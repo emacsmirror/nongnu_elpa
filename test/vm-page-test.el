@@ -229,6 +229,79 @@ headers are exposed, and that is what the command reads."
       (should (string-match-p "page three text"
                               (buffer-substring (point-min) (point-max)))))))
 
+;;; Shrunken headers (issue #606)
+
+(defconst vm-page-test--folded-headers
+  (concat "From: alice@example.com\n"
+          "To: one@example.com,\n"
+          "        two@example.com,\n"
+          "        three@example.com\n"
+          "Subject: lunch\n"
+          "\n" "Body.\n")
+  "A message whose To header runs onto three lines, as a folded header does.")
+
+(defun vm-page-test--shrunken-overlays ()
+  "The overlays `vm-shrunken-headers' made in the current buffer."
+  (seq-filter (lambda (o) (overlay-get o 'vm-shrunken-headers))
+              (overlays-in (point-min) (point-max))))
+
+(ert-deftest vm-page-test-shrunken-headers-folds-a-continued-header ()
+  "A header running onto more lines is hidden behind an overlay; a short one is not.
+The `To' header here has two continuation lines and `Subject' has none."
+  (with-temp-buffer
+    (insert vm-page-test--folded-headers)
+    (vm-shrunken-headers)
+    (let ((hidden (vm-page-test--shrunken-overlays)))
+      (should (= 1 (length hidden)))
+      (should (overlay-get (car hidden) 'invisible))
+      ;; what is hidden is the continuation, not the header's first line
+      (let ((text (buffer-substring-no-properties
+                   (overlay-start (car hidden)) (overlay-end (car hidden)))))
+        (should (string-match-p "two@example.com" text))
+        (should-not (string-match-p "^To:" text))
+        (should-not (string-match-p "Subject:" text))))))
+
+(ert-deftest vm-page-test-shrunken-headers-toggle-shows-them-again ()
+  "Toggling flips the overlay rather than making another one."
+  (with-temp-buffer
+    (insert vm-page-test--folded-headers)
+    (vm-shrunken-headers)
+    (should (overlay-get (car (vm-page-test--shrunken-overlays)) 'invisible))
+    (vm-shrunken-headers 'toggle)
+    (should (= 1 (length (vm-page-test--shrunken-overlays))))
+    (should-not (overlay-get (car (vm-page-test--shrunken-overlays)) 'invisible))
+    (vm-shrunken-headers 'toggle)
+    (should (overlay-get (car (vm-page-test--shrunken-overlays)) 'invisible))))
+
+(ert-deftest vm-page-test-shrunken-headers-stops-at-the-body ()
+  "Only the header section is folded.
+An indented line in the body is a quotation or a code sample, not a folded
+header, and hiding it would hide the message."
+  (with-temp-buffer
+    (insert "From: alice@example.com\n"
+            "Subject: lunch\n"
+            "\n"
+            "    indented body line\n"
+            "    another one\n")
+    (vm-shrunken-headers)
+    (should (null (vm-page-test--shrunken-overlays)))))
+
+(ert-deftest vm-page-test-shrunken-headers-leaves-the-buffer-unmodified ()
+  "Folding is a display change: it must not mark the folder buffer modified.
+The overlays would otherwise make VM think the folder needs saving."
+  (with-temp-buffer
+    (insert vm-page-test--folded-headers)
+    (set-buffer-modified-p nil)
+    (vm-shrunken-headers)
+    (should-not (buffer-modified-p))))
+
+(ert-deftest vm-page-test-shrunken-headers-is-off-by-default ()
+  "`vm-enable-shrunken-headers' replaces the vm-enable-addons flag it had."
+  (should-not (default-value 'vm-enable-shrunken-headers))
+  (should (get 'vm-enable-shrunken-headers 'standard-value))
+  ;; and the old flag is gone from the addon list
+  (should-not (memq 'shrunken-headers (default-value 'vm-enable-addons))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here

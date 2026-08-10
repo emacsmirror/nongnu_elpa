@@ -30,6 +30,12 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * Shrunken headers are part of VM proper now, in vm-page.el, and are turned
+    on with vm-enable-shrunken-headers rather than by adding shrunken-headers
+    to vm-enable-addons.  VM no longer sets vm-always-use-presentation behind
+    your back to make them work, advises two of its own functions, or takes
+    the T key from vm-toggle-thread; bind vm-shrunken-headers-toggle to a key
+    if you want one.
   * vm-rfaddons.el has lost the features VM does elsewhere or that were of
     marginal use.  Gone: the `.' and `T' rebindings and
     vm-mime-take-action-on-attachment (VM has the `$' attachment commands),

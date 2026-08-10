@@ -7314,26 +7314,19 @@ Useful ways to customize VM.
 @unnumberedsubsec Shrunken headers
 
 @cindex headers, shrunken
-@vindex vm-enable-addons
-Some messages come with huge lists of recipients and one has to page
-through them before getting to the actual content of the message.  The
-@dfn{shrunken headers} feature, included in @code{vm-rfaddons},
-addresses this problem.  To use the feature, you must add
-@code{shrunken-headers} to the variable @code{vm-enable-addons} in
-your VM init file:
+Some messages come with huge lists of recipients, and one has to page
+through them before reaching the content.  VM can show the first line of
+such a header and hide the rest behind a widget:
 
-@example
-(setq vm-enable-addons (cons 'shrunken-headers vm-enable-addons))
-@end example
+@vmdocvmenableshrunkenheaders
 
-@noindent The add-on abbreviates all the message headers to
-single lines, and adds a button at the end.  You can click
-the button to expand the header to its full length.  The function
-@code{vm-shrunken-headers-toggle} can be used to expand or collapse
-all the headers of a message.  You might bind this to a key, if you
-use it often.
+@findex vm-shrunken-headers-toggle
+@noindent
+Clicking the widget, or pressing @key{RET} on it, expands that one header;
+@code{vm-shrunken-headers-toggle} expands or collapses all of them in the
+message, and is worth a key of your own if you use it often.
 
-(This add-on was provided by Robert Fenk.)
+Written by Robert Fenk, as part of vm-rfaddons.
 
 @unnumberedsubsubsec @acronym{MIME} alternatives
 @cindex @acronym{MIME} alternatives

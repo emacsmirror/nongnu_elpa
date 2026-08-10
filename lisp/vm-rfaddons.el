@@ -81,7 +81,6 @@
 (require 'vm-sort)
 (require 'vm-reply)
 (require 'vm-postpone)
-(require 'wid-edit)
 (require 'vm)
 (eval-when-compile (require 'cl-lib))
 
@@ -159,9 +158,6 @@ The following options are possible.
    order to encode the headers before sending.
  - fake-date: if enabled allows you to fake the date of an outgoing message.
 
-`vm-mode' options:
- - shrunken-headers: enable shrunken-headers by advising several functions 
-
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add `vm-mime-auto-save-all-attachments' to
    `vm-select-new-message-hook' for automatic saving of attachments.
@@ -178,10 +174,9 @@ or do the binding and advising on your own."
   (interactive "")
 
   (if (eq option-list 'all)
-      (setq option-list (list 'vm-mail-mode 'vm-mode
-                              'auto-save-all-attachments))
+      (setq option-list (list 'vm-mail-mode 'auto-save-all-attachments))
     (if (eq option-list t)
-        (setq option-list (list 'vm-mail-mode 'vm-mode))))
+        (setq option-list (list 'vm-mail-mode))))
   
   
   (when (member 'vm-mail-mode option-list)
@@ -195,10 +190,6 @@ or do the binding and advising on your own."
                               option-list))
     (setq option-list (delq 'vm-mail-mode option-list)))
   
-  (when (member 'vm-mode option-list)
-    (setq option-list (append '(shrunken-headers)
-                              option-list))
-    (setq option-list (delq 'vm-mode option-list)))
     
   (while exclude-option-list
     (if (member (car exclude-option-list) option-list)
@@ -244,23 +235,6 @@ or do the binding and advising on your own."
   (vm-rfaddons-check-option
    'clean-subject option-list
    (add-hook 'vm-mail-mode-hook 'vm-mail-subject-cleanup))
-
-  ;; vm-mode -----------------------------------------------------------
-
-  ;; Shrunken header handlers
-  (vm-rfaddons-check-option
-   'shrunken-headers option-list
-   (if (not (boundp 'vm-always-use-presentation))
-       (message "Shrunken-headers do NOT work in standard VM!")
-     ;; We would corrupt the folder buffer for messages which are
-     ;; not displayed by a presentation buffer, thus we must ensure
-     ;; that a presentation buffer is used.  The visibility-widget
-     ;; would cause "*"s to be inserted into the folder buffer.
-     (setq vm-always-use-presentation t)
-     (advice-add 'vm-present-current-message :after #'vm-shrunken-headers)
-     (advice-add 'vm-expose-hidden-headers :after #'vm-shrunken-headers)
-     ;; this overrides the VM binding of "T" to `vm-toggle-thread'
-     (define-key vm-mode-map "T" 'vm-shrunken-headers-toggle)))
 
 
 ;; This is not needed any more becaue it is in the core  
@@ -914,140 +888,6 @@ headers."
           (insert (read-string "Subject: "))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defface vm-shrunken-headers-face 
-  '((((class color) (background light))
-     (:background "grey"))
-    (((class color) (background dark))
-     (:background "DimGrey"))
-    (t (:dim t)))
-  "Used for marking shrunken headers."
-  :group 'vm-rfaddons)
-
-(defconst vm-shrunken-headers-keymap
-  (let ((map (if (featurep 'xemacs) (make-keymap) (copy-keymap vm-mode-map))))
-    (define-key map [(return)]   'vm-shrunken-headers-toggle-this)
-    (if (featurep 'xemacs)
-        (define-key map [(button2)]  'vm-shrunken-headers-toggle-this-mouse)
-      (define-key map [(mouse-2)]  'vm-shrunken-headers-toggle-this-mouse))
-    map)
-  "Keymap used for shrunken-headers glyphs.")
-
-;;;###autoload
-(defun vm-shrunken-headers-toggle ()
-  "Toggle display of shrunken headers."
-  (interactive)
-  (vm-shrunken-headers 'toggle))
-
-;;;###autoload
-(defun vm-shrunken-headers-toggle-this-mouse (&optional event)
-  "Toggle display of shrunken headers."
-  (interactive "e")
-  (mouse-set-point event)
-  (end-of-line)
-  (vm-shrunken-headers-toggle-this))
-
-;;;###autoload
-(defun vm-shrunken-headers-toggle-this-widget (widget &rest _event)
-  (goto-char (widget-get widget :to))
-  (end-of-line)
-  (vm-shrunken-headers-toggle-this))
-
-;;;###autoload
-(defun vm-shrunken-headers-toggle-this ()
-  "Toggle display of shrunken headers."
-  (interactive)
-  
-  (save-excursion
-    (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
-        (set-buffer (symbol-value 'vm-mail-buffer)))
-    (if vm-presentation-buffer
-        (set-buffer vm-presentation-buffer))
-    (let ((o (or (car (vm-shrunken-headers-get-overlays (point)))
-                 (car (vm-shrunken-headers-get-overlays
-                       (save-excursion (end-of-line)
-                                       (forward-char 1)
-                                       (point)))))))
-      (save-restriction
-        (narrow-to-region (- (overlay-start o) 7) (overlay-end o))
-        (vm-shrunken-headers 'toggle)
-        (widen)))))
-
-(defun vm-shrunken-headers-get-overlays (start &optional end)
-  (let ((o-list (if end
-                    (overlays-in start end)
-                  (overlays-at start))))
-    (setq o-list (mapcar (lambda (o)
-                           (if (overlay-get o 'vm-shrunken-headers)
-                               o
-                             nil))
-                         o-list)
-          o-list (delete nil o-list))))
-
-;;;###autoload
-(defun vm-shrunken-headers (&optional toggle)
-  "Hide or show headers which occupy more than one line.
-Well, one might do it more precisely with only some headers,
-but it is sufficient for me!
-
-If the optional argument TOGGLE, then hiding is toggled.
-
-The face used for the visible hidden regions is `vm-shrunken-headers-face' and
-the keymap used within that region is `vm-shrunken-headers-keymap'."
-  (interactive "P")
-  
-  (save-excursion 
-    (let (headers-start headers-end start end o shrunken modified)
-      (if (equal major-mode 'vm-summary-mode)
-          (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
-              (set-buffer (symbol-value 'vm-mail-buffer))))
-      (if (equal major-mode 'vm-mode)
-          (if vm-presentation-buffer
-              (set-buffer vm-presentation-buffer)))
-
-      ;; We cannot use the default functions (vm-headers-of, ...) since
-      ;; we might also work within a presentation buffer.
-      (setq modified (buffer-modified-p))
-      (goto-char (point-min))
-      (setq headers-start (point-min)
-            headers-end (or (re-search-forward "\n\n" (point-max) t)
-                            (point-max)))
-
-      (cond (toggle
-             (setq shrunken (vm-shrunken-headers-get-overlays
-                             headers-start headers-end))
-             (while shrunken
-               (setq o (car shrunken))
-               (let ((w (overlay-get o 'vm-shrunken-headers-widget)))
-                 (widget-toggle-action w))
-	       (overlay-put o 'invisible (not (overlay-get o 'invisible)))
-	       (setq shrunken (cdr shrunken))))
-            (t
-             (goto-char headers-start)
-             (while (re-search-forward "^\\(\\s-+.*\n\\)+" headers-end t)
-               (setq start (match-beginning 0) end (match-end 0))
-               (setq o (vm-shrunken-headers-get-overlays start end))
-               (if o
-                   (setq o (car o))
-                 (setq o (make-overlay (1- start) end))
-                 (overlay-put o 'face 'vm-shrunken-headers-face)
-                 (overlay-put o 'mouse-face 'highlight)
-                 (overlay-put o 'local-map vm-shrunken-headers-keymap)
-                 (overlay-put o 'priority 10000)
-                 ;; make a new overlay for the invisibility, the other one we
-                 ;; made before is just for highlighting and key-bindings ...
-                 (setq o (make-overlay start end))
-                 (overlay-put o 'vm-shrunken-headers t)
-		 (goto-char (1- start))
-		 (overlay-put o 'start-closed nil)
-		 (overlay-put o 'vm-shrunken-headers-widget
-			      (widget-create 'visibility
-					     :action
-                                      'vm-shrunken-headers-toggle-this-widget))
-		 (overlay-put o 'invisible t)))))
-      (set-buffer-modified-p modified)
-      (goto-char (point-min)))))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-mail-mode-citation-kill-regexp-alist
   (list
