@@ -140,11 +140,18 @@ install-pkg: info
 	@echo VM INFO files successfully installed
 
 uninstall-pkg:
-	$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
+	@# Only if it is there.  `install-info --delete' fails when the file is
+	@# already gone, so a second `make uninstall' died here instead of
+	@# finishing, and an uninstall has to be safe to repeat.
+	@if test -f "$(INFO_INSTALLED)"; then \
+		echo "$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)"; \
+		$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED); \
+	fi
 	for f in $(INFO_SPLIT_GLOB); do \
 		$(RM) -f "$(infodestdir)/$$f"; \
 	done
-	$(RMDIR) $(infodestdir)/ 2> /dev/null || true
+	@# Empty or not there: either way there is nothing to report.
+	@$(RMDIR) $(infodestdir)/ 2> /dev/null || true
 
 ##############################################################################
 clean:

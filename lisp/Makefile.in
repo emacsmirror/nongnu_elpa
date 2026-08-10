@@ -225,7 +225,7 @@ uninstall-pkg: $(INSTALL_FILES)
 	  echo "Uninstalling $$i from $(DESTDIR)$(lispdir)" ; \
 	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \
 	done
-	-$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null
+	@$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null || true
 	@echo VM ELISP files successfully uninstalled
 
 

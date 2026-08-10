@@ -62,7 +62,7 @@ install-pkg:
 
 uninstall: uninstall-pkg
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i uninstall) || exit 1; done
-	-$(RMDIR) $(DESTDIR)$(docdir)/
+	@$(RMDIR) $(DESTDIR)$(docdir)/ 2> /dev/null || true
 
 uninstall-pkg:
 	@for i in $(SOURCES) ; do                                  \
