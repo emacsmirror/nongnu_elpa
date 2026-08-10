@@ -933,6 +933,42 @@ FILE is compatible if
     (or (not (and vm-folder-type type))
 	(eq vm-folder-type type))))
 
+(defun vm-existing-From_-separator (message)
+  "MESSAGE's own From_ envelope line, or nil if it has none.
+A message in an mbox folder already has one, and it says who sent the
+message and when it was delivered.  Converting the folder is no reason to
+throw that away."
+  (when (memq (vm-message-type-of message) '(From_ mboxcl2 BellFrom_))
+    (with-current-buffer (vm-buffer-of message)
+      (save-excursion
+	(save-restriction
+	  (widen)
+	  (goto-char (vm-start-of message))
+	  (when (looking-at "From [^\n]*\n")
+	    (match-string 0)))))))
+
+(defun vm-From_-date (date)
+  "DATE, the contents of a Date header, as an envelope line's ctime date.
+Nil when it cannot be read, which is what a Date header written by hand
+often cannot be."
+  (and date (ignore-errors (current-time-string (date-to-time date)))))
+
+(defun vm-make-From_-separator (message)
+  "A From_ envelope line built from MESSAGE's From and Date headers.
+For a message that has no envelope line of its own -- one coming out of an
+MMDF or BABYL folder, say.  An address with a space in it is not usable as
+an envelope sender, so VM names itself instead, as it always did."
+  (let* ((from (vm-get-header-contents message "From:"))
+	 (address (and from (nth 1 (mail-extract-address-components from))))
+	 (date (vm-get-header-contents message "Date:")))
+    (concat "From "
+	    (if (and address (string-match "\\`[^ \t\n]+\\'" address))
+		address
+	      "VM")
+	    " "
+	    (or (vm-From_-date date) (current-time-string))
+	    "\n")))
+
 (defun vm-leading-message-separator (&optional folder-type message
 				     for-other-folder)
   "Returns a leading message separator for the current folder.
@@ -950,7 +986,12 @@ be used a `foreign' folder.  This means that the `deleted'
 attributes should not be copied for BABYL folders."
   (let ((type (or folder-type vm-folder-type)))
     (cond ((memq type '(From_ mboxcl2 BellFrom_))
-	   (concat "From VM " (current-time-string) "\n"))
+	   ;; A composition being filed has no envelope line and no message
+	   ;; struct; anything else does, or can have one built.
+	   (if message
+	       (or (vm-existing-From_-separator message)
+		   (vm-make-From_-separator message))
+	     (concat "From VM " (current-time-string) "\n")))
 	  ((eq type 'mmdf)
 	   "\001\001\001\001\n")
 	  ((eq type 'babyl)

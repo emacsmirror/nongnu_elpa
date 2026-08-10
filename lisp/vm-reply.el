@@ -989,6 +989,28 @@ Counted through the coding system the copy will be written with, which
                                 (or coding-system-for-write
                                     (vm-line-ending-coding-system)))))
 
+(defun vm-fcc-leading-separator (type)
+  "The separator to file a copy of the message in this buffer under.
+An mbox envelope line carries a date, and for a filed copy that date should
+be the message's own: filing the same message twice then records when it was
+sent, not when each copy happened to be written.  The sender stays VM, since
+nothing delivered this copy.
+
+The message struct the other separator callers have does not exist here --
+the composition is not in a folder -- so the Date header is read from the
+buffer."
+  (if (not (memq type '(From_ mboxcl2 BellFrom_)))
+      (vm-leading-message-separator type)
+    (let* ((end (save-excursion (goto-char (point-min))
+				(if (re-search-forward "\n\n" nil t)
+				    (point) (point-max))))
+	   (date (save-excursion
+		   (goto-char (point-min))
+		   (when (re-search-forward "^Date: *\\(.*\\)$" end t)
+		     (match-string 1)))))
+      (concat "From VM " (or (vm-From_-date date) (current-time-string))
+	      "\n"))))
+
 (defun vm-fcc-message-text (type)
   "The message in the current buffer, ready to append to a folder of TYPE.
 That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
@@ -1003,7 +1025,7 @@ one.  A composition has been through none of that yet."
       (vm-munge-message-separators type (point-min) (point-max))
       (goto-char (point-min))
       (let ((body (if (re-search-forward "\n\n" nil t) (point) (point-max))))
-	(concat (vm-leading-message-separator type)
+	(concat (vm-fcc-leading-separator type)
 		(if (eq type 'mboxcl2)
 		    (format "%s %d\n" vm-content-length-header
 			    (vm-fcc-body-octets body (point-max)))

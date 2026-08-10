@@ -1333,6 +1333,54 @@ never came true."
             (should-not (string-match-p "Content-Length:" (buffer-string)))))
       (delete-directory dir t))))
 
+(ert-deftest vm-reply-test-fcc-dates-the-envelope-line-from-the-message ()
+  "A filed copy's envelope line carries the message's own Date.
+Filing the same message twice then records when it was sent rather than when
+each copy happened to be written -- which matters for a composition that was
+postponed and sent days later (emacs-vm/vm#611)."
+  (with-temp-buffer
+    (insert "To: someone@example.com\n"
+            "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
+            "Subject: dated\n\nBody.\n")
+    (should (equal (vm-fcc-leading-separator 'From_)
+                   "From VM Sat Aug  8 14:24:13 2026\n"))
+    (should (equal (vm-fcc-leading-separator 'mboxcl2)
+                   "From VM Sat Aug  8 14:24:13 2026\n")))
+  ;; no Date header, or one that cannot be read: the time of filing, as before
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: undated\n\nBody.\n")
+    (should (string-prefix-p "From VM " (vm-fcc-leading-separator 'From_))))
+  (with-temp-buffer
+    (insert "To: someone@example.com\nDate: whenever\n\nBody.\n")
+    (should (string-prefix-p "From VM " (vm-fcc-leading-separator 'From_))))
+  ;; a Date in the body is not the message's date
+  (with-temp-buffer
+    (insert "To: someone@example.com\n\nDate: Sat, 8 Aug 2026 14:24:13 -0700\n")
+    (should-not (string-match-p "Aug  8" (vm-fcc-leading-separator 'From_))))
+  ;; and a format with no From_ line is untouched
+  (with-temp-buffer
+    (insert "To: someone@example.com\nDate: Sat, 8 Aug 2026 14:24:13 -0700\n\nB\n")
+    (should (equal (vm-fcc-leading-separator 'mmdf) "\001\001\001\001\n"))))
+
+(ert-deftest vm-reply-test-fcc-writes-the-dated-envelope-line ()
+  "The filed copy on disk carries that envelope line, not the time of filing.
+The test above checks what the function returns; this one checks that the
+write path is the caller, which is the part a wiring mistake breaks."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-reply-fcc-date" t))))
+    (unwind-protect
+        (let ((folder (expand-file-name "sent.mbox" dir))
+              (vm-default-folder-type 'From_))
+          (with-temp-buffer
+            (insert "To: someone@example.com\n"
+                    "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
+                    "Subject: dated\n\nBody.\n")
+            (vm-fcc-write folder))
+          (with-temp-buffer
+            (insert-file-contents folder)
+            (goto-char (point-min))
+            (should (looking-at "From VM Sat Aug  8 14:24:13 2026$"))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

@@ -2429,6 +2429,61 @@ every new one if a name were enough to make it one."
       (write-region "" nil empty nil 'quiet)
       (should-not (vm-get-folder-type empty)))))
 
+;;; The From_ envelope line (emacs-vm/vm#611)
+
+(ert-deftest vm-folder-test-conversion-keeps-the-envelope-line ()
+  "Converting a folder keeps each message's own envelope line.
+It says who sent the message and when it arrived, and the conversion used to
+stamp every one of them with the moment of the conversion instead."
+  (let ((folder (concat
+                 "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                 "From: alice@example.com\nSubject: one\n\nBody one.\n\n"
+                 "From bob@example.com Sun Aug  9 09:00:00 2026\n"
+                 "From: bob@example.com\nSubject: two\n\nBody two.\n\n")))
+    (vm-test-with-folder folder
+      (let ((before (mapcar #'vm-existing-From_-separator vm-message-list)))
+        (should (equal before '("From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                "From bob@example.com Sun Aug  9 09:00:00 2026\n")))
+        (dolist (m vm-message-list)
+          (should (equal (vm-leading-message-separator 'mboxcl2 m)
+                         (vm-existing-From_-separator m))))))))
+
+(ert-deftest vm-folder-test-a-message-with-no-envelope-line-gets-one-built ()
+  "A message out of a folder that has no From_ lines gets one built from its
+From and Date headers, rather than VM's own name and the time of day."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: Alice Adams <alice@example.com>\n"
+              "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
+              "Subject: one\n\nBody.\n\n")
+    (let ((m (car vm-message-list)))
+      ;; pretend it came from a folder type that has no envelope line
+      (vm-set-message-type-of m 'mmdf)
+      (should-not (vm-existing-From_-separator m))
+      (let ((built (vm-make-From_-separator m)))
+        (should (string-prefix-p "From alice@example.com " built))
+        (should (string-suffix-p "\n" built))
+        ;; the date is the message's, not now
+        (should (string-match-p "2026" built))
+        (should (equal built (vm-leading-message-separator 'From_ m)))))))
+
+(ert-deftest vm-folder-test-an-unusable-address-falls-back-to-vm ()
+  "An address with a space in it cannot be an envelope sender, and a message
+with no From at all has nothing to offer, so VM names itself as it always did."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "Subject: no from header\n\nBody.\n\n")
+    (let ((m (car vm-message-list)))
+      (vm-set-message-type-of m 'mmdf)
+      (should (string-prefix-p "From VM " (vm-make-From_-separator m))))))
+
+(ert-deftest vm-folder-test-a-composition-still-gets-vms-own-line ()
+  "With no message to ask, the separator is VM's own name and the time.
+That is the Fcc of a composition, which has no envelope line yet."
+  (let ((line (vm-leading-message-separator 'From_)))
+    (should (string-prefix-p "From VM " line))
+    (should (string-suffix-p "\n" line))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
