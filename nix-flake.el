@@ -594,9 +594,13 @@ See `nix-flake-init-post-action' variable for details."
       (nix-flake-init-dispatch))))
 
 ;;;###autoload
-(add-to-list 'auto-mode-alist (cons "/flake\\.lock\\'"
-				    (if (and (fboundp 'treesit-ready-p) (fboundp 'json-ts-mode) (treesit-ready-p 'json t))
-					'json-ts-mode 'js-mode)))
+(defun nix-flake-lock-mode ()
+  (if (and (fboundp 'treesit-ready-p) (treesit-ready-p 'json t))
+      (json-ts-mode)
+    (js-mode)))
+
+;;;###autoload
+(add-to-list 'auto-mode-alist '("/flake\\.lock\\'" . nix-flake-lock-mode))
 
 (provide 'nix-flake)
 ;;; nix-flake.el ends here

@@ -16,10 +16,6 @@
 ;;; Code:
 
 (require 'nix)
-(require 'nix-format)
-(require 'nix-shebang)
-(require 'nix-shell)
-(require 'nix-repl)
 (require 'smie)
 (require 'ffap)
 (eval-when-compile (require 'subr-x))
@@ -925,7 +921,7 @@ don’t do anything"
 (defun nix-create-menu ()
   "Create the Nix menu as shown in the menu bar."
   (let ((m '("Nix"
-             ["Format buffer" nix-format-buffer t])))
+             ["Format buffer" nix-mode-format t])))
     (easy-menu-define nix-mode-menu nix-mode-map "Menu keymap for Nix mode" m)))
 
 (nix-create-keymap)
