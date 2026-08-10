@@ -7548,16 +7548,6 @@ information is derived from `vm-mime-mule-charset-to-coding-alist' (which see)."
 (defvar vm-fsfemacs-cached-scroll-bar-width nil)
 (defvar vm-update-composition-buffer-name-timer nil)
 
-(defcustom vm-enable-addons nil
-  "*A list of addons to enable, t for all and nil to disable all.
-The addons are what is left of `vm-rfaddons-infect-vm'; the rest of what
-was there is part of VM proper now, with an ordinary option each.
-
-You must restart VM after a change to cause any effects."
-  :group 'vm-rfaddons
-  :type '(set (const :tag "Reply to a return-receipt request" return-receipt-to)
-	      (const :tag "Enable all addons" t)))
-
 (defcustom vm-mail-subject-prefix-replacements
   '(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Re: ")
     ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Fo: "))
@@ -7581,6 +7571,30 @@ The number reflects the number of references."
   :type '(boolean))
 
 ;;;###autoload
+
+(defcustom vm-handle-return-receipts nil
+  "*Non-nil means answer a message asking for a return receipt.
+`vm-handle-return-receipt-mode' says whether the answer is sent as it
+stands, asked about first, or left in a composition buffer for you.
+
+A return receipt is a request, not an instruction: a sender cannot make
+your mail reader tell them you read something, and VM does not by default."
+  :group 'vm-misc
+  :type 'boolean)
+
+(defcustom vm-handle-return-receipt-mode 'edit
+  "Tells `vm-handle-return-receipt' how to handle return receipts.
+One can choose between `ask', `auto', `edit', or an expression which should
+return t if the return receipts should be sent."
+  :group 'vm-misc
+  :type '(choice (const :tag "Edit" edit)
+                 (const :tag "Ask" ask)
+                 (const :tag "Auto" auto)))
+
+(defcustom vm-handle-return-receipt-peek 500
+  "*Number of characters from the original message body to be returned."
+  :group 'vm-misc
+  :type '(integer))
 
 (defcustom vm-auto-save-all-attachments nil
   "*Non-nil means save the attachments of a message as it arrives.

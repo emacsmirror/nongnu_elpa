@@ -208,7 +208,7 @@ PREDICATE would not signal `void-function'."
 (ert-deftest vm-minibuf-test-history-arguments-are-quoted-symbols ()
   "Every caller passes HISTORY as a symbol, not as the variable's value."
   (let ((sites 0))
-    (dolist (file '("vm-mime.el" "vm-rfaddons.el" "vm-avirtual.el"
+    (dolist (file '("vm-mime.el" "vm-avirtual.el"
 		    "vm-postpone.el" "vm-grepmail.el" "vm-save.el" "vm.el"))
       (with-temp-buffer
 	(insert-file-contents (expand-file-name file vm-test-lisp-dir))

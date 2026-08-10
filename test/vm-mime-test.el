@@ -2595,8 +2595,8 @@ variables were plain aliases, never marked obsolete, and are dropped."
   "`vm-auto-save-all-attachments' replaces the vm-enable-addons flag."
   (should (get 'vm-auto-save-all-attachments 'standard-value))
   (should-not (default-value 'vm-auto-save-all-attachments))
-  (should-not (memq 'auto-save-all-attachments (default-value 'vm-enable-addons)))
-  (should-not (memq 'attach-save-files (default-value 'vm-enable-addons))))
+  ;; `vm-enable-addons' is gone entirely now
+  (should-not (boundp 'vm-enable-addons)))
 
 (provide 'vm-mime-test)
 

@@ -91,7 +91,7 @@ manual appendix silently loses its options.  That is what this catches."
 (ert-deftest vm-optional-test-bbdb-integration-loads ()
   "The three files that call into BBDB load with BBDB present."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
-  (dolist (feature '(vm-avirtual vm-pcrisis vm-rfaddons))
+  (dolist (feature '(vm-avirtual vm-pcrisis))
     (should (require feature nil t))))
 
 ;;; Every name VM uses still exists
@@ -122,7 +122,6 @@ landed in the record\='s `aka\=' field."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-avirtual)
   (require 'vm-pcrisis)
-  (require 'vm-rfaddons)
   (should (equal nil (vm-optional-test--unresolved "bbdb-"))))
 
 ;;; What works: the in-bbdb selector
@@ -224,13 +223,13 @@ reading it `bbdb-get-field', neither of which BBDB 3 has."
 
 ;;; The virtual folders BBDB records ask for
 
-(ert-deftest vm-optional-test-rfaddons-builds-virtual-folders-from-bbdb ()
+(ert-deftest vm-optional-test-avirtual-builds-virtual-folders-from-bbdb ()
   "A record with a `vm-virtual' field gets a virtual folder of its addresses.
 The field was read with `bbdb-record-raw-notes' and the addresses with
 `bbdb-record-net', both gone; and the mail-alias variant split its aliases
 with `bbdb-split', whose arguments BBDB 3 takes the other way round."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
-  (require 'vm-rfaddons)
+  (require 'vm-avirtual)
   (vm-optional-test-with-bbdb
     (let ((vm-virtual-folder-alist nil)
           (vm-primary-inbox "~/INBOX"))

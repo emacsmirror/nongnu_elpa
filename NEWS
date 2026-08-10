@@ -30,6 +30,12 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * vm-rfaddons.el is gone.  What was worth keeping is part of VM proper, in
+    the module it belongs to, and vm-enable-addons and vm-rfaddons-infect-vm
+    are gone with it -- there are no addons to switch on any more, only
+    ordinary options.  Answering a return receipt is vm-handle-return-receipts,
+    the BBDB virtual-folder builders are in vm-avirtual.el, and
+    vm-isearch-presentation is in vm-page.el.
   * The attachment commands are part of VM proper now, in vm-mime.el:
     vm-attach-files-in-directory, vm-mime-auto-save-all-attachments,
     vm-mime-set-8bit-composition-charset and vm-toggle-best-mime.  Saving
