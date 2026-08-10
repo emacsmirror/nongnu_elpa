@@ -12,6 +12,12 @@ since that version to see how you might be affected.
     rather than `vm-trust-From_-with-Content-Length`.  The old names still
     work.
 
+  * `vm-change-folder-type` with a prefix argument converts a folder on disk,
+    without visiting it, and keeps the folder as it was in a backup file --
+    as does changing a visited folder's type.  That is how to repair a folder
+    VM will not read, since such a folder cannot be visited to convert it
+    (emacs-vm/vm#613).
+
   * An mboxcl2 folder is kept sound.  Every message VM writes into one carries
     a `Content-Length`, which is how the end of a message is found there, and
     a message that has none is refused rather than guessed at;

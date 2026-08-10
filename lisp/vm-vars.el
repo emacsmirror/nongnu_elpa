@@ -1036,11 +1036,15 @@ and that is how the next message is found.  A message written into such a
 folder without one -- by another mailer, or by VM before this was checked --
 leaves the folder saying one thing and containing another.
 
-With this set, reading such a folder signals an error naming the message.
+With this set, reading such a folder signals an error naming the message and
+saying how to repair it: `vm-change-folder-type' with a prefix argument
+converts a folder on disk, without visiting it, and gives every message a
+length.
+
 With it nil, VM warns and falls back on looking for the next line beginning
-\"From \", which is what it used to do silently; that is also how to open a
-folder in order to repair it with `vm-change-folder-type', which gives every
-message a correct length."
+\"From \", which is what it used to do silently.  Turning it off to get at a
+broken folder is not necessary and is easy to forget about; the repair does
+not need it."
   :group 'vm-folders
   :type 'boolean)
 
