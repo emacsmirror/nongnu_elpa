@@ -218,6 +218,47 @@ affected, `--with-package-dir' as well."
           (forward-line 1))
         (should (equal nil glued))))))
 
+;;; The generated autoloads file, which is loaded before anything else of VM's
+
+(defun vm-build-test--load-in-a-clean-emacs (form)
+  "Evaluate FORM in a batch Emacs that has only lisp/ on its load-path.
+Returns (EXIT-STATUS . OUTPUT).  A subprocess is the only way to see what a
+user's startup sees: this Emacs has VM loaded already, so nothing here would
+notice a loaddefs file that cannot be loaded on its own."
+  (with-temp-buffer
+    (let ((status (call-process
+                   (expand-file-name invocation-name invocation-directory)
+                   nil t nil
+                   "-batch" "-Q"
+                   "-L" (expand-file-name "lisp" vm-build-test--root)
+                   "--eval" (prin1-to-string form))))
+      (cons status (buffer-string)))))
+
+(ert-deftest vm-build-test-autoloads-load-on-their-own ()
+  "`(require \\='vm-autoloads)' works in an Emacs with nothing else loaded.
+That is what INSTALL.md tells anyone running from a checkout to do, and it
+broke: an autoloaded defcustom whose default value read another VM variable
+put the value form in the loaddefs file, where the variable it read did not
+exist yet, and startup died with \"Symbol's value as variable is void:
+vm-included-text-prefix\" (emacs-vm/vm#608)."
+  (let ((result (vm-build-test--load-in-a-clean-emacs '(require 'vm-autoloads))))
+    (should (equal (car result) 0))
+    (should-not (string-match-p "void-variable\\|Symbol's value as variable"
+                                (cdr result)))))
+
+(ert-deftest vm-build-test-vm-vars-autoloads-nothing ()
+  "No option in vm-vars.el is autoloaded, which is what makes the above safe.
+Every VM file requires vm-vars, so autoloading an option from it gains
+nothing, and an autoloaded default that reads another variable depends on the
+order the two happen to appear in the file.  Four cookies arrived with the
+vm-rfaddons merge, where they had been needed because that file was an add-on
+loaded on demand."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "lisp/vm-vars.el"
+                                            vm-build-test--root))
+    (goto-char (point-min))
+    (should-not (re-search-forward "^;;;###autoload" nil t))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here
