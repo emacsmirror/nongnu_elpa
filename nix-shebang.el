@@ -31,15 +31,17 @@
 
 (defun nix-shebang-mode ()
   "Detect and run file’s interpreter mode."
-  (let ((mode (nix-shebang-get-interpreter)))
+  (let* ((interpreter (nix-shebang-get-interpreter))
+         (mode (and interpreter
+                    (assoc-default interpreter
+                                   (mapcar (lambda (e)
+                                             (cons
+                                              (format "\\`%s\\'" (car e))
+                                              (cdr e)))
+                                           interpreter-mode-alist)
+                                   #'string-match-p))))
     (when mode
-      (funcall (assoc-default mode
-                              (mapcar (lambda (e)
-                                        (cons
-                                         (format "\\`%s\\'" (car e))
-                                         (cdr e)))
-                                      interpreter-mode-alist)
-                              #'string-match-p)))))
+      (funcall mode))))
 
 (provide 'nix-shebang)
 ;;; nix-shebang.el ends here
