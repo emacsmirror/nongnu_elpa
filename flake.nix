@@ -2,8 +2,12 @@
   description = "XMPP client for Emacs";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.keymap-popup = {
+    url = "git+https://git.thanosapollo.org/emacs-keymap-popup.git";
+    flake = false;
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, keymap-popup }:
     let
       systems = [
         # Note: Most of the testing I've done is x86_64-linux and
@@ -17,7 +21,7 @@
 
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      keymapPopupVersion = "0.4.1";
+      keymapPopupVersion = "0.4.2";
 
       # Build everything for one concrete Emacs.  Called once per
       # variant (full build, and emacs-nox) so the test matrix can
@@ -41,10 +45,7 @@
           keymapPopup = emacsPackages.trivialBuild {
             pname = "keymap-popup";
             version = keymapPopupVersion;
-            src = pkgs.fetchurl {
-              url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-              hash = "sha256-O2t6v0b8xknkevzXu6uu+M/ZiqPhcN/g5MytxKF4DkU=";
-            };
+            src = keymap-popup;
             packageRequires = [ ];
           };
 
@@ -138,6 +139,7 @@
         let jabber = mkJabber system;
         in {
           default = jabber.full.omemoModule;
+          keymap-popup = jabber.full.keymapPopup;
           omemo-module = jabber.full.omemoModule;
         });
 
