@@ -33,6 +33,9 @@
 ;; on purpose -- a suite that quietly skips a server it was told about has no
 ;; coverage.
 
+;; Sending mail is configured separately, and is not part of `make test': see
+;; `vm-send-test-config' at the end of this file.
+
 ;;; Code:
 
 (setq vm-imap-test-servers
@@ -77,3 +80,30 @@
 	 :accounts (("vmtest1" . "PASSWORD1")))))
 
 ;;; vm-live-config.el ends here
+
+;; The mail-sending tests, `make test-send'.  These send real mail, so they run
+;; only from that target and only with this set.  Leave it out and they skip.
+;;
+;; :to must be your own address.  The tests mark every message with an
+;; `X-VM-Send-Test' header and delete it again, but mail that leaves the
+;; machine cannot be recalled, so nothing here should ever name someone else.
+;;
+;; No password: how this machine sends mail is its own business.  Set
+;; `send-mail-function' and whatever it needs below -- msmtp through
+;; `sendmail-program', or smtpmail with auth-source, or anything else.  The
+;; tests only need it to work.
+;;
+;; :verify-server names one of the `vm-imap-test-servers' above, whose account
+;; receives that mail; the test waits for it there and then deletes it.
+
+;; (setq vm-send-test-config
+;;       '(:from           "you@example.com"
+;;         :to             "you@example.com"
+;;         :verify-server  "plain"
+;;         :verify-mailbox "INBOX"
+;;         :wait           60))
+
+;; (setq send-mail-function 'sendmail-send-it
+;;       sendmail-program "/opt/local/bin/msmtp"
+;;       mail-specify-envelope-from t
+;;       mail-envelope-from 'header)

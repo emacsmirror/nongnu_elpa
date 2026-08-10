@@ -37,14 +37,6 @@
 
 ;;; Header highlighting functions
 
-(ert-deftest vm-page-test-highlight-functions-exist ()
-  "Test that header highlighting functions exist."
-  (should (fboundp 'vm-highlight-headers))
-  (should (fboundp 'vm-highlight-headers-maybe))
-  (should (fboundp 'vm-energize-urls))
-  (should (fboundp 'vm-energize-headers))
-  (should (fboundp 'vm-energize-urls-in-message-region)))
-
 ;;; Presentation functions
 
 (ert-deftest vm-page-test-presentation-functions-exist ()
@@ -62,9 +54,6 @@
 
 ;;; vm-emit-eom-blurb tests
 
-(ert-deftest vm-page-test-emit-eom-blurb-exists ()
-  "Test vm-emit-eom-blurb exists."
-  (should (fboundp 'vm-emit-eom-blurb)))
 
 ;;; vm-howl-if-eom tests
 
@@ -88,9 +77,6 @@
 
 ;;; vm-narrow-for-preview tests
 
-(ert-deftest vm-page-test-narrow-for-preview-exists ()
-  "Test vm-narrow-for-preview exists."
-  (should (fboundp 'vm-narrow-for-preview)))
 
 ;;; Scrolling variables
 
@@ -101,9 +87,6 @@
 
 ;;; vm-url-help tests
 
-(ert-deftest vm-page-test-url-help-exists ()
-  "Test vm-url-help function exists."
-  (should (fboundp 'vm-url-help)))
 
 
 ;;; Exposing headers while reading a later page (#513)
@@ -229,6 +212,114 @@ headers are exposed, and that is what the command reads."
       (should (string-match-p "page three text"
                               (buffer-substring (point-min) (point-max)))))))
 
+;;; What a preview shows, what the end-of-message blurb says, and what the
+;;; URL help offers.  These three had a test each asserting the function was
+;;; bound, which is true of any file that loads.
+
+(defconst vm-page-test--folder
+  (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: alice@example.com\nSubject: first\n\n"
+          "Line one\nLine two\nLine three\n\n"
+          "From bob@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: bob@example.com\nSubject: second\n\nOther body.\n\n")
+  "Two messages, the first with three body lines to preview part of.")
+
+(ert-deftest vm-page-test-narrow-for-preview-shows-what-was-asked-for ()
+  "A preview shows the headers and `vm-preview-lines' lines of the body.
+The number is the whole point of the option, and nothing checked it."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list)))
+      (let ((vm-preview-lines 1))
+        (vm-narrow-for-preview)
+        (should (= (point-min) (vm-vheaders-of m)))
+        (should (string-match-p "Subject: first" (buffer-string)))
+        (should (string-match-p "Line one" (buffer-string)))
+        (should-not (string-match-p "Line two" (buffer-string))))
+      (let ((vm-preview-lines 2))
+        (vm-narrow-for-preview)
+        (should (string-match-p "Line two" (buffer-string)))
+        (should-not (string-match-p "Line three" (buffer-string)))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-of-zero-lines-shows-headers ()
+  "Zero preview lines means the headers and no body."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((vm-preview-lines 0))
+      (vm-narrow-for-preview)
+      (should (string-match-p "Subject: first" (buffer-string)))
+      (should-not (string-match-p "Line one" (buffer-string))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-t-shows-the-whole-message ()
+  "`vm-preview-lines' t means the message rather than a preview of it."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list))
+          (vm-preview-lines t))
+      (vm-narrow-for-preview)
+      (should (= (point-max) (vm-text-end-of m)))
+      (should (string-match-p "Line three" (buffer-string))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-does-not-run-past-the-message ()
+  "Asking for more lines than the message has shows the message, not the next.
+The folder is one buffer, so the next message is a few characters away."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list))
+          (vm-preview-lines 500))
+      (vm-narrow-for-preview)
+      (should (= (point-max) (vm-text-end-of m)))
+      (should-not (string-match-p "second" (buffer-string))))))
+
+(ert-deftest vm-page-test-emit-eom-blurb-says-nothing-when-not-wanted ()
+  "With `vm-auto-next-message' nil the end of a message is not announced,
+which is what that option's docstring promises."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args)))
+                ((symbol-function 'vm-summary-sprintf) (lambda (&rest _) "x")))
+        (let ((vm-auto-next-message nil))
+          (vm-emit-eom-blurb)
+          (should-not said))
+        (let ((vm-auto-next-message t))
+          (vm-emit-eom-blurb)
+          (should said)
+          (should (string-match-p "End of message" (nth 1 said))))))))
+
+(ert-deftest vm-page-test-emit-eom-blurb-names-the-recipient-for-your-own-mail ()
+  "In a folder of sent mail the blurb says who it went to, not who sent it.
+`vm-summary-uninteresting-senders' is what tells VM the sender is you."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args)))
+                ((symbol-function 'vm-summary-sprintf) (lambda (&rest _) "x")))
+        (let ((vm-auto-next-message t)
+              (vm-summary-uninteresting-senders "alice"))
+          (vm-emit-eom-blurb)
+          (should (string-match-p "End of message %s to" (nth 1 said))))
+        (let ((vm-auto-next-message t)
+              (vm-summary-uninteresting-senders "nobody-here"))
+          (vm-emit-eom-blurb)
+          (should (string-match-p "End of message %s from" (nth 1 said))))))))
+
+(ert-deftest vm-page-test-url-help-names-the-browser-it-would-use ()
+  "The help text on a URL says where button 2 would send it."
+  (let ((vm-url-browser "/usr/bin/firefox"))
+    (should (string-match-p "/usr/bin/firefox" (vm-url-help nil))))
+  (let ((vm-url-browser 'w3-fetch))
+    (should (string-match-p "Emacs W3" (vm-url-help nil))))
+  (let ((vm-url-browser 'browse-url))
+    (should (string-match-p "browse-url" (vm-url-help nil)))
+    (should (string-match-p "button 2" (vm-url-help nil)))
+    (should (string-match-p "button 3" (vm-url-help nil))))
+  ;; customize's function type allows a lambda, which has no name to print
+  (let ((vm-url-browser (lambda (url) url)))
+    (should (stringp (vm-url-help nil)))))
+
 ;;; Shrunken headers (issue #606)
 
 (defconst vm-page-test--folded-headers
@@ -301,6 +392,103 @@ The overlays would otherwise make VM think the folder needs saving."
   (should (get 'vm-enable-shrunken-headers 'standard-value))
   ;; the addon list it was a flag in is gone entirely
   (should-not (boundp 'vm-enable-addons)))
+
+;;; What energizing a message's URLs does, in place of a test that the five
+;;; highlight functions were bound.
+
+(defun vm-page-test--url-overlays ()
+  "The overlays in the current buffer that mark URLs, in buffer order."
+  (sort (seq-filter (lambda (o) (overlay-get o 'vm-url))
+                    (overlays-in (point-min) (point-max)))
+        (lambda (a b) (< (overlay-start a) (overlay-start b)))))
+
+(defun vm-page-test--url-strings ()
+  "The text of each URL overlay in the current buffer."
+  (mapcar (lambda (o) (buffer-substring (overlay-start o) (overlay-end o)))
+          (vm-page-test--url-overlays)))
+
+(ert-deftest vm-page-test-energize-urls-marks-each-url ()
+  "Each URL gets an overlay over exactly the URL, and nothing else does.
+The overlay is what button 2 and RET act on, so its bounds are the click
+target."
+  (with-temp-buffer
+    (insert "See http://example.com/a and mailto:someone@example.com now.\n"
+            "Not a url at all.\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls)
+      (should (equal (vm-page-test--url-strings)
+                     '("http://example.com/a" "mailto:someone@example.com")))
+      ;; and they are buttons: highlighted under the mouse, with a keymap
+      (let ((o (car (vm-page-test--url-overlays))))
+        (should (eq (overlay-get o 'mouse-face) 'highlight))
+        (should (overlay-get o 'vm-button))
+        (should (keymapp (overlay-get o 'local-map)))
+        (should (eq (overlay-get o 'balloon-help) 'vm-url-help))))))
+
+(ert-deftest vm-page-test-energize-urls-does-not-double-up ()
+  "Energizing twice leaves one overlay per URL: the old ones are removed
+first, which is what makes re-presenting a message safe."
+  (with-temp-buffer
+    (insert "http://example.com/a\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls)
+      (vm-energize-urls)
+      (should (= (length (vm-page-test--url-overlays)) 1)))))
+
+(ert-deftest vm-page-test-energize-urls-can-take-the-energy-back ()
+  "With a prefix argument the URLs are stripped and none are marked again."
+  (with-temp-buffer
+    (insert "http://example.com/a and http://example.com/b\n")
+    (cl-letf (((symbol-function 'vm-inform) #'ignore))
+      (let ((vm-url-search-limit nil)
+            (vm-highlight-url-face 'vm-highlight-url)
+            (vm-url-browser 'browse-url))
+        (vm-energize-urls)
+        (should (= (length (vm-page-test--url-overlays)) 2))
+        (vm-energize-urls t)
+        (should-not (vm-page-test--url-overlays))))))
+
+(ert-deftest vm-page-test-energize-urls-searches-only-the-ends-of-a-big-region ()
+  "`vm-url-search-limit' stops VM reading a huge message end to end: it looks
+at the first and last half-limit only, so a URL in the middle is not marked.
+The docstring promises this and nothing checked it."
+  (with-temp-buffer
+    (insert "http://example.com/first\n")
+    (insert (make-string 4000 ?x) "\n")
+    (insert "http://example.com/middle\n")
+    (insert (make-string 4000 ?x) "\n")
+    (insert "http://example.com/last\n")
+    (let ((vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (let ((vm-url-search-limit 200))
+        (vm-energize-urls)
+        (should (equal (vm-page-test--url-strings)
+                       '("http://example.com/first"
+                         "http://example.com/last"))))
+      ;; without a limit the whole message is searched
+      (let ((vm-url-search-limit nil))
+        (vm-energize-urls)
+        (should (= (length (vm-page-test--url-overlays)) 3))))))
+
+(ert-deftest vm-page-test-energize-urls-in-message-region-needs-a-reason ()
+  "Nothing is marked when there is neither a face to show it nor a browser to
+send it to, since the overlay would do nothing."
+  (with-temp-buffer
+    (insert "http://example.com/a\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face nil)
+          (vm-url-browser nil))
+      (vm-energize-urls-in-message-region (point-min) (point-max))
+      (should-not (vm-page-test--url-overlays)))
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face nil)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls-in-message-region (point-min) (point-max))
+      (should (= (length (vm-page-test--url-overlays)) 1)))))
 
 (provide 'vm-page-test)
 

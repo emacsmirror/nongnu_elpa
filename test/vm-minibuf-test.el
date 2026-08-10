@@ -93,10 +93,6 @@
 
 ;;; vm-keyboard-read-string tests
 
-(ert-deftest vm-minibuf-test-keyboard-read-string-exists ()
-  "Test vm-keyboard-read-string is callable."
-  (should (fboundp 'vm-keyboard-read-string)))
-
 ;;; vm-read-file-name tests
 
 (ert-deftest vm-minibuf-test-read-file-name-function-arity ()
@@ -221,6 +217,41 @@ PREDICATE would not signal `void-function'."
 		   file (line-number-at-pos) (match-string 1)))
 	  (setq sites (1+ sites)))))
     (should (> sites 5))))
+
+;;; What these do, in place of tests that they were bound.
+
+(ert-deftest vm-minibuf-test-read-number-keeps-asking-until-it-gets-one ()
+  "A number is what comes back, and nothing else is accepted.
+The prompt is repeated rather than an error signalled, since this is what
+answers `C-u' style counts."
+  (let ((answers '("not a number" "  -12 messages")))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) (pop answers))))
+      (should (= (vm-read-number "How many? ") -12))
+      (should-not answers))))
+
+(ert-deftest vm-minibuf-test-read-number-takes-the-leading-number ()
+  "Leading whitespace and trailing text are ignored, and a sign is not."
+  (dolist (case '(("3" . 3) ("  7  " . 7) ("-2" . -2) ("12 foo" . 12)))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (car case))))
+      (should (= (vm-read-number "n? ") (cdr case))))))
+
+(ert-deftest vm-minibuf-test-replace-word-replaces-the-last-word-only ()
+  "Completion replaces the last whitespace-delimited word, not the whole
+line: the last of several addresses stands, and the ones before it stay.
+A path counts as one word, so the completion has to carry the whole of it."
+  (with-temp-buffer
+    (insert "/home/me/mail/inb")
+    (vm-minibuffer-replace-word "/home/me/mail/inbox")
+    (should (equal (buffer-string) "/home/me/mail/inbox")))
+  (with-temp-buffer
+    (insert "alice@example.com bo")
+    (vm-minibuffer-replace-word "bob@example.com")
+    (should (equal (buffer-string) "alice@example.com bob@example.com")))
+  ;; with nothing typed yet, the word is simply inserted
+  (with-temp-buffer
+    (vm-minibuffer-replace-word "inbox")
+    (should (equal (buffer-string) "inbox"))))
 
 (provide 'vm-minibuf-test)
 

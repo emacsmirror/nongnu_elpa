@@ -292,6 +292,103 @@ neither."
                  (seq-difference (vm-reference-test--unautoloaded-commands)
                                  vm-reference-test--not-commands))))
 
+;;; The manual against the code
+
+(defconst vm-reference-test--manual
+  (expand-file-name "../info/vm.texinfo" vm-test-dir)
+  "The hand-written manual, which the generated files are included by.")
+
+(defconst vm-reference-test--foreign-symbols
+  '(;; other packages, which VM does not require and a batch run has not loaded
+    smtpmail-smtp-service smtpmail-stream-type
+    w3m-force-redisplay w3m-goto-article-function w3m-pop-up-frames
+    ;; named to show the shape of a name the reader is to invent
+    vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
+  "Symbols the manual indexes that are deliberately not VM's own.")
+
+(defun vm-reference-test--manual-symbols ()
+  "Every symbol the manual indexes with @vindex or @findex."
+  (let ((symbols nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward "^@\\(?:vindex\\|findex\\) +\\([^ \t\n]+\\)" nil t)
+        (push (intern (match-string 1)) symbols)))
+    (delete-dups symbols)))
+
+(ert-deftest vm-reference-test-the-manual-names-things-that-exist ()
+  "Every command and variable the manual indexes exists.
+The manual sent anyone wanting to revert a folder to `revert-file', which is
+not a command in any Emacs, and it went unnoticed because nothing checked.
+Deleting or renaming a function is the other way to break this, and half of
+vm-rfaddons.el was deleted in one release."
+  (vm-reference-load-everything)
+  (let ((missing nil))
+    (dolist (symbol (vm-reference-test--manual-symbols))
+      (unless (or (memq symbol vm-reference-test--foreign-symbols)
+                  (boundp symbol) (fboundp symbol) (facep symbol)
+                  (get symbol 'variable-documentation))
+        (push symbol missing)))
+    (should (equal nil (sort missing #'string<)))))
+
+(ert-deftest vm-reference-test-the-manual-does-not-name-the-unreleased-version ()
+  "The manual does not date a change to the version this tree will become.
+The number is not settled until the release is made, and dating changes to it
+means editing the manual again when it is.  \"In earlier releases\" needs no
+upkeep.  Naming a version that has been out for years, as the manual does for
+8.2.0, is another matter and is left alone.
+
+The tree has also said two things at once: 8.3.3 in one obsolescence marker
+and 8.4.0 in three others, which is what made this worth pinning."
+  (let* ((version (with-temp-buffer
+                    (insert-file-contents
+                     (expand-file-name "../lisp/vm.el" vm-test-dir))
+                    (goto-char (point-min))
+                    (should (re-search-forward "^;; Version: *\\([0-9.]+\\)" nil t))
+                    (match-string 1)))
+         (found nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      ;; the version history at the end names every release on purpose
+      (let ((end (save-excursion
+                   (goto-char (point-min))
+                   (if (re-search-forward "^@unnumberedsubsec Selected Releases" nil t)
+                       (match-beginning 0)
+                     (point-max)))))
+        (while (re-search-forward (regexp-quote version) end t)
+          (push (buffer-substring (line-beginning-position) (line-end-position))
+                found))))
+    (should (equal nil found))))
+
+(ert-deftest vm-reference-test-the-manual-names-the-option-that-is-current ()
+  "Where the manual indexes a renamed option, it names the current one too.
+Mentioning the old name is right -- someone looking it up needs to find the
+explanation -- but the manual must not tell a reader to set a variable that is
+only an alias.  It told them to name the ImageMagick programs in
+`vm-imagemagick-identify-program' and `vm-imagemagick-convert-program' for a
+release after both became aliases of `vm-imagemagick-program'.
+
+The neighbourhood is twelve lines, which is the paragraph that explains the
+rename in each of the three places the manual does it."
+  (vm-reference-load-everything)
+  (let ((orphaned nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward "^@vindex +\\([^ \t\n]+\\)" nil t)
+        (let* ((symbol (intern (match-string 1)))
+               (obsolete (get symbol 'byte-obsolete-variable))
+               (current (car-safe obsolete)))
+          (when (and current (symbolp current))
+            (let ((from (save-excursion (forward-line -12) (point)))
+                  (to (save-excursion (forward-line 12) (point))))
+              (unless (save-excursion
+                        (goto-char from)
+                        (search-forward (symbol-name current) to t))
+                (push (list symbol 'should-name current) orphaned)))))))
+    (should (equal nil (nreverse orphaned)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here

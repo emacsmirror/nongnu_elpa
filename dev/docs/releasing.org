@@ -40,6 +40,15 @@ note lint will not be clean, due to xemacs references
 - cd test && make test-imap   # needs a server in test/vm-live-config.el
 - cd test && make test-assert
 
+* run the mail-sending tests, if this machine can send mail
+- cd test && make test-send
+
+These send real mail and wait for it to arrive, which no other test does: the
+rest stub `mail-send'.  They want a `vm-send-test-config' in
+test/vm-live-config.el and skip without one, and they are deliberately not part
+of `make test'.  They cover the first four items of the sending list below, so
+what is left there for a person is the rest.
+
 * manual testing
 
 The suite reads no real mailbox and sends no real mail.  Every test stubs
@@ -49,14 +58,16 @@ checks are the ones a person has to do, and they are the same every release.
 Derive extra items from the NEWS.md section for the release: anything described
 there as changed behaviour wants trying once by hand.
 
-Sending, none of which any test reaches:
+Sending.  `make test-send' covers the first four when configured; do them by
+hand when it is not, and the rest either way:
 - send to yourself with an Fcc header, and check the copy is filed, is in the
   folder's own format, and that the composition keeps its Fcc header
-- an Fcc naming an IMAP maildrop, against a real account
 - a line past 998 characters, read back in something that is not VM
 - a non-ASCII Subject, once with `vm-send-using-mime' nil and once with it on
+- an Fcc naming an IMAP maildrop, against a real account
 - an attachment, and a message with no body
 - signed and encrypted, with vm-epg, and with an Fcc alongside
+- reading what arrived in something that is not VM
 
 Reading:
 - an HTML part, internally and sent to an external viewer with pictures
@@ -132,6 +143,10 @@ Most distributions still ship 8.2.0b from 2011, because their automatic
 new-version checks point at Launchpad, which VM left.  See issue #478 for what
 each packager watches and how to correct it; until that is corrected they only
 learn of a release by being told.
+
+Name the release number, never a snapshot version.  What they package is what
+they are told to package, and =8.3.3snapshot= is not something anyone should
+be shipping.
 
 - Fedora: @goeran packages it and already builds from git.  Tell him the tag
   exists.

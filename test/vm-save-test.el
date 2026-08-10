@@ -37,10 +37,6 @@
 
 ;;; IMAP folder check
 
-(ert-deftest vm-save-test-imap-folder-p-exists ()
-  "Test that vm-imap-folder-p exists."
-  (should (fboundp 'vm-imap-folder-p)))
-
 ;;; Print function
 
 (ert-deftest vm-save-test-print-message-exists ()
@@ -320,6 +316,109 @@ current folder has to as well, or the match is missed whenever
   (vm-save-test-with-auto-folder "newsletters"
     (let ((vm-auto-folder-alist nil))
       (should (null (vm-auto-select-folder-for-save vm-message-pointer))))))
+
+;;; Which folder VM picks for you, and which folders are IMAP.  Both of these
+;;; had a test asserting only that the function was bound.
+
+(defconst vm-save-test--two-messages
+  (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: alice@example.com\nTo: list@example.org\n"
+          "Subject: [emacs-vm] a patch\n\nBody.\n\n"
+          "From bob@elsewhere.test Mon Jan  1 00:00:00 2024\n"
+          "From: bob@elsewhere.test\nTo: me@example.com\n"
+          "Subject: lunch\n\nBody.\n\n")
+  "One list message and one personal one, to be filed differently.")
+
+(ert-deftest vm-save-test-auto-select-folder-matches-a-header ()
+  "The folder is the one whose regexp matches the header named."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders t)
+          (alist '(("From" ("alice@example\\.com" . "from-alice"))
+                   ("Subject" ("lunch" . "social")))))
+      (should (equal (vm-auto-select-folder vm-message-list alist)
+                     "from-alice"))
+      (should (equal (vm-auto-select-folder (cdr vm-message-list) alist)
+                     "social"))
+      ;; nothing matches, and nothing is chosen
+      (should-not (vm-auto-select-folder
+                   vm-message-list '(("Subject" ("nothing here" . "x"))))))))
+
+(ert-deftest vm-save-test-auto-select-folder-is-off-unless-asked-for ()
+  "`vm-save-using-auto-folders' nil means the alist is not consulted at all."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders nil)
+          (alist '(("From" ("alice" . "from-alice")))))
+      (should-not (vm-auto-select-folder vm-message-list alist)))))
+
+(ert-deftest vm-save-test-auto-select-folder-folds-case-if-told-to ()
+  "`vm-auto-folder-case-fold-search' decides whether the regexp cares."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders t)
+          (alist '(("From" ("ALICE@EXAMPLE" . "shouting")))))
+      (let ((vm-auto-folder-case-fold-search t))
+        (should (equal (vm-auto-select-folder vm-message-list alist)
+                       "shouting")))
+      (let ((vm-auto-folder-case-fold-search nil))
+        (should-not (vm-auto-select-folder vm-message-list alist))))))
+
+(ert-deftest vm-save-test-auto-select-folder-evaluates-a-form ()
+  "A form instead of a string is evaluated with the match data of the header,
+which is how a folder gets named after part of what it matched -- the
+mailing-list name in a Subject, say.  It is documented and nothing tested it."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders t)
+          (alist '(("Subject" ("\\[\\([a-z-]+\\)\\]" . (match-string 1))))))
+      (should (equal (vm-auto-select-folder vm-message-list alist)
+                     "emacs-vm")))
+    ;; a form returning a list is taken as an alist to look in next
+    (let ((vm-save-using-auto-folders t)
+          (alist '(("Subject" ("patch" . '(("From" ("alice" . "nested"))))))))
+      (should (equal (vm-auto-select-folder vm-message-list alist)
+                     "nested")))))
+
+(ert-deftest vm-save-test-auto-select-folder-says-which-variable-is-wrong ()
+  "A broken alist names `vm-auto-folder-alist' in the error, since that is
+what the user has to go and fix."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders t)
+          (text-quoting-style 'grave))
+      (should (string-match-p
+               "vm-auto-folder-alist"
+               (cadr (should-error
+                      (vm-auto-select-folder
+                       vm-message-list
+                       '(("From" ("alice" . (this-is-not-a-function)))))))))))) 
+
+(ert-deftest vm-save-test-auto-select-folder-for-save-avoids-this-folder ()
+  "The folder a message is already in is not suggested for saving it."
+  (vm-test-with-folder vm-save-test--two-messages
+    (let ((vm-save-using-auto-folders t)
+          (alist '(("From" ("alice@example\\.com" . "from-alice")))))
+      (setq vm-folder-directory nil)
+      (let ((buffer-file-name (expand-file-name "from-alice")))
+        (should-not (vm-auto-select-folder-for-save vm-message-list alist)))
+      (let ((buffer-file-name (expand-file-name "some-other-folder")))
+        (should (equal (vm-auto-select-folder-for-save vm-message-list alist)
+                       "from-alice"))))))
+
+(ert-deftest vm-save-test-imap-folder-p-answers-for-the-folder-buffer ()
+  "Whether this is an IMAP folder is a question about the folder buffer,
+asked from the summary as often as not."
+  (let ((folder (generate-new-buffer " *vm-save-test-folder*"))
+        (summary (generate-new-buffer " *vm-save-test-summary*")))
+    (unwind-protect
+        (save-current-buffer
+          (with-current-buffer folder (setq major-mode 'vm-mode))
+          (set-buffer summary)
+          (setq vm-mail-buffer folder)
+          (with-current-buffer folder (setq vm-folder-access-method nil))
+          (should-not (vm-imap-folder-p))
+          (with-current-buffer folder (setq vm-folder-access-method 'imap))
+          (should (vm-imap-folder-p))
+          (with-current-buffer folder (setq vm-folder-access-method 'pop))
+          (should-not (vm-imap-folder-p)))
+      (kill-buffer folder)
+      (kill-buffer summary))))
 
 (provide 'vm-save-test)
 

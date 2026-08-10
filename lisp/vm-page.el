@@ -614,7 +614,9 @@ Use mouse button 3 to choose a Web browser for the URL."
 	  "Mosaic")
 	 ((eq vm-url-browser 'vm-mouse-send-url-to-netscape)
 	  "Netscape")
-	 (t (symbol-name vm-url-browser)))))
+	 ((symbolp vm-url-browser) (symbol-name vm-url-browser))
+	 ;; customize's function type also allows a lambda, which has no name
+	 (t "a Lisp function"))))
 
 ;;;###autoload
 (defun vm-energize-urls-in-message-region (&optional start end)

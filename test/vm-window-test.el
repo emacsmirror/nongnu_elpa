@@ -307,26 +307,103 @@ Creates initial frame and sets up all frame function mocks."
       (should (equal (assq 'height comp-params) '(height . 40))))))
 
 ;;; Window loop tests (no frame mocking needed)
+;;; What the window functions do.  These four had a test each asserting the
+;;; function was bound.
 
-(ert-deftest vm-window-test-window-loop-exists ()
-  "Test that vm-window-loop function exists."
-  (should (fboundp 'vm-window-loop)))
+(defmacro vm-window-test-with-two-windows (spec &rest body)
+  "Run BODY with two windows, showing the buffers SPEC names.
+SPEC is (VAR-A VAR-B): each is bound to a fresh buffer shown in a window.
+The configuration is restored afterwards, so a test cannot strand the run in
+a window it made."
+  (declare (indent 1) (debug t))
+  (let ((a (nth 0 spec)) (b (nth 1 spec)))
+    `(let ((,a (generate-new-buffer " *vm-window-test-a*"))
+           (,b (generate-new-buffer " *vm-window-test-b*")))
+       (unwind-protect
+           (save-window-excursion
+             (delete-other-windows)
+             (switch-to-buffer ,a)
+             (select-window (split-window))
+             (switch-to-buffer ,b)
+             ,@body)
+         (kill-buffer ,a)
+         (kill-buffer ,b)))))
+
+(ert-deftest vm-window-test-window-loop-replace-changes-every-such-window ()
+  "`vm-window-loop' replace puts the second buffer wherever the first was."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil))
+      (vm-window-loop 'replace a b)
+      (should-not (memq a (mapcar #'window-buffer (window-list))))
+      (should (memq b (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-takes-a-buffer-name ()
+  "A buffer name works where a buffer does: `vm-window-loop' looks it up."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil))
+      (vm-window-loop 'replace (buffer-name a) b)
+      (should-not (memq a (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-delete-removes-the-window ()
+  "`vm-window-loop' delete deletes the window showing the buffer."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil)
+          (before (length (window-list))))
+      (vm-window-loop 'delete a)
+      (should (= (length (window-list)) (1- before)))
+      (should-not (memq a (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-keeps-the-last-window ()
+  "Deleting the only window is refused, since a frame must have one.
+The deferred deletion the function goes to the trouble of is what makes this
+work: the window is deleted after point has moved off it."
+  (let ((a (generate-new-buffer " *vm-window-test-a*")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer a)
+          (let ((vm-search-other-frames nil))
+            (vm-window-loop 'delete a)
+            (should (= (length (window-list)) 1))))
+      (kill-buffer a))))
+
+(ert-deftest vm-window-test-bury-buffer-buries-the-current-one-by-default ()
+  "`vm-bury-buffer' with no argument buries the buffer you are in."
+  (let ((a (generate-new-buffer " *vm-window-test-a*"))
+        (b (generate-new-buffer " *vm-window-test-b*")))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer b)
+          (switch-to-buffer a)
+          (should (eq (car (buffer-list)) a))
+          (vm-bury-buffer)
+          (should-not (eq (car (buffer-list)) a))
+          (should (memq a (buffer-list))))
+      (kill-buffer a)
+      (kill-buffer b))))
+
+(ert-deftest vm-window-test-unbury-buffer-leaves-the-windows-as-they-were ()
+  "`vm-unbury-buffer' raises a buffer without disturbing the display.
+It is called where VM wants a buffer out of the way of `bury-buffer' but has
+no intention of showing it."
+  (let ((a (generate-new-buffer " *vm-window-test-a*"))
+        (b (generate-new-buffer " *vm-window-test-b*")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer b)
+          (bury-buffer a)
+          (should (eq (car (last (buffer-list))) a))
+          (vm-unbury-buffer a)
+          (should (eq (window-buffer (selected-window)) b))
+          (should-not (eq (car (last (buffer-list))) a)))
+      (kill-buffer a)
+      (kill-buffer b))))
+
 
 ;;; vm-bury-buffer tests
 
-(ert-deftest vm-window-test-bury-buffer-exists ()
-  "Test that vm-bury-buffer function exists."
-  (should (fboundp 'vm-bury-buffer)))
-
-(ert-deftest vm-window-test-unbury-buffer-exists ()
-  "Test that vm-unbury-buffer function exists."
-  (should (fboundp 'vm-unbury-buffer)))
-
 ;;; vm-display function tests
-
-(ert-deftest vm-window-test-display-function-exists ()
-  "Test that vm-display function exists."
-  (should (fboundp 'vm-display)))
 
 ;;; Frame compatibility function tests
 
