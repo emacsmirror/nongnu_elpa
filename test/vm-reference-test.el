@@ -389,6 +389,29 @@ rename in each of the three places the manual does it."
                 (push (list symbol 'should-name current) orphaned)))))))
     (should (equal nil (nreverse orphaned)))))
 
+(ert-deftest vm-reference-test-no-command-is-attributed-to-a-generated-file ()
+  "Every command belongs to the file that defines it, not to the loaddefs.
+The appendix is built by asking `symbol-file' which file each symbol came
+from, and skipping the generated files, whose symbols are defined elsewhere.
+An autoloaded `defalias' breaks that: the cookie copies the whole `defalias'
+into vm-autoloads.el, so that is where the alias is defined and the command
+drops out of the manual.  Four did -- `vm-compact-folder',
+`vm-recover-folder', `vm-unread-message' and `vm-headers-summary' -- when
+they were autoloaded for emacs-vm/vm#609.  An alias needs the explicit form:
+
+  ;;;###autoload (autoload \\='vm-compact-folder \"vm-delete\" nil t)"
+  (vm-reference-load-everything)
+  (let ((orphans nil))
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-prefix-p "vm" (symbol-name symbol))
+                  (commandp symbol)
+                  (not (vm-reference-obsolete-p symbol))
+                  (member (vm-reference-defining-file symbol)
+                          vm-reference-excluded-files))
+         (push symbol orphans))))
+    (should (equal nil (sort orphans #'string<)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here

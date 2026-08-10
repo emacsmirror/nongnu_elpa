@@ -516,7 +516,7 @@ ignored."
     )
   (when vm-debug
     (vm-check-thread-integrity)))
-;;;###autoload
+;;;###autoload (autoload 'vm-compact-folder "vm-delete" nil t)
 (defalias 'vm-compact-folder 'vm-expunge-folder)
 
 (defun vm-expunge-message (m)

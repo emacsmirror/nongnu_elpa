@@ -191,7 +191,7 @@ mandatory."
     (vm-display nil nil '(vm-summarize vm-summarize-other-frame)
 		(list this-command)))
   (vm-update-summary-and-mode-line))
-;;;###autoload
+;;;###autoload (autoload 'vm-headers-summary "vm-summary" nil t)
 (defalias 'vm-headers-summary 'vm-summarize)
 
 ;;;###autoload
