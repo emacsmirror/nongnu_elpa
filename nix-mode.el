@@ -258,7 +258,8 @@ STRING-TYPE type of string based off of Emacs syntax table types"
       (when (equal (mod (- end start) 3) 2)
         (let ((str-peek (buffer-substring end (min (point-max) (+ 2 end)))))
           (cond
-           ((member str-peek '("${" "\\n" "\\r" "\\t"))
+           ((or (string-prefix-p "${" str-peek)
+                (string-prefix-p "\\" str-peek))
             (goto-char (+ 2 end)))
            ((string-prefix-p "$" str-peek)
             (goto-char (1+ end)))
@@ -326,7 +327,8 @@ STRING-TYPE type of string based off of Emacs syntax table types"
   "Handle Nix antiquote close."
   (let* ((start (match-beginning 0))
          (ps (nix--get-parse-state start)))
-    (unless (nix--get-string-type ps)
+    (unless (or (nth 4 ps)
+                (nix--get-string-type ps))
       (let ((string-type (nix--open-brace-string-type ps)))
         (when string-type
           (put-text-property start (1+ start)
@@ -349,7 +351,7 @@ STRING-TYPE type of string based off of Emacs syntax table types"
               (`?\' (cond
                      ((or (string-match "^'''" ahead)
                           (string-match "^''\\${" ahead)
-                          (string-match "^''\\\\[nrt]" ahead))
+                          (string-match "^''\\\\\\(?:.\\|\n\\)" ahead))
                       (nix--mark-string (1+ start) string-type)
                       (goto-char (+ start (match-end 0) 1)))
                      ((string-match-p "^''" ahead)
@@ -366,11 +368,11 @@ STRING-TYPE type of string based off of Emacs syntax table types"
   (funcall
    (syntax-propertize-rules
     ("\\\\\\\\"
-     (0 nil))
+     (0 (ignore)))
     ("\\\\\""
-     (0 nil))
+     (0 (ignore)))
     ("\\$\\$"
-     (0 nil))
+     (0 (ignore)))
     ("\\\\\\$\\${"
      (0 (ignore (nix--escaped-dollar-sign-antiquote-sq-style))))
     ("\\\\\\${"
@@ -453,11 +455,13 @@ STRING-TYPE type of string based off of Emacs syntax table types"
   '("->" "||" "&&" "==" "!=" "<=" ">=" "++" "//"))
 
 (defconst nix-smie--infix-symbols-re
-  (regexp-opt (append '(":" "<" ">" "-" "+" "*" "/" "?")
-                      nix-smie--2char-symbols)))
+  (concat "\\`"
+	  (regexp-opt (append '(":" "<" ">" "-" "+" "*" "/" "?")
+                              nix-smie--2char-symbols))
+	  "\\'"))
 
 (defconst nix-smie-indent-tokens-re
-  (regexp-opt '("{" "(" "[" "=" "let" "if" "then" "else")))
+  (concat "\\`" (regexp-opt '("{" "(" "[" "=" "let" "if" "then" "else")) "\\'"))
 
 ;; The core indentation algorithm is very simple:
 ;; - If the last token on the previous line matches `nix-smie-indent-tokens-re',
