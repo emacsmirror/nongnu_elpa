@@ -2084,6 +2084,19 @@ deleting a MIME object with `vm-delete-mime-object'."
   :group 'vm-mime
   :type 'boolean)
 
+;; Renamed in 8.1.1; kept as obsolete aliases until the next major release
+;; (issue #594), unlike the plain `vm-mime-' aliases of
+;; `vm-attach-files-in-directory', which were never marked anything.
+(defvaralias 'vm-mime-save-all-attachments-types
+  'vm-mime-saveable-types)
+(make-obsolete-variable 'vm-mime-save-all-attachments-types
+			'vm-mime-saveable-types "8.1.1")
+
+(defvaralias 'vm-mime-save-all-attachments-types-exceptions
+  'vm-mime-saveable-type-exceptions)
+(make-obsolete-variable 'vm-mime-save-all-attachments-types-exceptions
+			'vm-mime-saveable-type-exceptions "8.1.1")
+
 (defvaralias 'vm-mime-savable-types
   'vm-mime-saveable-types)
 (defcustom vm-mime-saveable-types
@@ -2103,6 +2116,16 @@ deleting a MIME object with `vm-delete-mime-object'."
   "List of MIME types which should not be saved."
   :group 'vm-mime
   :type '(repeat (string :tag "MIME type" nil)))
+
+(defvaralias 'vm-mime-delete-all-attachments-types
+  'vm-mime-deletable-types)
+(make-obsolete-variable 'vm-mime-delete-all-attachments-types
+			'vm-mime-deletable-types "8.1.1")
+
+(defvaralias 'vm-mime-delete-all-attachments-types-exceptions
+  'vm-mime-deletable-type-exceptions)
+(make-obsolete-variable 'vm-mime-delete-all-attachments-types-exceptions
+			'vm-mime-deletable-type-exceptions "8.1.1")
 
 (defcustom vm-mime-deletable-types
   (append
@@ -7532,8 +7555,7 @@ was there is part of VM proper now, with an ordinary option each.
 
 You must restart VM after a change to cause any effects."
   :group 'vm-rfaddons
-  :type '(set (const :tag "Automatically save attachments of new messages"
-		     auto-save-all-attachments)
+  :type '(set (const :tag "Reply to a return-receipt request" return-receipt-to)
 	      (const :tag "Enable all addons" t)))
 
 (defcustom vm-mail-subject-prefix-replacements
@@ -7559,6 +7581,46 @@ The number reflects the number of references."
   :type '(boolean))
 
 ;;;###autoload
+
+(defcustom vm-auto-save-all-attachments nil
+  "*Non-nil means save the attachments of a message as it arrives.
+`vm-mime-auto-save-all-attachments' does the saving, under
+`vm-mime-attachment-save-directory' in a subdirectory named by
+`vm-mime-auto-save-all-attachments-subdir'."
+  :group 'vm-mime
+  :type 'boolean)
+
+(defvar vm-attach-files-in-directory-regexps-history nil
+  "Regexp history for matching files.")
+
+(defcustom vm-attach-files-in-directory-default-type nil
+  "*The default MIME-type for attached files.
+If set to nil you will be asked for the type if it cannot be guessed.
+For guessing mime-types we use `vm-mime-attachment-auto-type-alist'."
+  :group 'vm-mime
+  :type '(choice (const :tag "Ask" nil)
+                 (string "application/octet-stream")))
+
+(defcustom vm-attach-files-in-directory-default-charset 'guess
+  "*The default charset used for attached files of type `text'.
+If set to nil you will be asked for the charset.
+If set to `guess' it will be determined by `vm-determine-proper-charset', but
+this may take some time, since the file needs to be visited."
+  :group 'vm-mime
+  :type '(choice (const :tag "Ask" nil)
+                 (const :tag "Guess" guess)))
+
+(defcustom vm-mime-auto-save-all-attachments-subdir
+  nil
+  "*Subdirectory where to save the attachments of a message.
+This variable might be set to a string, a function or anything which evaluates
+to a string.  If set to nil we use a concatenation of the from, subject and
+date header as subdir for the attachments."
+  :group 'vm-mime
+  :type '(choice (directory :tag "Directory")
+                 (string :tag "No Subdir" "")
+                 (function :tag "Function")
+                 (sexp :tag "sexp")))
 
 (defcustom vm-check-recipients nil
   "*Non-nil means check the recipient headers before sending a message.

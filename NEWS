@@ -30,6 +30,14 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * The attachment commands are part of VM proper now, in vm-mime.el:
+    vm-attach-files-in-directory, vm-mime-auto-save-all-attachments,
+    vm-mime-set-8bit-composition-charset and vm-toggle-best-mime.  Saving
+    attachments as messages arrive is vm-auto-save-all-attachments rather
+    than a flag in vm-enable-addons, and the C-c C-a rebinding is gone, so
+    that key is vm-attach-file again.
+  * The vm-mime- spellings of vm-attach-files-in-directory and its three
+    variables are gone.  They were plain aliases, never marked obsolete.
   * The composition checks and conveniences are part of VM proper now, in
     vm-reply.el, with an option each instead of a flag in vm-enable-addons:
     vm-check-recipients, vm-check-for-empty-subject (on, as it was),

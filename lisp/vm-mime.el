@@ -5585,7 +5585,13 @@ file with the name should be overwritten."
 		file )
 	    (error (vm-warn 1 2 "Error in writing %s: %s" file err)
 		   nil))
-	(when work-buffer (kill-buffer work-buffer))))))
+	(when work-buffer (kill-buffer work-buffer))
+	;; Saving can change what the part is displayed as, since
+	;; `vm-mime-delete-after-saving' turns it into an external-body
+	;; reference, so the message is presented again to show that.  This
+	;; was advice on this function, from vm-rfaddons.
+	(when vm-mime-delete-after-saving
+	  (vm-present-current-message))))))
 
 (defun vm-mime-send-body-to-folder (layout &optional default-filename)
   (unless (vectorp layout)
@@ -8636,6 +8642,202 @@ buffer."
   "Safe insert the contents of BUFFER of TYPE into the current buffer."
   (insert-buffer-substring buffer))
 
+
+;;; Attachment commands, from vm-rfaddons.el (issue #606)
+
+(defun vm-mime-set-8bit-composition-charset (charset &optional buffer-local)
+  "*Set `vm-mime-8bit-composition-charset' to CHARSET.
+With the optional BUFFER-LOCAL prefix arg, this only affects the current
+buffer."
+  (interactive (list (completing-read 
+		      ;; prompt
+		      "Composition charset: "
+		      ;; collection
+		      vm-mime-charset-completion-alist
+		      ;; predicate, require-match
+		      nil t)
+		     current-prefix-arg))
+  (if (or (featurep 'xemacs) (not (featurep 'xemacs)))
+      (error "vm-mime-8bit-composition-charset has no effect in XEmacs/MULE"))
+  (if buffer-local
+      (set (make-local-variable 'vm-mime-8bit-composition-charset) charset)
+    (setq vm-mime-8bit-composition-charset charset)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-attach-files-in-directory (directory &optional regexp)
+  "Attach all files in DIRECTORY matching REGEXP.
+The optional argument MATCH might specify a regexp matching all files
+which should be attached, when empty all files will be attached.
+
+When called with a prefix arg it will do a literal match instead of a regexp
+match."
+  (interactive
+   ;; FIXME: Temporarily override substitute-in-file-name. but why?
+   (cl-letf (((symbol-function 'substitute-in-file-name) #'identity))
+     (let ((file (vm-read-file-name
+                  "Attach files matching regexp: "
+                  (or vm-mime-all-attachments-directory
+                      vm-mime-attachment-save-directory
+                      default-directory)
+                  (or vm-mime-all-attachments-directory
+                      vm-mime-attachment-save-directory
+                      default-directory)
+                  nil nil
+                  'vm-attach-files-in-directory-regexps-history)))
+       (list (file-name-directory file)
+             (file-name-nondirectory file)))))
+
+  (setq vm-mime-all-attachments-directory directory)
+
+  (message "Attaching files matching `%s' from directory %s " regexp directory)
+  
+  (if current-prefix-arg
+      (setq regexp (concat "^" (regexp-quote regexp) "$")))
+  
+  (let ((files (directory-files directory t regexp nil))
+        file type charset)
+    (if (null files)
+        (error "No matching files!")
+      (while files
+        (setq file (car files))
+        (if (file-directory-p file)
+            nil ;; should we add recursion here?
+          (setq type (or (vm-mime-default-type-from-filename file)
+                         vm-attach-files-in-directory-default-type))
+          (message "Attaching file %s with type %s ..." file type)
+          (if (null type)
+              (let ((default-type (or (vm-mime-default-type-from-filename file)
+                                      "application/octet-stream")))
+                (setq type (completing-read
+			    ;; prompt
+                            (format "Content type for %s (default %s): "
+                                    (file-name-nondirectory file)
+                                    default-type)
+			    ;; collection
+                            vm-mime-type-completion-alist)
+                      type (if (> (length type) 0) type default-type))))
+          (if (not (vm-mime-types-match "text" type)) nil
+            (setq charset vm-attach-files-in-directory-default-charset)
+            (cond ((eq 'guess charset)
+                   (save-excursion
+                     (let ((b (get-file-buffer file)))
+                       (set-buffer (or b (find-file-noselect file t t)))
+                       (setq charset (vm-determine-proper-charset (point-min)
+                                                                  (point-max)))
+                       (if (null b) (kill-buffer (current-buffer))))))
+                  ((null charset)
+                   (setq charset
+                         (completing-read
+			  ;; prompt
+                          (format "Character set for %s (default US-ASCII): "
+                                  file)
+			  ;; collection
+                          vm-mime-charset-completion-alist)
+                         charset (if (> (length charset) 0) charset)))))
+          (vm-attach-file file type charset))
+        (setq files (cdr files))))))
+(defun vm-mime-auto-save-all-attachments-subdir (msg)
+  "Return a subdir for the attachments of MSG.
+This will be done according to `vm-mime-auto-save-all-attachments-subdir'."
+  (setq msg (vm-real-message-of msg))
+  (when (not (string-match 
+	      (regexp-quote (vm-reencode-mime-encoded-words-in-string
+			     (vm-su-full-name msg)))
+	      (vm-get-header-contents msg "From:")))
+    (backtrace)
+    (if (y-or-n-p (format "Is this wrong? %s <> %s "
+                         (vm-su-full-name msg)
+                         (vm-get-header-contents msg "From:")))
+        (error "Yes it is wrong!")))
+    
+  (cond ((functionp vm-mime-auto-save-all-attachments-subdir)
+         (funcall vm-mime-auto-save-all-attachments-subdir msg))
+        ((stringp vm-mime-auto-save-all-attachments-subdir)
+         (vm-summary-sprintf vm-mime-auto-save-all-attachments-subdir msg))
+        ((null vm-mime-auto-save-all-attachments-subdir)
+         (let (;; for the folder
+               (basedir (buffer-file-name (vm-buffer-of msg)))
+               ;; for the message
+               (subdir (concat 
+                        "/"
+                        (format "%04s.%02s.%02s-%s"
+                                (vm-su-year msg)
+                                (vm-su-month-number msg)
+                                (vm-su-monthday msg)
+                                (vm-su-hour msg))
+                        "--"
+			(or (vm-su-full-name msg)
+			    "unknown")
+                        "--"
+                         (vm-su-subject msg))))
+               
+           (if (and basedir vm-folder-directory
+                    (string-match
+                     (concat "^" (expand-file-name vm-folder-directory))
+                     basedir))
+               (setq basedir (replace-match "" nil nil basedir)))
+           
+           (setq subdir (vm-replace-in-string subdir "\\s-\\s-+" " " t))
+           (setq subdir (vm-replace-in-string subdir "[^A-Za-z0-9\241-_-]+" "_" t))
+           (setq subdir (vm-replace-in-string subdir "?_-?_" "-" nil))
+           (setq subdir (vm-replace-in-string subdir "^_+" "" t))
+           (setq subdir (vm-replace-in-string subdir "_+$" "" t))
+           (concat basedir "/" subdir)))
+        (t
+         (eval vm-mime-auto-save-all-attachments-subdir))))
+
+(defun vm-mime-auto-save-all-attachments-path (msg)
+  "Create a path for storing the attachments of MSG."
+  (let ((subdir (vm-mime-auto-save-all-attachments-subdir
+                 (vm-real-message-of msg))))
+    (if (not vm-mime-attachment-save-directory)
+        (error "Set `vm-mime-attachment-save-directory' for autosaving of attachments")
+      (if subdir
+          (if (string-match "/$" vm-mime-attachment-save-directory)
+              (concat vm-mime-attachment-save-directory subdir)
+            (concat vm-mime-attachment-save-directory "/" subdir))
+        vm-mime-attachment-save-directory))))
+
+;;;###autoload
+(defun vm-mime-auto-save-all-attachments (&optional count)
+  "Save all attachments to a subdirectory.
+Root directory for saving is `vm-mime-attachment-save-directory'.
+
+You might add this to `vm-select-new-message-hook' in order to automatically
+save attachments.
+
+    (add-hook \\='vm-select-new-message-hook #\\='vm-mime-auto-save-all-attachments)"
+  (interactive "P")
+
+  (if vm-mime-auto-save-all-attachments-avoid-recursion
+      nil
+    (let ((vm-mime-auto-save-all-attachments-avoid-recursion t))
+      (vm-check-for-killed-folder)
+      (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+      
+      (vm-save-all-attachments
+       count
+       'vm-mime-auto-save-all-attachments-path)
+
+      (when (vm-interactive-p)
+        (vm-discard-cached-data)
+        (vm-present-current-message)))))
+
+;;;###autoload
+(defun vm-toggle-best-mime ()
+  "Toggle between best-internal and best mime decoding modes. (Alley Soughton)"
+  (interactive)
+  (if (eq vm-mime-alternative-show-method 'best-internal)
+      (progn
+	(vm-decode-mime-message 'undecoded)
+	(setq vm-mime-alternative-show-method 'best)
+	(vm-decode-mime-message 'decoded)
+	(message "using best MIME decoding"))
+    (progn
+      (vm-decode-mime-message 'undecoded)
+      (setq vm-mime-alternative-show-method 'best-internal)
+      (vm-decode-mime-message 'decoded)
+      (message "using best internal MIME decoding"))))
 
 (provide 'vm-mime)
 ;;; vm-mime.el ends here
