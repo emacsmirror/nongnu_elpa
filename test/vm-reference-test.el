@@ -361,6 +361,34 @@ and 8.4.0 in three others, which is what made this worth pinning."
                 found))))
     (should (equal nil found))))
 
+(ert-deftest vm-reference-test-the-manual-names-the-option-that-is-current ()
+  "Where the manual indexes a renamed option, it names the current one too.
+Mentioning the old name is right -- someone looking it up needs to find the
+explanation -- but the manual must not tell a reader to set a variable that is
+only an alias.  It told them to name the ImageMagick programs in
+`vm-imagemagick-identify-program' and `vm-imagemagick-convert-program' for a
+release after both became aliases of `vm-imagemagick-program'.
+
+The neighbourhood is twelve lines, which is the paragraph that explains the
+rename in each of the three places the manual does it."
+  (vm-reference-load-everything)
+  (let ((orphaned nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward "^@vindex +\\([^ \t\n]+\\)" nil t)
+        (let* ((symbol (intern (match-string 1)))
+               (obsolete (get symbol 'byte-obsolete-variable))
+               (current (car-safe obsolete)))
+          (when (and current (symbolp current))
+            (let ((from (save-excursion (forward-line -12) (point)))
+                  (to (save-excursion (forward-line 12) (point))))
+              (unless (save-excursion
+                        (goto-char from)
+                        (search-forward (symbol-name current) to t))
+                (push (list symbol 'should-name current) orphaned)))))))
+    (should (equal nil (nreverse orphaned)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here

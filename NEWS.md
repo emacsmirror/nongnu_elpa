@@ -143,6 +143,9 @@ since that version to see how you might be affected.
 
   * New `vm-folder-cache-file`, the cache file of the folder you are in.
 
+  * `vm-save-message-hook` is a variable at last.  `vm-save-message` has run
+    it for years, but it was declared nowhere, so it could not be customized.
+
   * ImageMagick 7 is supported, which renamed `convert` to a subcommand of
     `magick`.
 
@@ -155,7 +158,7 @@ since that version to see how you might be affected.
 
   * For anyone writing against VM: message reverse links moved out of the
     message structure into `vm-reverse-link-table` (emacs-vm/vm#453), and VM
-    has a test suite of 1817 tests, which a contributor is expected to add to.
+    has a test suite which a contributor is expected to add to.
 
 ## VM 8.3.2 released 2025-12-29
 

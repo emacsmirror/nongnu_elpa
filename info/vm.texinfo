@@ -2653,16 +2653,15 @@ image is initially shown as a button with a thumbnail image.  Clicking on the
 button with the middle mouse button expands the image to its full size.
 
 @cindex ImageMagick
-@vindex vm-imagemagick-identify-program
-@vindex vm-imagemagick-convert-program
+@vindex vm-imagemagick-program
 Once an image is displayed, you can use the right mouse button to do
 various image manipulations on it, such as enlarging/reducing it,
 rotating it etc.  To do such operations, VM uses the @samp{ImageMagick}
 graphics manipulation software.  You can install ImageMagick on your
-system and specify the location of its @command{identify} and
-@command{convert} programs to VM via the variables
-@code{vm-imagemagick-identify-program} and
-@code{vm-imagemagick-convert-program}.
+system and name its program to VM in the variable
+@code{vm-imagemagick-program}: the @command{magick} program of
+ImageMagick 7, or @command{convert} in version 6 and earlier.  VM works
+out for itself which subcommand to call.
 
 @vindex vm-mime-use-image-strips
 By default, VM displays images by slicing them into contiguous
@@ -2671,11 +2670,10 @@ facilitates vertical scrolling within an image.  The variable
 @code{vm-mime-use-image-strips} controls whether VM uses strips for
 image display.  It is @samp{t} by default.
 
-VM also uses the ImageMagick's @code{convert} program to convert
-between image formats, so that an image that is not displayable in
-Emacs is converted to another format that is displayable.  You can
-turn off such conversion by setting the variable
-@code{vm-imagemagick-convert-program} to @samp{nil}.
+VM also uses ImageMagick to convert between image formats, so that an
+image that is not displayable in Emacs is converted to another format
+that is displayable.  You can turn off such conversion by setting
+@code{vm-imagemagick-program} to @samp{nil}.
 
 
 @node @acronym{MIME} type conversion, Character sets, Displaying images, @acronym{MIME} Messages
