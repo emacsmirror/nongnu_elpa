@@ -34,18 +34,19 @@ or with use-package:
 nix.el contains some miscellaneous tools for Nix developers.
 Interactive functions include:
 
-- nix-unpack - unpack source of a Nix attribute.
+- nix-shell-unpack - unpack source of a Nix attribute.
 
   To use this just type:
 
-  M-x nix-unpack<RET>
+  M-x nix-shell-unpack<RET>
 
-  Followed by your Nix path & attribute path.
+  Followed by your Nix file & attribute path.
 
 - nix-build - build a Nix derivation.
 
-  This is meant to work similarly to M-x compile. It will use your
-  current directory & build it if there is a default.nix there.
+  This is meant to work similarly to M-x compile. It prompts for a
+  Nix file (defaulting to shell.nix or default.nix in the current
+  directory) and an attribute to build.
 
 nix.el also provides some basic functions for interfacing with Nix.
 Some variables are provided to point to the Nix binaries that can be

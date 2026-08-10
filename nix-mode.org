@@ -38,8 +38,8 @@ M-x package-install RET nix-mode RET
 
 It is also possible to install nix-mode from Nix itself. This requires
 some knowledge of how to write a Nix expression. If you would like to
-see an example see nix-mode.nix in this Git repo. This file is an
-expression that contains a bundled Emacs with nix-mode preinstalled.
+see an example see flake.nix in this Git repo. It contains a
+bundled Emacs with nix-mode preinstalled.
 
 *** Installing from Git
 
@@ -48,7 +48,7 @@ recommended if you are interested in contributing to nix-mode.
 
 #+BEGIN_SRC sh
 $ mkdir -p ~/.emacs.d/site-lisp
-$ git clone https://github.com/matthewbauer/nix-mode.git ~/.emacs.d/site-lisp/nix-mode
+$ git clone https://github.com/NixOS/nix-mode.git ~/.emacs.d/site-lisp/nix-mode
 $ cd ~/.emacs.d/site-lisp/nix-mode
 #+END_SRC
 

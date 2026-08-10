@@ -207,7 +207,7 @@ For PROMPT and INITIAL-INPUT, see the documentation of transient.el."
 
 (defun nix-flake--input-names ()
   "Return a list of inputs to the flake."
-  (thread-last (nix--process-json "flake" "info" nix-flake-ref "--json")
+  (thread-last (nix--process-json "flake" "metadata" nix-flake-ref "--json")
     (alist-get 'locks)
     (alist-get 'nodes)
     (alist-get 'root)

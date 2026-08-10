@@ -5,8 +5,11 @@
 
 (files
  "nix-mode.el"
+ "nix-build.el"
  "nix-company.el"
+ "nix-edit.el"
  "nix-format.el"
+ "nix-log.el"
  "nix-repl.el"
  "nix-shell.el"
  "nix-mode-mmm.el"
@@ -16,9 +19,8 @@
  "nix-drv-mode.el"
  "nix-search.el"
  "nix-shebang.el"
- "nix-flake.el
+ "nix-flake.el"
  "nix.el"
- "nix-shell-haskell.el"
  )
 
 (development

@@ -8,11 +8,10 @@
 
 ;;; Commentary:
 
-;; To use this just run:
-
-;; M-x RET nix-shell RET
-
-;; This will give you some
+;; This file provides common infrastructure for running Nix commands
+;; from Emacs: locations of the Nix executables, helpers for running
+;; them and parsing their output, Nix version detection, and
+;; pcomplete support for the nix command.
 
 ;;; Code:
 

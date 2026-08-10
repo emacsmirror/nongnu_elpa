@@ -43,5 +43,8 @@
     (when mode
       (funcall mode))))
 
+;;;###autoload
+(add-to-list 'interpreter-mode-alist '("nix-shell" . nix-shebang-mode))
+
 (provide 'nix-shebang)
 ;;; nix-shebang.el ends here

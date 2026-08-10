@@ -17,13 +17,13 @@
 ;; names — i.e., after enabling `nix-prettify-mode',
 ;; '/nix/store/72f54nfp6g1hz873w8z3gfcah0h4nl9p-foo-0.1' names will be
 ;; replaced with '/nix/store/…-foo-0.1' in the current buffer.  There is
-;; also `global-nix-prettify-mode' for global prettifying.
+;; also `nix-prettify-global-mode' for global prettifying.
 
 ;; To install, add the following to your Emacs init file:
 ;;
 ;;   (add-to-list 'load-path "/path/to/dir-with-nix-prettify")
 ;;   (autoload 'nix-prettify-mode "nix-prettify-mode" nil t)
-;;   (autoload 'global-nix-prettify-mode "nix-prettify-mode" nil t)
+;;   (autoload 'nix-prettify-global-mode "nix-prettify-mode" nil t)
 
 ;; If you want to enable/disable composition after "M-x font-lock-mode",
 ;; use the following setting:
@@ -89,13 +89,13 @@ This will transform
   '(nix-info-mode ibuffer-mode)
   "List of special modes that support font-locking.
 
-By default, \\[global-nix-prettify-mode] enables prettifying in
+By default, \\[nix-prettify-global-mode] enables prettifying in
 all buffers except the ones where `font-lock-defaults' is
 nil (see Info node `(elisp) Font Lock Basics'), because it may
 break the existing highlighting.
 
 Modes from this list and all derived modes are exceptions
-\(`global-nix-prettify-mode' enables prettifying there).")
+\(`nix-prettify-global-mode' enables prettifying there).")
 
 (defvar nix-prettify-flush-function
   (cond ((fboundp 'font-lock-flush) #'font-lock-flush)
@@ -133,14 +133,14 @@ file names (see `nix-prettify-regexp') are prettified,
 i.e. displayed as `nix-prettify-char' character.  This mode can
 be enabled programmatically using hooks:
 
-  (add-hook 'shell-mode-hook 'nix-prettify-mode)
+  (add-hook \\='shell-mode-hook \\='nix-prettify-mode)
 
 It is possible to enable the mode in any buffer, however not any
 buffer's highlighting may survive after adding new elements to
 `font-lock-keywords' (see `nix-prettify-special-modes' for
 details).
 
-Also you can use `global-nix-prettify-mode' to enable Nix
+Also you can use `nix-prettify-global-mode' to enable Nix
 Prettify mode for all modes that support font-locking."
   :init-value nil
   :lighter " …"
