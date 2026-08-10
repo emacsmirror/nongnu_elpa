@@ -374,7 +374,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
-;;;###autoload
+;;;###autoload (autoload 'vm-create-search-folder-other-frame "vm-virtual" nil t)
 (defalias 'vm-create-search-folder-other-frame
   'vm-create-virtual-folder-other-frame)
 
@@ -419,7 +419,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
-;;;###autoload
+;;;###autoload (autoload 'vm-create-search-folder-other-window "vm-virtual" nil t)
 (defalias 'vm-create-search-folder-other-window 
   'vm-create-virtual-folder-other-window)
 

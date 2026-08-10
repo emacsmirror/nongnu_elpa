@@ -3455,7 +3455,7 @@ thread are affected."
       (setq mlist (cdr mlist))))
   (vm-display nil nil '(vm-mark-message-unread) '(vm-mark-message-unread))
   (vm-update-summary-and-mode-line))
-;;;###autoload
+;;;###autoload (autoload 'vm-unread-message "vm-folder" nil t)
 (defalias 'vm-unread-message 'vm-mark-message-unread)
 (defalias 'vm-flag-message-unread 'vm-mark-message-unread)
 (make-obsolete 'vm-flag-message-unread 
@@ -4309,7 +4309,7 @@ Same as \\[vm-recover-folder]."
     (setq vm-folder-access-data access-data) ; restore data
     (vm (current-buffer) :access-method access-method :reload 'reload)))
 
-;;;###autoload
+;;;###autoload (autoload 'vm-recover-folder "vm-folder" nil t)
 (defalias 'vm-recover-folder 'vm-recover-file)
 
 ;; It doesn't seem that any of these recover/reversion handlers are

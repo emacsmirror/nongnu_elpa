@@ -262,10 +262,19 @@ works before VM itself is loaded.
   variable puts that value form in the loaddefs, where the variable may not
   exist yet. That is how issue #608 broke startup with "Symbol's value as
   variable is void: vm-included-text-prefix".
-- **A cookie on a `defalias` needs the cookie on the line above the
-  `defalias`,** not on the function it aliases. Seven of the twenty-two are
-  aliases (`vm-compact-folder`, `vm-recover-folder`, `vm-unread-message`,
-  `vm-headers-summary` and the search-folder pair).
+- **An alias needs the explicit autoload form,** not a bare cookie:
+
+  ```elisp
+  ;;;###autoload (autoload 'vm-compact-folder "vm-delete" nil t)
+  (defalias 'vm-compact-folder 'vm-expunge-folder)
+  ```
+
+  A bare `;;;###autoload` copies the whole `defalias` into
+  `lisp/vm-autoloads.el`, so that is where `symbol-file` says the alias is
+  defined — and the manual's appendix is built by asking `symbol-file` and
+  skipping the generated files, so the command silently drops out of the
+  manual. Four did. `vm-reference-test-no-command-is-attributed-to-a-generated-file`
+  checks it. Seven of VM's autoloaded commands are aliases.
 - Tests of loaddefs behaviour need a subprocess Emacs: the suite's own Emacs
   has all of VM loaded, so it cannot tell an autoloaded command from a loaded
   one, and could never see a loaddefs file that fails to load on its own.
