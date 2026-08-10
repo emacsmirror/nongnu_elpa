@@ -1198,6 +1198,7 @@ The special action \"none\" will result in an empty action list."
    ;; default
    default))
 
+;;;###autoload
 (defun vmpc-prompt-for-profile (&optional remember prompt)
   "Find a profile or prompt for it and add its actions to the list of actions.
 

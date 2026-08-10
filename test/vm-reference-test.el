@@ -228,6 +228,70 @@ examples chosen to pass."
       (setq count (1+ count)))
     count))
 
+;;; Commands the manual documents, against the autoloads a user's Emacs has
+
+(defconst vm-reference-test--not-commands
+  '(;; a value for `vm-url-browser', called once VM is loaded, not typed
+    vm-mouse-send-url-to-netscape
+    ;; named to show the shape of a name the reader is to invent
+    vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
+  "Functions the manual names that no one invokes by name.
+Everything else the manual indexes and that is a command has to be reachable
+before VM is loaded; see the test below.  The Personality Crisis conditions
+and actions are excluded by being functions rather than commands: they are
+written into `vmpc-conditions' and `vmpc-actions' and run from there.")
+
+(defun vm-reference-test--unautoloaded-commands ()
+  "Documented commands that are not reachable from the loaddefs.
+Asks a batch Emacs with only lisp/ on its load-path, because this Emacs has
+all of VM loaded and so cannot tell an autoloaded command from a loaded one.
+That Emacs loads the loaddefs, notes which of the manual's symbols are
+defined, then loads every module and reports which of the ones that were
+missing turn out to be commands."
+  (let* ((lisp (expand-file-name "../lisp" vm-test-dir))
+         (manual (expand-file-name "../info/vm.texinfo" vm-test-dir))
+         (form `(let ((indexed nil) (missing nil) (commands nil))
+                  (with-temp-buffer
+                    (insert-file-contents ,manual)
+                    (goto-char (point-min))
+                    (while (re-search-forward "^@findex +\\([^ \t\n]+\\)" nil t)
+                      (push (intern (match-string 1)) indexed)))
+                  (setq indexed (delete-dups indexed))
+                  (require 'vm-autoloads)
+                  (dolist (symbol indexed)
+                    (unless (fboundp symbol) (push symbol missing)))
+                  (require 'vm)
+                  (dolist (file (directory-files ,lisp nil "\\`vm.*\\.el\\'"))
+                    (ignore-errors
+                      (require (intern (file-name-sans-extension file)) nil t)))
+                  (dolist (symbol missing)
+                    (when (commandp symbol) (push symbol commands)))
+                  (prin1 (sort commands #'string<)))))
+    (with-temp-buffer
+      (let ((status (call-process
+                     (expand-file-name invocation-name invocation-directory)
+                     nil t nil "-batch" "-Q" "-L" lisp
+                     "--eval" (prin1-to-string form))))
+        (should (equal status 0))
+        (goto-char (point-max))
+        (backward-sexp)
+        (read (current-buffer))))))
+
+(ert-deftest vm-reference-test-documented-commands-are-autoloaded ()
+  "Every command the manual documents can be run before VM is loaded.
+`M-x' has to find what the manual tells the reader to type, and with only
+`(require \\='vm-autoloads)' in an init file -- what INSTALL.md describes --
+it finds only what carries an autoload cookie.  Twenty-two documented
+commands did not, among them `vm-compact-folder', `vm-recover-folder' and
+`vm-toggle-thread', while 455 others did.
+
+The list is of commands, so a function the manual names for a user to put in
+an option is not one; `vm-reference-test--not-commands' holds the few that are
+neither."
+  (should (equal nil
+                 (seq-difference (vm-reference-test--unautoloaded-commands)
+                                 vm-reference-test--not-commands))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here

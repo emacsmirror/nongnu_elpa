@@ -374,6 +374,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload
 (defalias 'vm-create-search-folder-other-frame
   'vm-create-virtual-folder-other-frame)
 
@@ -418,6 +419,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload
 (defalias 'vm-create-search-folder-other-window 
   'vm-create-virtual-folder-other-window)
 
@@ -715,6 +717,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (vm-create-virtual-folder 'unseen read-only name))
 
 
+;;;###autoload
 (defun vm-toggle-virtual-mirror ()
   "Toggle whether this virtual folder mirrors the attributes of the real ones.
 

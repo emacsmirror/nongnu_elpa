@@ -245,6 +245,31 @@ These files are auto-generated during build - do not edit directly:
 
 Edit the `.in` templates or `configure.ac` instead.
 
+### Autoloads
+
+`lisp/vm-autoloads.el` is what a user's init file loads, so it decides what
+works before VM itself is loaded.
+
+- **Every command the manual documents carries `;;;###autoload`.** `M-x` has
+  to find what the manual tells the reader to type. Twenty-two did not, among
+  them `vm-compact-folder` and `vm-toggle-thread`, while 455 others did.
+  `vm-reference-test-documented-commands-are-autoloaded` checks it. A function
+  the manual names only as a value for an option is not a command and is
+  exempt; so are the Personality Crisis conditions and actions, which are
+  written into `vmpc-conditions` and `vmpc-actions` and run from there.
+- **Autoload nothing from `vm-vars.el`.** Every VM file requires it, so a
+  cookie there gains nothing, and an autoloaded default that reads another
+  variable puts that value form in the loaddefs, where the variable may not
+  exist yet. That is how issue #608 broke startup with "Symbol's value as
+  variable is void: vm-included-text-prefix".
+- **A cookie on a `defalias` needs the cookie on the line above the
+  `defalias`,** not on the function it aliases. Seven of the twenty-two are
+  aliases (`vm-compact-folder`, `vm-recover-folder`, `vm-unread-message`,
+  `vm-headers-summary` and the search-folder pair).
+- Tests of loaddefs behaviour need a subprocess Emacs: the suite's own Emacs
+  has all of VM loaded, so it cannot tell an autoloaded command from a loaded
+  one, and could never see a loaddefs file that fails to load on its own.
+
 ### Design Documentation
 
 Architecture docs in `dev/docs/design/`:

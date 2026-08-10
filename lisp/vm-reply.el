@@ -112,6 +112,7 @@
   (while (re-search-forward "^" (point-max) t)
     (insert vm-included-text-prefix)))
 
+;;;###autoload
 (defun vm-fill-long-lines-in-reply ()
   "Fill lines in the message composition in the current buffer,
 provided it has lines longer than the line length specified by
@@ -321,6 +322,7 @@ messages of the folder are involved in this reply."
 	(insert vm-included-text-prefix)
 	(forward-line 1)))))
 
+;;;###autoload
 (defun vm-yank-message-other-folder (folder)
   "Like vm-yank-message except the message is yanked from a folder other
 than the one that spawned the current Mail mode buffer.  The name of the
@@ -367,6 +369,7 @@ Don't call this function from a program."
       (vm-bury-buffer newbuf)
       (vm-bury-buffer sumbuf))))
 
+;;;###autoload
 (defun vm-yank-message (message)
   "Yank message number N into the current buffer at point.
 When called interactively N is always read from the minibuffer.  When
@@ -2508,6 +2511,7 @@ headers."
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
 (defun vm-mail-mode-citation-clean-up ()
   "Remove doubly-cited text and extra lines in a mail message."
   (interactive)
@@ -2585,6 +2589,7 @@ of empty lines which have been quoted."
           (setq vm-mail-mode-open-line nil)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
 (defun vm-mail-mode-elide-reply-region (b e)
   "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
 B and E are the beginning and end of the marked region or the current line."

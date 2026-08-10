@@ -8407,6 +8407,7 @@ end of the path."
 			     (if dispo (format " %S" dispo) ""))))))))
      buffer)
     ))
+;;;###autoload
 (defalias 'vm-mime-list-part-structure
   'vm-list-mime-part-structure)
 

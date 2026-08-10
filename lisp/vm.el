@@ -1553,6 +1553,7 @@ summary buffer to select a folder."
   (interactive)
   (find-file-other-frame vm-init-file))
 
+;;;###autoload
 (defun vm-toggle-thread-operations ()
   "Toggle the variable `vm-enable-thread-operations'.
 
