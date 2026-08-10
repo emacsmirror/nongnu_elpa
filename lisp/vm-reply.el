@@ -70,7 +70,20 @@
 (require 'vm-summary)
 (eval-when-compile (require 'cl-lib))
 
+(declare-function vm-emacs-name-and-version "vm" ())
 (declare-function vm-mode "vm" (&optional read-only))
+;; The Fcc of a composition may name an IMAP mailbox (emacs-vm/vm#605), so
+;; this file calls into vm-imap.el, which requires this one.
+(declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
+(declare-function vm-imap-subst-CRLF-for-LF "vm-imap" (string))
+;; A cl-defun taking &key arguments: spelling the arglist out here makes the
+;; compiler count a keyword call wrongly, so it is left unsaid.
+(declare-function vm-imap-make-session "vm-imap" t)
+(declare-function vm-imap-append-message "vm-imap"
+		  (process mailbox string &optional flags))
+(declare-function vm-imap-end-session "vm-imap"
+		  (process &optional imap-buffer keep-buffer))
+(declare-function dnd-get-local-file-name "dnd" (uri &optional must-exist))
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-version "vm" ())
 (declare-function get-itimer "vm-xemacs.el" (name))

@@ -4,6 +4,18 @@
 make byte-compile-lint
 make native-compile-lint
 
+** a call to a function no file defines
+make cross-file-lint
+
+Compiles each file in an Emacs of its own and fails on "not known to be
+defined".  byte-compile-lint cannot see those: it compiles the whole directory
+in one Emacs, so compiling vm-imap.el teaches that session the functions
+vm-reply.el goes on to call.  A user's Emacs native-compiles one file at a
+time and prints them, which is how seven of these were noticed.
+
+The fix is a declare-function beside the others at the top of the file, with
+the arglist the definition has.
+
 ** package-lint of vm.el (external package-lint)
 make package-lint
 

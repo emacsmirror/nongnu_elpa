@@ -27,14 +27,33 @@ make distclean          # Full cleanup including Makefile
 
 ## Linting
 
+**Run both compile lints before committing**, not just the byte one:
+
+```bash
+make byte-compile-lint && make native-compile-lint
+```
+
+Native compilation reports things the byte compiler does not, and a commit
+that passes one and not the other is a commit that breaks a user's build the
+first time their Emacs compiles the file.
+
 ```bash
 make byte-compile-lint   # Byte compile with strict warnings (primary check)
+make cross-file-lint     # Each file compiled alone: calls nothing defines
 make native-compile-lint # Native compilation check
 make package-lint        # Package metadata check (vm.el only)
 make relint-lint         # Regular expression linting
 ```
 
 Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has many false positives.
+
+**`byte-compile-lint` cannot see a call across files.** It compiles the whole
+directory in one Emacs, so compiling `vm-imap.el` teaches that session the
+functions `vm-reply.el` goes on to call and the warning never appears. A user's
+Emacs native-compiles one file at a time and prints them — which is how seven
+went unnoticed until a maintainer pasted them in. `make cross-file-lint`
+compiles each file alone and fails on them; the fix is a `declare-function`
+beside the others at the top of the file, with the arglist the definition has.
 
 ## Testing
 

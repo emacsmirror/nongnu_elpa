@@ -86,6 +86,7 @@ PACKAGE_INIT = --eval "(progn (require 'package) (package-initialize))"
 # don't try to run in parallel as byte-compile-lint removes .elc files
 lint:
 	${MAKE} byte-compile-lint
+	${MAKE} cross-file-lint
 	${MAKE} native-compile-lint
 
 # leave out until we fix all issues. it is also very slow
@@ -103,11 +104,39 @@ byte-compile-lint:
 native-compile-lint:
 	rm -rf eln.tmp
 	@mkdir -p eln.tmp
+	@# Nothing here compiles asynchronously, so the async-warning setting
+	@# that used to be bound has no bearing on what is reported.  What this
+	@# target does not see is a call across files: cross-file-lint does.
 	$(EMACS_PROG) -batch -Q -L lisp \
-	    --eval '(setq native-comp-async-report-warnings-errors nil)' \
 	    --eval '(setq byte-compile-error-on-warn nil)' \
 	    --eval '(dolist (f (directory-files "lisp" t "\\.el$$")) (let ((out (concat "eln.tmp/" (file-name-nondirectory f) ".eln"))) (message "Native compiling %s..." f) (native-compile f out)))'
 	rm -rf eln.tmp
+
+# Compile each file in an Emacs of its own and fail on a call to a function
+# nothing has defined.  byte-compile-lint cannot see these: it compiles the
+# whole directory in one Emacs, and compiling vm-imap.el teaches that session
+# the functions vm-reply.el goes on to call, so the warning never appears.
+# What a user sees is this: their Emacs native-compiles one file at a time, in
+# a process that knows nothing of the others, and prints the warnings.
+#
+# vm-autoloads.el is generated and its calls are to functions the files it
+# autoloads define, which is the whole idea.
+cross-file-lint:
+	@rm -f lisp/*.elc
+	@fail=; for f in lisp/*.el; do \
+		case "$$f" in lisp/vm-autoloads.el) continue;; esac; \
+		out=`$(EMACS_PROG) -batch -Q -L lisp \
+			--eval '(setq byte-compile-error-on-warn nil)' \
+			-f batch-byte-compile "$$f" 2>&1 \
+			| grep "not known to be defined"`; \
+		if test -n "$$out"; then echo "$$out"; fail=yes; fi; \
+	done; \
+	rm -f lisp/*.elc; \
+	if test -n "$$fail"; then \
+		echo "cross-file-lint: add a declare-function for each of those"; \
+		exit 1; \
+	fi
+	@echo "cross-file-lint: every file compiles on its own"
 
 # check with build-in elint
 elint-lint:
