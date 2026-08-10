@@ -639,6 +639,73 @@ composition left one `#mail%20to%20...#' file behind, in among the folders."
           (should (null (directory-files dir nil "\\`#"))))
       (delete-directory dir t))))
 
+;;; Postponing into an mboxcl2 folder (emacs-vm/vm#612)
+
+(ert-deftest vm-postpone-test-a-draft-gets-a-content-length ()
+  "A draft postponed into an mboxcl2 folder carries a `Content-Length'.
+Neither branch of the writer had one, so a draft written into such a folder
+could not be read back -- and the folder said nothing was wrong until VM was
+made to check."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-postpone-cl2" t))))
+    (unwind-protect
+        (let ((folder (expand-file-name "drafts.mboxcl2" dir))
+              (vm-postpone-message-hook nil)
+              (user-mail-address "me@example.com"))
+          (cl-letf (((symbol-function 'vm-delete-postponed-message) #'ignore)
+                    ((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (with-temp-buffer
+              (insert "To: someone@example.com\nSubject: a draft\n"
+                      mail-header-separator "\nUnfinished.\n")
+              (vm-postpone-message folder t)))
+          (with-temp-buffer
+            (insert-file-contents folder)
+            (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string))))
+          ;; and it reads back, with the strict reader that emacs-vm/vm#612 added
+          (let ((vm-mboxcl2-strict t))
+            (should (eq (vm-get-folder-type folder) 'mboxcl2))
+            (vm-visit-folder folder)
+            (should (= (length vm-message-list) 1))
+            (should (equal (vm-su-subject (car vm-message-list)) "a draft"))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-postpone-test-a-draft-into-an-open-folder-gets-one-too ()
+  "The same when the drafts folder is already open in VM.
+That branch appends to the folder buffer rather than to the file, and reads
+the type from the folder while the message is in another buffer -- which the
+first version of the fix got the wrong way round, so it wrote nothing."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-postpone-cl2" t))))
+    (unwind-protect
+        (let ((folder (expand-file-name "drafts.mboxcl2" dir))
+              (vm-postpone-message-hook nil)
+              (user-mail-address "me@example.com"))
+          (write-region (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                "From: alice@example.com\nSubject: first\n"
+                                "Content-Length: 10\n\nBody one.\n")
+                        nil folder nil 'quiet)
+          (vm-visit-folder folder)
+          (should (eq vm-folder-type 'mboxcl2))
+          (cl-letf (((symbol-function 'vm-delete-postponed-message) #'ignore)
+                    ((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (with-temp-buffer
+              (insert "To: someone@example.com\nSubject: a draft\n"
+                      mail-header-separator "\nUnfinished.\n")
+              (vm-postpone-message folder t)))
+          ;; the folder buffer now holds two messages, each with a length
+          (with-current-buffer (vm-get-file-buffer folder)
+            ;; a folder buffer is narrowed to the message on show
+            (should (= 2 (save-restriction
+                           (widen)
+                           (cl-count-if
+                            (lambda (l) (string-prefix-p "Content-Length:" l))
+                            (split-string (buffer-string) "\n")))))
+            (let ((buffer-read-only nil)) (vm-save-folder)))
+          (let ((vm-mboxcl2-strict t))
+            (vm-visit-folder folder)
+            (should (= (length vm-message-list) 2))))
+      (delete-directory dir t))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here

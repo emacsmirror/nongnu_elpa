@@ -1949,6 +1949,23 @@ folder’s file name.  If the folder does not have a file name,
 the function will not be called.
 @end defopt
 
+@defopt vm-mboxcl2-strict
+@vindex vm-mboxcl2-strict
+Non-nil means refuse to read an mboxcl2 message that has no length.
+An mboxcl2 folder stores each message’s length in a @code{Content-Length} header
+and that is how the next message is found.  A message written into such a
+folder without one -- by another mailer, or by VM before this was checked --
+leaves the folder saying one thing and containing another.
+
+With this set, reading such a folder signals an error naming the message.
+With it nil, VM warns and falls back on looking for the next line beginning
+"From ", which is what it used to do silently; that is also how to open a
+folder in order to repair it with @code{vm-change-folder-type}, which gives every
+message a correct length.
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-move-messages-physically
 @vindex vm-move-messages-physically
 Non-nil value causes VM’s commands that change the message order

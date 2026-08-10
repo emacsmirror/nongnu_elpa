@@ -949,6 +949,16 @@ folder to determine what format it is stored in and decodes it
 appropriately.  (However, such inference is not fully automatic.  See
 below.)
 
+@vindex vm-mboxcl2-strict
+Every message in an mboxcl2 folder must carry a @code{Content-Length}:
+that header is how the end of a message is found, so a message written
+without one cannot be read back.  VM writes one on every message it puts
+in such a folder, and refuses to read a message that has none, naming it.
+Another mailer that does not may leave a folder VM will not open; set
+@code{vm-mboxcl2-strict} to @samp{nil} to open it anyway, then
+@code{vm-change-folder-type} to mboxcl2 gives every message a length and
+the folder is sound again.
+
 @vindex vm-folder-type-by-name-alist
 A folder that does not exist yet has no contents to examine, so a name
 can say what it is instead.  @code{vm-folder-type-by-name-alist} matches

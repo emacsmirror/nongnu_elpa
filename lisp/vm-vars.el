@@ -1029,6 +1029,21 @@ must set this variable non-nil."
   :group 'vm-folders
   :type 'boolean)
 
+(defcustom vm-mboxcl2-strict t
+  "*Non-nil means refuse to read an mboxcl2 message that has no length.
+An mboxcl2 folder stores each message's length in a `Content-Length' header
+and that is how the next message is found.  A message written into such a
+folder without one -- by another mailer, or by VM before this was checked --
+leaves the folder saying one thing and containing another.
+
+With this set, reading such a folder signals an error naming the message.
+With it nil, VM warns and falls back on looking for the next line beginning
+\"From \", which is what it used to do silently; that is also how to open a
+folder in order to repair it with `vm-change-folder-type', which gives every
+message a correct length."
+  :group 'vm-folders
+  :type 'boolean)
+
 (defcustom vm-folder-type-by-name-alist
   '(("\\.mboxcl2\\'" . mboxcl2))
   "*Alist of (REGEXP . TYPE): the folder type a folder's name asks for.

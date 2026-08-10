@@ -648,6 +648,12 @@ Optional argument DONT-KILL is positive, then do not kill source message."
              (widen)
              (goto-char (point-max))
              (vm-write-string (current-buffer) (vm-leading-message-separator))
+             ;; An mboxcl2 folder cannot be read back without this.  The
+             ;; type is this buffer's, the message is the other one's.
+             (let* ((type vm-folder-type)
+                    (line (with-current-buffer message-buffer
+			    (vm-content-length-header-line type))))
+               (when line (vm-write-string (current-buffer) line)))
              (insert-buffer-substring message-buffer)
              (vm-write-string (current-buffer) (vm-trailing-message-separator))
 
@@ -667,6 +673,8 @@ Optional argument DONT-KILL is positive, then do not kill source message."
           (error "Folder `%s' type is unrecognized" folder))
       
       (vm-write-string folder (vm-leading-message-separator target-type))
+      (let ((line (vm-content-length-header-line target-type)))
+        (when line (vm-write-string folder line)))
       (write-region (point-min) (point-max) folder t 'quiet)
       (vm-write-string folder (vm-trailing-message-separator target-type)))
     
