@@ -49,11 +49,37 @@ Other targets, all from =test/=:
 | make test-one      | one file: make test-one testel=vm-imap-test.el |
 | make test-coverage | writes test/coverage-results.txt           |
 | make test-imap     | live IMAP tests, see below                 |
+| make test-send     | sends real mail, see below                  |
 
 Each target byte-compiles =lisp/= first, deliberately: macros and =defsubst=
 forms are inlined at compile time, so a test that stubs one of those passes
 from source and silently does nothing against a =.elc=.  If a fix-reverted run
 still passes, suspect a stale =.elc= before suspecting the test.
+
+** tests that send mail
+Nothing else in the suite sends anything: every test stubs =mail-send=, so the
+send path is checked by reading code and by hand.  =make test-send= closes that
+gap where the machine can send mail.  It composes with =vm-mail=, sends with
+=vm-mail-send=, and then reads the mailbox the mail arrives in with the live
+IMAP harness' own client, waiting for it.
+
+The opt-in is a =vm-send-test-config= in =test/vm-live-config.el=; the template
+describes it.  Without one every test skips.
+
+Unlike the live IMAP and POP tests these are *not* part of =make test=.  Those
+talk to a server on localhost, which costs nothing; sending mail leaves the
+machine, so it is asked for by name.  =vm-test-excluded-files= in
+=vm-test-init.el= is what keeps them out.
+
+Two rules the harness enforces, because real mail cannot be recalled:
+
+- Mail goes only to the =:to= in the config, which should be your own address.
+- Every message carries an =X-VM-Send-Test= header naming the Emacs process, and
+  each test deletes and expunges its own again, pass or fail.
+
+No password belongs in the config: how the machine sends mail is its own
+arrangement, so the config sets =send-mail-function= and whatever that needs --
+msmtp through =sendmail-program=, smtpmail with auth-source, or anything else.
 
 ** live IMAP tests
 Tests that talk to a real IMAP server, for the parts of =vm-imap.el= that

@@ -3258,8 +3258,8 @@ determined by the variable @code{vm-mail-header-order}.
 
 @cindex checking recipients
 @cindex empty subject
-These were add-ons switched on through @code{vm-enable-addons} until 8.3.3;
-each is an option of its own now.
+These were add-ons switched on through @code{vm-enable-addons} in earlier
+releases; each is an option of its own now.
 
 @vmdocvmcheckrecipients
 
@@ -4053,7 +4053,7 @@ VM's composition commands --- replying, forwarding, resending and starting a new
 message --- so that your rules are consulted as each composition begins;
 turning it off with @code{(vmpc-mode -1)} removes the advice again.
 
-Before VM 8.3.3 the advice was installed merely by loading the file, so
+In earlier releases the advice was installed merely by loading the file, so
 @code{(require 'vm-pcrisis)} was how one switched it on, and there was no way to
 switch it off.  That still loads the file but no longer changes how VM behaves,
 so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
@@ -7446,8 +7446,8 @@ Debugging information.
 
 @noindent
 So @code{(setq vm-verbosity 3)} leaves little more than warnings, and
-@code{(setq vm-verbosity 8)} restores the level VM used before 8.3.3, which
-was chattier than the documented normal one.
+@code{(setq vm-verbosity 8)} restores the level VM used in earlier releases,
+which was chattier than the documented normal one.
 
 @vindex vm-verbal-time
 Warnings use the same scale, so lowering @code{vm-verbosity} quiets warnings
@@ -7482,8 +7482,8 @@ name also names the auto-save file, so characters a file name cannot hold are
 replaced by
 @samp{_}: @code{vm-drop-buffer-name-chars} says which, and defaults to
 @samp{[[:cntrl:]/]}, or on MS-Windows to the wider set that platform needs.
-Set it to @samp{[^ a-zA-Z0-9.,_"'+-]} for the behaviour before 8.3.3, which
-replaced every accented letter as well.
+Set it to @samp{[^ a-zA-Z0-9.,_"'+-]} for the behaviour of earlier releases,
+which replaced every accented letter as well.
 
 @node History and Administration, Highlights, Customizations, Top
 @chapter History and Administration

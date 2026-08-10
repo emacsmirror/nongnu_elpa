@@ -778,10 +778,20 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
 
 ;;; Test file discovery
 
+(defconst vm-test-excluded-files
+  '("vm-send-live-test.el")
+  "Test files `make test' does not load, run by a target of their own.
+The live IMAP and POP tests are not here: they talk to a server on localhost,
+which costs nothing, so once a config exists they run with everything else.
+Sending mail leaves the machine, so it is asked for by name -- `make
+test-send\', which loads that file itself.")
+
 (defun vm-test-discover-test-files ()
   "Return list of test files in `vm-test-dir'.
-Files match pattern vm-*-test.el, excluding vm-test-init.el."
-  (sort (directory-files vm-test-dir nil "^vm-.*-test\\.el$")
+Files match pattern vm-*-test.el, excluding vm-test-init.el and the files in
+`vm-test-excluded-files\'."
+  (sort (seq-remove (lambda (f) (member f vm-test-excluded-files))
+                    (directory-files vm-test-dir nil "^vm-.*-test\\.el$"))
         #'string<))
 
 (defun vm-test-load-all-test-files ()

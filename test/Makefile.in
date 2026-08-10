@@ -15,13 +15,14 @@ TEST_RUNNER = run-tests.el
 COVERAGE_RUNNER = coverage-report.el
 IMAP_RUNNER = run-imap-tests.el
 POP_RUNNER = run-pop-tests.el
+SEND_RUNNER = run-send-tests.el
 LEAK_REPORT = leak-report.el
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-leaks \
+.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-send test-leaks \
 	compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
@@ -62,6 +63,13 @@ test-imap: compile-lisp
 # live ones want a POP server in test/vm-live-config.el and skip without one.
 test-pop: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
+
+# Send real mail and check that it arrives.  Not part of `make test': the live
+# IMAP and POP tests are, once configured, because they talk to a server on
+# localhost, but sending leaves the machine and so is asked for by name.  Wants
+# a vm-send-test-config in test/vm-live-config.el and skips without one.
+test-send: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(SEND_RUNNER)
 
 # Fetch the packages VM integrates with but does not require -- BBDB,
 # emacs-w3m, vcard -- into test/opt/elpa, where vm-test-init.el finds them and
