@@ -3,6 +3,16 @@
 ## Unreleased (1.6.0)
 
 * Introduce nix-store-path-omit-self customization option.
+* **Breaking:** the minimum supported Emacs version is now 27.1.
+* **Breaking:** nix-format-before-save was removed; use
+  nix-format-on-save-mode from the reformatter-based nix-format.el
+  instead.
+* nixfmt arguments can be customized with nix-nixfmt-args.
+* Recognize Lix and Determinate Nix when detecting flakes support.
+* nix-flake-update passes the flake reference via --flake on
+  Nix >= 2.19 (and Lix), matching the new command-line interface.
+* flake.lock files open in json-ts-mode when available, falling back
+  to js-mode.
 
 ## 1.5.0
 

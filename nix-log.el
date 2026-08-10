@@ -14,14 +14,20 @@
 (require 'nix-instantiate)
 (require 'files)
 
+;; Autoload to prevent a cycle.
+(autoload 'nix-read-file "nix-shell")
+(autoload 'nix-read-attr "nix-shell")
+
 (defun nix-log-path (drv-file)
-  "Get the nix log of path a derivation"
+  "Get the path of the build log of the derivation DRV-FILE."
   (let* ((drv-name (file-relative-name drv-file nix-store-dir))
-	 (log-file (format "%s/log/nix/drvs/%s/%s.bz2"
+	 (log-base (format "%s/log/nix/drvs/%s/%s"
                            nix-state-dir
                            (substring drv-name 0 2) (substring drv-name 2))))
-    (if (file-exists-p log-file) log-file
-      (error "No log is available for derivation"))))
+    (cond
+     ((file-exists-p (concat log-base ".bz2")) (concat log-base ".bz2"))
+     ((file-exists-p log-base) log-base)
+     (t (error "No log is available for derivation")))))
 
 ;;;###autoload
 (defun nix-log (file attr)

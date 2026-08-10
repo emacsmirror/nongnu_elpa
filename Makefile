@@ -1,7 +1,8 @@
-.PHONY: test clean install run
+.PHONY: all check test clean install run
 
-ELS  =  nix.el nix-company.el nix-drv-mode.el nix-flake.el nix-format.el \
-	nix-instantiate.el nix-mode.el nix-mode-mmm.el \
+ELS  =  nix.el nix-build.el nix-company.el nix-drv-mode.el nix-edit.el \
+	nix-flake.el nix-format.el nix-instantiate.el nix-log.el \
+	nix-mode.el nix-mode-mmm.el \
 	nix-prettify-mode.el nix-repl.el nix-search.el nix-shebang.el \
 	nix-shell.el nix-store.el
 ELCS = $(ELS:.el=.elc)

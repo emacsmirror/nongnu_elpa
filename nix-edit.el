@@ -15,7 +15,7 @@
 
 ;;;###autoload
 (defun nix-edit (&optional file attr)
-  "Open the nix log.
+  "Open the source of a nix expression.
 FILE the nix file to load from.
 ATTR the attribute to find in nix expressions."
   (interactive (list (nix-read-file) nil))

@@ -183,13 +183,13 @@ Related issue: https://github.com/NixOS/nix-mode/issues/69"
   "Proper indentation of an empty list.
 
 Related issue: https://github.com/NixOS/nix-mode/issues/69"
-  (with-nix-mode-test ("issue-60.2.nix" :indent 'smie-indent-line)))
+  (with-nix-mode-test ("issue-69.2.nix" :indent 'smie-indent-line)))
 
 (ert-deftest nix-mode-test-indent-issue-69-2 ()
   "Proper indentation of an empty list.
 
 Related issue: https://github.com/NixOS/nix-mode/issues/69"
-  (with-nix-mode-test ("issue-60.2.nix" :indent 'nix-indent-line)))
+  (with-nix-mode-test ("issue-69.2.nix" :indent 'nix-indent-line)))
 
 (ert-deftest nix-mode-test-indent-issue-72-smie ()
   "Proper indentation of strings in a multi-line string.

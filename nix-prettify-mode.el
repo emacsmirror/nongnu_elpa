@@ -22,8 +22,8 @@
 ;; To install, add the following to your Emacs init file:
 ;;
 ;;   (add-to-list 'load-path "/path/to/dir-with-nix-prettify")
-;;   (autoload 'nix-prettify-mode "nix-prettify" nil t)
-;;   (autoload 'global-nix-prettify-mode "nix-prettify" nil t)
+;;   (autoload 'nix-prettify-mode "nix-prettify-mode" nil t)
+;;   (autoload 'global-nix-prettify-mode "nix-prettify-mode" nil t)
 
 ;; If you want to enable/disable composition after "M-x font-lock-mode",
 ;; use the following setting:

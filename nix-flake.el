@@ -291,7 +291,6 @@ command after the flake reference."
   (pcase (nix--version-info)
     (`(nix . ,version) (version<= "2.19" version))
     (`(lix . ,version) (version<= "2.90" version))
-    (`(determinate . ,version) (version<= "2.19" version))
     (_ t)))
 
 (defun nix-flake--installable-command (subcommand options flake-ref attribute
