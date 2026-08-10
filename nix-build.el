@@ -21,8 +21,9 @@ ATTR the attribute to build."
   (interactive (list (nix-read-file) nil))
   (unless attr (setq attr (nix-read-attr file)))
 
-  (setq compile-command (format "%s %s -A '%s'" nix-build-executable
-				file attr))
+  (setq compile-command (format "%s %s -A %s" nix-build-executable
+				(shell-quote-argument file)
+				(shell-quote-argument attr)))
   (setq-default compilation-directory default-directory)
   (compilation-start compile-command nil
 		     (apply-partially (lambda (attr _)
