@@ -270,6 +270,7 @@ messages of the folder are involved in this reply."
     (when vm-fill-paragraphs-containing-long-lines-in-reply
       (vm-fill-long-lines-in-reply))
     (run-hooks 'vm-reply-hook)
+    (vm-mail-mode-apply-options)
     (run-hooks 'vm-mail-mode-hook)))
 
 (defun vm-strip-ignored-addresses (addresses)
@@ -692,7 +693,12 @@ folder, that message is marked as having been replied to."
 			  (vm-make-message-id))))))))
 
 (defun vm-mail-mode-insert-date-maybe ()
-  (if (not vm-mail-header-insert-date)
+  "Insert a Date header into the composition, unless it has one to keep.
+`vm-mail-mode-fake-date-p' is what keeps one: it lets you write the Date
+yourself and have VM leave it alone."
+  (if (or (not vm-mail-header-insert-date)
+	  (and vm-mail-mode-fake-date-p
+	       (vm-mail-mode-get-header-contents "Date:")))
       nil
     (save-restriction
       (save-excursion
@@ -821,7 +827,17 @@ as replied to, forwarded, etc, if appropriate."
   ;; send, so a flag left over from the last one would mean this message is
   ;; filed nowhere.
   (setq vm-fcc-filed nil)
+  (when vm-check-recipients
+    (vm-mail-check-recipients))
+  (when vm-check-for-empty-subject
+    (vm-mail-check-for-empty-subject))
   (save-excursion (run-hooks 'vm-mail-send-hook))
+  ;; A header carrying anything outside US-ASCII has to be encoded whatever
+  ;; the body is done with, so this is not conditional on
+  ;; `vm-send-using-mime': without it an 8-bit Subject went out raw when
+  ;; MIME was off.  `vm-mime-encode-composition' calls it again below and
+  ;; finds nothing left to do, the first pass having left pure ASCII.
+  (vm-mime-encode-headers)
   (vm-mail-mode-insert-date-maybe)
   (vm-mail-mode-insert-message-id-maybe)
   ;; send mail using MIME if user requests it and if the buffer
@@ -1386,6 +1402,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 		      )))
 	(mail-position-on-field "To"))
       (run-hooks 'vm-forward-message-hook)
+      (vm-mail-mode-apply-options)
       (run-hooks 'vm-mail-mode-hook))))
 
 ;;;###autoload
@@ -1459,6 +1476,7 @@ you can change the recipient address before resending the message."
 	(forward-char -1))
       (setq default-directory dir)))
   (run-hooks 'vm-resend-bounced-message-hook)
+  (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
 (defalias 'vm-retry-bounced-message 'vm-resend-bounced-message)
 
@@ -1526,6 +1544,7 @@ You may also create a Resent-Cc header."
 	    vm-redistribute-list (list (car vmp))
 	    default-directory dir)
       (run-hooks 'vm-resend-message-hook)
+      (vm-mail-mode-apply-options)
       (run-hooks 'vm-mail-mode-hook))))
 
 ;;;###autoload
@@ -1665,6 +1684,7 @@ included in the digest."
       (mail-position-on-field "To")
       (vm-inform 5 "Building %s digest... done" vm-digest-send-type)))
   (run-hooks 'vm-send-digest-hook)
+  (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
 
 ;;;###autoload
@@ -1778,6 +1798,7 @@ command can be invoked from external agents via an emacsclient."
 	(while (search-forward "\r\n" nil t)
 	  (replace-match "\n"))))
     (run-hooks 'vm-mail-hook)
+    (vm-mail-mode-apply-options)
     (run-hooks 'vm-mail-mode-hook)))
 
 ;; external variables
@@ -2348,6 +2369,237 @@ composition buffer.  URI is the url of the file as described in
     (vm-mail-mode-hide-headers)))
 
 (add-hook 'vm-mail-mode-hook 'vm-mail-mode-hide-headers-hook)
+
+;;; Composition helpers, from vm-rfaddons.el (issue #606)
+
+(defun vm-mail-mode-apply-options ()
+  "Apply the composition options to this buffer.
+Called wherever VM sets a composition up, just before
+`vm-mail-mode-hook\', so that a hook function can undo any of it."
+  (when vm-clean-subject-prefixes
+    (vm-mail-subject-cleanup))
+  (when vm-open-line-in-quoted-text
+    (vm-mail-mode-install-open-line)))
+
+
+
+(defun vm-mail-subject-cleanup ()
+  "Do some subject line clean up.
+- Replace subject prefixes according to `vm-mail-subject-prefix-replacements'.
+- Add a number after replies is `vm-mail-subject-number-reply' is t.
+
+You might add this function to `vm-mail-mode-hook' in order to clean up the
+Subject header."
+  (interactive)
+  (save-excursion
+    ;; cleanup
+    (goto-char (point-min))
+    (re-search-forward 
+     (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
+     (point-max))
+    (let ((case-fold-search t)
+          (rpl vm-mail-subject-prefix-replacements))
+      (while rpl
+        (if (re-search-backward (concat "^Subject:[ \t]*" (caar rpl))
+                                (point-min) t)
+            (replace-match (concat "Subject: " (cdar rpl))))
+        (setq rpl (cdr rpl))))
+
+    ;; add number to replys
+    (let (refs (start 0) end (count 0))
+      (when (and vm-mail-subject-number-reply vm-reply-list
+                 (setq refs  (vm-mail-mode-get-header-contents "References:")))
+        (while (string-match "<[^<>]+>" refs start)
+          (setq count (1+ count)
+                start (match-end 0)))
+        (when (> count 1)
+          (mail-position-on-field "Subject" t)
+          (setq end (point))
+          (if (re-search-backward "^Subject:" (point-min) t)
+              (setq start (point))
+            (error "vm-mail-check-subject-cleanup: Could not find end of Subject header start"))
+          (goto-char start)
+          (if (not (re-search-forward (regexp-quote vm-reply-subject-prefix)
+                                      end t))
+              (error "vm-mail-check-subject-cleanup: Cound not find vm-reply-subject-prefix `%s' in header"
+                     vm-reply-subject-prefix)
+            (goto-char (match-end 0))
+            (skip-chars-backward ": \t")
+            (insert (format "[%d]" count))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun vm-mail-check-recipients-strip (address)
+  "Remove from ADDRESS the parts that may legitimately contain an \"@\".
+That is MIME encoded words, quoted strings and RFC 5322 comments, all of
+which occur alongside the address proper.  What is left should hold
+exactly one address.
+
+`vm-parse-addresses' decodes encoded words, marking what it decoded with
+the `vm-string' text property, so those are removed by property; a word
+still in its encoded form is removed by matching."
+  (let ((start 0)
+	(len (length address))
+	(pieces nil)
+	(stripped nil)
+	(previous nil))
+    ;; drop the decoded encoded words
+    (while (< start len)
+      (let ((end (or (next-single-property-change start 'vm-string address)
+		     len)))
+	(unless (get-text-property start 'vm-string address)
+	  (push (substring-no-properties address start end) pieces))
+	(setq start end)))
+    (setq stripped
+	  (vm-replace-in-string
+	   (vm-replace-in-string (apply #'concat (nreverse pieces))
+				 vm-mime-encoded-word-regexp "")
+	   "\"[^\"]*\"" ""))
+    ;; and the comments, innermost first so nested ones go too
+    (while (not (equal previous stripped))
+      (setq previous stripped)
+      (setq stripped (vm-replace-in-string stripped "([^()]*)" "")))
+    stripped))
+
+(defun vm-mail-check-recipients ()
+  "Check if the recipients are specified correctly.
+Actually it checks only if there are any missing commas or the like in the
+headers."
+  (interactive)
+  (let ((header-list '("To:" "CC:" "BCC:"
+                       "Resent-To:" "Resent-CC:" "Resent-BCC:"))
+        (contents nil)
+        (errors nil))
+    (while header-list
+      (setq contents (vm-mail-mode-get-header-contents (car header-list)))
+      ;; Split into addresses first, respecting quoting and comments, and
+      ;; look for a second "@" within one of them.  Testing the whole
+      ;; header at once cannot tell a missing comma from a display name
+      ;; that contains an "@" -- an encoded word holding an address, say,
+      ;; which is legal and which Exchange and Outlook both produce.
+      (dolist (address (vm-parse-addresses contents))
+        (let ((bare (vm-mail-check-recipients-strip address)))
+          (when (string-match "@[^,]*@" bare)
+            (setq errors
+                  (vm-replace-in-string
+                   (format
+                    "vm-mail-check-recipients: Missing separator in %s \"%s\"!  "
+                    (car header-list) address)
+                   "[\n\t ]+" " ")))))
+      (setq header-list (cdr header-list)))
+    ;; "%s" matters: the message has an address interpolated into it, and
+    ;; "%" is legal in a local part -- percent-hack routing uses it -- so
+    ;; passing it as the format string fails with "Not enough arguments
+    ;; for format string" instead of saying what is wrong.
+    (if errors
+        (error "%s" errors))))
+
+
+(defun vm-mail-check-for-empty-subject ()
+  "Check if the subject line is empty and issue an error if so."
+  (interactive)
+  (let (subject)
+    (setq subject (vm-mail-mode-get-header-contents "Subject:"))
+    (if (or (not subject) (string-match "^[ \t]*$" subject))
+        (if (not vm-mail-prompt-if-subject-empty)
+            (error "Empty subject header")
+          (mail-position-on-field "Subject")
+          (insert (read-string "Subject: "))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-mail-mode-citation-clean-up ()
+  "Remove doubly-cited text and extra lines in a mail message."
+  (interactive)
+  (save-excursion
+    (mail-text)
+    (let ((re-alist vm-mail-mode-citation-kill-regexp-alist)
+          (pmin (point))
+          re subst)
+
+      (while re-alist
+        (goto-char pmin)
+        (setq re (caar re-alist)
+              subst (cdar re-alist))
+        (while (re-search-forward re (point-max) t)
+          (replace-match subst))
+        (setq re-alist (cdr re-alist))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-mail-mode-install-open-line ()
+  "Install the open-line hooks for VM composition buffers.
+Add this to `vm-mail-mode-hook'."
+  ;; these are not local even when using add-hook, so we make them local
+  (add-hook 'before-change-functions 'vm-mail-mode-open-line nil t)
+  (add-hook 'after-change-functions 'vm-mail-mode-open-line nil t))
+
+(defun vm-mail-mode-open-line (start end &optional length)
+  "Opens a line when inserting into the region of a reply.
+
+Insert newlines before and after an insert where necessary and does a cleanup
+of empty lines which have been quoted." 
+  (if (= start end)
+      (save-excursion
+        (beginning-of-line)
+        (setq vm-mail-mode-open-line
+              (if (and (eq this-command 'self-insert-command)
+                       (looking-at (concat "^"
+                                           vm-mail-mode-open-line-regexp)))
+                  (if (< (point) start) (point) start))))
+    (if (and length (= length 0) vm-mail-mode-open-line)
+        (let (start-mark end-mark)
+          (save-excursion 
+            (if (< vm-mail-mode-open-line start)
+                (progn
+                  (insert "\n\n" vm-included-text-prefix)
+                  (setq end-mark (point-marker))
+                  (goto-char start)
+                  (setq start-mark (point-marker))
+                  (insert "\n\n"))
+              (if (looking-at (concat "\\("
+                                      vm-mail-mode-open-line-regexp
+                                      "\\)+[ \t]*\n"))
+                  (replace-match ""))
+              (insert "\n\n")
+              (setq end-mark (point-marker))
+              (goto-char start)
+              (setq start-mark (point-marker))
+              (insert "\n"))
+
+            ;; clean leading and trailing garbage 
+            (let ((iq (concat "^" vm-mail-mode-open-line-regexp
+                              "[> \t]*\n")))
+              (save-excursion
+                (goto-char start-mark)
+                (beginning-of-line)
+                (while (looking-at "^$") (forward-line -1))
+                (while (looking-at iq)
+                  (replace-match "")
+                  (forward-line -1))
+                (goto-char end-mark)
+                (beginning-of-line)
+                (while (looking-at "^$") (forward-line 1))
+                (while (looking-at iq)
+                  (replace-match "")))))
+      
+          (setq vm-mail-mode-open-line nil)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-mail-mode-elide-reply-region (b e)
+  "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
+B and E are the beginning and end of the marked region or the current line."
+  (interactive (if (mark)
+                   (if (< (mark) (point))
+                       (list (mark) (point))
+                     (list (point) (mark)))
+                 (list (save-excursion (beginning-of-line) (point))
+                       (save-excursion (end-of-line) (point)))))
+  (if (eobp) (insert "\n"))
+  (if (mark) (delete-region b e) (delete-region b (+ 1 e)))
+  (insert vm-mail-mode-elide-reply-region))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
 
 (provide 'vm-reply)
 ;;; vm-reply.el ends here
