@@ -54,17 +54,19 @@ PROP the prop name of nix-instantiate--running-processes.
 ERR the error buffer.
 PROC the process that has been run.
 EVENT the event that was fired."
-  (when (string= event "finished\n")
-    (with-current-buffer (process-buffer proc)
-      (unless (eq (buffer-size) 0)
-	(let ((drv (nix-instantiate--parsed
-		    (substring (buffer-string) 0 (- (buffer-size) 1)))))
-	  (dolist
-	      (callback (lax-plist-get nix-instantiate--running-processes prop))
-	    (funcall callback drv)))))
-    (setq nix-instantiate--running-processes
-	  (lax-plist-put nix-instantiate--running-processes prop nil)))
   (unless (process-live-p proc)
+    (if (string= event "finished\n")
+	(with-current-buffer (process-buffer proc)
+	  (unless (eq (buffer-size) 0)
+	    (let ((drv (nix-instantiate--parsed
+			(substring (buffer-string) 0 (- (buffer-size) 1)))))
+	      (dolist
+		  (callback (lax-plist-get nix-instantiate--running-processes prop))
+		(funcall callback drv)))))
+      (message "nix-instantiate failed: %s"
+	       (string-trim (with-current-buffer err (buffer-string)))))
+    (setq nix-instantiate--running-processes
+	  (lax-plist-put nix-instantiate--running-processes prop nil))
     (kill-buffer (process-buffer proc))
     (kill-buffer err)))
 
