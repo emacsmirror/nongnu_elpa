@@ -91,39 +91,6 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 Switches to the Presentation buffer and starts isearch.
 @end deffn
 
-@deffn Command vm-mail-check-for-empty-subject
-@findex vm-mail-check-for-empty-subject
-Check if the subject line is empty and issue an error if so.
-@end deffn
-
-@deffn Command vm-mail-check-recipients
-@findex vm-mail-check-recipients
-Check if the recipients are specified correctly.
-Actually it checks only if there are any missing commas or the like in the
-headers.
-@end deffn
-
-@deffn Command vm-mail-mode-citation-clean-up
-@findex vm-mail-mode-citation-clean-up
-Remove doubly-cited text and extra lines in a mail message.
-@end deffn
-
-@deffn Command vm-mail-mode-elide-reply-region b e
-@findex vm-mail-mode-elide-reply-region
-Replace marked region or current line with @code{vm-mail-mode-elide-reply-region}.
-B and E are the beginning and end of the marked region or the current line.
-@end deffn
-
-@deffn Command vm-mail-subject-cleanup
-@findex vm-mail-subject-cleanup
-Do some subject line clean up.
-- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
-- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
-
-You might add this function to @code{vm-mail-mode-hook} in order to clean up the
-Subject header.
-@end deffn
-
 @deffn Command vm-mime-attach-files-in-directory directory &optional regexp
 @findex vm-mime-attach-files-in-directory
 Attach all files in DIRECTORY matching REGEXP.
@@ -165,11 +132,6 @@ The following options are possible.
 
 @code{vm-mail-mode} options:
  - attach-save-files: bind [C-c C-a] to @code{vm-attach-files-in-directory} 
- - check-recipients: add @code{vm-mail-check-recipients} to @code{mail-send-hook} in
-   order to check if the recipients headers are correct.
- - encode-headers: add @code{vm-mime-encode-headers} to @code{mail-send-hook} in
-   order to encode the headers before sending.
- - fake-date: if enabled allows you to fake the date of an outgoing message.
 
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add @code{vm-mime-auto-save-all-attachments} to
@@ -215,11 +177,10 @@ For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
 @defopt vm-enable-addons
 @vindex vm-enable-addons
 A list of addons to enable, t for all and nil to disable all.
-Most addons are from @code{vm-rfaddons-infect-vm}.
+The addons are what is left of @code{vm-rfaddons-infect-vm}; the rest of what
+was there is part of VM proper now, with an ordinary option each.
 
 You must restart VM after a change to cause any effects.
-
-Default value: @code{(check-for-empty-subject encode-headers)}
 @end defopt
 
 @defopt vm-handle-return-receipt-mode
@@ -236,93 +197,6 @@ Default value: @code{edit}
 Number of characters from the original message body to be returned.
 
 Default value: @code{500}
-@end defopt
-
-@defopt vm-mail-mode-citation-kill-regexp-alist
-@vindex vm-mail-mode-citation-kill-regexp-alist
-Regexp replacement pairs for cleaning of replies.
-
-Default value:
-@example
-(("^\\( > [|@{@}>:;][^
-]*
-\\)+"
-  . "[...]
-")
- ("^\\([^|@{@}>:;]+.*\\)
- > [|@{@}>:;]*$"
-  . "\\1")
- ("^ > [|@{@}>:;]*
-\\([^|@{@}>:;]\\)"
-  . "\\1")
- ("^ > [|@{@}>:;]*\\s-*
-\\( > [|@{@}>:;]*\\s-*
-\\)+"
-  . " > 
-")
- ("
-
-
-+"
-  . "
-
-")
- ("^ > --[^
-]*
-\\( > [^
-]*
-\\)+"
-  . "
-")
- ("^ > ________[^
-]*
-\\( > [^
-]*
-\\)+"
-  . "
-"))
-@end example
-@end defopt
-
-@defopt vm-mail-mode-fake-date-p
-@vindex vm-mail-mode-fake-date-p
-Non-nil means @code{vm-mail-mode-insert-date-maybe} keeps an existing date header.
-Otherwise, overwrite existing date headers
-
-Default value: @code{t}
-@end defopt
-
-@defopt vm-mail-mode-open-line-regexp
-@vindex vm-mail-mode-open-line-regexp
-Regexp matching prefix of quoted text at line start.
-
-Default value: @code{"[ \11]*>"}
-@end defopt
-
-@defopt vm-mail-prompt-if-subject-empty
-@vindex vm-mail-prompt-if-subject-empty
-Prompt for a subject when empty.
-
-Default value: @code{t}
-@end defopt
-
-@defopt vm-mail-subject-number-reply
-@vindex vm-mail-subject-number-reply
-Non-nil means, add a number [N] after the reply prefix.
-The number reflects the number of references.
-@end defopt
-
-@defopt vm-mail-subject-prefix-replacements
-@vindex vm-mail-subject-prefix-replacements
-List of subject prefixes which should be replaced.
-Matching will be done case insensitively.
-
-Default value:
-@example
-(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+"
-  . "Re: ")
- ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+" . "Fo: "))
-@end example
 @end defopt
 
 @defopt vm-mime-attach-files-in-directory-default-charset
@@ -6540,6 +6414,12 @@ The file names may be customized via the variables @code{vm-init-file} and
 @code{vm-preferences-file}.
 @end deffn
 
+@deffn Command vm-mail-mode-elide-reply-region b e
+@findex vm-mail-mode-elide-reply-region
+Replace marked region or current line with @code{vm-mail-mode-elide-reply-region}.
+B and E are the beginning and end of the marked region or the current line.
+@end deffn
+
 @deffn Command vm-optional-key
 @findex vm-optional-key
 Certain VM keys have optional bindings in VM, which differ from
@@ -8150,6 +8030,23 @@ See @code{vm-forward-message} for other forms of forwarding.
 Like vm-forward-message-plain, but run in a newly created frame.
 @end deffn
 
+@deffn Command vm-mail-check-for-empty-subject
+@findex vm-mail-check-for-empty-subject
+Check if the subject line is empty and issue an error if so.
+@end deffn
+
+@deffn Command vm-mail-check-recipients
+@findex vm-mail-check-recipients
+Check if the recipients are specified correctly.
+Actually it checks only if there are any missing commas or the like in the
+headers.
+@end deffn
+
+@deffn Command vm-mail-mode-citation-clean-up
+@findex vm-mail-mode-citation-clean-up
+Remove doubly-cited text and extra lines in a mail message.
+@end deffn
+
 @deffn Command vm-mail-mode-hide-headers
 @findex vm-mail-mode-hide-headers
 Hides and protects headers listed in @code{vm-mail-mode-hidden-headers}.
@@ -8175,6 +8072,16 @@ is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to.
 @end deffn
 
+@deffn Command vm-mail-subject-cleanup
+@findex vm-mail-subject-cleanup
+Do some subject line clean up.
+- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
+- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
+
+You might add this function to @code{vm-mail-mode-hook} in order to clean up the
+Subject header.
+@end deffn
+
 @deffn Command vm-mail-to-mailto-url url
 @findex vm-mail-to-mailto-url
 Creates a message composition buffer to send mail to the URL.  This
@@ -8188,29 +8095,6 @@ in a MIME-aware mail reader.  VM copies and encodes the current
 mail composition buffer and displays it as a mail folder.
 Type @code{q} to quit this temp folder and return to composing your
 message.
-@end deffn
-
-@deffn Command vm-reply count
-@findex vm-reply
-Reply to the sender of the current message.
-Numeric prefix argument N means to reply to the current message plus the
-next N-1 messages.  A negative N means reply to the current message and
-the previous N-1 messages.
-
-If invoked on marked messages (via @code{vm-next-command-uses-marks}),
-all marked messages will be replied to.
-
-You will be placed into a standard Emacs Mail mode buffer to compose and
-send your message.  See the documentation for the function @code{mail} for
-more info.
-
-Note that the normal binding of C-c C-y in the reply buffer is
-automatically changed to @code{vm-yank-message} during a reply.  This
-allows you to yank any message from the current folder into a
-reply.
-
-Normal VM commands may be accessed in the reply buffer by prefixing them
-with C-c C-v.
 @end deffn
 
 @deffn Command vm-reply-include-text count
@@ -8352,6 +8236,27 @@ Don’t call this function from a program.
 @end deffn
 
 @appendixsubsec User options
+
+@defopt vm-check-for-empty-subject
+@vindex vm-check-for-empty-subject
+Non-nil means ask before sending a message with an empty Subject.
+
+Default value: @code{t}
+@end defopt
+
+@defopt vm-check-recipients
+@vindex vm-check-recipients
+Non-nil means check the recipient headers before sending a message.
+A missing comma turns two addresses into one that goes nowhere, which is
+what @code{vm-mail-check-recipients} looks for.
+@end defopt
+
+@defopt vm-clean-subject-prefixes
+@vindex vm-clean-subject-prefixes
+Non-nil means tidy the Subject prefixes of a new composition.
+@code{vm-mail-subject-cleanup} does the work, by
+@code{vm-mail-subject-prefix-replacements}.
+@end defopt
 
 @defopt vm-coding-system-priorities
 @vindex vm-coding-system-priorities
@@ -8643,6 +8548,60 @@ Default value:
 @end example
 @end defopt
 
+@defopt vm-mail-mode-citation-kill-regexp-alist
+@vindex vm-mail-mode-citation-kill-regexp-alist
+Regexp replacement pairs for cleaning of replies.
+
+Default value:
+@example
+(("^\\( > [|@{@}>:;][^
+]*
+\\)+"
+  . "[...]
+")
+ ("^\\([^|@{@}>:;]+.*\\)
+ > [|@{@}>:;]*$"
+  . "\\1")
+ ("^ > [|@{@}>:;]*
+\\([^|@{@}>:;]\\)"
+  . "\\1")
+ ("^ > [|@{@}>:;]*\\s-*
+\\( > [|@{@}>:;]*\\s-*
+\\)+"
+  . " > 
+")
+ ("
+
+
++"
+  . "
+
+")
+ ("^ > --[^
+]*
+\\( > [^
+]*
+\\)+"
+  . "
+")
+ ("^ > ________[^
+]*
+\\( > [^
+]*
+\\)+"
+  . "
+"))
+@end example
+@end defopt
+
+@defopt vm-mail-mode-fake-date-p
+@vindex vm-mail-mode-fake-date-p
+Non-nil means @code{vm-mail-mode-insert-date-maybe} keeps an existing date header.
+Otherwise, overwrite existing date headers
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-mail-mode-hidden-headers
 @vindex vm-mail-mode-hidden-headers
 A list of headers to hide in a VM composition buffer.
@@ -8650,15 +8609,48 @@ A list of headers to hide in a VM composition buffer.
 Default value: @code{("References" "X-Mailer")}
 @end defopt
 
+@defopt vm-mail-prompt-if-subject-empty
+@vindex vm-mail-prompt-if-subject-empty
+Prompt for a subject when empty.
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-mail-reorder-message-headers
 @vindex vm-mail-reorder-message-headers
 Reorder message headers before sending.
+@end defopt
+
+@defopt vm-mail-subject-number-reply
+@vindex vm-mail-subject-number-reply
+Non-nil means, add a number [N] after the reply prefix.
+The number reflects the number of references.
+@end defopt
+
+@defopt vm-mail-subject-prefix-replacements
+@vindex vm-mail-subject-prefix-replacements
+List of subject prefixes which should be replaced.
+Matching will be done case insensitively.
+
+Default value:
+@example
+(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+"
+  . "Re: ")
+ ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+" . "Fo: "))
+@end example
 @end defopt
 
 @defopt vm-mail-use-sender-address
 @vindex vm-mail-use-sender-address
 If this set to @code{t}, M-x vm-mail will use the sender of the current
 message as the recipient for the new message composition.
+@end defopt
+
+@defopt vm-open-line-in-quoted-text
+@vindex vm-open-line-in-quoted-text
+Non-nil means make room when you type inside quoted text.
+Typing in the middle of a citation otherwise leaves your words inside the
+quotation; with this set VM opens a line for them.
 @end defopt
 
 @defopt vm-reply-ignored-addresses
@@ -9365,6 +9357,13 @@ of available face names.
 @end deffn
 
 @appendixsubsec User options
+
+@defopt vm-mail-mode-open-line-regexp
+@vindex vm-mail-mode-open-line-regexp
+Regexp matching prefix of quoted text at line start.
+
+Default value: @code{"[ \11]*>"}
+@end defopt
 
 @defopt vm-summary-faces-alist
 @vindex vm-summary-faces-alist

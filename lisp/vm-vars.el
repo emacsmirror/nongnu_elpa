@@ -7525,29 +7525,120 @@ information is derived from `vm-mime-mule-charset-to-coding-alist' (which see)."
 (defvar vm-fsfemacs-cached-scroll-bar-width nil)
 (defvar vm-update-composition-buffer-name-timer nil)
 
-(defcustom vm-enable-addons '(;; check-recipients -- removed on 2014-07-15
-                              check-for-empty-subject
-                              encode-headers)
+(defcustom vm-enable-addons nil
   "*A list of addons to enable, t for all and nil to disable all.
-Most addons are from `vm-rfaddons-infect-vm'.
+The addons are what is left of `vm-rfaddons-infect-vm'; the rest of what
+was there is part of VM proper now, with an ordinary option each.
 
 You must restart VM after a change to cause any effects."
   :group 'vm-rfaddons
-  :type '(set (const :tag "Open a line when typing in quoted text"
-		     open-line)
-	      (const :tag "Check the recipients before sending a message"
-		     check-recipients)
-	      (const :tag "Check for an empty subject before sending a message"
-		     check-for-empty-subject)
-	      (const :tag "MIME encode headers before sending a message"
-		     encode-headers)
-	      (const :tag "Clean up subject prefixes before sending a message"
-		     clean-subject)
-	      (const :tag "Do not replace Date: header when sending a message"
-		     fake-date)
-	      (const :tag "Automatically save attachments of new messages" 
+  :type '(set (const :tag "Automatically save attachments of new messages"
 		     auto-save-all-attachments)
 	      (const :tag "Enable all addons" t)))
+
+(defcustom vm-mail-subject-prefix-replacements
+  '(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Re: ")
+    ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Fo: "))
+  "*List of subject prefixes which should be replaced.
+Matching will be done case insensitively."
+  :group 'vm-compose
+  :type '(repeat (cons (regexp :tag "Regexp")
+                       (string :tag "Replacement"))))
+
+(defcustom vm-mail-subject-number-reply nil
+  "*Non-nil means, add a number [N] after the reply prefix.
+The number reflects the number of references."
+  :group 'vm-compose
+  :type '(choice
+          (const :tag "on" t)
+          (const :tag "off" nil)))
+
+(defcustom vm-mail-prompt-if-subject-empty t
+  "*Prompt for a subject when empty."
+  :group 'vm-compose
+  :type '(boolean))
+
+;;;###autoload
+
+(defcustom vm-check-recipients nil
+  "*Non-nil means check the recipient headers before sending a message.
+A missing comma turns two addresses into one that goes nowhere, which is
+what `vm-mail-check-recipients' looks for."
+  :group 'vm-compose
+  :type 'boolean)
+
+(defcustom vm-check-for-empty-subject t
+  "*Non-nil means ask before sending a message with an empty Subject."
+  :group 'vm-compose
+  :type 'boolean)
+
+(defcustom vm-clean-subject-prefixes nil
+  "*Non-nil means tidy the Subject prefixes of a new composition.
+`vm-mail-subject-cleanup' does the work, by
+`vm-mail-subject-prefix-replacements'."
+  :group 'vm-compose
+  :type 'boolean)
+
+(defcustom vm-open-line-in-quoted-text nil
+  "*Non-nil means make room when you type inside quoted text.
+Typing in the middle of a citation otherwise leaves your words inside the
+quotation; with this set VM opens a line for them."
+  :group 'vm-compose
+  :type 'boolean)
+
+(defcustom vm-mail-mode-fake-date-p t
+  "Non-nil means `vm-mail-mode-insert-date-maybe' keeps an existing date header.
+Otherwise, overwrite existing date headers"
+  :group 'vm-compose
+  :type '(boolean))
+
+;;;###autoload
+(defcustom vm-mail-mode-citation-kill-regexp-alist
+  (list
+   ;; empty lines multi quoted 
+   (cons (concat "^\\(" vm-included-text-prefix "[|{}>:;][^\n]*\n\\)+")
+         "[...]\n")
+   ;; empty quoted starting/ending lines
+   (cons (concat "^\\([^|{}>:;]+.*\\)\n"
+                 vm-included-text-prefix "[|{}>:;]*$")
+         "\\1")
+   (cons (concat "^" vm-included-text-prefix "[|{}>:;]*\n"
+                 "\\([^|{}>:;]\\)")
+         "\\1")
+   ;; empty quoted multi lines 
+   (cons (concat "^" vm-included-text-prefix "[|{}>:;]*\\s-*\n\\("
+                 vm-included-text-prefix "[|{}>:;]*\\s-*\n\\)+")
+         (concat vm-included-text-prefix "\n"))
+   ;; empty lines
+   (cons "\n\n\n+"
+         "\n\n")
+   ;; signature & -----Ursprüngliche Nachricht-----
+   (cons (concat "^" vm-included-text-prefix "--[^\n]*\n"
+                 "\\(" vm-included-text-prefix "[^\n]*\n\\)+")
+         "\n")
+   (cons (concat "^" vm-included-text-prefix "________[^\n]*\n"
+                 "\\(" vm-included-text-prefix "[^\n]*\n\\)+")
+         "\n")
+   )
+  "*Regexp replacement pairs for cleaning of replies."
+  :group 'vm-compose
+  :type '(repeat (cons :tag "Kill Definition"
+                       (regexp :tag "Regexp")
+                       (string :tag "Replacement"))))
+   
+(defvar vm-mail-mode-open-line nil
+  "Flag used by `vm-mail-mode-open-line'.")
+
+(defcustom vm-mail-mode-open-line-regexp "[ \t]*>"
+  "Regexp matching prefix of quoted text at line start."
+  :type 'regexp)
+
+(defcustom vm-mail-mode-elide-reply-region "[...]\n"
+  "*String which is used as replacement for elided text."
+  :group 'vm-compose
+  :type '(string))
+
+;;;###autoload
 
 (defcustom vm-enable-shrunken-headers nil
   "*Non-nil means fold a header that runs onto more than one line.

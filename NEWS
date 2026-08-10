@@ -30,6 +30,19 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * The composition checks and conveniences are part of VM proper now, in
+    vm-reply.el, with an option each instead of a flag in vm-enable-addons:
+    vm-check-recipients, vm-check-for-empty-subject (on, as it was),
+    vm-clean-subject-prefixes and vm-open-line-in-quoted-text.  A Date header
+    you write yourself is kept by vm-mail-mode-fake-date-p, which is a test
+    inside vm-mail-mode-insert-date-maybe rather than advice on it.
+  * vm-reply-include-presentation and vm-followup-include-presentation are
+    gone.  They have been obsolete since 8.2.0; vm-include-text-from-presentation
+    does the same thing for the ordinary reply and forward commands.
+  * Headers carrying anything outside US-ASCII are always encoded when a
+    message is sent.  This was the encode-headers add-on, on by default, and
+    it did nothing when vm-send-using-mime was nil -- so an 8-bit Subject
+    went out raw for anyone sending without MIME.
   * Shrunken headers are part of VM proper now, in vm-page.el, and are turned
     on with vm-enable-shrunken-headers rather than by adding shrunken-headers
     to vm-enable-addons.  VM no longer sets vm-always-use-presentation behind

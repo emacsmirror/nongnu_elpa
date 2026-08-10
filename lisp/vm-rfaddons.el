@@ -113,12 +113,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Sometimes it's handy to fake a date.
 ;; I overwrite the standard function by a slightly different version.
-(defcustom vm-mail-mode-fake-date-p t
-  "Non-nil means `vm-mail-mode-insert-date-maybe' keeps an existing date header.
-Otherwise, overwrite existing date headers"
-  :group 'vm-rfaddons
-  :type '(boolean))
-
 (defmacro vm-rfaddons-check-option (option option-list &rest body)
   "Evaluate body if option is in OPTION-LIST or OPTION-LIST is
 nil."
@@ -128,12 +122,6 @@ nil."
                     (cons (list 'message "Adding vm-rfaddons-option `%s'."
                                 option)
                           body)))))
-
-(defun vm-rfaddons--fake-date (orig-fun &rest args)
-  "Do not change an existing date if `vm-mail-mode-fake-date-p' is t."
-  (if (not (and vm-mail-mode-fake-date-p
-                (vm-mail-mode-get-header-contents "Date:")))
-      (apply orig-fun args)))
 
 (defun vm-rfaddons--do-preview-again (&rest _)
   (if vm-mime-delete-after-saving
@@ -152,11 +140,6 @@ The following options are possible.
 
 `vm-mail-mode' options:
  - attach-save-files: bind [C-c C-a] to `vm-attach-files-in-directory' 
- - check-recipients: add `vm-mail-check-recipients' to `mail-send-hook' in
-   order to check if the recipients headers are correct.
- - encode-headers: add `vm-mime-encode-headers' to `mail-send-hook' in
-   order to encode the headers before sending.
- - fake-date: if enabled allows you to fake the date of an outgoing message.
 
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add `vm-mime-auto-save-all-attachments' to
@@ -180,13 +163,7 @@ or do the binding and advising on your own."
   
   
   (when (member 'vm-mail-mode option-list)
-    (setq option-list (append '(attach-save-files
-                                check-recipients
-                                check-for-empty-subject
-                                encode-headers
-                                clean-subject
-                                fake-date
-                                open-line)
+    (setq option-list (append '(attach-save-files)
                               option-list))
     (setq option-list (delq 'vm-mail-mode option-list)))
   
@@ -207,34 +184,10 @@ or do the binding and advising on your own."
    ;; this binding overrides the VM binding of C-c C-a to `vm-attach-file'
    (define-key vm-mail-mode-map "\C-c\C-a" 'vm-attach-files-in-directory))
   
-  ;; check recipients headers for errors before sending
-  (vm-rfaddons-check-option
-   'check-recipients option-list
-   (add-hook 'mail-send-hook 'vm-mail-check-recipients))
 
-  ;; check if the subjectline is empty
-  (vm-rfaddons-check-option
-   'check-for-empty-subject option-list
-   (add-hook 'vm-mail-send-hook 'vm-mail-check-for-empty-subject))
-  
-  ;; encode headers before sending
-  (vm-rfaddons-check-option
-   'encode-headers option-list
-   (add-hook 'mail-send-hook 'vm-mime-encode-headers))
 
-  ;; This allows us to fake a date by advising vm-mail-mode-insert-date-maybe
-  (vm-rfaddons-check-option
-   'fake-date option-list
-   (advice-add 'vm-mail-mode-insert-date-maybe
-               :around #'vm-rfaddons--fake-date))
-  
-  (vm-rfaddons-check-option
-   'open-line option-list
-   (add-hook 'vm-mail-mode-hook 'vm-mail-mode-install-open-line))
 
-  (vm-rfaddons-check-option
-   'clean-subject option-list
-   (add-hook 'vm-mail-mode-hook 'vm-mail-subject-cleanup))
+
 
 
 ;; This is not needed any more becaue it is in the core  
@@ -259,41 +212,8 @@ or do the binding and advising on your own."
     (ding)
     (sit-for 3)))
 
-(defcustom vm-reply-include-presentation nil
-  "*If true a reply will include the presentation of a message.
-This might give better results when using filling or MIME encoded messages,
-e.g. HTML message.
- (This variable is part of vm-rfaddons.el.)"
-  :group 'vm-rfaddons
-  :type 'boolean)
 
 ;;;###autoload
-(defun vm-followup-include-presentation (count)
-  "Include presentation instead of text.
-This does not work when replying to multiple messages."
-  (interactive "p")
-  (vm-reply-include-presentation count t))
-(make-obsolete 'vm-followup-include-presentation
-	       'vm-include-text-from-presentation "8.2.0")
-
-;;;###autoload
-(defun vm-reply-include-presentation (count &optional to-all)
-  "Include presentation instead of text.
-This does only work with my modified VM, i.e. a hacked
-`vm-yank-message'."
-  (interactive "p")
-  (vm-follow-summary-cursor)
-  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (if (null vm-presentation-buffer)
-      (if to-all
-          (vm-followup-include-text count)
-        (vm-reply-include-text count))
-    (let ((vm-include-text-from-presentation t)
-	  (vm-reply-include-presentation t)  ; is this variable necessary?
-	  (vm-enable-thread-operations nil)) 
-      (vm-do-reply to-all t count))))
-(make-obsolete 'vm-reply-include-presentation
-	       'vm-include-text-from-presentation "8.2.0")
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -305,68 +225,6 @@ This does only work with my modified VM, i.e. a hacked
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; This has been moved to the VM core.  USR, 2010-03-11
 ;;;;;###autoload
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-mail-subject-prefix-replacements
-  '(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Re: ")
-    ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Fo: "))
-  "*List of subject prefixes which should be replaced.
-Matching will be done case insensitively."
-  :group 'vm-rfaddons
-  :type '(repeat (cons (regexp :tag "Regexp")
-                       (string :tag "Replacement"))))
-
-(defcustom vm-mail-subject-number-reply nil
-  "*Non-nil means, add a number [N] after the reply prefix.
-The number reflects the number of references."
-  :group 'vm-rfaddons
-  :type '(choice
-          (const :tag "on" t)
-          (const :tag "off" nil)))
-
-(defun vm-mail-subject-cleanup ()
-  "Do some subject line clean up.
-- Replace subject prefixes according to `vm-mail-subject-prefix-replacements'.
-- Add a number after replies is `vm-mail-subject-number-reply' is t.
-
-You might add this function to `vm-mail-mode-hook' in order to clean up the
-Subject header."
-  (interactive)
-  (save-excursion
-    ;; cleanup
-    (goto-char (point-min))
-    (re-search-forward 
-     (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
-     (point-max))
-    (let ((case-fold-search t)
-          (rpl vm-mail-subject-prefix-replacements))
-      (while rpl
-        (if (re-search-backward (concat "^Subject:[ \t]*" (caar rpl))
-                                (point-min) t)
-            (replace-match (concat "Subject: " (cdar rpl))))
-        (setq rpl (cdr rpl))))
-
-    ;; add number to replys
-    (let (refs (start 0) end (count 0))
-      (when (and vm-mail-subject-number-reply vm-reply-list
-                 (setq refs  (vm-mail-mode-get-header-contents "References:")))
-        (while (string-match "<[^<>]+>" refs start)
-          (setq count (1+ count)
-                start (match-end 0)))
-        (when (> count 1)
-          (mail-position-on-field "Subject" t)
-          (setq end (point))
-          (if (re-search-backward "^Subject:" (point-min) t)
-              (setq start (point))
-            (error "vm-mail-check-subject-cleanup: Could not find end of Subject header start"))
-          (goto-char start)
-          (if (not (re-search-forward (regexp-quote vm-reply-subject-prefix)
-                                      end t))
-              (error "vm-mail-check-subject-cleanup: Cound not find vm-reply-subject-prefix `%s' in header"
-                     vm-reply-subject-prefix)
-            (goto-char (match-end 0))
-            (skip-chars-backward ": \t")
-            (insert (format "[%d]" count))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-mime-set-8bit-composition-charset (charset &optional buffer-local)
@@ -803,229 +661,6 @@ save attachments.
         (vm-discard-cached-data)
         (vm-present-current-message)))))
 
-;;;###autoload
-(defun vm-mail-check-recipients-strip (address)
-  "Remove from ADDRESS the parts that may legitimately contain an \"@\".
-That is MIME encoded words, quoted strings and RFC 5322 comments, all of
-which occur alongside the address proper.  What is left should hold
-exactly one address.
-
-`vm-parse-addresses' decodes encoded words, marking what it decoded with
-the `vm-string' text property, so those are removed by property; a word
-still in its encoded form is removed by matching."
-  (let ((start 0)
-	(len (length address))
-	(pieces nil)
-	(stripped nil)
-	(previous nil))
-    ;; drop the decoded encoded words
-    (while (< start len)
-      (let ((end (or (next-single-property-change start 'vm-string address)
-		     len)))
-	(unless (get-text-property start 'vm-string address)
-	  (push (substring-no-properties address start end) pieces))
-	(setq start end)))
-    (setq stripped
-	  (vm-replace-in-string
-	   (vm-replace-in-string (apply #'concat (nreverse pieces))
-				 vm-mime-encoded-word-regexp "")
-	   "\"[^\"]*\"" ""))
-    ;; and the comments, innermost first so nested ones go too
-    (while (not (equal previous stripped))
-      (setq previous stripped)
-      (setq stripped (vm-replace-in-string stripped "([^()]*)" "")))
-    stripped))
-
-(defun vm-mail-check-recipients ()
-  "Check if the recipients are specified correctly.
-Actually it checks only if there are any missing commas or the like in the
-headers."
-  (interactive)
-  (let ((header-list '("To:" "CC:" "BCC:"
-                       "Resent-To:" "Resent-CC:" "Resent-BCC:"))
-        (contents nil)
-        (errors nil))
-    (while header-list
-      (setq contents (vm-mail-mode-get-header-contents (car header-list)))
-      ;; Split into addresses first, respecting quoting and comments, and
-      ;; look for a second "@" within one of them.  Testing the whole
-      ;; header at once cannot tell a missing comma from a display name
-      ;; that contains an "@" -- an encoded word holding an address, say,
-      ;; which is legal and which Exchange and Outlook both produce.
-      (dolist (address (vm-parse-addresses contents))
-        (let ((bare (vm-mail-check-recipients-strip address)))
-          (when (string-match "@[^,]*@" bare)
-            (setq errors
-                  (vm-replace-in-string
-                   (format
-                    "vm-mail-check-recipients: Missing separator in %s \"%s\"!  "
-                    (car header-list) address)
-                   "[\n\t ]+" " ")))))
-      (setq header-list (cdr header-list)))
-    ;; "%s" matters: the message has an address interpolated into it, and
-    ;; "%" is legal in a local part -- percent-hack routing uses it -- so
-    ;; passing it as the format string fails with "Not enough arguments
-    ;; for format string" instead of saying what is wrong.
-    (if errors
-        (error "%s" errors))))
-
-
-(defcustom vm-mail-prompt-if-subject-empty t
-  "*Prompt for a subject when empty."
-  :group 'vm-rfaddons
-  :type '(boolean))
-
-;;;###autoload
-(defun vm-mail-check-for-empty-subject ()
-  "Check if the subject line is empty and issue an error if so."
-  (interactive)
-  (let (subject)
-    (setq subject (vm-mail-mode-get-header-contents "Subject:"))
-    (if (or (not subject) (string-match "^[ \t]*$" subject))
-        (if (not vm-mail-prompt-if-subject-empty)
-            (error "Empty subject header")
-          (mail-position-on-field "Subject")
-          (insert (read-string "Subject: "))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-mail-mode-citation-kill-regexp-alist
-  (list
-   ;; empty lines multi quoted 
-   (cons (concat "^\\(" vm-included-text-prefix "[|{}>:;][^\n]*\n\\)+")
-         "[...]\n")
-   ;; empty quoted starting/ending lines
-   (cons (concat "^\\([^|{}>:;]+.*\\)\n"
-                 vm-included-text-prefix "[|{}>:;]*$")
-         "\\1")
-   (cons (concat "^" vm-included-text-prefix "[|{}>:;]*\n"
-                 "\\([^|{}>:;]\\)")
-         "\\1")
-   ;; empty quoted multi lines 
-   (cons (concat "^" vm-included-text-prefix "[|{}>:;]*\\s-*\n\\("
-                 vm-included-text-prefix "[|{}>:;]*\\s-*\n\\)+")
-         (concat vm-included-text-prefix "\n"))
-   ;; empty lines
-   (cons "\n\n\n+"
-         "\n\n")
-   ;; signature & -----Ursprüngliche Nachricht-----
-   (cons (concat "^" vm-included-text-prefix "--[^\n]*\n"
-                 "\\(" vm-included-text-prefix "[^\n]*\n\\)+")
-         "\n")
-   (cons (concat "^" vm-included-text-prefix "________[^\n]*\n"
-                 "\\(" vm-included-text-prefix "[^\n]*\n\\)+")
-         "\n")
-   )
-  "*Regexp replacement pairs for cleaning of replies."
-  :group 'vm-rfaddons
-  :type '(repeat (cons :tag "Kill Definition"
-                       (regexp :tag "Regexp")
-                       (string :tag "Replacement"))))
-   
-(defun vm-mail-mode-citation-clean-up ()
-  "Remove doubly-cited text and extra lines in a mail message."
-  (interactive)
-  (save-excursion
-    (mail-text)
-    (let ((re-alist vm-mail-mode-citation-kill-regexp-alist)
-          (pmin (point))
-          re subst)
-
-      (while re-alist
-        (goto-char pmin)
-        (setq re (caar re-alist)
-              subst (cdar re-alist))
-        (while (re-search-forward re (point-max) t)
-          (replace-match subst))
-        (setq re-alist (cdr re-alist))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun vm-mail-mode-install-open-line ()
-  "Install the open-line hooks for VM composition buffers.
-Add this to `vm-mail-mode-hook'."
-  ;; these are not local even when using add-hook, so we make them local
-  (add-hook 'before-change-functions 'vm-mail-mode-open-line nil t)
-  (add-hook 'after-change-functions 'vm-mail-mode-open-line nil t))
-
-(defvar vm-mail-mode-open-line nil
-  "Flag used by `vm-mail-mode-open-line'.")
-
-(defcustom vm-mail-mode-open-line-regexp "[ \t]*>"
-  "Regexp matching prefix of quoted text at line start."
-  :type 'regexp)
-
-(defun vm-mail-mode-open-line (start end &optional length)
-  "Opens a line when inserting into the region of a reply.
-
-Insert newlines before and after an insert where necessary and does a cleanup
-of empty lines which have been quoted." 
-  (if (= start end)
-      (save-excursion
-        (beginning-of-line)
-        (setq vm-mail-mode-open-line
-              (if (and (eq this-command 'self-insert-command)
-                       (looking-at (concat "^"
-                                           vm-mail-mode-open-line-regexp)))
-                  (if (< (point) start) (point) start))))
-    (if (and length (= length 0) vm-mail-mode-open-line)
-        (let (start-mark end-mark)
-          (save-excursion 
-            (if (< vm-mail-mode-open-line start)
-                (progn
-                  (insert "\n\n" vm-included-text-prefix)
-                  (setq end-mark (point-marker))
-                  (goto-char start)
-                  (setq start-mark (point-marker))
-                  (insert "\n\n"))
-              (if (looking-at (concat "\\("
-                                      vm-mail-mode-open-line-regexp
-                                      "\\)+[ \t]*\n"))
-                  (replace-match ""))
-              (insert "\n\n")
-              (setq end-mark (point-marker))
-              (goto-char start)
-              (setq start-mark (point-marker))
-              (insert "\n"))
-
-            ;; clean leading and trailing garbage 
-            (let ((iq (concat "^" vm-mail-mode-open-line-regexp
-                              "[> \t]*\n")))
-              (save-excursion
-                (goto-char start-mark)
-                (beginning-of-line)
-                (while (looking-at "^$") (forward-line -1))
-                (while (looking-at iq)
-                  (replace-match "")
-                  (forward-line -1))
-                (goto-char end-mark)
-                (beginning-of-line)
-                (while (looking-at "^$") (forward-line 1))
-                (while (looking-at iq)
-                  (replace-match "")))))
-      
-          (setq vm-mail-mode-open-line nil)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-mail-mode-elide-reply-region "[...]\n"
-  "*String which is used as replacement for elided text."
-  :group 'vm-rfaddons
-  :type '(string))
-
-;;;###autoload
-(defun vm-mail-mode-elide-reply-region (b e)
-  "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
-B and E are the beginning and end of the marked region or the current line."
-  (interactive (if (mark)
-                   (if (< (mark) (point))
-                       (list (mark) (point))
-                     (list (point) (mark)))
-                 (list (save-excursion (beginning-of-line) (point))
-                       (save-excursion (end-of-line) (point)))))
-  (if (eobp) (insert "\n"))
-  (if (mark) (delete-region b e) (delete-region b (+ 1 e)))
-  (insert vm-mail-mode-elide-reply-region))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defvaralias 'vm-mime-display-internal-multipart/mixed-separator
   'vm-mime-parts-display-separator)

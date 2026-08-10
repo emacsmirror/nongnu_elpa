@@ -3254,6 +3254,34 @@ headers into a particular order before sending.  The order is
 determined by the variable @code{vm-mail-header-order}.
 
 
+@unnumberedsec Checks and conveniences
+
+@cindex checking recipients
+@cindex empty subject
+These were add-ons switched on through @code{vm-enable-addons} until 8.3.3;
+each is an option of its own now.
+
+@vmdocvmcheckrecipients
+
+@vmdocvmcheckforemptysubject
+
+@vmdocvmcleansubjectprefixes
+
+@vmdocvmopenlineinquotedtext
+
+@vmdocvmmailmodefakedatep
+
+@findex vm-mail-mode-citation-clean-up
+@findex vm-mail-mode-elide-reply-region
+@noindent
+Two commands go with them, for a composition you are already in:
+@code{vm-mail-mode-citation-clean-up} takes the noise out of a citation,
+and @code{vm-mail-mode-elide-reply-region} replaces a stretch of quoted
+text with a marker saying it was cut.
+
+A header carrying anything outside @acronym{US-ASCII} is encoded on the way
+out whatever else is set; that was an add-on too, and is not optional.
+
 @node Sending @acronym{MIME} Messages, Sending Secure @acronym{MIME}, Sending Options, Sending Messages
 @section Sending @acronym{MIME} Messages
 

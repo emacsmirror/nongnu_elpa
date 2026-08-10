@@ -1016,6 +1016,67 @@ included the quote would put every later message in the wrong place."
                                        (vm-text-end-of (nth 1 vm-message-list)))))))
       (delete-directory dir t))))
 
+;;; Composition options moved out of vm-rfaddons (issue #606)
+
+(ert-deftest vm-reply-test-composition-options-replace-the-addon-flags ()
+  "The vm-enable-addons flags are ordinary options now.
+`check-for-empty-subject' and `encode-headers' were on by default through
+that list; the first is an option that defaults to t and the second is not
+optional at all."
+  (should (get 'vm-check-recipients 'standard-value))
+  (should (get 'vm-check-for-empty-subject 'standard-value))
+  (should (get 'vm-clean-subject-prefixes 'standard-value))
+  (should (get 'vm-open-line-in-quoted-text 'standard-value))
+  (should (eq t (default-value 'vm-check-for-empty-subject)))
+  (dolist (flag '(check-recipients check-for-empty-subject encode-headers
+                  clean-subject fake-date open-line shrunken-headers))
+    (should-not (memq flag (default-value 'vm-enable-addons)))))
+
+(ert-deftest vm-reply-test-apply-options-does-nothing-when-they-are-off ()
+  "With the options off, setting a composition up changes nothing."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: Re: Re: hello\n"
+            mail-header-separator "\n")
+    (let ((vm-clean-subject-prefixes nil)
+          (vm-open-line-in-quoted-text nil)
+          (before (buffer-string)))
+      (vm-mail-mode-apply-options)
+      (should (equal before (buffer-string)))
+      (should-not (memq 'vm-mail-mode-open-line before-change-functions)))))
+
+(ert-deftest vm-reply-test-open-line-is-installed-when-asked ()
+  "`vm-open-line-in-quoted-text' installs the change hooks, buffer-locally."
+  (with-temp-buffer
+    (let ((vm-open-line-in-quoted-text t))
+      (vm-mail-mode-apply-options)
+      (should (memq 'vm-mail-mode-open-line before-change-functions))
+      (should (memq 'vm-mail-mode-open-line after-change-functions))
+      ;; buffer-local, not global
+      (should (local-variable-p 'before-change-functions)))))
+
+(ert-deftest vm-reply-test-a-date-of-your-own-is-kept ()
+  "`vm-mail-mode-fake-date-p' keeps a Date header you wrote yourself.
+This was advice on `vm-mail-mode-insert-date-maybe'; it is a test inside it."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nDate: Wed, 01 Jan 2020 00:00:00 +0000\n"
+            "Subject: hello\n" mail-header-separator "\n")
+    (let ((vm-mail-header-insert-date t)
+          (vm-mail-mode-fake-date-p t))
+      (vm-mail-mode-insert-date-maybe)
+      (should (= 1 (cl-count-if (lambda (l) (string-prefix-p "Date:" l))
+                                (split-string (buffer-string) "\n"))))
+      (should (string-match-p "01 Jan 2020" (buffer-string))))))
+
+(ert-deftest vm-reply-test-a-date-is-replaced-when-not-faking ()
+  "With the flag off, VM writes the Date itself."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nDate: Wed, 01 Jan 2020 00:00:00 +0000\n"
+            "Subject: hello\n" mail-header-separator "\n")
+    (let ((vm-mail-header-insert-date t)
+          (vm-mail-mode-fake-date-p nil))
+      (vm-mail-mode-insert-date-maybe)
+      (should-not (string-match-p "01 Jan 2020" (buffer-string))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
