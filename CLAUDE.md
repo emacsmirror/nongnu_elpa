@@ -27,6 +27,16 @@ make distclean          # Full cleanup including Makefile
 
 ## Linting
 
+**Run both compile lints before committing**, not just the byte one:
+
+```bash
+make byte-compile-lint && make native-compile-lint
+```
+
+Native compilation reports things the byte compiler does not, and a commit
+that passes one and not the other is a commit that breaks a user's build the
+first time their Emacs compiles the file.
+
 ```bash
 make byte-compile-lint   # Byte compile with strict warnings (primary check)
 make cross-file-lint     # Each file compiled alone: calls nothing defines
