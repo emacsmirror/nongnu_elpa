@@ -20,7 +20,7 @@
         system: with (import nixpkgs { inherit system; }); {
           default =
             let
-              emacs = emacsWithPackages (
+              emacs = (pkgs.emacsPackagesFor pkgs.emacs).emacsWithPackages (
                 epkgs: with epkgs; [
                   org-contrib
                   company
