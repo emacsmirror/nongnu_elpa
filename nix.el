@@ -189,19 +189,31 @@ OPTIONS a list of options to accept."
        ((or (string= "-s" last-arg) (string= "--substituter" last-arg))
         (pcomplete-here))))))
 
-(defun nix-is-24 ()
-  "Whether Nix is a version with Flakes support."
+(defun nix--version-info ()
+  "Parse `nix-version' into a (VARIANT . VERSION) pair.
+VARIANT is the symbol `nix' or `lix' and VERSION
+is a version string.
+Return nil for unrecognized version strings."
   (let ((version (nix-version)))
     (save-match-data
       (cond
        ((string-match (rx bol "nix (Nix) " (group (+ digit) (?  "." (+ digit))))
                       version)
-	(version<= "2.4" (match-string 1 version)))
+	(cons 'nix (match-string 1 version)))
+       ((string-match (rx bol "nix (Determinate Nix " (+ (not (any ")"))) ") "
+			  (group (+ digit) (?  "." (+ digit))))
+                      version)
+	(cons 'nix (match-string 1 version)))
        ((string-match (rx bol "nix (Lix, like Nix) " (group (+ digit) (?  "." (+ digit))))
                       version)
-	(version<= "2.90" (match-string 1 version))) ;; first lix version, flakes included
-       (t nil)
-       ))))
+	(cons 'lix (match-string 1 version)))))))
+
+(defun nix-is-24 ()
+  "Whether Nix is a version with Flakes support."
+  (pcase (nix--version-info)
+    (`(nix . ,version) (version<= "2.4" version))
+    (`(lix . ,version) (version<= "2.90" version)) ;; first lix version, flakes included
+    (_ nil)))
 
 (defun nix-has-flakes ()
   "Whether Nix is a version with Flakes support."

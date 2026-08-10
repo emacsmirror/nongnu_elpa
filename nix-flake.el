@@ -286,15 +286,13 @@ command after the flake reference."
 		       ,@options)
                      " ")))
 
-(defun nix-flake--command-with-flake-argument (subcommand options flake-ref)
-  (concat nix-executable
-          " "
-          (mapconcat #'shell-quote-argument
-                     `(,@(nix-flake--to-list subcommand)
-		       "--flake"
-                       ,flake-ref
-		       ,@options)
-                     " ")))
+(defun nix-flake--update-takes-flake-argument-p ()
+  "Whether \"nix flake update\" accepts the --flake argument."
+  (pcase (nix--version-info)
+    (`(nix . ,version) (version<= "2.19" version))
+    (`(lix . ,version) (version<= "2.90" version))
+    (`(determinate . ,version) (version<= "2.19" version))
+    (_ t)))
 
 (defun nix-flake--installable-command (subcommand options flake-ref attribute
 						  &optional extra-arguments)
@@ -397,7 +395,9 @@ For OPTIONS and FLAKE-REF, see the documentation of
 For OPTIONS and FLAKE-REF, see the documentation of
 `nix-flake-run-attribute'."
   (interactive (list (nix-flake--options) nix-flake-ref))
-  (compile (nix-flake--command-with-flake-argument '("flake" "update") options flake-ref)))
+  (compile (if (nix-flake--update-takes-flake-argument-p)
+	       (nix-flake--command-with-flake-argument '("flake" "update") options flake-ref)
+	     (nix-flake--command '("flake" "update") options flake-ref))))
 
 ;;;###autoload (autoload 'nix-flake-dispatch "nix-flake" nil t)
 (transient-define-prefix nix-flake-dispatch (flake-ref &optional remote)
@@ -562,7 +562,7 @@ See `nix-flake-init-post-action' variable for details."
 
 ;;;;; The transient interface
 
-;;;###autoload (autoload 'nix-flake-init "nix-flake" nil t)
+;;;###autoload (autoload 'nix-flake-init-dispatch "nix-flake" nil t)
 (transient-define-prefix nix-flake-init-dispatch (&optional flake-ref)
   "Scaffold a project from a template."
   [:description "Initialize a flake"]
