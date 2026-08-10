@@ -103,6 +103,10 @@
 	 (provide 'vm-autoloads)))
       (t (require 'vm-autoloads)))
 
+(defvar vm-visit-new-buffer nil
+  "The folder buffer the visit in progress created, if it created one.
+Bound by `vm' and set by `vm--visit'; see `vm-kill-half-visited-buffer'.")
+
 ;;;###autoload
 (cl-defun vm (&optional folder &key read-only interactive
 		      access-method reload just-visit)
@@ -175,6 +179,37 @@ deleted messages.  Use `###' to expunge deleted messages."
   ;; set inhibit-local-variables non-nil to protect
   ;; against letter bombs.
   ;; set enable-local-variables to nil for newer Emacses
+  ;; The body is `vm--visit', so that a visit that fails part way through
+  ;; can be cleaned up after: it used to leave a buffer visiting the folder,
+  ;; in vm-mode, holding however many messages had been read before the error
+  ;; (emacs-vm/vm#614).
+  (let ((vm-visit-new-buffer nil)
+	(visited nil))
+    (unwind-protect
+	(prog1 (vm--visit folder read-only interactive access-method reload
+			  just-visit)
+	  (setq visited t))
+      (unless visited (vm-kill-half-visited-buffer)))))
+
+(defun vm-kill-half-visited-buffer ()
+  "Kill the folder buffer a failed visit created, if it created one.
+A visit that raises part way through -- a folder VM cannot parse, an index
+file it cannot read -- left the buffer behind, in vm-mode, holding however
+many messages had been read: five of seven, in the case this was written for.
+It is unmodified, so nothing warns, and it looks like the folder while showing
+less than the folder.
+
+A buffer that was already visiting the folder is left alone, and so is one
+with unsaved changes: neither is this visit's to throw away."
+  (when (and vm-visit-new-buffer
+	     (buffer-live-p vm-visit-new-buffer)
+	     (not (buffer-modified-p vm-visit-new-buffer)))
+    (let ((name (buffer-name vm-visit-new-buffer)))
+      (kill-buffer vm-visit-new-buffer)
+      (vm-inform 5 "Killed %s: the folder did not finish loading" name))))
+
+(defun vm--visit (folder read-only interactive access-method reload just-visit)
+  "The body of `vm', which see.  Separate so that `vm' can wrap it."
   (catch 'done
     (unless folder
       (setq folder vm-primary-inbox))
@@ -235,7 +270,12 @@ deleted messages.  Use `###' to expunge deleted messages."
 
       (if (bufferp folder)
 	  (setq folder-buffer folder)
-	(setq folder-buffer (vm-read-folder folder remote-spec folder-name)))
+	;; Whether this call is the one that created the buffer decides whether
+	;; it is ours to kill if the visit fails; by here FOLDER is a file name
+	;; even for a POP or IMAP folder, whose cache file it names.
+	(let ((existing (vm-get-file-buffer folder)))
+	  (setq folder-buffer (vm-read-folder folder remote-spec folder-name))
+	  (unless existing (setq vm-visit-new-buffer folder-buffer))))
       (set-buffer folder-buffer)
       (setq set-vm-mode (not (eq major-mode 'vm-mode)))
       ;; Thunderbird folders
