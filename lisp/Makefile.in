@@ -214,14 +214,21 @@ install-pkg: all $(INSTALL_FILES)
 	done
 	@echo VM ELISP files successfully installed
 
-uninstall-pkg: $(INSTALL_FILES)
+# No prerequisites: uninstall needs the names of the files, not the files.
+# With `$(INSTALL_FILES)' here, `make uninstall' byte-compiled the whole of
+# VM before deleting it.
+uninstall-pkg:
 	@# Files an earlier VM installed that this one does not, which Emacs
 	@# would otherwise go on loading in preference to nothing.  `uninstall'
 	@# only knows the current SOURCES, so a dropped file has to be named.
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
 		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
-	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
+	@# $(INSTALL_FILES) is every .el and .elc install puts there.  The list
+	@# used to carry $(SOURCES:%=@srcdir@/%) as well, which is the same files
+	@# named through the source directory: harmlessly duplicated for an
+	@# in-tree build, and pointing outside $(lispdir) for any other.
+	@for i in $(INSTALL_FILES) ; do  \
 	  echo "Uninstalling $$i from $(DESTDIR)$(lispdir)" ; \
 	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \
 	done
