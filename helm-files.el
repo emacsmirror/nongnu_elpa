@@ -6322,18 +6322,19 @@ and `dired-compress-files-alist'."
 (defun helm-ff--delete-by-moving-to-trash (file)
   "Decide to trash or delete FILE.
 Return non-nil when FILE needs to be trashed."
-  (let ((remote (file-remote-p file)))
-    (or
-     (and delete-by-moving-to-trash
-          (null helm-current-prefix-arg)
-          (null current-prefix-arg)
-          (or (and remote helm-trash-remote-files)
-              (null remote)))
-     (and (null delete-by-moving-to-trash)
-          (or helm-current-prefix-arg
-              current-prefix-arg)
-          (or (and remote helm-trash-remote-files)
-              (null remote))))))
+  (when file
+    (let ((remote (file-remote-p file)))
+      (or
+       (and delete-by-moving-to-trash
+            (null helm-current-prefix-arg)
+            (null current-prefix-arg)
+            (or (and remote helm-trash-remote-files)
+                (null remote)))
+       (and (null delete-by-moving-to-trash)
+            (or helm-current-prefix-arg
+                current-prefix-arg)
+            (or (and remote helm-trash-remote-files)
+                (null remote)))))))
 
 (defun helm-trash-directory ()
   "Try to find a trash directory.
