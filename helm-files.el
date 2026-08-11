@@ -6478,6 +6478,7 @@ When a prefix arg is given, meaning of
          (old--allow-recursive-deletes helm-ff-allow-recursive-deletes)
          (buffers (cl-loop for f in files
                            append (helm-file-buffers f))))
+    (cl-assert files nil "No files found for deletion")
     (with-helm-display-marked-candidates
       helm-marked-buffer-name
       (helm-ff--count-and-collect-dups files)
@@ -6553,6 +6554,7 @@ directories are always deleted with no warnings."
          ;; Workaround emacs-26 bug with tramp see
          ;; https://github.com/jwiegley/emacs-async/issues/80.
          (async-quiet-switch "-q"))
+    (cl-assert files nil "No files found for deletion")
     (cl-loop for f in files
              for buf = (helm-file-buffers f)
              for dot-file-p = (helm-ff-dot-file-p f)
