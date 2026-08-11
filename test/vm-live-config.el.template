@@ -79,8 +79,6 @@
 	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
 	 :accounts (("vmtest1" . "PASSWORD1")))))
 
-;;; vm-live-config.el ends here
-
 ;; The mail-sending tests, `make test-send'.  These send real mail, so they run
 ;; only from that target and only with this set.  Leave it out and they skip.
 ;;
