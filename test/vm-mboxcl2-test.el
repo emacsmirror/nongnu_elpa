@@ -27,17 +27,23 @@
 (require 'vm-sort)
 (require 'vm-delete)
 (require 'vm-undo)
+(require 'vm-mime)
 
 (defun vm-mboxcl2-test--write (file messages)
   "Write MESSAGES to FILE as an mboxcl2 folder.
-MESSAGES is a list of (SUBJECT . BODY); each gets a correct Content-Length,
-so the folder starts out sound."
+MESSAGES is a list of (SUBJECT . BODY), or of (SUBJECT HEADERS . BODY) where
+HEADERS is extra header lines -- the MIME ones, for a message with an
+attachment, which have to be headers and not the first lines of the body.
+Each message gets a correct Content-Length, so the folder starts out sound."
   (with-temp-buffer
     (dolist (message messages)
-      (let ((body (cdr message)))
+      (let* ((rest (cdr message))
+             (extra (if (consp rest) (car rest) ""))
+             (body (if (consp rest) (cdr rest) rest)))
         (insert "From sender@example.com Sat Aug  8 14:24:13 2026\n"
                 "From: sender@example.com\n"
                 "Subject: " (car message) "\n"
+                extra
                 (format "Content-Length: %d\n" (string-bytes body))
                 "\n" body)))
     (write-region (point-min) (point-max) file nil 'quiet)))
@@ -329,6 +335,49 @@ the folder's type before appending, which is where the header comes from."
                               (cdr (nth 1 messages))))
       (should (string-match-p "The second enclosed body"
                               (cdr (nth 2 messages)))))))
+
+;;; Deleting an attachment, which is where a body shrinks
+
+(defconst vm-mboxcl2-test--mime-headers
+  (concat "MIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"sep\"\n")
+  "The headers that make the message below a message with an attachment.")
+
+(defconst vm-mboxcl2-test--with-attachment
+  (concat "--sep\n"
+          "Content-Type: text/plain\n\n"
+          "Please find it attached.\n"
+          "--sep\n"
+          "Content-Type: application/octet-stream; name=\"thing.bin\"\n"
+          "Content-Disposition: attachment; filename=\"thing.bin\"\n"
+          "Content-Transfer-Encoding: base64\n\n"
+          "VGhpcyBpcyBhIGZhaXJseSBsb25nIGF0dGFjaG1lbnQgd2hpY2ggd2lsbCBnbyBhd2F5Lgo=\n"
+          "--sep--\n")
+  "A body that is mostly an attachment.")
+
+(ert-deftest vm-mboxcl2-test-deleting-an-attachment-updates-the-length ()
+  "Deleting an attachment shrinks the body, and the length follows it.
+This is the largest change VM makes to a message in place, and the folder is
+unreadable by anything that believes the header if the length stays as it was."
+  (vm-mboxcl2-test-with-folders (_source target)
+    (vm-mboxcl2-test--write
+     target (list (cons "with an attachment"
+                       (cons vm-mboxcl2-test--mime-headers
+                             vm-mboxcl2-test--with-attachment))
+                  (cons "the one after" "Still here.\n")))
+    (vm-visit-folder target)
+    (setq vm-message-pointer vm-message-list)
+    (cl-letf (((symbol-function 'vm-display) #'ignore)
+              ((symbol-function 'vm-present-current-message) #'ignore)
+              ((symbol-function 'vm-discard-cached-data) #'ignore))
+      (let ((vm-mime-confirm-delete nil))
+        (vm-delete-all-attachments 1)))
+    (let ((messages (vm-mboxcl2-test--read target)))
+      (should (= (length messages) 2))
+      (should (equal (cdr (nth 1 messages)) "Still here.\n"))
+      ;; the attachment's data is gone and the note about it is there
+      (should-not (string-match-p "VGhpcyBpcyBh" (cdr (nth 0 messages))))
+      (should (string-match-p "Please find it attached" (cdr (nth 0 messages)))))))
 
 (provide 'vm-mboxcl2-test)
 
