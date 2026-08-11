@@ -293,12 +293,16 @@ The keywords after it are the faults described in the commentary above.
     mock))
 
 (defun vm-pop-mock-stop (mock)
-  "Shut MOCK down, along with any connection it is serving."
+  "Shut MOCK down, along with any connection it is serving.
+Its own connections, found by the property `vm-pop-mock--on-connect' puts on
+each: this used to kill every process whose name began with \"vm-pop-mock\",
+which is two mocks killing each other's connections and, in the test that
+speaks POP itself, the client -- it is called vm-pop-mock-test-client."
   (let ((server (vm-pop-mock-server mock)))
     (when (process-live-p server)
       (ignore-errors (delete-process server))))
   (dolist (process (process-list))
-    (when (string-prefix-p "vm-pop-mock" (process-name process))
+    (when (eq (process-get process 'vm-pop-mock) mock)
       (ignore-errors (delete-process process)))))
 
 (defun vm-pop-mock-spec (mock &optional auth)

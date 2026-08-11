@@ -253,10 +253,29 @@ truncate anything."
 ;;
 ;; It is a server the tests trust, so its own behaviour is worth pinning.
 
+(defun vm-pop-mock-test--complete-response-p (text multiline)
+  "Whether TEXT is a whole POP3 response, MULTILINE saying which kind.
+A single-line response ends at its first CRLF.  A multi-line one -- what UIDL,
+LIST and RETR answer when they succeed -- ends at a dot on a line of its own;
+an error reply to the same command is a single line, so the status decides."
+  (let ((first (and (string-match "\\`\\([^\r\n]*\\)\r\n" text)
+                    (match-string 1 text))))
+    (and first
+         (if (and multiline (string-prefix-p "+OK" first))
+             (string-suffix-p "\r\n.\r\n" text)
+           t))))
+
 (ert-deftest vm-pop-mock-test-mock-serves-a-plain-conversation ()
   "The mock speaks POP3 to a client that is not VM.
 Keeps the tests above honest: if the mock stopped answering STAT or dot-stuffing
-its bodies, they would all still pass by agreeing with a broken server."
+its bodies, they would all still pass by agreeing with a broken server.
+
+Each response is read to its end before it is matched, and only then is the
+next command sent.  Matching a pattern as soon as it appeared left the rest of
+the response unread, so it arrived during the next command and the next
+pattern -- three of them anchored at the start of what had arrived -- was
+matched against the wrong reply.  That never fired on an idle machine, where a
+small response arrives in one piece (emacs-vm/vm#626)."
   (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1
 					  vm-pop-mock-test--message-2))
     (let ((process (make-network-process
@@ -269,27 +288,35 @@ its bodies, they would all still pass by agreeing with a broken server."
 	    (set-process-filter process
 				(lambda (_p text) (setq received
 							(concat received text))))
-	    (cl-flet ((converse
-			(command pattern)
-			(setq received "")
-			(process-send-string process (concat command "\r\n"))
-			(let ((deadline (+ 5 (float-time))))
-			  (while (and (not (string-match-p pattern received))
-				      (< (float-time) deadline))
-			    (accept-process-output process 0 100)))
-			(should (string-match-p pattern received))))
+	    (cl-flet* ((await
+			 (done what)
+			 ;; Wait for DONE, a predicate on what has arrived.
+			 (let ((deadline (+ 5 (float-time))))
+			   (while (and (not (funcall done)) (< (float-time) deadline))
+			     (accept-process-output process 0 100)))
+			 (unless (funcall done)
+			   (ert-fail (list what :received received))))
+		       (converse
+			 (command pattern &optional multiline)
+			 (setq received "")
+			 (process-send-string process (concat command "\r\n"))
+			 (await (lambda ()
+				  (vm-pop-mock-test--complete-response-p
+				   received multiline))
+				(format "no complete response to %s" command))
+			 (should (string-match-p pattern received))))
 	      ;; The greeting arrives unprompted.
-	      (let ((deadline (+ 5 (float-time))))
-		(while (and (equal received "") (< (float-time) deadline))
-		  (accept-process-output process 0 100)))
+	      (await (lambda ()
+		       (vm-pop-mock-test--complete-response-p received nil))
+		     "no greeting")
 	      (should (string-prefix-p "+OK" received))
 	      (converse "USER vmtest" "\\`\\+OK")
 	      (converse "PASS secret" "\\`\\+OK")
 	      (converse "STAT" "\\`\\+OK 2 ")
-	      (converse "UIDL" "uid1")
-	      (converse "RETR 1" "Body of the first message")
+	      (converse "UIDL" "uid1" t)
+	      (converse "RETR 1" "Body of the first message" t)
 	      ;; The body is terminated by a dot on a line of its own.
-	      (converse "RETR 2" "\r\n\\.\r\n\\'")
+	      (converse "RETR 2" "\r\n\\.\r\n\\'" t)
 	      (converse "DELE 1" "\\`\\+OK")
 	      (converse "STAT" "\\`\\+OK 1 ")
 	      (converse "RSET" "\\`\\+OK")
