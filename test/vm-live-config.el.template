@@ -93,11 +93,23 @@
 ;;
 ;; :verify-server names one of the `vm-imap-test-servers' above, whose account
 ;; receives that mail; the test waits for it there and then deletes it.
+;;
+;; :to and :verify-server have to be two ends of the same mailbox.  The servers
+;; above are usually test accounts on a local dovecot, and a test account
+;; receives nothing that is sent to your address -- point :verify-server at one
+;; of those and every test sends its mail, waits :wait seconds and fails.  Give
+;; the account that actually receives :to, which may mean adding a server entry
+;; for your own IMAP account.
+;;
+;; :wait is how long delivery may take.  Sixty seconds is enough for a server
+;; that receives the mail directly; a mailbox that is a mirror -- mbsync,
+;; offlineimap -- needs however long the mirror takes, or the mail is there and
+;; the test has stopped looking.
 
 ;; (setq vm-send-test-config
 ;;       '(:from           "you@example.com"
 ;;         :to             "you@example.com"
-;;         :verify-server  "plain"
+;;         :verify-server  "your-own-account"
 ;;         :verify-mailbox "INBOX"
 ;;         :wait           60))
 

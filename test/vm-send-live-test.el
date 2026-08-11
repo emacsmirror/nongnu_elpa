@@ -40,7 +40,6 @@ The simplest thing VM does, and the thing no other test does at all."
         (setq subject s)
         (insert "One plain line of body.\n"))
       (let ((n (vm-send-live-await conn mailbox subject)))
-        (should n)
         (let ((text (vm-imap-live-cmd-ok conn "FETCH %s (BODY.PEEK[])" n)))
           (should (string-match-p (regexp-quote subject) text))
           (should (string-match-p "One plain line of body" text))
@@ -62,7 +61,6 @@ encoding happens on the way out."
       ;; plain text finds nothing; search for the part that stays ASCII.
       (let ((n (vm-send-live-await
                 conn mailbox (car (split-string subject " café")))))
-        (should n)
         (let ((text (vm-imap-live-cmd-ok conn "FETCH %s (BODY.PEEK[HEADER])" n)))
           (should (string-match-p "=\\?[Uu][Tt][Ff]-8\\?" text))
           (should-not (string-match-p "café" text)))))))
@@ -79,7 +77,6 @@ puts it back together, which is only checkable by receiving it."
         (setq subject s)
         (insert line "\n"))
       (let ((n (vm-send-live-await conn mailbox subject)))
-        (should n)
         (let ((text (vm-imap-live-cmd-ok conn "FETCH %s (BODY.PEEK[])" n)))
           ;; on the wire it is folded, with soft breaks
           (should (string-match-p "quoted-printable" (downcase text)))
@@ -114,7 +111,7 @@ emacs-vm/vm#597 gave VM its own FCC.  Every other test of it stubs
               ;; the filed copy does not carry the Fcc header
               (should-not (string-match-p "^Fcc:" (buffer-string))))
             ;; and the message still arrived
-            (should (vm-send-live-await conn mailbox subject)))
+            (vm-send-live-await conn mailbox subject))
         (delete-directory dir t)))))
 
 (provide 'vm-send-live-test)

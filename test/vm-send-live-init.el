@@ -49,7 +49,11 @@ Set in the gitignored test/vm-live-config.el; see the template.  A plist:
   :to              where the test message is sent.  Your own address: these
                    tests send real mail, and it must not reach anyone else.
   :verify-server   the name of a server in `vm-imap-test-servers' whose
-                   account receives that mail
+                   account receives that mail.  It and :to are two ends of
+                   one mailbox: a test account on a local dovecot, which is
+                   what those servers usually are, receives nothing sent to
+                   your address, and every test then sends its mail and waits
+                   for it in a mailbox it will never reach
   :verify-mailbox  the mailbox to look in there, \"INBOX\" unless said
   :wait            seconds to wait for delivery, 60 unless said
 
@@ -84,13 +88,13 @@ Sending itself is not described here: the config file sets
   ;; is a failure rather than a skip, as it is for the live IMAP tests.
   (vm-imap-live-skip-unless-server (vm-send-live-config :verify-server)))
 
+(defvar vm-send-live--counter 0
+  "Distinguishes two messages sent by the same run.")
+
 (defun vm-send-live-unique-subject (what)
   "A subject naming WHAT and this run, so that it can be found and only it."
   (format "vm-send-test %s %d-%d" what (emacs-pid)
           (cl-incf vm-send-live--counter)))
-
-(defvar vm-send-live--counter 0
-  "Distinguishes two messages sent by the same run.")
 
 (defmacro vm-send-live-with-composition (spec &rest body)
   "Compose a message, run BODY in its buffer, and send it.
@@ -105,6 +109,13 @@ test does not leave Emacs asking about it."
   (let ((subject (nth 0 spec)) (what (nth 1 spec)))
     `(let* ((,subject (vm-send-live-unique-subject ,what))
             (user-mail-address (vm-send-live-config :from))
+            ;; A composition needs a From header of its own.  VM leaves it to
+            ;; the MTA by default, but a configuration that takes the envelope
+            ;; sender from the header -- `mail-envelope-from' set to `header',
+            ;; which is how msmtp is usually driven -- then has nothing to send
+            ;; from, and `sendmail-send-it' dies with "Invalid address: nil".
+            ;; This is the option a person in that position sets.
+            (vm-mail-header-from (vm-send-live-config :from))
             (mail-from-style nil)
             (mail-setup-hook nil)
             (vm-mail-mode-hook nil)
@@ -130,8 +141,15 @@ test does not leave Emacs asking about it."
 
 (defun vm-send-live-await (conn mailbox subject &optional seconds)
   "Wait for a message with SUBJECT to appear in MAILBOX on CONN.
-Returns its sequence number, or nil if it does not arrive within SECONDS.
-Mail takes its own time, so this polls rather than assuming."
+Returns its sequence number.  Mail takes its own time, so this polls; it
+signals when the message does not arrive, since a test that goes on to check
+nothing is worse than one that says what went wrong.
+
+The likely cause is not slowness.  `:verify-server' has to be a server whose
+account receives what is sent to `:to' -- the two are ends of the same
+mailbox -- and a server configured for the live IMAP tests is usually a test
+account that receives nothing at all.  That is what the message says, with
+what the mailbox does hold, since an empty one makes the point on its own."
   (let ((deadline (+ (float-time) (or seconds (vm-send-live-config :wait 60))))
         (found nil))
     (while (and (not found) (< (float-time) deadline))
@@ -141,7 +159,26 @@ Mail takes its own time, so this polls rather than assuming."
         (when (string-match "\\* SEARCH \\([0-9 ]+\\)" text)
           (setq found (car (last (split-string (match-string 1 text)))))))
       (unless found (sleep-for 2)))
-    found))
+    (or found (vm-send-live-not-delivered conn mailbox subject))))
+
+(defun vm-send-live-not-delivered (conn mailbox subject)
+  "Signal that SUBJECT never turned up in MAILBOX on CONN, and say why not."
+  (let ((held (vm-send-live-message-count conn mailbox)))
+    (error (concat "%s never arrived in %s on the %s server, which holds %d"
+                   " message%s.  Sending worked; the search did not."
+                   "  :verify-server has to name a server whose account"
+                   " receives what is sent to :to -- one configured for the"
+                   " live IMAP tests is usually a test account that receives"
+                   " nothing.  Or raise :wait, if the mail is merely slow.")
+           subject mailbox (vm-send-live-config :verify-server) held
+           (if (= held 1) "" "s"))))
+
+(defun vm-send-live-message-count (conn mailbox)
+  "How many messages MAILBOX holds on CONN, from the SELECT response."
+  (let ((text (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)))
+    (if (string-match "^\\* \\([0-9]+\\) EXISTS" text)
+        (string-to-number (match-string 1 text))
+      0)))
 
 (defun vm-send-live-delete (conn mailbox n)
   "Delete and expunge message N in MAILBOX on CONN.
