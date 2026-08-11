@@ -924,6 +924,161 @@ other, so this is the invariant stated on its own."
       (vm-discard-summary-cache-of r)
       (should-not (vm-decoded-tokenized-summary-of r)))))
 
+;;; Creating a search folder (emacs-vm/vm#627)
+;;
+;; The nine vm-create-*-virtual-folder commands the manual documents had no
+;; test between them.  Each is a thin wrapper on `vm-create-virtual-folder'
+;; with a selector, which is exactly the kind of code that goes wrong by
+;; naming the wrong selector or dropping an argument, and never by failing
+;; loudly.
+
+(defconst vm-virtual-test--assorted
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: Alice Adams <alice@example.com>\nTo: list@example.org\n"
+          "Subject: badgers in the garden\n\nA body about badgers.\n\n"
+          "From bob@example.com Sun Aug  9 09:00:00 2026\n"
+          "From: Bob Brown <bob@example.com>\nTo: alice@example.com\n"
+          "Subject: the roof\n\nA body about slates.\n\n"
+          "From carol@example.com Mon Aug 10 10:00:00 2026\n"
+          "From: Carol Clark <carol@example.com>\nTo: bob@example.com\n"
+          "Subject: badgers again\n\nMore badgers.\n\n")
+  "Three messages that differ in author, recipient, subject and body.")
+
+(defmacro vm-virtual-test--with-real-folder (spec &rest body)
+  "Visit a folder of `vm-virtual-test--assorted' and run BODY.
+SPEC is (FOLDER-VAR).  Every buffer the visits create is killed afterwards,
+including the virtual folders BODY makes."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-virtual-create" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "real-folder" dir))
+               (vm-virtual-folder-alist nil)
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-visit-when-saving nil))
+           (write-region vm-virtual-test--assorted nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-virtual-test--subjects ()
+  "The subjects of the folder in the current buffer, in order."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(ert-deftest vm-virtual-test-an-author-search-folder-selects-by-author ()
+  "`vm-create-author-virtual-folder' collects the messages from one author."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-create-author-virtual-folder "alice")
+    (should (eq major-mode 'vm-virtual-mode))
+    (should (equal (vm-virtual-test--subjects) '("badgers in the garden")))))
+
+(ert-deftest vm-virtual-test-an-author-or-recipient-search-folder-takes-both ()
+  "`vm-create-author-or-recipient-virtual-folder' matches either end.
+Alice wrote one and received another, so the two searches differ -- which is
+the whole reason this command exists beside the author one."
+  (vm-virtual-test--with-real-folder (folder)
+    (vm-create-author-or-recipient-virtual-folder "alice")
+    (should (equal (vm-virtual-test--subjects)
+                   '("badgers in the garden" "the roof")))
+    (vm-visit-folder folder)
+    (vm-create-author-virtual-folder "alice")
+    (should (equal (vm-virtual-test--subjects) '("badgers in the garden")))))
+
+(ert-deftest vm-virtual-test-a-subject-search-folder-selects-by-subject ()
+  "`vm-create-subject-virtual-folder' matches the Subject header only.
+The body of the first message mentions badgers too, which is what tells this
+apart from the text search below."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-create-subject-virtual-folder "badgers")
+    (should (equal (vm-virtual-test--subjects)
+                   '("badgers in the garden" "badgers again")))))
+
+(ert-deftest vm-virtual-test-a-text-search-folder-looks-in-the-body ()
+  "`vm-create-text-virtual-folder' matches the text of the message.
+A word in a body and in no subject finds its message, which a subject search
+does not."
+  (vm-virtual-test--with-real-folder (folder)
+    (vm-create-text-virtual-folder "slates")
+    (should (equal (vm-virtual-test--subjects) '("the roof")))
+    (vm-visit-folder folder)
+    (vm-create-subject-virtual-folder "slates")
+    (should (equal (vm-virtual-test--subjects) nil))))
+
+(ert-deftest vm-virtual-test-a-label-search-folder-selects-by-label ()
+  "`vm-create-label-virtual-folder' collects the messages carrying a label."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-set-labels (nth 2 vm-message-list) '("todo"))
+    (vm-create-label-virtual-folder "todo")
+    (should (equal (vm-virtual-test--subjects) '("badgers again")))))
+
+(ert-deftest vm-virtual-test-a-flagged-search-folder-selects-the-flagged ()
+  "`vm-create-flagged-virtual-folder' takes the flagged messages and no more."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-set-flagged-flag (nth 1 vm-message-list) t)
+    (vm-create-flagged-virtual-folder)
+    (should (equal (vm-virtual-test--subjects) '("the roof")))))
+
+(ert-deftest vm-virtual-test-a-new-search-folder-takes-the-new-mail ()
+  "`vm-create-new-virtual-folder' collects what has not been looked at.
+A message is new when the folder is visited and stops being new when it is
+read, so clearing the flag on one takes it out of the search."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-set-new-flag (car vm-message-list) nil)
+    (vm-create-new-virtual-folder)
+    (should (equal (vm-virtual-test--subjects)
+                   '("the roof" "badgers again")))))
+
+(ert-deftest vm-virtual-test-an-unseen-search-folder-is-empty-in-fresh-mail ()
+  "Unseen is unread, which is not the same as new.
+A folder just visited is all new and none of it is unread, so this search finds
+nothing there -- worth stating, because the two commands sit next to each other
+in the manual and read as synonyms."
+  (vm-virtual-test--with-real-folder (_folder)
+    (should (cl-every #'vm-new-flag vm-message-list))
+    (should-not (cl-some #'vm-unread-flag vm-message-list))
+    (vm-create-unseen-virtual-folder)
+    (should-not (vm-virtual-test--subjects))))
+
+(ert-deftest vm-virtual-test-an-unseen-search-folder-takes-the-unread ()
+  "`vm-create-unseen-virtual-folder' collects the messages marked unread."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-set-unread-flag (nth 1 vm-message-list) t)
+    (vm-create-unseen-virtual-folder)
+    (should (equal (vm-virtual-test--subjects) '("the roof")))))
+
+(ert-deftest vm-virtual-test-a-date-search-folder-selects-by-age ()
+  "`vm-create-date-virtual-folder' takes the messages of the last N days.
+The fixture's dates are fixed, so `current-time' is stubbed to a day the
+arithmetic can be checked against rather than one that moves."
+  (vm-virtual-test--with-real-folder (_folder)
+    (cl-letf (((symbol-function 'current-time)
+               (lambda () (date-to-time "Mon, 10 Aug 2026 12:00:00 -0700"))))
+      ;; two days back reaches Sunday's message and Monday's, not Saturday's
+      (vm-create-date-virtual-folder 2)
+      (should (equal (vm-virtual-test--subjects)
+                     '("the roof" "badgers again"))))))
+
+(ert-deftest vm-virtual-test-a-search-folder-can-be-read-only ()
+  "The prefix argument every one of these takes makes the folder read only.
+Passed through `vm-create-virtual-folder', so checking it once checks the
+wrapper's argument order -- which is what a thin wrapper gets wrong."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-create-author-virtual-folder "alice" t)
+    (should vm-folder-read-only)))
+
+(ert-deftest vm-virtual-test-a-search-folder-is-named-after-its-search ()
+  "The folder's name says what was searched for, since several may be open."
+  (vm-virtual-test--with-real-folder (_folder)
+    (vm-create-subject-virtual-folder "badgers")
+    (should (string-match-p "badgers" (buffer-name)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
