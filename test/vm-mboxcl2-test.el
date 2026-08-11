@@ -415,6 +415,60 @@ crash box going into an mboxcl2 folder has to gain a length per message."
       (should (equal (mapcar #'car messages) '("already here" "newly arrived")))
       (should (equal (cdr (nth 1 messages)) "Fresh mail.\n")))))
 
+;;; Converting a folder to the type it already is (emacs-vm/vm#623)
+
+(ert-deftest vm-mboxcl2-test-the-current-type-is-offered-for-conversion ()
+  "The type a folder already has is among the ones offered.
+`vm-change-folder-type' used to remove it -- \"you cannot change to what you
+are\" -- so in an mboxcl2 folder the completions were BellFrom_, From_, babyl
+and mmdf, and the one conversion that repairs such a folder was the one it
+would not offer (emacs-vm/vm#623).
+
+The interactive spec is evaluated directly, since what is being checked is the
+list it puts to the user."
+  (vm-mboxcl2-test-with-folders (_source target)
+    (vm-mboxcl2-test--write target '(("one" . "Body.\n")))
+    (vm-visit-folder target)
+    (should (eq vm-folder-type 'mboxcl2))
+    (let ((offered nil))
+      (cl-letf (((symbol-function 'vm-read-string)
+                 (lambda (_prompt types &optional _multi)
+                   (setq offered types)
+                   "mboxcl2"))
+                ((symbol-function 'vm-read-file-name)
+                 (lambda (&rest _) (error "asked for a file with no prefix arg"))))
+        (let ((current-prefix-arg nil))
+          (should (equal (eval (cadr (interactive-form 'vm-change-folder-type)) t)
+                         '(mboxcl2 nil)))))
+      (should (member "mboxcl2" offered))
+      ;; and it offers the others as it always did
+      (should (member "From_" offered))
+      (should (member "babyl" offered)))))
+
+(ert-deftest vm-mboxcl2-test-converting-to-the-same-type-fixes-stale-lengths ()
+  "A folder whose lengths are wrong is repaired by converting it to mboxcl2.
+A wrong length is not a missing one: the folder opens, because the reader falls
+back on searching for the next separator, so nothing complains and the folder
+is wrong for anything that believes the header.  Converting it to the type it
+already has rewrites every message and recomputes every length."
+  (vm-mboxcl2-test-with-folders (_source target)
+    ;; written by hand, with lengths that are all wrong
+    (with-temp-buffer
+      (dolist (message '(("one" . "Body one is this long.\n")
+                         ("two" . "Body two.\n")))
+        (insert "From sender@example.com Sat Aug  8 14:24:13 2026\n"
+                "From: sender@example.com\nSubject: " (car message) "\n"
+                "Content-Length: 3\n\n" (cdr message)))
+      (write-region (point-min) (point-max) target nil 'quiet))
+    (should (eq (vm-get-folder-type target) 'mboxcl2))
+    (vm-visit-folder target)
+    (cl-letf (((symbol-function 'vm-display) #'ignore))
+      (vm-change-folder-type 'mboxcl2))
+    (let ((messages (vm-mboxcl2-test--read target)))
+      (should (equal (mapcar #'car messages) '("one" "two")))
+      (should (equal (cdr (nth 0 messages)) "Body one is this long.\n"))
+      (should (equal (cdr (nth 1 messages)) "Body two.\n")))))
+
 (provide 'vm-mboxcl2-test)
 
 ;;; vm-mboxcl2-test.el ends here
