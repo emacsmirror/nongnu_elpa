@@ -117,15 +117,17 @@ test-one: compile-lisp
 # Clean test artifacts
 clean:
 	-rm -f $(srcdir)/coverage-results.txt
-	@# The optional packages `make optional-packages' downloads.  They are
-	@# not committed and not built, so a clean checkout has none; leaving
-	@# them behind means a stale copy is what the tests run against.
-	-rm -rf $(srcdir)/opt/elpa
-	-rmdir $(srcdir)/opt 2> /dev/null || true
 	@# What VM itself writes during a run: the IMAP cache of any folder the
 	@# live tests visit.  In the tree so that this can remove it -- it used
 	@# to go to $$HOME, there being no other default.
 	-rm -rf $(srcdir)/scratch
 
 distclean: clean
+	@# The optional packages `make optional-packages' downloads -- bbdb,
+	@# emacs-w3m, vcard.  Not in `clean': they take the network to fetch,
+	@# and a `clean' that leaves the tests skipping until someone notices
+	@# is a poor trade.  They are not part of the checkout, so `distclean'
+	@# is where they go.
+	-rm -rf $(srcdir)/opt/elpa
+	-rmdir $(srcdir)/opt 2> /dev/null || true
 	-rm -f Makefile
