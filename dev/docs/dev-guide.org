@@ -78,6 +78,22 @@ IMAP harness' own client, waiting for it.
 The opt-in is a =vm-send-test-config= in =test/vm-live-config.el=; the template
 describes it.  Without one every test skips.
 
+=:to= and =:verify-server= have to be two ends of the same mailbox, and this is
+the thing to get wrong: the servers in =vm-imap-test-servers= are usually test
+accounts on a local dovecot, and such an account receives nothing that is sent
+to your address.  Point =:verify-server= at one of those and every test sends
+its mail, waits =:wait= seconds and fails -- which is what happened the first
+time this was run against a real configuration.  The failure says so now, and
+reports how many messages the mailbox holds, an empty one being the giveaway.
+
+Mail that arrives in a mirror -- mbsync, offlineimap -- arrives when the mirror
+next runs, so =:wait= has to cover that or the message is there and the test has
+stopped looking.
+
+The messages a failed run leaves behind are yours to remove: the cleanup looks
+in the same wrong mailbox.  They carry =X-VM-Send-Test= and a subject beginning
+=vm-send-test=.
+
 Unlike the live IMAP and POP tests these are *not* part of =make test=.  Those
 talk to a server on localhost, which costs nothing; sending mail leaves the
 machine, so it is asked for by name.  =vm-test-excluded-files= in
