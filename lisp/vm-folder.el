@@ -5684,7 +5684,14 @@ Interactively TYPE will be read from the minibuffer.
 
 With a prefix argument, or with FILE given, convert a folder on disk that VM
 is not visiting.  That is how to repair a folder VM will not read -- see
-`vm-change-folder-type-of-file'."
+`vm-change-folder-type-of-file'.
+
+The folder's current type is offered as well as the others: converting a
+folder to what it already is rewrites every message in it, which for mboxcl2
+recomputes every `Content-Length'.  That is the repair for a folder whose
+lengths are wrong -- and a wrong length is not a missing one, so such a folder
+opens without complaint and the reader quietly falls back on searching for the
+next separator."
   (interactive
    (let ((this-command this-command)
 	 (last-command last-command)
@@ -5697,9 +5704,7 @@ is not visiting.  That is how to repair a folder VM will not read -- see
      (save-current-buffer
        (unless file
 	 (vm-select-folder-buffer)
-	 (vm-error-if-virtual-folder)
-	 (setq types (vm-delqual (symbol-name vm-folder-type)
-				 (copy-sequence types))))
+	 (vm-error-if-virtual-folder))
        (list (vm-canonical-folder-type
 	      (intern (vm-read-string "Change folder to type: " types)))
 	     file))))

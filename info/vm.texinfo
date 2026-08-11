@@ -962,6 +962,13 @@ already claims is the repair --- every length is recomputed --- and the
 folder as it was is kept in a backup file, named as Emacs names one when
 saving a buffer.  Changing a visited folder's type keeps a backup too.
 
+A length that is wrong rather than missing needs the same repair and gives
+no sign of needing it: the folder opens, because VM falls back on searching
+for the next separator, while anything that believes the header --- which is
+what the format is for --- takes the wrong bytes.  The folder's own type is
+offered by @code{vm-change-folder-type} for this reason, so it can be run on
+a folder that is open in front of you.
+
 @vindex vm-folder-type-by-name-alist
 A folder that does not exist yet has no contents to examine, so a name
 can say what it is instead.  @code{vm-folder-type-by-name-alist} matches
