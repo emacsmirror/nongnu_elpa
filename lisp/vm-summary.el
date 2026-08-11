@@ -113,6 +113,17 @@ marked as modified."
   "Mark a thread root message M as expanded."
   (vm-set-folded-flag m nil))
 
+(defsubst vm-summary-folding-buffer ()
+  "The summary buffer whose text the folding commands are to alter.
+This buffer if it is a summary buffer, and `vm-summary-buffer' otherwise --
+which is nil in a summary buffer, so neither answer alone will do.  The
+su-start-of and su-end-of markers point into the summary, and applying them
+to the folder buffer signals args-out-of-range."
+  (if (eq major-mode 'vm-summary-mode)
+      (current-buffer)
+    (or vm-summary-buffer
+	(error "This folder has no summary buffer to fold"))))
+
 (defsubst vm-visible-message (m)
   (apply 'vm-vs-or m vm-summary-visible))
 
@@ -333,9 +344,13 @@ is the root of the thread you want expanded."
     (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
     (unless vm-summary-show-threads
       (error "Summary is not sorted by threads"))
-    (vm-follow-summary-cursor)
-    (set-buffer vm-summary-buffer))
-  (let ((buffer-read-only nil))
+    (vm-follow-summary-cursor))
+  ;; In the summary buffer, whoever called: the markers below point into it.
+  ;; This used to switch only when called interactively, so the Lisp call the
+  ;; docstring above invites -- with ROOT -- put text properties in the folder
+  ;; buffer and signalled args-out-of-range (emacs-vm/vm#627).
+  (with-current-buffer (vm-summary-folding-buffer)
+   (let ((buffer-read-only nil))
     (unless root
       (setq root (vm-thread-root (vm-summary-message-at-point))))
     (when (> (vm-thread-count root) 1)
@@ -347,7 +362,7 @@ is the root of the thread you want expanded."
 	  (vm-su-start-of m) (vm-su-end-of m) 'invisible nil))
        (vm-thread-subtree (vm-thread-symbol root)))
       (when (vm-interactive-p)
-	(vm-update-summary-and-mode-line)))))
+	(vm-update-summary-and-mode-line))))))
 
 ;;;###autoload
 (defun vm-collapse-thread (&optional nomove root)
@@ -367,9 +382,10 @@ ROOT, which is the root of the thread you want collapsed."
     (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
     (unless vm-summary-show-threads
       (error "Summary is not sorted by threads"))
-    (vm-follow-summary-cursor)
-    (set-buffer vm-summary-buffer))
-  (let ((buffer-read-only nil)
+    (vm-follow-summary-cursor))
+  ;; In the summary buffer, whoever called: as in `vm-expand-thread' above.
+  (with-current-buffer (vm-summary-folding-buffer)
+   (let ((buffer-read-only nil)
 	(msg nil))
     (unless root
       (setq msg (vm-summary-message-at-point))
@@ -390,7 +406,7 @@ ROOT, which is the root of the thread you want collapsed."
 	(unless nomove
 	  (when (get-text-property (+ (vm-su-start-of msg) 3) 'invisible)
 	    (goto-char (vm-su-start-of root))))
-	(vm-update-summary-and-mode-line)))))
+	(vm-update-summary-and-mode-line))))))
 	
 ;;;###autoload
 (defun vm-expand-all-threads ()

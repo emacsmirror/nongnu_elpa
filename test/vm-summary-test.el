@@ -528,6 +528,129 @@ buffer but then used the virtual message's own start marker, mixing the two."
       (should-not (vm-grok-From_-author m))
       (should-not (vm-grok-From_-date m)))))
 
+;;; Folding a thread in the summary (emacs-vm/vm#627)
+;;
+;; The four commands the manual documents for this -- vm-collapse-thread,
+;; vm-expand-thread, vm-collapse-all-threads, vm-expand-all-threads -- had no
+;; test between them.
+
+(defconst vm-summary-test--thread
+  (concat "From a@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: a@example.com\nMessage-ID: <root@example.com>\n"
+          "Subject: the root\n\nRoot body.\n\n"
+          "From b@example.com Sat Aug  8 15:00:00 2026\n"
+          "From: b@example.com\nMessage-ID: <kid1@example.com>\n"
+          "References: <root@example.com>\nSubject: Re: the root\n\nFirst reply.\n\n"
+          "From c@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: c@example.com\nMessage-ID: <kid2@example.com>\n"
+          "References: <root@example.com> <kid1@example.com>\n"
+          "Subject: Re: the root\n\nSecond reply.\n\n")
+  "A root and two replies, which References makes one thread of three.")
+
+(defmacro vm-summary-test--with-thread (spec &rest body)
+  "Visit a folder of one three-message thread and run BODY.
+SPEC is (FOLDER-VAR).  Threads are shown and folding is on, and every message
+is marked read: `vm-summary-visible' keeps new messages visible whatever the
+fold says, so a folder of new mail cannot show folding at all."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-summary-thread" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "threaded" dir))
+               (vm-summary-show-threads t)
+               (vm-summary-enable-thread-folding t)
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil))
+           (write-region vm-summary-test--thread nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             (dolist (m vm-message-list)
+               (vm-set-new-flag m nil)
+               (vm-set-unread-flag m nil))
+             (vm-update-summary-and-mode-line)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-summary-test--hidden-replies ()
+  "How many of the thread's replies are invisible in the summary."
+  (with-current-buffer vm-summary-buffer
+    (let ((n 0))
+      (dolist (m (cdr vm-message-list))
+        (when (get-text-property (vm-su-start-of m) 'invisible)
+          (setq n (1+ n))))
+      n)))
+
+(ert-deftest vm-summary-test-collapsing-a-thread-hides-its-replies ()
+  "`vm-collapse-thread' hides the replies and leaves the root showing.
+Called from Lisp with a root, which is what its docstring tells a program to
+do -- and what used to signal args-out-of-range, the text properties being
+applied to the folder buffer while the markers point into the summary."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (should (eq root (vm-thread-root root)))
+      (should (= (vm-thread-count root) 3))
+      (vm-collapse-thread nil root)
+      (should (vm-collapsed-root-p root))
+      (should (= (vm-summary-test--hidden-replies) 2))
+      ;; the root itself stays visible, or there would be nothing to click
+      (with-current-buffer vm-summary-buffer
+        (should-not (get-text-property (vm-su-start-of root) 'invisible))))))
+
+(ert-deftest vm-summary-test-expanding-a-thread-shows-them-again ()
+  "`vm-expand-thread' undoes it, and marks the root expanded."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (vm-collapse-thread nil root)
+      (should (= (vm-summary-test--hidden-replies) 2))
+      (vm-expand-thread root)
+      (should (vm-expanded-root-p root))
+      (should-not (vm-collapsed-root-p root))
+      (should (= (vm-summary-test--hidden-replies) 0)))))
+
+(ert-deftest vm-summary-test-collapse-and-expand-all-threads ()
+  "The all-threads commands do it to every thread in the folder.
+They work from the folder buffer, unlike the two above, because they wrap the
+per-thread call in the summary buffer themselves -- which is how the bug in
+those two stayed hidden."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (vm-collapse-all-threads)
+      (should (vm-collapsed-root-p root))
+      (should (= (vm-summary-test--hidden-replies) 2))
+      (vm-expand-all-threads)
+      (should (vm-expanded-root-p root))
+      (should (= (vm-summary-test--hidden-replies) 0)))))
+
+(ert-deftest vm-summary-test-folding-needs-both-options ()
+  "Folding refuses to run unless it is enabled and the summary is threaded.
+Two separate refusals: without `vm-summary-enable-thread-folding' there is no
+folding at all, and without `vm-summary-show-threads' there are no threads to
+fold."
+  (vm-summary-test--with-thread (_folder)
+    (let ((text-quoting-style 'grave))
+      (let ((vm-summary-enable-thread-folding nil))
+        (should (string-match-p "folding"
+                                (cadr (should-error (vm-collapse-thread))))))
+      (let ((vm-summary-show-threads nil))
+        (should (string-match-p "threads"
+                                (cadr (should-error (vm-collapse-all-threads)))))))))
+
+(ert-deftest vm-summary-test-a-new-reply-stays-visible-when-folded ()
+  "A collapsed thread still shows a reply that has not been read.
+`vm-summary-visible' is ((new)) out of the box, and folding a thread away
+whose unread mail you have not seen would hide the reason you were looking."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (vm-set-new-flag (nth 1 vm-message-list) t)
+      (vm-update-summary-and-mode-line)
+      (vm-collapse-thread nil root)
+      (should (= (vm-summary-test--hidden-replies) 1)))))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here
