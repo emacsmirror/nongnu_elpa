@@ -706,6 +706,72 @@ first version of the fix got the wrong way round, so it wrote nothing."
             (should (= (length vm-message-list) 2))))
       (delete-directory dir t))))
 
+(ert-deftest vm-postpone-test-a-draft-is-continued-out-of-an-mboxcl2-folder ()
+  "A draft in an mboxcl2 folder is continued into a composition, cleanly.
+The other half of postponing: the folder holds the draft with a
+`Content-Length', and that header must not follow it into the composition and
+out onto the wire.  It does not, because `vm-continue-postponed-message'
+rebuilds the headers from `vm-postponed-message-headers', a keep-list -- which
+is worth a test, since a keep-list is exactly the kind of thing someone
+extends without thinking about mboxcl2."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-postpone-cont" t))))
+    (unwind-protect
+        (let ((folder (expand-file-name "drafts.mboxcl2" dir))
+              (vm-postpone-message-hook nil)
+              (vm-continue-postponed-message-hook nil)
+              (user-mail-address "me@example.com"))
+          (cl-letf (((symbol-function 'vm-delete-postponed-message) #'ignore)
+                    ((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (with-temp-buffer
+              (insert "To: someone@example.com\nSubject: a draft\n"
+                      mail-header-separator "\nUnfinished business.\n")
+              (vm-postpone-message folder t))
+            (vm-visit-folder folder)
+            (should (eq vm-folder-type 'mboxcl2))
+            (setq vm-message-pointer vm-message-list)
+            (vm-continue-postponed-message)
+            ;; the composition has the draft, and none of the folder's
+            ;; bookkeeping
+            (should (string-match-p "^To: someone@example.com$" (buffer-string)))
+            (should (string-match-p "^Subject: a draft$" (buffer-string)))
+            (should (string-match-p "Unfinished business" (buffer-string)))
+            (should-not (string-match-p "Content-Length" (buffer-string)))
+            (should-not (string-match-p "X-VM-postponed-data" (buffer-string)))
+            (set-buffer-modified-p nil)))
+      (delete-directory dir t))))
+
+(ert-deftest vm-postpone-test-a-draft-being-previewed-keeps-its-body ()
+  "Continuing a draft that has not been shown yet copies its body.
+A message being previewed has its presentation buffer narrowed to the headers
+and however many lines `vm-preview-lines' says -- none, by default -- and the
+body was copied from whatever was visible there.  So continuing a draft
+straight from the summary, without pressing SPC first, produced a composition
+with no text in it (emacs-vm/vm#621).
+
+The state matters: this test does not show the message, which is what makes it
+the failing case."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-postpone-prev" t))))
+    (unwind-protect
+        (let ((folder (expand-file-name "drafts.mbox" dir))
+              (vm-postpone-message-hook nil)
+              (vm-continue-postponed-message-hook nil)
+              (user-mail-address "me@example.com"))
+          (cl-letf (((symbol-function 'vm-delete-postponed-message) #'ignore)
+                    ((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (with-temp-buffer
+              (insert "To: someone@example.com\nSubject: a draft\n"
+                      mail-header-separator "\nUnfinished business.\n")
+              (vm-postpone-message folder t))
+            (vm-visit-folder folder)
+            (should (eq vm-system-state 'previewing))
+            (setq vm-message-pointer vm-message-list)
+            (vm-continue-postponed-message)
+            (should (string-match-p "Unfinished business" (buffer-string)))
+            (set-buffer-modified-p nil)))
+      (delete-directory dir t))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
