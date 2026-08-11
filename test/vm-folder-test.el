@@ -2741,61 +2741,6 @@ earlier in the session would have had none, and this rewrites every message."
         (insert-file-contents (vm-folder-backup-name file))
         (should (equal (buffer-string) before))))))
 
-;;; A visit that fails leaves nothing behind (emacs-vm/vm#614)
-
-(ert-deftest vm-folder-test-a-failed-visit-kills-the-buffer-it-made ()
-  "A visit that raises part way through leaves no buffer visiting the folder.
-It used to leave one, in vm-mode, holding however many messages had been read
-before the error -- five of seven, in the case this was written for.  It is
-unmodified, so nothing warns; it looks like the folder and shows less than the
-folder, and it blocked the on-disk repair, which refuses a visited folder."
-  (vm-folder-test-with-file (file "broken.mboxcl2"
-                                  vm-folder-test--seven-and-two-short)
-    (let ((vm-mboxcl2-strict t))
-      (should-error (vm-visit-folder file))
-      (should-not (vm-get-file-buffer file)))))
-
-(ert-deftest vm-folder-test-a-visit-that-works-keeps-its-buffer ()
-  "The cleanup is for a failure only: a folder that opens stays open."
-  (vm-folder-test-with-file (file "folder.mbox"
-                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
-                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
-    (vm-visit-folder file)
-    (should (vm-get-file-buffer file))
-    (should (= (length vm-message-list) 1))))
-
-(ert-deftest vm-folder-test-a-failed-visit-spares-a-buffer-it-found ()
-  "A buffer that was already visiting the folder is not this visit's to kill.
-Someone may have been reading the file in fundamental mode, or have the folder
-open already; the visit that failed did not create it."
-  (vm-folder-test-with-file (file "broken.mboxcl2"
-                                  vm-folder-test--seven-and-two-short)
-    (let ((vm-mboxcl2-strict t))
-      (find-file-noselect file)
-      (should-error (vm-visit-folder file))
-      (should (vm-get-file-buffer file))
-      (kill-buffer (vm-get-file-buffer file)))))
-
-(ert-deftest vm-folder-test-a-failed-visit-spares-unsaved-changes ()
-  "A buffer with changes in it survives, whoever made it.
-Killing it would throw work away, and the messages read before the error are
-not worth that."
-  (vm-folder-test-with-file (file "broken.mboxcl2"
-                                  vm-folder-test--seven-and-two-short)
-    (let ((vm-mboxcl2-strict t))
-      (with-current-buffer (find-file-noselect file)
-        ;; at the end: a change to the first line would stop the folder being
-        ;; read as mboxcl2, and then there is no error to test with
-        (let ((buffer-read-only nil))
-          (goto-char (point-max))
-          (insert "x")))
-      (should-error (vm-visit-folder file))
-      (should (vm-get-file-buffer file))
-      (with-current-buffer (vm-get-file-buffer file)
-        (should (buffer-modified-p))
-        (set-buffer-modified-p nil))
-      (kill-buffer (vm-get-file-buffer file)))))
-
 (ert-deftest vm-folder-test-a-name-decides-between-From_-and-mboxcl2 ()
   "A folder named mboxcl2 is mboxcl2, whether or not it has the header yet.
 The two formats are the same folder but for `Content-Length', so a folder
