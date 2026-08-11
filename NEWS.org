@@ -1,4 +1,5 @@
-#+TITLE: Changelog for =gnuplot.el=
+#+title: gnuplot.el - News
+#+language: en
 
 * Version 0.12 (2026-05-19)
 
