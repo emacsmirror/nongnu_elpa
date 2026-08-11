@@ -1287,6 +1287,30 @@ are left external, which is what makes the fetch a bunched one."
           (let ((vm-confirm-quit nil))
             (ignore-errors (vm-quit-no-change))))))))
 
+(ert-deftest vm-imap-live-test-the-skip-helper-works-outside-a-test-body ()
+  "`vm-imap-live-skip-unless-server' skips when called from a function.
+It used to expand to `skip-unless', which `ert-deftest' binds with
+`cl-macrolet' -- so it exists inside a test body and nowhere else.  Called
+from a test it worked; called from a helper function, as the mail-sending
+tests call it, every one of them died with \"(void-function skip-unless)\"
+instead of skipping.
+
+Checked by catching the skip rather than being skipped by it."
+  ;; before the let: binding a variable this file has not seen declared makes
+  ;; it lexical, and the defvar in the required file then refuses it
+  (require 'vm-send-live-init)
+  (let ((vm-imap-test-servers nil))
+    (should-error (funcall (lambda () (vm-imap-live-skip-unless-server "plain")))
+                  :type 'ert-test-skipped))
+  ;; and the same for the one the mail-sending tests call, with a config that
+  ;; gets past its own check and into the IMAP one
+  (let ((vm-imap-test-servers nil)
+        (vm-send-test-config '(:from "me@example.com" :to "me@example.com"
+                               :verify-server "nowhere"))
+        (send-mail-function 'sendmail-send-it))
+    (should-error (funcall (lambda () (vm-send-live-skip-unless-configured)))
+                  :type 'ert-test-skipped)))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here

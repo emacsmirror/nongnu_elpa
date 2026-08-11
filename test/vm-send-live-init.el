@@ -77,9 +77,12 @@ Sending itself is not described here: the config file sets
        t))
 
 (defun vm-send-live-skip-unless-configured ()
-  "Skip the test unless mail can be sent and its arrival checked."
-  (unless (vm-send-live-configured-p)
-    (ert-skip "No vm-send-test-config in test/vm-live-config.el"))
+  "Skip the test unless mail can be sent and its arrival checked.
+`vm-test-skip-unless' throughout: `skip-unless' is bound by `ert-deftest'
+itself, with `cl-macrolet', so it does not exist in a function called from
+one."
+  (vm-test-skip-unless (vm-send-live-configured-p)
+		       "No vm-send-test-config in test/vm-live-config.el")
   ;; The mailbox has to be reachable too, and a named-but-unreachable server
   ;; is a failure rather than a skip, as it is for the live IMAP tests.
   (vm-imap-live-skip-unless-server (vm-send-live-config :verify-server)))

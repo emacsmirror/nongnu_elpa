@@ -99,15 +99,23 @@ Falls back to `vm-live-config-obsolete-file', warning about the name."
   (seq-find (lambda (s) (equal (plist-get s :name) name))
             vm-imap-test-servers))
 
-(defmacro vm-imap-live-skip-unless-server (name)
+(defun vm-imap-live-skip-unless-server (name)
   "Skip the running test unless a server called NAME is configured.
 Skipping when nothing is configured is intended.  Failing when a configured
 server cannot be reached is also intended, and happens later, at connect
 time -- a suite that silently skips a server it was told about is a suite
-with no coverage."
-  `(progn
-     (skip-unless (vm-imap-live-available-p))
-     (skip-unless (vm-imap-live-server ,name))))
+with no coverage.
+
+Written with `vm-test-skip-unless' rather than `skip-unless'.  `skip-unless' is bound
+by `ert-deftest' with `cl-macrolet', so it exists only inside a test body:
+a helper that used it worked when called from a test and failed with
+\"(void-function skip-unless)\" when called from a function, which is what
+happened to the mail-sending tests."
+  (vm-test-skip-unless (vm-imap-live-available-p)
+		       "No live IMAP configuration in test/vm-live-config.el")
+  (vm-test-skip-unless (vm-imap-live-server name)
+		       (format "No server called %s in vm-imap-test-servers"
+			       name)))
 
 ;;; ------------------------------------------------------------------
 ;;; Independent minimal IMAP client
