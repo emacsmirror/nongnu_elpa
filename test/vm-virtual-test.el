@@ -835,6 +835,95 @@ Göran reported the Z of a forward as well as the D of a delete."
       (should (string-match-p "Z" (vm-virtual-test--summary-flags
                                    vm-summary-buffer))))))
 
+(ert-deftest vm-virtual-test-every-attribute-letter-shows-at-once ()
+  "Each attribute that has a letter in the summary gets it without a revisit.
+Göran named the D of a delete and the Z of a forward; the summary has eight
+such letters and they all come from the same cached line, so they all failed
+the same way.  Checked here in the three columns they live in, since a letter
+in one column masks the ones below it in the same `cond'."
+  (vm-virtual-test--with-folders (_real virt-a _virt-b)
+    (with-current-buffer virt-a
+      (setq vm-message-pointer vm-message-list)
+      (let ((m (car vm-message-list)))
+        ;; column one: deleted beats new beats unread beats flagged
+        (vm-set-new-flag m nil)
+        (vm-set-unread-flag m nil)
+        (vm-set-flagged-flag m t)
+        (vm-update-summary-and-mode-line)
+        (should (string-match-p "!" (vm-virtual-test--summary-flags
+                                     vm-summary-buffer)))
+        ;; column two
+        (vm-set-filed-flag m t)
+        (vm-update-summary-and-mode-line)
+        (should (string-match-p "F" (vm-virtual-test--summary-flags
+                                     vm-summary-buffer)))
+        ;; column three
+        (vm-set-replied-flag m t)
+        (vm-update-summary-and-mode-line)
+        (should (string-match-p "R" (vm-virtual-test--summary-flags
+                                     vm-summary-buffer)))
+        ;; column four.  Editing sets this through the accessor, there being
+        ;; no vm-set-edited-flag of the kind the others have.
+        (vm-set-edited-flag-of m t)
+        (vm-mark-for-summary-update m)
+        (vm-update-summary-and-mode-line)
+        (should (string-match-p "E" (vm-virtual-test--summary-flags
+                                     vm-summary-buffer)))))))
+
+(ert-deftest vm-virtual-test-a-label-change-shows-in-a-virtual-folder ()
+  "A label added in a virtual folder appears in its summary at once.
+Not only the attribute letters: a summary format with %L in it -- and a virtual
+folder selected by label is the reason to have one -- was equally stale, the
+whole line coming from the one cache."
+  (vm-virtual-test--with-folders (_real virt-a _virt-b)
+    (with-current-buffer virt-a
+      (let ((vm-summary-format "%n %L %s\n"))
+        ;; regenerate under this format, so the label is on the line
+        (vm-set-summary-redo-start-point t)
+        (vm-update-summary-and-mode-line)
+        (setq vm-message-pointer vm-message-list)
+        (vm-add-message-labels "todo" 1)
+        (with-current-buffer vm-summary-buffer
+          (should (string-match-p "todo" (buffer-string))))))))
+
+(ert-deftest vm-virtual-test-renumbering-does-not-throw-the-summary-away ()
+  "`dont-kill-cache' still means what it says.
+Renumbering and thread indentation pass it, because they change what is around
+a summary line rather than the line itself, and rebuilding every line for them
+would be waste.  The cache-clearing added for emacs-vm/vm#623 is inside that
+guard, and this pins it: a marked-with-DONT-KILL-CACHE update leaves the
+cached line in place."
+  (vm-virtual-test--with-folders (_real virt-a _virt-b)
+    (with-current-buffer virt-a
+      (let* ((m (car vm-message-list))
+             (cached (vm-su-summary m)))
+        (should cached)
+        (vm-mark-for-summary-update m t)
+        (should (eq (vm-virtual-summary-of m) cached))
+        ;; and without the flag it is thrown away
+        (vm-mark-for-summary-update m)
+        (should-not (vm-virtual-summary-of m))))))
+
+(ert-deftest vm-virtual-test-the-cache-helper-clears-the-right-slot ()
+  "`vm-discard-summary-cache-of' clears the slot its message actually uses.
+The bug was one slot being cleared for a message that keeps its summary in the
+other, so this is the invariant stated on its own."
+  (vm-virtual-test--with-folders (real virt-a _virt-b)
+    (let ((v (with-current-buffer virt-a (car vm-message-list)))
+          (r (with-current-buffer real (car vm-message-list))))
+      (should (vm-virtual-message-p v))
+      (should-not (vm-virtual-message-p r))
+      ;; fill both caches
+      (vm-su-summary v)
+      (vm-su-summary r)
+      (should (vm-virtual-summary-of v))
+      (should (vm-decoded-tokenized-summary-of r))
+      (vm-discard-summary-cache-of v)
+      (should-not (vm-virtual-summary-of v))
+      (should (vm-decoded-tokenized-summary-of r)) ; untouched
+      (vm-discard-summary-cache-of r)
+      (should-not (vm-decoded-tokenized-summary-of r)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
