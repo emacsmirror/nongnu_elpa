@@ -1617,7 +1617,12 @@ If MODES is nil the take the modes from the variable
 	 (error nil))))
 
 (defun vm-multiple-frames-possible-p ()
-  (cond ((featurep 'xemacs)
+  "Whether VM may put a buffer in a frame of its own.
+Never in a batch Emacs: `make-frame' is defined there and fails, with
+\"Unknown terminal type\", so a composition made by a script died at the
+point where VM went to give it a frame."
+  (cond (noninteractive nil)
+	((featurep 'xemacs)
 	 (or (memq 'win (device-matching-specifier-tag-list))
 	     (featurep 'tty-frames)))
         ((not (featurep 'xemacs))
