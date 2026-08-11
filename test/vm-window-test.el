@@ -234,12 +234,18 @@ Creates initial frame and sets up all frame function mocks."
 
 ;;; vm-multiple-frames-possible-p tests
 
-(ert-deftest vm-window-test-multiple-frames-possible-p ()
-  "Test vm-multiple-frames-possible-p checks for make-frame."
-  ;; In batch mode with GUI Emacs, make-frame is usually fboundp
-  (if (fboundp 'make-frame)
-      (should (vm-multiple-frames-possible-p))
-    (should-not (vm-multiple-frames-possible-p))))
+(ert-deftest vm-window-test-multiple-frames-are-not-possible-in-batch ()
+  "A batch Emacs cannot make a frame, whatever `make-frame\=' says.
+`make-frame\=' is defined there and fails with \"Unknown terminal type\", so
+VM used to answer yes and die at the point where it went to give a
+composition a frame -- which is what `make test-send\=' did
+(emacs-vm/vm#617).  Interactively the answer is `make-frame\=' as before."
+  (should noninteractive)                ; the suite runs in batch
+  (should-not (vm-multiple-frames-possible-p))
+  (let ((noninteractive nil))
+    (if (fboundp 'make-frame)
+        (should (vm-multiple-frames-possible-p))
+      (should-not (vm-multiple-frames-possible-p)))))
 
 ;;; vm-set-hooks-for-frame-deletion tests
 
