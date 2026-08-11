@@ -931,7 +931,13 @@ message."
 	    (save-excursion
 	      (search-forward "\n\n" nil 0)
 	      (setq start (point)))
-	    (let ((vm-folder-type old-type))
+	    (let ((vm-folder-type old-type)
+		  ;; This is measuring a message in order to give it a length,
+		  ;; so its having none is the ordinary case here and not the
+		  ;; folder-is-broken case `vm-mboxcl2-strict' is about.  A
+		  ;; digest burst builds its messages and converts them, and
+		  ;; with strictness on that raised on the first one.
+		  (vm-mboxcl2-strict nil))
 	      (vm-find-trailing-message-separator))
 	    (setq length (- (point) start)))))
     ;; chop out content-length header if new format doesn't need
