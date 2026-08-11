@@ -379,6 +379,42 @@ unreadable by anything that believes the header if the length stays as it was."
       (should-not (string-match-p "VGhpcyBpcyBh" (cdr (nth 0 messages))))
       (should (string-match-p "Please find it attached" (cdr (nth 0 messages)))))))
 
+(ert-deftest vm-mboxcl2-test-mail-gobbled-from-a-crash-box-gets-lengths ()
+  "New mail arriving through a crash box is converted on the way in.
+That is the last step of every arrival -- movemail, POP and IMAP all leave
+their mail in a crash box and `vm-gobble-crash-box' appends it -- and a From_
+crash box going into an mboxcl2 folder has to gain a length per message."
+  (vm-mboxcl2-test-with-folders (crash target)
+    (vm-mboxcl2-test--write target '(("already here" . "First body.\n")))
+    (write-region (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                          "From: alice@example.com\nSubject: newly arrived\n"
+                          "\nFresh mail.\n\n"
+                          "From bob@example.com Sun Aug  9 09:00:00 2026\n"
+                          "From: bob@example.com\nSubject: and another\n"
+                          "\nMore of it.\n\n")
+                  nil crash nil 'quiet)
+    (vm-visit-folder target)
+    (cl-letf (((symbol-function 'vm-display) #'ignore))
+      (should (vm-gobble-crash-box crash)))
+    (let ((messages (vm-mboxcl2-test--read target)))
+      (should (equal (mapcar #'car messages)
+                     '("already here" "newly arrived" "and another")))
+      (should (equal (cdr (nth 1 messages)) "Fresh mail.\n"))
+      (should (equal (cdr (nth 2 messages)) "More of it.\n")))))
+
+(ert-deftest vm-mboxcl2-test-a-crash-box-of-the-same-type-is-appended-as-it-is ()
+  "A crash box that is already mboxcl2 keeps the lengths it came with."
+  (vm-mboxcl2-test-with-folders (crash target)
+    (setq crash (concat crash ".mboxcl2"))
+    (vm-mboxcl2-test--write target '(("already here" . "First body.\n")))
+    (vm-mboxcl2-test--write crash '(("newly arrived" . "Fresh mail.\n")))
+    (vm-visit-folder target)
+    (cl-letf (((symbol-function 'vm-display) #'ignore))
+      (should (vm-gobble-crash-box crash)))
+    (let ((messages (vm-mboxcl2-test--read target)))
+      (should (equal (mapcar #'car messages) '("already here" "newly arrived")))
+      (should (equal (cdr (nth 1 messages)) "Fresh mail.\n")))))
+
 (provide 'vm-mboxcl2-test)
 
 ;;; vm-mboxcl2-test.el ends here
