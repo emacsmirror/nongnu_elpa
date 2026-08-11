@@ -431,18 +431,27 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
       (search-forward-regexp "\n\n")
       (replace-match (concat "\n" mail-header-separator "\n") t t)
 
-      ;; Add message body as previewed
+      ;; Add the message body.  Widened, in both buffers: a message being
+      ;; previewed has its presentation buffer narrowed to the headers and
+      ;; however many lines `vm-preview-lines' says, and the folder buffer is
+      ;; narrowed to the message being shown -- so the body was copied from
+      ;; whatever happened to be visible, and continuing a draft without
+      ;; showing it first produced a composition with no text in it at all
+      ;; (emacs-vm/vm#621).
       (goto-char (point-max))
-      (if presentation-buffer
-          ;; when using presentation buffer we have to
-          (with-current-buffer presentation-buffer
-            (goto-char (point-min))
-            (search-forward-regexp "\n\n")
-            (setq tstart (match-end 0)
-                  tend (point-max)))
-        (setq presentation-buffer folder-buffer))
-            
-      (insert-buffer-substring presentation-buffer tstart tend)
+      (insert
+       (if presentation-buffer
+           (with-current-buffer presentation-buffer
+             (save-excursion
+               (save-restriction
+                 (widen)
+                 (goto-char (point-min))
+                 (search-forward-regexp "\n\n")
+                 (buffer-substring (match-end 0) (point-max)))))
+         (with-current-buffer folder-buffer
+           (save-restriction
+             (widen)
+             (buffer-substring tstart tend)))))
       ;; in order to show headers hidden by vm-shrunken-headers 
       (put-text-property (point-min) (point-max) 'invisible nil)
       
