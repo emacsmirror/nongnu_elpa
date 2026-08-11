@@ -93,6 +93,31 @@ finding them by name is that it cannot."
     (should-not (memq 'features vars))
     (should-not (memq 'load-path vars))))
 
+;;; Nothing a run writes lands outside the tree
+
+(ert-deftest vm-test-init-test-the-imap-cache-goes-in-the-tree ()
+  "A cache file VM writes during a run is inside the test directory.
+`vm-imap-make-filename-for-spec' falls back to `vm-folder-directory' and then
+to $HOME, so with neither set the live IMAP tests wrote imap-cache-<md5> into
+the developer's home directory and Emacs left a backup beside it.  The suite
+sets `vm-imap-folder-cache-directory' to `vm-test-scratch-dir' for that reason,
+and `make clean' removes it."
+  (require 'vm-imap)
+  (should vm-imap-folder-cache-directory)
+  (should (equal (file-name-as-directory vm-imap-folder-cache-directory)
+                 vm-test-scratch-dir))
+  ;; under the test directory, and so not under $HOME by accident
+  (should (string-prefix-p (expand-file-name vm-test-dir)
+                           (expand-file-name vm-test-scratch-dir)))
+  ;; and that is where a real cache name comes out
+  (let ((file (vm-imap-make-filename-for-spec
+               "imap:mail.example.com:143:INBOX:login:someone:secret")))
+    (should (string-prefix-p (expand-file-name vm-test-scratch-dir)
+                            (expand-file-name file)))
+    (should (string-match-p "imap-cache-[0-9a-f]+\\'" file))
+    (should-not (equal (file-name-directory (expand-file-name file))
+                       (file-name-as-directory (expand-file-name "~"))))))
+
 (provide 'vm-test-init-test)
 
 ;;; vm-test-init-test.el ends here

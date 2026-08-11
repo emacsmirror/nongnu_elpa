@@ -122,6 +122,10 @@ clean:
 	@# them behind means a stale copy is what the tests run against.
 	-rm -rf $(srcdir)/opt/elpa
 	-rmdir $(srcdir)/opt 2> /dev/null || true
+	@# What VM itself writes during a run: the IMAP cache of any folder the
+	@# live tests visit.  In the tree so that this can remove it -- it used
+	@# to go to $$HOME, there being no other default.
+	-rm -rf $(srcdir)/scratch
 
 distclean: clean
 	-rm -f Makefile
