@@ -1,4 +1,5 @@
-#+options: toc:nil num:nil author:nil
+#+title: simple-httpd.el - News
+#+language: en
 
 * Version 1.6 (2026-05-19)
 
