@@ -50,7 +50,11 @@ The simplest thing VM does, and the thing no other test does at all."
   "A Subject outside US-ASCII arrives encoded, not as raw bytes.
 It went out raw whenever `vm-send-using-mime' was nil until the encoding was
 moved into the send path (emacs-vm/vm#606), and no test could see it: the
-encoding happens on the way out."
+encoding happens on the way out.
+
+Which charset is VM's business -- an e-acute arrived as
+=?iso-8859-1?Q?caf=E9?=, and insisting on UTF-8 here failed a message that was
+perfectly well encoded."
   (vm-send-live-skip-unless-configured)
   (vm-send-live-with-delivery (conn mailbox)
     (let (subject)
@@ -58,11 +62,13 @@ encoding happens on the way out."
         (setq subject s)
         (insert "Body.\n"))
       ;; The subject on the wire is RFC 2047 encoded, so searching for the
-      ;; plain text finds nothing; search for the part that stays ASCII.
+      ;; plain text finds nothing.  Search for the run and message number at
+      ;; the end of it: ASCII, and unlike the words at the front it does not
+      ;; also match what an earlier run left behind.
       (let ((n (vm-send-live-await
-                conn mailbox (car (split-string subject " café")))))
+                conn mailbox (car (last (split-string subject " "))))))
         (let ((text (vm-imap-live-cmd-ok conn "FETCH %s (BODY.PEEK[HEADER])" n)))
-          (should (string-match-p "=\\?[Uu][Tt][Ff]-8\\?" text))
+          (should (string-match-p "Subject:[^\n]*=\\?[^?]+\\?[QqBb]\\?" text))
           (should-not (string-match-p "café" text)))))))
 
 (ert-deftest vm-send-live-test-a-long-line-arrives-whole ()
