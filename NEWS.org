@@ -1,4 +1,5 @@
-#+title: Elfeed Changelog
+#+title: Elfeed News
+#+language: en
 
 * Development
 
