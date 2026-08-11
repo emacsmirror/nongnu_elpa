@@ -40,6 +40,18 @@
   (expand-file-name "fixtures" vm-test-dir)
   "Directory containing test fixtures.")
 
+(defvar vm-test-scratch-dir
+  (file-name-as-directory (expand-file-name "scratch" vm-test-dir))
+  "Directory for files the tests make VM write of its own accord.
+In the tree, so that `make clean' removes it and a developer can see what was
+left behind; a run leaves nothing anywhere else.
+
+The IMAP cache is why this exists.  `vm-imap-make-filename-for-spec' names a
+cache file after the MD5 of the maildrop, in `vm-imap-folder-cache-directory'
+or `vm-folder-directory' or, failing both, $HOME -- and the tests set neither,
+so visiting a folder in the live IMAP tests wrote imap-cache-<md5> into the
+developer's home directory and Emacs left a backup beside it.")
+
 ;; Add VM lisp directory to load path
 (add-to-list 'load-path vm-test-lisp-dir)
 
@@ -74,6 +86,14 @@ Absent unless that has been run; the tests that need one skip without it.")
 
 (require 'vm-macro)
 (require 'vm-vars)
+
+;; An IMAP cache file goes in the tree, not in $HOME.  Set rather than
+;; let-bound: what writes it is VM, deep inside a folder visit, and no test is
+;; on the stack to bind anything.  `vm-folder-directory' is deliberately left
+;; alone -- it decides where a user's folders are, and tests that care about it
+;; set it themselves.
+(make-directory vm-test-scratch-dir t)
+(setq vm-imap-folder-cache-directory vm-test-scratch-dir)
 (require 'vm-menu)
 
 ;;; Menus

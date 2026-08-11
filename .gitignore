@@ -52,3 +52,8 @@ commit.msg
 /test/coverage-results.txt
 /test/vm-live-config.el
 /notes
+
+# What the tests make VM write: the IMAP cache of a folder the live tests
+# visit.  In the tree so that make clean can remove it; it used to land in
+# $HOME, that being VM's last fallback for the cache directory.
+test/scratch/

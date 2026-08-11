@@ -62,6 +62,14 @@ Other targets, all from =test/=:
 | make test-coverage | writes test/coverage-results.txt           |
 | make test-imap     | live IMAP tests, see below                 |
 | make test-send     | sends real mail, see below                  |
+| make optional-packages | fetches bbdb, emacs-w3m, vcard into test/opt/elpa |
+
+The optional packages are what the bbdb, w3m and vcard tests need; without them
+those tests skip.  Fetching them takes the network, so =make clean= leaves them
+alone -- it removes only what a run produced, =test/scratch= and the coverage
+report.  =make distclean= removes them, being the target for everything that is
+not part of the checkout.  A run that reports eleven skipped tests rather than
+one has usually lost them.
 
 Each target byte-compiles =lisp/= first, deliberately: macros and =defsubst=
 forms are inlined at compile time, so a test that stubs one of those passes
