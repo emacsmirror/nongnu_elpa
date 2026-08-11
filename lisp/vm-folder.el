@@ -778,19 +778,27 @@ the value of vm-default-From_folder-type will be returned."
 	      (goto-char (point-min))
 	      (cond ((zerop (buffer-size)) nil)
 		    ((looking-at "\n*From ")
-		     (if (not (or vm-trust-content-length
-				  (eq (vm-folder-type-for-name
-				       (or file (buffer-file-name)))
-				      'mboxcl2)))
-			 vm-default-From_-folder-type
-		       (let ((case-fold-search t))
-			 (re-search-forward vm-content-length-search-regexp
-					    nil t))
-		       (cond ((match-beginning 1)
-			      vm-default-From_-folder-type)
-			     ((match-beginning 0)
-			      'mboxcl2)
-			     (t vm-default-From_-folder-type))))
+		     (let ((named (vm-folder-type-for-name
+				   (or file (buffer-file-name)))))
+		       (cond
+			;; From_ and mboxcl2 are the same folder but for the
+			;; Content-Length header, so a folder cannot say which
+			;; it is by looking like one -- a name that says
+			;; mboxcl2 decides it, and a message with no header is
+			;; then the reader's complaint rather than a folder
+			;; quietly read as something it does not claim to be.
+			((memq named '(From_ BellFrom_ mboxcl2)) named)
+			((not vm-trust-content-length)
+			 vm-default-From_-folder-type)
+			(t
+			 (let ((case-fold-search t))
+			   (re-search-forward vm-content-length-search-regexp
+					      nil t))
+			 (cond ((match-beginning 1)
+				vm-default-From_-folder-type)
+			       ((match-beginning 0)
+				'mboxcl2)
+			       (t vm-default-From_-folder-type))))))
 		    ((looking-at "\001\001\001\001\n") 'mmdf)
 		    ((looking-at "BABYL OPTIONS:") 'babyl)
 		    (t 'unknown)))))

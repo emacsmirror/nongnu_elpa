@@ -2397,8 +2397,9 @@ they cannot.  A BABYL file called .mboxcl2 is still BABYL."
 (ert-deftest vm-folder-test-a-name-makes-content-length-believable ()
   "A folder named mboxcl2 is read as mboxcl2 even with
 `vm-trust-content-length' nil: naming the file says as plainly as the option
-does that the header is to be believed.  Without a Content-Length in it the
-name changes nothing -- the folder is a From_ folder whatever it is called."
+does that the header is to be believed.  With no Content-Length in it the name
+still decides -- see the test below -- and the reader then complains about the
+message that has none, which is the point of saying so in the name."
   (vm-folder-test-with-directory dir
     (let ((with-length (expand-file-name "sent.mboxcl2" dir))
           (without (expand-file-name "other.mboxcl2" dir))
@@ -2411,7 +2412,7 @@ name changes nothing -- the folder is a From_ folder whatever it is called."
       (write-region (concat "From VM Mon Aug 10 00:00:00 2026\n"
                             "To: someone@example.com\n\nbody\n")
                     nil without nil 'quiet)
-      (should (eq (vm-get-folder-type without) vm-default-From_-folder-type))
+      (should (eq (vm-get-folder-type without) 'mboxcl2))
       ;; and with the option off, the name is not consulted at all
       (let ((vm-folder-type-by-name-alist nil))
         (should (eq (vm-get-folder-type with-length)
@@ -2794,6 +2795,41 @@ not worth that."
         (should (buffer-modified-p))
         (set-buffer-modified-p nil))
       (kill-buffer (vm-get-file-buffer file)))))
+
+(ert-deftest vm-folder-test-a-name-decides-between-From_-and-mboxcl2 ()
+  "A folder named mboxcl2 is mboxcl2, whether or not it has the header yet.
+The two formats are the same folder but for `Content-Length', so a folder
+cannot say which it is by looking like one -- and reading a folder called
+mboxcl2 as From_ because it has no lengths in it is how a folder stays wrong
+and nothing says so (emacs-vm/vm#620).  A name that says nothing still leaves
+it to the contents."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  vm-folder-test--mboxcl2-without-one)
+    (should (eq (vm-get-folder-type file) 'mboxcl2)))
+  (vm-folder-test-with-file (file "sent.mbox"
+                                  vm-folder-test--mboxcl2-without-one)
+    (should (eq (vm-get-folder-type file) vm-default-From_-folder-type)))
+  ;; and with the option empty, a name says nothing at all
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  vm-folder-test--mboxcl2-without-one)
+    (let ((vm-folder-type-by-name-alist nil))
+      (should (eq (vm-get-folder-type file) vm-default-From_-folder-type)))))
+
+(ert-deftest vm-folder-test-a-folder-named-mboxcl2-without-lengths-is-refused ()
+  "Visiting one says so, and says how to repair it.
+Reading it as a From_ folder instead is what happened before: VM opened it,
+said nothing, and went on adding messages to a folder whose name was a lie."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  vm-folder-test--mboxcl2-without-one)
+    (let ((vm-mboxcl2-strict t)
+          (text-quoting-style 'grave))
+      (let ((message (cadr (should-error (vm-visit-folder file)))))
+        (should (string-match-p "has no Content-Length" message))
+        (should (string-match-p "vm-change-folder-type" message)))
+      ;; and the repair the message names produces a folder that opens
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (vm-visit-folder file)
+      (should (= (length vm-message-list) 1)))))
 
 (provide 'vm-folder-test)
 
