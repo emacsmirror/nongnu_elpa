@@ -354,6 +354,16 @@ If START-POINT is nil, nothing is updated."
 	  (t
 	   (setq vm-summary-redo-start-point start-point)))))
 
+(defun vm-discard-summary-cache-of (m)
+  "Forget the summary line cached for message M.
+Which slot that is depends on what M is: a virtual message's summary lives in
+`vm-virtual-summary-of', a real one's in `vm-decoded-tokenized-summary-of'.
+Clearing the wrong one leaves the line as it was, which is how a virtual
+folder came to show no status letter until it was left and entered again."
+  (if (vm-virtual-message-p m)
+      (vm-set-virtual-summary-of m nil)
+    (vm-set-decoded-tokenized-summary-of m nil)))
+
 (defun vm-mark-for-summary-update (m &optional dont-kill-cache)
   "Mark message M and all its mirrored messages for a summary update.
 Also mark M's buffer as needing a display update. Any virtual
@@ -371,11 +381,12 @@ and thread indentation."
 	 ;; this is a real message.
 	 ;; its summary and modeline need to be updated.
 	 (unless dont-kill-cache
-	   ;; toss the cache.  this also tosses the cache of any
-	   ;; virtual messages mirroring this message.  the summary
-	   ;; entry cache must be cleared when an attribute of a
-	   ;; message that could appear in the summary has changed.
-	   (vm-set-decoded-tokenized-summary-of m nil))
+	   ;; Toss the cache.  The summary entry cache must be cleared when an
+	   ;; attribute of a message that could appear in the summary has
+	   ;; changed.  This used to say that it tossed the cache of any
+	   ;; virtual message mirroring this one; it did not, their summaries
+	   ;; being kept in a slot of their own, so each is cleared below.
+	   (vm-discard-summary-cache-of m))
 	 (when (vm-su-start-of m)
 	   (vm-add-to-list m vm-messages-needing-summary-update))
 	 (intern (buffer-name (vm-buffer-of m))
@@ -384,6 +395,8 @@ and thread indentation."
 	 ;; need a summary update.
 	 (dolist (v-m (vm-virtual-messages-of m))
 	   (when (eq (vm-attributes-of m) (vm-attributes-of v-m))
+	     (unless dont-kill-cache
+	       (vm-discard-summary-cache-of v-m))
 	     (when (vm-su-start-of v-m)
 	       (vm-add-to-list v-m 
 			       vm-messages-needing-summary-update))
@@ -410,27 +423,30 @@ and thread indentation."
 	       ;; the same cache as this message.
 	       (dolist (v-m (vm-virtual-messages-of m))
 		 (when (eq (vm-attributes-of m) (vm-attributes-of v-m))
+		   (unless dont-kill-cache
+		     (vm-discard-summary-cache-of v-m))
 		   (when (vm-su-start-of v-m)
 		     (vm-add-to-list v-m 
 				     vm-messages-needing-summary-update))
 		   (when (buffer-name (vm-buffer-of v-m))
 		     (intern (buffer-name (vm-buffer-of v-m))
 			     vm-buffers-needing-display-update))))
-	       ;; now take care of the real message
+	       ;; now take care of the real message.  M is a virtual message
+	       ;; here, so tossing its cache is not tossing the real one's --
+	       ;; which is what the FIXME of 2012-10-14 asked, and the answer
+	       ;; was no: this cleared vm-decoded-tokenized-summary-of on a
+	       ;; message whose summary is kept in vm-virtual-summary-of, so
+	       ;; the virtual folder kept showing the line it already had.
 	       (unless dont-kill-cache
-		 ;; toss the cache.  this also tosses the cache of
-		 ;; any virtual messages sharing the same cache as
-		 ;; this message.
-		 ;; FIXME does this really toss the cache of virtual
-		 ;; mirrors?  USR, 2012-10-14
-		 (vm-set-decoded-tokenized-summary-of m nil))
+		 (vm-discard-summary-cache-of m)
+		 (vm-discard-summary-cache-of (vm-real-message-of m)))
 	       (when (vm-su-start-of (vm-real-message-of m))
 		 (vm-add-to-list (vm-real-message-of m)
 				 vm-messages-needing-summary-update))
 	       (intern (buffer-name (vm-buffer-of (vm-real-message-of m)))
 		       vm-buffers-needing-display-update))
 	   (unless dont-kill-cache
-	     (vm-set-virtual-summary-of m nil))
+	     (vm-discard-summary-cache-of m))
 	   (when (vm-su-start-of m)
 	     (vm-add-to-list m vm-messages-needing-summary-update))
 	   (intern (buffer-name (vm-buffer-of m))

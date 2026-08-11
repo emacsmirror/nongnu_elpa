@@ -768,6 +768,73 @@ vm-avirtual.el, which lost, so the option did nothing for a folder's selectors."
       (vm-vs-and nil '(peek))
       (should (eq nil seen)))))
 
+;;; The status letters in a virtual folder's summary (emacs-vm/vm#623)
+
+(defun vm-virtual-test--summary-flags (summary-buffer)
+  "The attribute characters of the first summary line in SUMMARY-BUFFER.
+The default format puts them after the message number, so this reads the line
+the way a person does."
+  (with-current-buffer summary-buffer
+    (save-excursion
+      (goto-char (point-min))
+      (let ((line (buffer-substring-no-properties
+                   (point) (line-end-position))))
+        (should (string-match "\\`..[ 0-9]+ \\(.\\{1,4\\}?\\) [^ ]" line))
+        (match-string 1 line)))))
+
+(ert-deftest vm-virtual-test-an-operation-in-a-virtual-folder-shows-its-letter ()
+  "Deleting a message in a virtual folder puts the D in its summary at once.
+It appeared only after leaving the folder and entering it again: a virtual
+message's summary is cached in `vm-virtual-summary-of', and the invalidation
+cleared `vm-decoded-tokenized-summary-of' instead -- a different slot -- so the
+line was regenerated from the copy it already had (emacs-vm/vm#623).
+
+The FIXME beside it asked whether it tossed the cache of the virtual mirrors,
+and had gone unanswered since 2012."
+  (vm-virtual-test--with-folders (real virt-a _virt-b)
+    (with-current-buffer virt-a
+      (setq vm-message-pointer vm-message-list)
+      (should-not (string-match-p "D" (vm-virtual-test--summary-flags
+                                       vm-summary-buffer)))
+      (vm-delete-message 1)
+      (should (string-match-p "D" (vm-virtual-test--summary-flags
+                                   vm-summary-buffer)))
+      ;; and undeleting takes it away again
+      (vm-undelete-message 1)
+      (should-not (string-match-p "D" (vm-virtual-test--summary-flags
+                                       vm-summary-buffer))))
+    ;; the real folder's own summary followed along, as it always did
+    (with-current-buffer real
+      (should-not (string-match-p "D" (vm-virtual-test--summary-flags
+                                       vm-summary-buffer))))))
+
+(ert-deftest vm-virtual-test-an-operation-in-the-real-folder-reaches-the-virtual ()
+  "Deleting in the real folder puts the D in the virtual folder's summary too.
+The same cache, reached from the other side: the real message's invalidation
+said it tossed the cache of every virtual message mirroring it, and did not."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer real
+      (setq vm-message-pointer vm-message-list)
+      (vm-delete-message 1))
+    (with-current-buffer virt-a
+      (should (string-match-p "D" (vm-virtual-test--summary-flags
+                                   vm-summary-buffer))))
+    ;; and every virtual folder over it, not just the first
+    (with-current-buffer virt-b
+      (should (string-match-p "D" (vm-virtual-test--summary-flags
+                                   vm-summary-buffer))))))
+
+(ert-deftest vm-virtual-test-a-forwarded-flag-shows-in-a-virtual-folder ()
+  "Not only deletion: any attribute that shows in the summary shows at once.
+Göran reported the Z of a forward as well as the D of a delete."
+  (vm-virtual-test--with-folders (_real virt-a _virt-b)
+    (with-current-buffer virt-a
+      (setq vm-message-pointer vm-message-list)
+      (vm-set-forwarded-flag (car vm-message-list) t)
+      (vm-update-summary-and-mode-line)
+      (should (string-match-p "Z" (vm-virtual-test--summary-flags
+                                   vm-summary-buffer))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
