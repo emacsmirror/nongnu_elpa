@@ -24,10 +24,13 @@ since that version to see how you might be affected.
     `vm-mboxcl2-strict` nil opens such a folder so that
     `vm-change-folder-type` can repair it (emacs-vm/vm#612).
 
-  * A folder's name can say what format it is.  A new folder whose name ends
-    in `.mboxcl2` is created as one, rather than as whatever
-    `vm-default-folder-type` says, and a `Content-Length` in it is believed;
-    `vm-folder-type-by-name-alist` is the option (emacs-vm/vm#610).
+  * A folder's name can say what format it is.  A folder whose name ends in
+    `.mboxcl2` is created as one, rather than as whatever
+    `vm-default-folder-type` says, and is read as one -- so a folder named
+    that way which has no `Content-Length` headers is refused, with how to
+    convert it, instead of being read as a From_ folder in silence
+    (emacs-vm/vm#610, emacs-vm/vm#620).  `vm-folder-type-by-name-alist` is the
+    option.
 
   * Sent copies work with IMAP.  An `FCC:` header naming an IMAP maildrop
     files the copy on the server instead of writing a file named after the

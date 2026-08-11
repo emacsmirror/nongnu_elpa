@@ -1054,18 +1054,18 @@ not need it."
 REGEXP is matched against the file name, TYPE is one of the types
 `vm-default-folder-type' accepts.  The first match wins.
 
-This is consulted in the two places where a folder cannot say for itself
-what it is:
+This is consulted where a folder cannot say for itself what it is:
 
   - a folder that does not exist yet, or is empty, is created in the type
     its name asks for rather than in `vm-default-folder-type';
-  - a folder whose first message carries a `Content-Length' is read as
-    mboxcl2 even when `vm-trust-content-length' is nil, since naming a
-    file mboxcl2 says as plainly as that option does that the header is
-    to be believed.
+  - a From_ folder is read as the type its name gives.  From_ and mboxcl2
+    are the same folder but for the `Content-Length' header, so looking
+    like one is no evidence: a folder named mboxcl2 is mboxcl2, and a
+    message in it that has no length is then something the reader
+    complains about -- which is the use of saying so in the name.
 
-What a folder's own contents say is never overridden: a name matching
-mboxcl2 does not make VM read a BABYL file as one.
+What a folder's own contents say is never overridden where they settle the
+question: a name matching mboxcl2 does not make VM read a BABYL file as one.
 
 Set it to nil to have names mean nothing, which is what VM did before."
   :group 'vm-folders
