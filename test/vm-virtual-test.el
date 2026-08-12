@@ -1079,6 +1079,132 @@ wrapper's argument order -- which is what a thin wrapper gets wrong."
     (vm-create-subject-virtual-folder "badgers")
     (should (string-match-p "badgers" (buffer-name)))))
 
+;;; The virtual selectors (emacs-vm/vm#633)
+;;
+;; Thirty of the vm-vs-* selectors were called by no test.  They are what a
+;; virtual folder definition and an interactive search are built from, and a
+;; selector that answers wrongly quietly mis-files mail.
+
+(defconst vm-virtual-test--selector-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: Alice Adams <alice@example.com>\n"
+          "To: bob@example.com\nCc: carol@example.com\n"
+          "Reply-To: desk@example.com\n"
+          "Subject: Re: badgers\nMessage-ID: <one@example.com>\n"
+          "X-Spam-Flag: YES\n\nThe first body.\n\n"
+          "From dave@example.com Sat Aug  8 16:05:00 2026\n"
+          "From: dave@example.com\nTo: me@example.com\n"
+          "Subject: ordinary mail\nMessage-ID: <two@example.com>\n\n"
+          "The second body.\n\n")
+  "Two messages, the second lacking the headers the first has.")
+
+(defmacro vm-virtual-test--with-selectors (spec &rest body)
+  "Visit a folder of two messages and run BODY with them bound.
+SPEC is (FIRST-VAR SECOND-VAR)."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-selectors" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil))
+           (write-region vm-virtual-test--selector-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             (let ((,(car spec) (car vm-message-list))
+                   (,(cadr spec) (cadr vm-message-list)))
+               ,@body)))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-virtual-test-header-field-selector-without-the-header ()
+  "REGRESSION: `header-field' does not match a message that lacks the header.
+Issue #633.  `vm-get-header-contents' answers nil for a header that is not
+there, and that went straight to `string-match': the selector signalled
+rather than declining to match, and nothing catches it -- `vm-vs-or' and
+`vm-vs-and' apply the selector with no `condition-case', so the whole
+virtual folder stopped being built.  Which is the case the selector exists
+for: the messages you are picking out are the ones carrying the header."
+  (vm-virtual-test--with-selectors (first second)
+    (should (vm-vs-header-field first "X-Spam-Flag" "YES"))
+    (should-not (vm-vs-header-field second "X-Spam-Flag" "YES"))
+    ;; and a header that is there but does not match is still no match
+    (should-not (vm-vs-header-field first "X-Spam-Flag" "NO"))))
+
+(ert-deftest vm-virtual-test-a-virtual-folder-on-a-missing-header ()
+  "REGRESSION: the folder builds, and holds the messages that have the header.
+Issue #633, end to end: this is what the selector is for, and it used to
+signal `wrong-type-argument stringp nil' on the first message without the
+header."
+  (vm-virtual-test--with-selectors (_first _second)
+    (let* ((folder (buffer-file-name))
+           (vm-virtual-folder-alist
+            (list (list "spam" (list (list folder)
+                                     '(header-field "X-Spam-Flag" "YES"))))))
+      (vm-visit-virtual-folder "spam")
+      (should (equal (length vm-message-list) 1))
+      (should (equal (vm-su-subject (car vm-message-list)) "Re: badgers")))))
+
+(ert-deftest vm-virtual-test-addressee-recipient-and-principal-selectors ()
+  "`addressee' is the To line, `recipient' the To and the Cc, `principal'
+the Reply-To.  Three different questions, and the copied-in address is what
+tells the first two apart."
+  (vm-virtual-test--with-selectors (first second)
+    (should (vm-vs-addressee first "bob@example\\.com"))
+    (should-not (vm-vs-addressee first "carol@example\\.com"))
+    (should (vm-vs-recipient first "bob@example\\.com"))
+    (should (vm-vs-recipient first "carol@example\\.com"))
+    (should-not (vm-vs-addressee first "desk@example\\.com"))
+    (should (vm-vs-principal first "desk@example\\.com"))
+    (should-not (vm-vs-principal first "bob@example\\.com"))
+    ;; the second message has no Reply-To, and that is not an error
+    (should-not (vm-vs-principal second "desk@example\\.com"))))
+
+(ert-deftest vm-virtual-test-sortable-subject-ignores-the-reply-prefix ()
+  "`sortable-subject' matches the subject as sorting sees it.
+The Re: is not part of it, which is the whole difference from `subject'."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-subject first "Re: badgers"))
+    (should (vm-vs-sortable-subject first "\\`badgers\\'"))
+    (should-not (vm-vs-sortable-subject first "\\`Re: badgers\\'"))))
+
+(ert-deftest vm-virtual-test-date-selectors ()
+  "`sent-before' and `sent-after' put the message on the right side of a date.
+The two must disagree about any given date, or one of them is wrong."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-sent-after first "1 Jan 1990"))
+    (should-not (vm-vs-sent-before first "1 Jan 1990"))
+    (should (vm-vs-sent-before first "1 Jan 2050"))
+    (should-not (vm-vs-sent-after first "1 Jan 2050"))))
+
+(ert-deftest vm-virtual-test-header-and-text-selectors ()
+  "`header' searches the headers, `text' the body, `header-or-text' both.
+A word in the body is not in the headers, and the test would pass by
+accident if the folder were searched whole."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-header first "X-Spam-Flag"))
+    (should-not (vm-vs-header first "The first body"))
+    (should (vm-vs-text first "The first body"))
+    (should-not (vm-vs-text first "X-Spam-Flag"))
+    (should (vm-vs-header-or-text first "The first body"))
+    (should (vm-vs-header-or-text first "X-Spam-Flag"))))
+
+(ert-deftest vm-virtual-test-selector-combinators ()
+  "`and', `or' and `not' combine selectors, and an invalid one matches
+nothing rather than being negated into a match."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-and first '(subject "badgers") '(author "alice")))
+    (should-not (vm-vs-and first '(subject "badgers") '(author "nobody")))
+    (should (vm-vs-or first '(subject "nothing") '(author "alice")))
+    (should-not (vm-vs-or first '(subject "nothing") '(author "nobody")))
+    (should (vm-vs-not first '(author "nobody")))
+    (should-not (vm-vs-not first '(author "alice")))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
