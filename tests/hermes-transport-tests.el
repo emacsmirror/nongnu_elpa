@@ -37,6 +37,20 @@
               ("session.resume" (session_id . "stored")
                (source . "emacs")))))))
 
+(ert-deftest hermes-dashboard-rpc-config-set-sends-reasoning-scope ()
+  "Config writes preserve the Dashboard session and optional global scope."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (setq request (cons method params)))))
+      (hermes-dashboard-transport-config-set
+       'client "reasoning" "ultra"
+       :session-id "sid" :scope "global"))
+    (should
+     (equal request
+            '("config.set" (key . "reasoning") (value . "ultra")
+              (session_id . "sid") (scope . "global"))))))
+
 (ert-deftest hermes-transport-dashboard-approval-respond-payload ()
   (let ((client (hermes-test--dashboard-client))
         (hermes-dashboard-transport-request-timeout nil)

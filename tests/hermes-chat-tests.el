@@ -3173,88 +3173,51 @@
        (should (equal status-queries '(("goal" . "status"))))
        (should-not (plist-get hermes-chat--goal :running))))))
 
-(ert-deftest hermes-chat-reasoning-command-refreshes-effective-header ()
-  "A successful `/reasoning' command refreshes the effective session effort."
-  (let ((client (hermes-test--dashboard-client)) config-key config-session)
+(ert-deftest hermes-chat-reasoning-command-mutates-live-session ()
+  "`/reasoning' sets and reads back the owned dashboard session."
+  (let ((client (hermes-test--dashboard-client)) set-args get-args)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec") (output . "Reasoning: high")))))
-              ((symbol-function 'hermes-dashboard-transport-config-get)
-               (lambda (_client key &rest args)
-                 (setq config-key key
-                       config-session (plist-get args :session-id))
-                 (funcall (plist-get args :resolve) '((value . "high"))))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-active"
-             hermes-chat--dashboard-session-ready-p t
-             hermes-chat--runtime-flags '(:reasoning-effort "low"))
-       (insert "/reasoning high")
-       (hermes-chat-send)
-       (should (equal config-key "reasoning"))
-       (should (equal config-session "sid-active"))
-       (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "high"))
-       (should (string-match-p "high" (hermes-test--header-line-string)))
-       (should-not (string-match-p "low" (hermes-test--header-line-string)))))))
-
-(ert-deftest hermes-chat-reasoning-fallback-refreshes-effective-header ()
-  "A successful fallback `/reasoning' dispatch refreshes session effort."
-  (let ((client (hermes-test--dashboard-client)) config-key)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :reject) "use command.dispatch")))
-              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client _name _arg &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec") (output . "Reasoning: high")))))
-              ((symbol-function 'hermes-dashboard-transport-config-get)
-               (lambda (_client key &rest args)
-                 (setq config-key key)
-                 (funcall (plist-get args :resolve) '((value . "high"))))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-active"
-             hermes-chat--dashboard-session-ready-p t
-             hermes-chat--runtime-flags '(:reasoning-effort "low"))
-       (insert "/reasoning high")
-       (hermes-chat-send)
-       (should (equal config-key "reasoning"))
-       (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "high"))))))
-
-(ert-deftest hermes-chat-reasoning-refresh-ignores-stale-session ()
-  "A late reasoning refresh cannot overwrite a replacement session."
-  (let ((client (hermes-test--dashboard-client)) resolve-config)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec") (output . "Reasoning: high")))))
-              ((symbol-function 'hermes-dashboard-transport-config-get)
-               (lambda (_client _key &rest args)
-                 (setq resolve-config (plist-get args :resolve)))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-old"
-             hermes-chat--dashboard-session-ready-p t
-             hermes-chat--runtime-flags '(:reasoning-effort "low"))
-       (insert "/reasoning high")
-       (hermes-chat-send)
-       (setq hermes-chat--dashboard-active-session-id "sid-new")
-       (funcall resolve-config '((value . "high")))
-       (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "low"))))))
-
-(ert-deftest hermes-chat-reasoning-command-result-ignores-stale-session ()
-  "A late `/reasoning' result cannot refresh a replacement session."
-  (let ((client (hermes-test--dashboard-client)) resolve-command config-gets)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (setq resolve-command (plist-get args :resolve))))
-              ((symbol-function 'hermes-dashboard-transport-config-get)
                (lambda (&rest _args)
-                 (cl-incf config-gets))))
+                 (ert-fail "Reasoning must not run in the isolated slash worker")))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key value &rest args)
+                 (setq set-args (list key value
+                                      (plist-get args :session-id)
+                                      (plist-get args :scope)))
+                 (funcall (plist-get args :resolve) '((value . "ultra")))))
+              ((symbol-function 'hermes-dashboard-transport-config-get)
+               (lambda (_client key &rest args)
+                 (setq get-args (list key (plist-get args :session-id)))
+                 (funcall (plist-get args :resolve) '((value . "ultra"))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--runtime-flags '(:reasoning-effort "high"))
+       (insert "/reasoning ultra")
+       (hermes-chat-send)
+       (should (equal set-args '("reasoning" "ultra" "sid-active" nil)))
+       (should (equal get-args '("reasoning" "sid-active")))
+       (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
+                      "ultra"))
+       (should (string-match-p "ultra" (hermes-test--header-line-string)))
+       (should-not (string-match-p "high" (hermes-test--header-line-string)))))))
+
+(ert-deftest hermes-chat-reasoning-request-projects-scope ()
+  "Reasoning arguments project to one value and optional global scope."
+  (should (equal (hermes-chat--reasoning-request "ultra --session")
+                 '("ultra")))
+  (should (equal (hermes-chat--reasoning-request "--global ultra")
+                 '("ultra" . "global"))))
+
+(ert-deftest hermes-chat-reasoning-settlement-ignores-stale-session ()
+  "A late reasoning setter cannot read into a replacement session."
+  (let ((client (hermes-test--dashboard-client)) resolve-set config-gets)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq resolve-set (plist-get args :resolve))))
+              ((symbol-function 'hermes-dashboard-transport-config-get)
+               (lambda (&rest _args) (cl-incf config-gets))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
              hermes-chat--dashboard-active-session-id "sid-old"
@@ -3264,92 +3227,41 @@
        (insert "/reasoning high")
        (hermes-chat-send)
        (setq hermes-chat--dashboard-active-session-id "sid-new")
-       (funcall resolve-command
-                '((type . "exec") (output . "Reasoning: high")))
+       (funcall resolve-set '((value . "high")))
        (should (= config-gets 0))
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
                       "low"))))))
 
-(ert-deftest hermes-chat-reasoning-command-rejection-ignores-stale-session ()
-  "A late slash rejection cannot fallback into a replacement session."
-  (let ((client (hermes-test--dashboard-client)) reject-command dispatches)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (setq reject-command (plist-get args :reject))))
-              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (&rest _args)
-                 (cl-incf dispatches))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-old"
-             hermes-chat--dashboard-session-ready-p t
-             dispatches 0)
-       (insert "/reasoning high")
-       (hermes-chat-send)
-       (setq hermes-chat--dashboard-active-session-id "sid-new")
-       (funcall reject-command "use command.dispatch")
-       (should (= dispatches 0))))))
-
-(ert-deftest hermes-chat-reasoning-fallback-result-ignores-stale-session ()
-  "A late fallback result cannot refresh a replacement session."
-  (let ((client (hermes-test--dashboard-client)) resolve-dispatch config-gets)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :reject) "use command.dispatch")))
-              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client _name _arg &rest args)
-                 (setq resolve-dispatch (plist-get args :resolve))))
-              ((symbol-function 'hermes-dashboard-transport-config-get)
-               (lambda (&rest _args)
-                 (cl-incf config-gets))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-old"
-             hermes-chat--dashboard-session-ready-p t
-             hermes-chat--runtime-flags '(:reasoning-effort "low")
-             config-gets 0)
-       (insert "/reasoning high")
-       (hermes-chat-send)
-       (setq hermes-chat--dashboard-active-session-id "sid-new")
-       (funcall resolve-dispatch
-                '((type . "exec") (output . "Reasoning: high")))
-       (should (= config-gets 0))
-       (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "low"))))))
-
-(ert-deftest hermes-chat-reasoning-refresh-rejection-preserves-header ()
-  "A rejected reasoning refresh preserves the previous session effort."
-  (let ((client (hermes-test--dashboard-client)))
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec") (output . "Reasoning: high")))))
+(ert-deftest hermes-chat-reasoning-readback-ignores-stale-session ()
+  "A late reasoning readback cannot overwrite a replacement session."
+  (let ((client (hermes-test--dashboard-client)) resolve-get)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (funcall (plist-get args :resolve) '((value . "high")))))
               ((symbol-function 'hermes-dashboard-transport-config-get)
                (lambda (_client _key &rest args)
-                 (funcall (plist-get args :reject) "refresh rejected"))))
+                 (setq resolve-get (plist-get args :resolve)))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-active-session-id "sid-old"
              hermes-chat--dashboard-session-ready-p t
              hermes-chat--runtime-flags '(:reasoning-effort "low"))
        (insert "/reasoning high")
        (hermes-chat-send)
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve-get '((value . "high")))
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "low"))
-       (should (string-match-p "low" (hermes-test--header-line-string)))))))
+                      "low"))))))
 
-(ert-deftest hermes-chat-reasoning-command-rejection-preserves-header ()
-  "A rejected `/reasoning' command preserves the previous session effort."
+(ert-deftest hermes-chat-reasoning-rejection-preserves-effective-state ()
+  "A rejected reasoning setter preserves the previous effective effort."
   (let ((client (hermes-test--dashboard-client)))
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :reject) "use command.dispatch")))
-              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client _name _arg &rest args)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
                  (funcall (plist-get args :reject) "reasoning rejected")))
               ((symbol-function 'hermes-dashboard-transport-config-get)
                (lambda (&rest _args)
-                 (ert-fail "Rejected command must not refresh reasoning"))))
+                 (ert-fail "Rejected setter must not read reasoning"))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
              hermes-chat--dashboard-active-session-id "sid-active"
@@ -3358,9 +3270,7 @@
        (insert "/reasoning high")
        (hermes-chat-send)
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "low"))
-       (should (string-match-p "low" (hermes-test--header-line-string)))
-       (should-not (string-match-p "high" (hermes-test--header-line-string)))))))
+                      "low"))))))
 
 (ert-deftest hermes-chat-command-dispatch-output-renders ()
   (let ((client (hermes-test--dashboard-client)) slash-command dispatch-name dispatch-arg)

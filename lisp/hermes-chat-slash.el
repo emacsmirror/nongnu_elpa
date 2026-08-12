@@ -205,29 +205,74 @@ CONTEXT, when non-nil, retains ownership from a failed `slash.exec' request."
                   (when (hermes-chat--command-context-current-p request-context)
                     (hermes-chat--command-error message))))))))))))
 
-(defun hermes-chat--dashboard-slash-exec (name arg raw)
-  "Run RAW slash command, falling back to command dispatch for NAME/ARG."
+(defun hermes-chat--reasoning-request (arg)
+  "Return (VALUE . SCOPE) for reasoning ARG.
+SCOPE is \"global\" only when ARG contains `--global'.  `--session' is an
+accepted explicit spelling of the default session scope."
+  (let* ((tokens (split-string arg "[ \t\n]+" t))
+         (scope (and (member "--global" tokens) "global"))
+         (value (string-join
+                 (cl-remove-if (lambda (token)
+                                 (member token '("--global" "--session")))
+                               tokens)
+                 " ")))
+    (and (hermes-transport--non-empty-string value)
+         (cons value scope))))
+
+(defun hermes-chat--dashboard-set-reasoning (arg)
+  "Set reasoning ARG on the owned dashboard session, then refresh it."
   (let ((buffer (current-buffer))
-        (preserve-content (concat "/" raw)))
+        (preserve-content (concat "/reasoning " arg))
+        (request (hermes-chat--reasoning-request arg)))
     (hermes-chat--with-dashboard-session
      preserve-content buffer
      (lambda (live-client)
        (let ((context (hermes-chat--command-context live-client)))
-         (hermes-dashboard-transport-slash-exec
-          live-client raw
+         (hermes-dashboard-transport-config-set
+          live-client "reasoning" (car request)
           :session-id (plist-get context :session-id)
+          :scope (cdr request)
           :resolve
           (lambda (result)
             (hermes-chat--in-buffer buffer
               (when (hermes-chat--command-context-current-p context)
-                (hermes-chat--handle-command-result result arg)
-                (hermes-chat--refresh-state-after-command name context))))
+                (when-let* ((value (hermes-chat--result-string result 'value)))
+                  (hermes-chat--insert-local-status
+                   (format "Reasoning set to %s" value) 'done))
+                (hermes-chat--refresh-reasoning-after-command
+                 "reasoning" context))))
           :reject
-          (lambda (_message)
+          (lambda (message)
             (hermes-chat--in-buffer buffer
               (when (hermes-chat--command-context-current-p context)
-                (hermes-chat--dashboard-dispatch-command
-                 name arg preserve-content context))))))))))
+                (hermes-chat--command-error message))))))))))
+
+(defun hermes-chat--dashboard-slash-exec (name arg raw)
+  "Run RAW slash command for NAME and ARG, using native state paths when available."
+  (if (and (string-equal name "reasoning")
+           (hermes-chat--reasoning-request arg))
+      (hermes-chat--dashboard-set-reasoning arg)
+    (let ((buffer (current-buffer))
+          (preserve-content (concat "/" raw)))
+      (hermes-chat--with-dashboard-session
+       preserve-content buffer
+       (lambda (live-client)
+         (let ((context (hermes-chat--command-context live-client)))
+           (hermes-dashboard-transport-slash-exec
+            live-client raw
+            :session-id (plist-get context :session-id)
+            :resolve
+            (lambda (result)
+              (hermes-chat--in-buffer buffer
+                (when (hermes-chat--command-context-current-p context)
+                  (hermes-chat--handle-command-result result arg)
+                  (hermes-chat--refresh-state-after-command name context))))
+            :reject
+            (lambda (_message)
+              (hermes-chat--in-buffer buffer
+                (when (hermes-chat--command-context-current-p context)
+                  (hermes-chat--dashboard-dispatch-command
+                   name arg preserve-content context)))))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."
