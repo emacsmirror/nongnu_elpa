@@ -265,6 +265,36 @@ an error reply to the same command is a single line, so the status decides."
              (string-suffix-p "\r\n.\r\n" text)
            t))))
 
+(defun vm-pop-mock-test--connect (mock)
+  "Open a client connection to MOCK and return the process.
+The filter goes in through `make-network-process' rather than being set
+afterwards.  A process with neither a filter nor a buffer discards what
+arrives, and the greeting is written by the server the moment it accepts the
+connection -- so anything that let the event loop run between creating the
+process and setting its filter dropped the greeting for good, and the test
+then waited out its deadline for a line that no longer existed.  That is what
+emacs-vm/vm#626 was.
+
+What has arrived is kept on the process, readable with
+`vm-pop-mock-test--received'."
+  (make-network-process
+   :name "vm-pop-mock-test-client"
+   :host "127.0.0.1" :service (vm-pop-mock-port mock)
+   :coding 'binary :noquery t
+   :filter (lambda (process text)
+	     (process-put process 'vm-pop-mock-test-received
+			  (concat (process-get process
+					       'vm-pop-mock-test-received)
+				  text)))))
+
+(defun vm-pop-mock-test--received (process)
+  "Everything PROCESS has been sent since it was last forgotten."
+  (or (process-get process 'vm-pop-mock-test-received) ""))
+
+(defun vm-pop-mock-test--forget (process)
+  "Forget what PROCESS has been sent, before sending the next command."
+  (process-put process 'vm-pop-mock-test-received ""))
+
 (ert-deftest vm-pop-mock-test-mock-serves-a-plain-conversation ()
   "The mock speaks POP3 to a client that is not VM.
 Keeps the tests above honest: if the mock stopped answering STAT or dot-stuffing
@@ -278,16 +308,9 @@ matched against the wrong reply.  That never fired on an idle machine, where a
 small response arrives in one piece (emacs-vm/vm#626)."
   (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1
 					  vm-pop-mock-test--message-2))
-    (let ((process (make-network-process
-		    :name "vm-pop-mock-test-client"
-		    :host "127.0.0.1" :service (vm-pop-mock-port mock)
-		    :coding 'binary :noquery t))
-	  (received ""))
+    (let ((process (vm-pop-mock-test--connect mock)))
       (unwind-protect
 	  (progn
-	    (set-process-filter process
-				(lambda (_p text) (setq received
-							(concat received text))))
 	    (cl-flet* ((await
 			 (done what)
 			 ;; Wait for DONE, a predicate on what has arrived.
@@ -307,24 +330,29 @@ small response arrives in one piece (emacs-vm/vm#626)."
 			 (unless (funcall done)
 			   (ert-fail
 			    (list what
-				  :received received
+				  :received (vm-pop-mock-test--received process)
 				  :connection (process-status process)
 				  :server-saw (vm-pop-mock-commands mock)
 				  :server-errors (vm-pop-mock-errors mock)))))
 		       (converse
 			 (command pattern &optional multiline)
-			 (setq received "")
+			 (vm-pop-mock-test--forget process)
 			 (process-send-string process (concat command "\r\n"))
 			 (await (lambda ()
 				  (vm-pop-mock-test--complete-response-p
-				   received multiline))
+				   (vm-pop-mock-test--received process)
+				   multiline))
 				(format "no complete response to %s" command))
-			 (should (string-match-p pattern received))))
+			 (should (string-match-p
+				  pattern
+				  (vm-pop-mock-test--received process)))))
 	      ;; The greeting arrives unprompted.
 	      (await (lambda ()
-		       (vm-pop-mock-test--complete-response-p received nil))
+		       (vm-pop-mock-test--complete-response-p
+			(vm-pop-mock-test--received process) nil))
 		     "no greeting")
-	      (should (string-prefix-p "+OK" received))
+	      (should (string-prefix-p "+OK"
+				       (vm-pop-mock-test--received process)))
 	      (converse "USER vmtest" "\\`\\+OK")
 	      (converse "PASS secret" "\\`\\+OK")
 	      (converse "STAT" "\\`\\+OK 2 ")
@@ -354,6 +382,56 @@ POP3 mistake in both directions."
       ;; The whole message arrived, dot line included and undoubled again.
       (should (string-match-p "^\\.hidden line$" text))
       (should (string-match-p "^after$" text)))))
+
+(ert-deftest vm-pop-mock-test-a-client-without-a-filter-loses-what-arrives ()
+  "The trap behind issue #626, demonstrated on two clients side by side.
+
+A process with neither a filter nor a buffer discards what it is sent.  The
+mock writes its greeting the moment it accepts a connection, so a client
+created bare and given its filter afterwards loses that greeting to anything
+that lets the event loop run in between -- and there is then nothing to wait
+for but the deadline.  A client whose filter goes in through
+`make-network-process' has no such window, which is why
+`vm-pop-mock-test--connect' does it that way.
+
+This does not guard the helper: the window it closes is a race, and a test
+cannot force the event loop inside a helper it is calling.  The conversation
+test is the regression -- it is the one that failed about once in ten full
+runs.  This pins the behaviour that explains it, and would notice if Emacs
+ever started buffering for a filterless process."
+  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
+    ;; bare: no filter, no buffer, and the event loop runs before the filter
+    ;; is installed
+    (let ((bare (make-network-process
+                 :name "vm-pop-mock-test-bare" :host "127.0.0.1"
+                 :service (vm-pop-mock-port mock)
+                 :coding 'binary :noquery t)))
+      (unwind-protect
+          (progn
+            (accept-process-output nil 0.1)
+            (set-process-filter
+             bare (lambda (process text)
+                    (process-put process 'vm-pop-mock-test-received
+                                 (concat (process-get
+                                          process 'vm-pop-mock-test-received)
+                                         text))))
+            (accept-process-output bare 0 100)
+            (should (equal (vm-pop-mock-test--received bare) "")))
+        (when (process-live-p bare) (delete-process bare))))
+    ;; and the way the tests connect: the greeting is there whenever it is
+    ;; delivered, because the filter was in place before the connection was
+    (let ((process (vm-pop-mock-test--connect mock)))
+      (unwind-protect
+          (progn
+            (accept-process-output nil 0.1)
+            (let ((deadline (+ 30 (float-time))))
+              (while (and (string= (vm-pop-mock-test--received process) "")
+                          (process-live-p process)
+                          (< (float-time) deadline))
+                (accept-process-output process 0 50)))
+            (should (string-prefix-p "+OK"
+                                     (vm-pop-mock-test--received process))))
+        (when (process-live-p process) (delete-process process))))))
 
 (provide 'vm-pop-mock-test)
 
