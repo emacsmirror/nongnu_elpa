@@ -133,7 +133,7 @@ touched."
                   (id . "req-abc")
                   (method . "emacs.request")
                   (params . ((request_id . "req-abc")
-                             (target . "pihome-pair")
+                             (target . "emacs-pair")
                              (instance_id . "emacs-30.1:pi:123:abcd1234")
                              (method . "buffer.read")
                              (params . ((buffer . "*scratch*")))
@@ -141,7 +141,7 @@ touched."
          (request (hermes-capabilities--normalize-request frame)))
     (should (equal (plist-get request :id) "req-abc"))
     (should (equal (plist-get request :request-id) "req-abc"))
-    (should (equal (plist-get request :target) "pihome-pair"))
+    (should (equal (plist-get request :target) "emacs-pair"))
     (should (equal (plist-get request :instance-id) "emacs-30.1:pi:123:abcd1234"))
     (should (equal (plist-get request :method) "buffer.read"))
     (should (equal (plist-get request :timeout-ms) 30000))
@@ -199,7 +199,7 @@ touched."
         (list :url "ws://x" :redacted-url "ws://x" :secrets nil)
       (let ((provider (hermes-capabilities--provider-create
                        :active t :socket 'fake-socket :buffer (current-buffer)
-                       :target "pihome-pair" :instance-id "inst-1"
+                       :target "emacs-pair" :instance-id "inst-1"
                        :display-name "PiHome" :role "pair")))
         (hermes-capabilities--handle-message
          provider
@@ -208,7 +208,7 @@ touched."
             (id . "live-1")
             (method . "emacs.request")
             (params . ((request_id . "live-1")
-                       (target . "pihome-pair")
+                       (target . "emacs-pair")
                        (instance_id . "inst-1")
                        (method . "buffer.current")
                        (params . nil))))))
@@ -228,7 +228,7 @@ touched."
         (list :url "ws://x" :redacted-url "ws://x" :secrets nil)
       (let ((provider (hermes-capabilities--provider-create
                        :active t :socket 'fake-socket :buffer (current-buffer)
-                       :target "pihome-pair" :instance-id "inst-1"
+                       :target "emacs-pair" :instance-id "inst-1"
                        :display-name "PiHome" :role "pair")))
         (hermes-capabilities--handle-message
          provider
@@ -248,6 +248,10 @@ touched."
 
 ;;;; Registration-on-ready with mocked transport
 
+(ert-deftest hermes-capabilities-default-target-is-public-and-portable ()
+  "A clean install identifies its capability pair with a generic target."
+  (should (equal hermes-capabilities-target "emacs-pair")))
+
 (ert-deftest hermes-capabilities-register-on-ready ()
   "A `gateway.ready' event triggers an `emacs.register' request on the socket."
   (hermes-capabilities-test--with-clean-registry
@@ -259,7 +263,7 @@ touched."
       (let ((provider (hermes-capabilities--provider-create
                        :active t
                        :buffer (current-buffer)
-                       :target "pihome-pair"
+                       :target "emacs-pair"
                        :instance-id "inst-1"
                        :display-name "PiHome"
                        :role 'pair)))
@@ -277,7 +281,7 @@ touched."
                                          :array-type 'list)))
           (should (equal (alist-get 'method frame) "emacs.register"))
           (let ((params (alist-get 'params frame)))
-            (should (equal (alist-get 'target params) "pihome-pair"))
+            (should (equal (alist-get 'target params) "emacs-pair"))
             (should (equal (alist-get 'instance_id params) "inst-1"))
             (should (seq-contains-p (alist-get 'capabilities params) "buffer.list"))))))))
 
@@ -290,7 +294,7 @@ touched."
       (let ((provider (hermes-capabilities--provider-create
                        :active t
                        :buffer (current-buffer)
-                       :target "pihome-pair"
+                       :target "emacs-pair"
                        :instance-id "inst-1"
                        :display-name "PiHome"
                        :role 'pair))
@@ -350,7 +354,7 @@ touched."
       (let ((provider (hermes-capabilities--provider-create
                        :active t
                        :buffer (current-buffer)
-                       :target "pihome-pair"
+                       :target "emacs-pair"
                        :instance-id "inst-1"
                        :display-name "PiHome"
                        :role 'pair)))
@@ -393,8 +397,8 @@ checked to exclude session-id-bearing slots."
     (hermes-capabilities--register "buffer.list" (lambda (_) "ok"))
     (hermes-capabilities--register "buffer.current" (lambda (_) "ok"))
     (let ((params (hermes-capabilities--registration-params
-                   "pihome-pair" "inst-1" "PiHome" 'pair)))
-      (should (equal (alist-get 'target params) "pihome-pair"))
+                   "emacs-pair" "inst-1" "PiHome" 'pair)))
+      (should (equal (alist-get 'target params) "emacs-pair"))
       (should (equal (alist-get 'instance_id params) "inst-1"))
       (should (equal (alist-get 'display_name params) "PiHome"))
       (should (equal (alist-get 'role params) "pair"))
@@ -405,7 +409,7 @@ checked to exclude session-id-bearing slots."
 
 (ert-deftest hermes-capabilities-instance-id-is-volatile ()
   "Two calls with different fingerprints produce distinct instance ids."
-  (let ((a (hermes-capabilities--instance-id "pihome-pair")))
+  (let ((a (hermes-capabilities--instance-id "emacs-pair")))
     (should (string-match-p
              (rx "emacs-" (+ nonl) ":" (+ nonl) ":" (+ digit) ":" (+ hex))
              a))))
@@ -646,7 +650,7 @@ checked to exclude session-id-bearing slots."
     (hermes-capabilities--register "buffer.list" (lambda (_) "ok"))
     (hermes-capabilities--register "buffer.read" (lambda (_) "ok"))
     (let* ((params (hermes-capabilities--registration-params
-                    "pihome-pair" "inst-1" "PiHome" 'pair))
+                    "emacs-pair" "inst-1" "PiHome" 'pair))
            (frame `((jsonrpc . "2.0")
                     (id . "reg-1")
                     (method . "emacs.register")

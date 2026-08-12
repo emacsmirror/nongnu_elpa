@@ -64,7 +64,7 @@ never come up implicitly.  Set it to t before calling
 `hermes-capabilities-start'."
   :type 'boolean)
 
-(defcustom hermes-capabilities-target "pihome-pair"
+(defcustom hermes-capabilities-target "emacs-pair"
   "Stable target id this provider registers as.
 The backend routes `emacs_call' requests by target; `pair' targets are the
 visible interactive Emacs and `worker' targets are background sessions.  See
