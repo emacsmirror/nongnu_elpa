@@ -120,6 +120,20 @@
 
             buildPhase = ''
               runHook preBuild
+              emacs -Q --batch -l loaddefs-gen \
+                --eval '(loaddefs-generate "lisp" "lisp/hermes-autoloads.el")'
+              emacs -Q --batch -l package \
+                --eval '(with-temp-buffer
+                           (insert-file-contents "lisp/hermes.el")
+                           (let ((description (package-buffer-info)))
+                             ;; keymap-popup is a propagated trivialBuild library,
+                             ;; not an ELPA directory package in Nix.
+                             (setf (package-desc-reqs description)
+                                   (assq-delete-all
+                                    (quote keymap-popup)
+                                    (package-desc-reqs description)))
+                             (package-generate-description-file
+                              description "lisp/hermes-pkg.el")))'
               emacs -l package -f package-initialize -L lisp --batch \
                 -f batch-byte-compile ${elispFileArgs}
               runHook postBuild
@@ -127,7 +141,7 @@
 
             installPhase = ''
               runHook preInstall
-              lispdir=$out/share/emacs/site-lisp
+              lispdir=$out/share/emacs/site-lisp/elpa/hermes-${version}
               mkdir -p "$lispdir"
               install -m444 lisp/*.el lisp/*.elc "$lispdir/"
               runHook postInstall
@@ -206,15 +220,20 @@
               }
               ''
                 set -eu
-                lispdir="${hermesEl}/share/emacs/site-lisp"
+                lispdir="${hermesEl}/share/emacs/site-lisp/elpa/hermes-${version}"
                 for f in ${elispFileArgs}; do
                   base=$(basename "$f" .el)
                   test -f "$lispdir/$base.elc"
                 done
+                test -f "$lispdir/hermes-autoloads.el"
+                test -f "$lispdir/hermes-pkg.el"
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME"
                 emacs -Q --batch --eval '(progn
                   (package-initialize)
+                  (unless (and (commandp (quote hermes))
+                               (autoloadp (symbol-function (quote hermes))))
+                    (error "installed package autoload missing"))
                   (require (quote hermes-session-title))
                   (require (quote hermes))
                   (unless (and (fboundp (quote hermes-session-title-canonicalize))
