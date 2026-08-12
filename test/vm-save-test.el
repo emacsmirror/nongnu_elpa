@@ -420,6 +420,160 @@ asked from the summary as often as not."
       (kill-buffer folder)
       (kill-buffer summary))))
 
+;;; Piping and saving without headers (emacs-vm/vm#632)
+;;
+;; `vm-pipe-message-to-command' and `vm-save-message-sans-headers' had no
+;; test.  Both hand the message to something outside VM -- a shell command,
+;; a file -- so what they hand over is the thing to check, and the prefix
+;; argument that chooses how much of the message goes is the interesting part.
+
+(defconst vm-save-test--pipe-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nTo: me@example.com\n"
+          "Subject: piping\nMessage-ID: <pipe@example.com>\n\n"
+          "The body to be piped.\n\n"
+          "From bob@example.com Sat Aug  8 16:05:00 2026\n"
+          "From: bob@example.com\nTo: me@example.com\n"
+          "Subject: second\nMessage-ID: <two@example.com>\n\n"
+          "The second body.\n\n")
+  "Two messages, so a command run over marks can be told from one message.")
+
+(defmacro vm-save-test--with-pipe-folder (&rest body)
+  "Visit the piping fixture and run BODY in the folder buffer."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-pipe" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-last-pipe-command nil))
+           (write-region vm-save-test--pipe-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-save-test--piped-to-file (file)
+  "What a pipe wrote to FILE."
+  (if (file-exists-p file)
+      (with-temp-buffer (insert-file-contents file) (buffer-string))
+    ""))
+
+(ert-deftest vm-save-test-piping-a-message-sends-headers-and-body ()
+  "`vm-pipe-message-to-command' hands the whole message to the command,
+headers and body, but not the folder's own separator line -- what the
+command sees has to be a message, not a piece of an mbox."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "piped" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (vm-pipe-message-to-command (format "cat > %s" target))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "Subject: piping" piped))
+              (should (string-match-p "The body to be piped" piped))
+              (should-not (string-match-p "\\`From alice@example\\.com " piped))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-with-a-prefix-sends-only-a-part ()
+  "REGRESSION: the prefix argument chooses how much of the message goes.
+Issue #634.  One \\[universal-argument] sends the text, two the headers, and
+they are complementary -- a test of one without the other would not notice
+the parts being swapped.
+
+`vm-pipe-message-part' took the prefix as an argument and then ignored it,
+reading the variable `prefix-arg' instead.  That is the prefix for the next
+command and is nil while one is running, so every documented prefix did
+nothing and the whole message went every time."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "piped-part" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (vm-pipe-message-to-command (format "cat > %s" target) '(4))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" piped))
+              (should-not (string-match-p "Subject: piping" piped)))
+            (vm-pipe-message-to-command (format "cat > %s" target) '(16))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "Subject: piping" piped))
+              (should-not (string-match-p "The body to be piped" piped))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-with-a-prefix-typed-at-the-keyboard ()
+  "REGRESSION: the prefix works when it comes from the keyboard too.
+Issue #634.  This is the path a user takes -- \\[universal-argument] \\[vm-pipe-message-to-command] --
+where the prefix arrives as `current-prefix-arg' and the command's own
+interactive spec passes it on.  A test that only called the function with an
+argument would not have caught this one being read from the wrong variable,
+since both were wrong in the same way."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "piped-typed" temporary-file-directory)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (&rest _) (format "cat > %s" target))))
+            (let ((current-prefix-arg '(4)))
+              (call-interactively 'vm-pipe-message-to-command))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" piped))
+              (should-not (string-match-p "Subject: piping" piped))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-remembers-the-last-command ()
+  "The command is remembered, since `vm-pipe-message-to-command' offers it
+as the default next time."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "piped-remember" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (vm-pipe-message-to-command (format "cat > %s" target))
+            (should (equal vm-last-pipe-command (format "cat > %s" target))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-to-a-string-returns-the-output ()
+  "`vm-pipe-message-to-command-to-string' gives the command's output back
+rather than displaying it, which is what a program calling it wants."
+  (vm-save-test--with-pipe-folder
+    (should (string-match-p
+             "Subject: piping"
+             (vm-pipe-message-to-command-to-string "cat")))))
+
+(ert-deftest vm-save-test-saving-without-headers-writes-the-body-alone ()
+  "`vm-save-message-sans-headers' writes the body and leaves the headers
+out, and marks the message written -- that flag is how the summary shows
+that a message has been filed somewhere."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "body-only" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (vm-save-message-sans-headers target 1 t)
+            (let ((saved (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" saved))
+              (should-not (string-match-p "Subject: piping" saved))
+              (should-not (string-match-p "From: alice" saved)))
+            (should (vm-written-flag (car vm-message-list))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-saving-without-headers-appends ()
+  "A second save appends rather than replacing what is there, which is what
+makes the command usable for collecting bodies into one file."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "collected" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (vm-save-message-sans-headers target 1 t)
+            (setq vm-message-pointer (cdr vm-message-list))
+            (vm-save-message-sans-headers target 1 t)
+            (let ((saved (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" saved))
+              (should (string-match-p "The second body" saved))))
+        (ignore-errors (delete-file target))))))
+
 (provide 'vm-save-test)
 
 ;;; vm-save-test.el ends here
