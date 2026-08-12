@@ -1205,6 +1205,126 @@ nothing rather than being negated into a match."
     (should (vm-vs-not first '(author "nobody")))
     (should-not (vm-vs-not first '(author "alice")))))
 
+(defconst vm-virtual-test--thread-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nSubject: badgers\n"
+          "Message-ID: <root@example.com>\n\nThe root.\n\n"
+          "From bob@example.com Sat Aug  8 16:05:00 2026\n"
+          "From: bob@example.com\nSubject: Re: badgers\n"
+          "Message-ID: <reply@example.com>\n"
+          "In-Reply-To: <root@example.com>\n\nThe reply.\n\n")
+  "A thread of two: a root from alice and a reply from bob.")
+
+(defmacro vm-virtual-test--with-thread-folder (spec &rest body)
+  "Visit a folder holding one thread of two messages and run BODY.
+SPEC is (ROOT-VAR REPLY-VAR).  Threading is on, since the thread selectors
+have nothing to walk without it."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-thread-sel" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-summary-show-threads t))
+           (write-region vm-virtual-test--thread-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             (vm-build-threads nil)
+             (let ((,(car spec) (car vm-message-list))
+                   (,(cadr spec) (cadr vm-message-list)))
+               ,@body)))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-virtual-test-thread-selector-holds-for-any-of-the-thread ()
+  "`thread' asks whether the selector holds for any message in the thread.
+The reply is from bob, so a thread selector for alice matches it too -- that
+is what makes a thread selector different from the plain one, and it is how
+you pull a whole conversation into a folder."
+  (vm-virtual-test--with-thread-folder (root reply)
+    (should (vm-vs-thread root '(author "alice")))
+    (should (vm-vs-thread reply '(author "alice")))
+    (should (vm-vs-thread root '(author "bob")))
+    (should-not (vm-vs-thread reply '(author "nobody")))
+    ;; the plain selector still speaks only for the message it is given
+    (should-not (vm-vs-author reply "alice"))))
+
+(ert-deftest vm-virtual-test-thread-all-selector-holds-for-every-message ()
+  "`thread-all' asks whether the selector holds for every message in the
+thread, which is the other question and gives the other answer here: only
+one of these two is from alice."
+  (vm-virtual-test--with-thread-folder (root reply)
+    (should-not (vm-vs-thread-all root '(author "alice")))
+    (should (vm-vs-thread-all root '(subject "badgers")))
+    (should (vm-vs-thread-all reply '(subject "badgers")))))
+
+(ert-deftest vm-virtual-test-uid-and-uidl-selectors ()
+  "`uid' and `uidl' compare the server's identifier for the message.
+A folder read from a file has neither, and asking must answer no rather than
+matching everything or signalling.
+
+The two read the same slot -- a message comes from POP or from IMAP, not
+both -- so they are one question asked in two vocabularies, and setting
+either is setting the other."
+  (vm-virtual-test--with-selectors (first _second)
+    (should-not (vm-vs-uid first "1"))
+    (should-not (vm-vs-uidl first "1"))
+    (vm-set-imap-uid-of first "42")
+    (should (vm-vs-uid first "42"))
+    (should-not (vm-vs-uid first "43"))
+    (should (vm-vs-uidl first "42"))
+    (vm-set-pop-uidl-of first "abc")
+    (should (vm-vs-uidl first "abc"))
+    (should (vm-vs-uid first "abc"))))
+
+(ert-deftest vm-virtual-test-folder-name-selector ()
+  "`folder-name' matches the name of the folder the message is really in.
+For a virtual message that is the real message's folder, not the virtual
+one, which is what makes the selector usable inside a virtual folder."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-folder-name first "\\`incoming\\'"))
+    (should-not (vm-vs-folder-name first "\\`nothing\\'"))))
+
+(ert-deftest vm-virtual-test-eval-and-sexp-selectors ()
+  "`eval' runs Lisp against `vm-virtual-message'; `sexp' combines selectors.
+They are the escape hatches, and what they are given is the message being
+checked."
+  (vm-virtual-test--with-selectors (first _second)
+    (should (vm-vs-eval first '(vm-vs-author vm-virtual-message "alice")))
+    (should-not (vm-vs-eval first '(vm-vs-author vm-virtual-message "nobody")))
+    (should (vm-vs-sexp first '(and (subject "badgers") (author "alice"))))
+    (should-not (vm-vs-sexp first '(and (subject "badgers")
+                                        (author "nobody"))))))
+
+(ert-deftest vm-virtual-test-outgoing-selector ()
+  "`outgoing' is a message from you, and who that is comes from
+`vm-summary-uninteresting-senders'.  With nothing set there, nothing is
+outgoing -- rather than everything."
+  (vm-virtual-test--with-selectors (first _second)
+    (let ((vm-summary-uninteresting-senders nil))
+      (should-not (vm-vs-outgoing first)))
+    (let ((vm-summary-uninteresting-senders "alice@example\\.com"))
+      (should (vm-vs-outgoing first)))
+    (let ((vm-summary-uninteresting-senders "nobody@example\\.com"))
+      (should-not (vm-vs-outgoing first)))))
+
+(ert-deftest vm-virtual-test-virtual-folder-member-selector ()
+  "`virtual-folder-member' is true of a message some virtual folder is
+showing.  Before any virtual folder exists, no message is a member."
+  (vm-virtual-test--with-selectors (first _second)
+    (should-not (vm-vs-virtual-folder-member first))
+    (let* ((folder (buffer-file-name))
+           (vm-virtual-folder-alist
+            (list (list "everything" (list (list folder) '(any))))))
+      (vm-visit-virtual-folder "everything")
+      (should (vm-vs-virtual-folder-member first)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
