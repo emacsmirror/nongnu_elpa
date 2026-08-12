@@ -111,11 +111,18 @@ by `ert-deftest' with `cl-macrolet', so it exists only inside a test body:
 a helper that used it worked when called from a test and failed with
 \"(void-function skip-unless)\" when called from a function, which is what
 happened to the mail-sending tests."
-  (vm-test-skip-unless (vm-imap-live-available-p)
-		       "No live IMAP configuration in test/vm-live-config.el")
-  (vm-test-skip-unless (vm-imap-live-server name)
-		       (format "No server called %s in vm-imap-test-servers"
-			       name)))
+  (vm-test-skip-unless
+   (vm-imap-live-available-p)
+   (concat "No live IMAP configuration.  To run the live tests, copy "
+	   "test/vm-live-config.el.template to test/vm-live-config.el and "
+	   "fill in vm-imap-test-servers; see "
+	   "dev/docs/design/imap-live-tests.org."))
+  (vm-test-skip-unless
+   (vm-imap-live-server name)
+   (format (concat "No server called %s in vm-imap-test-servers.  Add one to "
+		   "test/vm-live-config.el, or this server's tests stay "
+		   "unrun.")
+	   name)))
 
 ;;; ------------------------------------------------------------------
 ;;; Independent minimal IMAP client
