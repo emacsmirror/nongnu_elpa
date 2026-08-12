@@ -42,6 +42,8 @@
 
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
+(defvar hermes-chat--lifecycle-generation)
+(defvar hermes-chat--runtime-flags)
 
 (defvar-local hermes-chat--commands-cache nil
   "Cached slash command catalog as an alist of (NAME . DESCRIPTION).")
@@ -127,24 +129,81 @@
   (when (string-equal name "goal")
     (hermes-chat--dashboard-refresh-goal)))
 
-(defun hermes-chat--dashboard-dispatch-command (name arg &optional preserve-content)
+(defun hermes-chat--reasoning-flags (flags result)
+  "Return FLAGS with effective reasoning from config RESULT."
+  (if-let* ((effort (hermes-transport--non-empty-string
+                     (hermes-transport--scalar-string
+                      (hermes-transport--get result 'value)))))
+      (plist-put (copy-sequence flags) :reasoning-effort effort)
+    flags))
+
+(defun hermes-chat--command-context (client)
+  "Return current command ownership context for CLIENT."
+  (list :client client
+        :generation hermes-chat--lifecycle-generation
+        :session-id hermes-chat--dashboard-active-session-id))
+
+(defun hermes-chat--command-context-current-p (context)
+  "Return non-nil when command CONTEXT still owns this chat."
+  (hermes-chat--dashboard-context-current-p
+   (plist-get context :client)
+   (plist-get context :generation)
+   (plist-get context :session-id)))
+
+(defun hermes-chat--refresh-reasoning-after-command (name context)
+  "Refresh effective reasoning when command NAME in CONTEXT may have changed it."
+  (when (and (string-equal name "reasoning")
+             (hermes-chat--command-context-current-p context))
+    (let ((buffer (current-buffer))
+          (client (plist-get context :client))
+          (session-id (plist-get context :session-id)))
+      (hermes-dashboard-transport-config-get
+       client "reasoning"
+       :session-id session-id
+       :resolve
+       (lambda (result)
+         (hermes-chat--in-buffer buffer
+           (when (hermes-chat--command-context-current-p context)
+             (setq hermes-chat--runtime-flags
+                   (hermes-chat--reasoning-flags
+                    hermes-chat--runtime-flags result))
+             (force-mode-line-update))))
+       :reject #'ignore))))
+
+(defun hermes-chat--refresh-state-after-command (name context)
+  "Refresh structured state that command NAME in CONTEXT may have changed."
+  (hermes-chat--refresh-goal-after-command name)
+  (hermes-chat--refresh-reasoning-after-command name context))
+
+(defun hermes-chat--dashboard-dispatch-command
+    (name arg &optional preserve-content context)
   "Dispatch dashboard command NAME with ARG and render its result.
-PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
+PRESERVE-CONTENT is restored if session bootstrap fails before dispatch.
+CONTEXT, when non-nil, retains ownership from a failed `slash.exec' request."
   (let ((buffer (current-buffer))
         (raw (or preserve-content (hermes-chat--alias-content name arg))))
-    (hermes-chat--with-dashboard-session
-     raw buffer
-     (lambda (live-client)
-       (hermes-dashboard-transport-command-dispatch
-        live-client name arg
-        :session-id hermes-chat--dashboard-active-session-id
-        :resolve (lambda (result)
-                   (hermes-chat--in-buffer buffer
-                     (hermes-chat--handle-command-result result arg)
-                     (hermes-chat--refresh-goal-after-command name)))
-        :reject (lambda (message)
-                  (hermes-chat--in-buffer buffer
-                    (hermes-chat--command-error message))))))))
+    (when (or (null context) (hermes-chat--command-context-current-p context))
+      (hermes-chat--with-dashboard-session
+       raw buffer
+       (lambda (live-client)
+         (let ((request-context (or context
+                                    (hermes-chat--command-context live-client))))
+           (when (hermes-chat--command-context-current-p request-context)
+             (hermes-dashboard-transport-command-dispatch
+              live-client name arg
+              :session-id (plist-get request-context :session-id)
+              :resolve
+              (lambda (result)
+                (hermes-chat--in-buffer buffer
+                  (when (hermes-chat--command-context-current-p request-context)
+                    (hermes-chat--handle-command-result result arg)
+                    (hermes-chat--refresh-state-after-command
+                     name request-context))))
+              :reject
+              (lambda (message)
+                (hermes-chat--in-buffer buffer
+                  (when (hermes-chat--command-context-current-p request-context)
+                    (hermes-chat--command-error message))))))))))))
 
 (defun hermes-chat--dashboard-slash-exec (name arg raw)
   "Run RAW slash command, falling back to command dispatch for NAME/ARG."
@@ -153,17 +212,22 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
     (hermes-chat--with-dashboard-session
      preserve-content buffer
      (lambda (live-client)
-       (hermes-dashboard-transport-slash-exec
-        live-client raw
-        :session-id hermes-chat--dashboard-active-session-id
-        :resolve (lambda (result)
-                   (hermes-chat--in-buffer buffer
-                     (hermes-chat--handle-command-result result arg)
-                     (hermes-chat--refresh-goal-after-command name)))
-        :reject (lambda (_message)
-                  (hermes-chat--in-buffer buffer
-                    (hermes-chat--dashboard-dispatch-command
-                     name arg preserve-content))))))))
+       (let ((context (hermes-chat--command-context live-client)))
+         (hermes-dashboard-transport-slash-exec
+          live-client raw
+          :session-id (plist-get context :session-id)
+          :resolve
+          (lambda (result)
+            (hermes-chat--in-buffer buffer
+              (when (hermes-chat--command-context-current-p context)
+                (hermes-chat--handle-command-result result arg)
+                (hermes-chat--refresh-state-after-command name context))))
+          :reject
+          (lambda (_message)
+            (hermes-chat--in-buffer buffer
+              (when (hermes-chat--command-context-current-p context)
+                (hermes-chat--dashboard-dispatch-command
+                 name arg preserve-content context))))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."

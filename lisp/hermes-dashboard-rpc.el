@@ -160,8 +160,9 @@ asynchronous result or error."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-config-get "config.get"
   "Send a `config.get' request reading KEY on CLIENT.
-CWD scopes the `project' key; SESSION-ID scopes the `fast' key.  RESOLVE and
-REJECT receive the asynchronous result or error."
+CWD scopes the `project' key; SESSION-ID scopes live-session keys such as
+`fast' and `reasoning'.  RESOLVE and REJECT receive the asynchronous result or
+error."
   :args (key) :keys (cwd session-id))
 
 (hermes-dashboard-transport-define-rpc
