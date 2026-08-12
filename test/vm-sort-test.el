@@ -565,6 +565,156 @@ comes to mean a different message than the one the user was last at."
       (should (memq vm-message-pointer (vm-sort-test--conses)))
       (should (memq vm-last-message-pointer (vm-sort-test--conses))))))
 
+;;; Sorting a folder (emacs-vm/vm#632)
+;;
+;; The sort comparators were called by no test: `vm-sort-messages' is what a
+;; user runs, and the order it leaves the folder in is what they see.  Each
+;; key is checked against a folder built so that the keys disagree -- sorting
+;; by author, by date and by subject must each give a different order, or the
+;; test would pass with every comparator returning the same thing.
+
+(defconst vm-sort-test--folder
+  (concat
+   ;; alice: second by date, third by subject, second by size, first in file
+   "From alice@example.com Sun Aug  2 10:00:00 2026\n"
+   "From: alice@example.com\nTo: me@example.com\n"
+   "Date: Sun, 2 Aug 2026 10:00:00 +0000\n"
+   "Subject: cherries\nMessage-ID: <a@example.com>\n\n"
+   "A body of middling length.\nWith a second line to it.\n\n"
+   ;; carol: first by date, second by subject, longest, second in file
+   "From carol@example.com Sat Aug  1 10:00:00 2026\n"
+   "From: carol@example.com\nTo: me@example.com\n"
+   "Date: Sat, 1 Aug 2026 10:00:00 +0000\n"
+   "Subject: bananas\nMessage-ID: <c@example.com>\n\n"
+   "The longest body of the three, which is what makes the size order\n"
+   "differ from every other order in this folder.\nA third line.\n"
+   "A fourth line.\nA fifth line.\n\n"
+   ;; bob: last by date, first by subject, shortest, last in file
+   "From bob@example.com Mon Aug  3 10:00:00 2026\n"
+   "From: bob@example.com\nTo: me@example.com\n"
+   "Date: Mon, 3 Aug 2026 10:00:00 +0000\n"
+   "Subject: apples\nMessage-ID: <b@example.com>\n\nShort.\n\n")
+  "Three messages whose every order differs from every other.
+Author, date, subject, size and the order in the file are five different
+arrangements of the same three messages, so a test of one key cannot pass by
+agreeing with another -- which is how a date test first passed here with the
+date comparator swapped for the subject one.")
+
+(defmacro vm-sort-test--with-folder (&rest body)
+  "Visit the sorting fixture and run BODY in the folder buffer."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-sort" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-summary-show-threads nil)
+               (vm-move-messages-physically nil))
+           (write-region vm-sort-test--folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-sort-test--subjects ()
+  "The subjects of the folder, in the order the folder holds them."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(defun vm-sort-test--authors ()
+  "The authors of the folder, in the order the folder holds them."
+  (mapcar #'vm-su-from vm-message-list))
+
+(ert-deftest vm-sort-test-by-author ()
+  "Sorting by author orders by the From address, and `reversed-author'
+undoes it.  The subjects say which order came out, and the author order is
+not the subject order."
+  (vm-sort-test--with-folder
+    (vm-sort-messages "author")
+    (should (equal (vm-sort-test--subjects) '("cherries" "apples" "bananas")))
+    (vm-sort-messages "reversed-author")
+    (should (equal (vm-sort-test--subjects) '("bananas" "apples" "cherries")))))
+
+(ert-deftest vm-sort-test-by-date ()
+  "Sorting by date orders by when the message was sent, oldest first.
+Neither that nor its reverse is the subject order, so a comparator reading
+the wrong field cannot give this answer."
+  (vm-sort-test--with-folder
+    (vm-sort-messages "date")
+    (should (equal (vm-sort-test--subjects) '("bananas" "cherries" "apples")))
+    (vm-sort-messages "reversed-date")
+    (should (equal (vm-sort-test--subjects) '("apples" "cherries" "bananas")))))
+
+(ert-deftest vm-sort-test-by-subject ()
+  "Sorting by subject is alphabetical on the subject as sorting sees it."
+  (vm-sort-test--with-folder
+    (vm-sort-messages "subject")
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))
+    (vm-sort-messages "reversed-subject")
+    (should (equal (vm-sort-test--subjects) '("cherries" "bananas" "apples")))))
+
+(ert-deftest vm-sort-test-by-size ()
+  "Sorting by byte-count puts the shortest first and the longest last, an
+order that is neither the date's nor the subject's."
+  (vm-sort-test--with-folder
+    (vm-sort-messages "byte-count")
+    (should (equal (vm-sort-test--subjects) '("apples" "cherries" "bananas")))
+    (vm-sort-messages "reversed-byte-count")
+    (should (equal (vm-sort-test--subjects) '("bananas" "cherries" "apples")))
+    (vm-sort-messages "line-count")
+    (should (equal (car (vm-sort-test--subjects)) "apples"))
+    (should (equal (car (last (vm-sort-test--subjects))) "bananas"))))
+
+(ert-deftest vm-sort-test-physical-order-is-the-order-in-the-file ()
+  "`physical-order' is the order the messages sit in the folder file, which
+is what an unsorted folder shows and what sorting by it restores."
+  (vm-sort-test--with-folder
+    (let ((original (vm-sort-test--subjects)))
+      (should (equal original '("cherries" "bananas" "apples")))
+      (vm-sort-messages "author")
+      (should-not (equal (vm-sort-test--subjects) original))
+      (vm-sort-messages "physical-order")
+      (should (equal (vm-sort-test--subjects) original))
+      (vm-sort-messages "reversed-physical-order")
+      (should (equal (vm-sort-test--subjects) (reverse original))))))
+
+(ert-deftest vm-sort-test-several-keys-in-order ()
+  "Several keys are tried in turn: the first decides, and a later one only
+breaks a tie.  Sorting by a key every message shares leaves the second key
+to do the work."
+  (vm-sort-test--with-folder
+    ;; every message has a different subject, so subject alone decides
+    (vm-sort-messages "subject author")
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))
+    ;; every message is to the same address, so recipients decides nothing
+    ;; and author breaks every tie
+    (vm-sort-messages "recipients author")
+    (should (equal (vm-sort-test--authors)
+                   '("alice@example.com" "bob@example.com"
+                     "carol@example.com")))))
+
+(ert-deftest vm-sort-test-sorting-does-not-move-messages-in-the-file ()
+  "Sorting changes the order VM shows, not the order on disk.
+`vm-move-messages-physically' is what would change the file, and it is off
+here; the folder must be left holding what it held."
+  (vm-sort-test--with-folder
+    (let ((file (buffer-file-name)))
+      (vm-sort-messages "reversed-author")
+      (should (equal (vm-sort-test--authors)
+                     '("carol@example.com" "bob@example.com"
+                       "alice@example.com")))
+      (let ((on-disk (with-temp-buffer
+                       (insert-file-contents file)
+                       (buffer-string))))
+        ;; alice is still the first message in the file
+        (should (string-match-p "\\`From alice@example\\.com" on-disk))))))
+
 (provide 'vm-sort-test)
 
 ;;; vm-sort-test.el ends here
