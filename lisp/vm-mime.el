@@ -5275,13 +5275,19 @@ confirmed before creating a new directory."
 		    (file-name-as-directory		; directory
 		     (or directory		      
 			 vm-mime-attachment-save-directory
-			 vm-mime-all-attachments-directory))
+			 vm-mime-all-attachments-directory
+			 ;; both are allowed to be nil -- the customize type
+			 ;; of the first offers it -- and `file-name-as-directory'
+			 ;; of nil is an error, so the command signalled instead
+			 ;; of asking where to save
+			 default-directory))
 		    (and file-name			; default-filename
 			 (concat
 			  (file-name-as-directory 	      
 			   (or directory		      
 			       vm-mime-attachment-save-directory
-			       vm-mime-all-attachments-directory))
+			       vm-mime-all-attachments-directory
+			       default-directory))
 			  (or file-name "")))
 		    nil nil			      ; mustmatch initial
 		    'vm-mime-save-all-attachments-history
