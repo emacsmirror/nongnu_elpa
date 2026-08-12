@@ -2903,6 +2903,123 @@ attachments a sender has mislabelled."
     (should (string-match-p "The attached file contents"
                             (buffer-string)))))
 
+;;; Saving every attachment of a message (emacs-vm/vm#632)
+
+(defconst vm-mime-test--two-attachment-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nTo: me@example.com\n"
+          "Subject: two attachments\nMIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"bnd\"\n\n"
+          "--bnd\nContent-Type: text/plain\n\nSome covering text.\n\n"
+          "--bnd\nContent-Type: application/octet-stream; name=\"first.bin\"\n"
+          "Content-Disposition: attachment; filename=\"first.bin\"\n\n"
+          "The first attachment.\n\n"
+          "--bnd\nContent-Type: application/octet-stream; name=\"second.bin\"\n"
+          "Content-Disposition: attachment; filename=\"second.bin\"\n\n"
+          "The second attachment.\n\n"
+          "--bnd--\n\n")
+  "A message with two attachments, so saving them all can be told from
+saving one.  Both are application/octet-stream, which is in
+`vm-mime-saveable-types' and is not shown inline.")
+
+(defmacro vm-mime-test--with-two-attachments (spec &rest body)
+  "Visit a folder holding `vm-mime-test--two-attachment-folder' and run BODY.
+SPEC is (DIRECTORY-VAR), bound to an empty directory to save into."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-save-attach" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (,(car spec) (file-name-as-directory
+                             (expand-file-name "saved" dir)))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-auto-decode-mime-messages t)
+               (vm-display-using-mime t)
+               (vm-preview-lines nil)
+               (vm-mime-attachment-save-directory nil)
+               (vm-mime-all-attachments-directory nil))
+           (make-directory ,(car spec) t)
+           (write-region vm-mime-test--two-attachment-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-mime-test--file-contents (file)
+  "The contents of FILE, or nil if it is not there."
+  (when (file-exists-p file)
+    (with-temp-buffer (insert-file-contents file) (buffer-string))))
+
+(ert-deftest vm-mime-test-saving-every-attachment ()
+  "`vm-save-attachments' saves each attachment of the message, decoded, to
+the file the prompt gives back.  Both attachments are written, and the
+covering text is not one of them: it has no filename and no attachment
+disposition, so it is not an attachment to save."
+  (vm-mime-test--with-two-attachments (target)
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'vm-read-file-name)
+                 (lambda (_prompt _dir default &rest _)
+                   (push (file-name-nondirectory (or default "")) asked)
+                   (expand-file-name (file-name-nondirectory (or default ""))
+                                     target)))
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-attachments 1))
+      (should (equal (sort asked #'string<) '("first.bin" "second.bin")))
+      (should (equal (vm-mime-test--file-contents
+                      (expand-file-name "first.bin" target))
+                     "The first attachment.\n"))
+      (should (equal (vm-mime-test--file-contents
+                      (expand-file-name "second.bin" target))
+                     "The second attachment.\n")))))
+
+(ert-deftest vm-mime-test-saving-attachments-does-not-overwrite-unbidden ()
+  "An existing file is not overwritten when the answer is no, and what was
+in it is still there afterwards.
+
+The question is asked only about the file that is already there: the other
+attachment has nothing to overwrite and is saved as usual, so one no does not
+abandon the rest of the message."
+  (vm-mime-test--with-two-attachments (target)
+    (let ((first (expand-file-name "first.bin" target))
+          (second (expand-file-name "second.bin" target))
+          (questions 0))
+      (write-region "Something already here.\n" nil first nil 'quiet)
+      (cl-letf (((symbol-function 'vm-read-file-name)
+                 (lambda (_prompt _dir default &rest _)
+                   (expand-file-name (file-name-nondirectory (or default ""))
+                                     target)))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq questions (1+ questions)) nil)))
+        (vm-save-attachments 1))
+      (should (equal questions 1))
+      (should (equal (vm-mime-test--file-contents first)
+                     "Something already here.\n"))
+      (should (equal (vm-mime-test--file-contents second)
+                     "The second attachment.\n")))))
+
+(ert-deftest vm-mime-test-saving-attachments-creates-the-directory ()
+  "A directory that does not exist yet is created once it is confirmed."
+  (vm-mime-test--with-two-attachments (target)
+    (let ((fresh (expand-file-name "not-yet/" target)))
+      (should-not (file-exists-p fresh))
+      (cl-letf (((symbol-function 'vm-read-file-name)
+                 (lambda (_prompt _dir default &rest _)
+                   (expand-file-name (file-name-nondirectory (or default ""))
+                                     fresh)))
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-attachments 1))
+      (should (file-directory-p fresh))
+      (should (equal (vm-mime-test--file-contents
+                      (expand-file-name "first.bin" fresh))
+                     "The first attachment.\n")))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

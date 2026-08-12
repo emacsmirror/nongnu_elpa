@@ -448,6 +448,48 @@ commands that reads the summary's text rather than the message list."
                                 (cadr (should-error (vm-mark-summary-region)))))))
     (should-not (vm-mark-test--marked))))
 
+(ert-deftest vm-mark-test-marking-by-virtual-folder ()
+  "`vm-mark-messages-by-virtual-folder' marks the messages a named virtual
+folder's selectors pick out, and `vm-unmark-messages-by-virtual-folder'
+unmarks them.
+
+The folder is not visited: its selectors are applied to the messages here,
+with the folder list replaced by this buffer.  That is what makes the command
+useful -- a virtual folder definition doubles as a saved search to mark by."
+  (vm-mark-test--with-folder (folder)
+    (let ((vm-virtual-folder-alist
+           (list (list "from-alice" (list (list folder) '(author "alice")))
+                 (list "about-roofs" (list (list folder) '(subject "roof"))))))
+      (vm-mark-messages-by-virtual-folder "from-alice")
+      (should (equal (vm-mark-test--marked) '("badgers" "the roof")))
+      ;; a second definition marks another message without clearing the first
+      (vm-mark-messages-by-virtual-folder "about-roofs")
+      (should (equal (vm-mark-test--marked) '("badgers" "the roof")))
+      (vm-unmark-messages-by-virtual-folder "from-alice")
+      (should (equal (vm-mark-test--marked) nil)))))
+
+(ert-deftest vm-mark-test-marking-by-a-virtual-folder-that-does-not-exist ()
+  "A name no virtual folder has says so, rather than marking nothing in
+silence."
+  (vm-mark-test--with-folder (_folder)
+    (let ((vm-virtual-folder-alist nil)
+          (text-quoting-style 'grave))
+      (should (equal (cadr (should-error
+                            (vm-mark-messages-by-virtual-folder "nowhere")))
+                     "No such virtual folder, nowhere")))))
+
+(ert-deftest vm-mark-test-unmarking-by-virtual-folder-leaves-the-rest ()
+  "Unmarking by a virtual folder takes the mark off the messages it selects
+and leaves any other marks alone."
+  (vm-mark-test--with-folder (folder)
+    (let ((vm-virtual-folder-alist
+           (list (list "about-roofs" (list (list folder) '(subject "roof"))))))
+      (dolist (m vm-message-list)
+        (vm-set-mark-of m t))
+      (should (equal (length (vm-mark-test--marked)) 3))
+      (vm-unmark-messages-by-virtual-folder "about-roofs")
+      (should (equal (vm-mark-test--marked) '("badgers" "Re: badgers"))))))
+
 (provide 'vm-mark-test)
 
 ;;; vm-mark-test.el ends here
