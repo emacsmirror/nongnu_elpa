@@ -1357,6 +1357,47 @@ showing.  Before any virtual folder exists, no message is a member."
       (vm-visit-virtual-folder "everything")
       (should (vm-vs-virtual-folder-member first)))))
 
+;;; The summary display toggles (emacs-vm/vm#632)
+
+(ert-deftest vm-virtual-test-toggle-virtual-mirror-in-a-virtual-folder ()
+  "`vm-toggle-virtual-mirror' stops a virtual folder mirroring the real one,
+and starts it again.
+
+Mirrored, deleting a message here deletes the real one.  Unmirrored, the
+virtual folder keeps its own attributes and the real message is left alone --
+which is the whole use of the command, marking a search up without touching
+the folders it came from."
+  (vm-virtual-test--with-selectors (first _second)
+    (let* ((folder (buffer-file-name))
+           (real (current-buffer))
+           (vm-virtual-folder-alist
+            (list (list "everything" (list (list folder) '(any))))))
+      (vm-visit-virtual-folder "everything")
+      (should (eq major-mode 'vm-virtual-mode))
+      (should vm-virtual-mirror)
+      ;; mirrored: deleting here deletes the real message
+      (vm-set-deleted-flag (car vm-message-list) t)
+      (should (vm-deleted-flag first))
+      (vm-set-deleted-flag (car vm-message-list) nil)
+      ;; unmirrored: it does not
+      (vm-toggle-virtual-mirror)
+      (should-not vm-virtual-mirror)
+      (vm-set-deleted-flag (car vm-message-list) t)
+      (should-not (vm-deleted-flag first))
+      ;; and back
+      (vm-toggle-virtual-mirror)
+      (should vm-virtual-mirror)
+      (should (buffer-live-p real)))))
+
+(ert-deftest vm-virtual-test-toggle-virtual-mirror-elsewhere-is-an-error ()
+  "In a folder that is not virtual the command says so.  There is nothing for
+it to mirror, and quietly doing nothing would leave the user thinking the
+attributes were now their own."
+  (vm-virtual-test--with-selectors (_first _second)
+    (let ((text-quoting-style 'grave))
+      (should (equal (cadr (should-error (vm-toggle-virtual-mirror)))
+                     "This is not a virtual folder.")))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
