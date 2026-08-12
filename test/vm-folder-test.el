@@ -2776,6 +2776,114 @@ said nothing, and went on adding messages to a folder whose name was a lie."
       (vm-visit-folder file)
       (should (= (length vm-message-list) 1)))))
 
+;;; The folder's read-only flag, and shrunken headers (emacs-vm/vm#632)
+
+(defconst vm-folder-test--state-message
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\n"
+          ;; a header over more than one line: that is what shrinking hides,
+          ;; and with every header on a line of its own there is nothing for
+          ;; the command to do
+          "To: one@example.com,\n\ttwo@example.com,\n\tthree@example.com\n"
+          "Subject: a message with headers worth hiding\n"
+          "Message-ID: <state@example.com>\n\nThe body.\n\n")
+  "One message, for the commands that change how a folder is looked at.")
+
+(defmacro vm-folder-test--with-state-folder (&rest body)
+  "Visit a folder of `vm-folder-test--state-message' and run BODY in it.
+A real visited folder, since these are commands that validate the folder they
+are called in and will not run in a buffer that merely holds the text."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-folder-state" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-current-warning vm-current-warning))
+           (write-region vm-folder-test--state-message nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-toggle-read-only-both-ways ()
+  "`vm-toggle-read-only' makes a read-only folder modifiable and back again."
+  (vm-folder-test--with-state-folder
+    (should-not vm-folder-read-only)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-toggle-read-only)
+      (should vm-folder-read-only)
+      (vm-toggle-read-only)
+      (should-not vm-folder-read-only))))
+
+(ert-deftest vm-folder-test-making-a-modified-folder-read-only-is-confirmed ()
+  "Making a folder with unsaved changes read-only asks first, since quitting
+would discard them, and answering no leaves the folder modifiable.
+
+Coming back the other way is never dangerous and is not confirmed: a
+read-only folder has no changes to lose.  The count of questions says so."
+  (vm-folder-test--with-state-folder
+    (set-buffer-modified-p t)
+    (let ((asked 0))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked (1+ asked)) nil)))
+        (should-error (vm-toggle-read-only))
+        (should (equal asked 1))
+        (should-not vm-folder-read-only))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked (1+ asked)) t)))
+        (vm-toggle-read-only)
+        (should (equal asked 2))
+        (should vm-folder-read-only)
+        (vm-toggle-read-only)
+        (should (equal asked 2))
+        (should-not vm-folder-read-only)))))
+
+(ert-deftest vm-folder-test-shrunken-headers-hide-and-show ()
+  "`vm-shrunken-headers' hides the headers that run to more than one line,
+and `vm-shrunken-headers-toggle' shows them again and hides them again.
+
+The hiding is an overlay, so what changes is what can be seen and not what
+the buffer holds: the addresses are still there to be searched, saved and
+replied to.
+
+The order matters and is the way VM uses these.  `vm-shrunken-headers' makes
+the overlay, hidden; the toggle only flips overlays that already exist, so on
+a presentation where nothing has been shrunk yet it does nothing at all.  VM
+calls the first from a hook as a message is selected, which is why a user's
+toggle always has something to work on."
+  (vm-folder-test--with-state-folder
+    (let ((vm-preview-lines nil)
+          (vm-display-using-mime t))
+      (cl-letf (((symbol-function 'vm-display) #'ignore))
+        (vm-show-current-message))
+      (with-current-buffer (or vm-presentation-buffer (current-buffer))
+        (cl-flet ((hidden ()
+                    (let ((n 0))
+                      (dolist (o (overlays-in (point-min) (point-max)) n)
+                        (when (overlay-get o 'invisible)
+                          (setq n (1+ n)))))))
+          ;; nothing shrunk yet, so the toggle has nothing to flip
+          (should (equal (hidden) 0))
+          (vm-shrunken-headers-toggle)
+          (should (equal (hidden) 0))
+          ;; shrinking hides the folded To line
+          (vm-shrunken-headers)
+          (should (> (hidden) 0))
+          (should (string-match-p "three@example.com" (buffer-string)))
+          ;; and now the toggle shows it and hides it again
+          (vm-shrunken-headers-toggle)
+          (should (equal (hidden) 0))
+          (vm-shrunken-headers-toggle)
+          (should (> (hidden) 0)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
