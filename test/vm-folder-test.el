@@ -2884,6 +2884,120 @@ toggle always has something to work on."
           (vm-shrunken-headers-toggle)
           (should (> (hidden) 0)))))))
 
+;;; Writing a folder elsewhere, and the quiet quits (emacs-vm/vm#632)
+
+(defmacro vm-folder-test--with-writable-folder (spec &rest body)
+  "Visit a folder with a summary and run BODY.
+SPEC is (FILE-VAR TARGET-VAR): the folder's own file, and a name in the same
+directory that nothing has written yet."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-write-file" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "original" dir))
+               (,(cadr spec) (expand-file-name "elsewhere" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-default-folder-permission-bits #o600)
+               (vm-folders-summary-database nil)
+               (vm-current-warning vm-current-warning))
+           (write-region vm-folder-test--state-message nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             (setq vm-message-pointer vm-message-list)
+             (vm-summarize)
+             (set-buffer (vm-buffer-of (car vm-message-list)))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-write-file-writes-the-folder-elsewhere ()
+  "`vm-write-file' writes the folder to another name, with the permission
+bits `vm-default-folder-permission-bits' asks for.
+
+That is the first of the three things its docstring says `write-file' does
+not do: a folder must not become world-readable by being written somewhere
+new."
+  (vm-folder-test--with-writable-folder (_file target)
+    (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) target)))
+      (vm-write-file))
+    (should (file-exists-p target))
+    (should (equal (file-modes target) #o600))
+    (should (equal buffer-file-name target))
+    (should (string-match-p "a message with headers worth hiding"
+                            (with-temp-buffer (insert-file-contents target)
+                                              (buffer-string))))))
+
+(ert-deftest vm-folder-test-write-file-renames-the-summary ()
+  "The summary buffer follows the folder to its new name, which is the third
+thing the docstring promises -- a summary called after the old file would be
+a summary of a folder that is no longer there."
+  (vm-folder-test--with-writable-folder (_file target)
+    (should (equal (buffer-name vm-summary-buffer) "original Summary"))
+    (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) target)))
+      (vm-write-file))
+    (should (equal (buffer-name) "elsewhere"))
+    (should (equal (buffer-name vm-summary-buffer) "elsewhere Summary"))))
+
+(ert-deftest vm-folder-test-write-file-refuses-a-virtual-folder ()
+  "A virtual folder has no file of its own and the command says so.
+
+The message is checked, not merely that something was signalled.  Any error
+at all satisfies `should-error', so a test that asked no more than that would
+pass for a command that was broken in some other way entirely -- which is how
+this test first passed against a `vm-write-file' that had been stubbed out."
+  (vm-folder-test--with-writable-folder (file _target)
+    (let ((vm-virtual-folder-alist
+           (list (list "everything" (list (list file) '(any)))))
+          (text-quoting-style 'grave))
+      (vm-visit-virtual-folder "everything")
+      (should (eq major-mode 'vm-virtual-mode))
+      ;; the prompt is answered, so that a command which got past the refusal
+      ;; would write a file and return rather than stopping for input -- the
+      ;; test then fails on the missing error instead of hanging
+      (cl-letf (((symbol-function 'read-file-name)
+                 (lambda (&rest _) (expand-file-name "from-virtual"
+                                                     (file-name-directory file)))))
+        (should (string-match-p
+                 "cannot be applied to virtual folders"
+                 (cadr (should-error (vm-write-file)))))))))
+
+(ert-deftest vm-folder-test-quitting-just-buries-leaves-the-folder-alone ()
+  "`vm-quit-just-bury' buries the folder and its summary and alters nothing.
+Emacs is still visiting the folder afterwards -- that is the difference from
+quitting it -- and `vm-quit-hook' runs, since a hook that tidies up on the
+way out should run on this way out too."
+  (vm-folder-test--with-writable-folder (file _target)
+    (let ((ran 0)
+          (folder (current-buffer)))
+      (let ((vm-quit-hook (list (lambda () (setq ran (1+ ran))))))
+        (vm-quit-just-bury))
+      (should (equal ran 1))
+      (should (buffer-live-p folder))
+      (should (equal (buffer-file-name folder) file))
+      (should (buffer-live-p vm-summary-buffer))
+      ;; and the messages are still there, unexpunged and unsaved
+      (should (equal (length vm-message-list) 1)))))
+
+(ert-deftest vm-folder-test-quitting-outside-a-folder-is-refused ()
+  "Both quiet quits are folder commands and say so elsewhere.
+
+The refusal comes from the folder validation every folder command begins
+with, not from anything of these two commands' own: their `major-mode' check
+is never reached in a buffer with no folder at all.  So this pins the refusal
+and not much else, which is what it is worth."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((text-quoting-style 'grave))
+      (dolist (command '(vm-quit-just-bury vm-quit-just-iconify))
+        (should (string-match-p
+                 "No VM folder buffer\\|must be invoked from a VM buffer"
+                 (cadr (should-error (funcall command)))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
