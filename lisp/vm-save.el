@@ -632,13 +632,17 @@ This command should NOT be used to save message to mail folders; use
 		   command output-bytes)
 	(display-buffer buffer)))))
 
-(defun vm-pipe-message-part (m _arg)
-  "Return (START END) bounds for piping to external command, based on ARG."
-  (cond ((equal prefix-arg '(4))
+(defun vm-pipe-message-part (m arg)
+  "Return (START END) bounds for piping to external command, based on ARG.
+ARG is the prefix argument of the command that is doing the piping.  This
+used to read the variable `prefix-arg' instead, which is the prefix for the
+*next* command and is nil while one is running -- so every documented prefix
+did nothing and the whole message went every time."
+  (cond ((equal arg '(4))
 	 (list (vm-text-of m) (vm-text-end-of m)))
-	((equal prefix-arg '(16))
+	((equal arg '(16))
 	 (list (vm-headers-of m) (vm-text-of m)))
-	((equal prefix-arg '(64))
+	((equal arg '(64))
 	 (list (vm-vheaders-of m) (vm-text-end-of m)))
 	(t 
 	 (list (vm-headers-of m) (vm-text-end-of m)))))
