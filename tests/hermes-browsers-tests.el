@@ -597,6 +597,128 @@
         (should-error (hermes-profiles-rename " DEFAULT ") :type 'user-error)))
     (should-not requested)))
 
+(ert-deftest hermes-profiles-create-can-clone-existing-profile ()
+  "Profile creation sends the backend's optional clone_from field."
+  (let (seen-body)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (_method _path &rest args)
+                 (setq seen-body (plist-get args :body))
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'hermes-profiles--revert) #'ignore)
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (hermes-profiles-create "worker" "planner")))
+    (should (equal seen-body
+                   '((name . "worker") (clone_from . "planner"))))))
+
+(ert-deftest hermes-profiles-soul-get-and-put-use-exact-profile-route ()
+  "SOUL editing loads and saves the selected non-default profile."
+  (let (requests soul-buffer)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                   (lambda () 'fake-client))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (method path &rest args)
+                     (push (list method path (plist-get args :body)) requests)
+                     (hermes--promise-resolved
+                      (if (equal method "GET")
+                          '((content . "You are precise.\n") (exists . t))
+                        '((ok . t))))))
+                  ((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) buffer))
+                  ((symbol-function 'message) #'ignore))
+          (with-temp-buffer
+            (hermes-profiles-mode)
+            (setq tabulated-list-entries
+                  '(("planner" ["planner" "" "" "" "—" ""])))
+            (tabulated-list-print)
+            (goto-char (point-min))
+            (hermes-profiles-edit-soul))
+          (setq soul-buffer (get-buffer "*Hermes Profile SOUL: planner*"))
+          (should (buffer-live-p soul-buffer))
+          (with-current-buffer soul-buffer
+            (should (equal (buffer-string) "You are precise.\n"))
+            (goto-char (point-max))
+            (insert "Stay brief.\n")
+            (hermes-profiles-soul-save))
+          (should (member '("GET" "/api/profiles/planner/soul" nil) requests))
+          (should (member
+                   '("PUT" "/api/profiles/planner/soul"
+                     ((content . "You are precise.\nStay brief.\n")))
+                   requests)))
+      (when (buffer-live-p soul-buffer) (kill-buffer soul-buffer)))))
+
+(ert-deftest hermes-profiles-soul-ignores-stale-and-killed-buffer-results ()
+  "Late SOUL reads cannot overwrite a repurposed or killed editor buffer."
+  (let ((read (hermes--promise-make)) target)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) read))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (setq tabulated-list-entries
+              '(("planner" ["planner" "" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-profiles-edit-soul))
+      (setq target (get-buffer "*Hermes Profile SOUL: planner*"))
+      (with-current-buffer target
+        (setq hermes-profiles-soul-profile "other")
+        (insert "new owner"))
+      (hermes--promise-resolve read '((content . "stale") (exists . t)))
+      (with-current-buffer target
+        (should (equal (buffer-string) "new owner")))
+      (kill-buffer target)
+      (should-not (buffer-live-p target)))))
+
+(ert-deftest hermes-profiles-soul-read-preserves-input-typed-while-loading ()
+  "A late SOUL read does not overwrite user input typed after dispatch."
+  (let ((read (hermes--promise-make)) target)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                   (lambda () 'fake-client))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (&rest _) read))
+                  ((symbol-function 'pop-to-buffer) #'ignore))
+          (with-temp-buffer
+            (hermes-profiles-mode)
+            (setq tabulated-list-entries
+                  '(("planner" ["planner" "" "" "" "—" ""])))
+            (tabulated-list-print)
+            (goto-char (point-min))
+            (hermes-profiles-edit-soul))
+          (setq target (get-buffer "*Hermes Profile SOUL: planner*"))
+          (with-current-buffer target (insert "typed while loading"))
+          (hermes--promise-resolve read '((content . "stale")))
+          (with-current-buffer target
+            (should (equal (buffer-string) "typed while loading"))))
+      (when (buffer-live-p target) (kill-buffer target)))))
+
+(ert-deftest hermes-profiles-soul-refuses-default-profile ()
+  "The built-in default profile has no editable SOUL surface."
+  (let (requested)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (setq requested t)
+                 (hermes--promise-resolved nil))))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (setq tabulated-list-entries
+              '(("default" ["default" "*" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (should-error (hermes-profiles-edit-soul) :type 'user-error)))
+    (should-not requested)))
+
+(ert-deftest hermes-dashboard-keymap-reaches-profiles-browser ()
+  "The main dashboard exposes profile management directly."
+  (should (eq (lookup-key hermes-dashboard-mode-map (kbd "F"))
+              #'hermes-list-profiles)))
+
 (ert-deftest hermes-rollback-diff-ignores-stale-result ()
   "An older rollback diff cannot replace the result of a newer request."
   (let ((first (hermes--promise-make))

@@ -36,6 +36,7 @@
 (require 'seq)
 (require 'tabulated-list)
 (require 'url-util)
+(require 'markdown-mode)
 (require 'hermes-transport)
 (require 'hermes-promise)
 (require 'hermes-dashboard-transport)
@@ -112,19 +113,114 @@ route requires both fields."
   (when (string-equal-ignore-case name "default")
     (user-error "Cannot %s the default profile" action)))
 
-(defun hermes-profiles-create (name)
-  "Create profile NAME through the dashboard API."
-  (interactive (list (read-string "New profile name: ")))
+(defun hermes-profiles--read-create-arguments ()
+  "Read a new profile name and optional clone source."
+  (let* ((name (read-string "New profile name: "))
+         (profiles (mapcar #'car tabulated-list-entries))
+         (clone-from (completing-read "Clone profile (empty for none): "
+                                      profiles nil nil)))
+    (list name (unless (string-empty-p clone-from) clone-from))))
+
+(defun hermes-profiles-create (name &optional clone-from)
+  "Create profile NAME, optionally cloning identity from CLONE-FROM."
+  (interactive (hermes-profiles--read-create-arguments))
   (let ((name (string-trim name))
+        (clone-from (and clone-from (string-trim clone-from)))
         (origin (current-buffer)))
     (when (string-empty-p name) (user-error "Profile name is required"))
     (hermes-profiles--ensure-non-default name "create")
     (hermes-browser--run-on-client
      (lambda (client)
-       (hermes-profiles--api client "POST" "" `((name . ,name))))
+       (hermes-profiles--api
+        client "POST" ""
+        (append `((name . ,name))
+                (and (hermes-transport--non-empty-string clone-from)
+                     `((clone_from . ,clone-from))))))
      (lambda (_result)
        (hermes-profiles--refresh-after-mutation origin
                                                 (format "created profile %s" name))))))
+
+(defvar-local hermes-profiles-soul-profile nil
+  "Profile owned by the current SOUL editor buffer.")
+
+(defvar-keymap hermes-profiles-soul-mode-map
+  :parent markdown-mode-map
+  "C-c C-c" #'hermes-profiles-soul-save
+  "C-c C-k" #'quit-window)
+
+(define-derived-mode hermes-profiles-soul-mode markdown-mode "Hermes SOUL"
+  "Edit one Hermes profile's SOUL.md through the dashboard API."
+  :interactive nil
+  (setq-local header-line-format
+              '(:eval (format " Profile: %s  |  C-c C-c save  C-c C-k quit "
+                              hermes-profiles-soul-profile))))
+
+(defun hermes-profiles--soul-path (profile)
+  "Return the SOUL API path for PROFILE."
+  (format "/%s/soul" (url-hexify-string profile)))
+
+(defun hermes-profiles--soul-current-p (buffer generation profile)
+  "Return non-nil when BUFFER still owns GENERATION and PROFILE."
+  (and (hermes-browser--request-current-mode-p
+        buffer generation 'hermes-profiles-soul-mode)
+       (with-current-buffer buffer
+         (equal hermes-profiles-soul-profile profile))))
+
+(defun hermes-profiles-edit-soul ()
+  "Open the selected non-default profile's SOUL.md for editing."
+  (interactive)
+  (let ((profile (tabulated-list-get-id)))
+    (unless profile (user-error "No profile on this line"))
+    (hermes-profiles--ensure-non-default profile "edit SOUL for")
+    (let ((target (get-buffer-create
+                   (format "*Hermes Profile SOUL: %s*" profile))))
+      (with-current-buffer target
+        (unless (derived-mode-p 'hermes-profiles-soul-mode)
+          (hermes-profiles-soul-mode))
+        (setq hermes-profiles-soul-profile profile))
+      (pop-to-buffer target)
+      (unless (with-current-buffer target (buffer-modified-p))
+        (let ((generation
+               (with-current-buffer target
+                 (hermes-browser--next-request-generation))))
+          (hermes-browser--run-on-client
+           (lambda (client)
+             (hermes-profiles--api
+              client "GET" (hermes-profiles--soul-path profile)))
+           (lambda (result)
+             (when (hermes-profiles--soul-current-p
+                    target generation profile)
+               (with-current-buffer target
+                 (unless (buffer-modified-p)
+                   (let ((inhibit-read-only t))
+                     (erase-buffer)
+                     (insert (or (hermes-profiles--field result 'content) ""))
+                     (set-buffer-modified-p nil))))))))))))
+
+(defun hermes-profiles-soul-save ()
+  "Save the current profile SOUL editor through the dashboard API."
+  (interactive)
+  (unless (derived-mode-p 'hermes-profiles-soul-mode)
+    (user-error "Not in a Hermes profile SOUL buffer"))
+  (let* ((profile hermes-profiles-soul-profile)
+         (target (current-buffer))
+         (content (buffer-substring-no-properties (point-min) (point-max)))
+         (generation (hermes-browser--next-request-generation)))
+    (unless (hermes-transport--non-empty-string profile)
+      (user-error "This SOUL buffer has no profile"))
+    (hermes-profiles--ensure-non-default profile "edit SOUL for")
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-profiles--api
+        client "PUT" (hermes-profiles--soul-path profile)
+        `((content . ,content))))
+     (lambda (_result)
+       (when (hermes-profiles--soul-current-p target generation profile)
+         (with-current-buffer target
+           (when (equal content
+                        (buffer-substring-no-properties (point-min) (point-max)))
+             (set-buffer-modified-p nil)))
+         (message "Hermes: saved SOUL for profile %s" profile))))))
 
 (defun hermes-profiles-rename (new-name)
   "Rename the profile at point to NEW-NAME."
@@ -199,6 +295,7 @@ route requires both fields."
   :rows #'hermes-profiles--rows
   :keys ("m" #'hermes-profiles-set-model
          "RET" #'hermes-profiles-set-model
+         "s" #'hermes-profiles-edit-soul
          "c" #'hermes-profiles-create
          "r" #'hermes-profiles-rename
          "D" #'hermes-profiles-delete))

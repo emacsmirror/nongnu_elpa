@@ -152,6 +152,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "R" ("Rollbacks" hermes-list-rollbacks)
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
+  "F" ("Profiles" hermes-list-profiles)
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
   :group "System"
