@@ -550,6 +550,111 @@ mouse-face VM puts on a URL it will not act on, are both passed over."
       (vm-move-to-xxxx-button 1 t)
       (should (= (point) (overlay-start button))))))
 
+;;; Moving between the buttons of a message (emacs-vm/vm#632)
+;;
+;; `vm-next-button' and `vm-previous-button' step between the MIME buttons of
+;; the message on show.  Neither had a test.  They select the window the
+;; message is in, so these display the presentation buffer in the window batch
+;; Emacs has: without that `vm-get-visible-buffer-window' finds nothing and
+;; `select-window' is handed nil.
+
+(defconst vm-page-test--two-button-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nSubject: two attachments\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"bnd\"\n\n"
+          "--bnd\nContent-Type: text/plain\n\nCovering text.\n\n"
+          "--bnd\nContent-Type: application/octet-stream; name=\"first.bin\"\n"
+          "Content-Disposition: attachment; filename=\"first.bin\"\n\n"
+          "The first attachment.\n\n"
+          "--bnd\nContent-Type: application/octet-stream; name=\"second.bin\"\n"
+          "Content-Disposition: attachment; filename=\"second.bin\"\n\n"
+          "The second attachment.\n\n"
+          "--bnd--\n\n")
+  "A message with two parts VM will not display inline, so two buttons.")
+
+(defmacro vm-page-test--with-buttons (&rest body)
+  "Show a message with two buttons and run BODY in its presentation buffer."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-buttons" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-auto-decode-mime-messages t)
+               (vm-display-using-mime t)
+               (vm-preview-lines nil)
+               (vm-honor-page-delimiters nil))
+           (write-region vm-page-test--two-button-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             (vm-show-current-message)
+             (should vm-presentation-buffer)
+             (set-window-buffer (selected-window) vm-presentation-buffer)
+             (set-buffer vm-presentation-buffer)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-page-test--on-a-button-p ()
+  "Whether point is on a MIME button."
+  (and (vm-extent-at (point) 'vm-mime-layout) t))
+
+(ert-deftest vm-page-test-next-button-steps-through-the-buttons ()
+  "`vm-next-button' moves to each button in turn, and says when there are no
+more rather than moving somewhere unhelpful."
+  (vm-page-test--with-buttons
+    (goto-char (point-min))
+    (should-not (vm-page-test--on-a-button-p))
+    (vm-next-button 1)
+    (should (vm-page-test--on-a-button-p))
+    (let ((first (point)))
+      (vm-next-button 1)
+      (should (vm-page-test--on-a-button-p))
+      (should (> (point) first))
+      (let ((second (point))
+            (text-quoting-style 'grave))
+        ;; there is no third
+        (should (equal (cadr (should-error (vm-next-button 1)))
+                       "No more buttons"))
+        ;; and point stayed where it was, as the docstring promises
+        (should (equal (point) second))))))
+
+(ert-deftest vm-page-test-previous-button-goes-back ()
+  "`vm-previous-button' walks the other way, and stops at the first button."
+  (vm-page-test--with-buttons
+    (goto-char (point-min))
+    (vm-next-button 1)
+    (let ((first (point)))
+      (vm-next-button 1)
+      (should (> (point) first))
+      (vm-previous-button 1)
+      (should (equal (point) first))
+      (let ((text-quoting-style 'grave))
+        (should (equal (cadr (should-error (vm-previous-button 1)))
+                       "No more buttons"))
+        (should (equal (point) first))))))
+
+(ert-deftest vm-page-test-a-negative-count-reverses-the-direction ()
+  "A negative count sends each command the other way, which is what its
+docstring says: negative N to `vm-next-button' moves to the Nth previous."
+  (vm-page-test--with-buttons
+    (goto-char (point-min))
+    (vm-next-button 1)
+    (let ((first (point)))
+      (vm-next-button 1)
+      (let ((second (point)))
+        (vm-next-button -1)
+        (should (equal (point) first))
+        (vm-previous-button -1)
+        (should (equal (point) second))))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here
