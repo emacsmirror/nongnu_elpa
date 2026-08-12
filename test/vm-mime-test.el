@@ -3020,6 +3020,111 @@ abandon the rest of the message."
                       (expand-file-name "first.bin" fresh))
                      "The first attachment.\n")))))
 
+;;; Renaming the attachment at point, as the command does (emacs-vm/vm#632)
+;;
+;; The tests above drive `vm-mime-set-attachment-name-at-point', which is the
+;; worker.  The command `vm-mime-rename-attachment' was called by no test, so
+;; neither the name it reads nor its refusal away from an attachment was
+;; checked.
+
+(ert-deftest vm-mime-test-rename-attachment-command ()
+  "`vm-mime-rename-attachment' gives the attachment at point the name read
+from the minibuffer, offering the current one as the default.
+
+The file on disk is not touched: the name is the one the recipient sees, which
+is the point of the command."
+  (vm-mime-test-with-attachment-tag nil
+    (let ((offered nil)
+          (before (vm-mime-attachment-name-at-point)))
+      (should (stringp before))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (_prompt &optional initial &rest _)
+                   (setq offered initial)
+                   "under-another-name.txt")))
+        (vm-mime-rename-attachment))
+      (should (equal offered before))
+      (should (equal (vm-mime-attachment-name-at-point)
+                     "under-another-name.txt"))
+      (should (string-match-p "under-another-name\\.txt" (buffer-string))))))
+
+(ert-deftest vm-mime-test-rename-attachment-away-from-a-tag-is-refused ()
+  "Away from an attachment the command says there is none, rather than
+renaming whatever happens to be at point.
+
+The message is checked, since any error at all would satisfy a bare
+`should-error'.  Three places raise this one message -- the command, and one
+guard per platform branch of `vm-mime-set-attachment-name-at-point' -- so the
+refusal survives losing any single one of them, and it takes removing both of
+the two that run here to make this test fail."
+  (vm-mime-test-with-attachment-tag nil
+    (goto-char (point-min))                  ; on the To: header
+    (let ((text-quoting-style 'grave))
+      ;; the prompt is answered, so a command that got past the refusal
+      ;; returns rather than stopping for input: the test then fails on the
+      ;; missing error instead of hanging
+      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "anything")))
+        (should (equal (cadr (should-error (vm-mime-rename-attachment)))
+                       "No attachment here"))))))
+
+;;; Eliding a quoted region
+
+(ert-deftest vm-mime-test-elide-reply-region-replaces-the-region ()
+  "`vm-mail-mode-elide-reply-region' replaces the marked region with
+`vm-mail-mode-elide-reply-region', which is how a long quotation is cut down
+to a mark that something was left out.
+
+The mark has to be set.  The command decides what to delete by whether there
+is a mark, not by the arguments it was given: with none it deletes one
+character past the end, to take in the newline of the current line that its
+interactive form would have measured -- and with a region that character is
+the first of the next line."
+  (with-temp-buffer
+    (mail-mode)
+    (insert "To: someone@example.com\n" mail-header-separator "\n"
+            "My answer.\n"
+            "> the first quoted line\n"
+            "> the second quoted line\n"
+            "> the third quoted line\n")
+    (let ((vm-mail-mode-elide-reply-region "[...]\n")
+          start end)
+      (goto-char (point-min))
+      (should (re-search-forward "^> the first quoted line\n" nil t))
+      (setq start (match-beginning 0))
+      (should (re-search-forward "^> the second quoted line\n" nil t))
+      (setq end (match-end 0))
+      (push-mark start t)
+      (goto-char end)
+      (vm-mail-mode-elide-reply-region start end)
+      (should (string-match-p "^\\[\\.\\.\\.\\]$" (buffer-string)))
+      (should-not (string-match-p "the first quoted line" (buffer-string)))
+      (should-not (string-match-p "the second quoted line" (buffer-string)))
+      ;; what was outside the region is untouched, the next line included
+      (should (string-match-p "^My answer\\.$" (buffer-string)))
+      (should (string-match-p "^> the third quoted line$"
+                              (buffer-string))))))
+
+(ert-deftest vm-mime-test-elide-reply-region-with-no-mark-takes-the-newline ()
+  "With no mark at all the command takes one character more than it is given.
+Its interactive form then measures the current line, whose end excludes the
+newline, so the extra character is that newline and the line is replaced
+whole.  Written down because the same extra character eats into the next line
+when a region was meant."
+  (with-temp-buffer
+    (mail-mode)
+    (insert "To: someone@example.com\n" mail-header-separator "\n"
+            "> a line to elide\n"
+            "> a line to keep\n")
+    (let ((vm-mail-mode-elide-reply-region "[...]\n"))
+      (goto-char (point-min))
+      (should (re-search-forward "^> a line to elide" nil t))
+      (set-mark nil)
+      (deactivate-mark)
+      (vm-mail-mode-elide-reply-region (line-beginning-position)
+                                       (line-end-position))
+      (should (string-match-p "^\\[\\.\\.\\.\\]$" (buffer-string)))
+      (should-not (string-match-p "a line to elide" (buffer-string)))
+      (should (string-match-p "^> a line to keep$" (buffer-string))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
