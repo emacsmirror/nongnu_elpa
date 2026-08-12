@@ -31,6 +31,7 @@
     ("Switch chat" . hermes-switch-to-chat)
     ("Sessions" . hermes-list-sessions)
     ("Profiles" . hermes-list-profiles)
+    ("Messaging" . hermes-list-messaging-platforms)
     ("Cron jobs" . hermes-list-crons)
     ("Kanban" . hermes-list-kanban)
     ("MCP servers" . hermes-list-mcp)

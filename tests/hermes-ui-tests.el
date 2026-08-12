@@ -159,7 +159,8 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Navigate" "Session" "Selected chat" "Browse" "System")))
+                   '("Navigate" "Session" "Selected chat" "Browse" "Manage"
+                     "System")))
     (dolist (group groups)
       (should (<= (length (plist-get group :entries)) 6)))
     (dolist (key '("c" "m" "I" "g"))
