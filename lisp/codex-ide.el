@@ -1,10 +1,10 @@
-;;; codex-ide.el --- Run Codex CLI in an Emacs terminal  -*- lexical-binding: t; -*-
+;;; codex-ide.el --- Run Codex CLI in a terminal  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.4.0") (eat "0.9.4"))
+;; Package-Requires: ((emacs "29.1") (compat "29.1.4.2") (keymap-popup "0.4.0") (eat "0.9.4"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 

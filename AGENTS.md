@@ -1,6 +1,6 @@
 # emacs-codex-ide
 
-Codex CLI in Emacs via eat. Emacs 28.1+. Sources `lisp/`, tests `tests/`.
+Codex CLI in Emacs via eat. Emacs 29.1+. Sources `lisp/`, tests `tests/`.
 Deps: `compat`, `keymap-popup`, `eat`.
 
 ## Public safety

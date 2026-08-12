@@ -312,6 +312,9 @@ that limit return the symbol `too-large'."
   "Start the local MCP HTTP server and return its process."
   (when (codex-ide-mcp--running-p)
     (user-error "Codex MCP tools server is already running"))
+  (unless (and (codex-ide-mcp--host-name codex-ide-mcp-host)
+               (codex-ide-mcp--local-host-p codex-ide-mcp-host))
+    (user-error "Codex MCP host must be loopback"))
   (let ((server (make-network-process
                  :name "codex-ide-mcp"
                  :buffer nil

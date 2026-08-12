@@ -34,7 +34,7 @@ and Codex receives it through a transient CLI config override."
   :group 'codex-ide)
 
 (defcustom codex-ide-mcp-host "127.0.0.1"
-  "Host address for the local MCP HTTP server."
+  "Loopback host address for the local MCP HTTP server."
   :type 'string
   :group 'codex-ide)
 

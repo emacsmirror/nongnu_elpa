@@ -3,8 +3,6 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: ai, codex, tools, ide
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
@@ -55,9 +53,9 @@
   "/tmp/codex-ipc"
   "Directory holding the Codex IDE context Unix socket.
 The socket is created as `ipc-<uid>.sock' inside this directory.
-Defaults to \"/tmp/codex-ipc\", matching the path the Codex TUI connects
-to by default.  The directory is created with mode 0700 before the
-socket is opened."
+This legacy directory remains a Codex TUI fallback; newer Codex versions
+prefer `$CODEX_HOME/ipc/ipc.sock'.  The directory is created with mode
+0700 before the socket is opened."
   :type 'directory
   :group 'codex-ide)
 
@@ -787,5 +785,9 @@ tell the user to use `/ide' in the Codex TUI."
          "No Codex clients connected; type /ide in Codex TUI to pull context")))))
 
 (provide 'codex-ide-context)
+
+;; Local Variables:
+;; package-lint-main-file: "codex-ide.el"
+;; End:
 
 ;;; codex-ide-context.el ends here

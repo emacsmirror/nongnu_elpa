@@ -738,29 +738,38 @@ When INDENT is non-nil, indent the inserted region."
   (when-let* ((job (gethash id codex-ide-harness--jobs)))
     (codex-ide-harness--put-job (funcall function job))))
 
-(defun codex-ide-harness--append-job-output (output chunk)
-  "Append CHUNK to OUTPUT, truncating to the job output limit."
-  (let* ((base (or output ""))
-         (next (concat base chunk))
-         (limit codex-ide-harness-job-output-limit))
-    (if (and (integerp limit)
-             (> limit 0)
-             (> (length next) limit))
-        (let* ((marker (format "\n...[truncated %d chars]"
-                               (- (length next) limit)))
-               (keep (max 0 (- limit (length marker)))))
-          (concat (substring next 0 keep) marker))
-      next)))
+(defun codex-ide-harness--append-job-output (job chunk)
+  "Return JOB with CHUNK appended to its retained output tail."
+  (let* ((output (or (plist-get job :output) ""))
+         (start (or (plist-get job :output-start) 0))
+         (next (+ (or (plist-get job :output-next)
+                      (+ start (length output)))
+                  (length chunk)))
+         (combined (concat output chunk))
+         (limit codex-ide-harness-job-output-limit)
+         (drop (if (and (integerp limit)
+                        (> limit 0)
+                        (> (length combined) limit))
+                   (- (length combined) limit)
+                 0))
+         (with-output (plist-put (copy-sequence job) :output
+                                 (substring combined drop)))
+         (with-start (plist-put with-output :output-start (+ start drop))))
+    (plist-put with-start :output-next next)))
 
 (defun codex-ide-harness--job-output (job since)
   "Return JOB output starting at SINCE."
   (let* ((output (or (plist-get job :output) ""))
-         (offset (if (and (integerp since) (>= since 0))
-                     (min since (length output))
-                   0)))
+         (start (or (plist-get job :output-start) 0))
+         (next (or (plist-get job :output-next)
+                   (+ start (length output))))
+         (requested (if (and (integerp since) (>= since 0)) since 0))
+         (offset (min next (max start requested))))
     (list (cons "offset" offset)
-          (cons "nextOffset" (length output))
-          (cons "text" (substring output offset)))))
+          (cons "nextOffset" next)
+          (cons "truncated"
+                (codex-ide-mcp--json-false (< requested start)))
+          (cons "text" (substring output (- offset start))))))
 
 (defun codex-ide-harness--job-summary (job &optional output)
   "Return JSON-ready metadata for JOB.
@@ -774,7 +783,8 @@ When OUTPUT is non-nil, include output data."
               (cons "started" (plist-get job :started))
               (cons "finished" (plist-get job :finished))
               (cons "outputLength"
-                    (length (or (plist-get job :output) "")))
+                    (or (plist-get job :output-next)
+                        (length (or (plist-get job :output) ""))))
               (when output (cons "output" output)))))
 
 (defun codex-ide-harness--job-summaries ()
@@ -803,9 +813,7 @@ When OUTPUT is non-nil, include output data."
   "Append STRING to job ID output."
   (codex-ide-harness--update-job
    id (lambda (job)
-        (plist-put job :output
-                   (codex-ide-harness--append-job-output
-                    (plist-get job :output) string)))))
+        (codex-ide-harness--append-job-output job string))))
 
 (defun codex-ide-harness--job-sentinel (id process _event)
   "Record final state for PROCESS belonging to job ID."
@@ -846,7 +854,8 @@ When OUTPUT is non-nil, include output data."
            (job (list :id id :command command :directory directory
                       :status "running" :exit-code nil
                       :started (codex-ide-harness--time-string)
-                      :finished nil :output "" :process process)))
+                      :finished nil :output "" :output-start 0
+                      :output-next 0 :process process)))
       (set-process-query-on-exit-flag process nil)
       (set-process-filter
        process (lambda (proc string)

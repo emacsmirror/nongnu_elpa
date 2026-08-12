@@ -34,21 +34,6 @@
 
           emacs = pkgs.emacs30-nox or pkgs.emacs;
           emacsPackages = pkgs.emacsPackagesFor emacs;
-          elispFiles = [
-            "lisp/codex-ide-debug.el"
-            "lisp/codex-ide-term.el"
-            "lisp/codex-ide-context.el"
-            "lisp/codex-ide-diff.el"
-            "lisp/codex-ide-mcp-core.el"
-            "lisp/codex-ide-mcp-treesit.el"
-            "lisp/codex-ide-mcp-tools.el"
-            "lisp/codex-ide-mcp-protocol.el"
-            "lisp/codex-ide-mcp-server.el"
-            "lisp/codex-ide-mcp.el"
-            "lisp/codex-ide.el"
-            "lisp/codex-ide-menu.el"
-          ];
-          elispFileArgs = lib.concatStringsSep " " elispFiles;
           ignoredSourceNames = [
             ".direnv"
             ".hermes"
@@ -76,40 +61,28 @@
             lib.removePrefix ";; Version: " versionLine;
           keymapPopupSrc = keymap-popup;
 
-          keymapPopup = emacsPackages.trivialBuild {
+          keymapPopup = emacsPackages.melpaBuild {
             pname = "keymap-popup";
             version = keymapPopupVersion;
             src = keymapPopupSrc;
             packageRequires = [ ];
+            turnCompilationWarningToError = true;
           };
 
           eat = emacsPackages.eat;
           compat = emacsPackages.compat;
 
-          codexIde = emacsPackages.trivialBuild {
+          codexIde = emacsPackages.melpaBuild {
             pname = "codex-ide";
             inherit version;
             src = source;
+            files = ''("lisp/*.el")'';
             packageRequires = [
               compat
               keymapPopup
               eat
             ];
-
-            buildPhase = ''
-              runHook preBuild
-              emacs -l package -f package-initialize -L lisp --batch \
-                -f batch-byte-compile ${elispFileArgs}
-              runHook postBuild
-            '';
-
-            installPhase = ''
-              runHook preInstall
-              lispdir=$out/share/emacs/site-lisp
-              mkdir -p "$lispdir"
-              install -m444 lisp/*.el lisp/*.elc "$lispdir/"
-              runHook postInstall
-            '';
+            turnCompilationWarningToError = true;
 
             meta = with lib; {
               description = "Codex IDE integration for Emacs";
@@ -129,6 +102,15 @@
             compat
             eat
           ]);
+          autoloadCheck = pkgs.runCommand "codex-ide-autoload-check" {
+            nativeBuildInputs = [ emacsWithCodex ];
+          } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            emacs -Q --batch -f package-activate-all \
+              --eval "(unless (commandp 'codex-ide) (error \"codex-ide autoload missing\"))"
+            touch "$out"
+          '';
 
           mkCheck =
             name: target:
@@ -138,6 +120,7 @@
               src = source;
               nativeBuildInputs = [
                 devEmacs
+                pkgs.git
                 pkgs.gnumake
               ];
               dontConfigure = true;
@@ -149,6 +132,7 @@
                 export XDG_CONFIG_HOME="$TMPDIR/config"
                 export XDG_DATA_HOME="$TMPDIR/share"
                 export XDG_STATE_HOME="$TMPDIR/state"
+                export CODEX_IDE_SKIP_PTY_TESTS=1
                 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" \
                   "$XDG_DATA_HOME" "$XDG_STATE_HOME"
                 make ${target} CODEX_ENV_WRAPPED=1 EMACS=emacs
@@ -188,6 +172,7 @@
         {
           inherit
             check
+            autoloadCheck
             devEmacs
             emacsWithCodex
             codexIde
@@ -209,6 +194,7 @@
       apps = forAllSystems (system: (mkCodex system).apps);
 
       checks = forAllSystems (system: {
+        autoload = (mkCodex system).autoloadCheck;
         default = (mkCodex system).check;
         package = (mkCodex system).codexIde;
       });

@@ -5,6 +5,7 @@
   + Run Codex in a project-scoped eat buffer.
   + Resume, switch, cycle, and stop multiple live Codex sessions.
   + Optional IDE context provider and local Emacs MCP tools bridge.
++ Requires Emacs 29.1 or newer.
 
 ** Commands
 | Command | Purpose |
@@ -33,6 +34,9 @@
 ** MCP tools
 + When =codex-ide-mcp-enabled= is non-nil (default), session start
   registers a transient local MCP URL via Codex =-c= overrides.
++ The bridge can evaluate Elisp, edit buffers, and run shell commands. It
+  only accepts loopback bind addresses; disable it when those tools are not
+  needed.
 + Commands: =codex-ide-mcp-start=, =codex-ide-mcp-stop=,
   =codex-ide-mcp-status=, =codex-ide-mcp-install-codex-config=.
 + Default port is ephemeral (=codex-ide-mcp-port= 0). Persistent Codex

@@ -107,6 +107,8 @@ Returns the final PREDICATE value.  TIMEOUT defaults to 5 seconds."
   "Run SCRIPT through sh in a Codex eat buffer and call BODY.
 BODY receives the eat buffer and its process.  ENV is passed through
 to the session.  The session is torn down afterwards."
+  (when (getenv "CODEX_IDE_SKIP_PTY_TESTS")
+    (ert-skip "PTY unavailable in the Nix build sandbox"))
   (unless (executable-find "sh")
     (ert-skip "sh executable not found"))
   (let ((buffer nil)

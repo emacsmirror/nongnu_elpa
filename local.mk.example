@@ -4,7 +4,7 @@
 # ENV = host
 
 # Point host-side tests at a local checkout when keymap-popup is not installed.
-# KEYMAP_POPUP = /home/$USER/Projects/emacs-lisp/keymap-popup
+# KEYMAP_POPUP = ../keymap-popup
 
 # Pick a specific Emacs binary for host-side commands.
 # EMACS = emacs

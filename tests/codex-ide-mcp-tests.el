@@ -232,6 +232,16 @@
                    '("content-type" . "text/plain")))
                  '(415 . "Content-Type must be application/json"))))
 
+(ert-deftest codex-ide-mcp-start-server-rejects-non-loopback-host ()
+  "Server startup rejects a non-loopback bind address."
+  (let ((codex-ide-mcp-host "0.0.0.0")
+        called)
+    (cl-letf (((symbol-function 'make-network-process)
+               (lambda (&rest _args)
+                 (setq called t))))
+      (should-error (codex-ide-mcp--start-server) :type 'user-error)
+      (should-not called))))
+
 (ert-deftest codex-ide-mcp-config-overrides-url ()
   "MCP URL override is emitted as a TOML string."
   (should (equal (codex-ide-mcp-config-overrides
@@ -870,33 +880,24 @@
     (should (eq (codex-ide-mcp--split-request pending) 'too-large))))
 
 (ert-deftest codex-ide-harness-job-output-is-capped ()
-  "Retained async job output is truncated deterministically."
-  (let ((codex-ide-harness-job-output-limit 32)
-        (codex-ide-harness--jobs (make-hash-table :test 'equal))
-        (codex-ide-harness--events nil)
-        (codex-ide-harness--event-cursor 0)
-        (codex-ide-harness--next-job-id 0))
-    (let* ((start (codex-ide-harness-start-job
-                   '(:command "printf '%s' 'abcdefghijklmnopqrstuvwxyz0123456789'")))
-           (job-id (cdr (assoc "id" start)))
-           (done (progn
-                   (let ((deadline (+ (float-time) 2)))
-                     (while (and (< (float-time) deadline)
-                                 (equal (plist-get
-                                         (gethash job-id codex-ide-harness--jobs)
-                                         :status)
-                                        "running"))
-                       (accept-process-output nil 0.05)))
-                   (codex-ide-harness--job-summary
-                    (gethash job-id codex-ide-harness--jobs))))
-           (job (gethash job-id codex-ide-harness--jobs))
-           (output (plist-get job :output))
-           (read (codex-ide-harness--job-output job 0)))
-      (should (member (cdr (assoc "status" done)) '("done" "failed")))
-      (should (<= (length output) 32))
-      (should (string-match-p "truncated" output))
-      (should (equal (cdr (assoc "nextOffset" read)) (length output)))
-      (should (equal (cdr (assoc "text" read)) output)))))
+  "Retained output preserves absolute cursors after truncation."
+  (let* ((codex-ide-harness-job-output-limit 8)
+         (job '(:output "" :output-start 0 :output-next 0))
+         (first (codex-ide-harness--append-job-output job "abcdef"))
+         (second (codex-ide-harness--append-job-output first "ghij"))
+         (summary (codex-ide-harness--job-summary second))
+         (old-read (codex-ide-harness--job-output second 0))
+         (new-read (codex-ide-harness--job-output second 6)))
+    (should (equal (plist-get second :output) "cdefghij"))
+    (should (= (plist-get second :output-start) 2))
+    (should (= (plist-get second :output-next) 10))
+    (should (equal (cdr (assoc "outputLength" summary)) 10))
+    (should (equal (cdr (assoc "offset" old-read)) 2))
+    (should (eq (cdr (assoc "truncated" old-read)) t))
+    (should (equal (cdr (assoc "text" old-read)) "cdefghij"))
+    (should (equal (cdr (assoc "offset" new-read)) 6))
+    (should (equal (cdr (assoc "nextOffset" new-read)) 10))
+    (should (equal (cdr (assoc "text" new-read)) "ghij"))))
 
 (ert-deftest codex-ide-harness-cancel-emits-single-terminal-event ()
   "Live cancel emits job-canceled and not job-finished."
