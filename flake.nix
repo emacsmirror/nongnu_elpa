@@ -80,20 +80,54 @@
           # Closed-world: only Makefile, explicit Lisp paths, top-level tests/*.el.
           # No directory trees — nested/generated/private files stay out of src.
           # Dot-prefixed basenames stay out of scans and release membership.
-          testElFiles =
+          testElFiles = [
+            "hermes-browsers-tests.el"
+            "hermes-capabilities-tests.el"
+            "hermes-chat-dashboard-tests.el"
+            "hermes-chat-handoff-tests.el"
+            "hermes-chat-models-tests.el"
+            "hermes-chat-prompts-tests.el"
+            "hermes-chat-reducer-tests.el"
+            "hermes-chat-tests.el"
+            "hermes-command-palette-tests.el"
+            "hermes-config-tests.el"
+            "hermes-cron-tests.el"
+            "hermes-dashboard-tests.el"
+            "hermes-exec-tests.el"
+            "hermes-inventory-tests.el"
+            "hermes-kanban-tests.el"
+            "hermes-mcp-tests.el"
+            "hermes-notifications-tests.el"
+            "hermes-onboarding-tests.el"
+            "hermes-promise-tests.el"
+            "hermes-sessions-tests.el"
+            "hermes-system-tests.el"
+            "hermes-test-helpers.el"
+            "hermes-transport-tests.el"
+            "hermes-ui-tests.el"
+          ];
+          allTestElFiles =
             let
               entries = builtins.readDir ./tests;
             in
-            lib.filter (
-              name:
-              entries.${name} == "regular"
-              && !(lib.hasPrefix "." name)
-              && lib.hasSuffix ".el" name
-            ) (lib.attrNames entries);
+            map (name: "tests/${name}") (
+              lib.filter (
+                name:
+                entries.${name} == "regular"
+                && !(lib.hasPrefix "." name)
+                && lib.hasSuffix ".el" name
+              ) (builtins.attrNames entries)
+            );
+          testFileArgs =
+            assert lib.assertMsg
+              (lib.sort builtins.lessThan (map (name: "tests/${name}") testElFiles)
+                == lib.sort builtins.lessThan allTestElFiles)
+              "flake testElFiles must list every tests/*.el source";
+            testElFiles;
           releaseFileset = lib.fileset.unions (
             [ ./Makefile ]
             ++ map (path: ./. + "/${path}") elispFiles
-            ++ map (name: ./tests + "/${name}") testElFiles
+            ++ map (name: ./tests + "/${name}") testFileArgs
           );
           source = lib.fileset.toSource {
             root = ./.;
