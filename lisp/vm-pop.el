@@ -763,6 +763,24 @@ killed as well."
 	((not (buffer-live-p (process-buffer process)))
 	 (error "POP process %s's buffer has been killed" process))))
 
+(defun vm-pop-accept-process-output (process)
+  "Accept output from PROCESS for POP operations.
+The variable `vm-pop-server-timeout' says how many seconds to wait before
+giving up, and nil means wait for ever, which is its default.
+
+A closed connection is reported as such rather than as a timeout.
+`accept-process-output' returns nil both when it waited in vain and when
+there is nothing left to wait for, so the two are told apart by the process
+status.  This mirrors `vm-imap-accept-process-output'.
+
+Until this existed, POP passed no timeout at any of its five reads, so
+`vm-pop-server-timeout' guarded only the connect: a server that accepted a
+connection and then said nothing hung Emacs with no way out but C-g."
+  (unless (vm-accept-process-output process vm-pop-server-timeout)
+    (if (memq (process-status process) '(open run connect))
+	(error "Timed out waiting for a response from the POP server")
+      (error "POP server closed the connection unexpectedly"))))
+
 (defun vm-pop-send-command (process command)
   (vm-pop-check-connection process)
   (goto-char (point-max))
@@ -779,7 +797,7 @@ killed as well."
     (goto-char vm-pop-read-point)
     (while (not (search-forward "\r\n" nil t))
       (vm-pop-check-connection process)
-      (vm-accept-process-output process)
+      (vm-pop-accept-process-output process)
       (goto-char vm-pop-read-point))
     (setq match-end (point))
     (goto-char vm-pop-read-point)
@@ -799,7 +817,7 @@ killed as well."
       ;; save-excursion doesn't work right
       (let ((opoint (point)))
 	(vm-pop-check-connection process)
-	(vm-accept-process-output process)
+	(vm-pop-accept-process-output process)
 	(goto-char opoint)))
     (setq vm-pop-read-point (point))))
 
@@ -828,7 +846,7 @@ killed as well."
 	;; save-excursion doesn't work right
 	(let ((opoint (point)))
 	  (vm-pop-check-connection process)
-	  (vm-accept-process-output process)
+	  (vm-pop-accept-process-output process)
 	  (goto-char opoint)))
       (setq vm-pop-read-point (point-marker))
       (goto-char start)
@@ -932,7 +950,7 @@ popdrop
 			   (vm-pop-report-retrieval-status statblob)))))))
 	     (after-change-functions (cons func after-change-functions)))
 	(vm-pop-check-connection process)
-	(vm-accept-process-output process)
+	(vm-pop-accept-process-output process)
 	(goto-char opoint)))
     (vm-set-pop-stat-x-need statblob nil)
     (setq vm-pop-read-point (point-marker))
@@ -1028,7 +1046,7 @@ popdrop
 	    ;; save-excursion doesn't work right
 	    (let ((opoint (point)))
 	      (vm-pop-check-connection process)
-	      (vm-accept-process-output process)
+	      (vm-pop-accept-process-output process)
 	      (goto-char opoint)))
 	  (setq vm-pop-read-point (point-marker))
 	  (goto-char start)
