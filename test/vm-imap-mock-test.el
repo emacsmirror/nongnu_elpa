@@ -433,6 +433,93 @@ which is what to do with a message whose copy here has gone wrong."
                               (vm-imap-mock-test--body-of message)))
       (should (vm-imap-mock-received-p mock "UID FETCH")))))
 
+;;; Synchronising, and pruning what the server no longer has
+
+(defun vm-imap-mock-test--has-flag (mock mailbox uid flag)
+  "Whether the message with UID in MAILBOX carries FLAG, whatever its case.
+IMAP system flags are case-insensitive and VM sends \\deleted in lower case,
+while a mock that stored what it was given keeps it that way."
+  (cl-some (lambda (had) (equal (downcase had) (downcase flag)))
+           (vm-imap-mock-flags mock mailbox uid)))
+
+(ert-deftest vm-imap-mock-test-synchronize-sends-changes-and-fetches-new ()
+  "`vm-imap-synchronize' pushes what changed here and pulls what is new there.
+A message flagged deleted in the folder is flagged on the server, and a
+message that arrived on the server since the folder was visited is fetched --
+the two halves its docstring promises, in that order."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (vm-set-deleted-flag (car vm-message-list) t)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
+    (vm-imap-synchronize)
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))
+    (should (vm-imap-mock-test--has-flag mock "INBOX" 1 "\\Deleted"))
+    ;; the message it deleted is still here: synchronising does not expunge
+    (should (vm-deleted-flag (car vm-message-list)))))
+
+(ert-deftest vm-imap-mock-test-synchronize-needs-an-imap-folder ()
+  "In a folder that is not an IMAP folder the command says so rather than
+trying, and touches no server."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
+    (let* ((dir (file-name-as-directory (make-temp-file "vm-not-imap" t)))
+           (local (expand-file-name "plain" dir))
+           (vm-frame-per-folder nil)
+           (vm-mutable-frame-configuration nil)
+           (vm-auto-get-new-mail nil)
+           (before (buffer-list))
+           (said nil))
+      (unwind-protect
+          (progn
+            (write-region (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+                                  "From: alice@example.com\nSubject: local\n\nA body.\n\n")
+                          nil local nil 'quiet)
+            (cl-letf (((symbol-function 'vm-display) #'ignore)
+                      ((symbol-function 'vm-inform)
+                       (lambda (_level format &rest args)
+                         (push (apply #'format format args) said))))
+              (vm-visit-folder local)
+              (vm-imap-synchronize))
+            (should (cl-find-if (lambda (s)
+                                  (string-match-p "not an IMAP folder" s))
+                                said))
+            (should-not (vm-imap-mock-received-p mock "SELECT")))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))
+        (delete-directory dir t)))))
+
+(ert-deftest vm-imap-mock-test-pruning-the-retrieved-list ()
+  "`vm-prune-imap-retrieved-list' forgets the UIDs the server no longer has.
+
+VM remembers what it has retrieved so as not to fetch it twice, and that list
+grows for ever otherwise -- a message deleted on the server by something else
+would be remembered as retrieved long after it was gone.  Here one of the two
+is taken off the server behind VM's back, and the list comes back to one."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (setf (vm-imap-mock-message-expunged
+           (car (vm-imap-mock-messages mock "INBOX")))
+          t)
+    (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
+    (should (equal (length vm-imap-retrieved-messages) 1))
+    ;; the local messages are untouched: this prunes a memo, not the mail
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))))
+
+(ert-deftest vm-imap-mock-test-pruning-keeps-what-the-server-still-has ()
+  "With everything still on the server, nothing is forgotten."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
+    (should (equal (length vm-imap-retrieved-messages) 2))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
