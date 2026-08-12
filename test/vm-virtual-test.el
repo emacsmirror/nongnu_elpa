@@ -1053,17 +1053,49 @@ in the manual and read as synonyms."
     (vm-create-unseen-virtual-folder)
     (should (equal (vm-virtual-test--subjects) '("the roof")))))
 
+(defmacro vm-virtual-test--at-a-fixed-day (&rest body)
+  "Run BODY with the clock held at Monday 10 August 2026.
+The stub is on `current-time-string', which is what `vm-vs-newer-than' reads.
+Stubbing `current-time' does nothing for it -- `current-time-string' is its
+own primitive and goes to the system clock -- so a test that stubbed only
+that one measured the fixture's age against the real today.  This one passed
+on 11 August 2026 and failed on the 12th, with an expectation calibrated to
+the accident."
+  (declare (indent 0) (debug t))
+  `(cl-letf (((symbol-function 'current-time)
+              (lambda () (date-to-time "Mon, 10 Aug 2026 12:00:00 -0700")))
+             ((symbol-function 'current-time-string)
+              (lambda (&rest _) "Mon Aug 10 12:00:00 2026")))
+     ,@body))
+
 (ert-deftest vm-virtual-test-a-date-search-folder-selects-by-age ()
   "`vm-create-date-virtual-folder' takes the messages of the last N days.
-The fixture's dates are fixed, so `current-time' is stubbed to a day the
-arithmetic can be checked against rather than one that moves."
+One day back from the stubbed Monday reaches Sunday's message and Monday's,
+and leaves Saturday's out."
   (vm-virtual-test--with-real-folder (_folder)
-    (cl-letf (((symbol-function 'current-time)
-               (lambda () (date-to-time "Mon, 10 Aug 2026 12:00:00 -0700"))))
-      ;; two days back reaches Sunday's message and Monday's, not Saturday's
-      (vm-create-date-virtual-folder 2)
+    (vm-virtual-test--at-a-fixed-day
+      (vm-create-date-virtual-folder 1)
       (should (equal (vm-virtual-test--subjects)
                      '("the roof" "badgers again"))))))
+
+(ert-deftest vm-virtual-test-a-date-search-folder-counts-from-the-stubbed-day ()
+  "The window is measured from the stubbed day, and is inclusive.
+Nought days back is Monday's message alone; two days back reaches Saturday's
+as well, so all three.  These answers hold whatever the real date is.
+
+Each search runs from the real folder: `vm-create-date-virtual-folder' works
+on the current folder, so called again without going back it would search the
+virtual folder it had just made."
+  (vm-virtual-test--with-real-folder (_folder)
+    (let ((real (current-buffer)))
+      (vm-virtual-test--at-a-fixed-day
+        (vm-create-date-virtual-folder 0)
+        (should (equal (vm-virtual-test--subjects) '("badgers again")))
+        (set-buffer real)
+        (vm-create-date-virtual-folder 2)
+        (should (equal (vm-virtual-test--subjects)
+                       '("badgers in the garden" "the roof"
+                         "badgers again")))))))
 
 (ert-deftest vm-virtual-test-a-search-folder-can-be-read-only ()
   "The prefix argument every one of these takes makes the folder read only.
