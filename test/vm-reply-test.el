@@ -1410,6 +1410,402 @@ write path is the caller, which is the part a wiring mistake breaks."
                      "From alice@example.com Sat Aug  8 14:24:13 2026$"))))
       (delete-directory dir t))))
 
+;;; Replying, following up and forwarding (emacs-vm/vm#629)
+;;
+;; `vm-reply', `vm-followup', their include-text halves and `vm-forward-message'
+;; had no test between them: the composition they produce -- who it is to, what
+;; it quotes, what threads it to the original -- was checked by hand or not at
+;; all.
+
+(defconst vm-reply-test--incoming
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: Alice Adams <alice@example.com>\n"
+          "To: bob@example.com, me@example.com\n"
+          "Cc: carol@example.com\n"
+          "Message-ID: <one@example.com>\n"
+          "Subject: badgers\n\n"
+          "The body of the message.\n\n")
+  "A message with several recipients, so a reply and a followup differ.")
+
+(defconst vm-reply-test--mime-bounce
+  (concat "From MAILER-DAEMON Sat Aug  8 16:00:00 2026\n"
+          "From: Mail Delivery Subsystem <MAILER-DAEMON@example.com>\n"
+          "To: me@example.com\nSubject: Returned mail: User unknown\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"bnd\"\n\n"
+          "--bnd\nContent-Type: text/plain\n\n"
+          "Your message could not be delivered.\n\n"
+          "--bnd\nContent-Type: message/rfc822\n\n"
+          "From: me@example.com\nTo: nosuch@example.com\n"
+          "Subject: the original\nMessage-ID: <orig@example.com>\n\n"
+          "The original body.\n\n"
+          "--bnd--\n\n")
+  "A bounce that returns the message as a MIME attachment.")
+
+(defconst vm-reply-test--plain-bounce
+  (concat "From MAILER-DAEMON Sat Aug  8 16:00:00 2026\n"
+          "From: Mail Delivery Subsystem <MAILER-DAEMON@example.com>\n"
+          "To: me@example.com\nSubject: Returned mail: User unknown\n\n"
+          "   ----- Transcript of session follows -----\n"
+          "550 nosuch@example.com... User unknown\n\n"
+          "   ----- Original message follows -----\n\n"
+          "Received: from example.com by example.net\n"
+          "From: me@example.com\nTo: nosuch@example.com\n"
+          "Subject: the original\n\n"
+          "The original body.\n\n")
+  "A bounce that quotes the message as text, no MIME about it.")
+
+(defmacro vm-reply-test--composing (spec &rest body)
+  "Visit a folder of one message, select it, and run BODY.
+SPEC is (FOLDER-VAR TEXT): the folder holds TEXT and FOLDER-VAR is bound to
+its name, for a test that wants a second folder beside it.  BODY runs with
+the folder current, and a composition it starts becomes the current buffer,
+as it does interactively.  Everything the visits and compositions created is
+killed afterwards."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-composing" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "incoming" dir))
+               (vm-frame-per-composition nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-mail-mode-hook nil)
+               (vm-mail-hook nil)
+               (vm-resend-bounced-message-hook nil)
+               (mail-signature nil)
+               (mail-setup-hook nil)
+               (user-mail-address "me@example.com")
+               (vm-included-text-prefix "> ")
+               (vm-included-text-attribution-format nil))
+           (write-region ,(cadr spec) nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-reply-test--header (name)
+  "The contents of header NAME in the composition in the current buffer.
+Continuation lines are included: VM folds a long recipient list one address
+to a line, so reading only the first line of Cc reads only the first address."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((case-fold-search t)
+          (end (save-excursion
+                 (re-search-forward
+                  (concat "^" (regexp-quote mail-header-separator) "$") nil t))))
+      (when (re-search-forward (concat "^" (regexp-quote name) ": *") end t)
+        (let ((start (point)))
+          (forward-line 1)
+          (while (and (< (point) (or end (point-max)))
+                      (looking-at "[ \t]"))
+            (forward-line 1))
+          (string-trim (buffer-substring-no-properties start (point))))))))
+
+(ert-deftest vm-reply-test-a-reply-goes-to-the-author-alone ()
+  "`vm-reply' addresses the author and nobody else, and threads the reply.
+The other recipients are the difference between this and a followup, and the
+In-Reply-To and References are what make a reply part of the thread."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-reply 1)
+    (should (equal (vm-reply-test--header "To")
+                   "Alice Adams <alice@example.com>"))
+    (should-not (vm-reply-test--header "Cc"))
+    (should (equal (vm-reply-test--header "Subject") "badgers"))
+    (should (equal (vm-reply-test--header "In-Reply-To") "<one@example.com>"))
+    (should (equal (vm-reply-test--header "References") "<one@example.com>"))
+    ;; a reply without include-text quotes nothing
+    (should-not (string-match-p "The body of the message" (buffer-string)))))
+
+(ert-deftest vm-reply-test-a-followup-goes-to-everyone ()
+  "`vm-followup' adds the other recipients of the message to the reply.
+That is the whole difference between it and `vm-reply', which writes to the
+author alone.  Your own address among them is not removed: VM leaves that to
+`vm-reply-ignored-addresses', tested below."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-followup 1)
+    (let ((all (concat (or (vm-reply-test--header "To") "") " "
+                       (or (vm-reply-test--header "Cc") ""))))
+      (should (string-match-p "alice@example.com" all))
+      (should (string-match-p "bob@example.com" all))
+      (should (string-match-p "carol@example.com" all))
+      (should (string-match-p "me@example.com" all)))))
+
+(ert-deftest vm-reply-test-ignored-addresses-are-dropped-from-a-followup ()
+  "`vm-reply-ignored-addresses' keeps an address out of the reply.
+Its use is to keep your own addresses out of a followup, so answering a
+message you were a recipient of does not mail you a copy of your answer."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let ((vm-reply-ignored-addresses '("me@example\\.com")))
+      (vm-followup 1)
+      (let ((all (concat (or (vm-reply-test--header "To") "") " "
+                         (or (vm-reply-test--header "Cc") ""))))
+        (should-not (string-match-p "me@example.com" all))
+        (should (string-match-p "bob@example.com" all))
+        (should (string-match-p "carol@example.com" all))))))
+
+(ert-deftest vm-reply-test-include-text-quotes-the-message ()
+  "The include-text commands quote the body, prefixed as the option says.
+That is the whole difference between them and the plain ones."
+  (vm-reply-test--composing (folder vm-reply-test--incoming)
+    (vm-reply-include-text 1)
+    (should (string-match-p "^> The body of the message\\.$" (buffer-string)))
+    (should (equal (vm-reply-test--header "To")
+                   "Alice Adams <alice@example.com>"))
+    (set-buffer-modified-p nil)
+    ;; and the followup half quotes it too, while addressing everyone
+    (vm-visit-folder folder)
+    (setq vm-message-pointer vm-message-list)
+    (vm-followup-include-text 1)
+    (should (string-match-p "^> The body of the message\\.$" (buffer-string)))
+    (should (string-match-p "bob@example.com"
+                            (concat (vm-reply-test--header "To") " "
+                                    (vm-reply-test--header "Cc"))))))
+
+(ert-deftest vm-reply-test-a-reply-subject-keeps-its-prefix-once ()
+  "Replying to a reply does not stack another prefix on the subject.
+`vm-reply-subject-prefix' is added only when it is not there already, so a
+thread does not accumulate Re: Re: Re:."
+  (vm-reply-test--composing (folder vm-reply-test--incoming)
+    (let ((answered (expand-file-name "answered" (file-name-directory folder)))
+          (vm-reply-subject-prefix "Re: "))
+      ;; a subject without the prefix gets one
+      (vm-reply 1)
+      (should (equal (vm-reply-test--header "Subject") "Re: badgers"))
+      (set-buffer-modified-p nil)
+      ;; a subject that has one already is left alone
+      (write-region (replace-regexp-in-string
+                     "^Subject: badgers$" "Subject: Re: badgers"
+                     vm-reply-test--incoming)
+                    nil answered nil 'quiet)
+      (vm-visit-folder answered)
+      (setq vm-message-pointer vm-message-list)
+      (vm-reply 1)
+      (should (equal (vm-reply-test--header "Subject") "Re: badgers"))
+      (set-buffer-modified-p nil))))
+
+(ert-deftest vm-reply-test-forwarding-attaches-the-message ()
+  "`vm-forward-message' forwards as MIME by default, so the message is an
+attachment rather than text in the composition.  `vm-forwarding-digest-type'
+is what chooses that, and its default is mime.
+The subject names the sender, which is what tells a forward from a reply at
+a glance, and the To is left empty for you to fill in: a forward is for
+somebody else, not for the author."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (should (equal vm-forwarding-digest-type "mime"))
+    (vm-forward-message)
+    (should (string-match-p "message/rfc822" (buffer-string)))
+    (should (string-match-p "Alice Adams"
+                            (or (vm-reply-test--header "Subject") "")))
+    (should (equal (vm-reply-test--header "To") ""))))
+
+(ert-deftest vm-reply-test-forwarding-plain-sends-it-as-text ()
+  "`vm-forward-message-plain' forwards the text rather than as an attachment,
+so the words of the message are in the composition itself.  That is its
+reason for existing beside `vm-forward-message'."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-forward-message-plain)
+    (should (string-match-p "The body of the message" (buffer-string)))
+    (should-not (string-match-p "message/rfc822" (buffer-string)))))
+
+(ert-deftest vm-reply-test-yanking-a-message-into-a-composition ()
+  "`vm-yank-message' pulls a folder's message into the composition at point.
+It is bound to C-c C-y in a reply for exactly this, and the prefix it quotes
+with is the same option the include-text commands use."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let ((message (car vm-message-list)))
+      (vm-mail)
+      (goto-char (point-max))
+      (vm-yank-message message)
+      (should (string-match-p "^> The body of the message\\.$" (buffer-string)))
+      (set-buffer-modified-p nil))))
+
+(ert-deftest vm-reply-test-the-composition-is-a-mail-buffer-set-up-for-vm ()
+  "A reply is left in a buffer VM's own commands work in.
+`vm-mail-buffer' points back at the folder -- that is how C-c C-y knows which
+folder to yank from -- and `vm-reply-list' records what is being answered, so
+the message is marked replied when it is sent."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-reply 1)
+    (should (eq major-mode 'mail-mode))
+    (should (buffer-live-p vm-mail-buffer))
+    (should (equal (mapcar #'vm-su-subject vm-reply-list) '("badgers")))
+    (set-buffer-modified-p nil)))
+
+(ert-deftest vm-reply-test-yanking-from-another-folder ()
+  "`vm-yank-message-other-folder' quotes a message from a folder other than
+the one the composition came from.  It reads the message number from the
+minibuffer, so a test has to answer that prompt."
+  (vm-reply-test--composing (folder vm-reply-test--incoming)
+    (let ((other (expand-file-name "other" (file-name-directory folder))))
+      (write-region (concat "From dave@example.com Sat Aug  8 15:00:00 2026\n"
+                            "From: dave@example.com\nSubject: otters\n\n"
+                            "Text from the other folder.\n\n")
+                    nil other nil 'quiet)
+      (vm-mail)
+      (goto-char (point-max))
+      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "1"))
+                ((symbol-function 'vm-summarize) #'ignore))
+        (vm-yank-message-other-folder other))
+      (should (string-match-p "^> Text from the other folder\\.$"
+                              (buffer-string)))
+      (set-buffer-modified-p nil))))
+
+(ert-deftest vm-reply-test-resending-asks-for-a-new-recipient ()
+  "`vm-resend-message' copies the message and offers a Resent-To to fill in.
+The original headers come along -- that is what makes it a resend rather than
+a fresh message -- and the empty Resent-To is what its docstring says you must
+fill in for the result to mean anything."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-resend-message)
+    (should (equal (vm-reply-test--header "Resent-To") ""))
+    (should (equal (vm-reply-test--header "From")
+                   "Alice Adams <alice@example.com>"))
+    (should (equal (vm-reply-test--header "Subject") "badgers"))
+    (set-buffer-modified-p nil)))
+
+(ert-deftest vm-reply-test-a-digest-holds-the-folder ()
+  "`vm-send-digest' packs the messages into one composition.
+Sending the whole folder is confirmed first, since it is rarely what a stray
+keystroke meant, and the subject counts what went in."
+  (vm-reply-test--composing (folder vm-reply-test--incoming)
+    (let ((two (expand-file-name "two" (file-name-directory folder))))
+      (write-region (concat vm-reply-test--incoming
+                            "From dave@example.com Sat Aug  8 15:00:00 2026\n"
+                            "From: dave@example.com\nSubject: otters\n\n"
+                            "A second message.\n\n")
+                    nil two nil 'quiet)
+      (vm-visit-folder two)
+      (setq vm-message-pointer vm-message-list)
+      (should (= (length vm-message-list) 2))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-send-digest))
+      (should (string-match-p "Alice Adams"
+                              (or (vm-reply-test--header "Subject") "")))
+      (should (string-match-p "and 1 more message"
+                              (or (vm-reply-test--header "Subject") "")))
+      (should (= (length vm-forward-list) 2))
+      (set-buffer-modified-p nil))))
+
+(ert-deftest vm-reply-test-a-digest-refused-sends-nothing ()
+  "Answering no to the whole-folder question aborts, rather than digesting
+the folder anyway."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+      (should-error (vm-send-digest)))))
+
+(ert-deftest vm-reply-test-previewing-a-composition-shows-it-as-a-folder ()
+  "`vm-preview-composition' encodes a copy of the composition and reads it
+back as a one-message folder.  The copy is what is encoded: the buffer being
+composed must come back untouched, or previewing would cost you your message.
+The display at the end of the command signals `end-of-buffer' in batch, where
+there is no window to show the folder in; the folder it built by then is what
+the command is for and what is checked here."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (vm-reply 1)
+    (goto-char (point-max))
+    (insert "Some text to preview.\n")
+    (let ((composition (current-buffer))
+          (before (buffer-string)))
+      (ignore-error end-of-buffer (vm-preview-composition))
+      (should (get-buffer "composition preview"))
+      (with-current-buffer "composition preview"
+        (should (eq major-mode 'vm-mode))
+        (should (= (length vm-message-list) 1))
+        ;; what the reader would see: encoded, and with the headers a
+        ;; composition does not carry yet
+        (should (string-match-p "Some text to preview" (buffer-string)))
+        (should (string-match-p "MIME-Version: 1.0" (buffer-string)))
+        (should-not (string-match-p (regexp-quote mail-header-separator)
+                                    (buffer-string))))
+      (with-current-buffer composition
+        (should (equal (buffer-string) before))
+        (set-buffer-modified-p nil)))))
+
+(ert-deftest vm-reply-test-previewing-outside-a-composition-is-refused ()
+  "`vm-preview-composition' is a Mail mode command and says so, rather than
+building a folder out of whatever buffer it was called in."
+  (with-temp-buffer
+    (fundamental-mode)
+    (let ((text-quoting-style 'grave))
+      (should (equal (cadr (should-error (vm-preview-composition)))
+                     "Command must be used in a VM Mail mode buffer.")))))
+
+(ert-deftest vm-reply-test-filling-long-lines-in-a-reply ()
+  "`vm-fill-long-lines-in-reply' fills the body, and only the body.
+The headers are not paragraphs to be reflowed: filling a long To across lines
+by this route would break it."
+  (let ((vm-fill-paragraphs-containing-long-lines-in-reply 40)
+        (vm-fill-long-lines-in-reply-column 40)
+        (vm-word-wrap-paragraphs-in-reply nil))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "To: " (make-string 60 ?a) "@example.com\n"
+              mail-header-separator "\n"
+              (string-join (make-list 40 "word") " ") "\n")
+      (vm-fill-long-lines-in-reply)
+      (goto-char (point-min))
+      (should (looking-at (concat "To: " (make-string 60 ?a) "@example.com$")))
+      (let ((body (buffer-substring (progn (mail-text) (point)) (point-max))))
+        (should (string-match-p "word\nword" body))
+        (should (< (apply #'max (mapcar #'length (split-string body "\n")))
+                   60))))))
+
+(ert-deftest vm-reply-test-citation-clean-up-cuts-doubly-cited-text ()
+  "`vm-mail-mode-citation-clean-up' replaces a block of doubly-cited text
+with an ellipsis, so a reply to a reply does not carry the whole thread.
+`vm-mail-mode-citation-kill-regexp-alist' is what it works from."
+  (with-temp-buffer
+    (mail-mode)
+    ;; the quoting here is `vm-included-text-prefix', whose default is " > ";
+    ;; the alist is built from it when vm-vars is loaded, so a test that binds
+    ;; the variable afterwards changes nothing
+    (insert "To: someone@example.com\n" mail-header-separator "\n"
+            "My answer.\n"
+            " > > The message before that.\n"
+            " > > More of it.\n"
+            " > What they wrote.\n")
+    (vm-mail-mode-citation-clean-up)
+    (should-not (string-match-p "The message before that" (buffer-string)))
+    (should (string-match-p "\\[\\.\\.\\.\\]" (buffer-string)))
+    ;; the single-cited text, which is what is being answered, stays
+    (should (string-match-p "^ > What they wrote\\.$" (buffer-string)))))
+
+(ert-deftest vm-reply-test-retrying-a-mime-bounce ()
+  "`vm-resend-bounced-message' digs the returned message out of the bounce.
+What comes back is the message you sent -- its headers and its body -- and not
+the postmaster's report of why it failed, with an empty Resent-To to put the
+corrected address in."
+  (vm-reply-test--composing (_folder vm-reply-test--mime-bounce)
+    (vm-resend-bounced-message)
+    (should (equal (vm-reply-test--header "Subject") "the original"))
+    (should (equal (vm-reply-test--header "To") "nosuch@example.com"))
+    (should (equal (vm-reply-test--header "Resent-To") ""))
+    (should (string-match-p "The original body" (buffer-string)))
+    (should-not (string-match-p "could not be delivered" (buffer-string)))))
+
+(ert-deftest vm-reply-test-retrying-a-bounce-that-is-only-text ()
+  "A bounce with no MIME part is handled by looking for the returned
+message's own Received line, which is where VM takes the start of it to be."
+  (vm-reply-test--composing (_folder vm-reply-test--plain-bounce)
+    (vm-resend-bounced-message)
+    (should (equal (vm-reply-test--header "Subject") "the original"))
+    (should (string-match-p "The original body" (buffer-string)))
+    (should-not (string-match-p "Transcript of session" (buffer-string)))))
+
+(ert-deftest vm-reply-test-retrying-what-is-not-a-bounce-is-refused ()
+  "A message with no returned message in it says so, rather than composing
+something out of whatever was there."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let ((text-quoting-style 'grave))
+      (should (equal (cadr (should-error (vm-resend-bounced-message)))
+                     "This doesn't look like a bounced message.")))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
