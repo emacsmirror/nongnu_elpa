@@ -2598,6 +2598,311 @@ variables were plain aliases, never marked obsolete, and are dropped."
   ;; `vm-enable-addons' is gone entirely now
   (should-not (boundp 'vm-enable-addons)))
 
+;;; The attachment commands (emacs-vm/vm#632)
+;;
+;; The commands the manual documents for putting an attachment into a
+;; composition and for doing something with one that arrived: none of them had
+;; a test.  What is checked here is the effect -- the part that ends up in the
+;; encoded message, the bytes that end up in the saved file -- rather than the
+;; button that stands for it.
+
+(defconst vm-mime-test--attachment-folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nTo: me@example.com\n"
+          "Subject: with an attachment\nMIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"bnd\"\n\n"
+          "--bnd\nContent-Type: text/plain\n\nSome covering text.\n\n"
+          "--bnd\nContent-Type: application/octet-stream; name=\"notes.bin\"\n"
+          "Content-Disposition: attachment; filename=\"notes.bin\"\n\n"
+          "The attached file contents.\n\n"
+          "--bnd--\n\n")
+  "A message with one inline part and one attachment VM will not display.
+An attachment of a type VM shows internally is shown, not buttoned, and there
+is then no extent for the reader commands to act on.")
+
+(defmacro vm-mime-test--with-attachment (spec &rest body)
+  "Visit a folder holding an attachment, show the message, and run BODY.
+SPEC is (POINT-VAR): BODY runs in the presentation buffer with point on the
+attachment's button and POINT-VAR bound to that position.  The folder text is
+`vm-mime-test--attachment-folder' unless SPEC gives a second element."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-mime-attach" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-auto-decode-mime-messages t)
+               (vm-display-using-mime t)
+               (vm-preview-lines nil)
+               (vm-mime-delete-after-saving nil)
+               (vm-mime-attachment-save-directory nil))
+           (write-region ,(or (cadr spec) 'vm-mime-test--attachment-folder)
+                         nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             (vm-show-current-message)
+             (set-buffer (or vm-presentation-buffer (current-buffer)))
+             (goto-char (point-min))
+             (let ((,(car spec) (vm-mime-test--button-position)))
+               (should ,(car spec))
+               (goto-char ,(car spec))
+               ,@body)))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-mime-test--button-position ()
+  "Where in this buffer a MIME button is, or nil if there is none."
+  (save-excursion
+    (goto-char (point-min))
+    (catch 'found
+      (while (not (eobp))
+        (when (vm-extent-at (point) 'vm-mime-layout)
+          (throw 'found (point)))
+        (forward-line 1))
+      nil)))
+
+(ert-deftest vm-mime-test-saving-the-object-at-point-writes-its-body ()
+  "`vm-mime-reader-map-save-file' writes the attachment, decoded, to a file.
+The bytes in the file are the part's own body and nothing else: not the
+covering text, not the MIME headers that described it."
+  (vm-mime-test--with-attachment (button)
+    (let ((target (expand-file-name "saved.bin" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'read-file-name)
+                       (lambda (&rest _) target))
+                      ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+              (vm-mime-reader-map-save-file))
+            (should (file-exists-p target))
+            (let ((written (with-temp-buffer
+                             (insert-file-contents target)
+                             (buffer-string))))
+              (should (string-match-p "The attached file contents" written))
+              (should-not (string-match-p "Some covering text" written))
+              (should-not (string-match-p "Content-Type" written))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-mime-test-deleting-the-object-at-point-rewrites-the-folder ()
+  "`vm-delete-mime-object' takes the contents out of the message on disk.
+The folder is where the effect is: the part becomes a text/plain note naming
+what was there, and the bytes are gone.  The presentation buffer is not the
+thing to check -- the label that replaces the button is written after the
+contents are discarded, and appears whether or not they were."
+  (vm-mime-test--with-attachment (button)
+    (let ((folder (vm-buffer-of (car vm-message-list))))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-delete-mime-object))
+      (let ((text (with-current-buffer folder
+                    (save-restriction (widen) (buffer-string)))))
+        ;; the message keeps its shape and its other part
+        (should (string-match-p "Content-Type: multipart/mixed" text))
+        (should (string-match-p "Some covering text" text))
+        ;; and where the attachment was, a note saying what went
+        (should (string-match-p "\\[Deleted notes\\.bin" text))
+        (should-not (string-match-p "The attached file contents" text))))))
+
+(ert-deftest vm-mime-test-piping-the-object-at-point-to-a-command ()
+  "`vm-mime-reader-map-pipe-to-command' feeds the part's body to a program.
+What the program sees is the decoded body: that is the whole point of the
+command, and a test that only checked it ran would not notice it piping the
+base64."
+  (vm-mime-test--with-attachment (button)
+    (let ((piped (expand-file-name "piped.txt" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'read-string)
+                       (lambda (&rest _) (format "cat > %s" piped))))
+              (vm-mime-reader-map-pipe-to-command))
+            (should (file-exists-p piped))
+            (should (string-match-p
+                     "The attached file contents"
+                     (with-temp-buffer (insert-file-contents piped)
+                                       (buffer-string)))))
+        (ignore-errors (delete-file piped))))))
+
+;;; Putting an attachment into a composition
+
+(defmacro vm-mime-test--composing (&rest body)
+  "Run BODY in a fresh VM composition buffer, then kill what it made."
+  (declare (indent 0) (debug t))
+  `(let ((before (buffer-list)))
+     (unwind-protect
+         (let ((vm-frame-per-composition nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-mail-mode-hook nil)
+               (mail-signature nil)
+               (vm-send-using-mime t))
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-mail)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer)))))))
+
+(ert-deftest vm-mime-test-attaching-a-file-to-a-composition ()
+  "`vm-attach-file' puts the file in the composition and it survives encoding.
+The tag in the buffer is a stand-in; what matters is that encoding the
+composition turns it into a part of the right type carrying the file."
+  (let ((file (expand-file-name "attach-me.txt" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (write-region "The file being attached.\n" nil file nil 'quiet)
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            (insert "Here is the file you wanted.\n")
+            (vm-attach-file file "text/plain")
+            (should (string-match-p (regexp-quote (file-name-nondirectory file))
+                                    (buffer-string)))
+            (vm-mime-encode-composition)
+            (let ((encoded (buffer-string)))
+              ;; text of your own beside an attachment is what makes it
+              ;; multipart; an attachment alone becomes the body itself
+              (should (string-match-p "Content-Type: multipart/mixed" encoded))
+              (should (string-match-p "Here is the file you wanted" encoded))
+              (should (string-match-p "The file being attached" encoded))
+              (should (string-match-p
+                       (concat "filename=\"?"
+                               (regexp-quote (file-name-nondirectory file)))
+                       encoded)))))
+      (ignore-errors (delete-file file)))))
+
+(ert-deftest vm-mime-test-an-attachment-alone-becomes-the-body ()
+  "A composition of nothing but an attachment is encoded as one part.
+There is no second part for it to be multipart with, so the file becomes the
+message body and its name is carried in the Content-Disposition."
+  (let ((file (expand-file-name "only-attachment.txt" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (write-region "Nothing but this file.\n" nil file nil 'quiet)
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            (vm-attach-file file "text/plain")
+            (vm-mime-encode-composition)
+            (let ((encoded (buffer-string)))
+              (should-not (string-match-p "multipart" encoded))
+              (should (string-match-p "Content-Type: text/plain" encoded))
+              (should (string-match-p "Nothing but this file" encoded)))))
+      (ignore-errors (delete-file file)))))
+
+(ert-deftest vm-mime-test-attaching-a-buffer-to-a-composition ()
+  "`vm-attach-buffer' attaches what is in a buffer, no file needed.
+Its use is attaching something you have only in Emacs, so the contents have
+to come from the buffer at encoding time."
+  (let ((source (get-buffer-create "vm-mime-test-source")))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "Contents of the attached buffer.\n"))
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            (vm-attach-buffer source "text/plain")
+            (vm-mime-encode-composition)
+            (should (string-match-p "Contents of the attached buffer"
+                                    (buffer-string)))))
+      (kill-buffer source))))
+
+(ert-deftest vm-mime-test-attaching-a-message-to-a-composition ()
+  "`vm-attach-message' attaches a message as message/rfc822.
+Forwarding one message inside another is what the type is for, and the
+attached copy keeps its own headers."
+  (vm-mime-test--with-attachment (button)
+    (let ((message (car vm-message-list))
+          (folder (current-buffer)))
+      (vm-mime-test--composing
+        (goto-char (point-max))
+        (let ((vm-mail-buffer folder))
+          (vm-attach-message message))
+        (vm-mime-encode-composition)
+        (let ((encoded (buffer-string)))
+          (should (string-match-p "message/rfc822" encoded))
+          (should (string-match-p "Subject: with an attachment" encoded)))))))
+
+(ert-deftest vm-mime-test-attaching-the-object-at-point-to-a-composition ()
+  "`vm-mime-reader-map-attach-to-composition' moves an attachment you were
+sent into one you are sending.  The composition is asked for by name, and
+what lands in it is the part -- so encoding the composition carries the same
+bytes on."
+  (vm-mime-test--with-attachment (button)
+    (let ((composition nil))
+      (unwind-protect
+          (progn
+            (save-window-excursion
+              (let ((vm-frame-per-composition nil)
+                    (vm-mutable-frame-configuration nil)
+                    (vm-mail-mode-hook nil)
+                    (mail-signature nil)
+                    (vm-send-using-mime t))
+                (cl-letf (((symbol-function 'vm-display) #'ignore))
+                  (vm-mail)
+                  (setq composition (current-buffer)))))
+            (with-current-buffer (or vm-presentation-buffer (current-buffer))
+              (goto-char button)
+              (cl-letf (((symbol-function 'read-buffer)
+                         (lambda (&rest _) composition))
+                        ((symbol-function 'completing-read)
+                         (lambda (&rest _) (buffer-name composition))))
+                (vm-mime-reader-map-attach-to-composition)))
+            (with-current-buffer composition
+              (should (string-match-p "notes\\.bin" (buffer-string)))
+              (vm-mime-encode-composition)
+              (let ((encoded (buffer-string)))
+                (should (string-match-p "application/octet-stream" encoded))
+                ;; binary goes out base64, so the bytes are checked by
+                ;; decoding rather than by looking for them in the message
+                (should (string-match-p "Content-Transfer-Encoding: base64"
+                                        encoded))
+                (should (string-match-p
+                         "The attached file contents"
+                         (base64-decode-string
+                          (car (last (split-string encoded "\n" t)))))))
+              (set-buffer-modified-p nil)))
+        (when (buffer-live-p composition)
+          (with-current-buffer composition (set-buffer-modified-p nil))
+          (kill-buffer composition))))))
+
+(ert-deftest vm-mime-test-saving-the-object-at-point-to-a-folder ()
+  "`vm-mime-reader-map-save-message' writes the object to a folder rather
+than to a plain file, which is what you want when the object is a message.
+Here it is not one, and the part is still what gets written."
+  (vm-mime-test--with-attachment (button)
+    (let ((target (expand-file-name "saved-folder" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'vm-read-file-name)
+                       (lambda (&rest _) target))
+                      ((symbol-function 'read-file-name)
+                       (lambda (&rest _) target))
+                      ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+              (vm-mime-reader-map-save-message))
+            (should (file-exists-p target))
+            (should (string-match-p
+                     "The attached file contents"
+                     (with-temp-buffer (insert-file-contents target)
+                                       (buffer-string)))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-mime-test-displaying-the-object-at-point-as-another-type ()
+  "`vm-mime-reader-map-display-object-as-type' shows a part as a type of
+your choosing.  Asked to read the binary attachment as text, VM shows its
+contents where the button was: that is the use of the command, for the
+attachments a sender has mislabelled."
+  (vm-mime-test--with-attachment (button)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) "text/plain"))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) "text/plain")))
+      (vm-mime-reader-map-display-object-as-type))
+    (should (string-match-p "The attached file contents"
+                            (buffer-string)))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
