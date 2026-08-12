@@ -233,12 +233,9 @@ accepted explicit spelling of the default session scope."
           :session-id (plist-get context :session-id)
           :scope (cdr request)
           :resolve
-          (lambda (result)
+          (lambda (_result)
             (hermes-chat--in-buffer buffer
               (when (hermes-chat--command-context-current-p context)
-                (when-let* ((value (hermes-chat--result-string result 'value)))
-                  (hermes-chat--insert-local-status
-                   (format "Reasoning set to %s" value) 'done))
                 (hermes-chat--refresh-reasoning-after-command
                  "reasoning" context))))
           :reject

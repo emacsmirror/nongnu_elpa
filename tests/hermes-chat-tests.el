@@ -3198,6 +3198,12 @@
        (hermes-chat-send)
        (should (equal set-args '("reasoning" "ultra" "sid-active" nil)))
        (should (equal get-args '("reasoning" "sid-active")))
+       (should-not
+        (cl-find-if (lambda (entry)
+                      (and (eq (plist-get entry :role) 'status)
+                           (string-match-p "Reasoning set"
+                                           (or (plist-get entry :content) ""))))
+                    (hermes-chat--entries)))
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
                       "ultra"))
        (should (string-match-p "ultra" (hermes-test--header-line-string)))
