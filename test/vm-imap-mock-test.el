@@ -300,6 +300,139 @@ with VM about which ones exist afterwards."
     (vm-imap-delete-mailbox process "Later")
     (should-not (member "Later" (vm-imap-mock-mailbox-names mock)))))
 
+;;; Retrieving from an IMAP maildrop, and external message bodies
+;;
+;; The tests above visit an IMAP folder.  These use the mock the other way, as
+;; a maildrop that `vm-get-new-mail' fetches from into a local folder, which is
+;; a different path through the client and the one `vm-expunge-imap-messages'
+;; works on: it deletes from the server the messages already retrieved, and it
+;; has nothing to go on until something has been retrieved.
+
+(defmacro vm-imap-mock-test--spooling (spec &rest body)
+  "Visit a local folder fed from a mock IMAP maildrop, and run BODY in it.
+SPEC is (MOCK-VAR &rest ARGS) as for `vm-imap-mock-start'.  BODY runs in the
+local folder buffer, with `vm-spool-files' naming the mock as its spool."
+  (declare (indent 1) (debug t))
+  `(vm-imap-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((dir (file-name-as-directory (make-temp-file "vm-imap-spool" t)))
+            (cache (make-temp-file "vm-imap-mock-cache" t))
+            (local (expand-file-name "inbox" dir))
+            (vm-imap-folder-cache-directory cache)
+            (vm-imap-server-timeout 10)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            ;; visiting a folder fetches its spool by itself, which would mean
+            ;; the messages had already arrived before the test asked for them
+            ;; -- and a test of fetching twice would then be fetching once
+            (vm-auto-get-new-mail nil)
+            ;; the crash box has to be a file of its own: VM refuses to gobble
+            ;; a crash box that is the folder
+            (vm-spool-files (list (list local (vm-imap-mock-spec ,(car spec))
+                                        (concat local ".crash"))))
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (write-region "" nil local nil 'quiet)
+             (cl-letf (((symbol-function 'vm-display) #'ignore))
+               (vm-visit-folder local)
+               ,@body))
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory cache t)
+         (delete-directory dir t)))))
+
+(ert-deftest vm-imap-mock-test-getting-new-mail-from-a-maildrop ()
+  "`vm-get-new-mail' fetches from an IMAP maildrop into a local folder.
+The messages arrive whole, and VM records their UIDs as retrieved -- that
+list is what tells it not to fetch them again, and what
+`vm-expunge-imap-messages' works from."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (should (string-match-p "The first body"
+                            (vm-imap-mock-test--body-of (car vm-message-list))))))
+
+(ert-deftest vm-imap-mock-test-getting-new-mail-twice-fetches-once ()
+  "A second `vm-get-new-mail' brings nothing new: the UIDs are remembered,
+so the messages are not fetched again and the folder does not grow."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (should (equal (length vm-message-list) 2))
+    (vm-get-new-mail)
+    (should (equal (length vm-message-list) 2))))
+
+(ert-deftest vm-imap-mock-test-expunging-what-has-been-retrieved ()
+  "`vm-expunge-imap-messages' deletes from the server what has been
+retrieved, and leaves the local copies alone.  It flags each UID \\Deleted
+and closes the mailbox, which is what expunges them."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    (should (equal (vm-imap-mock-messages mock "INBOX") nil))
+    (should (vm-imap-mock-received-p mock "STORE .*\\\\Deleted"))
+    ;; the local folder still has them: this deletes from the server only
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))))
+
+(ert-deftest vm-imap-mock-test-expunging-nothing-retrieved-touches-nothing ()
+  "With nothing retrieved there is nothing to delete, and the server keeps
+its messages."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))
+    (should-not (vm-imap-mock-received-p mock "STORE"))))
+
+;;; Bodies kept on the server
+
+(ert-deftest vm-imap-mock-test-unloading-a-body-and-fetching-it-back ()
+  "`vm-unload-message' throws the body away and `vm-load-message' fetches it
+again from the server.
+
+This is what `vm-enable-external-messages' is for: the folder holds the
+headers and the body is fetched when it is wanted.  The proof that it really
+went is that the folder buffer no longer has it, and the proof that it comes
+back is the UID FETCH the server sees."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (should (vm-message-can-be-external message))
+      (should (string-match-p "The first body"
+                              (vm-imap-mock-test--body-of message)))
+      (vm-unload-message 1 t)
+      (should (vm-body-to-be-retrieved-of message))
+      (should (equal (vm-imap-mock-test--body-of message) ""))
+      (vm-load-message 1)
+      (should-not (vm-body-to-be-retrieved-of message))
+      (should (string-match-p "The first body"
+                              (vm-imap-mock-test--body-of message)))
+      (should (vm-imap-mock-received-p mock "UID FETCH")))))
+
+(ert-deftest vm-imap-mock-test-refreshing-a-message-reloads-its-body ()
+  "`vm-refresh-message' throws the body away and reads it again in one step,
+which is what to do with a message whose copy here has gone wrong."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-refresh-message)
+      (should-not (vm-body-to-be-retrieved-of message))
+      (should (string-match-p "The first body"
+                              (vm-imap-mock-test--body-of message)))
+      (should (vm-imap-mock-received-p mock "UID FETCH")))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
