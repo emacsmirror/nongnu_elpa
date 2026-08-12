@@ -453,9 +453,20 @@ The buffer has IMAP-related variables initialized.
 
 (defmacro vm-test-skip-unless (condition &optional message)
   "Skip the current test unless CONDITION is true.
-Optional MESSAGE explains why the test was skipped."
+Optional MESSAGE explains why the test was skipped, and says what to do about
+it where there is anything to do.
+
+The reason is printed as well as handed to `ert-skip'.  A batch run shows only
+the name of a skipped test -- neither the per-test line nor the summary
+carries the reason -- so a message given to `ert-skip' alone is invisible
+exactly where someone is reading the output and wondering what went wrong."
   `(unless ,condition
-     (ert-skip (or ,message "Precondition not met"))))
+     (let ((reason (or ,message "Precondition not met")))
+       (message "Skipping %s: %s"
+                (or (ignore-errors (ert-test-name (ert-running-test)))
+                    "this test")
+                reason)
+       (ert-skip reason))))
 
 ;;; Folder setup helpers
 

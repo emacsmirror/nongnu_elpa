@@ -36,18 +36,35 @@ Body of the smoke test message.\r
 ;;; Configuration sanity -- these run without a server
 ;;; ------------------------------------------------------------------
 
-(ert-deftest vm-imap-live-test-inert-without-a-config ()
+(ert-deftest vm-imap-live-test-an-unconfigured-checkout-stays-off-the-network ()
   "With no config file, nothing here touches the network.
 The config is the opt-in: an unconfigured checkout must run the whole suite
-without a server, so every live test has to skip rather than fail."
-  (skip-unless (not vm-imap-test-servers))
+without a server, so every live test has to skip rather than fail.
+
+This one is therefore skipped on a machine that *has* a config, and the skip
+message says so.  It used to be called
+`vm-imap-live-test-inert-without-a-config' and skipped with a bare
+`skip-unless', which printed nothing but the name -- reading
+\"SKIPPED vm-imap-live-test-inert-without-a-config\" on a configured machine
+looks exactly like a config that was not found."
+  (vm-test-skip-unless
+   (not vm-imap-test-servers)
+   (concat "A live IMAP config is present, so the no-config contract cannot be "
+           "checked here; nothing is wrong.  To exercise this one, run the "
+           "suite in a checkout with no test/vm-live-config.el, or with "
+           "vm-imap-test-servers bound to nil."))
   (should-not (vm-imap-live-available-p)))
 
-(ert-deftest vm-imap-live-test-runs-when-configured ()
+(ert-deftest vm-imap-live-test-a-configured-checkout-runs-them ()
   "With a config file, and not suppressed, the live tests are live.
 The other half of the contract above: a configured checkout must actually
 exercise them, or the config silently buys nothing."
-  (skip-unless (and vm-imap-test-servers vm-imap-live-enabled))
+  (vm-test-skip-unless
+   (and vm-imap-test-servers vm-imap-live-enabled)
+   (concat "No live IMAP config, or the live tests are suppressed.  To "
+           "exercise them, copy test/vm-live-config.el.template to "
+           "test/vm-live-config.el and fill in vm-imap-test-servers; see "
+           "dev/docs/design/imap-live-tests.org."))
   (should (vm-imap-live-available-p))
   (should (vm-imap-live-server "plain")))
 
@@ -1299,9 +1316,15 @@ Checked by catching the skip rather than being skipped by it."
   ;; before the let: binding a variable this file has not seen declared makes
   ;; it lexical, and the defvar in the required file then refuses it
   (require 'vm-send-live-init)
-  (let ((vm-imap-test-servers nil))
-    (should-error (funcall (lambda () (vm-imap-live-skip-unless-server "plain")))
-                  :type 'ert-test-skipped))
+  ;; the skips here are provoked on purpose, so their reasons are not printed:
+  ;; `vm-test-skip-unless' says why it is skipping, and a run on a configured
+  ;; machine would otherwise carry two lines announcing there is no
+  ;; configuration
+  (cl-letf (((symbol-function 'message) #'ignore))
+    (let ((vm-imap-test-servers nil))
+      (should-error (funcall (lambda ()
+                               (vm-imap-live-skip-unless-server "plain")))
+                    :type 'ert-test-skipped))
   ;; and the same for the one the mail-sending tests call, with a config that
   ;; gets past its own check and into the IMAP one
   (let ((vm-imap-test-servers nil)
@@ -1309,7 +1332,7 @@ Checked by catching the skip rather than being skipped by it."
                                :verify-server "nowhere"))
         (send-mail-function 'sendmail-send-it))
     (should-error (funcall (lambda () (vm-send-live-skip-unless-configured)))
-                  :type 'ert-test-skipped)))
+                  :type 'ert-test-skipped))))
 
 (provide 'vm-imap-live-test)
 
