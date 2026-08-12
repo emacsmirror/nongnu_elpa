@@ -52,10 +52,11 @@ test-assert: compile-lisp
 	    --eval '(setq vm-assertion-checking-off nil)' \
 	    -l $(srcdir)/$(TEST_RUNNER)
 
-# Run only the live IMAP tests, for when that is all you are working on.
-# They are not exclusive to this target: given a gitignored vm-live-config.el
-# they also run as part of `make test', which is the opt-in.  Every test skips
-# when nothing is configured.  See dev/docs/design/imap-live-tests.org.
+# Run only the IMAP tests, for when that is all you are working on.  The mock
+# ones need no server and always run, live config or not: a mock that only
+# runs where there is no live server is a mock that rots on the machines that
+# do have one.  The live ones want a server in test/vm-live-config.el and skip
+# without it.  See dev/docs/design/imap-live-tests.org.
 test-imap: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(IMAP_RUNNER)
 
