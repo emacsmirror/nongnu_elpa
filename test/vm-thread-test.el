@@ -862,6 +862,89 @@ fills it in a real session."
     (vm-promote-subthread 0)
     (should (equal '(0 1 0 1 0) (vm-thread-test--indentations)))))
 
+;;; Toggling the threads display (emacs-vm/vm#632)
+
+(defconst vm-thread-test--display-folder
+  (concat
+   ;; the root comes first in the file, its reply last, and an unrelated
+   ;; message sits between them -- so threading has something to move
+   "From alice@example.com Sat Aug  8 10:00:00 2026\n"
+   "From: alice@example.com\nSubject: badgers\n"
+   "Message-ID: <root@example.com>\n\nThe root.\n\n"
+   "From carol@example.com Sat Aug  8 11:00:00 2026\n"
+   "From: carol@example.com\nSubject: the roof\n"
+   "Message-ID: <alone@example.com>\n\nNothing to do with badgers.\n\n"
+   "From bob@example.com Sat Aug  8 12:00:00 2026\n"
+   "From: bob@example.com\nSubject: Re: badgers\n"
+   "Message-ID: <reply@example.com>\n"
+   "References: <root@example.com>\n\nThe reply.\n\n")
+  "A thread of two with an unrelated message between them in the file.")
+
+(defmacro vm-thread-test--with-display-folder (&rest body)
+  "Visit `vm-thread-test--display-folder' as a real folder and run BODY.
+`vm-toggle-threads-display' sorts the folder, so this wants a folder VM has
+really visited rather than a buffer holding the text."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-thread-display" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-summary-show-threads nil))
+           (write-region vm-thread-test--display-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-thread-test-toggle-threads-display ()
+  "`vm-toggle-threads-display' turns the threads display on and off and sorts
+the folder to match: by thread activity with it on, back to the order in the
+file with it off.
+
+With threads on the reply follows its root, which in the file it does not --
+another message is between them.  Toggling back restores the file order
+exactly, so nothing is left rearranged."
+  (vm-thread-test--with-display-folder
+    (let ((physical (mapcar #'vm-su-subject vm-message-list)))
+      (should (equal physical '("badgers" "the roof" "Re: badgers")))
+      (should-not vm-summary-show-threads)
+      (vm-toggle-threads-display)
+      (should vm-summary-show-threads)
+      (let* ((threaded (mapcar #'vm-su-subject vm-message-list))
+             (root (cl-position "badgers" threaded :test #'equal))
+             (reply (cl-position "Re: badgers" threaded :test #'equal)))
+        (should (equal reply (1+ root))))
+      (vm-toggle-threads-display)
+      (should-not vm-summary-show-threads)
+      (should (equal (mapcar #'vm-su-subject vm-message-list) physical)))))
+
+(ert-deftest vm-thread-test-toggling-threads-swaps-the-sort-keys ()
+  "The toggle swaps the sort keys between physical order and activity, and
+between their reversed forms.
+
+The keys have to be set for that to be visible: a folder that has not been
+sorted has none, the swap has nothing to match, and the keys are then whatever
+the sort the toggle performs leaves behind -- which looks like the same answer
+and tests nothing."
+  (vm-thread-test--with-display-folder
+    (setq vm-ml-sort-keys "physical-order")
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "activity"))
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "physical-order"))
+    ;; and the reversed pair swap with each other, not with the plain ones
+    (setq vm-ml-sort-keys "reversed-activity")
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "reversed-physical-order"))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here
