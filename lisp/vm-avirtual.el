@@ -1040,10 +1040,15 @@ message to the last, which on arrival is exactly the new mail."
 (defcustom vm-virtual-auto-folder-alist nil
   "*Non-nil value should be an alist that VM will use to choose a default
 folder name when messages are saved.  The alist should be of the form
-        ((VIRTUAL-FOLDER-NAME . FOLDER-NAME)
+        ((VIRTUAL-FOLDER-NAME FOLDER-NAME)
           ...)
 where VIRTUAL-FOLDER-NAME is a string, and FOLDER-NAME
 is a string or an s-expression that evaluates to a string.
+
+Each entry is a two-element list, as the example below shows.  This said
+\"(VIRTUAL-FOLDER-NAME . FOLDER-NAME)\" until 2026-08-12; the entry is read
+with `cadr', so a dotted pair whose tail is the folder name signals
+\"wrong-type-argument listp\" instead of saving anything.
 
 This allows you to extend `vm-virtual-auto-select-folder' to generate
 a folder name.  Your function may use `folder' to get the currently chosen

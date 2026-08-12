@@ -650,6 +650,94 @@ alone."
       (vm-virtual-filter-new-messages)
       (should (equal '("x") (vm-labels-of (nth 1 vm-message-list)))))))
 
+;;; Virtual folder maintenance (emacs-vm/vm#632)
+
+(defconst vm-avirtual-test--folder
+  (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: alice@example.com\nSubject: badgers\n\nOne.\n\n"
+          "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+          "From: bob@example.com\nSubject: otters\n\nTwo.\n\n")
+  "Two messages, one of which an archive rule will match.")
+
+(defmacro vm-avirtual-test--with-folder (spec &rest body)
+  "Visit a folder of two messages and run BODY in it.
+SPEC is (FILE-VAR ARCHIVE-VAR): the folder's file, and a name for an archive
+folder that does not exist yet."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-avirtual" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "inbox" dir))
+               (,(cadr spec) (expand-file-name "badger-archive" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-confirm-for-auto-archive nil)
+               (vm-delete-after-archiving nil)
+               (vm-virtual-folder-alist nil)
+               (vm-virtual-auto-folder-alist nil))
+           (write-region vm-avirtual-test--folder nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-avirtual-test-auto-select-folder-follows-the-rules ()
+  "`vm-virtual-auto-select-folder' names the folder a message belongs in,
+by finding a virtual folder whose selectors match it and looking that up in
+`vm-virtual-auto-folder-alist'.
+
+The entries of that alist are two-element lists.  Its docstring said
+\"(VIRTUAL-FOLDER-NAME . FOLDER-NAME)\" until this was written, and a dotted
+pair signals `wrong-type-argument listp': the entry is read with `cadr'."
+  (vm-avirtual-test--with-folder (file archive)
+    (let ((vm-virtual-folder-alist
+           (list (list "badger-mail" (list (list file) '(subject "badgers")))))
+          (vm-virtual-auto-folder-alist
+           (list (list "badger-mail" archive))))
+      (should (equal (vm-virtual-auto-select-folder (car vm-message-list))
+                     archive))
+      ;; the other message matches no virtual folder, so it has no home
+      (should-not (vm-virtual-auto-select-folder (cadr vm-message-list))))))
+
+(ert-deftest vm-avirtual-test-auto-archive-files-what-the-rules-match ()
+  "`vm-virtual-auto-archive-messages' saves each message to the folder its
+rules name, and leaves the messages no rule matches where they are."
+  (vm-avirtual-test--with-folder (file archive)
+    (let ((vm-virtual-folder-alist
+           (list (list "badger-mail" (list (list file) '(subject "badgers")))))
+          (vm-virtual-auto-folder-alist
+           (list (list "badger-mail" archive))))
+      (should-not (file-exists-p archive))
+      (vm-virtual-auto-archive-messages)
+      (should (file-exists-p archive))
+      (let ((archived (with-temp-buffer (insert-file-contents archive)
+                                        (buffer-string))))
+        (should (string-match-p "Subject: badgers" archived))
+        (should-not (string-match-p "Subject: otters" archived)))
+      ;; the folder still holds both: archiving copies unless
+      ;; vm-delete-after-archiving says otherwise
+      (should (equal (length vm-message-list) 2)))))
+
+(ert-deftest vm-avirtual-test-auto-archive-with-no-rules-does-nothing ()
+  "With no rules nothing is archived, and nothing new is written.
+
+The whole directory is compared, not just the folder the other tests archive
+to: a command that filed everything under a name of its own making would
+leave that file alone and pass a narrower test."
+  (vm-avirtual-test--with-folder (file _archive)
+    (let* ((dir (file-name-directory file))
+           (before (sort (directory-files dir) #'string<)))
+      (vm-virtual-auto-archive-messages)
+      (should (equal (sort (directory-files dir) #'string<) before))
+      (should (equal (length vm-message-list) 2)))))
+
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
