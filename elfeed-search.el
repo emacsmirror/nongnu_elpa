@@ -55,6 +55,12 @@
 The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
 
+(defcustom elfeed-search-confirm-tag 2
+  "Confirm `elfeed-search-tag' when modifying this many or more entries."
+  :type '(choice (const :tag "No confirmation" nil)
+                 (const :tag "Always confirm" t)
+                 natnum))
+
 (defcustom elfeed-search-update-delay 1.0
   "Delay search buffer updates by that many seconds to reduce redraws.
 This delay affects only the redraws after feed updates.  See also
@@ -1167,21 +1173,25 @@ the browser defined by `browse-url-secondary-browser-function'."
       (message "Yanked: %s" links-str)
       (elfeed-search--after-action 'yank))))
 
-(defun elfeed-search--tag (fun)
-  "Call FUN with the entries to tag and update the entries afterwards."
+(defun elfeed-search--tag (query tags fun)
+  "Call FUN with the entries and TAGS and update the entries afterwards.
+If `elfeed-search-confirm-tag' is non-nil, confirm with QUERY."
   (let* ((all current-prefix-arg)
-         (entries (if all elfeed-search-entries (elfeed-search-selected))))
-    (apply #'elfeed-search-update-entry (funcall fun entries))
-    (unless all
-      (elfeed-search--after-action 'tag))))
+         (entries (if all elfeed-search-entries (elfeed-search-selected)))
+         (confirm elfeed-search-confirm-tag)
+         (count (length entries)))
+    (when (or (not confirm)
+              (and (numberp confirm) (< count confirm))
+              (y-or-n-p (format query count (mapconcat #'symbol-name tags ", "))))
+      (apply #'elfeed-search-update-entry (apply fun entries tags))
+      (unless all
+        (elfeed-search--after-action 'tag)))))
 
 (defun elfeed-search-tag (&rest tags)
   "Apply TAGS to all selected entries.
 With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive (elfeed-search--prompt-tags "Tag: ") elfeed-search-mode)
-  (elfeed-search--tag
-   (lambda (entries)
-     (apply #'elfeed-tag entries tags))))
+  (elfeed-search--tag "Tag %s entries with %s?" tags #'elfeed-tag))
 
 (defun elfeed-search-untag (&rest tags)
   "Remove TAGS from all selected entries.
@@ -1192,16 +1202,14 @@ With \\[universal-argument] pressed before, modify all entries of the list."
                     elfeed-search-entries
                   (elfeed-search-selected)))
    elfeed-search-mode)
-  (elfeed-search--tag
-   (lambda (entries)
-     (apply #'elfeed-untag entries tags))))
+  (elfeed-search--tag "Untag %s entries with %s?" tags #'elfeed-untag))
 
 (defun elfeed-search-toggle (&rest tags)
   "Toggle TAGS on all selected entries.
 With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive (elfeed-search--prompt-tags "Toggle: ") elfeed-search-mode)
-  (elfeed-search--tag
-   (lambda (entries)
+  (elfeed-search--tag "Toggle %2$s of %1$s entries?" tags
+   (lambda (entries &rest tags)
      (dolist (tag tags entries)
        (let (entries-tag entries-untag)
          (cl-loop for entry in entries
