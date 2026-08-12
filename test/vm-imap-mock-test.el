@@ -117,15 +117,16 @@ UID validity means the cache it holds is worthless."
       (should (equal (nth 2 result) "1000"))    ; uid validity
       (should (nth 3 result)))))                ; read-write
 
-(ert-deftest vm-imap-mock-test-examine-is-sent-for-a-read-only-select ()
-  "Asking for a read-only selection sends EXAMINE rather than SELECT.
-What VM makes of the [READ-ONLY] it gets back is a separate matter, and a
-broken one -- see the test in vm-imap-test.el for
-`vm-imap-response-matches'."
+(ert-deftest vm-imap-mock-test-examine-selects-read-only ()
+  "Asking for a read-only selection sends EXAMINE, and the mailbox comes back
+read-only.  The server says which it gave in the [READ-ONLY] of its tagged
+OK, and VM has to read it: believing a read-only mailbox writable is
+believing it may store flags and expunge there."
   (vm-imap-mock-test--with-session
       (mock process :messages (list vm-imap-mock-test--alice))
     (let ((result (vm-imap-select-mailbox process "INBOX" t t)))
       (should (equal (nth 0 result) 1))
+      (should-not (nth 3 result))
       (should (vm-imap-mock-received-p mock "EXAMINE"))
       (should-not (vm-imap-mock-received-p mock "\\`[^ ]+ SELECT")))))
 
