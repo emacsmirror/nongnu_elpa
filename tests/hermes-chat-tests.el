@@ -3276,7 +3276,14 @@
        (insert "/reasoning high")
        (hermes-chat-send)
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
-                      "low"))))))
+                      "low"))
+       (should
+        (cl-find-if (lambda (entry)
+                      (and (eq (plist-get entry :role) 'status)
+                           (eq (plist-get entry :status) 'error)
+                           (equal (plist-get entry :content)
+                                  "reasoning rejected")))
+                    (hermes-chat--entries)))))))
 
 (ert-deftest hermes-chat-command-dispatch-output-renders ()
   (let ((client (hermes-test--dashboard-client)) slash-command dispatch-name dispatch-arg)
