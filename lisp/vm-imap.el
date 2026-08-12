@@ -2461,7 +2461,16 @@ Numbers are included among atoms."
 	      ((consp e)
 	       (if (not (eq (car e) (car r)))
 		   (throw 'done nil))
-	       (apply 'vm-imap-response-matches (cdr r) (cdr e)))
+	       ;; the contents have to match as well, and this used to throw
+	       ;; the result of that away -- so (vector READ-WRITE) matched
+	       ;; [READ-ONLY] and every EXAMINE was reported writable.  A
+	       ;; pattern of (vector) says nothing about the contents and
+	       ;; still matches any vector, empty ones included: that is what
+	       ;; BODY[] is read with, and its token has nothing inside, on
+	       ;; which the recursive call would report no match.
+	       (if (and (cdr e)
+			(not (apply 'vm-imap-response-matches (cdr r) (cdr e))))
+		   (throw 'done nil)))
 	      ((eq e 'atom)
 	       (if (not (eq (car r) 'atom))
 		   (throw 'done nil)))

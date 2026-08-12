@@ -640,6 +640,39 @@ would turn a mistyped file name into a wrong cache file."
                     "myaccount:"))           ; no mailbox
       (should-not (vm-imap-cache-file-for-folder-name name)))))
 
+(ert-deftest vm-imap-test-response-matches-looks-inside-a-vector ()
+  "A bracketed pattern is matched on its contents, not merely its brackets.
+`(vector READ-WRITE)' must not match [READ-ONLY]: `vm-imap-select-mailbox'
+tries the two in that order, so a match on the brackets alone reports every
+EXAMINE as a writable selection."
+  (with-temp-buffer
+    (insert "VM OK [READ-ONLY] EXAMINE completed")
+    ;; VM 1-3, OK 4-6, the vector 7-18 holding READ-ONLY 8-17
+    (let ((response `((atom 1 3) (atom 4 6) (vector (atom 8 17)))))
+      (should (vm-imap-response-matches response 'VM 'OK '(vector READ-ONLY)))
+      (should-not
+       (vm-imap-response-matches response 'VM 'OK '(vector READ-WRITE))))))
+
+(ert-deftest vm-imap-test-response-matches-an-empty-vector-pattern ()
+  "A pattern of `(vector)' still matches any vector, whatever is in it.
+That is what the BODY[] and BODY[HEADER] responses are matched with, where
+the brackets are the point and their contents are not."
+  (with-temp-buffer
+    (insert "VM OK [READ-ONLY] EXAMINE completed")
+    (let ((response `((atom 1 3) (atom 4 6) (vector (atom 8 17)))))
+      (should (vm-imap-response-matches response 'VM 'OK '(vector))))))
+
+(ert-deftest vm-imap-test-response-matches-an-empty-vector-token ()
+  "An empty vector matches `(vector)' too.
+BODY[] is exactly that -- brackets with nothing between them -- and it is how
+every fetched message arrives, so a stricter reading of the pattern loses the
+lot.  A recursive check of the contents must not be made here: there are
+none, and no response at all is no match."
+  (with-temp-buffer
+    (insert "VM OK BODY[] {5}")
+    (let ((response `((atom 1 3) (atom 4 6) (atom 7 11) (vector) (atom 13 16))))
+      (should (vm-imap-response-matches response 'VM 'OK 'BODY '(vector))))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here
