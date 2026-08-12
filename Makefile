@@ -43,15 +43,15 @@ verify-sources:
 	  trap 'rm -f "$$srcs" "$$lisp" "$$tests" "$$tree_tests"' 0 1 2 15; \
 	  printf '%s\n' $(SRCS) | sed 's|^\./||' | sort > "$$srcs"; \
 	  printf '%s\n' lisp/*.el | sed 's|^\./||' | sort > "$$lisp"; \
-	  printf '%s\n' $(TESTS) | sed 's|^\./||' | sort > "$$tests"; \
-	  printf '%s\n' tests/*-tests.el | sed 's|^\./||' | sort > "$$tree_tests"; \
+	  printf '%s\n' $(TESTS) $(TEST_SUPPORT) | sed 's|^\./||' | sort > "$$tests"; \
+	  printf '%s\n' tests/*.el | sed 's|^\./||' | sort > "$$tree_tests"; \
 	  if ! cmp -s "$$srcs" "$$lisp"; then \
 	    echo "SRCS must match lisp/*.el exactly (normalized set equality):"; \
 	    diff -u "$$lisp" "$$srcs" || true; \
 	    exit 1; \
 	  fi; \
 	  if ! cmp -s "$$tests" "$$tree_tests"; then \
-	    echo "TESTS must match tests/*-tests.el exactly (normalized set equality):"; \
+	    echo "TESTS + TEST_SUPPORT must match tests/*.el exactly (normalized set equality):"; \
 	    diff -u "$$tree_tests" "$$tests" || true; \
 	    exit 1; \
 	  fi
