@@ -484,6 +484,78 @@ rest, checked by arity above."
     (should-not (vm-raise-frame frame))
     (should-not (vm-raise-frame))))
 
+;;; Saved window configurations (emacs-vm/vm#632)
+;;
+;; VM can remember a window layout per command and restore it next time.  The
+;; three commands that manage those had no test: what matters is that a
+;; configuration is recorded under the name given, written to the file so it
+;; outlives the session, applied without complaint, and forgotten on request.
+
+(defmacro vm-window-test--with-configuration-file (spec &rest body)
+  "Run BODY with an empty window-configuration file.
+SPEC is (FILE-VAR).  `vm-window-configurations' starts empty and the file is
+in a directory of its own, so nothing of the user's is read or written."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-window-config" t))))
+     (unwind-protect
+         (let* ((,(car spec) (expand-file-name "configurations" dir))
+                (vm-window-configuration-file ,(car spec))
+                (vm-window-configurations nil)
+                (vm-mutable-window-configuration t))
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-window-test-saving-a-window-configuration ()
+  "`vm-save-window-configuration' records the layout under the name given and
+writes it to `vm-window-configuration-file', which is what makes it outlive
+the session."
+  (vm-window-test--with-configuration-file (file)
+    (should (null vm-window-configurations))
+    (vm-save-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations) '(startup)))
+    (should (file-exists-p file))
+    (should (string-match-p "startup"
+                            (with-temp-buffer (insert-file-contents file)
+                                              (buffer-string))))))
+
+(ert-deftest vm-window-test-applying-and-deleting-a-configuration ()
+  "A saved configuration can be applied by name and then forgotten.
+Deleting it leaves nothing behind: the action has no configuration afterwards,
+which is the point of the command."
+  (vm-window-test--with-configuration-file (_file)
+    (vm-save-window-configuration 'startup)
+    (vm-apply-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations) '(startup)))
+    (vm-delete-window-configuration 'startup)
+    (should (null vm-window-configurations))))
+
+(ert-deftest vm-window-test-two-configurations-are-kept-apart ()
+  "Configurations are per action, so saving a second leaves the first alone
+and deleting one leaves the other."
+  (vm-window-test--with-configuration-file (_file)
+    (vm-save-window-configuration 'startup)
+    (vm-save-window-configuration 'reading-message)
+    (should (equal (sort (mapcar #'car vm-window-configurations)
+                         (lambda (a b) (string< (symbol-name a)
+                                                (symbol-name b))))
+                   '(reading-message startup)))
+    (vm-delete-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations)
+                   '(reading-message)))))
+
+(ert-deftest vm-window-test-configurations-need-a-file-to-be-enabled ()
+  "With no `vm-window-configuration-file' the commands say the feature is off
+rather than quietly doing nothing -- there would be nowhere to keep what they
+were asked to save."
+  (let ((vm-window-configuration-file nil)
+        (vm-window-configurations nil)
+        (text-quoting-style 'grave))
+    (dolist (command '(vm-save-window-configuration
+                       vm-delete-window-configuration))
+      (should (equal (cadr (should-error (funcall command 'startup)))
+                     (concat "Configurable windows not enabled.  "
+                             "Set vm-window-configuration-file to enable."))))))
+
 (provide 'vm-window-test)
 
 ;;; vm-window-test.el ends here
