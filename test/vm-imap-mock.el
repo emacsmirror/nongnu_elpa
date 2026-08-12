@@ -535,15 +535,37 @@ than commands, so they are counted off first."
   (let ((mock (process-get process 'vm-imap-mock))
 	(pending (concat (or (process-get process 'vm-imap-mock-pending) "") text))
 	line)
-    (while (and (process-live-p process)
-		(if (process-get process 'vm-imap-mock-append-mailbox)
-		    (setq pending (vm-imap-mock--take-literal mock process pending))
-		  (when (string-match "\\`\\([^\r\n]*\\)\r?\n" pending)
-		    (setq line (match-string 1 pending)
-			  pending (substring pending (match-end 0)))
-		    (vm-imap-mock--handle mock process line)
-		    t))))
-    (process-put process 'vm-imap-mock-pending pending)))
+    (unwind-protect
+	(while (and (process-live-p process)
+		    (if (process-get process 'vm-imap-mock-append-mailbox)
+			(setq pending
+			      (vm-imap-mock--take-literal mock process pending))
+		      (when (string-match "\\`\\([^\r\n]*\\)\r?\n" pending)
+			(setq line (match-string 1 pending)
+			      pending (substring pending (match-end 0)))
+			(condition-case error
+			    (vm-imap-mock--handle mock process line)
+			  (error
+			   (vm-imap-mock--log
+			    mock (format "!! error answering %s: %s"
+					 line (error-message-string error)))
+			   (vm-imap-mock--send
+			    process
+			    (format "%s NO internal mock error\r\n"
+				    (car (split-string line " " t))))))
+			t))))
+      ;; an error must not cost the rest of PENDING: the command still in
+      ;; there would never be answered, and the client would wait for a reply
+      ;; that is not coming.  Emacs prints an error in a process filter and
+      ;; carries on, so the test would see only a timeout.
+      (process-put process 'vm-imap-mock-pending pending))))
+
+(defun vm-imap-mock-errors (mock)
+  "The errors MOCK hit while answering, as strings, newest last."
+  (let (errors)
+    (dolist (line (vm-imap-mock-log mock) (nreverse errors))
+      (when (string-prefix-p "!! " line)
+	(push line errors)))))
 
 (defun vm-imap-mock--take-literal (mock process pending)
   "Take the APPEND literal out of PENDING, returning what is left.

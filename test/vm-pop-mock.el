@@ -91,9 +91,11 @@
       size)))
 
 (defun vm-pop-mock--send (process string)
-  "Send STRING to PROCESS if it is still alive."
+  "Send STRING to PROCESS if it is still alive.
+A client can go away between the check and the send, and the signal from that
+would take down the filter this runs in -- see `vm-pop-mock--filter'."
   (when (process-live-p process)
-    (process-send-string process string)))
+    (ignore-errors (process-send-string process string))))
 
 (defun vm-pop-mock--send-multiline (process text)
   "Send TEXT to PROCESS as a POP3 multi-line response body.
@@ -231,17 +233,37 @@ the terminating dot is sent."
       (vm-pop-mock--send process "-ERR unknown command\r\n")))))
 
 (defun vm-pop-mock--filter (process text)
-  "Split TEXT from PROCESS into commands and answer each."
+  "Split TEXT from PROCESS into commands and answer each.
+An error while answering is caught, recorded and answered -ERR.  Emacs prints
+an error in a process filter to the messages and carries on, so an error here
+was invisible to the test and cost it the rest of PENDING as well -- the
+command still in there was never answered, and the client sat waiting for a
+reply that was not coming until its deadline ran out.  A silent timeout is
+the least debuggable thing a mock can do; failing loudly is the point."
   (let ((mock (process-get process 'vm-pop-mock))
 	(pending (concat (or (process-get process 'vm-pop-mock-pending) "")
 			 text))
 	line)
-    (while (and (process-live-p process)
-		(string-match "\\`\\([^\r\n]*\\)\r?\n" pending))
-      (setq line (match-string 1 pending)
-	    pending (substring pending (match-end 0)))
-      (vm-pop-mock--handle mock process line))
-    (process-put process 'vm-pop-mock-pending pending)))
+    (unwind-protect
+	(while (and (process-live-p process)
+		    (string-match "\\`\\([^\r\n]*\\)\r?\n" pending))
+	  (setq line (match-string 1 pending)
+		pending (substring pending (match-end 0)))
+	  (condition-case error
+	      (vm-pop-mock--handle mock process line)
+	    (error
+	     (vm-pop-mock--log mock (format "!! error answering %s: %s"
+					    line (error-message-string error)))
+	     (vm-pop-mock--send process "-ERR internal mock error\r\n"))))
+      ;; whatever happened, what has not been consumed is still owed an answer
+      (process-put process 'vm-pop-mock-pending pending))))
+
+(defun vm-pop-mock-errors (mock)
+  "The errors MOCK hit while answering, as strings, newest last."
+  (let (errors)
+    (dolist (line (vm-pop-mock-log mock) (nreverse errors))
+      (when (string-prefix-p "!! " line)
+	(push line errors)))))
 
 (defun vm-pop-mock--connection-buffer-away (client)
   "Detach and kill the buffer Emacs gave CLIENT.

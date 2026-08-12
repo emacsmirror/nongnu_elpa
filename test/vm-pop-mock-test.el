@@ -291,11 +291,26 @@ small response arrives in one piece (emacs-vm/vm#626)."
 	    (cl-flet* ((await
 			 (done what)
 			 ;; Wait for DONE, a predicate on what has arrived.
-			 (let ((deadline (+ 5 (float-time))))
-			   (while (and (not (funcall done)) (< (float-time) deadline))
+			 ;; The deadline is a watchdog, not a measurement: the
+			 ;; test asserts nothing about how long a local socket
+			 ;; takes, and gives up early the moment the
+			 ;; connection dies, since nothing more is coming
+			 ;; then.  A failure says what the server thought it
+			 ;; was doing -- what it received, and any error it
+			 ;; hit answering, which used to be lost to the
+			 ;; messages buffer.
+			 (let ((deadline (+ 30 (float-time))))
+			   (while (and (not (funcall done))
+				       (process-live-p process)
+				       (< (float-time) deadline))
 			     (accept-process-output process 0 100)))
 			 (unless (funcall done)
-			   (ert-fail (list what :received received))))
+			   (ert-fail
+			    (list what
+				  :received received
+				  :connection (process-status process)
+				  :server-saw (vm-pop-mock-commands mock)
+				  :server-errors (vm-pop-mock-errors mock)))))
 		       (converse
 			 (command pattern &optional multiline)
 			 (setq received "")
