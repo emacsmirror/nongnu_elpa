@@ -627,6 +627,159 @@ when `vm-skip-read-messages' says so."
         (vm-set-mark-of (car mp) nil)
         (should-not (vm-should-skip-message mp))))))
 
+;;; Moving about the folder (emacs-vm/vm#632)
+;;
+;; The commands a reader presses all day -- n, p, and their no-skip and unread
+;; variants -- were called by no test.  What matters about them is which
+;; message you land on, and the skipping is the whole of it: `vm-next-message'
+;; passes over a deleted message and `vm-next-message-no-skip' does not.
+
+(defconst vm-motion-test--folder
+  (mapconcat
+   (lambda (n)
+     (format (concat "From sender%d@example.com Sat Aug  %d 10:00:00 2026\n"
+                     "From: sender%d@example.com\nSubject: m%d\n\nBody %d.\n\n")
+             n n n n n))
+   '(1 2 3 4) "")
+  "Four messages, subjects m1 to m4.")
+
+(defmacro vm-motion-test--with-folder (&rest body)
+  "Visit a folder of four messages, select the first, and run BODY."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-motion" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-summary-show-threads nil)
+               (vm-summary-enable-thread-folding nil)
+               (vm-skip-deleted-messages t)
+               (vm-skip-read-messages nil)
+               (vm-circular-folders nil))
+           (write-region vm-motion-test--folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-motion-test--here ()
+  "The subject of the message the folder is looking at."
+  (vm-su-subject (car vm-message-pointer)))
+
+(defun vm-motion-test--go-to (n)
+  "Select message N, counting from 1."
+  (setq vm-message-pointer (nthcdr (1- n) vm-message-list)))
+
+(ert-deftest vm-motion-test-next-and-previous-move-one-message ()
+  "`vm-next-message' and `vm-previous-message' step by one, and undo
+each other."
+  (vm-motion-test--with-folder
+    (should (equal (vm-motion-test--here) "m1"))
+    (vm-next-message 1)
+    (should (equal (vm-motion-test--here) "m2"))
+    (vm-next-message 1)
+    (should (equal (vm-motion-test--here) "m3"))
+    (vm-previous-message 1)
+    (should (equal (vm-motion-test--here) "m2"))
+    (vm-previous-message 1)
+    (should (equal (vm-motion-test--here) "m1"))))
+
+(ert-deftest vm-motion-test-next-skips-a-deleted-message ()
+  "`vm-next-message' passes over a deleted message while
+`vm-skip-deleted-messages' says so, and `vm-next-message-no-skip' lands on
+it -- which is the whole difference between the two commands."
+  (vm-motion-test--with-folder
+    (vm-set-deleted-flag (nth 2 vm-message-list) t)   ; m3
+    (vm-motion-test--go-to 2)
+    (vm-next-message 1)
+    (should (equal (vm-motion-test--here) "m4"))
+    (vm-motion-test--go-to 2)
+    (vm-next-message-no-skip 1)
+    (should (equal (vm-motion-test--here) "m3"))))
+
+(ert-deftest vm-motion-test-previous-skips-a-deleted-message ()
+  "The same going backwards: `vm-previous-message' passes over the deleted
+message and `vm-previous-message-no-skip' does not."
+  (vm-motion-test--with-folder
+    (vm-set-deleted-flag (nth 1 vm-message-list) t)   ; m2
+    (vm-motion-test--go-to 3)
+    (vm-previous-message 1)
+    (should (equal (vm-motion-test--here) "m1"))
+    (vm-motion-test--go-to 3)
+    (vm-previous-message-no-skip 1)
+    (should (equal (vm-motion-test--here) "m2"))))
+
+(ert-deftest vm-motion-test-a-count-of-more-than-one-ignores-skipping ()
+  "A count greater than one moves that many messages whatever their state.
+The docstring says so: the skip options are ignored when the absolute value
+of the count is more than one, so counting is counting.
+
+The deleted message is the one being counted onto, not one being counted
+over -- with m2 deleted instead, counting two and skipping one both land on
+m3 and the test would hold whether or not the count was honoured."
+  (vm-motion-test--with-folder
+    (vm-set-deleted-flag (nth 2 vm-message-list) t)   ; m3
+    (vm-next-message 2)
+    (should (equal (vm-motion-test--here) "m3"))
+    ;; one at a time, the same deleted message is passed over
+    (vm-motion-test--go-to 1)
+    (vm-next-message 1)
+    (vm-next-message 1)
+    (should (equal (vm-motion-test--here) "m4"))))
+
+(ert-deftest vm-motion-test-next-unread-message-finds-the-unread-one ()
+  "`vm-next-unread-message' goes to the next message not yet read, passing
+over the ones that have been."
+  (vm-motion-test--with-folder
+    (dolist (m vm-message-list)
+      (vm-set-new-flag m nil)
+      (vm-set-unread-flag m nil))
+    (vm-set-unread-flag (nth 3 vm-message-list) t)    ; m4 alone is unread
+    (vm-motion-test--go-to 1)
+    (vm-next-unread-message)
+    (should (equal (vm-motion-test--here) "m4"))))
+
+(ert-deftest vm-motion-test-previous-unread-message-looks-backwards ()
+  "`vm-previous-unread-message' is the same search the other way."
+  (vm-motion-test--with-folder
+    (dolist (m vm-message-list)
+      (vm-set-new-flag m nil)
+      (vm-set-unread-flag m nil))
+    (vm-set-unread-flag (car vm-message-list) t)      ; m1 alone is unread
+    (vm-motion-test--go-to 4)
+    (vm-previous-unread-message)
+    (should (equal (vm-motion-test--here) "m1"))))
+
+(ert-deftest vm-motion-test-goto-message-last-seen-goes-back ()
+  "`vm-goto-message-last-seen' returns to the message you were on before,
+and pressing it twice puts you back where you started -- which is what makes
+it usable for flipping between two messages."
+  (vm-motion-test--with-folder
+    (vm-motion-test--go-to 1)
+    (vm-record-and-change-message-pointer vm-message-pointer
+                                          (nthcdr 2 vm-message-list))
+    (should (equal (vm-motion-test--here) "m3"))
+    (vm-goto-message-last-seen)
+    (should (equal (vm-motion-test--here) "m1"))
+    (vm-goto-message-last-seen)
+    (should (equal (vm-motion-test--here) "m3"))))
+
+(ert-deftest vm-motion-test-moving-past-the-end-is-an-error ()
+  "Moving past the last message says so rather than wrapping, while
+`vm-circular-folders' is off."
+  (vm-motion-test--with-folder
+    (vm-motion-test--go-to 4)
+    (should-error (vm-next-message 1 nil t))
+    (vm-motion-test--go-to 1)
+    (should-error (vm-previous-message 1 nil t))))
+
 (provide 'vm-motion-test)
 
 ;;; vm-motion-test.el ends here
