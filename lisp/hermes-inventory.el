@@ -29,8 +29,10 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'subr-x)
 (require 'tabulated-list)
+(require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
 (require 'hermes-dashboard-rpc)
@@ -395,6 +397,18 @@ after a reset/restart."
 
 ;;; Memory status
 
+(defvar-local hermes-memory--status nil
+  "Latest memory status owned by this buffer.")
+
+(defvar-local hermes-memory--operation nil
+  "Identity token for the current memory configuration operation.")
+
+(defconst hermes-memory--no-fields :hermes-memory-no-fields
+  "Result marker for a provider with no configurable fields.")
+
+(defconst hermes-memory--unchanged :hermes-memory-unchanged
+  "Result marker for a deliberately unchanged provider field.")
+
 (defun hermes-inventory--safe-memory-name (value)
   "Return a safe provider name for VALUE, redacting secret-shaped strings."
   (let ((text (or (hermes-transport--scalar-string value) "")))
@@ -429,7 +443,7 @@ unknown backend fields so secrets cannot leak through this buffer."
          (format "  USER.md: %d bytes"
                  (hermes-inventory--memory-size status 'user))
          ""
-         "Keys: g refresh, D reset built-in memory (asks yes-or-no-p).")
+         "Keys: p provider, c configure, g refresh, D reset built-in memory.")
    "\n"))
 
 (defun hermes-inventory--render-memory-status (status target &optional display)
@@ -438,6 +452,7 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
   (with-current-buffer target
     (unless (derived-mode-p 'hermes-memory-status-mode)
       (hermes-memory-status-mode))
+    (setq hermes-memory--status status)
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert (hermes-inventory--memory-status-text status))
@@ -447,12 +462,287 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
 (defvar-keymap hermes-memory-status-mode-map
   :doc "Keymap for `hermes-memory-status-mode'."
   :parent special-mode-map
+  "p" #'hermes-memory-select-provider
+  "c" #'hermes-memory-configure-provider
   "g" #'hermes-memory-status
   "D" #'hermes-memory-reset)
 
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
   :interactive nil)
+
+(defun hermes-memory--provider-name-p (name)
+  "Return non-nil when NAME is safe for a memory provider route."
+  (and (stringp name)
+       (string-match-p "\\`[A-Za-z0-9][A-Za-z0-9_-]\\{0,63\\}\\'" name)
+       (equal name (hermes-inventory--safe-memory-name name))))
+
+(defun hermes-memory--provider-names ()
+  "Return safe provider names from the current status, including built-in."
+  (delete-dups
+   (cons "built-in"
+         (delq nil
+               (mapcar
+                (lambda (provider)
+                  (let ((name (hermes-transport--scalar-string
+                               (hermes-transport--get provider 'name))))
+                    (and (hermes-memory--provider-name-p name) name)))
+                (hermes-transport--get hermes-memory--status 'providers))))))
+
+(defun hermes-memory--read-provider (action)
+  "Read a provider from current status for ACTION."
+  (completing-read (format "Memory provider to %s: " action)
+                   (hermes-memory--provider-names) nil t))
+
+(defun hermes-memory--require-provider (provider)
+  "Return validated PROVIDER from current status, or signal `user-error'."
+  (unless (member provider (hermes-memory--provider-names))
+    (user-error "Unknown memory provider: %s" provider))
+  provider)
+
+(defun hermes-memory--require-idle ()
+  "Signal `user-error' while a memory configuration operation is active."
+  (when hermes-memory--operation
+    (user-error "A memory update is still in progress")))
+
+(defun hermes-memory--operation-current-p (buffer generation)
+  "Return non-nil when BUFFER still owns memory operation GENERATION."
+  (hermes-browser--request-current-mode-p
+   buffer generation 'hermes-memory-status-mode))
+
+(defun hermes-memory--clear-operation (buffer token)
+  "Clear BUFFER's memory operation when it still belongs to TOKEN."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (eq hermes-memory--operation token)
+        (setq hermes-memory--operation nil)))))
+
+(defun hermes-memory--run-owned
+    (buffer generation token make-promise on-success &optional secrets)
+  "Run MAKE-PROMISE while BUFFER owns GENERATION and TOKEN.
+MAKE-PROMISE receives a dashboard client.  ON-SUCCESS and errors apply only
+while the originating memory buffer remains current.  SECRETS are redacted."
+  (condition-case err
+      (hermes-browser--with-client
+       (lambda (client done)
+         (let ((finish
+                (lambda ()
+                  (unwind-protect (funcall done)
+                    (hermes-memory--clear-operation buffer token)))))
+           (hermes--promise-catch
+            (hermes--promise-then
+             (condition-case request-error
+                 (hermes--promise-finally
+                  (funcall make-promise client) finish)
+               ((error quit)
+                (funcall finish)
+                (hermes--promise-rejected
+                 (error-message-string request-error))))
+             (lambda (result)
+               (when (hermes-memory--operation-current-p buffer generation)
+                 (funcall on-success result))))
+            (lambda (reason)
+              (when (hermes-memory--operation-current-p buffer generation)
+                (message "Hermes: %s"
+                         (hermes-dashboard-transport--redact-secret
+                          reason secrets))))))))
+    ((error quit)
+     (hermes-memory--clear-operation buffer token)
+     (message "Hermes: %s"
+              (hermes-dashboard-transport--redact-secret
+               (error-message-string err) secrets)))))
+
+(defun hermes-memory--api (client method path &optional body secrets)
+  "Send memory METHOD PATH through CLIENT with optional BODY and SECRETS."
+  (hermes-dashboard-transport-api-request-async
+   method (concat "/api/memory" path)
+   :body body :secrets secrets :client client))
+
+(defun hermes-memory--provider-path (provider)
+  "Return PROVIDER's configuration path."
+  (format "/providers/%s/config" (url-hexify-string provider)))
+
+(defun hermes-memory--status-promise (client)
+  "Return a memory status promise through CLIENT."
+  (hermes-memory--api client "GET" ""))
+
+(defun hermes-memory--comparable-value (value)
+  "Return VALUE's stable string form for schema dependency comparison."
+  (cond ((eq value t) "true")
+        ((eq value :false) "false")
+        ((null value) "")
+        (t (format "%s" value))))
+
+(defun hermes-memory--field-visible-p (field fields)
+  "Return non-nil when FIELD's `when' dependencies match FIELDS."
+  (let ((when (hermes-transport--get field 'when)))
+    (or (null when)
+        (seq-every-p
+         (lambda (condition)
+           (let* ((key (format "%s" (car condition)))
+                  (dependency
+                   (seq-find
+                    (lambda (candidate)
+                      (equal key
+                             (hermes-transport--scalar-string
+                              (hermes-transport--get candidate 'key))))
+                    fields)))
+             (equal (hermes-memory--comparable-value
+                     (hermes-transport--get dependency 'value))
+                    (hermes-memory--comparable-value (cdr condition)))))
+         when))))
+
+(defun hermes-memory--visible-fields (schema)
+  "Return currently visible configurable fields from SCHEMA."
+  (let ((fields (hermes-transport--get schema 'fields)))
+    (seq-filter (lambda (field)
+                  (and (hermes-transport--non-empty-string
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get field 'key)))
+                       (hermes-memory--field-visible-p field fields)))
+                fields)))
+
+(defun hermes-memory--read-field (fields)
+  "Read and return one field from FIELDS."
+  (let* ((choices
+          (mapcar
+           (lambda (field)
+             (format "%s (%s)"
+                     (or (hermes-transport--non-empty-string
+                          (hermes-transport--scalar-string
+                           (hermes-transport--get field 'label)))
+                         (hermes-transport--get field 'key))
+                     (hermes-transport--get field 'key)))
+           fields))
+         (choice (completing-read "Memory field: " choices nil t))
+         (index (seq-position choices choice #'equal)))
+    (nth index fields)))
+
+(defun hermes-memory--field-options (field)
+  "Return (DISPLAY . VALUE) choices from select FIELD."
+  (mapcar
+   (lambda (option)
+     (let* ((value (or (hermes-transport--scalar-string
+                        (hermes-transport--get option 'value))
+                       (hermes-transport--scalar-string option)
+                       ""))
+            (label (or (hermes-transport--non-empty-string
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get option 'label)))
+                       value)))
+       (cons (if (equal label value) value (format "%s (%s)" label value))
+             value)))
+   (hermes-transport--get field 'options)))
+
+(defun hermes-memory--read-field-value (field)
+  "Read FIELD's value using its backend-declared kind."
+  (let* ((kind (hermes-transport--scalar-string
+                (hermes-transport--get field 'kind)))
+         (key (hermes-transport--get field 'key))
+         (label (or (hermes-transport--non-empty-string
+                     (hermes-transport--scalar-string
+                      (hermes-transport--get field 'label)))
+                    key))
+         (current (hermes-transport--get field 'value)))
+    (pcase kind
+      ("secret"
+       (let ((value (read-passwd (format "%s: " label))))
+         (if (string-empty-p value) hermes-memory--unchanged value)))
+      ("select"
+       (let* ((options (hermes-memory--field-options field))
+              (initial (rassoc (hermes-memory--comparable-value current)
+                               options))
+              (choice (completing-read
+                       (format "%s: " label) (mapcar #'car options) nil t nil nil
+                       (car initial))))
+         (cdr (assoc choice options))))
+      ("boolean"
+       (if (y-or-n-p (format "Enable %s? " label)) t :false))
+      (_
+       (read-string (format "%s: " label)
+                    (hermes-memory--comparable-value current))))))
+
+(defun hermes-memory--configuration-promise
+    (client buffer generation provider redactions)
+  "Return PROVIDER configuration flow promise through CLIENT.
+BUFFER and GENERATION own prompts and writes.  REDACTIONS is updated when a
+secret is read."
+  (hermes--promise-then
+   (hermes-memory--api client "GET" (hermes-memory--provider-path provider))
+   (lambda (schema)
+     (when (hermes-memory--operation-current-p buffer generation)
+       (let ((fields (hermes-memory--visible-fields schema)))
+         (if (null fields)
+             hermes-memory--no-fields
+           (let* ((field (hermes-memory--read-field fields))
+                  (key (hermes-transport--scalar-string
+                        (hermes-transport--get field 'key)))
+                  (secret-p (equal (hermes-transport--get field 'kind) "secret"))
+                  (value (hermes-memory--read-field-value field)))
+             (if (eq value hermes-memory--unchanged)
+                 hermes-memory--unchanged
+               (when secret-p (setcar redactions value))
+               (when (hermes-memory--operation-current-p buffer generation)
+                 (hermes--promise-then
+                  (hermes-memory--api
+                   client "PUT" (hermes-memory--provider-path provider)
+                   `((values . ((,key . ,value))))
+                   (and secret-p (list value)))
+                  (lambda (_result)
+                    (when (hermes-memory--operation-current-p buffer generation)
+                      (hermes-memory--status-promise client)))))))))))))
+
+;;;###autoload
+(defun hermes-memory-select-provider (&optional provider)
+  "Select PROVIDER from the current memory status and refresh it."
+  (interactive)
+  (hermes-memory--require-idle)
+  (setq provider (hermes-memory--require-provider
+                  (or provider (hermes-memory--read-provider "activate"))))
+  (let ((buffer (current-buffer))
+        (generation (hermes-browser--next-request-generation))
+        (token (list 'memory-provider-selection)))
+    (setq hermes-memory--operation token)
+    (hermes-memory--run-owned
+     buffer generation token
+     (lambda (client)
+       (hermes--promise-then
+        (hermes-memory--api client "PUT" "/provider"
+                            `((provider . ,provider)))
+        (lambda (_result)
+          (when (hermes-memory--operation-current-p buffer generation)
+            (hermes-memory--status-promise client)))))
+     (lambda (status)
+       (hermes-inventory--render-memory-status status buffer)
+       (message "Hermes: active memory provider is %s" provider)))))
+
+;;;###autoload
+(defun hermes-memory-configure-provider (&optional provider)
+  "Configure one schema field for PROVIDER and refresh memory status."
+  (interactive)
+  (hermes-memory--require-idle)
+  (setq provider (hermes-memory--require-provider
+                  (or provider (hermes-memory--read-provider "configure"))))
+  (let ((buffer (current-buffer))
+        (generation (hermes-browser--next-request-generation))
+        (token (list 'memory-provider-configuration))
+        (redactions (list nil)))
+    (setq hermes-memory--operation token)
+    (hermes-memory--run-owned
+     buffer generation token
+     (lambda (client)
+       (hermes-memory--configuration-promise
+        client buffer generation provider redactions))
+     (lambda (result)
+       (pcase result
+         (:hermes-memory-no-fields
+          (message "Hermes: %s exposes no configurable fields" provider))
+         (:hermes-memory-unchanged
+          (message "Hermes: %s configuration unchanged" provider))
+         (_
+          (hermes-inventory--render-memory-status result buffer)
+          (message "Hermes: configured memory provider %s" provider))))
+     redactions)))
 
 ;;;###autoload
 (defun hermes-memory-status ()
