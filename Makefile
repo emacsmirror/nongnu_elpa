@@ -7,7 +7,7 @@ NIX := $(shell command -v nix 2>/dev/null)
 ENV_MAKE = $(MAKE) --no-print-directory
 ifeq ($(HERMES_ENV_WRAPPED),)
 ifneq ($(NIX),)
-ENV_MAKE = nix develop --no-write-lock-file path:$(CURDIR) --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory
+ENV_MAKE = nix develop --no-write-lock-file . --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory
 endif
 endif
 
@@ -32,9 +32,21 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile test do-test lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load clean
+.PHONY: all verify-sources compile do-compile test do-test lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load clean
 
 all: compile
+
+verify-sources:
+	@set -eu; \
+	  srcs=$$(mktemp); lisp=$$(mktemp); \
+	  trap 'rm -f "$$srcs" "$$lisp"' 0 1 2 15; \
+	  printf '%s\n' $(SRCS) | sed 's|^\./||' | sort > "$$srcs"; \
+	  printf '%s\n' lisp/*.el | sed 's|^\./||' | sort > "$$lisp"; \
+	  if ! cmp -s "$$srcs" "$$lisp"; then \
+	    echo "SRCS must match lisp/*.el exactly (normalized set equality):"; \
+	    diff -u "$$lisp" "$$srcs" || true; \
+	    exit 1; \
+	  fi
 
 compile:
 	@$(ENV_MAKE) do-compile
@@ -96,9 +108,9 @@ do-native-comp:
 dev:
 	@$(ENV_MAKE) do-compile do-lint do-test
 
-check: dev
+check: verify-sources dev
 
-pre-commit:
+pre-commit: verify-sources
 	git diff --check
 	@$(ENV_MAKE) do-compile do-lint do-native-comp do-test
 
@@ -106,9 +118,14 @@ pre-handoff-check:
 	git status --short --branch
 	git diff --check
 	nix --extra-experimental-features 'nix-command flakes' \
-	  develop --no-write-lock-file path:$(CURDIR) --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory check
+	  develop --no-write-lock-file . --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory check
 	nix --extra-experimental-features 'nix-command flakes' \
-	  flake check --no-write-lock-file
+	  flake check --all-systems --no-build --no-write-lock-file
+	@system=$$(nix --extra-experimental-features 'nix-command flakes' eval --impure --raw --expr builtins.currentSystem); \
+	  nix --extra-experimental-features 'nix-command flakes' \
+	    build --no-link --no-write-lock-file \
+	    ".#checks.$$system.package" \
+	    ".#checks.$$system.package-smoke"
 
 load: clean
 	@emacsclient --eval "(progn \

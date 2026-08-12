@@ -32,6 +32,7 @@
           elispFiles = [
             "lisp/hermes-promise.el"
             "lisp/hermes-notifications.el"
+            "lisp/hermes-session-title.el"
             "lisp/hermes-transport.el"
             "lisp/hermes-transport-cli.el"
             "lisp/hermes-dashboard-api.el"
@@ -65,24 +66,38 @@
             "lisp/hermes-capabilities.el"
             "lisp/hermes.el"
           ];
-          elispFileArgs = lib.concatStringsSep " " elispFiles;
-          ignoredSourceNames = [
-            ".direnv"
-            ".eca"
-            ".emacs-test-cache"
-            ".hermes"
-            ".test-results"
-          ];
-
-          source = lib.cleanSourceWith {
-            src = ./.;
-            filter =
-              path: type:
-              let
-                name = baseNameOf path;
-              in
-              (lib.cleanSourceFilter path type)
-              && !(lib.elem name ignoredSourceNames || lib.hasSuffix ".elc" name);
+          allElispFiles = map (name: "lisp/${name}") (
+            lib.filter (
+              name:
+              !(lib.hasPrefix "." name) && lib.hasSuffix ".el" name
+            ) (builtins.attrNames (builtins.readDir ./lisp))
+          );
+          elispFileArgs =
+            assert lib.assertMsg
+              (lib.sort builtins.lessThan elispFiles == lib.sort builtins.lessThan allElispFiles)
+              "flake elispFiles must list every lisp/*.el source";
+            lib.concatStringsSep " " elispFiles;
+          # Closed-world: only Makefile, explicit Lisp paths, top-level tests/*.el.
+          # No directory trees — nested/generated/private files stay out of src.
+          # Dot-prefixed basenames stay out of scans and release membership.
+          testElFiles =
+            let
+              entries = builtins.readDir ./tests;
+            in
+            lib.filter (
+              name:
+              entries.${name} == "regular"
+              && !(lib.hasPrefix "." name)
+              && lib.hasSuffix ".el" name
+            ) (lib.attrNames entries);
+          releaseFileset = lib.fileset.unions (
+            [ ./Makefile ]
+            ++ map (path: ./. + "/${path}") elispFiles
+            ++ map (name: ./tests + "/${name}") testElFiles
+          );
+          source = lib.fileset.toSource {
+            root = ./.;
+            fileset = releaseFileset;
           };
 
           keymapPopupVersion = "0.4.0";
@@ -183,6 +198,30 @@
             };
 
           check = mkCheck "check" "check";
+
+          packageSmoke =
+            pkgs.runCommand "hermes-el-package-smoke"
+              {
+                nativeBuildInputs = [ emacsWithHermes ];
+              }
+              ''
+                set -eu
+                lispdir="${hermesEl}/share/emacs/site-lisp"
+                for f in ${elispFileArgs}; do
+                  base=$(basename "$f" .el)
+                  test -f "$lispdir/$base.elc"
+                done
+                export HOME="$TMPDIR/home"
+                mkdir -p "$HOME"
+                emacs -Q --batch --eval '(progn
+                  (package-initialize)
+                  (require (quote hermes-session-title))
+                  (require (quote hermes))
+                  (unless (and (fboundp (quote hermes-session-title-canonicalize))
+                               (fboundp (quote hermes)))
+                    (error "installed package symbols missing")))'
+                touch "$out"
+              '';
         in
         {
           inherit
@@ -192,6 +231,7 @@
             hermesEl
             keymapPopup
             keymapPopupSrc
+            packageSmoke
             pkgs
             ;
 
@@ -209,6 +249,7 @@
       checks = forAllSystems (system: {
         default = (mkHermes system).check;
         package = (mkHermes system).hermesEl;
+        package-smoke = (mkHermes system).packageSmoke;
       });
 
       devShells = forAllSystems (system: {
