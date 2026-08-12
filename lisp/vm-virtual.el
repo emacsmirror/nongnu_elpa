@@ -975,9 +975,11 @@ i.e., sent by the user of this VM."
 
 (defun vm-vs-uninteresting-senders (m)
   "Virtual selector to check of the sender is an \"uninteresting\"
-sender.  (See `vm-summary-uninteresting-senders'.)"
-  (string-match vm-summary-uninteresting-senders
-                (vm-get-header-contents m "From:")))
+sender.  (See `vm-summary-uninteresting-senders'.)
+A message with no From: header has no sender to find uninteresting, and does
+not match; it used to signal, as `vm-vs-header-field' did."
+  (let ((from (vm-get-header-contents m "From:")))
+    (and from (string-match vm-summary-uninteresting-senders from))))
 
 (defun vm-vs-attachment (m)
   "Virtual selector to check if the message has an attachment.
@@ -1040,9 +1042,13 @@ listed in `vm-vs-spam-score-headers'."
 
 (defun vm-vs-header-field (m field regexp)
   "Virtual selector to check if the given header FIELD contains
-an instance of REGEXP."
+an instance of REGEXP.  A message without the header does not match.
+`vm-get-header-contents' answers nil for a header that is not there, and
+passing that to `string-match' signalled: nothing catches a selector's error,
+so a folder picking out the messages that carry a header stopped at the first
+message that did not."
   (let ((header (vm-get-header-contents m field)))
-    (string-match regexp header)))
+    (and header (string-match regexp header))))
 
 (defun vm-vs-uid (m arg)
   "Virtual selector to check if the message UID is ARG."
