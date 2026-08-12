@@ -26,6 +26,9 @@
 ;;                   whole fallback path for this and it has never been run
 ;;   :refuse         regexp; answer a matching command with -ERR
 ;;   :drop-on        regexp; close the connection when a command matches
+;;   :silent-on      regexp; read a matching command and answer nothing, which
+;;                   is the server that accepts and then says nothing -- the
+;;                   case a client with no read timeout waits out for ever
 ;;   :truncate-retr  cut a RETR response off mid-message and close, which is
 ;;                   what a real interrupted download looks like
 ;;   :lie-about-size report a wrong octet count in LIST and STAT
@@ -46,7 +49,7 @@
   deleted				; list of 1-based numbers marked DELE
   (log nil)
   ;; faults
-  no-uidl refuse drop-on truncate-retr lie-about-size slow-greeting
+  no-uidl refuse drop-on silent-on truncate-retr lie-about-size slow-greeting
   ;; per-connection state, this server serves one client at a time
   authenticated)
 
@@ -120,6 +123,10 @@ the terminating dot is sent."
      ((and (vm-pop-mock-drop-on mock)
 	   (string-match-p (vm-pop-mock-drop-on mock) line))
       (delete-process process))
+     ((and (vm-pop-mock-silent-on mock)
+	   (string-match-p (vm-pop-mock-silent-on mock) line))
+      ;; heard, and deliberately unanswered
+      nil)
      ((and (vm-pop-mock-refuse mock)
 	   (string-match-p (vm-pop-mock-refuse mock) line))
       (vm-pop-mock--send process "-ERR the server declines\r\n"))
@@ -292,7 +299,7 @@ about the live process."
 				      (vm-pop-mock--timestamp mock)))))
 
 (cl-defun vm-pop-mock-start (&key (user "vmtest") (password "secret")
-				  messages no-uidl refuse drop-on
+				  messages no-uidl refuse drop-on silent-on
 				  truncate-retr lie-about-size slow-greeting)
   "Start a mock POP3 server on a local port and return it.
 MESSAGES is the maildrop: a list of strings, each a whole RFC 5322 message.
@@ -302,6 +309,7 @@ The keywords after it are the faults described in the commentary above.
 		:user user :password password
 		:messages messages :deleted nil
 		:no-uidl no-uidl :refuse refuse :drop-on drop-on
+		:silent-on silent-on
 		:truncate-retr truncate-retr
 		:lie-about-size lie-about-size
 		:slow-greeting slow-greeting))

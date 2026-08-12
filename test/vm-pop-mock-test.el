@@ -433,6 +433,54 @@ ever started buffering for a filterless process."
                                      (vm-pop-mock-test--received process))))
         (when (process-live-p process) (delete-process process))))))
 
+;;; A server that goes quiet (emacs-vm/vm#639)
+
+(ert-deftest vm-pop-mock-test-a-silent-server-times-out ()
+  "REGRESSION: a POP server that accepts and then says nothing is given up on.
+Issue #639.
+
+VM passed no timeout at any of its five POP reads, so `vm-pop-server-timeout'
+guarded only the connect.  A server that answered the greeting and then went
+quiet left Emacs waiting for ever, with nothing to do but C-g -- and C-g in
+the middle of a retrieval is how mail goes missing.
+
+The mock here answers the greeting and the login and then ignores STAT, which
+is the first thing VM asks for afterwards.  With the timeout honoured the
+command gives up and says so; without it this test does not fail, it hangs."
+  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1)
+                          :silent-on "\\`STAT")
+    (let ((vm-pop-server-timeout 2)
+          (dest (make-temp-file "vm-pop-silent"))
+          (started (float-time)))
+      (unwind-protect
+          (let ((text-quoting-style 'grave))
+            ;; the read gives up and signals; what to do about it is the
+            ;; caller's business, and vm-get-spooled-mail turns it into a
+            ;; warning
+            (should (equal (cadr (should-error
+                                  (vm-pop-move-mail (vm-pop-mock-spec mock)
+                                                    dest)))
+                           "Timed out waiting for a response from the POP server"))
+            ;; it gave up near the timeout rather than waiting on
+            (should (< (- (float-time) started) 30))
+            ;; and the server did hear the command it declined to answer
+            (should (vm-pop-mock-received-p mock "\\`STAT")))
+        (ignore-errors (delete-file dest))))))
+
+(ert-deftest vm-pop-mock-test-the-timeout-is-only-a-backstop ()
+  "A server that answers normally is not cut off by the timeout.
+The point of the change is a bound on waiting, not a bound on the session."
+  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1
+                                          vm-pop-mock-test--message-2))
+    (let ((vm-pop-server-timeout 2)
+          (dest (make-temp-file "vm-pop-not-silent")))
+      (unwind-protect
+          (progn
+            (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
+            (should (string-match-p "Body of the first message"
+                                    (vm-pop-mock-test--contents dest))))
+        (ignore-errors (delete-file dest))))))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here
