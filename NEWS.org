@@ -9,6 +9,7 @@
 - =elfeed-search-confirm-tag=: New customization variable to confirm tagging
   multiple entries.
 - =elfeed-db-save-idle=: New customization option to delay database saving.
+- =elfeed-use-libxml=: Enable by default if libxml is available.
 
 * Version 4.1.1 (2026-08-01)
 

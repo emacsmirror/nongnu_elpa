@@ -179,7 +179,7 @@ Uses coding system from XML encoding declaration."
           (recode-region mark-beg mark-end coding-system 'raw-text)
           (setf beg (marker-position mark-beg)
                 end (marker-position mark-end))))))
-  (if (and (bound-and-true-p elfeed-use-libxml) (libxml-available-p))
+  (if (bound-and-true-p elfeed-use-libxml)
       (when-let* ((root (libxml-parse-xml-region beg end)))
         (list
          (if (eq (car root) 'top)
@@ -406,7 +406,7 @@ Links are relative to BASE-URL if non-nil."
                      (insert (format "<base href=\"%s\">" base-url)))
                    (insert html)
                    (libxml-parse-html-region (point-min) (point-max) base-url))
-               '(i () "Elfeed: libxml2 functionality is unavailable"))))
+               '(i () "Elfeed: libxml functionality is unavailable"))))
     (run-hook-wrapped 'elfeed-transform-html-functions
                       (lambda (hook)
                         (setq doc (funcall hook doc))

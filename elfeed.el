@@ -80,11 +80,10 @@ Each function should accept no arguments, and return a string or nil."
   "If non-nil, fetch feeds using curl instead of `url-retrieve'."
   :type 'boolean)
 
-(defcustom elfeed-use-libxml nil
-  "Use faster libxml2 for feed parsing.
-This setting is experimental, and disabled for now.  It may lead to
-subtle differences to the usual xml.el parser, which renders certain
-feeds unreadable.  Enabling may yield a performance boost."
+(defcustom elfeed-use-libxml (libxml-available-p)
+  "Use faster libxml for feed parsing instead of the xml.el parser.
+This option is enabled by default if libxml is available.  libxml yields
+a performance boost over xml.el."
   :type 'boolean)
 
 (defcustom elfeed-user-agent (format "Emacs Elfeed %s" elfeed-version)
