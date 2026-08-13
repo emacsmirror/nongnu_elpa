@@ -3,7 +3,8 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo
-;; Version: 0.1.0
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "29.1") (compat "29.1.4.2") (keymap-popup "0.4.0") (eat "0.9.4"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide

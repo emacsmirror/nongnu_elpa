@@ -78,6 +78,10 @@ do-lint:
 	  out=$$($(BATCH) --eval "(checkdoc-file \"$$f\")" 2>&1); \
 	  if [ -n "$$out" ]; then echo "$$out"; echo "checkdoc warnings in $$f"; exit 1; fi; \
 	done
+	@echo "Running package-lint..."
+	@cd lisp && $(EMACS_CMD) -Q --batch -L . \
+	  --eval '(setq package-lint-main-file "codex-ide.el" package-lint-batch-fail-on-warnings t)' \
+	  -l package-lint -f package-lint-batch-and-exit $(notdir $(SRCS))
 
 native-comp:
 	@$(ENV_MAKE) do-native-comp

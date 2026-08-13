@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo
-;; Keywords: ai, codex, keymap-popup, menu
+;; Keywords: ai, codex, keymap-popup, menu, tools
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
 ;; This file is not part of GNU Emacs.

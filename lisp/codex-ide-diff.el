@@ -3,8 +3,6 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: ai, codex, tools, diff
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
