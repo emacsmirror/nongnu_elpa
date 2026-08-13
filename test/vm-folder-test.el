@@ -3281,6 +3281,106 @@ for it to keep waking Emacs afterwards."
     (should-not cancelled)
     (should (equal (timer--repeat-delay timer) 90))))
 
+;;; The mail-fetching timer (emacs-vm/vm#632)
+;;
+;; `vm-get-mail-itimer-function' is the one that fetches rather than looks.
+;; It has four guards before it does, and each is there to stop VM writing
+;; into a folder it should not touch.  Every one is tested apart: a guard that
+;; is tested only along with the others is a guard that can be removed
+;; unnoticed.
+
+(defmacro vm-folder-test--fetching (spec &rest body)
+  "Run BODY with a folder open and `vm-get-spooled-mail' counted.
+SPEC is (COUNT-VAR), bound to a function of no arguments giving the number of
+fetches so far."
+  (declare (indent 1) (debug t))
+  `(vm-folder-test--with-state-folder
+     (let ((fetches 0))
+       (cl-letf (((symbol-function 'vm-get-spooled-mail)
+                  (lambda (&rest _) (setq fetches (1+ fetches)) nil)))
+         (cl-flet ((,(car spec) () fetches))
+           ,@body)))))
+
+(ert-deftest vm-folder-test-the-fetch-timer-fetches ()
+  "With nothing in the way the timer fetches, and reschedules itself from
+`vm-auto-get-new-mail'."
+  (vm-folder-test--fetching (fetches)
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-auto-get-new-mail 600)
+          (vm-global-block-new-mail nil)
+          (vm-block-new-mail nil)
+          (vm-folder-read-only nil))
+      (vm-get-mail-itimer-function timer)
+      (should (equal (fetches) 1))
+      (should (equal (timer--repeat-delay timer) 600)))))
+
+(ert-deftest vm-folder-test-the-fetch-timer-obeys-each-guard ()
+  "Each of the three flags stops the fetch on its own.
+
+`vm-global-block-new-mail' is bound while VM is busy with a folder,
+`vm-block-new-mail' while a folder is in a state that must not change under
+it, and `vm-folder-read-only' is the user saying so.  Any one of them is
+enough."
+  (dolist (guard '(vm-global-block-new-mail vm-block-new-mail
+                   vm-folder-read-only))
+    (vm-folder-test--fetching (fetches)
+      (let ((timer (vm-folder-test--dummy-timer))
+            (vm-auto-get-new-mail 600)
+            (vm-global-block-new-mail nil)
+            (vm-block-new-mail nil)
+            (vm-folder-read-only nil))
+        (set guard t)
+        (vm-get-mail-itimer-function timer)
+        (should (equal (fetches) 0))))))
+
+(ert-deftest vm-folder-test-the-fetch-timer-leaves-a-recovered-folder-alone ()
+  "A folder whose auto-save file is newer than itself is not fetched into.
+
+That is unsaved work waiting to be recovered, and pouring new mail into the
+folder underneath it would leave the two disagreeing.  The guard also asks
+that the buffer be unmodified: a modified buffer is one the user is working
+in, and the auto-save file is not ahead of it in the way that matters."
+  (vm-folder-test--fetching (fetches)
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-auto-get-new-mail 600)
+          (vm-global-block-new-mail nil)
+          (vm-block-new-mail nil)
+          (vm-folder-read-only nil)
+          (auto-save (make-auto-save-file-name)))
+      (unwind-protect
+          (progn
+            (set-buffer-modified-p nil)
+            (write-region "recovery data" nil auto-save nil 'quiet)
+            ;; make sure it is newer than the folder
+            (set-file-times auto-save (time-add (current-time) 60))
+            (vm-get-mail-itimer-function timer)
+            (should (equal (fetches) 0)))
+        (ignore-errors (delete-file auto-save))))))
+
+(ert-deftest vm-folder-test-the-fetch-timer-stops-when-turned-off ()
+  "With `vm-auto-get-new-mail' no longer a number the timer is cancelled.
+Run with a folder open: this function cancels in two places, and without a
+folder the other one fires and hides a broken interval branch."
+  (vm-folder-test--fetching (_fetches)
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-auto-get-new-mail nil)
+          (cancels 0))
+      (cl-letf (((symbol-function 'cancel-timer)
+                 (lambda (_which) (setq cancels (1+ cancels)))))
+        (vm-get-mail-itimer-function timer))
+      (should (equal cancels 1)))))
+
+(ert-deftest vm-folder-test-the-fetch-timer-stops-with-no-folders ()
+  "With no VM folder open the timer goes away whatever the interval."
+  (let ((timer (vm-folder-test--dummy-timer))
+        (vm-auto-get-new-mail 600)
+        (cancels 0))
+    (cl-letf (((symbol-function 'vm-get-spooled-mail) (lambda (&rest _) nil))
+              ((symbol-function 'cancel-timer)
+               (lambda (_which) (setq cancels (1+ cancels)))))
+      (vm-get-mail-itimer-function timer))
+    (should (equal cancels 1))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
