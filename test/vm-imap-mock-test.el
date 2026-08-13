@@ -520,6 +520,70 @@ is taken off the server behind VM's back, and the list comes back to one."
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
+;;; Making, renaming and deleting mailboxes on the server
+
+(defun vm-imap-mock-test--spec-for (mock mailbox)
+  "A maildrop spec for MAILBOX on MOCK.
+Built rather than edited from `vm-imap-mock-spec': `replace-regexp-in-string'
+matches the case of what it replaced, so substituting a mixed-case name into
+a spec naming INBOX gives the name back in capitals."
+  (format "imap:127.0.0.1:%d:%s:login:%s:%s"
+          (vm-imap-mock-port mock) mailbox
+          (vm-imap-mock-user mock) (vm-imap-mock-password mock)))
+
+(ert-deftest vm-imap-mock-test-creating-a-mailbox ()
+  "`vm-create-imap-folder' makes the mailbox its spec names, and the server
+has it afterwards."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-imap-server-timeout 10))
+      (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX")))
+      (vm-create-imap-folder (vm-imap-mock-test--spec-for mock "Later"))
+      (should (member "Later" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-received-p mock "CREATE")))))
+
+(ert-deftest vm-imap-mock-test-creating-a-mailbox-that-exists ()
+  "Making a mailbox that is already there is refused by the server, and VM
+says so rather than reporting success."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-imap-server-timeout 10))
+      (should-error (vm-create-imap-folder
+                     (vm-imap-mock-test--spec-for mock "INBOX"))))))
+
+(ert-deftest vm-imap-mock-test-renaming-a-mailbox ()
+  "`vm-rename-imap-folder' renames it on the server, and what was in it is
+still in it under the new name."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-imap-server-timeout 10))
+      (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
+      (vm-rename-imap-folder (vm-imap-mock-test--spec-for mock "Archive")
+                             (vm-imap-mock-test--spec-for mock "Old"))
+      (should (member "Old" (vm-imap-mock-mailbox-names mock)))
+      (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
+      (should (equal (length (vm-imap-mock-messages mock "Old")) 1))
+      (should (vm-imap-mock-received-p mock "RENAME")))))
+
+(ert-deftest vm-imap-mock-test-deleting-a-mailbox ()
+  "`vm-delete-imap-folder' takes it off the server, and only the one named."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-imap-server-timeout 10))
+      (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-delete-imap-folder (vm-imap-mock-test--spec-for mock "Archive")))
+      (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
+      (should (member "INBOX" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-received-p mock "DELETE")))))
+
+(ert-deftest vm-imap-mock-test-deleting-a-mailbox-that-is-not-there ()
+  "Deleting a mailbox the server does not have is reported, not passed over.
+The mock answers NO, which is what a server does, and VM has to notice."
+  (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice)
+                           :refuse "DELETE")
+    (let ((vm-imap-server-timeout 10))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (should-error (vm-delete-imap-folder
+                       (vm-imap-mock-test--spec-for mock "Nowhere"))))
+      (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX"))))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
