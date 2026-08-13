@@ -13,19 +13,23 @@ Where a claim is not verified, it says so.
 
 ** Where the blocking is
 
-*** The two primitives
+*** The primitive and its two wrappers
 
 - vm-accept-process-output, lisp/vm-misc.el:91-97. Binds inhibit-quit to nil
   and calls accept-process-output. This is the only place VM waits.
 - vm-imap-accept-process-output, lisp/vm-imap.el:473-489. The IMAP wrapper.
   Passes vm-imap-server-timeout, and distinguishes a timeout from a dropped
   connection by process-status.
-- POP has no wrapper. It calls vm-accept-process-output directly at
-  lisp/vm-pop.el:782, 802, 831, 935, 1031, and passes no timeout at any of
-  the five. vm-pop-server-timeout therefore guards only the connect
-  (with-timeout at lisp/vm-pop.el:524), not the reads. A POP server that
-  accepts a connection and then says nothing hangs Emacs forever. IMAP does
-  not have this hole.
+- vm-pop-accept-process-output, lisp/vm-pop.el:766-782. The POP wrapper, and
+  the same shape as the IMAP one: passes vm-pop-server-timeout, and tells a
+  timeout from a dropped connection by process-status. All five POP reads go
+  through it (lisp/vm-pop.el:800, 820, 849, 953, 1049).
+- Until issue #639 POP had no wrapper and passed no timeout at any of the five
+  reads, so vm-pop-server-timeout guarded only the connect (with-timeout at
+  lisp/vm-pop.el:524) and a server that accepted a connection and then said
+  nothing hung Emacs for ever.
+- The wrappers differ in what they raise: IMAP signals
+  vm-imap-protocol-error, POP a plain error (lisp/vm-pop.el:781, 782).
 
 *** IMAP: 4 waits, 51 call sites above them
 
@@ -74,27 +78,27 @@ Where a claim is not verified, it says so.
 
 *** POP: 5 waits, 23 call sites above them
 
-- The five vm-accept-process-output calls, each in a "search for the
+- The five vm-pop-accept-process-output calls, each in a "search for the
   terminator, else wait" loop:
   | line | function                          | terminator sought    |
-  |  782 | vm-pop-read-response              | \r\n                 |
-  |  802 | vm-pop-read-past-dot-sentinel-line | ^\.\r\n             |
-  |  831 | vm-pop-read-uidl-long-response    | ^\.\r\n or ^-ERR     |
-  |  935 | vm-pop-retrieve-to-target         | ^\.\r\n              |
-  | 1031 | vm-pop-get-uidl-data              | ^\.\r\n or ^-ERR     |
-- lisp/vm-pop.el:1017-1053 (vm-pop-get-uidl-data) duplicates
-  lisp/vm-pop.el:819-857 (vm-pop-read-uidl-long-response), wait loop and all.
+  |  800 | vm-pop-read-response              | \r\n                 |
+  |  820 | vm-pop-read-past-dot-sentinel-line | ^\.\r\n             |
+  |  849 | vm-pop-read-uidl-long-response    | ^\.\r\n or ^-ERR     |
+  |  953 | vm-pop-retrieve-to-target         | ^\.\r\n              |
+  | 1049 | vm-pop-get-uidl-data              | ^\.\r\n or ^-ERR     |
+- lisp/vm-pop.el:1035-1071 (vm-pop-get-uidl-data) duplicates
+  lisp/vm-pop.el:837-875 (vm-pop-read-uidl-long-response), wait loop and all.
   A rewrite that converts one and not the other leaves a blocking path live.
 - Read layer above, with call-site counts in lisp/vm-pop.el:
   | function                           | defined at | call sites |
-  | vm-pop-read-response               |        775 |         16 |
-  | vm-pop-read-stat-response          |        806 |          2 |
-  | vm-pop-read-list-response          |        814 |          2 |
-  | vm-pop-read-uidl-long-response     |        819 |          2 |
-  | vm-pop-read-past-dot-sentinel-line |        793 |          1 |
+  | vm-pop-read-response               |        793 |         16 |
+  | vm-pop-read-stat-response          |        824 |          2 |
+  | vm-pop-read-list-response          |        832 |          2 |
+  | vm-pop-read-uidl-long-response     |        837 |          2 |
+  | vm-pop-read-past-dot-sentinel-line |        811 |          1 |
 - 23 blocking read call sites in total.
-- vm-pop-send-command, lisp/vm-pop.el:766, has 19 call sites.
-- 10 functions in vm-pop.el take a process argument.
+- vm-pop-send-command, lisp/vm-pop.el:784, has 19 call sites.
+- 11 functions in vm-pop.el take a process argument.
 - with-timeout at lisp/vm-pop.el:524 around the connect; open-network-stream at
   531, 543, 548 and start-process at 537.
 - sleep-for 2 at lisp/vm-pop.el:574, 596, 606, after failed PASS, missing APOP
@@ -114,6 +118,9 @@ Shared, and this is what makes one mechanism serve both:
   most one outstanding response per connection.
 - Both open the connection the same way, both wrap it in with-timeout, both
   pause on auth failure with sleep-for 2.
+- Both reach the primitive through a per-protocol wrapper that passes the
+  protocol's server timeout and tells a timeout from a dropped connection by
+  process-status (lisp/vm-imap.el:473, lisp/vm-pop.el:766).
 
 Differs:
 
@@ -124,7 +131,9 @@ Differs:
   vm-imap-read-object is recursive, so its resume point is a stack of parser
   frames. A callback rewrite has to reify that stack; POP has no stack to
   reify. This asymmetry is the single largest difference in effort.
-- IMAP passes a timeout to accept-process-output; POP passes none.
+- An IMAP read failure signals vm-imap-protocol-error, which callers catch by
+  condition; a POP read failure signals a plain error (lisp/vm-pop.el:781,
+  782), which they can only tell apart by message text.
 - IMAP tracks a session state machine (vm-imap-session-type, below); POP has
   no equivalent.
 
@@ -168,17 +177,18 @@ Chain B, opening a session, 8 frames:
 Frame 3 then does CAPABILITY and LOGIN, each a further descent to frame 8,
 inside a catch and an unwind-protect that spans the whole of 1224-1391.
 
-Chain C, get new mail over POP, 6 frames:
+Chain C, get new mail over POP, 7 frames:
 
-| # | frame                      | defined at        | called from       |
-| 1 | vm-get-new-mail            | vm-folder.el:5112 | interactive       |
-| 2 | vm-get-spooled-mail        | vm-folder.el:4884 | vm-folder.el:5143 |
-| 3 | vm-pop-synchronize-folder  | vm-pop.el:1104    | vm-folder.el:4892 |
-| 4 | vm-pop-retrieve-to-target  | vm-pop.el:916     | vm-pop.el:1167    |
-| 5 | vm-accept-process-output   | vm-misc.el:91     | vm-pop.el:935     |
-| 6 | accept-process-output      | C                 | vm-misc.el:97     |
+| # | frame                        | defined at        | called from       |
+| 1 | vm-get-new-mail              | vm-folder.el:5112 | interactive       |
+| 2 | vm-get-spooled-mail          | vm-folder.el:4884 | vm-folder.el:5143 |
+| 3 | vm-pop-synchronize-folder    | vm-pop.el:1122    | vm-folder.el:4892 |
+| 4 | vm-pop-retrieve-to-target    | vm-pop.el:934     | vm-pop.el:1185    |
+| 5 | vm-pop-accept-process-output | vm-pop.el:766     | vm-pop.el:953     |
+| 6 | vm-accept-process-output     | vm-misc.el:91     | vm-pop.el:779     |
+| 7 | accept-process-output        | C                 | vm-misc.el:97     |
 
-POP is five frames shallower and has no recursion. It is the cheaper of the
+POP is four frames shallower and has no recursion. It is the cheaper of the
 two to convert and the sensible one to convert first.
 
 ** State a resumed continuation must carry
@@ -196,13 +206,13 @@ two to convert and the sensible one to convert first.
   it already states the hazard: a timer may start retrieving mail during an
   accept-process-output.
 - after-change-functions, let-bound around the read at lisp/vm-imap.el:1908
-  and lisp/vm-pop.el:933 to drive the progress meter. It has to be re-installed
+  and lisp/vm-pop.el:951 to drive the progress meter. It has to be re-installed
   on every resumption, and it must not be installed while other code is
   editing that buffer.
 - coding-system-for-read and coding-system-for-write, bound in
   vm-imap-make-session at lisp/vm-imap.el:1183-1184 for the whole session
   setup, and process-connection-type at 1188.
-- case-fold-search, bound in vm-pop-read-response (lisp/vm-pop.el:777), in
+- case-fold-search, bound in vm-pop-read-response (lisp/vm-pop.el:795), in
   vm-imap-response-matches (lisp/vm-imap.el:2440) and at
   lisp/vm-folder.el:4851.
 - inhibit-quit, bound to nil by vm-accept-process-output itself
@@ -211,7 +221,7 @@ two to convert and the sensible one to convert first.
 *** Buffer-local state in the process buffer
 
 - vm-imap-read-point / vm-pop-read-point, as above. Sometimes an integer,
-  sometimes a marker (lisp/vm-imap.el:1926, lisp/vm-pop.el:938, 1032). The
+  sometimes a marker (lisp/vm-imap.el:1926, lisp/vm-pop.el:956, 1051). The
   marker conversions exist because the buffer is edited under the read point.
 - vm-imap-session-done, vm-imap-capabilities, vm-imap-auth-methods, made local
   at lisp/vm-imap.el:1293, 1298, 1299.
@@ -270,7 +280,7 @@ vm-buffer-types, lisp/vm-vars.el:7295, is a global stack, not a let-bound one.
 | item                                   | IMAP | POP |
 | blocking read call sites               |   51 |  23 |
 | send-command call sites paired to them |   32 |  19 |
-| functions taking a process argument    |   40 |  10 |
+| functions taking a process argument    |   40 |  11 |
 | unwind-protect forms                   |   58 |   7 |
 | condition-case forms                   |   20 |   7 |
 | vm-*-make-session call sites           |   15 |   5 |
@@ -281,7 +291,7 @@ vm-buffer-types, lisp/vm-vars.el:7295, is a global stack, not a let-bound one.
   2602, 2685, 4227, 4525, 4574, 4631, 4699, 4906, plus lisp/vm-reply.el:1087
   and lisp/vm-save.el:1037. 1396 is its own retry, so 14 distinct callers, 2 of
   them outside vm-imap.el.
-- vm-pop-make-session call sites: lisp/vm-pop.el:148, 293, 372, 624, 1012. 624
+- vm-pop-make-session call sites: lisp/vm-pop.el:148, 293, 372, 624, 1030. 624
   is its own retry, so 4 distinct callers, none outside vm-pop.el.
 - Entry points from outside the two files: vm-imap-synchronize-folder at
   lisp/vm-folder.el:4243, 4897, 4902; vm-pop-synchronize-folder at
@@ -348,14 +358,19 @@ vm-buffer-types, lisp/vm-vars.el:7295, is a global stack, not a let-bound one.
   that sends QUIT after a partial RETR loses the mail, which is not. Which of
   the two an interrupted async POP session produces depends on where the
   suspension lands; this needs a test before any claim is made about it.
+  Since issue #639 the same interruption can be provoked synchronously, by a
+  read timeout mid-session, so the test does not have to wait for the async
+  rewrite.
 
 *** What can be staged, and what is all-or-nothing
 
 Safely staged, each independently useful and testable:
 
-- Give POP reads the timeout IMAP reads already have, at lisp/vm-pop.el:782,
-  802, 831, 935, 1031. Removes an unbounded hang and changes no control flow.
-- De-duplicate lisp/vm-pop.el:1017-1053 against 819-857, so there is one POP
+- Done, issue #639: POP reads go through vm-pop-accept-process-output
+  (lisp/vm-pop.el:766) and pass vm-pop-server-timeout. It removed an unbounded
+  hang and changed no control flow, which is the shape the rest of this list
+  wants.
+- De-duplicate lisp/vm-pop.el:1035-1071 against 837-875, so there is one POP
   UIDL wait loop rather than two.
 - Give IMAP commands distinct tags instead of the constant "VM". Prerequisite
   for anything concurrent, and verifiable on its own against
@@ -386,7 +401,7 @@ made to yield.
 
 *** Option 1: two code paths, sync and async twins
 
-- Every process-taking function gets a twin: 40 in IMAP, 10 in POP.
+- Every process-taking function gets a twin: 40 in IMAP, 11 in POP.
 - Costs 51 plus 23 duplicated call sites, and every bug fix has to land twice.
 - Rejected. The duplication is the whole file.
 
@@ -403,11 +418,16 @@ made to yield.
       (funcall thunk state)
       (while (not (vm-net-state-done state))
         (vm-accept-process-output (vm-net-state-process state)
-                                  vm-imap-server-timeout)
+                                  (vm-net-state-timeout state))
         (vm-net-state-poll state))
       (vm-net-state-value state)))
   #+end_src
 
+- The timeout comes from the state, not from a constant: the two protocols
+  have separate customs, vm-imap-server-timeout (lisp/vm-vars.el:815) and
+  vm-pop-server-timeout (lisp/vm-vars.el:626), both nil by default. The state
+  also decides which error a timeout raises, since the two wrappers do not
+  raise the same one.
 - The asynchronous driver installs a process filter that calls the same
   vm-net-state-poll and returns immediately.
 - vm-net-state-poll is where the two protocols meet: it tests the pending
@@ -495,10 +515,10 @@ The two mock servers are the design already working, on the server side.
 - Its unwind-protect at 563-566 puts back whatever was not consumed, so an
   error costs one command and not the rest of the buffer. A client filter
   needs exactly this discipline.
-- test/vm-pop-mock.el:235-259, vm-pop-mock--filter. Same shape, line at a
+- test/vm-pop-mock.el:242-266, vm-pop-mock--filter. Same shape, line at a
   time, same unwind-protect.
 - Both use make-network-process with a :log function for accept
-  (test/vm-imap-mock.el:629-633, test/vm-pop-mock.el:308-311).
+  (test/vm-imap-mock.el:629-633, test/vm-pop-mock.el:316-319).
 - Both keep per-connection state in process properties rather than in a
   buffer, and detach and kill the buffer Emacs gives the connection
   (vm-imap-mock--connection-buffer-away). The client could do the same for
@@ -510,6 +530,10 @@ The two mock servers are the design already working, on the server side.
   the fault injections (refuse, bad, drop-on, truncate-fetch, lie-about-size,
   slow-greeting, no-uidplus) are precisely the cases where a continuation is
   abandoned mid-flight.
+- test/vm-pop-mock.el:126-129, the POP mock's silent-on fault: read a matching
+  command and answer nothing. Added with issue #639, where it is aimed at STAT
+  (test/vm-pop-mock-test.el:438); aimed at RETR or DELE it is the mid-session
+  stall an abandoned continuation has to survive.
 
 Event-driven code elsewhere in the tree:
 
@@ -596,8 +620,10 @@ because the handler's frame is gone by the time the error occurs.
 **** Timeouts
 
 run-at-time replaces the timeout argument to accept-process-output; cancel it
-when the response arrives. This also closes the POP hole, where no timeout is
-passed today.
+when the response arrives. It has to reproduce what both wrappers do today:
+give up after the protocol's server timeout, and report a dropped connection
+as a dropped connection rather than as a timeout
+(lisp/vm-imap.el:473-489, lisp/vm-pop.el:766-782).
 
 ** Alternative: aio.el
 
@@ -615,9 +641,9 @@ capability. https://github.com/skeeto/emacs-aio
 
 ** Migration path
 
-1. The staged items above, each on its own: POP read timeouts, the duplicated
-   POP UIDL loop, distinct IMAP tags, per-session vm-buffer-types, the
-   sleep-for pauses.
+1. The staged items above, each on its own: the duplicated POP UIDL loop,
+   distinct IMAP tags, per-session vm-buffer-types, the sleep-for pauses. POP
+   read timeouts are done (issue #639).
 2. Spike generator.el against vm-imap-read-object, including unwind-protect
    inside iter-defun. Decide option 2 or option 3 on the result.
 3. Build the state object and the two drivers. Cover them with the mock
@@ -645,7 +671,8 @@ capability. https://github.com/skeeto/emacs-aio
 - What does an interrupted POP session do about pending DELEs? Whether an
   abandoned continuation reaches QUIT decides between losing deletes and
   losing mail. Needs a test against test/vm-pop-mock.el rather than an
-  argument.
+  argument. The mock's silent-on fault aimed at RETR or DELE is one way to
+  provoke it; not tried.
 - Should the assertions be on for the async path? They are inert by default
   (lisp/vm-vars.el:7289) and they are the only check on the invariants an
   interleaving would break.
