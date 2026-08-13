@@ -3208,6 +3208,78 @@ failure this command has."
         ;; and what follows is a file name, which is where VM put the part
         (should (string-match-p "cat +/" command))))))
 
+;;; Attaching a message to a composition (emacs-vm/vm#632)
+
+(ert-deftest vm-mime-test-attaching-a-message-to-a-named-composition ()
+  "`vm-attach-message-to-composition' attaches the folder's current message
+to the composition named, and it goes out as message/rfc822.
+
+This is the command behind forwarding a message into one you are already
+writing.  `vm-attach-message' is its counterpart for the composition you are
+in; this one takes the composition as an argument."
+  (vm-mime-test--with-attachment (button)
+    (let ((folder (current-buffer))
+          (composition nil)
+          (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (let ((vm-frame-per-composition nil)
+                  (vm-mutable-frame-configuration nil)
+                  (vm-mail-mode-hook nil)
+                  (mail-signature nil)
+                  (vm-send-using-mime t))
+              (cl-letf (((symbol-function 'vm-display) #'ignore))
+                (vm-mail)
+                (setq composition (current-buffer))))
+            (with-current-buffer folder
+              (vm-attach-message-to-composition composition "the description"))
+            (with-current-buffer composition
+              (should (string-match-p "ATTACHMENT" (buffer-string)))
+              (vm-mime-encode-composition)
+              (let ((encoded (buffer-string)))
+                (should (string-match-p "message/rfc822" encoded))
+                (should (string-match-p "Subject: with an attachment" encoded))
+                (should (string-match-p "the description" encoded)))
+              (set-buffer-modified-p nil)))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-mime-test-attaching-a-message-needs-mime-sending ()
+  "With `vm-send-using-mime' off the command says so and attaches nothing,
+since a message attachment is a MIME part or it is nothing."
+  (vm-mime-test--with-attachment (button)
+    (let ((folder (current-buffer))
+          (composition nil)
+          (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (let ((vm-frame-per-composition nil)
+                  (vm-mutable-frame-configuration nil)
+                  (vm-mail-mode-hook nil)
+                  (mail-signature nil)
+                  (vm-send-using-mime t))
+              (cl-letf (((symbol-function 'vm-display) #'ignore))
+                (vm-mail)
+                (setq composition (current-buffer))))
+            (with-current-buffer folder
+              (let ((vm-send-using-mime nil)
+                    (text-quoting-style 'grave))
+                (should (string-match-p
+                         "set vm-send-using-mime non-nil"
+                         (cadr (should-error
+                                (vm-attach-message-to-composition
+                                 composition nil)))))))
+            (with-current-buffer composition
+              (should-not (string-match-p "ATTACHMENT" (buffer-string)))))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

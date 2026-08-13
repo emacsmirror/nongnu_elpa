@@ -2998,6 +2998,67 @@ and not much else, which is what it is worth."
                  "No VM folder buffer\\|must be invoked from a VM buffer"
                  (cadr (should-error (funcall command)))))))))
 
+;;; What the help command says (emacs-vm/vm#632)
+;;
+;; `vm-help' is a dispatcher: what it says depends on what the folder is doing.
+;; No test called it, so none of its branches was checked.
+
+(ert-deftest vm-folder-test-help-says-what-the-state-calls-for ()
+  "`vm-help' answers for the state the folder is in.
+
+Previewing, it says how to read the message; reading, it lists the keys worth
+knowing; editing, it says how to finish or abandon the edit.  The branches are
+the command: a help that always said the same thing would be no help."
+  (vm-folder-test--with-state-folder
+    (let (said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (setq said (apply #'format format args)))))
+        (setq vm-system-state 'previewing)
+        (let ((last-command nil)) (vm-help))
+        (should (string-match-p "Type SPC to read message" said))
+        (setq vm-system-state 'reading)
+        (let ((last-command nil)) (vm-help))
+        (should (string-match-p "SPC and b scroll" said))
+        (setq vm-system-state 'editing)
+        (let ((last-command nil)) (vm-help))
+        (should (string-match-p "to end edit" said))))))
+
+(ert-deftest vm-folder-test-help-twice-describes-the-mode ()
+  "Pressing help twice in a row describes the mode instead, which is the way
+to the full list of keys."
+  (vm-folder-test--with-state-folder
+    (let ((described nil))
+      (cl-letf (((symbol-function 'describe-function)
+                 (lambda (f) (setq described f)))
+                ((symbol-function 'vm-inform) #'ignore))
+        (setq vm-system-state 'reading)
+        (let ((last-command 'vm-help)) (vm-help))
+        (should (equal described 'vm-mode))))))
+
+(ert-deftest vm-folder-test-help-in-a-composition ()
+  "In a composition it says how to send or abandon it, rather than talking
+about messages there are none of."
+  (let ((before (buffer-list))
+        said)
+    (unwind-protect
+        (let ((vm-frame-per-composition nil)
+              (vm-mutable-frame-configuration nil)
+              (vm-mail-mode-hook nil)
+              (mail-signature nil))
+          (cl-letf (((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-inform)
+                     (lambda (_level format &rest args)
+                       (setq said (apply #'format format args)))))
+            (vm-mail)
+            (let ((last-command nil)) (vm-help))
+            (should (string-match-p "to send message" said))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
