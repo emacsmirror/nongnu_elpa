@@ -1,4 +1,4 @@
-;;; codex-ide-term.el --- eat integration for codex-ide  -*- lexical-binding: t; -*-
+;;; codex-ide-term.el --- Terminal backends for codex-ide  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Thanos Apollo
 
@@ -23,163 +23,129 @@
 
 ;;; Commentary:
 
-;; eat integration for `codex-ide'.  Codex runs as a real terminal process;
-;; this file only owns eat session creation, input forwarding, scroll/point
-;; synchronization, and display-size synchronization.
+;; Fixed dispatch between the default Eat backend and optional vterm support.
 
 ;;; Code:
 
-(require 'eat)
+(require 'codex-ide-term-eat)
 (require 'subr-x)
 
 ;;; User options
 
-(defcustom codex-ide-term-blink-cursor nil
-  "Non-nil lets the Codex TUI drive a blinking cursor.
-When nil, the cursor stays steady even though Codex requests a blinking
-one via its terminal cursor-style escape."
-  :type 'boolean
+(defcustom codex-ide-terminal-backend 'eat
+  "Terminal backend used for new Codex sessions.
+Eat is the default.  Selecting `vterm' requires the vterm package to be
+installed separately.  Existing sessions keep the backend that created them."
+  :type '(choice (const :tag "Eat" eat)
+                 (const :tag "vterm" vterm))
   :group 'codex-ide)
 
-;;; Scroll and point synchronization
+;;; Backend dispatch
 
-(defun codex-ide-term--adrift-point-p (pos begin)
-  "Non-nil when POS should re-sync to the terminal cursor.
-BEGIN is the terminal display start.  POS re-syncs inside the display
-region, whose contents Codex erases and redraws wholesale, and at
-`point-min', where scrollback purges (ESC [3J, emitted by Codex resize
-reflows) collapse every dragged point and marker.  Anywhere else in
-the scrollback POS is a deliberate browsing position."
-  (or (>= pos begin) (= pos (point-min))))
+(defconst codex-ide-term--backends
+  '((eat
+     :feature codex-ide-term-eat
+     :available codex-ide-term-eat--available-p
+     :prepare codex-ide-term-eat--prepare-buffer
+     :configure codex-ide-term-eat--configure-buffer
+     :make-process codex-ide-term-eat--make-process
+     :send-string codex-ide-term-eat--send-string
+     :send-return codex-ide-term-eat--send-return
+     :send-escape codex-ide-term-eat--send-escape
+     :return-live codex-ide-term-eat--return-live)
+    (vterm
+     :feature codex-ide-term-vterm
+     :available codex-ide-term-vterm--available-p
+     :prepare codex-ide-term-vterm--prepare-buffer
+     :configure codex-ide-term-vterm--configure-buffer
+     :make-process codex-ide-term-vterm--make-process
+     :send-string codex-ide-term-vterm--send-string
+     :send-return codex-ide-term-vterm--send-return
+     :send-escape codex-ide-term-vterm--send-escape
+     :return-live codex-ide-term-vterm--return-live))
+  "Operations for the supported terminal backends.")
 
-(defun codex-ide-term--emacs-mode-p ()
-  "Return non-nil if the current Eat buffer is in Emacs input mode."
-  (not (or eat--semi-char-mode eat--char-mode eat--line-mode)))
+(defvar-local codex-ide-term--backend nil
+  "Terminal backend that owns the current Codex buffer.")
 
-(defun codex-ide-term--synchronize-scroll (windows)
-  "Synchronize point and windows with the terminal cursor.
-WINDOWS is eat's snapshot, taken before the output was processed, of
-the positions that were following the cursor; those always sync.  In
-Eat Emacs mode, leave that snapshot unchanged so navigation remains
-free.  In terminal input modes, also sync points a redraw set adrift
-according to `codex-ide-term--adrift-point-p'."
-  (if (codex-ide-term--emacs-mode-p)
-      (eat--synchronize-scroll windows)
-    (let ((begin (eat-term-display-beginning eat-terminal)))
-      (eat--synchronize-scroll
-       (append (and (or (memq 'buffer windows)
-                        (codex-ide-term--adrift-point-p (point) begin))
-                    '(buffer))
-               (seq-filter (lambda (window)
-                             (or (memq window windows)
-                                 (codex-ide-term--adrift-point-p
-                                  (window-point window) begin)))
-                           (get-buffer-window-list)))))))
+(defun codex-ide-term--backend-spec (backend)
+  "Return the fixed operation spec for BACKEND."
+  (or (assq backend codex-ide-term--backends)
+      (error "Unsupported terminal backend: %s" backend)))
 
-(defun codex-ide-term--return-live ()
-  "Restore terminal input and follow the live cursor in the current buffer."
-  (eat-semi-char-mode)
-  (eat--synchronize-scroll (list 'buffer (selected-window))))
+(defun codex-ide-term--load-backend (backend)
+  "Load BACKEND and return its operation spec."
+  (let* ((spec (codex-ide-term--backend-spec backend))
+         (feature (plist-get (cdr spec) :feature)))
+    (unless (require feature nil t)
+      (user-error "Terminal backend `%s' is not installed" backend))
+    (let ((available (plist-get (cdr spec) :available)))
+      (unless (and available (funcall available))
+        (user-error "Terminal backend `%s' is not available" backend)))
+    spec))
 
-(defun codex-ide-term--synchronize-window (window)
-  "Synchronize WINDOW with the terminal cursor.
-When a window shows the buffer again while Codex is idle, no output
-arrives to run the scroll sync, and the window point restored from
-`window-prev-buffers' has usually collapsed to `point-min'.  Reuses
-eat's own sync so the window is also recentered on the TUI frame."
-  (with-current-buffer (window-buffer window)
-    (when eat-terminal
-      (eat--synchronize-scroll (list window)))))
+(defun codex-ide-term--operation (backend operation)
+  "Return BACKEND function for OPERATION."
+  (or (plist-get (cdr (codex-ide-term--load-backend backend)) operation)
+      (error "Terminal backend `%s' has no %s operation" backend operation)))
 
-;;; Cursor appearance
+(defun codex-ide-term--current-backend ()
+  "Return the backend that owns the current terminal buffer."
+  (or codex-ide-term--backend
+      (cond
+       ((derived-mode-p 'vterm-mode) 'vterm)
+       ((derived-mode-p 'eat-mode) 'eat)
+       (t codex-ide-terminal-backend))))
 
-(defun codex-ide-term--normalize-cursor-state (state blink-cursor)
-  "Return Eat cursor STATE adjusted for BLINK-CURSOR.
-When BLINK-CURSOR is nil, map blinking block, bar, and underline states
-to their steady equivalents.  Preserve every other state."
-  (if blink-cursor
-      state
-    (pcase state
-      (:blinking-block :block)
-      (:blinking-bar :bar)
-      (:blinking-underline :underline)
-      (_ state))))
+(defun codex-ide-term--call (operation &rest args)
+  "Call the current backend OPERATION with ARGS."
+  (let ((backend (codex-ide-term--current-backend)))
+    (apply (codex-ide-term--operation backend operation) args)))
 
-(defun codex-ide-term--set-cursor (terminal state)
-  "Apply cursor STATE to TERMINAL through Eat's original callback."
-  (when-let* ((original
-               (eat-term-parameter
-                terminal 'codex-ide-term--original-set-cursor-function)))
-    (funcall original terminal
-             (codex-ide-term--normalize-cursor-state
-              state codex-ide-term-blink-cursor))))
-
-(defun codex-ide-term--install-cursor-adapter ()
-  "Install the Codex cursor adapter in the current Eat terminal."
-  (when eat-terminal
-    (let ((current (eat-term-parameter eat-terminal 'set-cursor-function)))
-      (unless (eq current #'codex-ide-term--set-cursor)
-        (setf (eat-term-parameter
-               eat-terminal 'codex-ide-term--original-set-cursor-function)
-              current)
-        (setf (eat-term-parameter eat-terminal 'set-cursor-function)
-              #'codex-ide-term--set-cursor))
-      (codex-ide-term--set-cursor
-       eat-terminal (eat-term-cursor-type eat-terminal)))))
-
-;;; Process lifecycle
-
-(defun codex-ide-term--configure-buffer ()
-  "Configure the current Codex eat buffer.
-Must run after `eat-mode', which resets the sync function."
-  (setq-local eat--synchronize-scroll-function
-              #'codex-ide-term--synchronize-scroll)
-  (add-hook 'window-buffer-change-functions
-            #'codex-ide-term--synchronize-window nil t)
-  (codex-ide-term--install-cursor-adapter))
+;;; Terminal operations
 
 (defun codex-ide-term--prepare-buffer (buffer-name working-dir)
-  "Prepare and return an Eat buffer named BUFFER-NAME for WORKING-DIR."
-  (let ((buffer (get-buffer-create buffer-name)))
-    (condition-case err
-        (progn
-          (with-current-buffer buffer
-            (setq default-directory (or working-dir default-directory))
-            (unless (eq major-mode 'eat-mode)
-              (eat-mode))
-            (codex-ide-term--configure-buffer))
-          buffer)
-      (error
-       (kill-buffer buffer)
-       (signal (car err) (cdr err))))))
+  "Prepare a terminal BUFFER-NAME for WORKING-DIR."
+  (let* ((backend codex-ide-terminal-backend)
+         (prepare (codex-ide-term--operation backend :prepare))
+         (buffer (funcall prepare buffer-name working-dir)))
+    (with-current-buffer buffer
+      (setq-local codex-ide-term--backend backend))
+    buffer))
+
+(defun codex-ide-term--configure-buffer ()
+  "Configure the current terminal buffer for its owning backend."
+  (let ((backend (codex-ide-term--current-backend)))
+    (setq-local codex-ide-term--backend backend)
+    (funcall (codex-ide-term--operation backend :configure))))
 
 (defun codex-ide-term--make-process (buffer program args env)
-  "Start PROGRAM with ARGS in the prepared Eat BUFFER.
-ENV is a list of \"KEY=VALUE\" strings prepended to the process environment.
-Return the process object."
+  "Start PROGRAM with ARGS and ENV in prepared terminal BUFFER."
   (with-current-buffer buffer
-    (let ((process-environment (append env process-environment)))
-      ;; `eat-exec' takes an argv list, so no shell quoting is needed.
-      (eat-exec buffer (buffer-name buffer) program nil args))
-    (codex-ide-term--configure-buffer)
-    (or (get-buffer-process buffer)
-        (error "Failed to create Eat process"))))
+    (let* ((backend (codex-ide-term--current-backend))
+           (make-process (codex-ide-term--operation backend :make-process))
+           (process (funcall make-process buffer program args env)))
+      (setq-local codex-ide-term--backend backend)
+      process)))
 
 (defun codex-ide-term--send-string (string)
-  "Send STRING to the current eat buffer's terminal."
-  (when eat-terminal
-    (eat-term-send-string eat-terminal string)))
+  "Send STRING to the current terminal."
+  (codex-ide-term--call :send-string string))
 
 (defun codex-ide-term--send-return ()
-  "Send RET to the current eat buffer's terminal."
-  (codex-ide-term--send-string "\r"))
+  "Send RET to the current terminal."
+  (codex-ide-term--call :send-return))
 
 (defun codex-ide-term--send-escape ()
-  "Send ESC to the current eat buffer's terminal."
-  (codex-ide-term--send-string "\e"))
+  "Send ESC to the current terminal."
+  (codex-ide-term--call :send-escape))
+
+(defun codex-ide-term--return-live ()
+  "Restore terminal input and follow the live cursor."
+  (codex-ide-term--call :return-live))
 
 (defun codex-ide-term--sync-dimensions (buffer window)
-  "Sync BUFFER terminal dimensions to WINDOW through eat's resize hook."
+  "Sync BUFFER terminal dimensions to WINDOW through its resize hook."
   (when (and (buffer-live-p buffer) (window-live-p window))
     (with-current-buffer buffer
       (when-let* ((process (get-buffer-process buffer))
@@ -188,5 +154,9 @@ Return the process object."
           (funcall adjust process (list window)))))))
 
 (provide 'codex-ide-term)
+
+;; Local Variables:
+;; package-lint-main-file: "codex-ide.el"
+;; End:
 
 ;;; codex-ide-term.el ends here

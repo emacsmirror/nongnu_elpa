@@ -29,6 +29,7 @@
 (defun codex-ide-test--with-vars (body)
   "Run BODY with controlled `codex-ide' variables, then restore them."
   (let ((codex-ide-cli-path "codex")
+        (codex-ide-terminal-backend 'eat)
         (codex-ide-config-overrides nil)
         (codex-ide-ask-for-approval nil)
         (codex-ide-no-alt-screen nil)
@@ -367,9 +368,9 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                   (:underline . :underline)
                   (:invisible . :invisible)
                   (:unknown . :unknown)))
-    (should (eq (codex-ide-term--normalize-cursor-state (car case) nil)
+    (should (eq (codex-ide-term-eat--normalize-cursor-state (car case) nil)
                 (cdr case)))
-    (should (eq (codex-ide-term--normalize-cursor-state (car case) t)
+    (should (eq (codex-ide-term-eat--normalize-cursor-state (car case) t)
                 (car case)))))
 
 (ert-deftest codex-ide-term-configure-buffer-installs-sync-and-hook ()
@@ -378,9 +379,9 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
     (eat-mode)
     (codex-ide-term--configure-buffer)
     (should (eq eat--synchronize-scroll-function
-                #'codex-ide-term--synchronize-scroll))
+                #'codex-ide-term-eat--synchronize-scroll))
     (should (local-variable-p 'eat--synchronize-scroll-function))
-    (should (memq #'codex-ide-term--synchronize-window
+    (should (memq #'codex-ide-term-eat--synchronize-window
                   (buffer-local-value 'window-buffer-change-functions
                                       (current-buffer))))))
 
@@ -397,10 +398,10 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
         (codex-ide-term--configure-buffer)
         (codex-ide-term--configure-buffer))
       (should (eq (eat-term-parameter eat-terminal 'set-cursor-function)
-                  #'codex-ide-term--set-cursor))
+                  #'codex-ide-term-eat--set-cursor))
       (should (eq (eat-term-parameter
                    eat-terminal
-                   'codex-ide-term--original-set-cursor-function)
+                   'codex-ide-term-eat--original-set-cursor-function)
                   original))
       (should (equal states '(:bar :bar))))))
 
@@ -442,7 +443,7 @@ the list forwarded to `eat--synchronize-scroll' and the selected window."
               (eat-semi-char-mode))
             (goto-char park)
             (setq window (selected-window))
-            (codex-ide-term--synchronize-scroll
+            (codex-ide-term-eat--synchronize-scroll
              (and snapshot-p (list 'buffer window)))))
       (kill-buffer buffer))
     (cons synced window)))
@@ -521,7 +522,7 @@ the list forwarded to `eat--synchronize-scroll' and the selected window."
             (cl-letf (((symbol-function 'eat--synchronize-scroll)
                        (lambda (windows)
                          (setq synced windows))))
-              (codex-ide-term--synchronize-window (selected-window)))
+              (codex-ide-term-eat--synchronize-window (selected-window)))
             (should (equal synced (list (selected-window))))))
       (kill-buffer buffer))))
 
@@ -535,7 +536,7 @@ the list forwarded to `eat--synchronize-scroll' and the selected window."
           (cl-letf (((symbol-function 'eat--synchronize-scroll)
                      (lambda (windows)
                        (setq synced windows))))
-            (codex-ide-term--synchronize-window (selected-window)))
+            (codex-ide-term-eat--synchronize-window (selected-window)))
           (should-not synced))
       (kill-buffer buffer))))
 
@@ -2253,6 +2254,7 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-menu-config-commands ()
   "Config menu exposes package configuration commands."
   (dolist (command '(codex-ide-menu--set-cli-path
+                     codex-ide-menu--set-terminal-backend
                      codex-ide-menu--set-approval
                      codex-ide-menu--toggle-no-alt-screen
                      codex-ide-menu--save-config))

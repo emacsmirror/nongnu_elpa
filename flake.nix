@@ -70,6 +70,7 @@
           };
 
           eat = emacsPackages.eat;
+          vterm = emacsPackages.vterm;
           compat = emacsPackages.compat;
 
           codexIde = emacsPackages.melpaBuild {
@@ -96,6 +97,7 @@
             compat
             keymapPopup
             eat
+            vterm
           ]);
           emacsWithCodex = emacsPackages.emacsWithPackages (_: [
             codexIde

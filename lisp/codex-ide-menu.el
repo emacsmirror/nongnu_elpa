@@ -36,6 +36,7 @@
 
 (defconst codex-ide-menu--saved-config-symbols
   '(codex-ide-cli-path
+    codex-ide-terminal-backend
     codex-ide-display-buffer-function
     codex-ide-ask-for-approval
     codex-ide-no-alt-screen
@@ -69,6 +70,15 @@
   (setq codex-ide-ask-for-approval (unless (eq policy 'nil) policy))
   (codex-ide-log "Approval policy set to %s" policy))
 
+(defun codex-ide-menu--set-terminal-backend (backend)
+  "Use BACKEND for new Codex sessions."
+  (interactive
+   (list (intern (completing-read
+                  "Terminal backend: " '("eat" "vterm") nil t nil nil
+                  (symbol-name codex-ide-terminal-backend)))))
+  (setq codex-ide-terminal-backend backend)
+  (codex-ide-log "Terminal backend set to %s" backend))
+
 (defun codex-ide-menu--toggle-no-alt-screen ()
   "Toggle `codex-ide-no-alt-screen'."
   (interactive)
@@ -85,9 +95,9 @@
 
 (defun codex-ide-menu--save-config ()
   "Save the documented configuration symbols to the custom file.
-Persists `codex-ide-menu--saved-config-symbols' only: CLI path, display
-function, approval, no-alt-screen, extra args, config overrides, debug,
-MCP enable/host/port, and context auto-start."
+Persists `codex-ide-menu--saved-config-symbols' only: CLI path, terminal
+backend, display function, approval, no-alt-screen, extra args, config
+overrides, debug, MCP enable/host/port, and context auto-start."
   (interactive)
   (mapc (lambda (symbol)
           (customize-save-variable symbol (symbol-value symbol)))
@@ -111,6 +121,7 @@ MCP enable/host/port, and context auto-start."
   :description "codex-ide Configuration"
   :group "CLI"
   "p" ("Set CLI path" codex-ide-menu--set-cli-path)
+  "t" ("Set terminal backend" codex-ide-menu--set-terminal-backend)
   "a" ("Set approval policy" codex-ide-menu--set-approval)
   "A" ((lambda () (format "No-alt-screen (%s)"
                           (codex-ide-menu--on-off codex-ide-no-alt-screen)))

@@ -25,10 +25,10 @@
 
 ;;; Commentary:
 
-;; Run the Codex CLI inside Emacs through eat.  This is a terminal-first
-;; integration: live Codex sessions are grouped by project root and displayed
-;; through a configurable buffer display function, with prompt sending, session
-;; cycling, and resume.
+;; Run the Codex CLI inside Emacs through Eat or optional vterm.  This is a
+;; terminal-first integration: live Codex sessions are grouped by project root
+;; and displayed through a configurable buffer display function, with prompt
+;; sending, session cycling, and resume.
 ;;
 ;; Usage:
 ;;   M-x codex-ide              Start or toggle Codex for the current project
@@ -61,7 +61,7 @@
 ;;; Customization
 
 (defgroup codex-ide nil
-  "Run Codex CLI inside Emacs through eat."
+  "Run Codex CLI inside Emacs through a terminal backend."
   :group 'tools
   :prefix "codex-ide-")
 
@@ -811,13 +811,12 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
 
 (defun codex-ide--make-process-sentinel (directory session-id &optional original)
   "Return the process sentinel for DIRECTORY and SESSION-ID.
-ORIGINAL is the sentinel being replaced, normally eat's; it runs first
-so eat can flush final output, tear down the terminal, and run
-`eat-exit-hook' before Codex kills the buffer."
+ORIGINAL is the backend sentinel being replaced.  It runs first so the
+terminal backend can finish its own teardown before Codex kills the buffer."
   (lambda (proc event)
     (codex-ide-debug "Codex process event: %s" (string-trim event))
     (when (functionp original)
-      ;; A failing eat sentinel must not block Codex session cleanup.
+      ;; A failing backend sentinel must not block Codex session cleanup.
       (condition-case err
           (funcall original proc event)
         (error
@@ -840,7 +839,7 @@ so eat can flush final output, tear down the terminal, and run
         (session-id (plist-get session :id)))
     (set-process-query-on-exit-flag process nil)
     ;; Recover/setup can re-enter for the same live process; wrap once so
-    ;; exit cleanup and the original eat sentinel each run a single time.
+    ;; Exit cleanup and the original backend sentinel each run once.
     (unless (process-get process 'codex-ide--sentinel-installed)
       (set-process-sentinel
        process (codex-ide--make-process-sentinel

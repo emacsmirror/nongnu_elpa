@@ -1,7 +1,8 @@
 # emacs-codex-ide
 
-Codex CLI in Emacs via eat. Emacs 29.1+. Sources `lisp/`, tests `tests/`.
-Deps: `compat`, `keymap-popup`, `eat`.
+Codex CLI in Emacs via Eat by default, with optional vterm. Emacs 29.1+.
+Sources `lisp/`, tests `tests/`. Deps: `compat`, `keymap-popup`, `eat`;
+vterm is optional.
 
 ## Public safety
 
@@ -10,9 +11,10 @@ Repo-relative paths only. Durable architecture only.
 
 ## Architecture
 
-Terminal-first. Order fixed: eat session wrapper, `/ide` context IPC, local
-MCP tools. Terminal buffers primary surface. No MCP/subprocess shortcut that
-replaces terminal unless task asks that design change.
+Terminal-first. Order fixed: terminal backend wrapper, `/ide` context IPC,
+local MCP tools. Terminal buffers primary surface. Eat remains the default;
+vterm support stays optional. No MCP/subprocess shortcut that replaces the
+terminal unless task asks that design change.
 
 - Sessions group by project root; multi buffer per root OK.
 - Context IPC: Unix socket, length-prefixed JSON; Codex TUI frame format wins.

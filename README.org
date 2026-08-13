@@ -1,8 +1,9 @@
 * Codex IDE integration for GNU Emacs
 
 ** About
-+ [[https://github.com/openai/codex][codex]] native integration for Emacs via [[https://codeberg.org/akib/emacs-eat][eat]]
-  + Run Codex in a project-scoped eat buffer.
++ [[https://github.com/openai/codex][codex]] native integration for Emacs via [[https://codeberg.org/akib/emacs-eat][Eat]] by default
+  + Run Codex in a project-scoped terminal buffer.
+  + Optionally use [[https://github.com/akermu/emacs-libvterm][vterm]] when it is installed separately.
   + Resume, switch, cycle, and stop multiple live Codex sessions.
   + Optional IDE context provider and local Emacs MCP tools bridge.
 + Requires Emacs 29.1 or newer.
@@ -22,9 +23,11 @@
 | =M-x codex-ide-menu= | Popup menu (sessions, config, MCP, debug) |
 
 ** Terminal scrolling
-+ =C-c C-e= enters Eat's read-only Emacs mode for ordinary scrolling,
++ With Eat, =C-c C-e= enters its read-only Emacs mode for ordinary scrolling,
   movement, search, and selection.
-+ =C-c C-j= restores terminal input and jumps to the live Codex frame.
++ With vterm, use =M-x vterm-copy-mode= for transcript navigation.
++ =C-c C-j= restores terminal input and jumps to the live Codex frame with
+  either backend.
 
 ** Context provider
 + With =codex-ide-context-auto-start= non-nil (default), new sessions
@@ -47,6 +50,7 @@
 | Variable | Default intent |
 |----------+----------------|
 | =codex-ide-cli-path= | Codex executable |
+| =codex-ide-terminal-backend= | =eat=; optionally set to =vterm= |
 | =codex-ide-ask-for-approval= | Optional =--ask-for-approval= policy |
 | =codex-ide-cli-extra-args= | Extra CLI args |
 | =codex-ide-no-alt-screen= | Inline TUI mode |
@@ -56,8 +60,20 @@
 | =codex-ide-debug= | Debug logging |
 
 Menu *Save configuration* persists the documented symbol set only
-(CLI/display/approval/no-alt-screen/extra-args/config-overrides/debug/MCP
-host-port-enable/context-auto-start).
+(CLI/terminal/display/approval/no-alt-screen/extra-args/config-overrides/debug/
+MCP host-port-enable/context-auto-start).
+
+** Optional vterm backend
+Install vterm separately, then select it for new sessions:
+#+begin_src emacs-lisp
+(use-package vterm
+  :ensure t)
+
+(setq codex-ide-terminal-backend 'vterm)
+#+end_src
+
+Eat remains a required dependency and the default.  Changing the option does
+not alter already running sessions.
 
 ** Installation
 + Using =:vc=
