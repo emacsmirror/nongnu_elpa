@@ -277,6 +277,9 @@
 (defvar hermes-browser--transient-clients nil
   "Dashboard clients created for browser operations still in flight.")
 
+(defvar hermes-browser--request-error-owner nil
+  "Optional (BUFFER GENERATION MODE) owner for a browser request error.")
+
 (defun hermes-browser-stop-all-transient-clients (&optional message)
   "Stop every transient browser client and return the number stopped.
 MESSAGE is forwarded to `hermes-dashboard-transport-stop'."
@@ -307,22 +310,28 @@ client that DONE stops.  Shared by the dashboard browser commands."
       (push client hermes-browser--transient-clients))
     (funcall fn client done)))
 
-(defun hermes-browser--run-on-client (make-promise &optional on-success)
+(defun hermes-browser--run-on-client (make-promise &optional on-success on-error)
   "Run MAKE-PROMISE on a dashboard client, releasing it when its promise settles.
 MAKE-PROMISE receives the CLIENT and returns a promise.  ON-SUCCESS, when given,
-receives the resolved result; rejections are reported with a `Hermes:' message.
+receives the resolved result.  ON-ERROR, when given, receives a rejection;
+otherwise current request owners report rejections with a `Hermes:' message.
 Shared by the dashboard browser commands."
-  (hermes-browser--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (condition-case err
-           (hermes--promise-finally (funcall make-promise client) done)
-         ((error quit)
-          (funcall done)
-          (hermes--promise-rejected (error-message-string err))))
-       on-success)
-      (lambda (reason) (message "Hermes: %s" reason))))))
+  (let ((owner hermes-browser--request-error-owner))
+    (hermes-browser--with-client
+     (lambda (client done)
+       (hermes--promise-catch
+        (hermes--promise-then
+         (condition-case err
+             (hermes--promise-finally (funcall make-promise client) done)
+           ((error quit)
+            (funcall done)
+            (hermes--promise-rejected (error-message-string err))))
+         on-success)
+        (or on-error
+            (lambda (reason)
+              (when (or (null owner)
+                        (apply #'hermes-browser--request-current-mode-p owner))
+                (message "Hermes: %s" reason)))))))))
 
 (defvar hermes-browser--request-sequence 0
   "Sequence used to issue request tokens that are unique across mode resets.")
@@ -529,13 +538,15 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          ,(format "Refresh the %s browser without re-displaying it." title)
          (let ((target (current-buffer))
                (generation (hermes-browser--next-request-generation)))
-           (hermes-browser--run-on-client
-            ,fetch
-            (lambda (result)
-              (when (hermes-browser--request-current-mode-p
-                     target generation ',mode)
-                (with-current-buffer target
-                  (,render result)))))))
+           (let ((hermes-browser--request-error-owner
+                  (list target generation ',mode)))
+             (hermes-browser--run-on-client
+              ,fetch
+              (lambda (result)
+                (when (hermes-browser--request-current-mode-p
+                       target generation ',mode)
+                  (with-current-buffer target
+                    (,render result))))))))
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
@@ -546,14 +557,16 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
            (let ((generation
                   (with-current-buffer target
                     (hermes-browser--next-request-generation))))
-             (hermes-browser--run-on-client
-              ,fetch
-              (lambda (result)
-                (when (hermes-browser--request-current-mode-p
-                       target generation ',mode)
-                  (with-current-buffer target
-                    (,render result))
-                  (pop-to-buffer target))))))))))
+             (let ((hermes-browser--request-error-owner
+                    (list target generation ',mode)))
+               (hermes-browser--run-on-client
+                ,fetch
+                (lambda (result)
+                  (when (hermes-browser--request-current-mode-p
+                         target generation ',mode)
+                    (with-current-buffer target
+                      (,render result))
+                    (pop-to-buffer target)))))))))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

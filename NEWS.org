@@ -1,0 +1,15 @@
+#+title: emacs-hermes Changelog
+
+* Unreleased
+
+- Added a backend-driven provider-account browser for OAuth and external
+  account flows.  Dashboard-provided shell commands are copied, never run.
+- Kept provider-account list, OAuth, and disconnect operations scoped to the
+  Hermes profile that opened them.
+- Kept OAuth-only providers out of API-key onboarding.
+- Reported backend account errors while suppressing stale asynchronous errors;
+  failed OAuth operations no longer trigger success effects.
+
+* Version 0.2.0 (2026-08-13)
+
+- Published on [[https://elpa.nongnu.org/nongnu/hermes.html][NonGNU ELPA]].

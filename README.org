@@ -1,5 +1,7 @@
 #+title: emacs-hermes
 
+[[https://elpa.nongnu.org/nongnu/hermes.svg]]
+
 An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 
 + =M-x hermes= dashboard with =keymap-popup= actions
@@ -8,7 +10,7 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 + Markdown-rendered replies; diffs open as =[View Diff]= in =diff-mode=
 + *Kanban*, sessions, profiles, MCP, cron, inventory, and rollback browsers
 + Configurable desktop notifications with click-to-open actions
-+ Provider onboarding (API keys) from Emacs
++ Provider onboarding (API keys and provider accounts) from Emacs
 + /Optional/ local eval endpoint (=hermes-exec=) for the Hermes Emacs MCP bridge
 
 * Installation
@@ -16,7 +18,13 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 Hermes Agent with dashboard/TUI gateway support is required.
   - See the [[https://hermes-agent.nousresearch.com/docs/getting-started/quickstart][Hermes Agent quickstart]] for installation and initial setup.
 
-** use-package
+** NonGNU ELPA
+
+=hermes= is available via [[https://elpa.nongnu.org/nongnu/hermes.html][NonGNU ELPA]].
+
+Install it with =M-x package-install RET hermes=.
+
+** package-vc (Emacs 30+)
 
 #+begin_src emacs-lisp
   (use-package hermes

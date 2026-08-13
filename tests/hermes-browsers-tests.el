@@ -303,6 +303,35 @@
         (when (get-buffer "*Hermes Browser Identity*")
           (kill-buffer "*Hermes Browser Identity*"))))))
 
+(ert-deftest hermes-browser-late-rejections-respect-request-ownership ()
+  "Replaced and killed list-browser requests cannot report late failures."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0)
+        messages
+        (hermes-browser-test--fetch-function nil))
+    (setq hermes-browser-test--fetch-function
+          (lambda ()
+            (setq requests (1+ requests))
+            (if (= requests 1) first second)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-browseridentity--render '("initial"))
+            (with-current-buffer "*Hermes Browser Identity*"
+              (hermes-browseridentity--revert)
+              (hermes-browseridentity--revert))
+            (hermes--promise-reject first "superseded failure")
+            (kill-buffer "*Hermes Browser Identity*")
+            (hermes--promise-reject second "orphaned failure")
+            (should-not messages))
+        (when (get-buffer "*Hermes Browser Identity*")
+          (kill-buffer "*Hermes Browser Identity*"))))))
+
 (ert-deftest hermes-browser-request-token-survives-mode-reset ()
   "A request token cannot become current again after changing modes twice."
   (with-temp-buffer
