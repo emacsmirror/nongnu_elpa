@@ -1258,6 +1258,86 @@ syntactically broken recipient list."
       (should (vm-pcrisis-test--holds "To: bob@example.com"))
       (should-not (vm-pcrisis-test--holds "To: , ")))))
 
+;;; Saying so when the mode is off (emacs-vm/vm#642)
+
+(ert-deftest vm-pcrisis-test-a-composition-says-when-the-mode-is-off ()
+  "With rules set and `vmpc-mode' off, starting a composition says so.
+
+The rules are never consulted then, and the composition gets whatever
+`user-mail-address' says.  Nothing else notices: a default rule naming the
+address VM would have used anyway looks exactly like a working setup."
+  (let ((vmpc-mode nil)
+        (vmpc-conditions '(("in a folder" (vmpc-folder-account-match "^work$"))))
+        (vmpc-actions '(("from work" (vmpc-substitute-header "From" "me@work"))))
+        (vmpc-default-rules '(("in a folder" "from work")))
+        (said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (setq said (apply #'format args)))))
+      (vmpc-warn-if-off))
+    (should (string-match-p "vmpc-mode is off" said))
+    (should (string-match-p "(vmpc-mode 1)" said))))
+
+(ert-deftest vm-pcrisis-test-it-says-so-every-time ()
+  "It says so at every composition, not once.
+
+`vm-warn' will not repeat a warning it has just given, which is why this one
+binds `vm-current-warning' around the call: a warning seen once at startup is
+a warning forgotten."
+  (let ((vmpc-mode nil)
+        (vmpc-conditions '(("in a folder" (vmpc-folder-account-match "^work$"))))
+        (vmpc-actions '(("from work" (vmpc-substitute-header "From" "me@work"))))
+        (vmpc-default-rules '(("in a folder" "from work")))
+        (times 0))
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest _) (setq times (1+ times))))
+              ((symbol-function 'sleep-for) #'ignore))
+      (vmpc-warn-if-off)
+      (vmpc-warn-if-off)
+      (vmpc-warn-if-off))
+    (should (equal times 3))))
+
+(ert-deftest vm-pcrisis-test-it-is-quiet-when-there-is-nothing-wrong ()
+  "Nothing is said when the mode is on, nor when no rules are set.
+A warning on every composition for someone who does not use pcrisis would be
+worse than the mistake it is warning about."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (setq said (apply #'format args)))))
+      ;; configured, and switched on
+      (let ((vmpc-mode t)
+            (vmpc-conditions '(("in a folder" t)))
+            (vmpc-actions '(("from work" (vmpc-substitute-header "From" "x"))))
+            (vmpc-default-rules '(("in a folder" "from work"))))
+        (vmpc-warn-if-off)
+        (should-not said))
+      ;; off, and nothing configured
+      (let ((vmpc-mode nil)
+            (vmpc-conditions nil)
+            (vmpc-actions nil)
+            (vmpc-default-rules nil))
+        (vmpc-warn-if-off)
+        (should-not said))
+      ;; conditions and actions but no rules joining them: nothing would run
+      ;; even with the mode on, so this is not the mistake being warned about
+      (let ((vmpc-mode nil)
+            (vmpc-conditions '(("in a folder" t)))
+            (vmpc-actions '(("from work" (vmpc-substitute-header "From" "x"))))
+            (vmpc-default-rules nil)
+            (vmpc-reply-rules nil)
+            (vmpc-forward-rules nil)
+            (vmpc-resend-rules nil)
+            (vmpc-newmail-rules nil)
+            (vmpc-automorph-rules nil))
+        (vmpc-warn-if-off)
+        (should-not said)))))
+
+(ert-deftest vm-pcrisis-test-the-warning-is-on-the-composition-hook ()
+  "The check runs from `vm-mail-mode-hook', which every composition runs:
+replying, forwarding, resending and starting a message all end there."
+  (should (memq 'vmpc-warn-if-off (default-value 'vm-mail-mode-hook))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
