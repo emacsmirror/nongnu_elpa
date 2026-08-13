@@ -64,10 +64,19 @@ ON-SUCCESS receives the result only while BUFFER remains a current config view."
 (defvar-local hermes-config--mutation-cleanup nil
   "Idempotent cleanup thunk for the current config mutation, or nil.")
 
+(defvar-local hermes-config--refresh-required nil
+  "Non-nil when a successful write still needs an authoritative refresh.")
+
 (defun hermes-config--require-mutation-idle ()
   "Signal `user-error' while this config view has an unsettled mutation."
   (when hermes-config--mutation-in-flight
     (user-error "A configuration update is still in progress")))
+
+(defun hermes-config--require-authoritative-state ()
+  "Signal when another mutation would derive from stale dashboard state."
+  (hermes-config--require-mutation-idle)
+  (when hermes-config--refresh-required
+    (user-error "Refresh configuration before another update")))
 
 (defun hermes-config--mutation-current-p (buffer token)
   "Return non-nil when BUFFER still owns mutation TOKEN."
@@ -118,6 +127,8 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
                   write
                   (lambda (_result)
                     (when (hermes-config--mutation-current-p buffer token)
+                      (with-current-buffer buffer
+                        (setq hermes-config--refresh-required t))
                       (hermes-config--fetch client))))
                  (lambda (result)
                    (when (hermes-config--mutation-current-p buffer token)
@@ -193,7 +204,8 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
       (when (derived-mode-p 'hermes-config-mode)
         (setq hermes-config--schema schema
               hermes-config--config config
-              hermes-config--env env)
+              hermes-config--env env
+              hermes-config--refresh-required nil)
         (let ((inhibit-read-only t)
               (fields (hermes-transport--get schema 'fields)))
           (erase-buffer)
@@ -287,7 +299,7 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
 (defun hermes-config-edit ()
   "Edit the schema field at point and save it through dashboard REST."
   (interactive)
-  (hermes-config--require-mutation-idle)
+  (hermes-config--require-authoritative-state)
   (let* ((path (get-text-property (point) 'hermes-config-key))
          (current (and path (hermes-config--path-value hermes-config--config path)))
          (schema (and path (hermes-config--field-schema path))))
@@ -313,7 +325,7 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
 (defun hermes-config-set-env ()
   "Set the environment key at point without echoing secret input."
   (interactive)
-  (hermes-config--require-mutation-idle)
+  (hermes-config--require-authoritative-state)
   (let* ((key (hermes-config--env-key-at-point))
          (value (read-passwd (format "%s: " key)))
          (buffer (current-buffer)))
@@ -327,7 +339,7 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
 (defun hermes-config-delete-env ()
   "Delete the environment key at point after confirmation."
   (interactive)
-  (hermes-config--require-mutation-idle)
+  (hermes-config--require-authoritative-state)
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer)))
     (unless key (user-error "No environment key on this line"))

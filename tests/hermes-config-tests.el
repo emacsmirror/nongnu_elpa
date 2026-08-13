@@ -276,6 +276,52 @@
       (should (= (hermes-config--path-value second "agent.max_turns") 12))
       (should (equal (hermes-config--path-value second "model") "claude")))))
 
+(ert-deftest hermes-config-failed-authoritative-refresh-blocks-next-mutation ()
+  "A successful write cannot be overwritten from a stale local snapshot."
+  (let ((write (hermes--promise-make))
+        (refresh (hermes--promise-make))
+        (fetches 0)
+        (reads 0)
+        (puts 0))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'client))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) (cl-incf reads) "new"))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method _path &rest _)
+                 (if (equal method "PUT")
+                     (progn (cl-incf puts) write)
+                   (ert-fail (format "Unexpected request: %s" method)))))
+              ((symbol-function 'hermes-config--fetch)
+               (lambda (_client)
+                 (cl-incf fetches)
+                 (if (= fetches 1)
+                     refresh
+                   (hermes--promise-resolved
+                    (list '((fields . ((model . ((type . "string"))))))
+                          '((model . "authoritative")) nil)))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-config-mode)
+        (setq hermes-config--schema
+              '((fields . ((model . ((type . "string"))))))
+              hermes-config--config '((model . "old")))
+        (let ((inhibit-read-only t))
+          (insert (propertize "model" 'hermes-config-key "model")))
+        (goto-char (point-min))
+        (hermes-config-edit)
+        (hermes--promise-resolve write '((ok . t)))
+        (hermes--promise-reject refresh "refresh failed")
+        (should-not hermes-config--mutation-in-flight)
+        (should hermes-config--refresh-required)
+        (should-error (hermes-config-edit) :type 'user-error)
+        (should (= reads 1))
+        (should (= puts 1))
+        (hermes-config-refresh)
+        (should-not hermes-config--refresh-required)
+        (should (equal hermes-config--config
+                       '((model . "authoritative"))))))))
+
 (ert-deftest hermes-config-mutation-invalidates-older-refresh ()
   "An older read cannot overwrite a mutation's authoritative refresh."
   (let ((old-read (hermes--promise-make))
