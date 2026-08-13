@@ -38,6 +38,35 @@ Point =hermes-dashboard-transport-url= at your running dashboard:
   hermes dashboard --no-open --tui --host 127.0.0.1 --port 9119
 #+end_src
 
+* Dashboard authentication
+
+=hermes-dashboard-transport-remote-auth-method= defaults to =auto=:
+
+- Loopback dashboards (=127.0.0.1= / =localhost=) can spawn or attach without extra credentials when the dashboard is not gated.
+- Remote or gated dashboards probe =/api/status= and choose one of the supported attach paths below.
+
+Supported gated attach paths:
+
+1. *Native PKCE OAuth* — when =/api/status= advertises =native_pkce=, Emacs opens the system browser, completes the official =/auth/native/*= loopback flow, stores access/refresh tokens in auth-source under login/port =hermes-dashboard-native=, authenticates REST with =Authorization: Bearer=, and mints a short-lived WebSocket ticket. Failed or cancelled login does not overwrite prior stored tokens.
+2. *Basic/password* — auth-source entry with port =hermes-dashboard-basic=, login =username=, and password secret. Emacs posts password-login cookies and mints a WebSocket ticket.
+3. *Legacy session token* — auth-source entry with login/port =hermes-dashboard-token= and the token as secret, or environment variable =HERMES_DASHBOARD_SESSION_TOKEN=. Used for ungated dashboards and forced =token= mode.
+
+Force a path with:
+
+#+begin_src emacs-lisp
+  (setq hermes-dashboard-transport-remote-auth-method 'native) ; or 'basic / 'token / 'auto
+#+end_src
+
+Generic auth-source examples (replace host/port/values; never commit real secrets):
+
+#+begin_src conf
+  machine https://dashboard.example.org:9119 login hermes-dashboard-native password {"access_token":"…","refresh_token":"…","expires_at":0,"provider":"oauth","user_id":""}
+  machine https://dashboard.example.org:9119 login admin password s3cret port hermes-dashboard-basic
+  machine https://dashboard.example.org:9119 login hermes-dashboard-token password SESSIONTOKEN port hermes-dashboard-token
+#+end_src
+
+If a gated dashboard advertises neither =native_pkce= nor a basic provider, Emacs refuses attach with an actionable error. Cookie-only browser OAuth without =native_pkce= remains unsupported.
+
 * Optional Emacs bridges
 
 The dashboard/TUI connection above drives chat and management.  Two separate,
