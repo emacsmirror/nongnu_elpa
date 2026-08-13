@@ -80,7 +80,11 @@ Each function should accept no arguments, and return a string or nil."
   "If non-nil, fetch feeds using curl instead of `url-retrieve'."
   :type 'boolean)
 
-(defcustom elfeed-use-libxml (libxml-available-p)
+(defcustom elfeed-use-libxml
+  (if (libxml-available-p)
+      t
+    (warn "Elfeed: libxml is not available, falling back to xml.el")
+    nil)
   "Use faster libxml for feed parsing instead of the xml.el parser.
 This option is enabled by default if libxml is available.  libxml yields
 a performance boost over xml.el."
