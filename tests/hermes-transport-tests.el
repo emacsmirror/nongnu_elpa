@@ -774,6 +774,7 @@
           (should (string-match-p "ticket=<redacted>" visible)))))))
 
 (ert-deftest hermes-transport-dashboard-oauth-only-remote-is-unsupported ()
+  "Gated OAuth without native_pkce still rejects when no basic provider exists."
   (let (requests auth-source-called reason)
     (cl-letf (((symbol-function 'auth-source-search)
                (lambda (&rest _args) (setq auth-source-called t) nil)))
@@ -785,7 +786,8 @@
                (hermes--promise-resolved
                 '(:status 200 :headers nil
                   :body ((auth_required . t)
-                         (auth_providers . ("oauth")))))))
+                         (auth_providers . ("oauth"))
+                         (auth_flows . ("cookie")))))))
             (hermes-dashboard-transport-websocket-open-function
              (lambda (&rest _args) (error "must not open websocket"))))
         (let ((client (hermes-dashboard-transport-start
@@ -800,6 +802,258 @@
         (should-not auth-source-called)
         (should (equal (nreverse requests)
                        '("http://100.64.0.10:9119/api/status")))))))
+
+(ert-deftest hermes-transport-dashboard-native-pkce-happy-path ()
+  "Native PKCE attach stores tokens, mints a ticket, and opens the WS."
+  (let* ((base "http://100.64.0.10:9119")
+         (access "native-access-token")
+         (refresh "native-refresh-token")
+         (ticket "native-ticket-secret")
+         (store (make-hash-table :test #'equal))
+         requests browsed opened-url events
+         loopback-filter loopback-process)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
+               (lambda (url) (gethash url store)))
+              ((symbol-function 'hermes-dashboard-transport--native-token-store)
+               (lambda (url tokens)
+                 (if tokens
+                     (puthash url tokens store)
+                   (remhash url store))))
+              ((symbol-function 'hermes-dashboard-transport--random-bytes)
+               (lambda (n) (apply #'unibyte-string (make-list n ?A))))
+              ((symbol-function 'hermes-dashboard-transport--browse-url)
+               (lambda (url) (setq browsed url)))
+              ((symbol-function 'make-network-process)
+               (lambda (&rest plist)
+                 (setq loopback-filter (plist-get plist :filter))
+                 (setq loopback-process
+                       (list 'fake-server
+                             :service 54321
+                             :filter loopback-filter))
+                 loopback-process))
+              ((symbol-function 'process-contact)
+               (lambda (proc &optional key &rest _)
+                 (pcase key
+                   (:service 54321)
+                   (:local '(127 0 0 1 54321))
+                   (_ proc))))
+              ((symbol-function 'delete-process) #'ignore)
+              ((symbol-function 'process-send-string) #'ignore)
+              ((symbol-function 'process-live-p)
+               (lambda (_proc) t)))
+      (let ((hermes-dashboard-transport-start-mode 'auto)
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (url _client)
+               (setq opened-url url)
+               'fake-websocket))
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) (error "remote attach must not spawn")))
+            (hermes-dashboard-transport-http-request-async-function
+             (lambda (url &rest args)
+               (push (list :url url
+                           :method (plist-get args :method)
+                           :headers (plist-get args :headers)
+                           :data (plist-get args :data))
+                     requests)
+               (cond
+                ((string-suffix-p "/api/status" url)
+                 (hermes--promise-resolved
+                  '(:status 200 :headers nil
+                    :body ((auth_required . t)
+                           (auth_providers . ("oauth"))
+                           (auth_flows . ("cookie" "native_pkce"))))))
+                ((string-suffix-p "/auth/native/token" url)
+                 (hermes--promise-resolved
+                  `(:status 200 :headers nil
+                    :body ((access_token . ,access)
+                           (refresh_token . ,refresh)
+                           (expires_at . 4102444800)
+                           (provider . "oauth")
+                           (user_id . "user-1")))))
+                ((string-suffix-p "/api/auth/ws-ticket" url)
+                 (hermes--promise-resolved
+                  `(:status 200 :headers nil
+                    :body ((ticket . ,ticket) (ttl_seconds . 30)))))
+                (t (hermes--promise-rejected
+                    (format "unexpected request %s" url)))))))
+        (hermes-dashboard-transport-start
+         :host "100.64.0.10" :port 9119
+         :callback (lambda (event) (push event events)))
+        (should (stringp browsed))
+        (should (string-match-p "/auth/native/authorize" browsed))
+        (should (string-match-p "code_challenge_method=S256" browsed))
+        (should (string-match-p "redirect_uri=" browsed))
+        (should (functionp loopback-filter))
+        (let* ((state (and (string-match "state=\\([^&]+\\)" browsed)
+                           (url-unhex-string (match-string 1 browsed))))
+               (req (format "GET /callback?code=gw-code&state=%s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                            (url-hexify-string state))))
+          (funcall loopback-filter loopback-process req))
+        (setq requests (nreverse requests))
+        (should (equal opened-url
+                       (format "ws://100.64.0.10:9119/api/ws?ticket=%s" ticket)))
+        (let* ((token-req (seq-find (lambda (r)
+                                      (string-suffix-p "/auth/native/token"
+                                                       (plist-get r :url)))
+                                    requests))
+               (ticket-req (seq-find (lambda (r)
+                                       (string-suffix-p "/api/auth/ws-ticket"
+                                                        (plist-get r :url)))
+                                     requests))
+               (token-body (json-parse-string (plist-get token-req :data)
+                                              :object-type 'alist))
+               (stored (gethash base store)))
+          (should (equal (hermes-transport--get token-body 'code) "gw-code"))
+          (should (hermes-transport--get token-body 'code_verifier))
+          (should (equal (alist-get "Authorization"
+                                    (plist-get ticket-req :headers)
+                                    nil nil #'equal)
+                         (concat "Bearer " access)))
+          (should (equal (plist-get stored :access-token) access))
+          (should (equal (plist-get stored :refresh-token) refresh)))
+        (let ((visible (format "%S" events)))
+          (dolist (secret (list access refresh ticket "gw-code"))
+            (should-not (string-match-p (regexp-quote secret) visible)))
+          (should (string-match-p "ticket=<redacted>" visible)))))))
+
+(ert-deftest hermes-transport-dashboard-native-pkce-failure-preserves-prior-tokens ()
+  "A failed native re-login leaves previously stored tokens untouched."
+  (let* ((base "http://100.64.0.10:9119")
+         (prior (list :access-token "prior-access"
+                      :refresh-token "prior-refresh"
+                      :expires-at 1
+                      :provider "oauth"
+                      :user-id "user-1"))
+         (store (make-hash-table :test #'equal))
+         browsed reason loopback-filter loopback-process)
+    (puthash base prior store)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
+               (lambda (url) (gethash url store)))
+              ((symbol-function 'hermes-dashboard-transport--native-token-store)
+               (lambda (url tokens)
+                 (if tokens
+                     (puthash url tokens store)
+                   (remhash url store))))
+              ((symbol-function 'hermes-dashboard-transport--random-bytes)
+               (lambda (n) (apply #'unibyte-string (make-list n ?B))))
+              ((symbol-function 'hermes-dashboard-transport--browse-url)
+               (lambda (url) (setq browsed url)))
+              ((symbol-function 'make-network-process)
+               (lambda (&rest plist)
+                 (setq loopback-filter (plist-get plist :filter))
+                 (setq loopback-process
+                       (list 'fake-server :service 54322 :filter loopback-filter))
+                 loopback-process))
+              ((symbol-function 'process-contact)
+               (lambda (proc &optional key &rest _)
+                 (pcase key
+                   (:service 54322)
+                   (:local '(127 0 0 1 54322))
+                   (_ proc))))
+              ((symbol-function 'delete-process) #'ignore)
+              ((symbol-function 'process-send-string) #'ignore)
+              ((symbol-function 'process-live-p)
+               (lambda (_proc) t)))
+      (let ((hermes-dashboard-transport-start-mode 'auto)
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (&rest _args) (error "must not open websocket")))
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) (error "remote attach must not spawn")))
+            (hermes-dashboard-transport-http-request-async-function
+             (lambda (url &rest _args)
+               (cond
+                ((string-suffix-p "/api/status" url)
+                 (hermes--promise-resolved
+                  '(:status 200 :headers nil
+                    :body ((auth_required . t)
+                           (auth_providers . ("oauth"))
+                           (auth_flows . ("cookie" "native_pkce"))))))
+                ((string-suffix-p "/auth/native/refresh" url)
+                 (hermes--promise-rejected
+                  "Hermes dashboard request failed at /auth/native/refresh (HTTP 401)"))
+                ((string-suffix-p "/auth/native/token" url)
+                 (hermes--promise-rejected
+                  "Hermes dashboard request failed at /auth/native/token (HTTP 400)"))
+                (t (hermes--promise-rejected
+                    (format "unexpected request %s" url)))))))
+        (let ((client (hermes-dashboard-transport-start
+                       :host "100.64.0.10" :port 9119 :callback #'ignore)))
+          (should (stringp browsed))
+          (let* ((state (and (string-match "state=\\([^&]+\\)" browsed)
+                             (url-unhex-string (match-string 1 browsed))))
+                 (req (format "GET /callback?code=bad-code&state=%s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                              (url-hexify-string state))))
+            (funcall loopback-filter loopback-process req))
+          (hermes--promise-catch
+           (hermes-dashboard-transport-client-ready-promise client)
+           (lambda (r) (setq reason r))))
+        (should (string-match-p "native\\|/auth/native/token\\|HTTP 400"
+                                (format "%s" reason)))
+        (should (equal (gethash base store) prior))))))
+
+(ert-deftest hermes-transport-dashboard-native-refresh-preserves-refresh-token ()
+  "Access-only refresh responses keep the prior refresh credential."
+  (let* ((prior (list :access-token "old-access"
+                      :refresh-token "keep-refresh"
+                      :expires-at 1
+                      :provider "oauth"
+                      :user-id "user-1"))
+         (next nil))
+    (setq next
+          (hermes-dashboard-transport--native-token-plist
+           '((access_token . "new-access")
+             (expires_at . 4102444800)
+             (provider . "oauth")
+             (user_id . "user-1"))
+           prior))
+    (should (equal (plist-get next :access-token) "new-access"))
+    (should (equal (plist-get next :refresh-token) "keep-refresh"))))
+
+(ert-deftest hermes-transport-dashboard-native-token-store-restores-prior-on-failure ()
+  "A failed durable write restores the previous native token set."
+  (let* ((base "http://100.64.0.10:9119")
+         (prior (list :access-token "prior-access"
+                      :refresh-token "prior-refresh"
+                      :expires-at 4102444800
+                      :provider "oauth"
+                      :user-id "user-1"))
+         (fresh (list :access-token "fresh-access"
+                      :refresh-token "fresh-refresh"
+                      :expires-at 4102444800
+                      :provider "oauth"
+                      :user-id "user-1"))
+         (writes 0)
+         (restored nil))
+    (clrhash hermes-dashboard-transport--native-token-memory)
+    (puthash (hermes-dashboard-transport--native-token-memory-key base)
+             prior
+             hermes-dashboard-transport--native-token-memory)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport--require-auth-source)
+               #'ignore)
+              ((symbol-function
+                'hermes-dashboard-transport--native-token-load-disk)
+               (lambda (_url) prior))
+              ((symbol-function
+                'hermes-dashboard-transport--native-token-delete-disk)
+               #'ignore)
+              ((symbol-function
+                'hermes-dashboard-transport--native-token-write-disk)
+               (lambda (_url tokens)
+                 (setq writes (1+ writes))
+                 (setq restored tokens)
+                 (if (= writes 1)
+                     nil
+                   t))))
+      (should-error
+       (hermes-dashboard-transport--native-token-store base fresh))
+      (should (equal (gethash
+                      (hermes-dashboard-transport--native-token-memory-key base)
+                      hermes-dashboard-transport--native-token-memory)
+                     prior))
+      (should (equal restored prior)))))
 
 (ert-deftest hermes-transport-dashboard-redacts-websocket-process-name ()
   (let* ((token-url "ws://127.0.0.1:4567/api/ws?token=secret-token")

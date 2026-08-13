@@ -496,14 +496,580 @@ Return a promise of the response plist."
 
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
   "Authentication method for remote dashboard attach.
-`auto' probes /api/status, using a legacy session token when the dashboard is
-not gated and username/password login with a WebSocket ticket when a basic
-provider is available.  `token' forces the legacy /api/ws?token= path.  `basic'
-forces username/password login and a single-use WebSocket ticket."
+`auto' probes /api/status.  An ungated dashboard uses a legacy session token.
+A gated dashboard prefers RFC 8252 native PKCE when `/api/status' advertises
+`native_pkce', otherwise username/password login with a WebSocket ticket when a
+basic provider is available.  `token' forces the legacy /api/ws?token= path.
+`basic' forces username/password login and a single-use WebSocket ticket.
+`native' forces the cookieless native PKCE attach path."
   :type '(choice (const :tag "Auto" auto)
                  (const :tag "Legacy session token" token)
-                 (const :tag "Basic/password gated auth" basic))
+                 (const :tag "Basic/password gated auth" basic)
+                 (const :tag "Native PKCE OAuth" native))
   :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-native-login-timeout 300
+  "Seconds to wait for the system-browser native PKCE loopback callback."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
+(defconst hermes-dashboard-transport--native-auth-user
+  "hermes-dashboard-native"
+  "Auth-source login used for native dashboard OAuth tokens.")
+
+(defconst hermes-dashboard-transport--native-auth-port
+  "hermes-dashboard-native"
+  "Auth-source port used for native dashboard OAuth tokens.")
+
+(defconst hermes-dashboard-transport--native-done-html
+  (concat
+   "<!doctype html><meta charset=\"utf-8\"><title>Signed in</title>"
+   "<body style=\"font:15px system-ui;margin:3rem;text-align:center\">"
+   "<h2>Signed in to Hermes</h2>"
+   "<p>You can close this window and return to Emacs.</p>")
+  "HTML served on the native PKCE loopback after the browser returns.")
+
+(defvar hermes-dashboard-transport-browse-url-function #'browse-url
+  "Function used to open the native PKCE authorize URL.
+Called with one URL string argument.")
+
+(defun hermes-dashboard-transport--browse-url (url)
+  "Open URL with `hermes-dashboard-transport-browse-url-function'."
+  (funcall hermes-dashboard-transport-browse-url-function url))
+
+(defun hermes-dashboard-transport--random-bytes (n)
+  "Return N cryptographically strong random bytes."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((coding-system-for-read 'binary)
+          (coding-system-for-write 'binary))
+      (insert-file-contents-literally "/dev/urandom" nil 0 n))
+    (buffer-string)))
+
+(defun hermes-dashboard-transport--base64url-no-pad (raw)
+  "Return base64url encoding of RAW without padding."
+  (let ((encoded (base64-encode-string raw t)))
+    (setq encoded (replace-regexp-in-string "\\+" "-" encoded t t))
+    (setq encoded (replace-regexp-in-string "/" "_" encoded t t))
+    (replace-regexp-in-string "=+\\'" "" encoded t t)))
+
+(defun hermes-dashboard-transport--pkce-pair ()
+  "Return a native PKCE plist with :verifier, :challenge, and :method."
+  (let* ((verifier (hermes-dashboard-transport--base64url-no-pad
+                    (hermes-dashboard-transport--random-bytes 32)))
+         (challenge (hermes-dashboard-transport--base64url-no-pad
+                     (secure-hash 'sha256 verifier nil nil t))))
+    (list :verifier verifier :challenge challenge :method "S256")))
+
+(defun hermes-dashboard-transport--native-state ()
+  "Return a high-entropy CSRF state for native PKCE."
+  (hermes-dashboard-transport--base64url-no-pad
+   (hermes-dashboard-transport--random-bytes 24)))
+
+(defun hermes-dashboard-transport--status-auth-flows (status)
+  "Return auth flow names from STATUS as strings."
+  (mapcar #'hermes-transport--scalar-string
+          (or (hermes-transport--get status 'auth_flows) '())))
+
+(defun hermes-dashboard-transport--status-supports-native-pkce-p (status)
+  "Return non-nil when STATUS advertises the native_pkce auth flow."
+  (member "native_pkce"
+          (hermes-dashboard-transport--status-auth-flows status)))
+
+(defun hermes-dashboard-transport--status-oauth-provider (status)
+  "Return the first non-basic auth provider name from STATUS, or nil."
+  (cl-find-if (lambda (name)
+                (and (stringp name)
+                     (not (string-empty-p name))
+                     (not (equal name "basic"))))
+              (hermes-dashboard-transport--status-auth-providers status)))
+
+(defun hermes-dashboard-transport--native-token-plist (body &optional previous)
+  "Return a native token plist parsed from JSON BODY, or nil.
+When BODY omits refresh_token, keep PREVIOUS's refresh token if present."
+  (let ((access (hermes-transport--scalar-string
+                 (hermes-transport--get body 'access_token)))
+        (refresh (hermes-transport--scalar-string
+                  (hermes-transport--get body 'refresh_token)))
+        (expires (hermes-transport--get body 'expires_at))
+        (provider (or (hermes-transport--scalar-string
+                       (hermes-transport--get body 'provider))
+                      (plist-get previous :provider)
+                      ""))
+        (user-id (or (hermes-transport--scalar-string
+                      (hermes-transport--get body 'user_id))
+                     (plist-get previous :user-id)
+                     ""))
+        (prior-refresh (plist-get previous :refresh-token)))
+    (when (and access (not (string-empty-p access)))
+      (list :access-token access
+            :refresh-token (if (and (stringp refresh)
+                                    (not (string-empty-p refresh)))
+                               refresh
+                             (or prior-refresh ""))
+            :expires-at (if (numberp expires) expires 0)
+            :provider provider
+            :user-id user-id))))
+
+(defun hermes-dashboard-transport--native-token-encode (tokens)
+  "Return the auth-source secret string for TOKENS."
+  (json-serialize
+   `((access_token . ,(plist-get tokens :access-token))
+     (refresh_token . ,(plist-get tokens :refresh-token))
+     (expires_at . ,(or (plist-get tokens :expires-at) 0))
+     (provider . ,(or (plist-get tokens :provider) ""))
+     (user_id . ,(or (plist-get tokens :user-id) "")))))
+
+(defun hermes-dashboard-transport--native-token-decode (secret)
+  "Return a native token plist decoded from SECRET, or nil."
+  (when (and (stringp secret) (not (string-empty-p secret)))
+    (condition-case nil
+        (hermes-dashboard-transport--native-token-plist
+         (hermes-transport-json-parse secret))
+      (error nil))))
+
+(defvar hermes-dashboard-transport--native-token-memory
+  (make-hash-table :test #'equal)
+  "Process-local native token cache keyed by normalized base URL.")
+
+(defun hermes-dashboard-transport--native-token-memory-key (base-url)
+  "Return the memory-cache key for BASE-URL."
+  (or (hermes-dashboard-transport--normalize-base-url base-url) base-url))
+
+(defun hermes-dashboard-transport--native-token-delete-disk (base-url)
+  "Delete auth-source native token entries for BASE-URL."
+  (when (fboundp 'auth-source-forget-all-cached)
+    (auth-source-forget-all-cached))
+  (dolist (host (hermes-dashboard-transport--auth-source-hosts base-url))
+    (ignore-errors
+      (auth-source-delete
+       :host host
+       :user hermes-dashboard-transport--native-auth-user
+       :port hermes-dashboard-transport--native-auth-port)))
+  (when (fboundp 'auth-source-forget-all-cached)
+    (auth-source-forget-all-cached)))
+
+(defun hermes-dashboard-transport--native-token-write-disk (base-url tokens)
+  "Write TOKENS for BASE-URL to auth-source and return non-nil on success."
+  (when (fboundp 'auth-source-forget-all-cached)
+    (auth-source-forget-all-cached))
+  (let* ((secret (hermes-dashboard-transport--native-token-encode tokens))
+         (auth-source-creation-defaults
+          `((user . ,hermes-dashboard-transport--native-auth-user)
+            (port . ,hermes-dashboard-transport--native-auth-port)
+            (secret . ,secret)))
+         (host (car (hermes-dashboard-transport--auth-source-hosts base-url)))
+         (entry (and host
+                     (auth-source-search
+                      :host host
+                      :user hermes-dashboard-transport--native-auth-user
+                      :port hermes-dashboard-transport--native-auth-port
+                      :max 1
+                      :create t
+                      :require '(:secret)))))
+    (when-let* ((save (and entry (plist-get entry :save-function))))
+      (funcall save))
+    (when (fboundp 'auth-source-forget-all-cached)
+      (auth-source-forget-all-cached))
+    (let ((loaded (hermes-dashboard-transport--native-token-load-disk base-url)))
+      (and loaded
+           (equal (plist-get loaded :access-token)
+                  (plist-get tokens :access-token))
+           (equal (plist-get loaded :refresh-token)
+                  (plist-get tokens :refresh-token))))))
+
+(defun hermes-dashboard-transport--native-token-load-disk (base-url)
+  "Return native tokens for BASE-URL from auth-source only, or nil."
+  (when-let* ((entry (hermes-dashboard-transport--auth-source-entry
+                      base-url
+                      :user hermes-dashboard-transport--native-auth-user
+                      :port hermes-dashboard-transport--native-auth-port
+                      :require '(:secret)))
+              (secret (hermes-dashboard-transport--auth-source-secret entry)))
+    (hermes-dashboard-transport--native-token-decode secret)))
+
+(defun hermes-dashboard-transport--native-token-load (base-url)
+  "Return stored native tokens for BASE-URL, or nil."
+  (let ((key (hermes-dashboard-transport--native-token-memory-key base-url)))
+    (or (gethash key hermes-dashboard-transport--native-token-memory)
+        (when-let* ((disk (hermes-dashboard-transport--native-token-load-disk
+                           base-url)))
+          (puthash key disk hermes-dashboard-transport--native-token-memory)
+          disk))))
+
+(defun hermes-dashboard-transport--native-token-store (base-url tokens)
+  "Persist TOKENS for BASE-URL, or delete the stored entry when TOKENS is nil.
+Failed writes restore any previously stored tokens."
+  (hermes-dashboard-transport--require-auth-source)
+  (let* ((key (hermes-dashboard-transport--native-token-memory-key base-url))
+         (prior-memory
+          (gethash key hermes-dashboard-transport--native-token-memory))
+         (prior-disk
+          (hermes-dashboard-transport--native-token-load-disk base-url))
+         (prior (or prior-memory prior-disk)))
+    (cond
+     ((null tokens)
+      (remhash key hermes-dashboard-transport--native-token-memory)
+      (hermes-dashboard-transport--native-token-delete-disk base-url)
+      nil)
+     (t
+      (puthash key tokens hermes-dashboard-transport--native-token-memory)
+      (condition-case err
+          (progn
+            ;; Replace disk only after the new secret is in hand.  Delete then
+            ;; write, and restore PRIOR on any failure so durable state cannot
+            ;; disappear because create/save failed mid-update.
+            (hermes-dashboard-transport--native-token-delete-disk base-url)
+            (unless (hermes-dashboard-transport--native-token-write-disk
+                     base-url tokens)
+              (error "Native token store verification failed"))
+            tokens)
+        (error
+         (if prior
+             (progn
+               (puthash key prior
+                        hermes-dashboard-transport--native-token-memory)
+               (ignore-errors
+                 (hermes-dashboard-transport--native-token-delete-disk base-url)
+                 (hermes-dashboard-transport--native-token-write-disk
+                  base-url prior)))
+           (remhash key hermes-dashboard-transport--native-token-memory))
+         (signal (car err) (cdr err))))))))
+
+(defun hermes-dashboard-transport--native-token-needs-refresh-p
+    (tokens &optional now skew)
+  "Return non-nil when TOKENS should be refreshed.
+NOW defaults to the current unix time; SKEW defaults to 60 seconds."
+  (let* ((expires (plist-get tokens :expires-at))
+         (now (or now (time-convert nil 'integer)))
+         (skew (or skew 60)))
+    (or (not (numberp expires))
+        (<= expires 0)
+        (>= now (- expires skew)))))
+
+(defun hermes-dashboard-transport--native-authorize-url
+    (base-url challenge redirect-uri state &optional provider)
+  "Return the native authorize URL for BASE-URL.
+CHALLENGE, REDIRECT-URI, STATE, and optional PROVIDER become query parameters."
+  (let ((query `((code_challenge . ,challenge)
+                 (code_challenge_method . "S256")
+                 (redirect_uri . ,redirect-uri)
+                 (state . ,state))))
+    (when (and (stringp provider) (not (string-empty-p provider)))
+      (push (cons 'provider provider) query))
+    (concat (hermes-dashboard-transport--api-url
+             base-url "/auth/native/authorize")
+            (hermes-dashboard-transport--query-string (nreverse query)))))
+
+(defun hermes-dashboard-transport--query-alist (query)
+  "Return QUERY string as an alist of decoded (KEY . VALUE) pairs."
+  (mapcar (lambda (pair)
+            (cons (car pair) (cadr pair)))
+          (url-parse-query-string (or query "") nil t)))
+
+(defun hermes-dashboard-transport--native-parse-loopback (request expected-state)
+  "Parse loopback REQUEST path/query and return (:code CODE).
+EXPECTED-STATE must match the returned state."
+  (let* ((line (car (split-string request "\r\n" t)))
+         (path (nth 1 (split-string line " " t)))
+         (query (cadr (split-string (or path "") "?")))
+         (params (hermes-dashboard-transport--query-alist query))
+         (error (cdr (assoc "error" params)))
+         (code (cdr (assoc "code" params)))
+         (state (cdr (assoc "state" params))))
+    (when error
+      (user-error "Gateway rejected native login: %s%s"
+                  error
+                  (if-let* ((desc (cdr (assoc "error_description" params))))
+                      (format " (%s)" desc)
+                    "")))
+    (unless (and (stringp code) (not (string-empty-p code)))
+      (user-error "Loopback callback missing authorization code"))
+    (unless (and (stringp expected-state)
+                 (stringp state)
+                 (equal state expected-state))
+      (user-error "Loopback callback state mismatch (possible CSRF)"))
+    (list :code code)))
+
+(defun hermes-dashboard-transport--native-loopback-reply (process)
+  "Write the browser completion page to PROCESS and close it."
+  (when (process-live-p process)
+    (process-send-string
+     process
+     (concat "HTTP/1.1 200 OK\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Connection: close\r\n"
+             "Content-Length: "
+             (number-to-string
+              (string-bytes hermes-dashboard-transport--native-done-html))
+             "\r\n\r\n"
+             hermes-dashboard-transport--native-done-html))
+    (delete-process process)))
+
+(defun hermes-dashboard-transport--native-loopback-listen (on-request)
+  "Start a loopback HTTP listener and call ON-REQUEST with the first request.
+Return a plist with :process, :port, and :redirect-uri."
+  (let* ((buffer (generate-new-buffer " *hermes-native-loopback*"))
+         process
+         port)
+    (setq process
+          (make-network-process
+           :name "hermes-native-loopback"
+           :buffer buffer
+           :host "127.0.0.1"
+           :service t
+           :server t
+           :noquery t
+           :coding 'binary
+           :filter
+           (lambda (client chunk)
+             (let ((buf (and (processp client) (process-buffer client))))
+               (cond
+                ((buffer-live-p buf)
+                 (with-current-buffer buf
+                   (goto-char (point-max))
+                   (insert chunk)
+                   (when (re-search-backward "\r?\n\r?\n" nil t)
+                     (let ((request (buffer-string)))
+                       (erase-buffer)
+                       (hermes-dashboard-transport--native-loopback-reply
+                        client)
+                       (funcall on-request request)))))
+                ((and (stringp chunk)
+                      (string-match-p "\r?\n\r?\n" chunk))
+                 (hermes-dashboard-transport--native-loopback-reply client)
+                 (funcall on-request chunk)))))
+           :sentinel
+           (lambda (proc _event)
+             (when (and (memq (process-status proc)
+                              '(closed failed exit signal))
+                        (buffer-live-p (process-buffer proc)))
+               (kill-buffer (process-buffer proc))))))
+    (unless (process-live-p process)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (user-error "Failed to bind loopback listener for native login"))
+    (setq port
+          (or (process-contact process :service)
+              (car (last (process-contact process :local)))))
+    (unless (integerp port)
+      (delete-process process)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (user-error "Failed to determine native loopback port"))
+    (list :process process
+          :port port
+          :redirect-uri (format "http://127.0.0.1:%d/callback" port))))
+
+(defun hermes-dashboard-transport--native-login-async
+    (base-url &optional provider)
+  "Return a promise of native tokens for BASE-URL after browser PKCE login.
+Optional PROVIDER is forwarded to the authorize URL when non-empty."
+  (let* ((promise (hermes--promise-make))
+         (pkce (hermes-dashboard-transport--pkce-pair))
+         (state (hermes-dashboard-transport--native-state))
+         (settled nil)
+         (server nil)
+         (timer nil)
+         (cleanup
+          (lambda ()
+            (when timer
+              (cancel-timer timer)
+              (setq timer nil))
+            (when-let* ((proc (plist-get server :process)))
+              (when (process-live-p proc)
+                (delete-process proc)))
+            (setq server nil)))
+         (fail
+          (lambda (reason)
+            (unless settled
+              (setq settled t)
+              (funcall cleanup)
+              (hermes--promise-reject promise reason))))
+         (finish
+          (lambda (tokens)
+            (unless settled
+              (setq settled t)
+              (funcall cleanup)
+              (hermes--promise-resolve promise tokens)))))
+    (condition-case err
+        (progn
+          (setq server
+                (hermes-dashboard-transport--native-loopback-listen
+                 (lambda (request)
+                   (condition-case request-err
+                       (let* ((parsed
+                               (hermes-dashboard-transport--native-parse-loopback
+                                request state))
+                              (code (plist-get parsed :code)))
+                         (hermes--promise-then
+                          (hermes-dashboard-transport--http-json-async
+                           (hermes-dashboard-transport--api-url
+                            base-url "/auth/native/token")
+                           :method "POST"
+                           :headers '(("Content-Type" . "application/json"))
+                           :body `((code . ,code)
+                                   (code_verifier
+                                    . ,(plist-get pkce :verifier)))
+                           :secrets (list code (plist-get pkce :verifier)))
+                          (lambda (response)
+                            (if-let* ((tokens
+                                       (hermes-dashboard-transport--native-token-plist
+                                        (plist-get response :body))))
+                                (funcall finish tokens)
+                              (funcall fail
+                                       "Gateway token response missing access_token")))
+                          (lambda (reason)
+                            (funcall fail reason))))
+                     (error
+                      (funcall fail (error-message-string request-err)))))))
+          (setq timer
+                (run-at-time
+                 hermes-dashboard-transport-native-login-timeout
+                 nil
+                 (lambda ()
+                   (funcall fail
+                            "Native sign-in timed out before the browser returned"))))
+          (hermes-dashboard-transport--browse-url
+           (hermes-dashboard-transport--native-authorize-url
+            base-url
+            (plist-get pkce :challenge)
+            (plist-get server :redirect-uri)
+            state
+            provider)))
+      (error (funcall fail (error-message-string err))))
+    promise))
+
+(defun hermes-dashboard-transport--native-ticket-auth
+    (host port base-url tokens ticket-response)
+  "Return ticket WebSocket auth from TOKENS and TICKET-RESPONSE.
+HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
+  (let ((ticket (hermes-transport--scalar-string
+                 (hermes-transport--get (plist-get ticket-response :body)
+                                        'ticket)))
+        (access (plist-get tokens :access-token))
+        (refresh (plist-get tokens :refresh-token)))
+    (unless (and ticket (not (string-empty-p ticket)))
+      (user-error "Hermes dashboard did not return a WebSocket ticket"))
+    (list :url (hermes-dashboard-transport--websocket-url
+                host port ticket base-url "ticket")
+          :redacted-url (hermes-dashboard-transport--redacted-websocket-url
+                         host port base-url "ticket")
+          :secrets (delq nil (list access refresh ticket)))))
+
+(defun hermes-dashboard-transport--native-ticket-async
+    (host port base-url tokens)
+  "Return a promise of ticket WebSocket auth using native TOKENS.
+HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
+  (let* ((access (plist-get tokens :access-token))
+         (refresh (plist-get tokens :refresh-token))
+         (secrets (delq nil (list access refresh))))
+    (hermes--promise-then
+     (hermes-dashboard-transport--http-json-async
+      (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
+      :method "POST"
+      :headers `(("Authorization" . ,(concat "Bearer " access)))
+      :secrets secrets)
+     (lambda (ticket-response)
+       (hermes-dashboard-transport--native-ticket-auth
+        host port base-url tokens ticket-response))
+     (lambda (reason)
+       (hermes--promise-rejected reason)))))
+
+(defun hermes-dashboard-transport--native-refresh-async (base-url tokens)
+  "Return a promise of refreshed native tokens for BASE-URL.
+TOKENS must include a refresh token; successful rotation is stored."
+  (let ((refresh (plist-get tokens :refresh-token))
+        (provider (plist-get tokens :provider)))
+    (if (or (not (stringp refresh)) (string-empty-p refresh))
+        (hermes--promise-rejected
+         "Native dashboard tokens expired and no refresh token is stored")
+      (hermes--promise-then
+       (hermes-dashboard-transport--http-json-async
+        (hermes-dashboard-transport--api-url base-url "/auth/native/refresh")
+        :method "POST"
+        :headers '(("Content-Type" . "application/json"))
+        :body (append `((refresh_token . ,refresh))
+                      (and (stringp provider)
+                           (not (string-empty-p provider))
+                           `((provider . ,provider))))
+        :secrets (list refresh))
+       (lambda (response)
+         (if-let* ((next (hermes-dashboard-transport--native-token-plist
+                          (plist-get response :body)
+                          tokens)))
+             (progn
+               (hermes-dashboard-transport--native-token-store base-url next)
+               next)
+           (hermes--promise-rejected
+            "Gateway refresh response missing access_token")))
+       (lambda (reason)
+         (hermes--promise-rejected reason))))))
+
+(defun hermes-dashboard-transport--native-ensure-tokens-async
+    (base-url &optional provider force-login)
+  "Return a promise of usable native tokens for BASE-URL.
+Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
+skip stored tokens and open the browser flow."
+  (let ((stored (and (not force-login)
+                     (hermes-dashboard-transport--native-token-load base-url))))
+    (cond
+     ((and stored
+           (not (hermes-dashboard-transport--native-token-needs-refresh-p
+                 stored)))
+      (hermes--promise-resolved stored))
+     ((and stored (hermes-transport--non-empty-string
+                   (plist-get stored :refresh-token)))
+      (hermes--promise-catch
+       (hermes-dashboard-transport--native-refresh-async base-url stored)
+       (lambda (reason)
+         ;; A dead refresh token forces a fresh interactive login; leave the
+         ;; previous store untouched until the new login succeeds.
+         (if (and (stringp reason) (string-match-p "(HTTP 401)" reason))
+             (hermes--promise-then
+              (hermes-dashboard-transport--native-login-async base-url provider)
+              (lambda (tokens)
+                (hermes-dashboard-transport--native-token-store base-url tokens)
+                tokens))
+           (hermes--promise-rejected reason)))))
+     (t
+      (hermes--promise-then
+       (hermes-dashboard-transport--native-login-async base-url provider)
+       (lambda (tokens)
+         (hermes-dashboard-transport--native-token-store base-url tokens)
+         tokens))))))
+
+(defun hermes-dashboard-transport--remote-native-auth-async
+    (host port base-url &optional status force-login)
+  "Return a promise of native PKCE WebSocket auth for HOST, PORT, BASE-URL.
+Optional STATUS supplies the OAuth provider name.  FORCE-LOGIN skips stored
+tokens."
+  (let ((provider (and status
+                       (hermes-dashboard-transport--status-oauth-provider
+                        status))))
+    (hermes--promise-then
+     (hermes-dashboard-transport--native-ensure-tokens-async
+      base-url provider force-login)
+     (lambda (tokens)
+       (hermes-dashboard-transport--native-ticket-async
+        host port base-url tokens)))))
+
+(defun hermes-dashboard-transport--api-native-auth-async
+    (base-url &optional status)
+  "Return a promise of REST bearer auth for BASE-URL using native tokens.
+Optional STATUS supplies the OAuth provider name."
+  (let ((provider (and status
+                       (hermes-dashboard-transport--status-oauth-provider
+                        status))))
+    (hermes--promise-map
+     (hermes-dashboard-transport--native-ensure-tokens-async
+      base-url provider)
+     (lambda (tokens)
+       (let ((access (plist-get tokens :access-token))
+             (refresh (plist-get tokens :refresh-token)))
+         (list :headers
+               (list (cons "Authorization" (concat "Bearer " access)))
+               :secrets (delq nil (list access refresh))))))))
 
 (defun hermes-dashboard-transport--loopback-host-p (host)
   "Return non-nil when HOST names a loopback dashboard bind."
@@ -601,7 +1167,9 @@ The password is the sole entry of the request's :secrets list."
           :secrets (list password cookies))))
 
 (defun hermes-dashboard-transport--api-authenticate ()
-  "Resolve dashboard REST auth for `hermes-dashboard-transport-url'."
+  "Resolve dashboard REST auth for `hermes-dashboard-transport-url'.
+Native PKCE requires the async path; this legacy synchronous resolver rejects
+native-gated dashboards instead of silently falling back to basic/token."
   (let ((base-url (hermes-dashboard-transport--api-base-url)))
     (append
      (list :base-url base-url)
@@ -609,10 +1177,20 @@ The password is the sole entry of the request's :secrets list."
        ('token (hermes-dashboard-transport--api-token-auth base-url))
        ('basic (hermes-dashboard-transport--api-basic-auth
                 base-url (hermes-dashboard-transport--remote-status base-url)))
+       ('native
+        (user-error
+         "Native PKCE dashboard auth requires the asynchronous request path"))
        (_ (let ((status (hermes-dashboard-transport--remote-status base-url)))
-            (if (hermes-dashboard-transport--status-auth-required-p status)
-                (hermes-dashboard-transport--api-basic-auth base-url status)
-              (hermes-dashboard-transport--api-token-auth base-url))))))))
+            (cond
+             ((not (hermes-dashboard-transport--status-auth-required-p status))
+              (hermes-dashboard-transport--api-token-auth base-url))
+             ((hermes-dashboard-transport--status-supports-native-pkce-p status)
+              (user-error
+               "Native PKCE dashboard auth requires the asynchronous request path"))
+             ((hermes-dashboard-transport--status-basic-provider status)
+              (hermes-dashboard-transport--api-basic-auth base-url status))
+             (t (hermes-dashboard-transport--unsupported-remote-auth
+                 base-url)))))))))
 
 (defun hermes-dashboard-transport--auth-error-p (reason)
   "Return non-nil when REASON is an HTTP 401/403 authentication failure.
@@ -796,14 +1374,27 @@ network; a missing token rejects the promise."
                     (lambda (status)
                       (hermes-dashboard-transport--api-basic-auth-async
                        base-url status))))
+           ('native (hermes--promise-then
+                     (hermes-dashboard-transport--remote-status-async base-url)
+                     (lambda (status)
+                       (hermes-dashboard-transport--api-native-auth-async
+                        base-url status))))
            (_ (hermes--promise-then
                (hermes-dashboard-transport--remote-status-async base-url)
                (lambda (status)
-                 (if (hermes-dashboard-transport--status-auth-required-p status)
-                     (hermes-dashboard-transport--api-basic-auth-async
-                      base-url status)
-                   (hermes-dashboard-transport--api-token-auth-async
-                    base-url))))))
+                 (cond
+                  ((not (hermes-dashboard-transport--status-auth-required-p
+                         status))
+                   (hermes-dashboard-transport--api-token-auth-async base-url))
+                  ((hermes-dashboard-transport--status-supports-native-pkce-p
+                    status)
+                   (hermes-dashboard-transport--api-native-auth-async
+                    base-url status))
+                  ((hermes-dashboard-transport--status-basic-provider status)
+                   (hermes-dashboard-transport--api-basic-auth-async
+                    base-url status))
+                  (t (hermes-dashboard-transport--unsupported-remote-auth
+                      base-url)))))))
          (lambda (auth) (append (list :base-url base-url) auth))))
     (error (hermes--promise-rejected (error-message-string err)))))
 
@@ -1089,8 +1680,9 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
   "Signal an actionable unsupported gated auth error for BASE-URL."
   (user-error
    (concat "Hermes dashboard at %s requires gated auth, but this Emacs client "
-           "currently supports basic/password gated dashboards or legacy "
-           "session tokens only; OAuth-only remote attach is not implemented")
+           "currently supports native PKCE OAuth, basic/password gated "
+           "dashboards, or legacy session tokens only; OAuth-only remote attach "
+           "is not implemented without the native_pkce auth flow")
    base-url))
 
 (defun hermes-dashboard-transport--remote-token-auth
@@ -1178,14 +1770,31 @@ and the basic password/ticket exchange resolve through promises."
              (lambda (status)
                (hermes-dashboard-transport--remote-basic-auth-async
                 host port base-url status))))
+    ('native (hermes--promise-then
+              (hermes-dashboard-transport--remote-status-async base-url)
+              (lambda (status)
+                (hermes-dashboard-transport--remote-native-auth-async
+                 host port base-url status))))
     ('auto (hermes--promise-then
             (hermes-dashboard-transport--remote-status-async base-url)
             (lambda (status)
-              (if (hermes-dashboard-transport--status-auth-required-p status)
-                  (hermes-dashboard-transport--remote-basic-auth-async
-                   host port base-url status)
+              (cond
+               ((not (hermes-dashboard-transport--status-auth-required-p
+                      status))
                 (hermes-dashboard-transport--remote-token-auth-async
-                 host port base-url token)))))
+                 host port base-url token))
+               ((hermes-dashboard-transport--status-supports-native-pkce-p
+                 status)
+                (hermes-dashboard-transport--remote-native-auth-async
+                 host port base-url status))
+               ((hermes-dashboard-transport--status-basic-provider status)
+                (hermes-dashboard-transport--remote-basic-auth-async
+                 host port base-url status))
+               (t (condition-case err
+                      (hermes-dashboard-transport--unsupported-remote-auth
+                       base-url)
+                    (error (hermes--promise-rejected
+                            (error-message-string err)))))))))
     (_ (hermes--promise-rejected
         (format "Unknown Hermes dashboard remote auth method: %S" method)))))
 
