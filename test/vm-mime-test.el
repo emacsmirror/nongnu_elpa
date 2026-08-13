@@ -3125,6 +3125,89 @@ when a region was meant."
       (should-not (string-match-p "a line to elide" (buffer-string)))
       (should (string-match-p "^> a line to keep$" (buffer-string))))))
 
+;;; The rest of the reader commands (emacs-vm/vm#632)
+;;
+;; Three commands on the MIME button at point that no test called: printing
+;; it, showing it as text whatever it says it is, and handing it to an
+;; external viewer.  Each is a thin wrapper on a worker, so what is worth
+;; checking is that the wrapper reaches its worker with the object at point.
+
+(ert-deftest vm-mime-test-printing-the-object-at-point ()
+  "`vm-mime-reader-map-pipe-to-printer' sends the decoded part to
+`vm-print-command' with `vm-print-command-switches' after it.
+
+The command and its switches are joined into one shell command, so a test can
+point them at a file and read back what the printer would have been given."
+  (vm-mime-test--with-attachment (button)
+    (let ((printed (expand-file-name "printed" temporary-file-directory)))
+      (unwind-protect
+          (let ((vm-print-command "cat")
+                (vm-print-command-switches (list ">" printed)))
+            (vm-mime-reader-map-pipe-to-printer)
+            (should (file-exists-p printed))
+            (let ((sent (with-temp-buffer (insert-file-contents printed)
+                                          (buffer-string))))
+              (should (string-match-p "The attached file contents" sent))
+              ;; the part, decoded, and not the covering text
+              (should-not (string-match-p "Some covering text" sent))))
+        (ignore-errors (delete-file printed))))))
+
+(ert-deftest vm-mime-test-displaying-the-object-at-point-as-text ()
+  "`vm-mime-reader-map-display-using-default' shows the part where its button
+was, reading it as text whatever its type says.
+
+The attachment here is application/octet-stream, which VM will not show
+inline -- that is why it has a button at all -- so the contents appearing is
+the command having done something."
+  (vm-mime-test--with-attachment (button)
+    (should-not (string-match-p "The attached file contents" (buffer-string)))
+    (vm-mime-reader-map-display-using-default)
+    (should (string-match-p "The attached file contents" (buffer-string)))))
+
+(ert-deftest vm-mime-test-an-external-viewer-must-be-configured ()
+  "`vm-mime-reader-map-display-using-external-viewer' says when there is no
+viewer for the type rather than doing nothing, and names the type it wanted
+one for."
+  (vm-mime-test--with-attachment (button)
+    (let ((vm-mime-external-content-types-alist nil)
+          (vm-mime-external-content-type-exceptions nil)
+          (text-quoting-style 'grave))
+      (should (string-match-p
+               "No viewer defined for type application/octet-stream"
+               (cadr (should-error
+                      (vm-mime-reader-map-display-using-external-viewer))))))))
+
+(ert-deftest vm-mime-test-an-external-viewer-is-given-the-part ()
+  "With a viewer configured the part is written out and the viewer run on it.
+The viewer here is `cat' with its output thrown away: what is checked is that
+VM got as far as running something, since a viewer that never runs is the
+failure this command has."
+  (vm-mime-test--with-attachment (button)
+    (let ((vm-mime-external-content-types-alist
+           '(("application/octet-stream" "cat")))
+          (vm-mime-external-content-type-exceptions nil)
+          (started nil))
+      (cl-letf (((symbol-function 'start-process)
+                 (lambda (_name _buffer program &rest args)
+                   (push (cons program args) started)
+                   ;; a process object is expected back.  Made with
+                   ;; `make-process': calling `start-process' here would call
+                   ;; this stub again, for ever
+                   (make-process :name "vm-mime-test-viewer"
+                                 :command '("true") :noquery t))))
+        (vm-mime-reader-map-display-using-external-viewer))
+      (should started)
+      ;; the viewer is run through a shell, so the program is the shell and
+      ;; the viewer and its file are in the command it is given
+      (let* ((call (car started))
+             (program (car call))
+             (arguments (cdr call))
+             (command (car (last arguments))))
+        (should (string-match-p "sh\\'\\|bash\\'" program))
+        (should (string-match-p "\\`cat " command))
+        ;; and what follows is a file name, which is where VM put the part
+        (should (string-match-p "cat +/" command))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
