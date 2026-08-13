@@ -538,13 +538,33 @@ Called with one URL string argument.")
   (funcall hermes-dashboard-transport-browse-url-function url))
 
 (defun hermes-dashboard-transport--random-bytes (n)
-  "Return N cryptographically strong random bytes."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (let ((coding-system-for-read 'binary)
-          (coding-system-for-write 'binary))
-      (insert-file-contents-literally "/dev/urandom" nil 0 n))
-    (buffer-string)))
+  "Return N cryptographically strong random bytes.
+Linux Emacs cannot seek `/dev/urandom`, so this prefers `openssl rand` and
+falls back to `head -c` from `/dev/urandom`.  Never uses Emacs `random`."
+  (unless (and (integerp n) (> n 0))
+    (error "Random byte count must be a positive integer"))
+  (let ((bytes
+         (or (hermes-dashboard-transport--random-bytes-command
+              n "openssl" nil "rand" (number-to-string n))
+             (hermes-dashboard-transport--random-bytes-command
+              n "head" "/dev/urandom" "-c" (number-to-string n)))))
+    (unless (and (stringp bytes) (= (length bytes) n))
+      (error "Failed to read %d cryptographically strong random bytes" n))
+    bytes))
+
+(defun hermes-dashboard-transport--random-bytes-command
+    (n program infile &rest args)
+  "Return N bytes from PROGRAM with ARGS, or nil on failure.
+INFILE is the optional stdin file for PROGRAM."
+  (when (executable-find program)
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (let* ((coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (status (apply #'call-process program infile t nil args)))
+        (and (eq status 0)
+             (= (buffer-size) n)
+             (buffer-string))))))
 
 (defun hermes-dashboard-transport--base64url-no-pad (raw)
   "Return base64url encoding of RAW without padding."
@@ -762,60 +782,95 @@ CHALLENGE, REDIRECT-URI, STATE, and optional PROVIDER become query parameters."
             (hermes-dashboard-transport--query-string (nreverse query)))))
 
 (defun hermes-dashboard-transport--query-alist (query)
-  "Return QUERY string as an alist of decoded (KEY . VALUE) pairs."
-  (mapcar (lambda (pair)
-            (cons (car pair) (cadr pair)))
-          (url-parse-query-string (or query "") nil t)))
+  "Return QUERY string as an alist of decoded (KEY . VALUE) pairs.
+Signals when any key appears more than once."
+  (let ((params (url-parse-query-string (or query "") nil t))
+        (seen (make-hash-table :test #'equal))
+        out)
+    (dolist (pair params)
+      (let ((key (car pair))
+            (values (cdr pair)))
+        (when (or (gethash key seen)
+                  (/= (length values) 1))
+          (user-error "Loopback callback has duplicate or empty parameters"))
+        (puthash key t seen)
+        (push (cons key (car values)) out)))
+    (nreverse out)))
 
 (defun hermes-dashboard-transport--native-parse-loopback (request expected-state)
   "Parse loopback REQUEST path/query and return (:code CODE).
-EXPECTED-STATE must match the returned state."
+Only a single GET /callback is accepted.  EXPECTED-STATE is validated before
+honoring code or OAuth error parameters."
   (let* ((line (car (split-string request "\r\n" t)))
-         (path (nth 1 (split-string line " " t)))
-         (query (cadr (split-string (or path "") "?")))
+         (parts (and (stringp line) (split-string line " " t)))
+         (method (nth 0 parts))
+         (target (nth 1 parts))
+         (version (nth 2 parts))
+         (path (and (stringp target) (car (split-string target "?"))))
+         (query (and (stringp target) (cadr (split-string target "?"))))
          (params (hermes-dashboard-transport--query-alist query))
          (error (cdr (assoc "error" params)))
          (code (cdr (assoc "code" params)))
          (state (cdr (assoc "state" params))))
-    (when error
-      (user-error "Gateway rejected native login: %s%s"
-                  error
-                  (if-let* ((desc (cdr (assoc "error_description" params))))
-                      (format " (%s)" desc)
-                    "")))
-    (unless (and (stringp code) (not (string-empty-p code)))
-      (user-error "Loopback callback missing authorization code"))
+    (unless (and (equal method "GET")
+                 (equal path "/callback")
+                 (stringp version)
+                 (string-match-p "\\`HTTP/1\\.[01]\\'" version)
+                 (= (length parts) 3))
+      (user-error "Loopback callback is not a GET /callback request"))
     (unless (and (stringp expected-state)
                  (stringp state)
                  (equal state expected-state))
       (user-error "Loopback callback state mismatch (possible CSRF)"))
+    (when error
+      (user-error "Gateway rejected native login"))
+    (unless (and (stringp code) (not (string-empty-p code)))
+      (user-error "Loopback callback missing authorization code"))
+    (when (and error code)
+      (user-error "Loopback callback is ambiguous"))
     (list :code code)))
 
-(defun hermes-dashboard-transport--native-loopback-reply (process)
-  "Write the browser completion page to PROCESS and close it."
+(defun hermes-dashboard-transport--native-loopback-reply (process &optional ok)
+  "Write a completion page to PROCESS and close it.
+OK non-nil means the callback was accepted."
   (when (process-live-p process)
-    (process-send-string
-     process
-     (concat "HTTP/1.1 200 OK\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Connection: close\r\n"
-             "Content-Length: "
-             (number-to-string
-              (string-bytes hermes-dashboard-transport--native-done-html))
-             "\r\n\r\n"
-             hermes-dashboard-transport--native-done-html))
-    (delete-process process)))
+    (let* ((body (if ok
+                     hermes-dashboard-transport--native-done-html
+                   "<!doctype html><title>Hermes</title><p>Sign-in could not be completed.</p>"))
+           (payload
+            (concat "HTTP/1.1 "
+                    (if ok "200 OK" "400 Bad Request")
+                    "\r\n"
+                    "Content-Type: text/html; charset=utf-8\r\n"
+                    "Connection: close\r\n"
+                    "Content-Length: "
+                    (number-to-string (string-bytes body))
+                    "\r\n\r\n"
+                    body)))
+      (ignore-errors (process-send-string process payload))
+      (delete-process process))))
+
+(defconst hermes-dashboard-transport--native-loopback-max-bytes 16384
+  "Maximum accepted bytes for one native loopback HTTP request.")
 
 (defun hermes-dashboard-transport--native-loopback-listen (on-request)
   "Start a loopback HTTP listener and call ON-REQUEST with the first request.
-Return a plist with :process, :port, and :redirect-uri."
-  (let* ((buffer (generate-new-buffer " *hermes-native-loopback*"))
+ON-REQUEST receives (REQUEST CLIENT).  Return a plist with :process, :port,
+:redirect-uri, and :children."
+  (let* ((children nil)
+         (acc (make-hash-table :test #'eq))
          process
-         port)
+         port
+         (closed nil)
+         (deliver
+          (lambda (request client)
+            (unless closed
+              (setq closed t)
+              (funcall on-request request client)))))
     (setq process
           (make-network-process
            :name "hermes-native-loopback"
-           :buffer buffer
+           :buffer nil
            :host "127.0.0.1"
            :service t
            :server t
@@ -823,43 +878,52 @@ Return a plist with :process, :port, and :redirect-uri."
            :coding 'binary
            :filter
            (lambda (client chunk)
-             (let ((buf (and (processp client) (process-buffer client))))
+             (unless (processp client)
+               (setq client process))
+             (unless (memq client children)
+               (push client children)
+               (when (processp client)
+                 (set-process-query-on-exit-flag client nil)))
+             (let* ((prev (or (gethash client acc) ""))
+                    (next (concat prev (if (stringp chunk) chunk ""))))
                (cond
-                ((buffer-live-p buf)
-                 (with-current-buffer buf
-                   (goto-char (point-max))
-                   (insert chunk)
-                   (when (re-search-backward "\r?\n\r?\n" nil t)
-                     (let ((request (buffer-string)))
-                       (erase-buffer)
-                       (hermes-dashboard-transport--native-loopback-reply
-                        client)
-                       (funcall on-request request)))))
-                ((and (stringp chunk)
-                      (string-match-p "\r?\n\r?\n" chunk))
-                 (hermes-dashboard-transport--native-loopback-reply client)
-                 (funcall on-request chunk)))))
+                ((> (length next)
+                    hermes-dashboard-transport--native-loopback-max-bytes)
+                 (remhash client acc)
+                 (hermes-dashboard-transport--native-loopback-reply client nil))
+                ((string-match "\r?\n\r?\n" next)
+                 (remhash client acc)
+                 (funcall deliver (substring next 0 (match-end 0)) client))
+                (t
+                 (puthash client next acc)))))
            :sentinel
            (lambda (proc _event)
-             (when (and (memq (process-status proc)
-                              '(closed failed exit signal))
-                        (buffer-live-p (process-buffer proc)))
-               (kill-buffer (process-buffer proc))))))
+             (when (memq (process-status proc) '(closed failed exit signal))
+               (setq children (delq proc children))
+               (remhash proc acc)))))
     (unless (process-live-p process)
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer))
       (user-error "Failed to bind loopback listener for native login"))
     (setq port
           (or (process-contact process :service)
               (car (last (process-contact process :local)))))
     (unless (integerp port)
       (delete-process process)
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer))
       (user-error "Failed to determine native loopback port"))
     (list :process process
           :port port
+          :children (lambda () children)
           :redirect-uri (format "http://127.0.0.1:%d/callback" port))))
+
+(defun hermes-dashboard-transport--native-loopback-close (server)
+  "Close SERVER listener and any accepted child connections."
+  (when server
+    (dolist (child (and (functionp (plist-get server :children))
+                        (funcall (plist-get server :children))))
+      (when (process-live-p child)
+        (delete-process child)))
+    (when-let* ((proc (plist-get server :process)))
+      (when (process-live-p proc)
+        (delete-process proc)))))
 
 (defun hermes-dashboard-transport--native-login-async
     (base-url &optional provider)
@@ -876,9 +940,7 @@ Optional PROVIDER is forwarded to the authorize URL when non-empty."
             (when timer
               (cancel-timer timer)
               (setq timer nil))
-            (when-let* ((proc (plist-get server :process)))
-              (when (process-live-p proc)
-                (delete-process proc)))
+            (hermes-dashboard-transport--native-loopback-close server)
             (setq server nil)))
          (fail
           (lambda (reason)
@@ -896,12 +958,19 @@ Optional PROVIDER is forwarded to the authorize URL when non-empty."
         (progn
           (setq server
                 (hermes-dashboard-transport--native-loopback-listen
-                 (lambda (request)
+                 (lambda (request client)
                    (condition-case request-err
                        (let* ((parsed
                                (hermes-dashboard-transport--native-parse-loopback
                                 request state))
                               (code (plist-get parsed :code)))
+                         ;; Accept only after state/code validation, then close
+                         ;; the listener before the token exchange starts.
+                         (hermes-dashboard-transport--native-loopback-reply
+                          client t)
+                         (hermes-dashboard-transport--native-loopback-close
+                          server)
+                         (setq server nil)
                          (hermes--promise-then
                           (hermes-dashboard-transport--http-json-async
                            (hermes-dashboard-transport--api-url
@@ -922,6 +991,8 @@ Optional PROVIDER is forwarded to the authorize URL when non-empty."
                           (lambda (reason)
                             (funcall fail reason))))
                      (error
+                      (hermes-dashboard-transport--native-loopback-reply
+                       client nil)
                       (funcall fail (error-message-string request-err)))))))
           (setq timer
                 (run-at-time

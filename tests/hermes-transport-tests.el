@@ -803,6 +803,56 @@
         (should (equal (nreverse requests)
                        '("http://100.64.0.10:9119/api/status")))))))
 
+(ert-deftest hermes-transport-dashboard-native-random-bytes-uses-csprng ()
+  "Native entropy comes from openssl/head, not /dev/urandom seek or Emacs random."
+  (let* ((wanted 32)
+         (payload (apply #'unibyte-string (number-sequence 1 wanted)))
+         calls)
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (program)
+                 (member program '("openssl" "head"))))
+              ((symbol-function 'call-process)
+               (lambda (program infile destination _display &rest args)
+                 (push (list program infile args) calls)
+                 (with-current-buffer (if (bufferp destination)
+                                         destination
+                                       (current-buffer))
+                   (set-buffer-multibyte nil)
+                   (erase-buffer)
+                   (insert payload))
+                 0)))
+      (should (equal (hermes-dashboard-transport--random-bytes wanted) payload))
+      (should (equal (caar (reverse calls)) "openssl"))))
+  (should-error (hermes-dashboard-transport--random-bytes 0))
+  (cl-letf (((symbol-function 'executable-find) (lambda (_p) nil)))
+    (should-error (hermes-dashboard-transport--random-bytes 16))))
+
+(ert-deftest hermes-transport-dashboard-native-loopback-rejects-bad-requests ()
+  "Loopback parse requires GET /callback, unique params, and state-first checks."
+  (let ((state "good-state"))
+    (should-error
+     (hermes-dashboard-transport--native-parse-loopback
+      "POST /callback?code=x&state=good-state HTTP/1.1\r\n\r\n" state))
+    (should-error
+     (hermes-dashboard-transport--native-parse-loopback
+      "GET /other?code=x&state=good-state HTTP/1.1\r\n\r\n" state))
+    (should-error
+     (hermes-dashboard-transport--native-parse-loopback
+      "GET /callback?code=x&state=bad HTTP/1.1\r\n\r\n" state))
+    (should-error
+     (hermes-dashboard-transport--native-parse-loopback
+      "GET /callback?error=access_denied&state=good-state HTTP/1.1\r\n\r\n"
+      state))
+    (should-error
+     (hermes-dashboard-transport--native-parse-loopback
+      "GET /callback?code=a&code=b&state=good-state HTTP/1.1\r\n\r\n" state))
+    (should (equal
+             (plist-get
+              (hermes-dashboard-transport--native-parse-loopback
+               "GET /callback?code=ok&state=good-state HTTP/1.1\r\n\r\n" state)
+              :code)
+             "ok"))))
+
 (ert-deftest hermes-transport-dashboard-native-pkce-happy-path ()
   "Native PKCE attach stores tokens, mints a ticket, and opens the WS."
   (let* ((base "http://100.64.0.10:9119")
