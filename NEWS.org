@@ -1,6 +1,6 @@
 #+title: emacs-hermes Changelog
 
-* Unreleased
+* Version 0.2.1 (2026-08-13)
 
 - Added a backend-driven provider-account browser for OAuth and external
   account flows.  Dashboard-provided shell commands are copied, never run.
