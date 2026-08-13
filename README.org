@@ -75,6 +75,9 @@ Install vterm separately, then select it for new sessions:
 Eat remains a required dependency and the default.  Changing the option does
 not alter already running sessions.
 
+** Changelog
+See [[file:NEWS.org][NEWS.org]] for release notes.
+
 ** Installation
 + Using =:vc=
 #+begin_src emacs-lisp

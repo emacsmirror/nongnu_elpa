@@ -1,0 +1,22 @@
+#+title: emacs-codex-ide NEWS
+
+* Version 0.1.1 (2026-08-13)
+
+** Terminal backends
+
+- Added optional vterm support.  Eat remains the default and required
+  terminal backend.
+- Kept terminal process ownership and session cleanup consistent across
+  backends.
+
+** Packaging
+
+- Raised the minimum supported Emacs version to 29.1.
+- Added package autoload generation and validation to the Nix package.
+- Added package-lint to the project release gates.
+
+** MCP and context
+
+- Restricted the local MCP server to loopback bind addresses.
+- Fixed MCP endpoint URLs for the IPv6 loopback address.
+- Documented compatibility with current and legacy Codex context IPC paths.
