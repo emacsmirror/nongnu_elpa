@@ -481,6 +481,79 @@ The point of the change is a bound on waiting, not a bound on the session."
                                     (vm-pop-mock-test--contents dest))))
         (ignore-errors (delete-file dest))))))
 
+;;; Visiting a POP folder (emacs-vm/vm#632)
+;;
+;; `vm-visit-pop-folder' opens a maildrop as a folder rather than fetching
+;; from it into one, which is the other half of VM's POP support and had no
+;; test.  The mock serves it.
+
+(defmacro vm-pop-mock-test--visiting (spec &rest body)
+  "Visit a mock POP maildrop as a folder and run BODY in it.
+SPEC is (MOCK-VAR &rest ARGS), ARGS going to `vm-pop-mock-start'.  The name in
+`vm-pop-folder-alist' is \"mockdrop\"."
+  (declare (indent 1) (debug t))
+  `(vm-pop-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((cache (make-temp-file "vm-pop-visit-cache" t))
+            (vm-pop-folder-alist
+             (list (list (vm-pop-mock-spec ,(car spec)) "mockdrop")))
+            (vm-pop-folder-cache-directory cache)
+            (vm-pop-server-timeout 10)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (before (buffer-list)))
+       (unwind-protect
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-pop-folder "mockdrop")
+             ,@body)
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory cache t)))))
+
+(ert-deftest vm-pop-mock-test-visiting-a-maildrop-as-a-folder ()
+  "`vm-visit-pop-folder' opens the maildrop named in `vm-pop-folder-alist'
+and the messages arrive whole.
+
+The folder knows it is POP afterwards, which is what tells the rest of VM to
+talk to the server rather than to a file."
+  (vm-pop-mock-test--visiting
+      (mock :messages (list vm-pop-mock-test--message-1
+                            vm-pop-mock-test--message-2))
+    (should (equal (length vm-message-list) 2))
+    (should (eq vm-folder-access-method 'pop))
+    (should (string-match-p
+             "Body of the first message"
+             (with-current-buffer (vm-buffer-of (car vm-message-list))
+               (save-restriction
+                 ;; the folder buffer is narrowed to the message on show
+                 (widen)
+                 (buffer-substring (vm-text-of (car vm-message-list))
+                                   (vm-text-end-of (car vm-message-list)))))))
+    ;; it asked for the messages by number after listing them
+    (should (vm-pop-mock-received-p mock "\\`RETR 1"))
+    (should (vm-pop-mock-received-p mock "\\`RETR 2"))))
+
+(ert-deftest vm-pop-mock-test-visiting-an-unknown-maildrop ()
+  "A name that is in no `vm-pop-folder-alist' entry is refused, and the name
+is in the message: it is the thing the user got wrong."
+  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
+    (let ((vm-pop-folder-alist nil)
+          (text-quoting-style 'grave))
+      (should (equal (cadr (should-error (vm-visit-pop-folder "nowhere")))
+                     "No such POP folder: nowhere")))))
+
+(ert-deftest vm-pop-mock-test-visiting-leaves-the-mail-on-the-server ()
+  "Visiting is not fetching: the maildrop still holds its messages
+afterwards, since the folder is a view of the server rather than a copy."
+  (vm-pop-mock-test--visiting
+      (mock :messages (list vm-pop-mock-test--message-1
+                            vm-pop-mock-test--message-2))
+    (should (equal (length vm-message-list) 2))
+    (should (equal (vm-pop-mock-live-messages mock) '(1 2)))
+    (should-not (vm-pop-mock-received-p mock "\\`DELE"))))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here
