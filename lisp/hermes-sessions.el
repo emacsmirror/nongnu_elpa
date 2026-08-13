@@ -456,13 +456,16 @@ COUNT, when non-nil, is the total history count reported by the gateway."
       (insert "No messages.\n"))
     (goto-char (point-min))))
 
-(defun hermes-sessions--render-detail (session messages &optional count display)
+(defun hermes-sessions--render-detail
+    (session messages &optional count display instance)
   "Display SESSION's MESSAGES in a native detail buffer.
 COUNT, when non-nil, is the total history count reported by the gateway.
-DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
+DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that.
+INSTANCE is inherited from the session browser when provided."
   (let ((buffer (get-buffer-create (hermes-sessions--detail-buffer-name session))))
     (with-current-buffer buffer
-      (hermes-sessions--render-detail-contents session messages count))
+      (hermes-sessions--render-detail-contents session messages count)
+      (when instance (hermes-browser--own-instance instance)))
     (when display (pop-to-buffer buffer))
     buffer))
 
@@ -513,6 +516,7 @@ returned messages instead.  PROFILE selects another profile's stored session."
          (profile (hermes-sessions--profile session))
          (detail-p (derived-mode-p 'hermes-session-detail-mode))
          (display (not detail-p))
+         (instance (hermes-instance-resolve))
          (origin (current-buffer))
          (generation (hermes-browser--next-request-generation)))
     (unless history-id
@@ -532,18 +536,20 @@ returned messages instead.  PROFILE selects another profile's stored session."
                  (when (derived-mode-p 'hermes-session-detail-mode)
                    (hermes-sessions--render-detail-contents
                     session messages count)))
-             (hermes-sessions--render-detail session messages count display))))))))
+             (hermes-sessions--render-detail
+              session messages count display instance))))))))
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
   (interactive)
-  (let* ((session (hermes-sessions--selected-session))
+  (let* ((instance (hermes-instance-resolve))
+         (session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
          (title (hermes-transport--display-field session 'title))
          (profile (hermes-sessions--profile session)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to resume"))
-    (hermes-chat-resume-session id title profile)))
+    (hermes-chat-resume-session id title profile instance)))
 
 (defun hermes-sessions--title-empty-p (title)
   "Return non-nil when TITLE is blank."

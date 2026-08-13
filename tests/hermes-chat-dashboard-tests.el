@@ -14,6 +14,33 @@
 
 ;;; Shared-socket runtime isolation
 
+(ert-deftest hermes-chat-dashboard-acquires-client-for-buffer-instance ()
+  "Each chat acquires its dashboard client under its pinned instance URL."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        urls buffers)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _)
+                 (push hermes-dashboard-transport-url urls)
+                 (make-hermes-dashboard-transport-client))))
+      (unwind-protect
+          (dolist (instance '(("local" . "http://127.0.0.1:9119")
+                              ("remote" . "https://hermes.example.test")))
+            (let ((buffer (generate-new-buffer (hermes-test--chat-buffer-name))))
+              (push buffer buffers)
+              (with-current-buffer buffer
+                (hermes-chat-mode)
+                (setq hermes-instance instance)
+                (hermes-chat--dashboard-ensure-client))))
+        (mapc (lambda (buffer)
+                (when (buffer-live-p buffer) (kill-buffer buffer)))
+              buffers)))
+    (should (equal (nreverse urls)
+                   '("http://127.0.0.1:9119"
+                     "https://hermes.example.test")))))
+
 (ert-deftest hermes-chat-dashboard-parses-vanilla-goal-status ()
   "Vanilla `/goal status' output becomes compact header state."
   (should

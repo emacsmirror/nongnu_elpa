@@ -5,6 +5,76 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+;;; Instance selection
+
+(ert-deftest hermes-instance-configured-falls-back-to-dashboard-url ()
+  "An empty instance list preserves the configured dashboard URL."
+  (let ((hermes-instances nil)
+        (hermes-dashboard-transport-url "http://127.0.0.1:9119"))
+    (should (equal (hermes-instance-configured)
+                   '(("default" . "http://127.0.0.1:9119"))))))
+
+(ert-deftest hermes-instance-resolve-uses-buffer-context ()
+  "A buffer-owned instance wins without prompting."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance '("remote" . "https://hermes.example.test")))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt"))))
+      (should (equal (hermes-instance-resolve) hermes-instance)))))
+
+(ert-deftest hermes-instance-resolve-uses-only-configured-instance ()
+  "One configured instance is selected without prompting."
+  (let ((hermes-instances '(("remote" . "https://hermes.example.test")))
+        (hermes-instance nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt"))))
+      (should (equal (hermes-instance-resolve)
+                     '("remote" . "https://hermes.example.test"))))))
+
+(ert-deftest hermes-instance-resolve-prompts-when-context-is-ambiguous ()
+  "Multiple configured instances prompt when the buffer owns none."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance nil)
+        seen)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (prompt collection &rest _)
+                 (setq seen (list prompt collection))
+                 "remote")))
+      (should (equal (hermes-instance-resolve)
+                     '("remote" . "https://hermes.example.test")))
+      (should (equal seen
+                     '("Hermes instance: " ("local" "remote")))))))
+
+(ert-deftest hermes-instance-context-does-not-prompt-when-ambiguous ()
+  "Passive context lookup returns nil when multiple instances need a choice."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt"))))
+      (should-not (hermes-instance-context)))))
+
+(ert-deftest hermes-instance-context-uses-the-only-instance ()
+  "Passive context lookup returns the sole configured instance."
+  (let ((hermes-instances '(("remote" . "https://hermes.example.test")))
+        (hermes-instance nil))
+    (should (equal (hermes-instance-context)
+                   '("remote" . "https://hermes.example.test")))))
+
+(ert-deftest hermes-dashboard-profile-cache-follows-buffer-instance ()
+  "Profile completion reads the cache owned by the current buffer instance."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance '("remote" . "https://hermes.example.test"))
+        (hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        (hermes-dashboard-transport--profile-cache
+         '(("https://hermes.example.test" . ((profiles . (((name . "work"))))))
+           ("http://127.0.0.1:9119" . ((profiles . (((name . "default")))))))))
+    (should (equal (hermes-dashboard-transport-cached-profile-list)
+                   '((profiles . (((name . "work")))))))))
+
 (ert-deftest hermes-dashboard-http-json-async-forwards-request-timeout ()
   "The JSON request seam receives a caller-specific timeout."
   (let (arguments)
@@ -41,6 +111,90 @@
       (hermes-dashboard-transport-api-request-async
        "POST" "/slow" :timeout 300)
       (should (equal (plist-get request :timeout) 300)))))
+
+(ert-deftest hermes-dashboard-api-request-async-uses-client-url-without-token ()
+  "A tokenless client pins the URL while REST auth supplies credentials."
+  (let ((hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        (client (make-hermes-dashboard-transport-client
+                 :base-url "https://hermes.example.test"))
+        auth-url request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
+               (lambda (&optional _refresh)
+                 (setq auth-url hermes-dashboard-transport-url)
+                 (hermes--promise-resolved
+                  `(:base-url ,hermes-dashboard-transport-url
+                    :headers (("Authorization" . "Bearer bearer"))))))
+              ((symbol-function
+                'hermes-dashboard-transport--http-json-request-async)
+               (lambda (value)
+                 (setq request value)
+                 (hermes--promise-resolved '(:status 200 :body ((ok . t)))))))
+      (hermes-dashboard-transport-api-request-async
+       "GET" "/api/status" :client client)
+      (should (equal auth-url "https://hermes.example.test"))
+      (should (equal (plist-get request :url)
+                     "https://hermes.example.test/api/status"))
+      (should (equal (alist-get "Authorization" (plist-get request :headers)
+                                nil nil #'equal)
+                     "Bearer bearer")))))
+
+(ert-deftest hermes-dashboard-api-request-async-retry-keeps-client-url ()
+  "A tokenless client's URL survives REST re-authentication after HTTP 401."
+  (let ((hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        (client (make-hermes-dashboard-transport-client
+                 :base-url "https://hermes.example.test"))
+        auth-urls request-urls)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
+               (lambda (&optional _refresh)
+                 (push hermes-dashboard-transport-url auth-urls)
+                 (hermes--promise-resolved
+                  `(:base-url ,hermes-dashboard-transport-url))))
+              ((symbol-function
+                'hermes-dashboard-transport--http-json-request-async)
+               (lambda (request)
+                 (push (plist-get request :url) request-urls)
+                 (if (cdr request-urls)
+                     (hermes--promise-resolved
+                      '(:status 200 :body ((ok . t))))
+                   (hermes--promise-rejected "Request failed (HTTP 401)")))))
+      (hermes-dashboard-transport-api-request-async
+       "GET" "/api/status" :client client)
+      (should (equal (reverse auth-urls)
+                     '("https://hermes.example.test"
+                       "https://hermes.example.test")))
+      (should (equal (reverse request-urls)
+                     '("https://hermes.example.test/api/status"
+                       "https://hermes.example.test/api/status"))))))
+
+(ert-deftest hermes-dashboard-api-request-async-retry-keeps-selected-url ()
+  "A selected URL survives async REST re-authentication after HTTP 401."
+  (let ((hermes-dashboard-transport-url "http://legacy.example.test")
+        (first-request (hermes--promise-make))
+        auth-urls request-urls)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
+               (lambda (&optional _refresh)
+                 (push hermes-dashboard-transport-url auth-urls)
+                 (hermes--promise-resolved
+                  `(:base-url ,hermes-dashboard-transport-url))))
+              ((symbol-function
+                'hermes-dashboard-transport--http-json-request-async)
+               (lambda (request)
+                 (push (plist-get request :url) request-urls)
+                 (if (cdr request-urls)
+                     (hermes--promise-resolved
+                      '(:status 200 :body ((ok . t))))
+                   first-request))))
+      (let ((hermes-dashboard-transport-url
+             "https://selected.example.test"))
+        (hermes-dashboard-transport-api-request-async
+         "GET" "/api/status"))
+      (hermes--promise-reject first-request "Request failed (HTTP 401)")
+      (should (equal (reverse auth-urls)
+                     '("https://selected.example.test"
+                       "https://selected.example.test")))
+      (should (equal (reverse request-urls)
+                     '("https://selected.example.test/api/status"
+                       "https://selected.example.test/api/status"))))))
 
 (ert-deftest hermes-dashboard-transport-call-resolves-on-result ()
   "A call resolves its promise with the JSON-RPC result for the matching id."

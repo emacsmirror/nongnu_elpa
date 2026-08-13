@@ -241,10 +241,18 @@ Report optional MESSAGE only for the current connection."
   "Resolve the events URL for TAIL and open its socket.
 A failed URL resolve or socket open re-enters the bounded backoff like a
 dropped connection, instead of permanently killing the tail."
-  (hermes--promise-then
-   (hermes-dashboard-transport-kanban-events-url-async
-    :since (hermes-kanban--events-tail-cursor tail)
-    :board (hermes-kanban--events-tail-slug tail))
+  (let* ((buffer (hermes-kanban--events-tail-buffer tail))
+         (instance (and (buffer-live-p buffer)
+                        (with-current-buffer buffer
+                          (hermes-instance-context))))
+         (hermes-dashboard-transport-url
+          (and instance (hermes-instance-url instance))))
+    (hermes--promise-then
+     (if instance
+         (hermes-dashboard-transport-kanban-events-url-async
+          :since (hermes-kanban--events-tail-cursor tail)
+          :board (hermes-kanban--events-tail-slug tail))
+       (hermes--promise-rejected "Kanban buffer has no Hermes instance"))
    (lambda (url)
      (when (hermes-kanban--events-tail-active tail)
        (condition-case err
@@ -264,8 +272,8 @@ dropped connection, instead of permanently killing the tail."
              (setf (hermes-kanban--events-tail-socket tail) socket))
          (error (hermes-kanban--events-on-down
                  tail nil (error-message-string err))))))
-   (lambda (reason)
-     (hermes-kanban--events-on-down tail nil (format "%s" reason)))))
+     (lambda (reason)
+       (hermes-kanban--events-on-down tail nil (format "%s" reason))))))
 
 (defun hermes-kanban--events-disconnect (tail)
   "Tear down TAIL: stop reconnecting, cancel timers, and close the socket."

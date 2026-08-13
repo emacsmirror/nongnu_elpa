@@ -260,28 +260,32 @@ DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
 TARGET and GENERATION identify an existing buffer-owned refresh.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
-  (let ((target (or target
+  (let ((instance (hermes-instance-resolve))
+        (target (or target
                     (and display
                          (get-buffer-create (format "*Hermes %s*" (car spec))))
                     (current-buffer))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-inventory-mode)
-        (hermes-inventory-mode)))
+        (hermes-inventory-mode))
+      (hermes-inventory--require-mutation-idle)
+      (hermes-browser--own-instance instance))
     (let ((generation (or generation
                           (with-current-buffer target
                             (hermes-browser--next-request-generation)))))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (if (eq (hermes-inventory--spec-kind spec) 'skills)
-             (hermes-inventory--skills-promise client spec)
-           (hermes-dashboard-transport-call
-            client (hermes-inventory--spec-method spec)
-            (hermes-inventory--spec-params spec))))
-       (lambda (result)
-         (when (hermes-browser--request-current-mode-p
-                target generation 'hermes-inventory-mode)
-           (hermes-inventory--render-result spec result target)
-           (when display (pop-to-buffer target))))))))
+      (with-current-buffer target
+        (hermes-browser--run-on-client
+         (lambda (client)
+           (if (eq (hermes-inventory--spec-kind spec) 'skills)
+               (hermes-inventory--skills-promise client spec)
+             (hermes-dashboard-transport-call
+              client (hermes-inventory--spec-method spec)
+              (hermes-inventory--spec-params spec))))
+         (lambda (result)
+           (when (hermes-browser--request-current-mode-p
+                  target generation 'hermes-inventory-mode)
+             (hermes-inventory--render-result spec result target)
+             (when display (pop-to-buffer target)))))))))
 
 (defun hermes-inventory--refresh-origin (buffer)
   "Start a fresh read of live inventory BUFFER."
@@ -319,13 +323,52 @@ client for the listing."
                 "; current dashboard session was reset"
               "; new sessions use this setting after reset/restart"))))
 
+(defvar-local hermes-inventory--mutation-in-flight nil
+  "Identity token for the current inventory mutation, or nil.")
+
+(defun hermes-inventory--require-mutation-idle ()
+  "Signal while the current inventory mutation remains unsettled."
+  (when hermes-inventory--mutation-in-flight
+    (user-error "An inventory update is still in progress")))
+
+(defun hermes-inventory--run-mutation (make-promise on-success)
+  "Run MAKE-PROMISE and call ON-SUCCESS while this inventory still owns it."
+  (hermes-inventory--require-mutation-idle)
+  (let* ((buffer (current-buffer))
+         (instance (hermes-instance-resolve))
+         (token (list 'inventory-mutation)))
+    (hermes-browser--own-instance instance)
+    (hermes-browser--next-request-generation)
+    (setq hermes-inventory--mutation-in-flight token)
+    (hermes-browser--run-on-client
+     make-promise
+     (lambda (result)
+       (when (and (buffer-live-p buffer)
+                  (eq token (buffer-local-value
+                             'hermes-inventory--mutation-in-flight buffer)))
+         (let ((current (and (hermes-browser--buffer-mode-p
+                              buffer 'hermes-inventory-mode)
+                             (equal instance
+                                    (buffer-local-value
+                                     'hermes-instance buffer)))))
+           (with-current-buffer buffer
+             (setq hermes-inventory--mutation-in-flight nil))
+           (when current (funcall on-success result)))))
+     (lambda (reason)
+       (when (and (buffer-live-p buffer)
+                  (eq token (buffer-local-value
+                             'hermes-inventory--mutation-in-flight buffer)))
+         (with-current-buffer buffer
+           (setq hermes-inventory--mutation-in-flight nil))
+         (message "Hermes: %s" reason))))))
+
 (defun hermes-inventory--set-toolset-enabled (name enabled)
   "Set toolset NAME to ENABLED through dashboard RPC.
 Toolset changes are global configuration: they are not scoped to a single
 chat session, so no `:session-id' is sent.  New sessions pick up the toggle
 after a reset/restart."
   (let ((origin (current-buffer)))
-    (hermes-browser--run-on-client
+    (hermes-inventory--run-mutation
      (lambda (client)
        (hermes-dashboard-transport-call-fn
         #'hermes-dashboard-transport-tools-configure
@@ -338,7 +381,7 @@ after a reset/restart."
 (defun hermes-inventory--set-skill-enabled (name enabled)
   "Set skill NAME to ENABLED through the dashboard REST API."
   (let ((origin (current-buffer)))
-    (hermes-browser--run-on-client
+    (hermes-inventory--run-mutation
      (lambda (client)
        (hermes-dashboard-transport-api-request-async
         "PUT" "/api/skills/toggle"
@@ -749,7 +792,8 @@ secret is read."
   "Show Hermes memory provider and built-in store sizes.
 The buffer never displays memory contents or secret material."
   (interactive)
-  (let* ((display (not (derived-mode-p 'hermes-memory-status-mode)))
+  (let* ((instance (hermes-instance-resolve))
+         (display (not (derived-mode-p 'hermes-memory-status-mode)))
          (target (if display
                      (get-buffer-create "*Hermes Memory*")
                    (current-buffer)))
@@ -757,15 +801,17 @@ The buffer never displays memory contents or secret material."
           (with-current-buffer target
             (unless (derived-mode-p 'hermes-memory-status-mode)
               (hermes-memory-status-mode))
+            (hermes-browser--own-instance instance)
             (hermes-browser--next-request-generation))))
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (hermes-dashboard-transport-api-request-async
-        "GET" "/api/memory" :client client))
-     (lambda (status)
-       (when (hermes-browser--request-current-mode-p
-              target generation 'hermes-memory-status-mode)
-         (hermes-inventory--render-memory-status status target display))))))
+    (with-current-buffer target
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-dashboard-transport-api-request-async
+          "GET" "/api/memory" :client client))
+       (lambda (status)
+         (when (hermes-browser--request-current-mode-p
+                target generation 'hermes-memory-status-mode)
+           (hermes-inventory--render-memory-status status target display)))))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)

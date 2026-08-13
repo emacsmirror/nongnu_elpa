@@ -4,6 +4,38 @@
 
 (require 'ert)
 (require 'hermes-test-helpers)
+
+(ert-deftest hermes-messaging-selects-instance-before-profile ()
+  "Interactive messaging selection reads profiles under the chosen instance."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        profile-instance fetched)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-messaging--read-profile)
+               (lambda ()
+                 (setq profile-instance hermes-instance)
+                 "work"))
+              ((symbol-function 'hermes-messaging--fetch)
+               (lambda (profile &optional display _target _generation selected)
+                 (setq fetched (list profile display selected)))))
+      (call-interactively #'hermes-list-messaging-platforms)
+      (should (equal profile-instance instance))
+      (should (equal fetched (list "work" t instance))))))
+
+(ert-deftest hermes-messaging-profile-selection-keeps-instance ()
+  "Selecting another profile keeps the catalog's owning instance."
+  (let ((instance '("remote" . "https://hermes.example.test")) seen)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-messaging--read-profile)
+               (lambda () "work"))
+              ((symbol-function 'hermes-list-messaging-platforms)
+               (lambda (&rest args) (setq seen args))))
+      (with-temp-buffer
+        (setq hermes-instance instance)
+        (hermes-messaging-select-profile))
+      (should (equal seen (list "work" instance))))))
+
 (require 'hermes-messaging)
 
 (defun hermes-messaging-test--platform (&optional enabled)

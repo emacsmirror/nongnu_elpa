@@ -15,6 +15,70 @@
   :rows (lambda (result)
           (mapcar (lambda (name) (list name (vector name))) result)))
 
+(ert-deftest hermes-browser-command-pins-resolved-instance ()
+  "A browser command resolves once and uses that instance for its client."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-browser-test--fetch-function
+         (lambda () (hermes--promise-resolved '("remote item"))))
+        started-url)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (setq started-url hermes-dashboard-transport-url)
+                 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-list-browseridentity)
+            (with-current-buffer "*Hermes Browser Identity*"
+              (should (equal hermes-instance instance))
+              (should (string-match-p
+                       "remote" (hermes-browser--instance-header-line)))
+              (should (equal started-url (hermes-instance-url instance)))))
+        (when (get-buffer "*Hermes Browser Identity*")
+          (kill-buffer "*Hermes Browser Identity*"))))))
+
+(ert-deftest hermes-browser-existing-client-matches-buffer-instance ()
+  "Passive client reuse is limited to the current buffer's instance."
+  (let ((local '("local" . "http://127.0.0.1:9119"))
+        (remote '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        (local-client (hermes-test--dashboard-client))
+        (remote-client (hermes-test--dashboard-client))
+        buffers)
+    (unwind-protect
+        (progn
+          (dolist (pair (list (cons local local-client)
+                              (cons remote remote-client)))
+            (let ((buffer (generate-new-buffer (hermes-test--chat-buffer-name))))
+              (push buffer buffers)
+              (with-current-buffer buffer
+                (hermes-chat-mode)
+                (setq hermes-instance (car pair)
+                      hermes-chat--dashboard-client (cdr pair)))))
+          (with-temp-buffer
+            (setq hermes-instance remote)
+            (should (eq (hermes-browser--existing-client) remote-client))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            buffers))))
+
+(ert-deftest hermes-browser-existing-client-does-not-prompt-without-context ()
+  "Passive client lookup returns nil when several instances are ambiguous."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt"))))
+      (should-not (hermes-browser--existing-client)))))
+
 (ert-deftest hermes-browser-semantic-faces-are-customizable ()
   "Every semantic browser role has its own customizable face."
   (dolist (face '(hermes-browser-name hermes-browser-title
@@ -341,6 +405,20 @@
       (hermes-browseridentity-mode)
       (hermes-browser--next-request-generation)
       (should-not (hermes-browser--request-current-p (current-buffer) old)))))
+
+(ert-deftest hermes-browser-retarget-invalidates-pending-request ()
+  "Changing browser instance ownership invalidates pending requests."
+  (let ((local '("local" . "http://127.0.0.1:9119"))
+        (remote '("remote" . "https://hermes.example.test")))
+    (with-temp-buffer
+      (setq-local hermes-instance local)
+      (let ((generation (hermes-browser--next-request-generation)))
+        (hermes-browser--own-instance local)
+        (should (hermes-browser--request-current-p
+                 (current-buffer) generation))
+        (hermes-browser--own-instance remote)
+        (should-not (hermes-browser--request-current-p
+                     (current-buffer) generation))))))
 
 (ert-deftest hermes-browser-run-on-client-cleans-signalling-setup ()
   "A synchronous fetch setup error releases its transient client once."
@@ -726,6 +804,56 @@
           (with-current-buffer target
             (should (equal (buffer-string) "typed while loading"))))
       (when (buffer-live-p target) (kill-buffer target)))))
+
+(ert-deftest hermes-profiles-soul-buffers-are-instance-specific ()
+  "The same profile on two instances uses two independently owned editors."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         buffers saved-instance saved-content)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                   (lambda () 'fake-client))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (method _path &rest args)
+                     (when (equal method "PUT")
+                       (setq saved-instance hermes-instance
+                             saved-content
+                             (alist-get 'content (plist-get args :body))))
+                     (hermes--promise-resolved '((content . "SOUL\n")))))
+                  ((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) buffer)))
+          (dolist (instance (list local remote))
+            (with-temp-buffer
+              (hermes-profiles-mode)
+              (setq hermes-instance instance
+                    tabulated-list-entries
+                    '(("planner" ["planner" "" "" "" "—" ""])))
+              (tabulated-list-print)
+              (goto-char (point-min))
+              (hermes-profiles-edit-soul)))
+          (setq buffers
+                (list (get-buffer "*Hermes Profile SOUL@local: planner*")
+                      (get-buffer "*Hermes Profile SOUL@remote: planner*")))
+          (should (cl-every #'buffer-live-p buffers))
+          (should (equal (mapcar (lambda (buffer)
+                                   (buffer-local-value 'hermes-instance buffer))
+                                 buffers)
+                         (list local remote)))
+          (with-current-buffer (car buffers)
+            (goto-char (point-max))
+            (insert "local draft\n")
+            (should (buffer-modified-p))
+            (hermes-profiles-soul-save))
+          (should (equal saved-instance local))
+          (should (equal saved-content "SOUL\nlocal draft\n"))
+          (let ((header (with-current-buffer (cadr buffers)
+                          (hermes-profiles--soul-header-line))))
+            (should (string-match-p "Hermes instance: remote" header))
+            (should (string-match-p "Profile: planner" header))
+            (should (string-match-p "C-c C-c save" header))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            buffers))))
 
 (ert-deftest hermes-profiles-soul-refuses-default-profile ()
   "The built-in default profile has no editable SOUL surface."

@@ -359,6 +359,8 @@
         buffer token)
     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "new"))
               ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'hermes-instance-resolve)
+               (lambda () '("local" . "http://127.0.0.1:9119")))
               ((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'client (lambda () (cl-incf done-calls)))))
@@ -373,6 +375,8 @@
           (progn
             (with-current-buffer buffer
               (hermes-config-mode)
+              (hermes-browser--own-instance
+               '("local" . "http://127.0.0.1:9119"))
               (setq hermes-config--schema
                     '((fields . ((model . ((type . "string"))))))
                     hermes-config--config '((model . "old")))
@@ -398,6 +402,38 @@
                              '((model . "authoritative"))))
               (should-not hermes-config--mutation-in-flight))
             (should (= done-calls 1)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-config-reopen-cannot-retarget-pending-mutation ()
+  "Reopening for another instance cannot steal an unsettled mutation."
+  (let ((write (hermes--promise-make))
+        (local '("local" . "http://127.0.0.1:9119"))
+        (remote '("remote" . "https://hermes.example.test"))
+        buffer token)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "new"))
+              ((symbol-function 'hermes-instance-resolve) (lambda () remote))
+              ((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'client #'ignore)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) write)))
+      (setq buffer (get-buffer-create "*Hermes Config*"))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (hermes-config-mode)
+              (hermes-browser--own-instance local)
+              (setq hermes-config--schema
+                    '((fields . ((model . ((type . "string"))))))
+                    hermes-config--config '((model . "old")))
+              (let ((inhibit-read-only t))
+                (insert (propertize "model" 'hermes-config-key "model")))
+              (goto-char (point-min))
+              (hermes-config-edit)
+              (setq token hermes-config--mutation-in-flight))
+            (should-error (hermes-config) :type 'user-error)
+            (with-current-buffer buffer
+              (should (equal hermes-instance local))
+              (should (eq hermes-config--mutation-in-flight token))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest hermes-config-mutation-rejection-releases-lock ()

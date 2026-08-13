@@ -1189,23 +1189,30 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
-(defun hermes-chat--new-buffer (&optional profile title)
-  "Create, display, and return a fresh chat buffer for PROFILE and TITLE.
+(defun hermes-chat--new-buffer (&optional profile title instance)
+  "Create, display, and return a fresh chat buffer.
+PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
+the owning Hermes instance.  A nil INSTANCE is resolved from the current
+context.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-The buffer is named `*Hermes@PROFILE*' (or `*Hermes@PROFILE: TITLE*') so chats
-stay distinct before a server title arrives.  This is the single side-effecting
-constructor every new-chat entry point funnels through."
-  (let ((profile (hermes-chat--clean-profile profile))
+With multiple instances the buffer is named `*INSTANCE@PROFILE*' (or
+`*INSTANCE@PROFILE: TITLE*'); the single-instance form remains
+`*Hermes@PROFILE*'.  This is the single side-effecting constructor every
+new-chat entry point funnels through."
+  (let ((instance (or instance (hermes-instance-resolve)))
+        (profile (hermes-chat--clean-profile profile))
         (title (hermes-transport--non-empty-string
                 (and title (string-trim title))))
         (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (hermes-chat-mode)
-      (setq hermes-chat--profile profile)
+      (setq hermes-instance instance
+            hermes-chat--profile profile)
       (when title
         (setq hermes-chat--title title
               hermes-chat--title-manual-p t))
-      (rename-buffer (hermes-chat--buffer-name-for-title profile title) t))
+      (rename-buffer
+       (hermes-chat--buffer-name-for-title profile title instance) t))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
@@ -1262,14 +1269,16 @@ CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
       (concat "  " (propertize model 'face 'shadow)))))
 
 (defun hermes-chat--existing-dashboard-client ()
-  "Return a live dashboard client from any Hermes chat buffer, or nil."
-  (cl-some (lambda (buffer)
-             (with-current-buffer buffer
-               (and (derived-mode-p 'hermes-chat-mode)
-                    (hermes-chat--dashboard-client-live-p
-                     hermes-chat--dashboard-client)
-                    hermes-chat--dashboard-client)))
-           (buffer-list)))
+  "Return a live dashboard client for the current Hermes instance, or nil."
+  (when-let* ((instance (hermes-instance-context)))
+    (cl-some (lambda (buffer)
+               (with-current-buffer buffer
+                 (and (derived-mode-p 'hermes-chat-mode)
+                      (equal hermes-instance instance)
+                      (hermes-chat--dashboard-client-live-p
+                       hermes-chat--dashboard-client)
+                      hermes-chat--dashboard-client)))
+             (buffer-list))))
 
 (defun hermes-chat--profile-list-payload ()
   "Return cached dashboard profiles and revalidate them asynchronously.
@@ -1360,19 +1369,24 @@ visible while reading."
                     (format "Could not load Hermes session history: %s" message)
                     'error)))))))
 
-(defun hermes-chat-resume-session (session-id &optional title profile)
+(defun hermes-chat-resume-session (session-id &optional title profile instance)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
-TITLE, when given, names the buffer.  PROFILE selects its owning profile.
+TITLE, when given, names the buffer.  PROFILE selects its owning profile, and
+INSTANCE selects its owning Hermes instance.  A nil INSTANCE is resolved from
+the current context.
 Over the dashboard transport the prior messages are fetched and rendered; the
 durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
-  (let ((buffer (generate-new-buffer
-                 (hermes-chat--buffer-name-for-title profile title))))
+  (let ((instance (or instance (hermes-instance-resolve)))
+        (buffer (generate-new-buffer
+                 (hermes-chat--buffer-name-for-title
+                  profile title instance))))
     (with-current-buffer buffer
       (hermes-chat-mode)
-      (setq hermes-chat--session-id session-id
+      (setq hermes-instance instance
+            hermes-chat--session-id session-id
             hermes-chat--profile profile))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
@@ -1660,14 +1674,19 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (hermes-chat--setup-buffer))
 
 ;;;###autoload
-(defun hermes-chat (&optional profile)
+(defun hermes-chat (&optional profile instance)
   "Open a new Hermes chat buffer under agent PROFILE.
-Interactively prompt for PROFILE (blank uses the dashboard default).  Each call
-opens a distinct buffer named after the profile -- and, once the session is
-titled, after that title -- so chats stay filterable with
+INSTANCE selects the owning Hermes instance.  Interactively resolve the
+instance first, then prompt for PROFILE (blank uses the dashboard default).
+Each call opens a distinct buffer named after the profile -- and, once the
+session is titled, after that title -- so chats stay filterable with
 `hermes-switch-to-chat'."
-  (interactive (list (hermes-chat--read-profile)))
-  (hermes-chat--new-buffer profile))
+  (interactive
+   (let ((instance (hermes-instance-resolve)))
+     (let ((hermes-instance instance)
+           (hermes-dashboard-transport-url (hermes-instance-url instance)))
+       (list (hermes-chat--read-profile) instance))))
+  (hermes-chat--new-buffer profile nil instance))
 
 
 ;; Registries keep lower chat layers free of upward references.

@@ -484,6 +484,24 @@
   (should (equal (hermes-chat--buffer-name-for-title nil "")
                  "*Hermes@default*")))
 
+(ert-deftest hermes-chat-buffer-name-identifies-instance-when-multiple ()
+  "Multi-instance chat names use the instance before the profile."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote)))
+    (should (equal (hermes-chat--buffer-name-for-title nil nil local)
+                   "*local@default*"))
+    (should (equal
+             (hermes-chat--buffer-name-for-title "coder" "Fix bug" remote)
+             "*remote@coder: Fix bug*"))))
+
+(ert-deftest hermes-chat-buffer-name-keeps-brand-for-single-instance ()
+  "Single-instance chat names retain the established Hermes prefix."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (hermes-instances (list local)))
+    (should (equal (hermes-chat--buffer-name-for-title "coder" nil local)
+                   "*Hermes@coder*"))))
+
 (ert-deftest hermes-chat-create-uses-project-canonical-title ()
   "Fresh dashboard sessions use a canonical title from the current project."
   (let ((client (hermes-test--dashboard-client)) created-title)
@@ -520,6 +538,24 @@
             (should (equal hermes-chat--profile "coder"))
             (should (string-prefix-p "*Hermes@coder" (buffer-name))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-selects-instance-before-profile ()
+  "Interactive chat selection pins the instance used to read its profile."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        profile-instance)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-chat--read-profile)
+               (lambda ()
+                 (setq profile-instance hermes-instance)
+                 "coder")))
+      (let ((buffer (call-interactively #'hermes-chat)))
+        (unwind-protect
+            (with-current-buffer buffer
+              (should (equal profile-instance instance))
+              (should (equal hermes-instance instance))
+              (should (equal hermes-chat--profile "coder")))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-chat-blank-profile-names-buffer-default ()
   "A blank profile yields the default profile name and no stored profile."
@@ -4507,6 +4543,16 @@
      (should-not (string-match-p "Hermes" header))
      (should-not (string-match-p "session " header)))))
 
+(ert-deftest hermes-chat-header-shows-instance-when-multiple-configured ()
+  "Concurrent chats identify their owning instance in the header."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test"))))
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () (cadr hermes-instances))))
+      (hermes-test-with-chat-buffer
+       (let ((header (hermes-test--header-line-string)))
+         (should (string-prefix-p " remote  |  default" header)))))))
+
 (ert-deftest hermes-chat-header-profile-falls-back-to-default ()
   "Without explicit or backend profile state the header shows default."
   (hermes-test-with-chat-buffer
@@ -4679,6 +4725,61 @@
     (unwind-protect
         (with-current-buffer buffer (should-not hermes-chat--profile))
       (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-new-buffer-pins-instance ()
+  "A new chat owns the resolved Hermes instance for its lifetime."
+  (let* ((instance '("remote" . "https://hermes.example.test"))
+         (buffer (hermes-chat--new-buffer "work" nil instance)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (equal hermes-instance instance)))
+      (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-legacy-url-change-before-connect-is-honored ()
+  "Unconfigured chats keep following the legacy dashboard URL until connect."
+  (let ((hermes-instances nil)
+        (hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        acquired-url buffer)
+    (unwind-protect
+        (progn
+          (setq buffer (hermes-chat--new-buffer "work"))
+          (setq hermes-dashboard-transport-url "https://hermes.example.test")
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _)
+                       (setq acquired-url hermes-dashboard-transport-url)
+                       (hermes-test--dashboard-client))))
+            (with-current-buffer buffer
+              (hermes-chat--dashboard-ensure-client))
+            (should (equal acquired-url "https://hermes.example.test"))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest hermes-chat-existing-dashboard-client-matches-instance ()
+  "The profile picker reuses only a client for its selected instance."
+  (let ((local '("local" . "http://127.0.0.1:9119"))
+        (remote '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        (local-client (hermes-test--dashboard-client))
+        (remote-client (hermes-test--dashboard-client))
+        buffers)
+    (unwind-protect
+        (progn
+          (dolist (pair (list (cons local local-client)
+                              (cons remote remote-client)))
+            (let ((buffer (generate-new-buffer (hermes-test--chat-buffer-name))))
+              (push buffer buffers)
+              (with-current-buffer buffer
+                (hermes-chat-mode)
+                (setq hermes-instance (car pair)
+                      hermes-chat--dashboard-client (cdr pair)))))
+          (with-temp-buffer
+            (setq hermes-instance local)
+            (should (eq (hermes-chat--existing-dashboard-client)
+                        local-client))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            buffers))))
 
 (ert-deftest hermes-chat-new-buffer-names-after-profile-and-title ()
   "The buffer name reflects the profile and a pinned title, never the bare name."

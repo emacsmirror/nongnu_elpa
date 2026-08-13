@@ -196,6 +196,14 @@
     (should (equal (car (hermes-dashboard--status-entry "In_Progress"))
                    "in-progress"))))
 
+(ert-deftest hermes-dashboard-chat-detail-identifies-instance-when-ambiguous ()
+  "Aggregate chat cards identify the instance owning each chat."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test"))))
+    (should (member "instance remote"
+                    (hermes-dashboard--format-chat-detail
+                     '(:instance "remote" :status ready))))))
+
 (ert-deftest hermes-dashboard-repeated-open-cleans-stale-refresh-timers ()
   (let ((hermes-dashboard-buffer-name (hermes-test--dashboard-buffer-name))
         (hermes-dashboard-stale-refresh-interval 3600)
@@ -379,6 +387,25 @@
         (hermes--promise-resolve second '((ok . t)))
         (hermes--promise-resolve first '((ok . :false)))
         (should-not hermes-dashboard--needs-onboarding)))))
+
+(ert-deftest hermes-dashboard-warm-profile-cache-skips-ambiguous-instance ()
+  "The aggregate dashboard does not choose an instance for passive warming."
+  (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                            ("remote" . "https://hermes.example.test")))
+        (hermes-instance nil)
+        fetched)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-cached-profile-list)
+               (lambda () nil))
+              ((symbol-function
+                'hermes-dashboard-transport-profile-list-async)
+               (lambda (&rest _)
+                 (setq fetched t)
+                 (hermes--promise-resolved nil)))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt"))))
+      (hermes-dashboard--warm-profile-cache)
+      (should-not fetched))))
 
 (ert-deftest hermes-dashboard-provider-connect-invalidates-auth-check ()
   "Saving credentials forces a newest-owned credential check."

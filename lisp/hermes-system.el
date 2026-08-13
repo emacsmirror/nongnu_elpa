@@ -94,9 +94,11 @@
 
 (defun hermes-system--open (buffer-name heading path &optional query)
   "Open BUFFER-NAME for HEADING fetched from PATH with QUERY."
-  (let ((buffer (get-buffer-create buffer-name)))
+  (let ((instance (hermes-instance-resolve))
+        (buffer (get-buffer-create buffer-name)))
     (with-current-buffer buffer
       (hermes-system-mode)
+      (hermes-browser--own-instance instance)
       (setq hermes-system--heading heading
             hermes-system--path path
             hermes-system--query query))

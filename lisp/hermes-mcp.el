@@ -238,23 +238,26 @@ error.  CLIENT supplies a live dashboard session token when available."
   "Fetch and render the MCP server list asynchronously.
 DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
 TARGET and GENERATION identify an existing buffer-owned refresh."
-  (let ((target (or target
+  (let ((instance (hermes-instance-resolve))
+        (target (or target
                     (and display (get-buffer-create hermes-mcp-buffer-name))
                     (current-buffer))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-mcp-mode)
-        (hermes-mcp-mode)))
+        (hermes-mcp-mode))
+      (hermes-browser--own-instance instance))
     (let ((generation (or generation
                           (with-current-buffer target
                             (hermes-browser--next-request-generation)))))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (hermes-mcp--api "GET" "/servers" nil nil :client client))
-       (lambda (result)
-         (when (hermes-browser--request-current-mode-p
-                target generation 'hermes-mcp-mode)
-           (hermes-mcp--render result target)
-           (when display (pop-to-buffer target))))))))
+      (with-current-buffer target
+        (hermes-browser--run-on-client
+         (lambda (client)
+           (hermes-mcp--api "GET" "/servers" nil nil :client client))
+         (lambda (result)
+           (when (hermes-browser--request-current-mode-p
+                  target generation 'hermes-mcp-mode)
+             (hermes-mcp--render result target)
+             (when display (pop-to-buffer target)))))))))
 
 (defun hermes-mcp--revert (&rest _)
   "Refresh the MCP server list."

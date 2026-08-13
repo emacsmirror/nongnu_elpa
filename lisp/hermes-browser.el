@@ -264,15 +264,32 @@
     (hermes-browser--face-cell
      status face)))
 
+(defun hermes-browser--instance-header-line ()
+  "Return a compact instance header for the current browser, or nil."
+  (when (and (hermes-instance-multiple-p)
+             (hermes-instance--valid-p hermes-instance))
+    (format " Hermes instance: %s " (hermes-instance-name hermes-instance))))
+
+(defun hermes-browser--own-instance (instance)
+  "Make the current browser buffer own INSTANCE."
+  (when (and (hermes-instance--valid-p hermes-instance)
+             (not (equal hermes-instance instance)))
+    (hermes-browser--next-request-generation))
+  (setq-local hermes-instance instance)
+  (setq-local header-line-format
+              '(:eval (hermes-browser--instance-header-line))))
+
 (defun hermes-browser--existing-client ()
-  "Return a live dashboard client from any Hermes chat buffer, or nil."
-  (cl-some (lambda (buffer)
-             (with-current-buffer buffer
-               (and (derived-mode-p 'hermes-chat-mode)
-                    (hermes-chat--dashboard-client-live-p
-                     hermes-chat--dashboard-client)
-                    hermes-chat--dashboard-client)))
-           (buffer-list)))
+  "Return a live dashboard client for the current Hermes instance, or nil."
+  (when-let* ((instance (hermes-instance-context)))
+    (cl-some (lambda (buffer)
+               (with-current-buffer buffer
+                 (and (derived-mode-p 'hermes-chat-mode)
+                      (equal hermes-instance instance)
+                      (hermes-chat--dashboard-client-live-p
+                       hermes-chat--dashboard-client)
+                      hermes-chat--dashboard-client)))
+             (buffer-list))))
 
 (defvar hermes-browser--transient-clients nil
   "Dashboard clients created for browser operations still in flight.")
@@ -297,7 +314,10 @@ MESSAGE is forwarded to `hermes-dashboard-transport-stop'."
   "Call FN with a connected CLIENT and a DONE cleanup thunk.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client that DONE stops.  Shared by the dashboard browser commands."
-  (let* ((existing (hermes-browser--existing-client))
+  (let* ((instance (hermes-instance-resolve))
+         (hermes-instance instance)
+         (hermes-dashboard-transport-url (hermes-instance-url instance))
+         (existing (hermes-browser--existing-client))
          (client (or existing
                      (hermes-dashboard-transport-start :callback #'ignore)))
          (done (lambda ()
@@ -550,23 +570,26 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
-         (let ((target (get-buffer-create ,buffer)))
+         (let ((instance (hermes-instance-resolve))
+               (target (get-buffer-create ,buffer)))
            (with-current-buffer target
              (unless (derived-mode-p ',mode)
-               (,mode)))
+               (,mode))
+             (hermes-browser--own-instance instance))
            (let ((generation
                   (with-current-buffer target
                     (hermes-browser--next-request-generation))))
-             (let ((hermes-browser--request-error-owner
-                    (list target generation ',mode)))
-               (hermes-browser--run-on-client
-                ,fetch
-                (lambda (result)
-                  (when (hermes-browser--request-current-mode-p
-                         target generation ',mode)
-                    (with-current-buffer target
-                      (,render result))
-                    (pop-to-buffer target)))))))))))
+             (with-current-buffer target
+               (let ((hermes-browser--request-error-owner
+                      (list target generation ',mode)))
+                 (hermes-browser--run-on-client
+                  ,fetch
+                  (lambda (result)
+                    (when (hermes-browser--request-current-mode-p
+                           target generation ',mode)
+                      (with-current-buffer target
+                        (,render result))
+                      (pop-to-buffer target))))))))))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

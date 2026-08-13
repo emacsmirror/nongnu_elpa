@@ -64,6 +64,74 @@ Use `hermes-dashboard-transport-start-mode' to force spawn or remote attach."
   :type 'string
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-instances nil
+  "Named Hermes dashboard instances.
+Each entry is (NAME . URL).  When nil, the existing
+`hermes-dashboard-transport-url' is available as the instance named
+\=`default'."
+  :type '(alist :key-type (string :tag "Name")
+                :value-type (string :tag "Dashboard URL"))
+  :group 'hermes-dashboard-transport)
+
+(defvar-local hermes-instance nil
+  "Hermes instance owned by the current buffer, as (NAME . URL).")
+
+(defun hermes-instance--valid-p (instance)
+  "Return non-nil when INSTANCE is a valid (NAME . URL) pair."
+  (and (consp instance)
+       (stringp (car instance))
+       (not (string-empty-p (string-trim (car instance))))
+       (stringp (cdr instance))
+       (not (string-empty-p (string-trim (cdr instance))))))
+
+(defun hermes-instance-configured ()
+  "Return configured Hermes instances as (NAME . URL) pairs.
+Fall back to the existing dashboard URL as the instance named `default'."
+  (let* ((instances (or hermes-instances
+                        (list (cons "default"
+                                    hermes-dashboard-transport-url))))
+         (invalid (seq-find (lambda (instance)
+                              (not (hermes-instance--valid-p instance)))
+                            instances))
+         (names (mapcar #'car instances)))
+    (when invalid
+      (user-error "Invalid Hermes instance: %S" invalid))
+    (unless (= (length names) (length (delete-dups (copy-sequence names))))
+      (user-error "Hermes instance names must be unique"))
+    (copy-tree instances)))
+
+(defun hermes-instance-name (instance)
+  "Return INSTANCE's display name."
+  (car instance))
+
+(defun hermes-instance-url (instance)
+  "Return INSTANCE's dashboard URL."
+  (cdr instance))
+
+(defun hermes-instance-multiple-p ()
+  "Return non-nil when more than one Hermes instance is configured."
+  (> (length (hermes-instance-configured)) 1))
+
+(defun hermes-instance-context ()
+  "Return the current unambiguous Hermes instance, or nil.
+Unlike `hermes-instance-resolve', this never prompts."
+  (let ((instances (hermes-instance-configured)))
+    (if hermes-instances
+        (or (and (hermes-instance--valid-p hermes-instance)
+                 hermes-instance)
+            (and (= (length instances) 1) (car instances)))
+      (car instances))))
+
+(defun hermes-instance-resolve ()
+  "Return the Hermes instance for the current operation.
+Use the current buffer's instance first.  Select the sole configured instance
+without prompting, or prompt when multiple configured instances are available."
+  (or (hermes-instance-context)
+      (let ((instances (hermes-instance-configured)))
+        (assoc (completing-read "Hermes instance: "
+                                (mapcar #'car instances) nil t)
+               instances))))
+
 (defcustom hermes-dashboard-transport-http-timeout 30
   "Seconds before a dashboard REST/HTTP request gives up.
 Bounds both the synchronous fallback and the asynchronous request path so a
@@ -1484,30 +1552,35 @@ with the synchronous path, and re-resolved when the configured URL changes."
        auth))))
 
 (cl-defun hermes-dashboard-transport--api-request-1-async
-    (method path &key body query headers secrets timeout retry)
+    (method path &key body query headers secrets timeout retry base-url)
   "Return a promise of dashboard REST METHOD PATH using resolved auth.
 BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; RETRY refreshes
-auth and retries once when the request fails."
-  (hermes--promise-then
-   (hermes-dashboard-transport-api-auth-async)
-   (lambda (auth)
-     (let ((request (hermes-dashboard-transport--api-request-plist
-		     auth method path :body body :query query
-		     :headers headers :secrets secrets :timeout timeout)))
-       (hermes--promise-catch
-        (hermes--promise-map
-	 (hermes-dashboard-transport--http-json-request-async request)
-         (lambda (response) (plist-get response :body)))
-        (lambda (reason)
-          (if (and retry (hermes-dashboard-transport--auth-error-p reason))
-              (progn
-                (setq hermes-dashboard-transport--api-auth nil)
-                (hermes-dashboard-transport--api-request-1-async
-                 method path :body body :query query :headers headers
-                 :secrets secrets :timeout timeout :retry nil))
-            (hermes--promise-rejected
-	     (hermes-dashboard-transport--redact-secret
-	      reason (plist-get request :secrets))))))))))
+auth and retries once when the request fails.  BASE-URL, when non-nil, pins
+authentication and retries to that dashboard endpoint."
+  (let* ((base-url (or base-url
+                       (hermes-dashboard-transport--api-base-url)))
+         (hermes-dashboard-transport-url base-url))
+    (hermes--promise-then
+     (hermes-dashboard-transport-api-auth-async)
+     (lambda (auth)
+       (let ((request (hermes-dashboard-transport--api-request-plist
+		       auth method path :body body :query query
+		       :headers headers :secrets secrets :timeout timeout)))
+         (hermes--promise-catch
+          (hermes--promise-map
+	   (hermes-dashboard-transport--http-json-request-async request)
+           (lambda (response) (plist-get response :body)))
+          (lambda (reason)
+            (if (and retry (hermes-dashboard-transport--auth-error-p reason))
+                (progn
+                  (setq hermes-dashboard-transport--api-auth nil)
+                  (hermes-dashboard-transport--api-request-1-async
+                   method path :body body :query query :headers headers
+                   :secrets secrets :timeout timeout :retry nil
+                   :base-url base-url))
+              (hermes--promise-rejected
+	       (hermes-dashboard-transport--redact-secret
+	        reason (plist-get request :secrets)))))))))))
 
 (cl-defun hermes-dashboard-transport--api-request-with-client-async
     (client method path &key body query headers secrets timeout)
@@ -1526,15 +1599,22 @@ BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request."
   "Return a promise of authenticated dashboard REST METHOD PATH.
 Mirrors `hermes-dashboard-transport-api-request' but resolves asynchronously so
 callers never block Emacs.  BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend
-the request.  CLIENT, when it carries a live session token, supplies the
-spawned dashboard base URL and `X-Hermes-Session-Token'."
-  (if (hermes-dashboard-transport--api-client-token client)
-      (hermes-dashboard-transport--api-request-with-client-async
-       client method path :body body :query query :headers headers
-       :secrets secrets :timeout timeout)
+the request.  CLIENT pins the dashboard base URL.  Its live session token is
+used when present; otherwise REST auth is resolved for that endpoint."
+  (cond
+   ((hermes-dashboard-transport--api-client-token client)
+    (hermes-dashboard-transport--api-request-with-client-async
+     client method path :body body :query query :headers headers
+     :secrets secrets :timeout timeout))
+   ((hermes-dashboard-transport-client-p client)
     (hermes-dashboard-transport--api-request-1-async
      method path :body body :query query :headers headers :secrets secrets
-     :timeout timeout :retry (equal method "GET"))))
+     :timeout timeout :retry (equal method "GET")
+     :base-url (hermes-dashboard-transport--api-client-base-url client)))
+   (t
+    (hermes-dashboard-transport--api-request-1-async
+     method path :body body :query query :headers headers :secrets secrets
+     :timeout timeout :retry (equal method "GET")))))
 
 ;;; Profile and model caches
 
@@ -1545,7 +1625,14 @@ spawned dashboard base URL and `X-Hermes-Session-Token'."
   "Return the normalized endpoint identity for CLIENT or the configured URL."
   (ignore-errors
     (hermes-dashboard-transport--normalize-base-url
-     (hermes-dashboard-transport--api-client-base-url client))))
+     (cond
+      (client (hermes-dashboard-transport--api-client-base-url client))
+      ((and hermes-instances (hermes-instance--valid-p hermes-instance))
+       (hermes-instance-url hermes-instance))
+      (hermes-instances
+       (and-let* ((instance (hermes-instance-context)))
+         (hermes-instance-url instance)))
+      (t (hermes-dashboard-transport--api-client-base-url nil))))))
 
 (defun hermes-dashboard-transport--endpoint-cache-get (cache base-url)
   "Return the payload in endpoint CACHE for BASE-URL.

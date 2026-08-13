@@ -5,6 +5,21 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-kanban-api-uses-selected-dashboard-client ()
+  "Kanban REST requests use the client for the selected instance."
+  (let (seen-client)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success _on-error)
+                 (hermes--promise-then
+                  (funcall make-promise 'remote-client) on-success)))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (_method _path &rest args)
+                 (setq seen-client (plist-get args :client))
+                 (hermes--promise-resolved '((boards . nil))))))
+      (hermes-kanban--api "GET" "/boards")
+      (should (eq seen-client 'remote-client)))))
+
 (ert-deftest hermes-kanban-status-display-uses-shared-icons ()
   "Status display helpers share icons, labels, and raw status properties."
   (should (equal hermes-kanban--current-board-marker "📍"))
@@ -282,6 +297,22 @@
       (when (get-buffer "*Hermes Kanban Boards*")
         (kill-buffer "*Hermes Kanban Boards*")))))
 
+(ert-deftest hermes-kanban-render-boards-pins-resolved-instance ()
+  "The boards overview owns the instance selected by its entry command."
+  (let ((instance '("remote" . "https://hermes.example.test")))
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved '((boards . nil))))))
+      (unwind-protect
+          (progn
+            (hermes-list-kanban)
+            (with-current-buffer "*Hermes Kanban Boards*"
+              (should (equal hermes-instance instance))))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
 (ert-deftest hermes-kanban-boards-revert-refreshes-without-display ()
   "Reverting the boards overview refreshes in place; the command displays."
   (let (displayed)
@@ -402,6 +433,35 @@
                              prompts)))
         (when (get-buffer "*Hermes Kanban Boards*")
           (kill-buffer "*Hermes Kanban Boards*"))))))
+
+(ert-deftest hermes-kanban-board-mutation-refresh-keeps-origin-instance ()
+  "A delayed board mutation refreshes through its originating instance."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         (mutation (hermes--promise-make))
+         refreshed-instance)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _) mutation))
+              ((symbol-function 'hermes-kanban--render-boards)
+               (lambda (&optional _)
+                 (setq refreshed-instance (hermes-instance-resolve))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (ert-fail "Unexpected instance prompt")))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-kanban-boards-mode)
+        (setq hermes-instance remote
+              tabulated-list-entries
+              (hermes-kanban--board-rows
+               '(((slug . "work") (name . "Work") (total . 0)
+                  (counts . nil)))))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-kanban-switch-board))
+      (with-temp-buffer
+        (hermes--promise-resolve mutation '((current . "work"))))
+      (should (equal refreshed-instance remote)))))
 
 (ert-deftest hermes-kanban-rename-board-rejects-blank-name ()
   "Whitespace-only board renames signal before PATCH or refresh."
@@ -940,6 +1000,41 @@
                       calls))
       (should refreshed))))
 
+(ert-deftest hermes-kanban-terminate-run-keeps-origin-instance ()
+  "A delayed task lookup terminates its run on the originating instance."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         (lookup (hermes--promise-make))
+         (origin (generate-new-buffer " *Hermes terminate origin*"))
+         calls)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-kanban--api)
+                   (lambda (method path &optional _body _query)
+                     (push (list method path (hermes-instance-resolve)) calls)
+                     (if (equal method "GET")
+                         lookup
+                       (hermes--promise-resolved '((ok . t))))))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) (ert-fail "Unexpected instance prompt")))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'read-string) (lambda (&rest _) ""))
+                  ((symbol-function 'revert-buffer) #'ignore)
+                  ((symbol-function 'message) #'ignore))
+          (with-current-buffer origin
+            (hermes-kanban-task-mode)
+            (setq hermes-instance remote
+                  hermes-kanban-task--task-id "t1"
+                  hermes-kanban-task--board-slug "work")
+            (hermes-kanban-terminate-run))
+          (with-temp-buffer
+            (hermes--promise-resolve
+             lookup '((task . ((id . "t1") (current_run_id . 42))))))
+          (should (equal (nreverse calls)
+                         `(("GET" "/tasks/t1" ,remote)
+                           ("POST" "/runs/42/terminate" ,remote)))))
+      (when (buffer-live-p origin) (kill-buffer origin)))))
+
 (ert-deftest hermes-kanban-comment-posts-from-task-detail-buffer ()
   "Commenting from the task detail view posts to the task and refreshes."
   (let (calls refreshed)
@@ -1049,6 +1144,24 @@
               (should (derived-mode-p 'hermes-kanban-diagnostics-mode))
               (should (equal hermes-kanban--slug "emacs-lisp"))
               (should (equal (caar tabulated-list-entries) "t1"))))
+        (when (get-buffer "*Hermes Kanban Diagnostics*")
+          (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
+(ert-deftest hermes-kanban-render-diagnostics-inherits-buffer-instance ()
+  "A diagnostics buffer inherits its board's instance."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test"))))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved '((diagnostics . nil))))))
+      (unwind-protect
+          (with-temp-buffer
+            (setq hermes-instance instance)
+            (hermes-kanban--render-diagnostics "work" "Work")
+            (with-current-buffer "*Hermes Kanban Diagnostics*"
+              (should (equal hermes-instance instance))))
         (when (get-buffer "*Hermes Kanban Diagnostics*")
           (kill-buffer "*Hermes Kanban Diagnostics*"))))))
 
@@ -1497,6 +1610,26 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (hermes-kanban--events-connect tail)
       (should (equal scheduled '(1))))))
 
+(ert-deftest hermes-kanban-events-connect-uses-owner-instance-url ()
+  "A board's live-events socket resolves against its pinned instance."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        seen-url)
+    (with-temp-buffer
+      (setq hermes-instance instance)
+      (let ((tail (hermes-kanban--events-tail-create
+                   :buffer (current-buffer) :slug "work")))
+        (cl-letf (((symbol-function
+                    'hermes-dashboard-transport-kanban-events-url-async)
+                   (lambda (&rest _)
+                     (setq seen-url hermes-dashboard-transport-url)
+                     (hermes--promise-rejected "stop")))
+                  ((symbol-function 'hermes-kanban--events-on-down) #'ignore))
+          (hermes-kanban--events-connect tail)
+          (should (equal seen-url (hermes-instance-url instance))))))))
+
 (ert-deftest hermes-kanban-events-reconnect-backs-off-and-stops-when-dead ()
   "Reconnect doubles the backoff, never double-schedules, and stops if dead."
   (let (scheduled
@@ -1552,6 +1685,46 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
           (with-current-buffer "*Hermes Kanban*"
             (should (= 42 hermes-kanban--latest-event-id))))
       (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
+
+(ert-deftest hermes-kanban-render-board-inherits-buffer-instance ()
+  "A board detail buffer inherits the overview's instance."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test"))))
+    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 80))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((columns . nil) (assignees . nil))))))
+      (unwind-protect
+          (with-temp-buffer
+            (setq hermes-instance instance)
+            (hermes-kanban--render-board "work" "Work")
+            (with-current-buffer "*Hermes Kanban*"
+              (should (equal hermes-instance instance))))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
+(ert-deftest hermes-kanban-open-task-inherits-buffer-instance ()
+  "A task detail buffer inherits its board's instance."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test"))))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((task . ((id . "t1") (title . "Task")
+                             (status . "todo") (body . "Body"))))))))
+      (unwind-protect
+          (with-temp-buffer
+            (setq hermes-instance instance)
+            (hermes-kanban-open-task "t1" "work")
+            (with-current-buffer "*Hermes Kanban Task*"
+              (should (equal hermes-instance instance))))
+        (when (get-buffer "*Hermes Kanban Task*")
+          (kill-buffer "*Hermes Kanban Task*"))))))
 
 (ert-deftest hermes-kanban-profile-candidates-merge-cache-and-board-assignees ()
   "Candidates merge the warmed profile cache with board-known assignees."

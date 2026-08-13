@@ -169,6 +169,8 @@ stops its poll) instead of being called by name from this file.")
         :title (or (and hermes-chat--title
                         (hermes-session-title-chat-display hermes-chat--title))
                    (buffer-name))
+        :instance (and (hermes-instance--valid-p hermes-instance)
+                       (hermes-instance-name hermes-instance))
         :session-id hermes-chat--session-id
         :connection (hermes-chat--dashboard-connection-label)
         :status (or (plist-get hermes-chat--status-state :status) 'ready)
@@ -846,10 +848,13 @@ no buffer is attached."
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
       hermes-chat--dashboard-client
     (hermes-chat--stop-dashboard-client)
-    (setq hermes-chat--dashboard-session-ready-p nil
-          hermes-chat--dashboard-active-session-id nil
-          hermes-chat--dashboard-client
-          (hermes-dashboard-transport-acquire :callback (or callback #'ignore)))
+    (let* ((instance (hermes-instance-resolve))
+           (hermes-dashboard-transport-url (hermes-instance-url instance)))
+      (setq hermes-chat--dashboard-session-ready-p nil
+            hermes-chat--dashboard-active-session-id nil
+            hermes-chat--dashboard-client
+            (hermes-dashboard-transport-acquire
+             :callback (or callback #'ignore))))
     (hermes-chat--warm-model-options hermes-chat--dashboard-client)
     hermes-chat--dashboard-client))
 
@@ -1194,15 +1199,21 @@ shared socket re-resumes every attached chat without waiting for the next send."
 ;; Dashboard-session behavior: server titles and /btw background
 ;; tasks live with the session lifecycle that drives them.
 
-(defun hermes-chat--buffer-name-for-title (profile title)
-  "Return a chat buffer name from PROFILE and TITLE.
-PROFILE nil means the default profile.  A nil or empty TITLE yields a name with
-just the profile, so buffers stay distinct before a session title arrives."
-  (let ((profile (or profile "default")))
+(defun hermes-chat--buffer-name-for-title (profile title &optional instance)
+  "Return a chat buffer name from PROFILE, TITLE, and INSTANCE.
+PROFILE nil means the default profile.  With multiple configured instances,
+INSTANCE replaces the Hermes brand in the name.  A nil or empty TITLE yields a
+name with just the owner and profile, before a session title arrives."
+  (let* ((profile (or profile "default"))
+         (instance (or instance (hermes-instance-context)))
+         (owner (if (and (hermes-instance-multiple-p)
+                         (hermes-instance--valid-p instance))
+                    (hermes-instance-name instance)
+                  "Hermes")))
     (if (and title (not (string-empty-p title)))
-        (format "*Hermes@%s: %s*"
-                profile (hermes-session-title-chat-display title))
-      (format "*Hermes@%s*" profile))))
+        (format "*%s@%s: %s*"
+                owner profile (hermes-session-title-chat-display title))
+      (format "*%s@%s*" owner profile))))
 
 (defun hermes-chat--push-session-title (title)
   "Push TITLE to the server with `session.title' when a session is attached.
@@ -1227,7 +1238,7 @@ With no live session the rename stays buffer-local; report that instead."
   "Record TITLE and rename this buffer to match, without updating the server."
   (setq hermes-chat--title title)
   (let ((newname (hermes-chat--buffer-name-for-title
-                  hermes-chat--profile title)))
+                  hermes-chat--profile title hermes-instance)))
     (unless (equal (buffer-name) newname)
       (rename-buffer newname t)))
   (force-mode-line-update))

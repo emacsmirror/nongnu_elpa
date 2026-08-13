@@ -388,10 +388,16 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
 (defun hermes-config ()
   "Open the schema-driven Hermes configuration browser."
   (interactive)
-  (let ((buffer (get-buffer-create "*Hermes Config*")))
+  (let ((instance (hermes-instance-resolve))
+        (buffer (get-buffer-create "*Hermes Config*")))
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-config-mode)
-        (hermes-config-mode)))
+        (hermes-config-mode))
+      (if hermes-config--mutation-in-flight
+          (unless (equal hermes-instance instance)
+            (user-error "Configuration update still in progress for %s"
+                        (hermes-instance-name hermes-instance)))
+        (hermes-browser--own-instance instance)))
     (pop-to-buffer buffer)
     (with-current-buffer buffer
       (unless hermes-config--mutation-in-flight

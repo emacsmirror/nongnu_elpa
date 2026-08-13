@@ -309,7 +309,8 @@ RUNS is the detail run list."
 (defun hermes-cron-show ()
   "Show details and recent run history for the cron job at point."
   (interactive)
-  (let ((id (hermes-cron--id-at-point))
+  (let ((instance (hermes-instance-resolve))
+        (id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
         (origin (current-buffer))
         (generation (hermes-browser--next-request-generation)))
@@ -328,7 +329,9 @@ RUNS is the detail run list."
      (lambda (detail)
        (when (hermes-browser--request-current-mode-p
               origin generation 'hermes-cron-mode)
-         (hermes-cron--display-detail (car detail) (cadr detail)))))))
+         (hermes-cron--display-detail (car detail) (cadr detail))
+         (with-current-buffer "*Hermes Cron Job*"
+           (hermes-browser--own-instance instance)))))))
 
 ;;; Run transcript (log)
 
@@ -379,7 +382,8 @@ RUNS is the detail run list."
 (defun hermes-cron-show-run-log ()
   "Show the transcript of the cron run on the current detail line."
   (interactive)
-  (let ((id (get-text-property (point) 'hermes-cron-run-id))
+  (let ((instance (hermes-instance-resolve))
+        (id (get-text-property (point) 'hermes-cron-run-id))
         (origin (current-buffer))
         (generation (hermes-browser--next-request-generation)))
     (unless id (user-error "No cron run on this line"))
@@ -388,7 +392,9 @@ RUNS is the detail run list."
      (lambda (result)
        (when (hermes-browser--request-current-p origin generation)
          (hermes-cron--display-run
-          id (hermes-transport--get result 'messages)))))))
+          id (hermes-transport--get result 'messages))
+         (with-current-buffer "*Hermes Cron Run*"
+           (hermes-browser--own-instance instance)))))))
 
 ;;; Job mutations
 

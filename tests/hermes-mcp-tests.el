@@ -97,6 +97,26 @@
         (when (get-buffer hermes-mcp-buffer-name)
           (kill-buffer hermes-mcp-buffer-name))))))
 
+(ert-deftest hermes-mcp-list-pins-resolved-instance ()
+  "The MCP browser owns the instance selected for its initial fetch."
+  (let ((instance '("remote" . "https://hermes.example.test")))
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then
+                  (funcall make-promise 'fake-client) on-success)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved '((servers . nil))))))
+      (unwind-protect
+          (progn
+            (hermes-list-mcp)
+            (with-current-buffer hermes-mcp-buffer-name
+              (should (equal hermes-instance instance))))
+        (when (get-buffer hermes-mcp-buffer-name)
+          (kill-buffer hermes-mcp-buffer-name))))))
+
 (ert-deftest hermes-mcp-revert-does-not-resurrect-killed-buffer ()
   "A late MCP refresh does not recreate its killed buffer."
   (let ((promise (hermes--promise-make)))

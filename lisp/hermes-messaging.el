@@ -188,29 +188,34 @@ remain current.  SECRETS are removed from current rejection messages."
     (setq tabulated-list-entries (hermes-messaging--rows result))
     (tabulated-list-print t)))
 
-(defun hermes-messaging--fetch (profile &optional display target generation)
+(defun hermes-messaging--fetch
+    (profile &optional display target generation instance)
   "Fetch PROFILE's catalog.
-DISPLAY pops TARGET after a current result.  GENERATION identifies ownership."
-  (let ((target (or target
+DISPLAY pops TARGET after a current result.  GENERATION identifies ownership.
+INSTANCE selects the owning Hermes dashboard."
+  (let ((instance (or instance (hermes-instance-resolve)))
+        (target (or target
                     (get-buffer-create (hermes-messaging--buffer-name profile)))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-messaging-mode)
         (hermes-messaging-mode))
       (hermes-messaging--require-mutation-idle)
+      (hermes-browser--own-instance instance)
       (setq hermes-messaging-profile profile))
     (let ((generation (or generation
                           (with-current-buffer target
                             (hermes-browser--next-request-generation))))
           (display-generation
            (and display (cl-incf hermes-messaging--display-generation))))
-      (hermes-messaging--run-owned
-       target generation profile
-       (lambda (client)
-         (hermes-messaging--api client "GET" "/platforms" profile))
-       (lambda (result)
-         (hermes-messaging--render result target)
-         (when display (pop-to-buffer target)))
-       nil display-generation))))
+      (with-current-buffer target
+        (hermes-messaging--run-owned
+         target generation profile
+         (lambda (client)
+           (hermes-messaging--api client "GET" "/platforms" profile))
+         (lambda (result)
+           (hermes-messaging--render result target)
+           (when display (pop-to-buffer target)))
+         nil display-generation)))))
 
 (defun hermes-messaging--revert (&rest _)
   "Refresh the current profile's messaging catalog."
@@ -428,7 +433,8 @@ accepted.  Arbitrary runtime error text is never displayed."
 (defun hermes-messaging-view ()
   "View safe catalog details for the platform at point."
   (interactive)
-  (let* ((platform (hermes-messaging--platform-at-point))
+  (let* ((instance (hermes-instance-resolve))
+         (platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
          (profile hermes-messaging-profile)
          (buffer (get-buffer-create
@@ -439,13 +445,18 @@ accepted.  Arbitrary runtime error text is never displayed."
         (erase-buffer)
         (insert (hermes-messaging--detail-text platform profile))
         (goto-char (point-min))
-        (special-mode)))
+        (special-mode)
+        (hermes-browser--own-instance instance)))
     (pop-to-buffer buffer)))
 
 (defun hermes-messaging-select-profile ()
   "Open the messaging catalog for another dashboard profile."
   (interactive)
-  (hermes-list-messaging-platforms (hermes-messaging--read-profile)))
+  (let ((instance (hermes-instance-resolve)))
+    (let ((hermes-instance instance)
+          (hermes-dashboard-transport-url (hermes-instance-url instance)))
+      (hermes-list-messaging-platforms
+       (hermes-messaging--read-profile) instance))))
 
 (defvar hermes-messaging-mode-map)
 
@@ -476,11 +487,16 @@ accepted.  Arbitrary runtime error text is never displayed."
   (tabulated-list-init-header))
 
 ;;;###autoload
-(defun hermes-list-messaging-platforms (&optional profile)
+(defun hermes-list-messaging-platforms (&optional profile instance)
   "Browse messaging platforms scoped to PROFILE.
-Interactively, blank means the dashboard's current profile."
-  (interactive (list (hermes-messaging--read-profile)))
-  (hermes-messaging--fetch profile t))
+INSTANCE selects the owning Hermes dashboard.  Interactively, blank means the
+dashboard's current profile."
+  (interactive
+   (let ((instance (hermes-instance-resolve)))
+     (let ((hermes-instance instance)
+           (hermes-dashboard-transport-url (hermes-instance-url instance)))
+       (list (hermes-messaging--read-profile) instance))))
+  (hermes-messaging--fetch profile t nil nil instance))
 
 (provide 'hermes-messaging)
 ;;; hermes-messaging.el ends here

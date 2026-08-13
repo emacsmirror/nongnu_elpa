@@ -273,6 +273,9 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
                     (plist-get node :activity)))
          (connection (hermes-dashboard--nonempty-string
                       (plist-get node :connection)))
+         (instance (and (hermes-instance-multiple-p)
+                        (hermes-dashboard--nonempty-string
+                         (plist-get node :instance))))
          (session-id (hermes-dashboard--nonempty-string
                       (plist-get node :session-id)))
          (active-tools (plist-get node :active-tools))
@@ -286,6 +289,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
     (delq nil
           (list activity
                 connection
+                (and instance (format "instance %s" instance))
                 (and session-id (format "session %s" session-id))
                 tools
                 prompts
@@ -398,7 +402,7 @@ The onboarding node leads when `hermes-dashboard--needs-onboarding' is set."
                :kind 'action
                :key "c"
                :title "Chat"
-               :subtitle "Open a new Hermes chat (prompts for a profile)"
+               :subtitle "Open a new Hermes chat"
                :action #'hermes-chat))))
 
 (defun hermes-dashboard--check-auth (&optional force)
@@ -408,7 +412,8 @@ connection just to check, so opening the dashboard stays passive.  FORCE allows
 an authentication-change callback to use a transient client.  Branches on the
 result `ok' flag because `setup.runtime_check' reports a credential failure as
 `ok' nil, not a JSON-RPC error."
-  (when (or force (hermes-browser--existing-client))
+  (when (and (hermes-instance-context)
+             (or force (hermes-browser--existing-client)))
     (let ((buffer (current-buffer))
           (token (setq hermes-dashboard--auth-request-token (list 'auth))))
       (hermes-browser--run-on-client
@@ -435,11 +440,14 @@ Best-effort and asynchronous: opening the dashboard never blocks or errors on
 this, mirroring `hermes-dashboard--check-auth'.  A live chat client's session
 token is used when one exists, else plain REST auth.  The cache is keyed by
 dashboard URL, so it re-fetches automatically after the configured URL changes."
-  (unless (hermes-dashboard-transport-cached-profile-list)
-    (hermes--promise-catch
-     (hermes-dashboard-transport-profile-list-async
-      (hermes-chat--existing-dashboard-client))
-     #'ignore)))
+  (when-let* ((instance (hermes-instance-context)))
+    (let ((hermes-instance instance)
+          (hermes-dashboard-transport-url (hermes-instance-url instance)))
+      (unless (hermes-dashboard-transport-cached-profile-list)
+        (hermes--promise-catch
+         (hermes-dashboard-transport-profile-list-async
+          (hermes-chat--existing-dashboard-client))
+         #'ignore)))))
 
 (defun hermes-dashboard--chat-node (buffer)
   "Return one chat dashboard node for BUFFER."

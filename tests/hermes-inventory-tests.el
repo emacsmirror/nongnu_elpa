@@ -112,6 +112,31 @@
               (should (equal (caar tabulated-list-entries) "files"))))
         (when (get-buffer "*Hermes Toolsets*") (kill-buffer "*Hermes Toolsets*"))))))
 
+(ert-deftest hermes-inventory-list-pins-resolved-instance ()
+  "Inventory selection uses one resolved instance for its buffer and client."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        started-url)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
+              ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (setq started-url hermes-dashboard-transport-url)
+                 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client _method _params resolve _reject)
+                 (funcall resolve '((toolsets . nil))))))
+      (unwind-protect
+          (progn
+            (hermes-list-inventory)
+            (with-current-buffer "*Hermes Toolsets*"
+              (should (equal hermes-instance instance))
+              (should (equal started-url (hermes-instance-url instance)))))
+        (when (get-buffer "*Hermes Toolsets*")
+          (kill-buffer "*Hermes Toolsets*"))))))
+
 (ert-deftest hermes-inventory-skill-rows-map-dashboard-skill-list ()
   "Skill rows map dashboard REST skill metadata, including enabled state."
   (let ((rows (hermes-inventory--skill-rows
@@ -245,7 +270,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "A mutation settled elsewhere refreshes only its originating inventory."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'fake-client)
                                        on-success)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
@@ -270,7 +295,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "A completed inventory mutation starts a fresh read after an intervening refresh."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
                (lambda (&rest _) promise))

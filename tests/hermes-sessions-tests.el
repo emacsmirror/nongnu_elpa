@@ -215,8 +215,10 @@
 
 (ert-deftest hermes-sessions-open-preserves-profile ()
   "Opening a row resumes its durable id under its owning profile."
-  (let (resumed)
-    (cl-letf (((symbol-function 'hermes-chat-resume-session)
+  (let ((instance '("remote" . "https://hermes.example.test")) resumed)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'hermes-chat-resume-session)
                (lambda (&rest args) (setq resumed args))))
       (hermes-sessions-test--render
        '(((id . "same") (title . "Other") (profile . "work"))))
@@ -227,7 +229,7 @@
             (beginning-of-line)
             (hermes-sessions-open))
         (kill-buffer "*Hermes Sessions*")))
-    (should (equal resumed '("same" "Other" "work")))))
+    (should (equal resumed (list "same" "Other" "work" instance)))))
 
 (ert-deftest hermes-sessions-profile-history-and-rename-use-rest ()
   "Profile-owned view and rename requests target the owning REST database."
@@ -343,6 +345,9 @@
                           (messages . (((role . "user") (text . "question"))
                                        ((role . "assistant")
                                         (text . "answer"))))))
+        (instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("remote" . "https://hermes.example.test")))
         history-session stopped)
     (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
@@ -359,6 +364,7 @@
             (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
+              (setq hermes-instance instance)
               (goto-char (point-min))
               (search-forward "s1")
               (beginning-of-line)
@@ -366,6 +372,7 @@
             (should (equal history-session "s1"))
             (should (eq stopped 'fake-client))
             (with-current-buffer "*Hermes Session: s1*"
+              (should (equal hermes-instance instance))
               (should (string-match-p "question" (buffer-string)))
               (should (string-match-p "answer" (buffer-string)))))
         (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))

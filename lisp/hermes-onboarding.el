@@ -438,12 +438,24 @@ with the dashboard's own message."
           (setq incoming (cons (cons key value) incoming))))
       incoming)))
 
-(defun hermes-onboarding--show-oauth (provider result &optional profile)
-  "Show PROVIDER and OAuth RESULT for PROFILE; return its request context."
-  (let ((buffer (get-buffer-create "*Hermes OAuth*")) context)
+(defun hermes-onboarding--oauth-buffer-name (instance)
+  "Return the OAuth status buffer name for INSTANCE."
+  (if (hermes-instance-multiple-p)
+      (format "*Hermes OAuth@%s*" (hermes-instance-name instance))
+    "*Hermes OAuth*"))
+
+(defun hermes-onboarding--show-oauth
+    (provider result &optional profile instance)
+  "Show PROVIDER and OAuth RESULT for PROFILE on INSTANCE.
+Return the new request context."
+  (let* ((instance (or instance (hermes-instance-resolve)))
+         (buffer (get-buffer-create
+                  (hermes-onboarding--oauth-buffer-name instance)))
+         context)
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-onboarding-oauth-mode)
         (hermes-onboarding-oauth-mode))
+      (hermes-browser--own-instance instance)
       (setq hermes-onboarding-oauth--provider
             (hermes-transport--display-field provider 'id)
             hermes-onboarding-oauth--provider-name
@@ -618,6 +630,7 @@ with the dashboard's own message."
   "Choose and disconnect a connected dashboard OAuth provider."
   (interactive)
   (let* ((origin (current-buffer))
+         (instance (hermes-instance-resolve))
          (owner (list origin (hermes-browser--next-request-generation)
                       major-mode))
          (profile (hermes-onboarding--current-profile))
@@ -643,7 +656,7 @@ with the dashboard's own message."
             (error "OAuth disconnect request superseded"))
           (setq context
                 (hermes-onboarding--show-oauth
-                 provider '((status . "disconnecting")) profile))
+                 provider '((status . "disconnecting")) profile instance))
           (hermes-onboarding--oauth-disconnect
            client (hermes-transport--display-field provider 'id) profile))))
      (lambda (result)
@@ -723,11 +736,13 @@ with the dashboard's own message."
 (defun hermes-onboarding-oauth-connect ()
   "Browse every provider account for the current Hermes profile."
   (interactive)
-  (let ((profile (hermes-onboarding--current-profile))
+  (let ((instance (hermes-instance-resolve))
+        (profile (hermes-onboarding--current-profile))
         (buffer (get-buffer-create "*Hermes Provider Accounts*")))
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-provider-accounts-mode)
         (hermes-provider-accounts-mode))
+      (hermes-browser--own-instance instance)
       (setq hermes-onboarding--provider-account-profile profile)
       (hermes-list-provider-accounts))))
 

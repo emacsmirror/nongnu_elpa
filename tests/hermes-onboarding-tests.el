@@ -232,11 +232,60 @@
         (dolist (buffer '("*Hermes Provider Accounts*" "*Hermes OAuth*"))
           (when (get-buffer buffer) (kill-buffer buffer)))))))
 
+(ert-deftest hermes-onboarding-oauth-disconnect-keeps-origin-instance ()
+  "A delayed provider lookup opens OAuth on its originating instance."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         (providers (hermes--promise-make))
+         (origin (generate-new-buffer " *Hermes OAuth origin*"))
+         disconnected-client oauth-buffer)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn 'remote-client #'ignore)))
+                  ((symbol-function 'hermes-onboarding--oauth-providers)
+                   (lambda (&rest _) providers))
+                  ((symbol-function 'hermes-onboarding--oauth-disconnect)
+                   (lambda (client &rest _)
+                     (setq disconnected-client client)
+                     (hermes--promise-resolved '((ok . t)))))
+                  ((symbol-function 'completing-read)
+                   (lambda (prompt collection &rest _)
+                     (when (string-prefix-p "Hermes instance" prompt)
+                       (ert-fail "Unexpected instance prompt"))
+                     (caar collection)))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) buffer))
+                  ((symbol-function 'message) #'ignore))
+          (with-current-buffer origin
+            (hermes-chat-mode)
+            (setq hermes-instance remote)
+            (hermes-onboarding-oauth-disconnect-provider))
+          (with-temp-buffer
+            (hermes--promise-resolve
+             providers
+             '((providers . (((id . "nous") (name . "Nous")
+                              (disconnectable . t)
+                              (status . ((logged_in . t)))))))))
+          (setq oauth-buffer (get-buffer "*Hermes OAuth@remote*"))
+          (should (buffer-live-p oauth-buffer))
+          (should (equal (buffer-local-value 'hermes-instance oauth-buffer)
+                         remote))
+          (should (eq disconnected-client 'remote-client)))
+      (when (buffer-live-p origin) (kill-buffer origin))
+      (when (buffer-live-p oauth-buffer) (kill-buffer oauth-buffer)))))
+
 (ert-deftest hermes-onboarding-account-browser-captures-chat-profile ()
-  "The public account command carries its invoking chat's profile into GET."
-  (let (query)
+  "Account command carries its invoking chat's profile and instance into GET."
+  (let ((instance '("remote" . "https://hermes.example.test"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        query seen-instance)
     (cl-letf (((symbol-function 'hermes-browser--with-client)
-               (lambda (fn) (funcall fn 'client #'ignore)))
+               (lambda (fn)
+                 (setq seen-instance hermes-instance)
+                 (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (_method _path &rest args)
                  (setq query (plist-get args :query))
@@ -245,10 +294,13 @@
       (unwind-protect
           (with-temp-buffer
             (hermes-chat-mode)
-            (setq hermes-chat--profile "profile-b")
+            (setq hermes-instance instance
+                  hermes-chat--profile "profile-b")
             (hermes-onboarding-oauth-connect)
             (should (equal query '((profile . "profile-b"))))
+            (should (equal seen-instance instance))
             (with-current-buffer "*Hermes Provider Accounts*"
+              (should (equal hermes-instance instance))
               (should (equal hermes-onboarding--provider-account-profile
                              "profile-b"))))
         (when (get-buffer "*Hermes Provider Accounts*")

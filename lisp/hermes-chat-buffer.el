@@ -38,6 +38,9 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-render)
 
+(defvar hermes-instance)
+(defvar hermes-instances)
+
 (defmacro hermes-chat--in-buffer (buffer &rest body)
   "Evaluate BODY in BUFFER when it is live, else do nothing.
 Lets asynchronous transport callbacks run in their originating chat buffer
@@ -1379,7 +1382,12 @@ self-explanatory."
   "Return ordered semantic segments for the Hermes chat header."
   (delq nil
         (append
-         (list (propertize (hermes-chat--header-profile-name)
+         (list (and (> (length hermes-instances) 1)
+                    (consp hermes-instance)
+                    (stringp (car hermes-instance))
+                    (propertize (car hermes-instance)
+                                'face 'hermes-chat-header-profile))
+               (propertize (hermes-chat--header-profile-name)
                            'face 'hermes-chat-header-profile)
                (hermes-chat--header-status-segment)
                (hermes-chat--header-goal-segment)

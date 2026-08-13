@@ -152,8 +152,20 @@ route requires both fields."
   "Edit one Hermes profile's SOUL.md through the dashboard API."
   :interactive nil
   (setq-local header-line-format
-              '(:eval (format " Profile: %s  |  C-c C-c save  C-c C-k quit "
-                              hermes-profiles-soul-profile))))
+              '(:eval (hermes-profiles--soul-header-line))))
+
+(defun hermes-profiles--soul-header-line ()
+  "Return the SOUL editor header for its profile and instance."
+  (concat (or (hermes-browser--instance-header-line) "")
+          (format " Profile: %s  |  C-c C-c save  C-c C-k quit "
+                  hermes-profiles-soul-profile)))
+
+(defun hermes-profiles--soul-buffer-name (profile instance)
+  "Return the SOUL editor buffer name for PROFILE on INSTANCE."
+  (if (hermes-instance-multiple-p)
+      (format "*Hermes Profile SOUL@%s: %s*"
+              (hermes-instance-name instance) profile)
+    (format "*Hermes Profile SOUL: %s*" profile)))
 
 (defun hermes-profiles--soul-path (profile)
   "Return the SOUL API path for PROFILE."
@@ -169,15 +181,19 @@ route requires both fields."
 (defun hermes-profiles-edit-soul ()
   "Open the selected non-default profile's SOUL.md for editing."
   (interactive)
-  (let ((profile (tabulated-list-get-id)))
+  (let ((instance (hermes-instance-resolve))
+        (profile (tabulated-list-get-id)))
     (unless profile (user-error "No profile on this line"))
     (hermes-profiles--ensure-non-default profile "edit SOUL for")
     (let ((target (get-buffer-create
-                   (format "*Hermes Profile SOUL: %s*" profile))))
+                   (hermes-profiles--soul-buffer-name profile instance))))
       (with-current-buffer target
         (unless (derived-mode-p 'hermes-profiles-soul-mode)
           (hermes-profiles-soul-mode))
-        (setq hermes-profiles-soul-profile profile))
+        (hermes-browser--own-instance instance)
+        (setq hermes-profiles-soul-profile profile
+              header-line-format
+              '(:eval (hermes-profiles--soul-header-line))))
       (pop-to-buffer target)
       (unless (with-current-buffer target (buffer-modified-p))
         (let ((generation
