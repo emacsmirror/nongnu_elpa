@@ -55,6 +55,9 @@ Chat ownership:
 
 ## Transport and ownership
 
+- Every feature must work with a released, unmodified Hermes Agent. Newer
+  protocol fields may enhance behavior, but must not be required by the
+  baseline path.
 - Use dashboard HTTP or TUI WebSocket through
   `hermes-dashboard-transport-url`. Never shell to local Hermes CLI for feature
   data. One-shot chat smoke is sole exception.

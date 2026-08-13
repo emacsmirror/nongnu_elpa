@@ -21,15 +21,12 @@
 
 ;;; Commentary:
 
-;; Connect a provider to Hermes from Emacs.  When the dashboard has no usable
-;; credentials a first-run user otherwise hits a raw connection failure with
-;; no way forward; this lists the dashboard's unauthenticated providers, reads
-;; an API key, and saves it through `model.save_key'.
+;; Connect providers to Hermes from Emacs.  API-key onboarding saves keys
+;; through `model.save_key'.  The provider-account browser projects the
+;; dashboard's OAuth catalog and uses its returned action metadata.
 ;;
-;; Every unauthenticated provider is offered without client-side auth
-;; classification: the gateway accepts a pasted key or returns its own error
-;; on save, so OAuth/managed providers fail with the backend's message rather
-;; than being filtered here.
+;; Provider membership and authentication policy remain backend-owned.  Shell
+;; commands returned by the dashboard are copied for the user, never executed.
 
 ;;; Code:
 
@@ -190,11 +187,44 @@ with the dashboard's own message."
   (hermes-transport--get
    (hermes-transport--get provider 'status) 'logged_in))
 
-(defun hermes-onboarding--oauth-provider-connectable-p (provider)
-  "Return non-nil when PROVIDER supports native REST onboarding."
-  (and (member (hermes-transport--display-field provider 'flow)
-               '("device_code" "pkce"))
-       (not (hermes-onboarding--oauth-provider-logged-in-p provider))))
+(defun hermes-onboarding--provider-account-row (provider)
+  "Return one `tabulated-list' entry for account PROVIDER."
+  (let* ((status (hermes-transport--get provider 'status))
+         (logged-in (hermes-onboarding--oauth-provider-logged-in-p provider))
+         (id (hermes-transport--display-field provider 'id))
+         (name (hermes-onboarding--provider-name provider))
+         (connected (if logged-in "Connected" "Available"))
+         (flow (hermes-transport--display-field provider 'flow))
+         (source (or (hermes-transport--non-empty-string
+                      (hermes-transport--field status 'source_label))
+                     (hermes-transport--field status 'source)
+                     "")))
+    (list id
+          (vector (hermes-browser--face-cell name 'hermes-browser-provider)
+                  (hermes-browser--face-cell
+                   connected (if logged-in
+                                 'hermes-browser-success
+                               'hermes-browser-muted))
+                  (hermes-browser--face-cell flow 'hermes-browser-type)
+                  (hermes-browser--face-cell source 'hermes-browser-description)))))
+
+(defun hermes-onboarding--provider-account-rows (result)
+  "Return account rows for every provider in API RESULT."
+  (mapcar #'hermes-onboarding--provider-account-row
+          (hermes-transport--get result 'providers)))
+
+(defvar-local hermes-onboarding--provider-account-result nil
+  "Latest provider-account API result rendered in this buffer.")
+
+(defun hermes-onboarding--provider-account-at-point ()
+  "Return the provider-account row at point or signal `user-error'."
+  (let ((id (tabulated-list-get-id)))
+    (or (seq-find
+         (lambda (provider)
+           (equal (hermes-transport--display-field provider 'id) id))
+         (hermes-transport--get
+          hermes-onboarding--provider-account-result 'providers))
+        (user-error "No provider on this line"))))
 
 (defun hermes-onboarding--oauth-provider-disconnectable-p (provider)
   "Return non-nil when PROVIDER can be disconnected through REST."
@@ -325,34 +355,73 @@ with the dashboard's own message."
     (pop-to-buffer buffer)
     context))
 
-;;;###autoload
-(defun hermes-onboarding-oauth-connect ()
-  "Choose and start a dashboard OAuth provider flow."
-  (interactive)
-  (let (provider context)
+(defun hermes-onboarding--oauth-start-provider (provider)
+  "Start native OAuth for API-supplied PROVIDER."
+  (let (context)
     (hermes-browser--run-on-client
      (lambda (client)
-       (hermes--promise-then
-        (hermes-dashboard-transport-api-request-async
-         "GET" "/api/providers/oauth" :client client)
-        (lambda (result)
-          (setq provider
-                (hermes-onboarding--choose-oauth-provider
-                 result #'hermes-onboarding--oauth-provider-connectable-p
-                 "Connect OAuth provider: "))
-          (setq context
-                (hermes-onboarding--show-oauth
-                 provider '((status . "starting"))))
-          (hermes-onboarding--oauth-start
-           client (hermes-transport--display-field provider 'id)))))
+       (setq context
+             (hermes-onboarding--show-oauth provider '((status . "starting"))))
+       (hermes-onboarding--oauth-start
+        client (hermes-transport--display-field provider 'id)))
      (lambda (result)
        (when (hermes-onboarding--oauth-apply-result context result)
          (when (hermes-onboarding--oauth-approved-p result)
            (hermes-onboarding--auth-changed))
-         (let ((url (or (hermes-transport--get result 'verification_url)
-                        (hermes-transport--get result 'auth_url))))
-           (when (hermes-transport--non-empty-string url)
-             (browse-url url))))))))
+         (when-let* ((url (or (hermes-transport--get result 'verification_url)
+                              (hermes-transport--get result 'auth_url)))
+                     ((hermes-transport--non-empty-string url)))
+           (browse-url url)))))))
+
+(defun hermes-onboarding--provider-account-copy-field (provider field label)
+  "Copy PROVIDER FIELD and report it as LABEL."
+  (let ((value (hermes-transport--non-empty-string
+                (hermes-transport--display-field provider field))))
+    (unless value
+      (user-error "Provider supplied no %s" label))
+    (kill-new value)
+    (message "Hermes: copied provider %s" label)))
+
+(defun hermes-onboarding--provider-account-act (provider)
+  "Use the API-described connection action for PROVIDER."
+  (let ((flow (hermes-transport--display-field provider 'flow)))
+    (cond
+     ((hermes-onboarding--oauth-provider-logged-in-p provider)
+      (message "Hermes: %s is connected"
+               (hermes-onboarding--provider-name provider)))
+     ((member flow '("device_code" "pkce"))
+      (hermes-onboarding--oauth-start-provider provider))
+     ((hermes-transport--non-empty-string
+       (hermes-transport--display-field provider 'cli_command))
+      (hermes-onboarding--provider-account-copy-field
+       provider 'cli_command "connection command"))
+     ((hermes-transport--non-empty-string
+       (hermes-transport--display-field provider 'docs_url))
+      (browse-url (hermes-transport--display-field provider 'docs_url)))
+     (t
+      (user-error "Provider supplied no supported connection action")))))
+
+(defun hermes-onboarding-provider-account-act ()
+  "Connect or describe the provider account at point."
+  (interactive)
+  (hermes-onboarding--provider-account-act
+   (hermes-onboarding--provider-account-at-point)))
+
+(defun hermes-onboarding-provider-account-copy-command ()
+  "Copy the API-supplied connection command for the provider at point."
+  (interactive)
+  (hermes-onboarding--provider-account-copy-field
+   (hermes-onboarding--provider-account-at-point)
+   'cli_command "connection command"))
+
+(defun hermes-onboarding-provider-account-browse-docs ()
+  "Open API-supplied documentation for the provider at point."
+  (interactive)
+  (let* ((provider (hermes-onboarding--provider-account-at-point))
+         (url (hermes-transport--non-empty-string
+               (hermes-transport--display-field provider 'docs_url))))
+    (unless url (user-error "Provider supplied no documentation URL"))
+    (browse-url url)))
 
 (defun hermes-onboarding-oauth-poll ()
   "Poll the OAuth session shown in the current status buffer."
@@ -452,6 +521,59 @@ with the dashboard's own message."
          (hermes-onboarding--auth-changed)
          (message "Hermes: disconnected OAuth provider %s"
                   (hermes-onboarding--provider-name provider)))))))
+
+(defun hermes-onboarding-provider-account-disconnect ()
+  "Disconnect the provider account at point using API-returned policy."
+  (interactive)
+  (let* ((provider (hermes-onboarding--provider-account-at-point))
+         (name (hermes-onboarding--provider-name provider))
+         (origin (current-buffer)))
+    (unless (hermes-onboarding--oauth-provider-logged-in-p provider)
+      (user-error "%s is not connected" name))
+    (cond
+     ((hermes-transport--get provider 'disconnectable)
+      (when (yes-or-no-p (format "Disconnect provider %s? " name))
+        (hermes-browser--run-on-client
+         (lambda (client)
+           (hermes-onboarding--oauth-disconnect
+            client (hermes-transport--display-field provider 'id)))
+         (lambda (_result)
+           (hermes-onboarding--auth-changed)
+           (message "Hermes: disconnected provider %s" name)
+           (when (hermes-browser--buffer-mode-p
+                  origin 'hermes-provider-accounts-mode)
+             (with-current-buffer origin
+               (hermes-provider-accounts--revert)))))))
+     ((hermes-transport--non-empty-string
+       (hermes-transport--display-field provider 'disconnect_command))
+      (hermes-onboarding--provider-account-copy-field
+       provider 'disconnect_command "disconnect command"))
+     ((hermes-transport--non-empty-string
+       (hermes-transport--display-field provider 'disconnect_hint))
+      (message "Hermes: %s"
+               (hermes-transport--display-field provider 'disconnect_hint)))
+     (t
+      (user-error "Provider supplied no disconnect action")))))
+
+;;;###autoload (autoload 'hermes-onboarding-oauth-connect "hermes-onboarding" nil t)
+(hermes-define-list-browser provider-accounts
+  :title "Hermes Provider Accounts"
+  :buffer "*Hermes Provider Accounts*"
+  :command hermes-onboarding-oauth-connect
+  :doc "Major mode listing provider accounts reported by the Hermes dashboard."
+  :command-doc "Browse every provider account reported by the Hermes dashboard."
+  :columns [("Provider" 32 t) ("Status" 11 t) ("Flow" 14 t) ("Source" 36 t)]
+  :fetch (lambda (client)
+           (hermes-dashboard-transport-api-request-async
+            "GET" "/api/providers/oauth" :client client))
+  :rows #'hermes-onboarding--provider-account-rows
+  :on-result (lambda (result)
+               (setq hermes-onboarding--provider-account-result result))
+  :keys ("RET" #'hermes-onboarding-provider-account-act
+         "c" #'hermes-onboarding-provider-account-act
+         "d" #'hermes-onboarding-provider-account-disconnect
+         "b" #'hermes-onboarding-provider-account-browse-docs
+         "w" #'hermes-onboarding-provider-account-copy-command))
 
 (defvar-keymap hermes-onboarding-oauth-mode-map
   :doc "Keymap for `hermes-onboarding-oauth-mode'."

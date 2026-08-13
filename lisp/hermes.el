@@ -131,6 +131,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 (keymap-popup-define hermes-dashboard-mode-map
   "Hermes Dashboard"
   :parent special-mode-map
+  :popup-key "h"
   :description "Hermes Dashboard"
   :group "Navigate"
   "n" ("Next card" hermes-dashboard-next)
@@ -139,8 +140,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "<mouse-1>" ("Open with mouse" hermes-dashboard-mouse-open)
   :group "Session"
   "c" ("Chat" hermes-chat)
-  "e" ("Connect provider" hermes-onboarding-connect-provider)
-  "o" ("Connect OAuth provider" hermes-onboarding-oauth-connect)
+  "e" ("Connect API-key provider" hermes-onboarding-connect-provider)
+  "o" ("Provider accounts" hermes-onboarding-oauth-connect)
   "S" ("Sessions" hermes-list-sessions)
   :group "Selected chat"
   "i" ("Interrupt" hermes-dashboard-interrupt)
@@ -166,12 +167,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "P" ("Command palette" hermes-command-palette)
   "?" ("Help" hermes-dashboard-popup))
 
-(defun hermes-dashboard--install-key-aliases ()
-  "Install dashboard key aliases omitted from popup metadata."
-  (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
-  (keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette))
-
-(hermes-dashboard--install-key-aliases)
+;; Standard palette alias; `P' remains the sole popup entry.
+(keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette)
 
 (defun hermes-dashboard--header-line ()
   "Return the dashboard header line."
