@@ -34,6 +34,19 @@
     (should (string-match-p "TELEGRAM_ALLOWED_USERS.*unset" detail))
     (should-not (string-match-p "SECRET-SUFFIX" detail))))
 
+(ert-deftest hermes-messaging-projects-current-backend-lifecycle-states ()
+  "Catalog rows and details preserve every current backend lifecycle state."
+  (dolist (state '("disabled" "not_configured" "pending_restart"
+                   "gateway_stopped" "startup_failed" "connecting"
+                   "connected" "retrying" "disconnected" "paused" "fatal"))
+    (let* ((platform (copy-tree (hermes-messaging-test--platform t)))
+           (_ (setf (alist-get 'state platform) state))
+           (row (car (hermes-messaging--rows `((platforms . (,platform))))))
+           (detail (hermes-messaging--detail-text platform "work")))
+      (should (equal (aref (cadr row) 3) state))
+      (should (string-match-p
+               (format "State:      %s" (regexp-quote state)) detail)))))
+
 (ert-deftest hermes-messaging-list-profile-scopes-get-and-ignores-stale-result ()
   "A catalog GET carries profile and cannot render after buffer ownership changes."
   (let ((request (hermes--promise-make)) seen target)

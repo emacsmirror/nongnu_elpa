@@ -178,6 +178,43 @@
       (should (equal method "complete.slash"))
       (should (equal (cdr (assq 'text params)) "/handoff ")))))
 
+(ert-deftest hermes-dashboard-rpc-wrapper-contracts-cover-current-features ()
+  "Less common feature wrappers preserve upstream methods and parameter names."
+  (let (requests)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (push (cons method params) requests))))
+      (hermes-dashboard-transport-setup-status 'client)
+      (hermes-dashboard-transport-rollback-restore
+       'client "checkpoint" :session-id "sid" :file-path "notes.org")
+      (hermes-dashboard-transport-subagent-interrupt 'client "child")
+      (hermes-dashboard-transport-cron-manage
+       'client :action "pause" :name "nightly")
+      (hermes-dashboard-transport-prompt-background
+       'client "audit" :session-id "sid")
+      (hermes-dashboard-transport-session-status 'client :session-id "sid"))
+    (should
+     (equal (nreverse requests)
+            '(("setup.status")
+              ("rollback.restore" (hash . "checkpoint")
+               (session_id . "sid") (file_path . "notes.org"))
+              ("subagent.interrupt" (subagent_id . "child"))
+              ("cron.manage" (action . "pause") (name . "nightly"))
+              ("prompt.background" (session_id . "sid") (text . "audit"))
+              ("session.status" (session_id . "sid")))))))
+
+(ert-deftest hermes-dashboard-active-profile-uses-authenticated-rest-client ()
+  "Active-profile lookup uses the exact upstream route and supplied client."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (method path &rest args)
+                 (setq request (list method path (plist-get args :client)))
+                 '((active . "default") (current . "work")))))
+      (should
+       (equal (hermes-dashboard-transport-active-profile 'client)
+              '((active . "default") (current . "work")))))
+    (should (equal request '("GET" "/api/profiles/active" client)))))
+
 ;;; Group: kanban events WS-URL plumbing
 
 (ert-deftest hermes-dashboard-websocket-endpoint-for-parameterizes-path ()

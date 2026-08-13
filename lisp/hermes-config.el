@@ -46,6 +46,94 @@
   (hermes-dashboard-transport-api-request-async
    method path :body body :client client))
 
+(defun hermes-config--run-owned (buffer generation make-promise on-success)
+  "Run MAKE-PROMISE while BUFFER owns GENERATION.
+ON-SUCCESS receives the result only while BUFFER remains a current config view."
+  (let ((hermes-browser--request-error-owner
+         (list buffer generation 'hermes-config-mode)))
+    (hermes-browser--run-on-client
+     make-promise
+     (lambda (result)
+       (when (hermes-browser--request-current-mode-p
+              buffer generation 'hermes-config-mode)
+         (funcall on-success result))))))
+
+(defvar-local hermes-config--mutation-in-flight nil
+  "Identity token for the current config mutation, or nil.")
+
+(defvar-local hermes-config--mutation-cleanup nil
+  "Idempotent cleanup thunk for the current config mutation, or nil.")
+
+(defun hermes-config--require-mutation-idle ()
+  "Signal `user-error' while this config view has an unsettled mutation."
+  (when hermes-config--mutation-in-flight
+    (user-error "A configuration update is still in progress")))
+
+(defun hermes-config--mutation-current-p (buffer token)
+  "Return non-nil when BUFFER still owns mutation TOKEN."
+  (and (hermes-browser--buffer-mode-p buffer 'hermes-config-mode)
+       (eq token
+           (buffer-local-value 'hermes-config--mutation-in-flight buffer))))
+
+(defun hermes-config--teardown-mutation ()
+  "Release the current config mutation during buffer teardown."
+  (when hermes-config--mutation-cleanup
+    (funcall hermes-config--mutation-cleanup)))
+
+(defun hermes-config--run-mutation (buffer make-promise)
+  "Run BUFFER's MAKE-PROMISE mutation, then fetch authoritative state.
+Only one mutation may own BUFFER.  The lock covers the write and its refresh."
+  (with-current-buffer buffer (hermes-config--require-mutation-idle))
+  (let ((token (list 'config-mutation)))
+    (with-current-buffer buffer
+      (hermes-browser--next-request-generation)
+      (setq hermes-config--mutation-in-flight token))
+    (condition-case err
+        (hermes-browser--with-client
+         (lambda (client done)
+           (let (cleanup
+                 (released nil))
+             (setq cleanup
+                   (lambda ()
+                     (unless released
+                       (setq released t)
+                       (when (buffer-live-p buffer)
+                         (with-current-buffer buffer
+                           (when (eq hermes-config--mutation-in-flight token)
+                             (setq hermes-config--mutation-in-flight nil))
+                           (when (eq hermes-config--mutation-cleanup cleanup)
+                             (setq hermes-config--mutation-cleanup nil))))
+                       (funcall done))))
+             (with-current-buffer buffer
+               (setq hermes-config--mutation-cleanup cleanup))
+             (let ((write
+                    (condition-case write-err
+                        (funcall make-promise client)
+                      ((error quit)
+                       (hermes--promise-rejected
+                        (error-message-string write-err))))))
+               (hermes--promise-finally
+                (hermes--promise-then
+                 (hermes--promise-then
+                  write
+                  (lambda (_result)
+                    (when (hermes-config--mutation-current-p buffer token)
+                      (hermes-config--fetch client))))
+                 (lambda (result)
+                   (when (hermes-config--mutation-current-p buffer token)
+                     (hermes-config--render
+                      buffer (nth 0 result) (nth 1 result) (nth 2 result))))
+                 (lambda (reason)
+                   (when (hermes-config--mutation-current-p buffer token)
+                     (message "Hermes: %s" reason))))
+                cleanup)))))
+      ((error quit)
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (setq hermes-config--mutation-in-flight nil
+                 hermes-config--mutation-cleanup nil)))
+       (signal (car err) (cdr err))))))
+
 (defun hermes-config--object-entries (object)
   "Return OBJECT as an alist of entries."
   (cond
@@ -142,15 +230,15 @@
 
 (defun hermes-config-refresh (&rest _)
   "Refresh the current Hermes config buffer."
+  (hermes-config--require-mutation-idle)
   (let ((buffer (current-buffer))
         (generation (hermes-browser--next-request-generation)))
-    (hermes-browser--run-on-client
+    (hermes-config--run-owned
+     buffer generation
      #'hermes-config--fetch
      (lambda (result)
-       (when (hermes-browser--request-current-mode-p
-              buffer generation 'hermes-config-mode)
-         (hermes-config--render buffer (nth 0 result) (nth 1 result)
-                                (nth 2 result)))))))
+       (hermes-config--render buffer (nth 0 result) (nth 1 result)
+                              (nth 2 result))))))
 
 (defun hermes-config--coerce (text schema)
   "Return TEXT coerced according to field SCHEMA."
@@ -199,6 +287,7 @@
 (defun hermes-config-edit ()
   "Edit the schema field at point and save it through dashboard REST."
   (interactive)
+  (hermes-config--require-mutation-idle)
   (let* ((path (get-text-property (point) 'hermes-config-key))
          (current (and path (hermes-config--path-value hermes-config--config path)))
          (schema (and path (hermes-config--field-schema path))))
@@ -208,13 +297,11 @@
                     hermes-config--config (split-string path "\\." t)
                     (hermes-config--read-value path schema current)))
            (buffer (current-buffer)))
-      (hermes-browser--run-on-client
+      (hermes-config--run-mutation
+       buffer
        (lambda (client)
          (hermes-config--api client "PUT" "/api/config"
-                             `((config . ,config))))
-       (lambda (_result)
-         (when (hermes-browser--buffer-mode-p buffer 'hermes-config-mode)
-           (with-current-buffer buffer (hermes-config-refresh))))))))
+                             `((config . ,config))))))))
 
 (defun hermes-config--env-key-at-point ()
   "Return environment key at point, or prompt for a new one."
@@ -226,31 +313,29 @@
 (defun hermes-config-set-env ()
   "Set the environment key at point without echoing secret input."
   (interactive)
+  (hermes-config--require-mutation-idle)
   (let* ((key (hermes-config--env-key-at-point))
          (value (read-passwd (format "%s: " key)))
          (buffer (current-buffer)))
-    (hermes-browser--run-on-client
+    (hermes-config--run-mutation
+     buffer
      (lambda (client)
        (hermes-dashboard-transport-api-request-async
         "PUT" "/api/env" :body `((key . ,key) (value . ,value))
-        :secrets (list value) :client client))
-     (lambda (_result)
-       (when (hermes-browser--buffer-mode-p buffer 'hermes-config-mode)
-         (with-current-buffer buffer (hermes-config-refresh)))))))
+        :secrets (list value) :client client)))))
 
 (defun hermes-config-delete-env ()
   "Delete the environment key at point after confirmation."
   (interactive)
+  (hermes-config--require-mutation-idle)
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer)))
     (unless key (user-error "No environment key on this line"))
     (when (yes-or-no-p (format "Delete environment key %s? " key))
-      (hermes-browser--run-on-client
+      (hermes-config--run-mutation
+       buffer
        (lambda (client)
-         (hermes-config--api client "DELETE" "/api/env" `((key . ,key))))
-       (lambda (_result)
-         (when (hermes-browser--buffer-mode-p buffer 'hermes-config-mode)
-           (with-current-buffer buffer (hermes-config-refresh))))))))
+         (hermes-config--api client "DELETE" "/api/env" `((key . ,key))))))))
 
 (defun hermes-config-reveal-env ()
   "Reveal the environment key at point by copying it without displaying it."
@@ -258,11 +343,12 @@
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer)))
     (unless key (user-error "No environment key on this line"))
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (hermes-config--api client "POST" "/api/env/reveal" `((key . ,key))))
-     (lambda (result)
-       (when (hermes-browser--buffer-mode-p buffer 'hermes-config-mode)
+    (let ((generation (hermes-browser--next-request-generation)))
+      (hermes-config--run-owned
+       buffer generation
+       (lambda (client)
+         (hermes-config--api client "POST" "/api/env/reveal" `((key . ,key))))
+       (lambda (result)
          (let ((value (hermes-transport--scalar-string
                        (hermes-transport--get result 'value))))
            (unless value (user-error "Dashboard returned no value"))
@@ -282,16 +368,22 @@
 (define-derived-mode hermes-config-mode special-mode "Hermes Config"
   "Major mode for dashboard configuration and environment management."
   :interactive nil
-  (setq-local revert-buffer-function #'hermes-config-refresh))
+  (setq-local revert-buffer-function #'hermes-config-refresh)
+  (add-hook 'change-major-mode-hook #'hermes-config--teardown-mutation nil t)
+  (add-hook 'kill-buffer-hook #'hermes-config--teardown-mutation nil t))
 
 ;;;###autoload
 (defun hermes-config ()
   "Open the schema-driven Hermes configuration browser."
   (interactive)
   (let ((buffer (get-buffer-create "*Hermes Config*")))
-    (with-current-buffer buffer (hermes-config-mode))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'hermes-config-mode)
+        (hermes-config-mode)))
     (pop-to-buffer buffer)
-    (with-current-buffer buffer (hermes-config-refresh))))
+    (with-current-buffer buffer
+      (unless hermes-config--mutation-in-flight
+        (hermes-config-refresh)))))
 
 (provide 'hermes-config)
 ;;; hermes-config.el ends here
