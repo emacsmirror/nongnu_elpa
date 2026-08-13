@@ -1744,5 +1744,33 @@ as VM defines them."
         (advice-add (car pair) :around (cdr pair))
       (advice-remove (car pair) (cdr pair)))))
 
+(defun vmpc-rules-are-set-p ()
+  "Whether Personality Crisis has been configured with anything to do."
+  (and (or vmpc-conditions vmpc-actions)
+       (or vmpc-default-rules vmpc-reply-rules vmpc-forward-rules
+           vmpc-resend-rules vmpc-newmail-rules vmpc-automorph-rules)))
+
+;;;###autoload
+(defun vmpc-warn-if-off ()
+  "Say so in a composition when the rules are set but `vmpc-mode' is off.
+
+Setting `vmpc-conditions' and `vmpc-actions' with the mode off can only be a
+mistake: the rules are never consulted, and the composition gets whatever
+`user-mail-address' says.  It is a quiet mistake, since a default rule naming
+the same address VM would have used anyway looks exactly like a working
+setup -- which is how an init file that had worked for years went unnoticed
+after the mode arrived in 8.3.0.
+
+Said at every composition rather than once, because a warning seen once at
+startup is a warning forgotten.  `vm-current-warning' is bound around the
+call for the same reason: `vm-warn' will not repeat itself, and here
+repeating itself is the point."
+  (when (and (not vmpc-mode) (vmpc-rules-are-set-p))
+    (let ((vm-current-warning nil))
+      (vm-warn 0 2 (concat "Personality Crisis rules are set but vmpc-mode "
+			   "is off: add (vmpc-mode 1) to your init file")))))
+
+(add-hook 'vm-mail-mode-hook #'vmpc-warn-if-off)
+
 (provide 'vm-pcrisis)
 ;;; vm-pcrisis.el ends here
