@@ -419,9 +419,21 @@ A keymap entry naming a deleted or misspelled command is a `void-function' the
 first time somebody presses the key, and nothing in a byte-compile or a lint run
 sees it: the `define-key' call is well-formed whatever symbol it is given.
 
-The optional bindings are installed first, so they are covered too."
+The optional bindings are installed first, so they are covered too, into
+copies of the maps.  Installing them for real leaves them installed: the
+functions call `define-key' on the map the variable holds, and the harness
+restores VM's variables rather than what their values point at, so the run
+carried VM 8 bindings from here on."
   (require 'vm)
-  (vm-v8-key-bindings)
+  (let ((vm-mode-map (copy-keymap vm-mode-map))
+        (vm-mode-virtual-map (copy-keymap vm-mode-virtual-map))
+        (vm-summary-mode-map (copy-keymap vm-summary-mode-map))
+        (vm-folders-summary-mode-map (copy-keymap vm-folders-summary-mode-map)))
+    (vm-v8-key-bindings)
+    (vm-integration-test--check-bindings)))
+
+(defun vm-integration-test--check-bindings ()
+  "Signal for every key in VM's maps bound to a command that does not exist."
   (let (broken)
     (cl-labels ((walk (map path name)
                   (map-keymap
