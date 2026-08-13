@@ -14,6 +14,7 @@
 (require 'jabber-mam)
 (require 'jabber-core)
 (require 'jabber-message-correct)
+(require 'jabber-moderation)
 (require 'jabber-omemo-store)
 
 ;;; Test infrastructure
@@ -1098,6 +1099,53 @@ VALUES ('a','b','in','chat','test',1)")
                     '("archive-reaction-1")))
       (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
       (should (car (jabber-xml-get-children stanza 'reactions))))))
+
+(ert-deftest jabber-test-mam-author-retract-fallback-unwrapped-not-stored ()
+  "Archived author retraction is unwrapped but never stored as chat text."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-mam--query-targets
+            (list (cons jabber-test-mam-queryid "room@conference.example")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           (stanza
+            `(message ((from . "room@conference.example"))
+                      (result ((xmlns . ,jabber-mam-xmlns)
+                               (queryid . ,jabber-test-mam-queryid)
+                               (id . "archive-retract-1"))
+                              (forwarded
+                               ((xmlns . ,jabber-mam-forward-xmlns))
+                               (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                       (stamp . "2026-08-13T13:45:00Z")))
+                               (message
+                                ((from . "room@conference.example/alice")
+                                 (to . "me@example.com")
+                                 (type . "groupchat")
+                                 (id . "retract-message-1"))
+                                (body () "sender-controlled fallback")
+                                (retract
+                                 ((id . "target-server-id")
+                                  (xmlns . ,jabber-moderation-retract-xmlns)))
+                                (occupant-id
+                                 ((xmlns . "urn:xmpp:occupant-id:0")
+                                  (id . "occupant-alice")))))))))
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example" "in" "groupchat"
+       "original message" 1786628700 "alice" "original-client-id"
+       "target-server-id" "occupant-alice")
+      (cl-letf (((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) t)))
+        (jabber-mam--process-message jc stanza)
+        (should (jabber-moderation--handle-message jc stanza)))
+      (should
+       (equal '(("original message" "room@conference.example/alice"))
+              (sqlite-select
+               (jabber-db-ensure-open)
+               "SELECT body, retracted_by FROM message ORDER BY id")))
+      (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
+      (should (jabber-moderation--muc-retraction-message-p stanza)))))
 
 (ert-deftest jabber-test-mam-bodyless-stanza-unwrapped ()
   "Bodyless MAM result is unwrapped with original sender and MAM marker."

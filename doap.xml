@@ -535,9 +535,9 @@
       <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0424.html"/>
         <xmpp:status>partial</xmpp:status>
-        <xmpp:version>0.4.2</xmpp:version>
+        <xmpp:version>0.5.0</xmpp:version>
         <xmpp:since>0.10.0</xmpp:since>
-        <xmpp:note>Received as part of XEP-0425 moderated retraction flow.  No standalone self-retraction.</xmpp:note>
+        <xmpp:note>Incoming MUC self-retraction is supported when the room supplies trusted XEP-0421 occupant identifiers, including MAM replay and mandatory fallback suppression.  XEP-0425 moderated retraction is supported.  No outgoing author retraction or standalone 1:1 retraction.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>

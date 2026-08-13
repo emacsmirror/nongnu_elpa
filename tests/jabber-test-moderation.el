@@ -80,6 +80,468 @@
                        (plist-get msg :retracted-by)))
         (should (equal "spam" (plist-get msg :retraction-reason)))))))
 
+(ert-deftest jabber-test-moderation-author-retract-updates-exact-target ()
+  "Author retraction updates its one occupant-matched target."
+  (jabber-test-moderation-with-ewoc
+    (setq-local jabber-group "room@muc.example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (let* ((from "room@muc.example.com/alice")
+           (msg (list :id "client-id-1" :server-id "server-id-1"
+                      :from from :occupant-id "occupant-alice"
+                      :body "mistake" :timestamp (current-time)))
+           (buf (current-buffer))
+           db-call)
+      (jabber-chat-ewoc-enter (list :muc-foreign msg))
+      (cl-letf (((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) t))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-retraction-candidates)
+                 (lambda (_account _room _server-id)
+                   (list (list :row-id 42 :from from
+                               :occupant-id "occupant-alice"))))
+                ((symbol-function 'jabber-db-retract-message-row)
+                 (lambda (&rest args) (setq db-call args)))
+                ((symbol-function 'jabber-moderation--target-buffers-for-row)
+                 (lambda (_jc _room _row-id) (list buf))))
+        (should
+         (jabber-moderation--handle-message
+          'fake-jc
+          `(message ((from . ,from) (type . "groupchat"))
+                    (body () "Your contact attempted to retract a previous message, but it's unsupported by your client")
+                    (retract ((id . "server-id-1")
+                              (xmlns . ,jabber-moderation-retract-xmlns)))
+                    (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                  (id . "occupant-alice")))))))
+      (should (equal '(42 "room@muc.example.com/alice") db-call))
+      (let ((updated (cadr (ewoc-data
+                            (jabber-chat-ewoc-find-by-id "server-id-1")))))
+        (should (plist-get updated :retracted))
+        (should (equal from (plist-get updated :retracted-by)))))))
+
+(ert-deftest jabber-test-moderation-author-retract-without-history ()
+  "Live author retraction works when persistent history is disabled."
+  (jabber-test-moderation-with-ewoc
+    (setq-local jabber-group "room@muc.example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (let ((jabber-db-path nil)
+          (original
+           '(message ((from . "room@muc.example.com/alice")
+                      (id . "client-id-1")
+                      (type . "groupchat"))
+                     (body () "mistake")
+                     (stanza-id ((id . "server-id-1")
+                                 (by . "room@muc.example.com")
+                                 (xmlns . "urn:xmpp:sid:0")))
+                     (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                   (id . "occupant-alice")))))
+          (retraction
+           '(message ((from . "room@muc.example.com/alice")
+                      (type . "groupchat"))
+                     (body () "sender-controlled fallback")
+                     (retract ((id . "server-id-1")
+                               (xmlns . "urn:xmpp:message-retract:1")))
+                     (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                   (id . "occupant-alice"))))))
+      (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (_room &optional _jc) (current-buffer)))
+                ((symbol-function 'jabber-muc-nickname)
+                 (lambda (_room _jc) "me"))
+                ((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) t)))
+        (jabber-process-input 'fake-jc original)
+        (jabber-process-input 'fake-jc retraction))
+      (let ((msg (cadr (ewoc-data
+                        (jabber-chat-ewoc-find-by-id "server-id-1")))))
+        (should (equal "occupant-alice" (plist-get msg :occupant-id)))
+        (should (plist-get msg :retracted)))
+      (should
+       (= 1
+          (length
+           (ewoc-collect jabber-chat-ewoc
+                         (lambda (data)
+                           (memq (car-safe data)
+                                 '(:muc-local :muc-foreign))))))))))
+
+(ert-deftest jabber-test-moderation-live-author-retract-updates-projections ()
+  "One live target is tombstoned in its parent and thread views."
+  (let ((parent (generate-new-buffer " *jabber-retract-parent*"))
+        (thread (generate-new-buffer " *jabber-retract-thread*")))
+    (unwind-protect
+        (progn
+          (dolist (entry (list (cons parent nil) (cons thread "thread-1")))
+            (with-current-buffer (car entry)
+              (setq-local jabber-group "room@muc.example.com")
+              (setq-local jabber-buffer-connection 'fake-jc)
+              (setq-local jabber-message-thread-id (cdr entry))
+              (setq-local jabber-chat-ewoc
+                          (ewoc-create #'ignore nil nil 'nosep))
+              (setq-local jabber-chat--msg-nodes
+                          (make-hash-table :test 'equal))
+              (jabber-chat-ewoc-enter
+               (list :muc-foreign
+                     (list :server-id "server-id-1"
+                           :from "room@muc.example.com/alice"
+                           :occupant-id "occupant-alice"
+                           :body "mistake" :timestamp (current-time))))))
+          (let ((jabber-db-path nil))
+            (cl-letf (((symbol-function
+                        'jabber-moderation--room-supports-occupant-id-p)
+                       (lambda (_room) t))
+                      ((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_jc) "me@example.com")))
+              (should
+               (jabber-moderation--handle-message
+                'fake-jc
+                '(message ((from . "room@muc.example.com/alice")
+                           (type . "groupchat"))
+                          (retract ((id . "server-id-1")
+                                    (xmlns . "urn:xmpp:message-retract:1")))
+                          (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                        (id . "occupant-alice"))))))))
+          (dolist (buffer (list parent thread))
+            (with-current-buffer buffer
+              (should
+               (plist-get
+                (cadr (ewoc-data
+                       (jabber-chat-ewoc-find-by-id "server-id-1")))
+                :retracted)))))
+      (dolist (buffer (list parent thread))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-moderation-author-retract-rejects-live-disagreement ()
+  "Stored authorization cannot override conflicting live occupant identity."
+  (jabber-test-moderation-with-ewoc
+    (setq-local jabber-group "room@muc.example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (jabber-chat-ewoc-enter
+     (list :muc-foreign
+           (list :server-id "server-id-1"
+                 :from "room@muc.example.com/alice"
+                 :occupant-id "occupant-mallory"
+                 :body "keep" :timestamp (current-time))))
+    (let (db-call)
+      (cl-letf (((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) t))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-retraction-candidates)
+                 (lambda (_account _room _server-id)
+                   (list (list :row-id 42
+                               :from "room@muc.example.com/alice"
+                               :occupant-id "occupant-alice"))))
+                ((symbol-function 'jabber-db-retract-message-row)
+                 (lambda (&rest args) (setq db-call args))))
+        (should-not
+         (jabber-moderation--handle-message
+          'fake-jc
+          '(message ((from . "room@muc.example.com/alice")
+                     (type . "groupchat"))
+                    (retract ((id . "server-id-1")
+                              (xmlns . "urn:xmpp:message-retract:1")))
+                    (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                  (id . "occupant-alice")))))))
+      (should-not db-call)
+      (should-not
+       (plist-get
+        (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "server-id-1")))
+        :retracted)))))
+
+(ert-deftest jabber-test-moderation-author-retract-rejects-missing-live-identity ()
+  "Stored authorization cannot override missing live occupant identity."
+  (jabber-test-moderation-with-ewoc
+    (setq-local jabber-group "room@muc.example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (jabber-chat-ewoc-enter
+     (list :muc-foreign
+           (list :server-id "server-id-1"
+                 :from "room@muc.example.com/alice"
+                 :body "keep" :timestamp (current-time))))
+    (let (db-call)
+      (cl-letf (((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) t))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-retraction-candidates)
+                 (lambda (_account _room _server-id)
+                   (list (list :row-id 42
+                               :from "room@muc.example.com/alice"
+                               :occupant-id "occupant-alice"))))
+                ((symbol-function 'jabber-db-retract-message-row)
+                 (lambda (&rest args) (setq db-call args))))
+        (should-not
+         (jabber-moderation--handle-message
+          'fake-jc
+          '(message ((from . "room@muc.example.com/alice")
+                     (type . "groupchat"))
+                    (retract ((id . "server-id-1")
+                              (xmlns . "urn:xmpp:message-retract:1")))
+                    (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                  (id . "occupant-alice")))))))
+      (should-not db-call)
+      (should-not
+       (plist-get
+        (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "server-id-1")))
+        :retracted)))))
+
+(ert-deftest jabber-test-moderation-author-retract-preserves-moderator-projections ()
+  "A later author action cannot downgrade a moderator tombstone."
+  (let* ((dir (make-temp-file "jabber-moderation-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" dir))
+         (jabber-db--connection nil)
+         (parent (generate-new-buffer " *jabber-moderated-parent*"))
+         (thread (generate-new-buffer " *jabber-moderated-thread*"))
+         (moderator "room@muc.example.com/admin"))
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          (jabber-db-store-message
+           "me@example.com" "room@muc.example.com" "in" "groupchat"
+           "spam" 1700000000 "alice" "client-id-1" "server-id-1"
+           "occupant-alice")
+          (dolist (entry (list (cons parent nil) (cons thread "thread-1")))
+            (with-current-buffer (car entry)
+              (setq-local jabber-group "room@muc.example.com")
+              (setq-local jabber-buffer-connection 'fake-jc)
+              (setq-local jabber-message-thread-id (cdr entry))
+              (setq-local jabber-chat-ewoc
+                          (ewoc-create #'ignore nil nil 'nosep))
+              (setq-local jabber-chat--msg-nodes
+                          (make-hash-table :test 'equal))
+              (jabber-chat-ewoc-enter
+               (list :muc-foreign
+                     (list :server-id "server-id-1"
+                           :from "room@muc.example.com/alice"
+                           :occupant-id "occupant-alice"
+                           :body "spam" :timestamp (current-time))))))
+          (cl-letf (((symbol-function
+                      'jabber-moderation--room-supports-occupant-id-p)
+                     (lambda (_room) t))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.com"))
+                    ((symbol-function 'jabber-moderation--target-buffers)
+                     (lambda (_jc _room _server-id)
+                       (list parent thread)))
+                    ((symbol-function
+                      'jabber-moderation--target-buffers-for-row)
+                     (lambda (_jc _room _row-id)
+                       (list parent thread))))
+            (should
+             (jabber-moderation--handle-message
+              'fake-jc
+              `(message ((from . "room@muc.example.com")
+                         (type . "groupchat"))
+                        (retract ((id . "server-id-1")
+                                  (xmlns . ,jabber-moderation-retract-xmlns))
+                                 (moderated
+                                  ((by . ,moderator)
+                                   (xmlns . ,jabber-moderation-xmlns)))
+                                 (reason () "spam")))))
+            (should
+             (jabber-moderation--handle-message
+              'fake-jc
+              '(message ((from . "room@muc.example.com/alice")
+                         (type . "groupchat"))
+                        (retract ((id . "server-id-1")
+                                  (xmlns . "urn:xmpp:message-retract:1")))
+                        (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                      (id . "occupant-alice")))))))
+          (should
+           (equal `((,moderator "spam"))
+                  (sqlite-select
+                   jabber-db--connection
+                   "SELECT retracted_by, retraction_reason FROM message")))
+          (dolist (buffer (list parent thread))
+            (with-current-buffer buffer
+              (let ((msg (cadr (ewoc-data
+                                (jabber-chat-ewoc-find-by-id
+                                 "server-id-1")))))
+                (should (plist-get msg :retracted))
+                (should (equal moderator (plist-get msg :retracted-by)))
+                (should (equal "spam" (plist-get msg :retraction-reason)))))))
+      (jabber-db-close)
+      (dolist (buffer (list parent thread))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer)))
+      (delete-directory dir t))))
+
+(ert-deftest jabber-test-moderation-live-author-retract-fails-closed ()
+  "Live lookup rejects mismatched, missing, and duplicate target identities."
+  (dolist (messages
+           '(((:server-id "server-id-1"
+              :from "room@muc.example.com/alice"
+              :occupant-id "occupant-bob"))
+             ((:server-id "other-id"
+               :from "room@muc.example.com/alice"
+               :occupant-id "occupant-alice"))
+             ((:server-id "server-id-1"
+               :from "room@muc.example.com/alice"
+               :occupant-id "occupant-alice")
+              (:server-id "server-id-1"
+               :from "room@muc.example.com/alice"
+               :occupant-id "occupant-alice"))))
+    (jabber-test-moderation-with-ewoc
+      (setq-local jabber-group "room@muc.example.com")
+      (setq-local jabber-buffer-connection 'fake-jc)
+      (dolist (msg messages)
+        (ewoc-enter-last
+         jabber-chat-ewoc
+         (list :muc-foreign
+               (append msg (list :body "keep" :timestamp (current-time))))))
+      (when (cdr messages)
+        (setq-local jabber-message-thread-id "same-view"))
+      (let ((jabber-db-path nil))
+        (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                   (lambda (_room &optional _jc) (current-buffer)))
+                  ((symbol-function
+                    'jabber-moderation--room-supports-occupant-id-p)
+                   (lambda (_room) t)))
+          (should-not
+           (jabber-moderation--handle-message
+            'fake-jc
+            '(message ((from . "room@muc.example.com/alice")
+                       (type . "groupchat"))
+                      (retract ((id . "server-id-1")
+                                (xmlns . "urn:xmpp:message-retract:1")))
+                      (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                    (id . "occupant-alice"))))))))
+      (let ((node (ewoc-nth jabber-chat-ewoc 0)))
+        (while node
+          (should-not (plist-get (cadr (ewoc-data node)) :retracted))
+          (setq node (ewoc-next jabber-chat-ewoc node)))))))
+
+(ert-deftest jabber-test-moderation-author-retract-rejects-occupant-mismatch ()
+  "Author retraction cannot retract another occupant's message."
+  (let (db-call)
+    (cl-letf (((symbol-function
+                'jabber-moderation--room-supports-occupant-id-p)
+               (lambda (_room) t))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-db-message-retraction-candidates)
+               (lambda (_account _room _server-id)
+                 (list (list :row-id 42
+                             :from "room@muc.example.com/bob"
+                             :occupant-id "occupant-bob"))))
+              ((symbol-function 'jabber-db-retract-message-row)
+               (lambda (&rest args) (setq db-call args))))
+      (jabber-moderation--handle-message
+       'fake-jc
+       `(message ((from . "room@muc.example.com/alice")
+                  (type . "groupchat"))
+                 (retract ((id . "server-id-1")
+                           (xmlns . ,jabber-moderation-retract-xmlns)))
+                 (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                               (id . "occupant-alice"))))))
+    (should-not db-call)))
+
+(ert-deftest jabber-test-moderation-author-retract-rejects-ambiguous-target ()
+  "Author retraction cannot choose among duplicate room stanza IDs."
+  (cl-letf (((symbol-function
+              'jabber-moderation--room-supports-occupant-id-p)
+             (lambda (_room) t))
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.com"))
+            ((symbol-function 'jabber-db-message-retraction-candidates)
+             (lambda (_account _room _server-id)
+               (list (list :row-id 42
+                           :from "room@muc.example.com/alice"
+                           :occupant-id "occupant-alice")
+                     (list :row-id 43
+                           :from "room@muc.example.com/mallory"
+                           :occupant-id "occupant-mallory"))))
+            ((symbol-function 'jabber-db-retract-message-row)
+             (lambda (&rest _args)
+               (ert-fail "Retracted an ambiguous stanza ID"))))
+    (should-not
+     (jabber-moderation--handle-message
+      'fake-jc
+      `(message ((from . "room@muc.example.com/alice")
+                 (type . "groupchat"))
+                (retract ((id . "duplicate-server-id")
+                          (xmlns . ,jabber-moderation-retract-xmlns)))
+                (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                              (id . "occupant-alice"))))))))
+
+(ert-deftest jabber-test-moderation-author-retract-requires-trusted-occupant-id ()
+  "Unadvertised or ambiguous occupant IDs cannot authorize retraction."
+  (dolist (case
+           `((nil
+              (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                            (id . "occupant-alice"))))
+             (t
+              (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                            (id . "occupant-alice")))
+              (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                            (id . "occupant-mallory"))))))
+    (let ((advertised (car case))
+          (occupant-elements (cdr case))
+          db-call)
+      (cl-letf (((symbol-function
+                  'jabber-moderation--room-supports-occupant-id-p)
+                 (lambda (_room) advertised))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-retraction-candidates)
+                 (lambda (_account _room _server-id)
+                   (list (list :row-id 42
+                               :from "room@muc.example.com/alice"
+                               :occupant-id "occupant-alice"))))
+                ((symbol-function 'jabber-db-retract-message-row)
+                 (lambda (&rest args) (setq db-call args))))
+        (jabber-moderation--handle-message
+         'fake-jc
+         `(message ((from . "room@muc.example.com/alice")
+                    (type . "groupchat"))
+                   (retract ((id . "server-id-1")
+                             (xmlns . ,jabber-moderation-retract-xmlns)))
+                   ,@occupant-elements)))
+      (should-not db-call))))
+
+(ert-deftest jabber-test-moderation-retract-fallback-is-protocol-only ()
+  "Any XEP-0424 retract body is hidden and excluded from history."
+  (dolist (stanza
+           `((message ((from . "room@muc.example.com/alice")
+                       (type . "groupchat"))
+                      (body () "sender-controlled fallback")
+                      (retract ((id . "missing-id")
+                                (xmlns . ,jabber-moderation-retract-xmlns))))
+             (message ((from . "room@muc.example.com/alice")
+                       (type . "groupchat"))
+                      (body () "ambiguous protocol action")
+                      (retract ((id . "first")
+                                (xmlns . ,jabber-moderation-retract-xmlns)))
+                      (retract ((id . "second")
+                                (xmlns . ,jabber-moderation-retract-xmlns))))))
+    (should (jabber-moderation--muc-retraction-message-p stanza))
+    (should (jabber-moderation--history-inhibit-p nil stanza)))
+  (should-not
+   (jabber-moderation--muc-retraction-message-p
+    '(message ((type . "groupchat"))
+              (retract ((id . "ordinary-extension")
+                        (xmlns . "urn:example:not-retraction")))))))
+
+(ert-deftest jabber-test-moderation-muc-does-not-render-retract-fallback ()
+  "MUC processing never displays a XEP-0424 retract fallback body."
+  (let ((displayed nil)
+        (stanza
+         `(message ((from . "room@muc.example.com/alice")
+                    (type . "groupchat"))
+                   (body () "sender-controlled fallback")
+                   (retract ((id . "unknown-id")
+                             (xmlns . ,jabber-moderation-retract-xmlns))))))
+    (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
+               (lambda (_jc xml-data) xml-data))
+              ((symbol-function 'jabber-muc--display-message)
+               (lambda (&rest _args) (setq displayed t))))
+      (jabber-muc-process-message 'fake-jc stanza))
+    (should-not displayed)))
+
 (ert-deftest jabber-test-moderation-tombstone-updates-ewoc ()
   "Archived tombstone sets :retracted using the MAM archive id."
   (jabber-test-moderation-with-ewoc
@@ -230,16 +692,19 @@
 ;;; Group 7: build-msg-plist extracts server-id
 
 (ert-deftest jabber-test-moderation-plist-extracts-server-id ()
-  "jabber-chat--build-msg-plist extracts :server-id from stanza-id element."
+  "Build message state with server and occupant IDs."
   (let* ((stanza '(message ((from . "room@muc.example.com/alice")
                             (id . "client-id")
                             (type . "groupchat"))
                            (body () "hello")
                            (stanza-id ((id . "server-id-42")
                                        (by . "room@muc.example.com")
-                                       (xmlns . "urn:xmpp:sid:0")))))
+                                       (xmlns . "urn:xmpp:sid:0")))
+                           (occupant-id ((id . "occupant-alice")
+                                         (xmlns . "urn:xmpp:occupant-id:0")))))
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
-    (should (equal "server-id-42" (plist-get plist :server-id)))))
+    (should (equal "server-id-42" (plist-get plist :server-id)))
+    (should (equal "occupant-alice" (plist-get plist :occupant-id)))))
 
 (ert-deftest jabber-test-moderation-plist-nil-server-id ()
   "jabber-chat--build-msg-plist returns nil :server-id when absent."

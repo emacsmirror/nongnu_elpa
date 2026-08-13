@@ -485,6 +485,9 @@ The format is that of `mode-line-format' and `header-line-format'."
                   "jabber-message-correct" (jc group))
 (autoload 'jabber-message-correct--replace-id "jabber-message-correct")
 (autoload 'jabber-message-correct--apply "jabber-message-correct")
+(declare-function jabber-moderation--muc-retraction-message-p
+                  "jabber-moderation" (xml-data))
+(autoload 'jabber-moderation--muc-retraction-message-p "jabber-moderation")
 (declare-function jabber-vcard-get "jabber-vcard" (jc jid))
 (declare-function jabber-chatstates--delete-typing-node
                   "jabber-chatstates" ())
@@ -1977,7 +1980,8 @@ messages."
 JC is the Jabber connection."
   (when (jabber-muc-message-p xml-data)
     (let ((xml-data (jabber-chat--decrypt-if-needed jc xml-data)))
-      (unless (jabber-reactions--reaction-only-p xml-data)
+      (unless (or (jabber-reactions--reaction-only-p xml-data)
+                  (jabber-moderation--muc-retraction-message-p xml-data))
         (let* ((from (jabber-xml-get-attribute xml-data 'from))
                (group (jabber-jid-user from))
                (nick (jabber-jid-resource from))

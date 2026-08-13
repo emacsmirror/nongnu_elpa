@@ -1198,6 +1198,64 @@ the corrected jabber-muc-create-buffer order."
              jabber-db--connection
              "SELECT peer, retracted_by FROM message ORDER BY peer")))))
 
+(ert-deftest jabber-test-db-author-retraction-uses-exact-row ()
+  "Author retraction lookup exposes ambiguity and writes one chosen row."
+  (jabber-test-db-with-db
+    (dolist (entry '(("alice" "occupant-alice" "first")
+                     ("mallory" "occupant-mallory" "collision")))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x" "in" "groupchat"
+       (nth 2 entry) 1700000000 (car entry) nil
+       (concat (car entry) "-server-id")
+       (cadr entry)))
+    (sqlite-execute
+     jabber-db--connection
+     "UPDATE message SET server_id = 'shared-server-id'")
+    (let ((candidates
+           (jabber-db-message-retraction-candidates
+            "me@x.com" "room@conference.x" "shared-server-id")))
+      (should (= 2 (length candidates)))
+      (should
+       (equal '("room@conference.x/alice" "room@conference.x/mallory")
+              (mapcar (lambda (candidate) (plist-get candidate :from))
+                      candidates)))
+      (jabber-db-retract-message-row
+       (plist-get (car candidates) :row-id)
+       "room@conference.x/alice")
+      (should
+       (equal '(("first" "room@conference.x/alice")
+                ("collision" nil))
+              (sqlite-select
+               jabber-db--connection
+               "SELECT body, retracted_by FROM message ORDER BY id"))))))
+
+(ert-deftest jabber-test-db-author-retraction-preserves-existing-tombstone ()
+  "Row-scoped author retraction cannot overwrite moderator metadata."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "room@conference.x" "in" "groupchat"
+     "spam" 1700000000 "alice" nil "server-id" "occupant-alice")
+    (let ((row-id
+           (caar (sqlite-select jabber-db--connection
+                                "SELECT id FROM message"))))
+      (should
+       (jabber-db-retract-message-row
+        row-id "room@conference.x/mod" "spam"))
+      (let ((candidate
+             (car (jabber-db-message-retraction-candidates
+                   "me@x.com" "room@conference.x" "server-id"))))
+        (should (equal "room@conference.x/mod"
+                       (plist-get candidate :retracted-by)))
+        (should (equal "spam" (plist-get candidate :retraction-reason))))
+      (should-not
+       (jabber-db-retract-message-row
+        row-id "room@conference.x/alice"))
+      (should
+       (equal '(("room@conference.x/mod" "spam"))
+              (sqlite-select
+               jabber-db--connection
+               "SELECT retracted_by, retraction_reason FROM message"))))))
+
 ;;; Group: Failed-decrypt replacement
 
 (ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-stanza-id ()
@@ -1574,9 +1632,13 @@ FROM message_reaction_actor"))))))
                              "hello" (floor (float-time))
                              "nick" "sid-1" nil "occ-abc-123")
     (let* ((rows (jabber-db-query "me@x.com" "room@x.com"))
-           (row (car rows)))
+           (row (car rows))
+           (backlog
+            (car (jabber-db-backlog
+                  "me@x.com" "room@x.com" nil nil nil "groupchat"))))
       (should row)
-      (should (string= "occ-abc-123" (plist-get row :occupant-id))))))
+      (should (string= "occ-abc-123" (plist-get row :occupant-id)))
+      (should (string= "occ-abc-123" (plist-get backlog :occupant-id))))))
 
 (ert-deftest jabber-test-db-occupant-id-nil-when-absent ()
   "occupant_id is nil when not provided."

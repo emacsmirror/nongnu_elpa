@@ -1095,6 +1095,39 @@ WHERE account = ? AND peer = ? AND direction = 'out' \
 AND timestamp <= ? AND delivered_at IS NOT NULL AND displayed_at IS NULL"
                     (list timestamp account peer ref-timestamp))))
 
+(defun jabber-db-message-retraction-candidates (account peer server-id)
+  "Return stored MUC retraction candidates for SERVER-ID.
+ACCOUNT and PEER scope the lookup.  Each result contains identity and
+existing retraction state for one exact row."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (mapcar
+     (lambda (row)
+       (seq-let (row-id resource occupant-id retracted-by
+                        retraction-reason)
+           row
+         (list :row-id row-id
+               :from (if resource (concat peer "/" resource) peer)
+               :occupant-id occupant-id
+               :retracted-by retracted-by
+               :retraction-reason retraction-reason)))
+     (sqlite-select
+      db
+      "SELECT id, resource, occupant_id, retracted_by, retraction_reason \
+FROM message \
+WHERE account = ? AND peer = ? AND type = 'groupchat' AND server_id = ?"
+      (list account peer server-id)))))
+
+(defun jabber-db-retract-message-row (row-id retracted-by &optional reason)
+  "Mark primary message ROW-ID as retracted by RETRACTED-BY.
+Optional REASON is the human-readable retraction reason string.
+Return non-nil only when this call performed the first retraction."
+  (when-let* ((db (and row-id (jabber-db-ensure-open))))
+    (sqlite-execute db
+                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
+WHERE id = ? AND retracted_by IS NULL"
+                    (list retracted-by reason row-id))
+    (= 1 (caar (sqlite-select db "SELECT changes()")))))
+
 (defun jabber-db-retract-message (server-id retracted-by &optional reason)
   "Retract globally unambiguous SERVER-ID by RETRACTED-BY.
 Optional REASON is the human-readable retraction reason string.
@@ -1344,7 +1377,7 @@ ORDER BY message_id, updated_at, rowid"
 (defconst jabber-db--backlog-columns
   "SELECT id, account, peer, direction, body, timestamp, \
 resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by, retraction_reason, edited, \
+server_id, retracted_by, retraction_reason, edited, occupant_id, \
 reply_to_id, reply_to_jid, fallback_start, fallback_end, \
 thread_id, thread_parent_id FROM message"
   "Columns shared by parent and thread backlog queries.")
@@ -1356,7 +1389,7 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
   (seq-let (id account peer direction body timestamp resource type
                encrypted stanza-id delivered-at
                displayed-at server-id retracted-by retraction-reason edited
-               reply-to-id reply-to-jid fallback-start fallback-end
+               occupant-id reply-to-id reply-to-jid fallback-start fallback-end
                thread-id thread-parent-id)
       row
     (let ((from (cond
@@ -1371,6 +1404,7 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
       (list :db-id id
             :id stanza-id
             :server-id server-id
+            :occupant-id occupant-id
             :from from
             :body (or body "")
             :subject nil

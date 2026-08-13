@@ -1479,6 +1479,7 @@ DELAYED marks the message as delayed unconditionally."
       :id (jabber-xml-get-attribute xml-data 'id)
       :server-id (jabber-chat--server-id xml-data)
       :origin-id (jabber-chat--origin-id xml-data)
+      :occupant-id (jabber-db--extract-occupant-id xml-data)
       :from (jabber-xml-get-attribute xml-data 'from)
       :body (car (jabber-xml-node-children
                   (car (jabber-xml-get-children xml-data 'body))))
