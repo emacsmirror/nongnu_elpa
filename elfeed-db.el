@@ -96,6 +96,12 @@ old ~/.elfeed directory is present, it will be used instead."
   "Time in seconds to keep the cache buffer alive."
   :type 'natnum)
 
+(defcustom elfeed-db-save-idle 10
+  "Idle time in seconds until the database is saved.
+Database saving costs time and causes a small pause in Emacs.  Therefore
+defer saving if possible.  Set to nil to always save immediately."
+  :type '(choice (const nil) natum))
+
 (defvar elfeed-db nil
   "The core database for elfeed.")
 
@@ -334,8 +340,23 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 ;; Saving and Loading:
 
+(defvar elfeed-db--save-idle-timer nil
+  "Timer to save database when idle.
+See `elfeed-db-save-idle'.")
+
+(defun elfeed-db--save-idle ()
+  "Save database when Emacs is idle."
+  (if elfeed-db-save-idle
+      (unless elfeed-db--save-idle-timer
+        (setq elfeed-db--save-idle-timer
+              (run-with-idle-timer elfeed-db-save-idle nil #'elfeed-db-save)))
+    (elfeed-db-save)))
+
 (defun elfeed-db-save ()
   "Write the database index to the filesystem."
+  (when elfeed-db--save-idle-timer
+    (cancel-timer elfeed-db--save-idle-timer)
+    (setq elfeed-db--save-idle-timer nil))
   (elfeed-db-ensure)
   (setf elfeed-db (plist-put elfeed-db :version elfeed-db-version))
   (mkdir elfeed-db-directory t)
@@ -403,8 +424,8 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 (defun elfeed-db--save-on-quit ()
   "Install hooks to save the database when quitting the current buffer."
   (setq-local elfeed-db--kill-on-unload t)
-  (add-hook 'kill-buffer-hook #'elfeed-db-save t 'local)
-  (add-hook 'quit-window-hook #'elfeed-db-save nil 'local))
+  (add-hook 'kill-buffer-hook #'elfeed-db--save-idle t 'local)
+  (add-hook 'quit-window-hook #'elfeed-db--save-idle nil 'local))
 
 (defun elfeed-db-unload ()
   "Unload the database so that it can be operated on externally.
@@ -417,8 +438,8 @@ Runs `elfeed-db-unload-hook' after unloading the database."
     (when (buffer-local-value 'elfeed-db--kill-on-unload buf)
       (with-current-buffer buf
         ;; Make sure that `elfeed-db-save' is not executed again.
-        (remove-hook 'kill-buffer-hook #'elfeed-db-save 'local)
-        (remove-hook 'quit-window-hook #'elfeed-db-save 'local)
+        (remove-hook 'kill-buffer-hook #'elfeed-db--save-idle 'local)
+        (remove-hook 'quit-window-hook #'elfeed-db--save-idle 'local)
         (kill-buffer))))
   (setf elfeed-db nil
         elfeed-db-feeds nil
