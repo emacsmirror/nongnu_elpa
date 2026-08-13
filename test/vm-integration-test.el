@@ -554,6 +554,41 @@ This is what made the handlers dead code, so it is what has to stay true."
       (should (or (eq (cdr arity) 'many)
                   (>= (cdr arity) (cdr probe)))))))
 
+;;; Switching folders, thread operations, and the button aliases
+;;; (emacs-vm/vm#632)
+
+(ert-deftest vm-integration-test-toggle-thread-operations ()
+  "`vm-toggle-thread-operations' turns `vm-enable-thread-operations' on and
+off.  With it on, a command applied to a collapsed thread applies to every
+message in the thread, so this is the switch between operating on one message
+and on a conversation."
+  (let ((vm-enable-thread-operations nil))
+    (cl-letf (((symbol-function 'vm-inform) #'ignore))
+      (vm-toggle-thread-operations)
+      (should vm-enable-thread-operations)
+      (vm-toggle-thread-operations)
+      (should-not vm-enable-thread-operations))))
+
+(ert-deftest vm-integration-test-the-button-commands-have-their-old-names ()
+  "`vm-move-to-next-button' and `vm-move-to-previous-button' are the names
+the manual gives for the button commands, and are aliases for them.
+
+Aliases are how VM keeps a name working after the command behind it is
+renamed, so a broken one is a key binding or an init file that stops working
+with no warning at all."
+  (should (eq (symbol-function 'vm-move-to-next-button) 'vm-next-button))
+  (should (eq (symbol-function 'vm-move-to-previous-button)
+              'vm-previous-button))
+  (should (commandp 'vm-move-to-next-button))
+  (should (commandp 'vm-move-to-previous-button)))
+
+(ert-deftest vm-integration-test-the-mime-part-structure-alias ()
+  "`vm-mime-list-part-structure' is the documented name for
+`vm-list-mime-part-structure'."
+  (should (eq (symbol-function 'vm-mime-list-part-structure)
+              'vm-list-mime-part-structure))
+  (should (commandp 'vm-mime-list-part-structure)))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
