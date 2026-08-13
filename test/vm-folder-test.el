@@ -3059,6 +3059,95 @@ about messages there are none of."
             (with-current-buffer buffer (set-buffer-modified-p nil))
             (kill-buffer buffer)))))))
 
+;;; Counting the messages in a file without reading it (emacs-vm/vm#632)
+;;
+;; vm-count-messages-in-file counts with grep rather than by visiting the
+;; folder, which is what makes the folders summary cheap.  No test called it.
+
+(defmacro vm-folder-test--with-file-of (content &rest body)
+  "Write CONTENT to a file and run BODY with FILE bound to its name."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-count" t))))
+     (unwind-protect
+         (let ((file (expand-file-name "folder" dir)))
+           (write-region ,content nil file nil 'quiet)
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-counting-messages-in-a-From_-file ()
+  "Every message in an mbox is counted.
+
+The third message has no Subject, so the count cannot be got right by
+counting some other header: three messages and two Subject lines."
+  (vm-folder-test--with-file-of
+      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+              "From: alice@example.com\nSubject: one\n\nOne.\n\n"
+              "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+              "From: bob@example.com\nSubject: two\n\nTwo.\n\n"
+              "From carol@example.com Mon Aug 10 16:00:00 2026\n"
+              "From: carol@example.com\n\nNo subject at all.\n\n")
+    (should (equal (vm-count-messages-in-file file t) 3))))
+
+(ert-deftest vm-folder-test-counting-counts-a-From_-line-in-a-body ()
+  "A body line beginning \"From \" is counted as another message.
+
+The count is grep -c of \"^From \", so an unquoted From_ line in a body adds
+one.  VM quotes those on the way out, so its own folders do not have them;
+one written by something else can, and then the folders summary shows a total
+one too many.  Filed as #640.
+
+This pins what the code does, not what it should do.  Two messages and one
+such line count as three."
+  (vm-folder-test--with-file-of
+      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+              "From: alice@example.com\nSubject: one\n\n"
+              "From here on, a body.\n\n"
+              "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+              "From: bob@example.com\nSubject: two\n\nTwo.\n\n")
+    (should (equal (vm-count-messages-in-file file t) 3))
+    ;; and quoted, as VM writes it, the count is right
+    (write-region
+     (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+             "From: alice@example.com\nSubject: one\n\n"
+             ">From here on, a body.\n\n"
+             "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+             "From: bob@example.com\nSubject: two\n\nTwo.\n\n")
+     nil file nil 'quiet)
+    (should (equal (vm-count-messages-in-file file t) 2))))
+
+(ert-deftest vm-folder-test-counting-messages-in-an-mmdf-file ()
+  "An mmdf folder is counted by its own separator."
+  (vm-folder-test--with-file-of
+      (concat "\001\001\001\001\n"
+              "From: alice@example.com\nSubject: one\n\nOne.\n"
+              "\001\001\001\001\n"
+              "\001\001\001\001\n"
+              "From: bob@example.com\nSubject: two\n\nTwo.\n"
+              "\001\001\001\001\n")
+    (should (equal (vm-count-messages-in-file file t) 2))))
+
+(ert-deftest vm-folder-test-counting-messages-in-an-empty-file ()
+  "An empty folder has no messages, which is nought and not nil: nil is what
+this returns when it cannot count at all, and the folders summary shows the
+two differently."
+  (vm-folder-test--with-file-of ""
+    (should (equal (vm-count-messages-in-file file t) nil))))
+
+(ert-deftest vm-folder-test-counting-needs-a-grep-program ()
+  "With no `vm-grep-program' there is no count, and nil says so rather than
+nought pretending the folder is empty."
+  (vm-folder-test--with-file-of
+      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+              "From: alice@example.com\nSubject: one\n\nOne.\n\n")
+    (should (equal (vm-count-messages-in-file file t) 1))
+    (let ((vm-grep-program nil))
+      (should (equal (vm-count-messages-in-file file t) nil)))))
+
+(ert-deftest vm-folder-test-counting-a-file-of-no-known-type ()
+  "A file that is not a folder is not counted."
+  (vm-folder-test--with-file-of "Not a folder at all.\nNo separators here.\n"
+    (should (equal (vm-count-messages-in-file file t) nil))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
