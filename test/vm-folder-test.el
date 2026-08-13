@@ -3148,6 +3148,139 @@ nought pretending the folder is empty."
   (vm-folder-test--with-file-of "Not a folder at all.\nNo separators here.\n"
     (should (equal (vm-count-messages-in-file file t) nil))))
 
+;;; The background timer functions (emacs-vm/vm#632)
+;;
+;; Three functions run from timers: one looks for waiting mail, one fetches
+;; it, one writes cached data back into folders.  None had a test.  They are
+;; the only VM code that runs when the user is doing nothing, so what they do
+;; when they find nothing to do matters as much as the rest.
+
+(defun vm-folder-test--dummy-timer ()
+  "A timer object that is not scheduled, for handing to the timer functions."
+  (let ((timer (timer-create)))
+    (timer-set-time timer (current-time) 60)
+    timer))
+
+(ert-deftest vm-folder-test-the-mail-check-timer-reschedules-itself ()
+  "`vm-check-mail-itimer-function' sets its timer's next run from
+`vm-mail-check-interval'."
+  (vm-folder-test--with-state-folder
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-mail-check-interval 300))
+      (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                 (lambda (&rest _) nil)))
+        (vm-check-mail-itimer-function timer))
+      (should (equal (timer--repeat-delay timer) 300)))))
+
+(ert-deftest vm-folder-test-the-mail-check-timer-stops-when-turned-off ()
+  "With `vm-mail-check-interval' no longer a number the timer is cancelled.
+Turning the interval off is how a user stops the checking, and a timer that
+kept running would go on opening connections.
+
+This runs with a folder open on purpose.  The function cancels in two places,
+here and again at the end when it saw no VM folder at all, so without one the
+timer is cancelled either way and a broken interval branch goes unnoticed."
+  (vm-folder-test--with-state-folder
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-mail-check-interval nil)
+          (cancels 0))
+      (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'cancel-timer)
+                 (lambda (_which) (setq cancels (1+ cancels)))))
+        (vm-check-mail-itimer-function timer))
+      (should (equal cancels 1)))))
+
+(ert-deftest vm-folder-test-the-mail-check-timer-stops-with-no-folders ()
+  "With no VM folder open at all the timer goes away, whatever the interval:
+there is nothing left for it to check."
+  (let ((timer (vm-folder-test--dummy-timer))
+        (vm-mail-check-interval 300)
+        (cancels 0))
+    (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+               (lambda (&rest _) nil))
+              ((symbol-function 'cancel-timer)
+               (lambda (_which) (setq cancels (1+ cancels)))))
+      (vm-check-mail-itimer-function timer))
+    (should (equal cancels 1))))
+
+(ert-deftest vm-folder-test-the-mail-check-timer-tells-the-folder ()
+  "When the waiting state changes `vm-spooled-mail-waiting-hook' runs, and
+when it does not change the hook stays quiet: it is for the moment mail
+arrives, not for every check.
+
+Two things stop the second announcement and they are tested apart.  With mail
+already known to be waiting VM does not ask again at all, unless
+`vm-mail-check-always'; and when it does ask and the answer is the same as
+before, the hook still does not run."
+  (vm-folder-test--with-state-folder
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-mail-check-interval 300)
+          (vm-global-block-new-mail nil)
+          (vm-mail-check-always nil)
+          (runs 0))
+      (setq vm-spooled-mail-waiting nil)
+      (let ((vm-spooled-mail-waiting-hook (list (lambda () (setq runs (1+ runs))))))
+        (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                   (lambda (&rest _) t)))
+          (vm-check-mail-itimer-function timer))
+        (should vm-spooled-mail-waiting)
+        (should (equal runs 1))
+        ;; with mail known to be waiting, VM does not even ask again
+        (let ((asked 0))
+          (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                     (lambda (&rest _) (setq asked (1+ asked)) t)))
+            (vm-check-mail-itimer-function timer))
+          (should (equal asked 0))
+          (should (equal runs 1)))
+        ;; told to ask every time, it asks, and the answer being the same as
+        ;; before the hook still does not run
+        (let ((asked 0)
+              (vm-mail-check-always t))
+          (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                     (lambda (&rest _) (setq asked (1+ asked)) t)))
+            (vm-check-mail-itimer-function timer))
+          (should (equal asked 1))
+          (should (equal runs 1)))))))
+
+(ert-deftest vm-folder-test-the-mail-check-timer-honours-the-block ()
+  "`vm-global-block-new-mail' stops the check, which is what it is for: VM
+binds it while it is busy with the folder."
+  (vm-folder-test--with-state-folder
+    (let ((timer (vm-folder-test--dummy-timer))
+          (vm-mail-check-interval 300)
+          (vm-global-block-new-mail t)
+          (asked 0))
+      (setq vm-spooled-mail-waiting nil)
+      (cl-letf (((symbol-function 'vm-check-for-spooled-mail)
+                 (lambda (&rest _) (setq asked (1+ asked)) t)))
+        (vm-check-mail-itimer-function timer))
+      (should (equal asked 0))
+      (should-not vm-spooled-mail-waiting))))
+
+(ert-deftest vm-folder-test-the-flush-timer-stops-when-there-is-nothing-to-do ()
+  "`vm-flush-itimer-function' cancels its timer once no folder has anything
+left to write.  It is started when data needs flushing and there is no reason
+for it to keep waking Emacs afterwards."
+  (let ((timer (vm-folder-test--dummy-timer))
+        (vm-flush-interval 90)
+        (cancelled nil))
+    (cl-letf (((symbol-function 'vm-flush-cached-data-all-folders)
+               (lambda () nil))
+              ((symbol-function 'cancel-timer)
+               (lambda (which) (setq cancelled which))))
+      (vm-flush-itimer-function timer))
+    (should (eq cancelled timer))
+    ;; with work still outstanding it keeps its schedule
+    (setq cancelled nil)
+    (cl-letf (((symbol-function 'vm-flush-cached-data-all-folders)
+               (lambda () t))
+              ((symbol-function 'cancel-timer)
+               (lambda (which) (setq cancelled which))))
+      (vm-flush-itimer-function timer))
+    (should-not cancelled)
+    (should (equal (timer--repeat-delay timer) 90))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
