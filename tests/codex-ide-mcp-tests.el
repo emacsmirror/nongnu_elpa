@@ -242,6 +242,13 @@
       (should-error (codex-ide-mcp--start-server) :type 'user-error)
       (should-not called))))
 
+(ert-deftest codex-ide-mcp-url-brackets-ipv6-loopback ()
+  "MCP URLs bracket an IPv6 loopback address."
+  (let ((codex-ide-mcp-host "::1")
+        (codex-ide-mcp--port 43210))
+    (should (equal (codex-ide-mcp--url)
+                   "http://[::1]:43210/mcp"))))
+
 (ert-deftest codex-ide-mcp-config-overrides-url ()
   "MCP URL override is emitted as a TOML string."
   (should (equal (codex-ide-mcp-config-overrides

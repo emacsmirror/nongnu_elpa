@@ -42,7 +42,10 @@
 
 (defun codex-ide-mcp--url ()
   "Return the URL for the running MCP endpoint."
-  (format "http://%s:%d/mcp" codex-ide-mcp-host codex-ide-mcp--port))
+  (let ((host (if (string-match-p ":" codex-ide-mcp-host)
+                  (format "[%s]" codex-ide-mcp-host)
+                codex-ide-mcp-host)))
+    (format "http://%s:%d/mcp" host codex-ide-mcp--port)))
 
 (defun codex-ide-mcp--json-read (bytes)
   "Decode JSON BYTES into a plist."
