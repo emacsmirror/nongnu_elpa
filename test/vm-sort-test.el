@@ -715,6 +715,162 @@ here; the folder must be left holding what it held."
         ;; alice is still the first message in the file
         (should (string-match-p "\\`From alice@example\\.com" on-disk))))))
 
+;;; Moving a message physically (emacs-vm/vm#649)
+;;
+;; `vm-physically-move-message' rewrites the folder text and re-aims six
+;; markers per message by hand; its own comment says corruption can be
+;; massive if that work happens in the wrong order.  These drive it through
+;; the two commands that always take that path.
+
+(defun vm-sort-test--physical-folder (count)
+  "Return an mbox of COUNT messages, each identifiable in header and body."
+  (mapconcat
+   (lambda (n)
+     (format (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                     "From: sender@example.com\n"
+                     "Subject: message %d\n\nbody %d\n\n")
+             n n))
+   (number-sequence 1 count)
+   ""))
+
+(defmacro vm-sort-test--moving-physically (count &rest body)
+  "Run BODY in a folder of COUNT messages, ready for a physical move.
+The messages are numbered because the move compares message numbers, and
+the display side is stubbed out: what is under test is the folder text and
+the markers into it."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder (vm-sort-test--physical-folder ,count)
+     (setq major-mode 'vm-mode)
+     (vm-number-messages)
+     (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+               ((symbol-function 'vm-display) #'ignore)
+               ((symbol-function 'vm-present-current-message) #'ignore)
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+       ,@body)))
+
+(defun vm-sort-test--subjects-in-the-text ()
+  "The subjects in the folder text, in the order they appear in the buffer."
+  (let (subjects)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^Subject: \\(.*\\)$" nil t)
+        (push (match-string-no-properties 1) subjects)))
+    (nreverse subjects)))
+
+(defun vm-sort-test--subjects-in-the-list ()
+  "The subjects of `vm-message-list', in order."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(defun vm-sort-test--subjects-by-marker ()
+  "For each message, the subject found between its own start and end markers.
+A message whose markers have drifted onto another message's text reports
+that message's subject, which is what makes this the interesting check."
+  (mapcar (lambda (m)
+            (let ((text (buffer-substring-no-properties
+                         (vm-start-of m) (vm-end-of m))))
+              (and (string-match "^Subject: \\(.*\\)$" text)
+                   (match-string 1 text))))
+          vm-message-list))
+
+(defun vm-sort-test--folder-is-intact-p (count)
+  "Non-nil when the folder still holds COUNT whole messages.
+Each message keeps its own From_ line, header and body, so a move that
+loses or duplicates text shows up here rather than as a subtle mis-parse
+later."
+  (and (= count (count-matches "^From sender@example\\.com "
+                               (point-min) (point-max)))
+       (= count (count-matches "^Subject: message " (point-min) (point-max)))
+       (= count (count-matches "^body " (point-min) (point-max)))))
+
+(ert-deftest vm-sort-test-a-physical-move-rewrites-the-folder ()
+  "`vm-move-message-forward-physically' moves the text, not just the order.
+The message list and the folder text agree afterwards, which is the whole
+difference from the ordinary move."
+  (vm-sort-test--moving-physically 3
+    (vm-move-message-forward-physically 1)
+    (should (equal (vm-sort-test--subjects-in-the-list)
+                   '("message 2" "message 1" "message 3")))
+    (should (equal (vm-sort-test--subjects-in-the-text)
+                   '("message 2" "message 1" "message 3")))
+    (should (vm-sort-test--folder-is-intact-p 3))))
+
+(ert-deftest vm-sort-test-an-ordinary-move-leaves-the-text-alone ()
+  "Without `vm-move-messages-physically' the folder text does not change.
+The presentation order does; this is the contrast that makes the physical
+commands worth having."
+  (vm-sort-test--moving-physically 3
+    (let ((vm-move-messages-physically nil))
+      (vm-move-message-forward 1))
+    (should (equal (vm-sort-test--subjects-in-the-list)
+                   '("message 2" "message 1" "message 3")))
+    (should (equal (vm-sort-test--subjects-in-the-text)
+                   '("message 1" "message 2" "message 3")))))
+
+(ert-deftest vm-sort-test-a-physical-move-keeps-every-marker-on-its-message ()
+  "Each message's markers still bracket its own text after several moves.
+Insertion and deletion move every marker after them, so the six markers of
+a moved message are re-aimed by hand and the ones after it must not be:
+this is where the corruption the code warns about would show."
+  (vm-sort-test--moving-physically 4
+    (vm-move-message-forward-physically 1)
+    (vm-move-message-forward-physically 2)
+    (vm-move-message-backward-physically 1)
+    (should (equal (vm-sort-test--subjects-by-marker)
+                   (vm-sort-test--subjects-in-the-list)))
+    (should (equal (vm-sort-test--subjects-in-the-text)
+                   (vm-sort-test--subjects-in-the-list)))
+    (should (vm-sort-test--folder-is-intact-p 4))))
+
+(ert-deftest vm-sort-test-a-physical-move-to-the-end-has-no-destination ()
+  "Moving the second-to-last message forward puts it last, where there is no
+message to insert before and the text goes to the end of the folder."
+  (vm-sort-test--moving-physically 3
+    (setq vm-message-pointer (nthcdr 1 vm-message-list))
+    (vm-move-message-forward-physically 1)
+    (should (equal (vm-sort-test--subjects-in-the-text)
+                   '("message 1" "message 3" "message 2")))
+    (should (equal (vm-sort-test--subjects-by-marker)
+                   (vm-sort-test--subjects-in-the-list)))
+    (should (vm-sort-test--folder-is-intact-p 3))))
+
+(ert-deftest vm-sort-test-a-physical-move-backward-rewrites-the-folder ()
+  "`vm-move-message-backward-physically' is the same in the other direction."
+  (vm-sort-test--moving-physically 3
+    (setq vm-message-pointer (nthcdr 2 vm-message-list))
+    (vm-move-message-backward-physically 1)
+    (should (equal (vm-sort-test--subjects-in-the-text)
+                   '("message 1" "message 3" "message 2")))
+    (should (equal (vm-sort-test--subjects-by-marker)
+                   (vm-sort-test--subjects-in-the-list)))))
+
+(ert-deftest vm-sort-test-a-physical-move-is-refused-on-a-read-only-folder ()
+  "Only the physical move writes the folder, and only it refuses a read-only
+one.  The ordinary move changes presentation order and is allowed."
+  (vm-sort-test--moving-physically 3
+    (let ((vm-folder-read-only t)
+          (text-quoting-style 'grave))
+      (let ((err (should-error (vm-move-message-forward-physically 1)
+                               :type 'error)))
+        (should (string-match-p "read-only" (error-message-string err))))
+      ;; and the text was not touched on the way to refusing
+      (should (equal (vm-sort-test--subjects-in-the-text)
+                     '("message 1" "message 2" "message 3")))
+      (let ((vm-move-messages-physically nil))
+        (vm-move-message-forward 1))
+      (should (equal (vm-sort-test--subjects-in-the-list)
+                     '("message 2" "message 1" "message 3"))))))
+
+(ert-deftest vm-sort-test-a-physical-move-marks-the-folder-modified ()
+  "The move changed the file, so the folder is modified and the message
+order is recorded as changed: otherwise the reordering would never reach
+the disk."
+  (vm-sort-test--moving-physically 3
+    (set-buffer-modified-p nil)
+    (setq vm-message-order-changed nil)
+    (vm-move-message-forward-physically 1)
+    (should (buffer-modified-p))
+    (should vm-message-order-changed)))
+
 (provide 'vm-sort-test)
 
 ;;; vm-sort-test.el ends here
