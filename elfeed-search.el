@@ -1498,7 +1498,7 @@ With prefix argument ALL show all entries."
 (defun elfeed-search-next-separator (&optional n)
   "Move to the next Nth separator line.
 Positive N moves forward, negative N backward."
-  (interactive "p")
+  (interactive "p" elfeed-search-mode)
   (setq n (or n 1))
   (goto-char (pos-bol))
   (cl-loop repeat (abs n) do
