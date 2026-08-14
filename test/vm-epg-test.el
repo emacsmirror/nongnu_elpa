@@ -1177,6 +1177,25 @@ answer with."
                                             vm-epg-test--address "*"))))
           (when exported (kill-buffer exported)))))))
 
+(ert-deftest vm-epg-test-inserting-a-public-key ()
+  "REGRESSION: `vm-epg-insert-public-key' inserts ASCII armor, as it says.
+The context it exported through had armor off, so the binary key packet went
+into the message body: the recipient cannot import that, and it is not text.
+`vm-epg-attach-public-key' shares the omission and is unaffected, since its
+export becomes a base64 MIME part."
+  (vm-epg-test--with-a-test-keyring
+    (vm-epg-test--in-a-composition
+      (goto-char (point-max))
+      (vm-epg-insert-public-key)
+      (let ((composed (buffer-string)))
+        (should (string-match-p "BEGIN PGP PUBLIC KEY BLOCK" composed))
+        (should (string-match-p "END PGP PUBLIC KEY BLOCK" composed))
+        ;; inline, where the attach command would have made a MIME part
+        (should-not (string-match-p "application/pgp-keys" composed))
+        ;; and it is text: every character survives a text/plain body
+        (should (string-match-p "\\`[[:print:][:space:]]*\\'" composed))))))
+
+
 (provide 'vm-epg-test)
 
 ;;; vm-epg-test.el ends here

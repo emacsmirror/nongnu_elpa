@@ -1584,6 +1584,9 @@ inline rather than attached as a MIME part."
          (keys (epg-list-keys context author)))
     (unless keys
       (error "%s has no public key" author))
+    ;; armored: this goes into the message body as text, unlike
+    ;; `vm-epg-attach-public-key', whose MIME part is base64-encoded
+    (setf (epg-context-armor context) t)
     (insert (epg-export-keys-to-string context keys))))
 
 ;;; MIME multipart boundary
