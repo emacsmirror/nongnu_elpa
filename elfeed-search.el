@@ -1029,7 +1029,7 @@ directly.  Instead use `elfeed-search-update'."
 
 (defun elfeed-search--truncated (count max)
   "Truncation button given entry COUNT and MAX entries to display."
-  (propertize
+  (elfeed-add-properties
    (format
     "[Click to extend truncated list (%s entries of %s, %s%%)]\n"
     max count (/ (* 100 max) count))
@@ -1478,8 +1478,9 @@ The update is delayed by `elfeed-search-live-delay'."
           (overlay-put ov 'category 'elfeed-search-separator)
           (overlay-put ov 'before-string
                        (concat (and last "\n")
-                               (propertize (concat title "\n")
-                                           'face 'elfeed-search-separator-face)))
+                               (elfeed-add-properties
+                                (concat title "\n")
+                                'face 'elfeed-search-separator-face)))
           (setq last title))
         (forward-line)))
     ;; Delete unnecessary separator again if there is only a single one.
