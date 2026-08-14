@@ -1806,6 +1806,112 @@ something out of whatever was there."
       (should (equal (cadr (should-error (vm-resend-bounced-message)))
                      "This doesn't look like a bounced message.")))))
 
+;;; Cleaning up the Subject of a composition (emacs-vm/vm#655)
+;;
+;; `vm-mail-subject-cleanup' is documented for `vm-mail-mode-hook', so an
+;; error in it aborts composition setup rather than merely failing to tidy a
+;; subject.
+
+(defmacro vm-reply-test--with-subject (spec &rest body)
+  "Run BODY in a composition built from SPEC, a plist.
+:subject is the Subject header, :references the References header, :prefix
+`vm-reply-subject-prefix' and :number `vm-mail-subject-number-reply'.  The
+composition counts as a reply, since that is what the numbering needs."
+  (declare (indent 1) (debug t))
+  `(let ((mail-header-separator "--text follows this line--")
+         (vm-reply-subject-prefix (plist-get ,spec :prefix))
+         (vm-mail-subject-number-reply (plist-get ,spec :number))
+         (vm-reply-list '(a-message))
+         (text-quoting-style 'grave))
+     (with-temp-buffer
+       (mail-mode)
+       (insert "To: someone@example.com\n"
+               "Subject: " (plist-get ,spec :subject) "\n"
+               (let ((refs (plist-get ,spec :references)))
+                 (if refs (concat "References: " refs "\n") ""))
+               mail-header-separator "\n"
+               "The body.\n")
+       ,@body)))
+
+(defun vm-reply-test--subject ()
+  "The Subject header of the current composition."
+  (vm-mail-mode-get-header-contents "Subject:"))
+
+(ert-deftest vm-reply-test-subject-cleanup-replaces-a-foreign-prefix ()
+  "A reply prefix in another language is replaced by the configured one, so
+a thread does not accumulate one prefix per correspondent's mail program."
+  (vm-reply-test--with-subject '(:subject "AW: hello" :prefix "Re: ")
+    (vm-mail-subject-cleanup)
+    (should (equal (vm-reply-test--subject) "Re: hello"))))
+
+(ert-deftest vm-reply-test-subject-cleanup-collapses-repeated-prefixes ()
+  "A pile of prefixes becomes one: the default replacements match a run of
+them, however they are spelled and numbered."
+  (vm-reply-test--with-subject '(:subject "Re: AW: Re[3]: hello" :prefix "Re: ")
+    (vm-mail-subject-cleanup)
+    (should (equal (vm-reply-test--subject) "Re: hello"))))
+
+(ert-deftest vm-reply-test-subject-cleanup-replaces-a-forward-prefix ()
+  "The forward prefixes are replaced as well as the reply ones: the second
+entry of `vm-mail-subject-prefix-replacements' is what handles WG and FO."
+  (vm-reply-test--with-subject '(:subject "WG: hello" :prefix "Re: ")
+    (vm-mail-subject-cleanup)
+    (should (equal (vm-reply-test--subject) "Fo: hello"))))
+
+(ert-deftest vm-reply-test-subject-cleanup-numbers-by-the-references ()
+  "With numbering on, the reply prefix carries the number of references, so
+the subject says how deep in the thread it is."
+  (vm-reply-test--with-subject '(:subject "Re: hello" :prefix "Re: " :number t
+                                 :references "<a@x> <b@x>")
+    (vm-mail-subject-cleanup)
+    (should (equal (vm-reply-test--subject) "Re[2]: hello"))))
+
+(ert-deftest vm-reply-test-subject-cleanup-leaves-a-first-reply-unnumbered ()
+  "One reference is the message being replied to, so there is nothing to
+count yet and the subject is left as it is."
+  (vm-reply-test--with-subject '(:subject "Re: hello" :prefix "Re: " :number t
+                                 :references "<a@x>")
+    (vm-mail-subject-cleanup)
+    (should (equal (vm-reply-test--subject) "Re: hello"))))
+
+(ert-deftest vm-reply-test-subject-cleanup-needs-a-prefix-to-number ()
+  "REGRESSION: numbering without a reply prefix is reported, not a type error.
+
+The number goes inside the prefix, and `vm-reply-subject-prefix' is nil by
+default: passing that to `regexp-quote' signalled wrong-type-argument from
+inside `vm-mail-mode-hook', which aborts composition setup.  The message
+names both variables, since setting one without the other is the mistake."
+  (vm-reply-test--with-subject '(:subject "Re: hello" :number t
+                                 :references "<a@x> <b@x>")
+    (let ((err (should-error (vm-mail-subject-cleanup) :type 'error)))
+      (should (string-match-p "vm-reply-subject-prefix"
+                              (error-message-string err)))
+      (should (string-match-p "vm-mail-subject-number-reply"
+                              (error-message-string err))))))
+
+(ert-deftest vm-reply-test-subject-cleanup-reports-a-subject-it-cannot-number ()
+  "A subject that does not begin with the prefix is reported by name.
+
+The message used to name `vm-mail-check-subject-cleanup', which does not
+exist, so a reader could not find what had complained."
+  (vm-reply-test--with-subject '(:subject "hello" :prefix "Re: " :number t
+                                 :references "<a@x> <b@x>")
+    (let ((err (should-error (vm-mail-subject-cleanup) :type 'error)))
+      (should (string-match-p "vm-mail-subject-cleanup"
+                              (error-message-string err)))
+      (should-not (string-match-p "vm-mail-check-subject-cleanup"
+                                  (error-message-string err))))))
+
+(ert-deftest vm-reply-test-subject-cleanup-leaves-a-new-message-alone ()
+  "A composition that is not a reply is not numbered, whatever References it
+carries: `vm-reply-list' is what says it is a reply."
+  (let ((vm-reply-list nil))
+    (vm-reply-test--with-subject '(:subject "Re: hello" :prefix "Re: " :number t
+                                   :references "<a@x> <b@x>")
+      (setq vm-reply-list nil)
+      (vm-mail-subject-cleanup)
+      (should (equal (vm-reply-test--subject) "Re: hello")))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
