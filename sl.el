@@ -43,6 +43,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'seq)
+(require 'ansi-color)
 (require 'diff-mode)
 
 (defgroup sl nil
@@ -89,6 +90,14 @@
   "Value for `w32-pipe-read-delay' while reading `sl' output.
 Lower values make process output significantly faster on Windows."
   :type 'integer
+  :group 'sl)
+
+(defcustom sl-use-color t
+  "When non-nil, colorize Sapling command output.
+Sl commands that display text are run with ANSI color enabled and
+`ansi-color' translates the SGR sequences into Emacs faces.  This
+works on Windows as well as on Unix."
+  :type 'boolean
   :group 'sl)
 
 (defcustom sl-diff-use-diff-mode t
@@ -143,6 +152,11 @@ lines in green) without parsing Sapling's terminal color codes."
   "Face for marked files in the status buffer."
   :group 'sl)
 
+(defface sl-log-changeset-face
+  '((t :foreground "yellow"))
+  "Face for changeset identifiers in Sapling smartlog output."
+  :group 'sl)
+
 ;;; Buffer-local state
 
 (defvar-local sl--repo-root nil
@@ -169,6 +183,9 @@ lines in green) without parsing Sapling's terminal color codes."
 (defvar-local sl--output-directory nil
   "Directory in which the current output command runs.")
 
+(defvar-local sl--output-color nil
+  "Non-nil when the current output command runs with ANSI colors.")
+
 ;;; Process helpers
 
 (defun sl--windows-p ()
@@ -191,21 +208,33 @@ On Windows, `.bat'/`.cmd' wrappers need to be run through the shell."
               (mapconcat #'shell-quote-argument (cons program args) " "))
       (cons program args))))
 
+(defun sl--color-args (args)
+  "Return ARGS with ANSI color flags prepended.
+`color.mode=ansi' forces ANSI escape sequences even on Windows,
+where Sapling may otherwise use the native console color API."
+  (append '("--config" "color.mode=ansi" "--color=always") args))
+
 (defun sl--process-environment ()
-  "Return `process-environment' with Sapling automation variables."
+  "Return `process-environment' with Sapling automation variables.
+When `sl-use-color' is non-nil, allow colored output under Sapling's
+automation mode."
   (let ((env (copy-sequence process-environment)))
     (dolist (var '("HGPLAIN=1" "SL_AUTOMATION=1"))
       (unless (member var env)
         (push var env)))
+    (when sl-use-color
+      (unless (member "SL_AUTOMATION_EXCEPT=color" env)
+        (push "SL_AUTOMATION_EXCEPT=color" env)))
     env))
 
-(cl-defun sl--run-async (args &key name callback directory)
+(cl-defun sl--run-async (args &key name callback directory color)
   "Run `sl' with ARGS asynchronously.
 
 When CALLBACK is non-nil it is called with two arguments: the
 process output string and the exit code (or nil if the process did
 not exit normally).  DIRECTORY, when non-nil, is used as the process
-working directory."
+working directory.  When COLOR is non-nil, run `sl' with ANSI colors
+enabled."
   (let* ((default-directory (or directory sl--repo-root default-directory))
          (buffer (generate-new-buffer (format " *sl-%s*" (or name "process"))))
          (process-environment (sl--process-environment)))
@@ -217,7 +246,7 @@ working directory."
     (make-process
      :name (concat "sl-" (or name "process"))
      :buffer buffer
-     :command (sl--process-command args)
+     :command (sl--process-command (if color (sl--color-args args) args))
      ;; Decode process output with `utf-8-auto' (handles CRLF on
      ;; Windows) but encode command-line arguments with plain `utf-8'.
      ;; `utf-8-auto' on the encoding side would prepend a BOM to every
@@ -445,6 +474,18 @@ Signal an error if the command exits unsuccessfully."
     (?C 'sl-status-clean-face)
     (t nil)))
 
+(defun sl--insert-smartlog (text)
+  "Insert smartlog TEXT with changeset hashes colored."
+  (let ((beg (point)))
+    (insert text)
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward
+              "^\\(?:[^[:space:]]+[[:space:]]+\\)\\([0-9a-f]+\\)[[:space:]]"
+              nil t)
+        (add-face-text-property (match-beginning 1) (match-end 1)
+                                'sl-log-changeset-face)))))
+
 (defun sl--render-status ()
   "Render the Sapling status buffer from cached data."
   (let ((inhibit-read-only t)
@@ -463,9 +504,9 @@ Signal an error if the command exits unsuccessfully."
       (insert "\n"))
     (insert "\n")
     (insert (propertize "Smartlog\n" 'face 'sl-header-face))
-    (insert (if (and smartlog (not (equal smartlog "")))
-                smartlog
-              "  (no smartlog output)\n"))
+    (if (and smartlog (not (equal smartlog "")))
+        (sl--insert-smartlog smartlog)
+      (insert "  (no smartlog output)\n"))
     (insert "\n")
     (insert (propertize "Changes\n" 'face 'sl-header-face))
     (if files
@@ -608,14 +649,23 @@ Signal an error if the command exits unsuccessfully."
              'face 'italic)))
   (set-buffer-modified-p nil))
 
+(defun sl--colorize-region (beg end)
+  "Translate ANSI color sequences between BEG and END into faces."
+  (setq ansi-color-context-region nil)
+  (ansi-color-apply-on-region beg end))
+
 (defun sl--render-output (title text code)
   "Render output TEXT with TITLE and process exit CODE."
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+        (text-beg nil))
     (erase-buffer)
     (insert (propertize (format "%s\n" title) 'face 'sl-header-face))
     (when text
+      (setq text-beg (point))
       (insert text)
-      (unless (bolp) (insert "\n")))
+      (unless (bolp) (insert "\n"))
+      (when (and sl-use-color sl--output-color)
+        (sl--colorize-region text-beg (point))))
     (unless (and code (zerop code))
       (insert (propertize
                (format "[sl exited with code %s]\n" (or code "unknown"))
@@ -635,16 +685,18 @@ Signal an error if the command exits unsuccessfully."
         (directory sl--output-directory))
     (sl--run-async
      args :name (or (car args) "output") :directory directory
+     :color sl--output-color
      :callback
      (lambda (out code)
        (when (buffer-live-p buffer)
          (with-current-buffer buffer
            (sl--render-output title out code)))))))
 
-(cl-defun sl--show-output (buffer-name args title directory &key mode)
+(cl-defun sl--show-output (buffer-name args title directory &key mode (color sl-use-color))
   "Show output of `sl ARGS' in BUFFER-NAME with TITLE.
 When MODE is non-nil, use it as the major mode for BUFFER-NAME
-instead of `sl-output-mode'."
+instead of `sl-output-mode'.  When COLOR is non-nil, run `sl' with
+ANSI colors enabled."
   (let ((buffer (get-buffer-create buffer-name)))
     (with-current-buffer buffer
       (unless (derived-mode-p (or mode 'sl-output-mode))
@@ -652,11 +704,13 @@ instead of `sl-output-mode'."
       (setq default-directory directory
             sl--output-command args
             sl--output-title title
-            sl--output-directory directory)
+            sl--output-directory directory
+            sl--output-color color)
       (sl--render-output-loading))
     (pop-to-buffer buffer)
     (sl--run-async
      args :name (or (car args) "output") :directory directory
+     :color color
      :callback
      (lambda (out code)
        (when (buffer-live-p buffer)
@@ -683,11 +737,13 @@ instead of `sl-output-mode'."
       (setq default-directory root
             sl--output-command args
             sl--output-title title
-            sl--output-directory root)
+            sl--output-directory root
+            sl--output-color sl-use-color)
       (sl--render-output-loading))
     (pop-to-buffer buffer)
     (sl--run-async
      args :name (or (car args) "output") :directory root
+     :color sl-use-color
      :callback
      (lambda (out code)
        (when (buffer-live-p buffer)
@@ -777,7 +833,9 @@ called outside the status buffer."
                      root
                      :mode (if sl-diff-use-diff-mode
                                #'sl-diff-mode
-                             #'sl-output-mode))))
+                             #'sl-output-mode)
+                     :color (and sl-use-color
+                                 (not sl-diff-use-diff-mode)))))
 
 ;;;###autoload
 (defun sl-commit ()

@@ -20,6 +20,9 @@ small and Windows-friendly.
 - `sl-diff` uses `diff-mode`, so removed lines are shown in red and added
   lines in green using Emacs-native font locking (no terminal color-code
   parsing).
+- Other output commands (`log`, `smartlog`, `show`, `grep`, etc.) run with
+  ANSI color enabled and `sl-status` highlights smartlog changesets in
+  yellow, matching colored `sl` output in a terminal.
 - A lightweight dispatch menu (`M-x sl-menu`) with no external
   dependencies.
 - Stack workflows: `fold`, `graft`, `hide`, `unhide`, `uncommit`, `unamend`,
@@ -60,7 +63,9 @@ The package targets Windows Emacs explicitly:
 - Output is decoded as UTF-8 (`utf-8-auto`), which also normalizes CRLF output
   from Windows processes.
 - `HGPLAIN=1` and `SL_AUTOMATION=1` are set for every `sl` process so output is
-  not paginated or colorized.
+  not paginated or interactive.  When `sl-use-color` is non-nil,
+  `SL_AUTOMATION_EXCEPT=color` and `--config color.mode=ansi --color=always`
+  force ANSI color codes, which Emacs translates into faces.
 - `w32-pipe-read-delay` is lowered to `sl-w32-pipe-read-delay` (default
   `0`) while talking to `sl`, which makes process output significantly faster
   on Windows.
@@ -108,6 +113,7 @@ customize `sl-program`:
 ## Configuration
 
 - `sl-program` — Sapling executable name or path (default `"sl"`).
+- `sl-use-color` — colorize command output with ANSI colors (default `t`).
 - `sl-log-limit` — number of commits in `sl-log` (default `100`).
 - `sl-w32-pipe-read-delay` — Windows pipe read delay in ms (default `0`).
 - `sl-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
