@@ -305,6 +305,98 @@ Visiting a directory is how VM asks for a folder inside it."
                    (vector "." '(vm-visit-folder "/mail/lists") t)))
     (should (= (length (cdr (car menu))) 2))))
 
+;;; The folder-menu commands that touch the disk (emacs-vm/vm#654)
+
+(defmacro vm-menu-test--in-a-folder-directory (&rest body)
+  "Run BODY with `vm-folder-directory' a temporary directory holding a folder.
+FOLDER is that folder's file name and DIR the directory.  Rebuilding and
+installing the menu is stubbed out: these commands are being tested for
+what they do to the disk."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-folders" t)))
+          (folder (expand-file-name "inbox" dir))
+          (vm-folder-directory dir))
+     (unwind-protect
+         (progn
+           (with-temp-file folder (insert "From a@b Mon Jan  1 00:00:00 2024\n"))
+           (cl-letf (((symbol-function 'vm-menu-hm-make-folder-menu) #'ignore)
+                     ((symbol-function 'vm-menu-hm-install-menu) #'ignore))
+             ,@body))
+       (delete-directory dir t))))
+
+(defun vm-menu-test--as-read-file-name (typed)
+  "A `read-file-name' stub that answers TYPED as the real one would.
+
+The real prompt resolves what is typed against the DIR argument it is
+given, so a stub that ignores DIR cannot see a command passing the wrong
+one -- which is the whole point of these tests."
+  (lambda (_prompt &optional dir &rest _)
+    (expand-file-name typed (or dir default-directory))))
+
+(ert-deftest vm-menu-test-renaming-a-folder-lands-beside-it ()
+  "REGRESSION: a name typed at the rename prompt names a folder in the same
+directory.
+
+The prompt was given `(directory-file-name folder)' as its directory, which
+for a file is that same file, so \"archive\" resolved to inbox/archive and
+the rename failed.  Typing a full path worked, which is presumably why this
+went unnoticed."
+  (vm-menu-test--in-a-folder-directory
+    (cl-letf (((symbol-function 'read-file-name)
+               (vm-menu-test--as-read-file-name "archive")))
+      (vm-menu-hm-rename-folder folder))
+    (should (file-exists-p (expand-file-name "archive" dir)))
+    (should-not (file-exists-p folder))))
+
+(ert-deftest vm-menu-test-renaming-a-folder-that-is-not-there-is-refused ()
+  "A folder that does not exist is reported rather than renamed to nothing."
+  (vm-menu-test--in-a-folder-directory
+    (let ((text-quoting-style 'grave))
+      (let ((err (should-error
+                  (vm-menu-hm-rename-folder (expand-file-name "absent" dir))
+                  :type 'error)))
+        (should (string-match-p "does not exist"
+                                (error-message-string err)))))))
+
+(ert-deftest vm-menu-test-deleting-a-folder-asks-first ()
+  "The delete is a query: answering no leaves the folder where it was."
+  (vm-menu-test--in-a-folder-directory
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+      (vm-menu-hm-delete-folder folder))
+    (should (file-exists-p folder))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-menu-hm-delete-folder folder))
+    (should-not (file-exists-p folder))))
+
+(ert-deftest vm-menu-test-deleting-a-folder-that-is-not-there-is-refused ()
+  "Deleting something absent is reported, and nothing is asked."
+  (vm-menu-test--in-a-folder-directory
+    (let ((asked nil)
+          (text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) (setq asked t))))
+        (let ((err (should-error
+                    (vm-menu-hm-delete-folder (expand-file-name "absent" dir))
+                    :type 'error)))
+          (should (string-match-p "does not exist"
+                                  (error-message-string err)))))
+      (should-not asked))))
+
+(ert-deftest vm-menu-test-creating-a-directory-makes-it ()
+  "`vm-menu-hm-create-dir' creates the directory named at its prompt."
+  (vm-menu-test--in-a-folder-directory
+    (cl-letf (((symbol-function 'read-file-name)
+               (vm-menu-test--as-read-file-name "archive")))
+      (vm-menu-hm-create-dir dir))
+    (should (file-directory-p (expand-file-name "archive" dir)))))
+
+(ert-deftest vm-menu-test-creating-a-directory-defaults-to-the-folder-directory ()
+  "With no parent given the new directory goes in `vm-folder-directory'."
+  (vm-menu-test--in-a-folder-directory
+    (cl-letf (((symbol-function 'read-file-name)
+               (vm-menu-test--as-read-file-name "archive")))
+      (vm-menu-hm-create-dir nil))
+    (should (file-directory-p (expand-file-name "archive" dir)))))
+
 (provide 'vm-menu-test)
 
 ;;; vm-menu-test.el ends here
