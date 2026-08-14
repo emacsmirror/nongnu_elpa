@@ -415,9 +415,15 @@ RUNS is the detail run list."
     (with-current-buffer buffer
       (hermes-cron--revert))))
 
+(defun hermes-cron--origin-instance-p (buffer owner)
+  "Return non-nil when cron BUFFER still has OWNER."
+  (and (hermes-browser--buffer-mode-p buffer 'hermes-cron-mode)
+       (equal owner (buffer-local-value 'hermes-instance buffer))))
+
 (defun hermes-cron--act (action id profile done-message)
   "Run cron ACTION on job ID for PROFILE, then report DONE-MESSAGE."
-  (let ((origin (current-buffer)))
+  (let ((origin (current-buffer))
+        (owner hermes-instance))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes--promise-map
@@ -429,8 +435,9 @@ RUNS is the detail run list."
                             nil (hermes-cron--query profile)))
         #'hermes-cron--checked-result))
      (lambda (_result)
-       (message "Hermes: %s" done-message)
-       (hermes-cron--refresh-origin origin)))))
+       (when (hermes-cron--origin-instance-p origin owner)
+         (message "Hermes: %s" done-message)
+         (hermes-cron--refresh-origin origin))))))
 
 (defun hermes-cron-toggle ()
   "Pause or resume the cron job at point."
@@ -482,31 +489,43 @@ RUNS is the detail run list."
 (defun hermes-cron-edit ()
   "Edit the cron job at point."
   (interactive)
-  (let ((id (hermes-cron--id-at-point))
+  (let ((job-id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
-        (origin (current-buffer)))
+        (origin (current-buffer))
+        (owner hermes-instance)
+        (generation (hermes-browser--next-request-generation)))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes--promise-then
-        (hermes-cron--fetch-job client id profile)
+        (hermes-cron--fetch-job client job-id profile)
         (lambda (job)
-          (let* ((job-profile (or (hermes-transport--non-blank-string
-                                   (hermes-cron--profile job))
-                                  profile))
-                 (updates (hermes-cron--read-updates job)))
-            (hermes--promise-map
-             (hermes-cron--update-job client id job-profile updates)
-             #'hermes-cron--checked-result)))))
+          (when (and (hermes-cron--origin-instance-p origin owner)
+                     (hermes-browser--request-current-mode-p
+                      origin generation 'hermes-cron-mode))
+            (let* ((job-profile (or (hermes-transport--non-blank-string
+                                     (hermes-cron--profile job))
+                                    profile))
+                   (updates (hermes-cron--read-updates job)))
+              (when (and (hermes-cron--origin-instance-p origin owner)
+                         (hermes-browser--request-current-mode-p
+                          origin generation 'hermes-cron-mode))
+                (hermes--promise-map
+                 (hermes-cron--update-job client job-id job-profile updates)
+                 #'hermes-cron--checked-result)))))))
      (lambda (_result)
-       (message "Hermes: updated %s" id)
-       (hermes-cron--refresh-origin origin)))))
+       (when (and (hermes-cron--origin-instance-p origin owner)
+                  (hermes-browser--request-current-mode-p
+                   origin generation 'hermes-cron-mode))
+         (message "Hermes: updated %s" job-id)
+         (hermes-cron--refresh-origin origin))))))
 
 (defun hermes-cron-trigger ()
   "Trigger the cron job at point immediately."
   (interactive)
   (let ((id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
-        (origin (current-buffer)))
+        (origin (current-buffer))
+        (owner hermes-instance))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes--promise-map
@@ -514,8 +533,9 @@ RUNS is the detail run list."
                           nil (hermes-cron--query profile))
         #'hermes-cron--checked-result))
      (lambda (_result)
-       (message "Hermes: triggered %s" id)
-       (hermes-cron--refresh-origin origin)))))
+       (when (hermes-cron--origin-instance-p origin owner)
+         (message "Hermes: triggered %s" id)
+         (hermes-cron--refresh-origin origin))))))
 
 (defun hermes-cron-create (name schedule prompt &optional profile deliver skills)
   "Create cron job NAME running PROMPT on SCHEDULE for PROFILE.
@@ -532,7 +552,8 @@ names.  Interactive creation defaults DELIVER to local delivery."
          (schedule (string-trim schedule))
          (prompt (string-trim prompt))
          (profile (or (hermes-transport--non-blank-string profile) "default"))
-         (origin (current-buffer)))
+         (origin (current-buffer))
+         (owner hermes-instance))
     (when (or (string-empty-p name)
               (string-empty-p schedule)
               (string-empty-p prompt))
@@ -548,8 +569,9 @@ names.  Interactive creation defaults DELIVER to local delivery."
                           (hermes-cron--query profile))
         #'hermes-cron--checked-result))
      (lambda (_result)
-       (message "Hermes: created cron job %s" name)
-       (hermes-cron--refresh-origin origin)))))
+       (when (hermes-cron--origin-instance-p origin owner)
+         (message "Hermes: created cron job %s" name)
+         (hermes-cron--refresh-origin origin))))))
 
 ;;; Failure notifications and auto-refresh
 

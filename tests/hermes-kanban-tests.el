@@ -313,6 +313,30 @@
         (when (get-buffer "*Hermes Kanban Boards*")
           (kill-buffer "*Hermes Kanban Boards*"))))))
 
+(ert-deftest hermes-kanban-cold-boards-request-owns-destination-buffer ()
+  "A pending cold request survives return from an unowned command buffer."
+  (let ((pending (hermes--promise-make))
+        (instance '("remote" . "https://hermes.example.test")))
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success on-error)
+                 (hermes--promise-then (funcall make-promise 'client)
+                                       on-success on-error)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) pending)))
+      (unwind-protect
+          (progn
+            (with-temp-buffer (hermes-list-kanban))
+            (hermes--promise-resolve
+             pending '((boards . (((slug . "owned") (name . "Owned"))))))
+            (with-current-buffer "*Hermes Kanban Boards*"
+              (should (equal hermes-instance instance))
+              (should (equal (caar tabulated-list-entries)
+                             '("owned" . "Owned")))))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
 (ert-deftest hermes-kanban-boards-revert-refreshes-without-display ()
   "Reverting the boards overview refreshes in place; the command displays."
   (let (displayed)
@@ -379,6 +403,22 @@
             (should-not
              (seq-some (lambda (text) (string-match-p "stale boards" text))
                        messages)))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
+(ert-deftest hermes-kanban-boards-hide-superseded-rejection ()
+  "Retargeting the boards request does not expose its internal sentinel."
+  (let ((pending (hermes--promise-make)) messages)
+    (cl-letf (((symbol-function 'hermes-kanban--api) (lambda (&rest _) pending))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-list-kanban)
+            (hermes--promise-reject pending hermes-kanban--superseded)
+            (should-not messages))
         (when (get-buffer "*Hermes Kanban Boards*")
           (kill-buffer "*Hermes Kanban Boards*"))))))
 

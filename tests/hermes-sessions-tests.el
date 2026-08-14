@@ -269,6 +269,95 @@
         (kill-buffer "*Hermes Sessions*")))
     (should (equal query '((profile . "work"))))))
 
+(ert-deftest hermes-sessions-late-rename-does-not-touch-retargeted-buffers ()
+  "An instance A rename cannot update instance B list or detail buffers."
+  (let ((a '("a" . "http://a")) (b '("b" . "http://b"))
+        (identity '("work" . "same")))
+    (unwind-protect
+        (progn
+          (hermes-sessions-test--render
+           '(((id . "same") (profile . "work") (title . "B title"))))
+          (with-current-buffer "*Hermes Sessions*"
+            (hermes-browser--own-instance b))
+          (hermes-sessions--render-detail
+           '((id . "same") (profile . "work") (title . "B title")) nil 0 nil b)
+          (hermes-sessions--after-rename nil a identity "A title")
+          (with-current-buffer "*Hermes Sessions*"
+            (should (equal (substring-no-properties
+                            (aref (cadr (assoc identity tabulated-list-entries)) 1))
+                           "B title")))
+          (with-current-buffer "*Hermes Session: work/same*"
+            (should (equal (hermes-transport--get
+                            hermes-sessions--detail-session 'title)
+                           "B title"))))
+      (dolist (name '("*Hermes Sessions*" "*Hermes Session: work/same*"))
+        (when (get-buffer name) (kill-buffer name))))))
+
+(ert-deftest hermes-sessions-late-delete-does-not-touch-retargeted-buffers ()
+  "An instance A delete cannot remove instance B list or detail state."
+  (let ((a '("a" . "http://a")) (b '("b" . "http://b"))
+        (identity '("work" . "same")))
+    (unwind-protect
+        (progn
+          (hermes-sessions-test--render
+           '(((id . "same") (profile . "work") (title . "B title"))))
+          (with-current-buffer "*Hermes Sessions*"
+            (hermes-browser--own-instance b))
+          (hermes-sessions--render-detail
+           '((id . "same") (profile . "work") (title . "B title")) nil 0 nil b)
+          (hermes-sessions--after-delete nil a identity)
+          (with-current-buffer "*Hermes Sessions*"
+            (should (assoc identity tabulated-list-entries)))
+          (should (buffer-live-p (get-buffer "*Hermes Session: work/same*"))))
+      (dolist (name '("*Hermes Sessions*" "*Hermes Session: work/same*"))
+        (when (get-buffer name) (kill-buffer name))))))
+
+(ert-deftest hermes-sessions-late-rename-does-not-report-success ()
+  "An instance A rename cannot report success after retargeting to B."
+  (let ((pending (hermes--promise-make)) messages)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "A title"))
+              ((symbol-function 'hermes-sessions--set-title-promise)
+               (lambda (&rest _) pending))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render
+             '(((id . "same") (profile . "work") (title . "Old"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (hermes-browser--own-instance '("a" . "http://a"))
+              (goto-char (point-min))
+              (hermes-sessions-rename)
+              (hermes-browser--own-instance '("b" . "http://b")))
+            (hermes--promise-resolve pending '((ok . t)))
+            (should-not messages))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-late-delete-does-not-report-success ()
+  "An instance A delete cannot report success after retargeting to B."
+  (let ((pending (hermes--promise-make)) messages)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (&rest _) pending))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render
+             '(((id . "same") (profile . "work") (title . "Old"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (hermes-browser--own-instance '("a" . "http://a"))
+              (goto-char (point-min))
+              (hermes-sessions-delete)
+              (hermes-browser--own-instance '("b" . "http://b")))
+            (hermes--promise-resolve pending '((ok . t)))
+            (should-not messages))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
 (ert-deftest hermes-sessions-export-writes-detail-markdown ()
   "Export writes the already-loaded detail history as Markdown."
   (let ((file (make-temp-file "hermes-session-" nil ".md")))

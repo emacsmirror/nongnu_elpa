@@ -420,7 +420,7 @@ after a reset/restart."
   "Reload dashboard skills, reporting added/removed skills when supported."
   (interactive)
   (let ((origin (current-buffer)))
-    (hermes-browser--run-on-client
+    (hermes-inventory--run-mutation
      (lambda (client)
        (hermes-dashboard-transport-call-fn
         #'hermes-dashboard-transport-skills-reload client))
@@ -822,26 +822,31 @@ TARGET is one of all, memory, or user.  External providers are not reset."
                           '("all" "memory" "user") nil t nil nil "all")))
   (unless (member target '("all" "memory" "user"))
     (user-error "Memory reset target must be all, memory, or user"))
+  (hermes-memory--require-idle)
   (let ((origin (current-buffer)))
     (when (yes-or-no-p
            (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
                    target))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (hermes-dashboard-transport-api-request-async
-          "POST" "/api/memory/reset"
-          :body `((target . ,target))
-          :client client))
-       (lambda (result)
-         (message "Hermes: reset %s memory (%s)"
-                  target
-                  (string-join
-                   (or (hermes-transport--get result 'deleted) '())
-                   ", "))
-         (when (hermes-browser--buffer-mode-p
-                origin 'hermes-memory-status-mode)
-           (with-current-buffer origin
-             (hermes-memory-status))))))))
+      (let ((generation (hermes-browser--next-request-generation))
+            (token (list 'memory-reset)))
+        (setq hermes-memory--operation token)
+        (hermes-memory--run-owned
+         origin generation token
+         (lambda (client)
+           (hermes-dashboard-transport-api-request-async
+            "POST" "/api/memory/reset"
+            :body `((target . ,target))
+            :client client))
+         (lambda (result)
+           (message "Hermes: reset %s memory (%s)"
+                    target
+                    (string-join
+                     (or (hermes-transport--get result 'deleted) '())
+                     ", "))
+           (when (hermes-browser--buffer-mode-p
+                  origin 'hermes-memory-status-mode)
+             (with-current-buffer origin
+               (hermes-memory-status)))))))))
 
 ;;;###autoload
 (defun hermes-list-inventory ()

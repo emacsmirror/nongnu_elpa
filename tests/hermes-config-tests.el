@@ -218,6 +218,41 @@
          old-request '((key . "OPENAI_API_KEY") (value . "old-secret")))))
     (should (equal copied "new-secret"))))
 
+(ert-deftest hermes-config-reveal-requires-authoritative-state ()
+  "Reveal cannot use a stale environment snapshot."
+  (let (requested)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) (setq requested t))))
+      (with-temp-buffer
+        (hermes-config-mode)
+        (setq hermes-config--refresh-required t)
+        (let ((inhibit-read-only t))
+          (insert (propertize "KEY" 'hermes-env-key "KEY")))
+        (goto-char (point-min))
+        (should-error (hermes-config-reveal-env) :type 'user-error)))
+    (should-not requested)))
+
+(ert-deftest hermes-config-retarget-invalidates-displayed-authority ()
+  "Retargeting blocks actions until the new instance refresh renders."
+  (let ((local '("local" . "http://local"))
+        (remote '("remote" . "http://remote"))
+        (refresh (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () remote))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'hermes-config--fetch) (lambda (_client) refresh))
+              ((symbol-function 'hermes-browser--existing-client) (lambda () 'client)))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Config*")
+              (hermes-config-mode)
+              (hermes-browser--own-instance local)
+              (setq hermes-config--refresh-required nil))
+            (hermes-config)
+            (with-current-buffer "*Hermes Config*"
+              (should hermes-config--refresh-required)))
+        (when (get-buffer "*Hermes Config*")
+          (kill-buffer "*Hermes Config*"))))))
+
 (ert-deftest hermes-config-edits-serialize-through-authoritative-refresh ()
   "A later full-config edit derives from the first edit's refreshed state."
   (let ((first-put (hermes--promise-make))

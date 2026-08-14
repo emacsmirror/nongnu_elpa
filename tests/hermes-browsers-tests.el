@@ -649,6 +649,32 @@
              put '((ok . t) (model . "gpt-5.5") (provider . "openai"))))
           (should (eq refreshed origin)))))))
 
+(ert-deftest hermes-profiles-stale-model-catalog-cannot-prompt-or-put ()
+  "A model catalog from instance A cannot act after retargeting to B."
+  (let ((catalog (hermes--promise-make)) prompted put)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () (or hermes-instance '("default" . "http://default"))))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'client-a))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) catalog))
+              ((symbol-function 'hermes-profiles--read-model-candidate)
+               (lambda (&rest _) (setq prompted t) '("p" . "m")))
+              ((symbol-function 'hermes-profiles--put-model)
+               (lambda (&rest _) (setq put t) (hermes--promise-resolved nil))))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (hermes-browser--own-instance '("a" . "http://a"))
+        (setq tabulated-list-entries
+              '(("planner" ["planner" "" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-profiles-set-model)
+        (hermes-browser--own-instance '("b" . "http://b"))
+        (hermes--promise-resolve catalog '((providers . nil)))))
+    (should-not prompted)
+    (should-not put)))
+
 (ert-deftest hermes-profiles-lifecycle-uses-exact-rest-and-refreshes ()
   "Profile lifecycle commands use exact REST contracts and refresh on success."
   (let (requests (refreshes 0))

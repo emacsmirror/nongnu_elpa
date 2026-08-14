@@ -277,7 +277,9 @@ route requires both fields."
   "Set the model of the profile at point, persisted in its configuration."
   (interactive)
   (let ((name (tabulated-list-get-id))
-        (origin (current-buffer)))
+        (origin (current-buffer))
+        (instance (hermes-instance-resolve))
+        (generation (hermes-browser--next-request-generation)))
     (unless name (user-error "No profile on this line"))
     (hermes-browser--run-on-client
      (lambda (client)
@@ -285,15 +287,21 @@ route requires both fields."
         (hermes-dashboard-transport-call-fn
          #'hermes-dashboard-transport-model-options-cached client)
         (lambda (catalog)
-          (hermes-profiles--put-model
-           client name (hermes-profiles--read-model-candidate catalog)))))
+          (when (and (hermes-browser--request-current-mode-p
+                      origin generation 'hermes-profiles-mode)
+                     (with-current-buffer origin
+                       (equal instance (hermes-instance-resolve))))
+            (hermes-profiles--put-model
+             client name (hermes-profiles--read-model-candidate catalog))))))
      (lambda (result)
-       (message "Hermes: profile %s set to %s via %s" name
-                (hermes-transport--scalar-string
-                 (hermes-transport--get result 'model))
-                (hermes-transport--scalar-string
-                 (hermes-transport--get result 'provider)))
-       (when (hermes-browser--buffer-mode-p origin 'hermes-profiles-mode)
+       (when (and (hermes-browser--buffer-mode-p origin 'hermes-profiles-mode)
+                  (with-current-buffer origin
+                    (equal instance (hermes-instance-resolve))))
+         (message "Hermes: profile %s set to %s via %s" name
+                  (hermes-transport--scalar-string
+                   (hermes-transport--get result 'model))
+                  (hermes-transport--scalar-string
+                   (hermes-transport--get result 'provider)))
          (with-current-buffer origin
            (hermes-profiles--revert)))))))
 

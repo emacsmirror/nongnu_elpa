@@ -603,15 +603,22 @@ id it returns.  PROFILE targets another profile through REST."
    (hermes-sessions--detail-buffer-name
     `((id . ,(cdr identity)) (profile . ,(car identity))))))
 
-(defun hermes-sessions--after-rename (_buffer identity title)
-  "Update open session buffers after session IDENTITY was renamed to TITLE."
+(defun hermes-sessions--owned-buffer-p (buffer instance mode)
+  "Return non-nil when BUFFER is live in MODE and still owns INSTANCE."
+  (and (hermes-browser--buffer-mode-p buffer mode)
+       (equal instance (buffer-local-value 'hermes-instance buffer))))
+
+(defun hermes-sessions--after-rename (_buffer instance identity title)
+  "Update session buffers owned by INSTANCE after renaming IDENTITY to TITLE."
   (when-let* ((browser (get-buffer "*Hermes Sessions*")))
     (with-current-buffer browser
-      (when (derived-mode-p 'hermes-sessions-mode)
+      (when (hermes-sessions--owned-buffer-p
+             browser instance 'hermes-sessions-mode)
         (hermes-sessions--replace-browser-row-title identity title))))
   (when-let* ((detail (hermes-sessions--detail-buffer-for-id identity)))
     (with-current-buffer detail
-      (when (derived-mode-p 'hermes-session-detail-mode)
+      (when (hermes-sessions--owned-buffer-p
+             detail instance 'hermes-session-detail-mode)
         (setq hermes-sessions--detail-session
               (hermes-sessions--session-with-title
                hermes-sessions--detail-session title))
@@ -630,7 +637,9 @@ id it returns.  PROFILE targets another profile through REST."
     (let* ((current-title (hermes-transport--display-field session 'title))
            (title (read-string (format "Rename Hermes session %s to: " id)
                                current-title))
-           (origin (current-buffer)))
+           (origin (current-buffer))
+           (origin-mode major-mode)
+           (instance (hermes-instance-resolve)))
       (when (hermes-sessions--title-empty-p title)
         (user-error "Session title required"))
       (hermes-browser--run-on-client
@@ -638,9 +647,11 @@ id it returns.  PROFILE targets another profile through REST."
          (hermes-sessions--set-title-promise
           client id (string-trim title) (hermes-sessions--profile session)))
        (lambda (_result)
-         (message "Hermes: renamed session %s" id)
-         (hermes-sessions--after-rename
-          origin (hermes-sessions--identity session) (string-trim title)))))))
+         (when (hermes-sessions--owned-buffer-p origin instance origin-mode)
+           (message "Hermes: renamed session %s" id)
+           (hermes-sessions--after-rename
+            origin instance (hermes-sessions--identity session)
+            (string-trim title))))))))
 
 (defun hermes-sessions--remove-browser-row (identity)
   "Remove browser row IDENTITY from the current buffer."
@@ -650,14 +661,17 @@ id it returns.  PROFILE targets another profile through REST."
     (remhash identity hermes-sessions--session-map))
   (tabulated-list-print t))
 
-(defun hermes-sessions--after-delete (_buffer identity)
-  "Update open session buffers after session IDENTITY was deleted."
+(defun hermes-sessions--after-delete (_buffer instance identity)
+  "Update session buffers owned by INSTANCE after deleting IDENTITY."
   (when-let* ((browser (get-buffer "*Hermes Sessions*")))
     (with-current-buffer browser
-      (when (derived-mode-p 'hermes-sessions-mode)
+      (when (hermes-sessions--owned-buffer-p
+             browser instance 'hermes-sessions-mode)
         (hermes-sessions--remove-browser-row identity))))
   (when-let* ((detail (hermes-sessions--detail-buffer-for-id identity)))
-    (kill-buffer detail)))
+    (when (hermes-sessions--owned-buffer-p
+           detail instance 'hermes-session-detail-mode)
+      (kill-buffer detail))))
 
 (defun hermes-sessions-delete ()
   "Delete the selected Hermes session after an explicit confirmation prompt."
@@ -665,7 +679,9 @@ id it returns.  PROFILE targets another profile through REST."
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
          (title (hermes-transport--display-field session 'title))
-         (origin (current-buffer)))
+         (origin (current-buffer))
+         (origin-mode major-mode)
+         (instance (hermes-instance-resolve)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to delete"))
     (if (yes-or-no-p
@@ -679,9 +695,10 @@ id it returns.  PROFILE targets another profile through REST."
             nil (and (hermes-sessions--profile session)
                      `((profile . ,(hermes-sessions--profile session))))))
          (lambda (_result)
-           (message "Hermes: deleted session %s" id)
-           (hermes-sessions--after-delete
-            origin (hermes-sessions--identity session))))
+           (when (hermes-sessions--owned-buffer-p origin instance origin-mode)
+             (message "Hermes: deleted session %s" id)
+             (hermes-sessions--after-delete
+              origin instance (hermes-sessions--identity session)))))
       (message "Hermes: delete cancelled"))))
 
 (provide 'hermes-sessions)

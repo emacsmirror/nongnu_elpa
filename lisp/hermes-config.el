@@ -352,6 +352,7 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
 (defun hermes-config-reveal-env ()
   "Reveal the environment key at point by copying it without displaying it."
   (interactive)
+  (hermes-config--require-authoritative-state)
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer)))
     (unless key (user-error "No environment key on this line"))
@@ -397,6 +398,8 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
           (unless (equal hermes-instance instance)
             (user-error "Configuration update still in progress for %s"
                         (hermes-instance-name hermes-instance)))
+        (unless (equal hermes-instance instance)
+          (setq hermes-config--refresh-required t))
         (hermes-browser--own-instance instance)))
     (pop-to-buffer buffer)
     (with-current-buffer buffer

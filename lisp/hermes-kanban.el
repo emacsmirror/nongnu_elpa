@@ -64,14 +64,23 @@
 (defconst hermes-kanban--superseded :hermes-kanban-superseded
   "Rejection marker for an operation whose buffer changed ownership.")
 
+(defvar hermes-kanban--request-owner nil
+  "Buffer that explicitly owns the current cold Kanban request.")
+
+(defun hermes-kanban--report-rejection (reason)
+  "Report REASON unless it indicates a superseded Kanban request."
+  (unless (eq reason hermes-kanban--superseded)
+    (message "Hermes: %s" reason)))
+
 (defun hermes-kanban--api (method path &optional body query timeout)
   "Return a promise of the kanban plugin response for METHOD PATH.
 BODY, QUERY, and TIMEOUT extend the request.  Authentication and a single retry
 on a failed GET come from the shared dashboard transport, which talks only to
 `hermes-dashboard-transport-url'."
-  (let ((origin (current-buffer))
-        (instance (hermes-instance-resolve))
-        (generation hermes-browser--request-generation))
+  (let* ((origin (or hermes-kanban--request-owner (current-buffer)))
+         (instance (with-current-buffer origin (hermes-instance-resolve)))
+         (generation
+          (buffer-local-value 'hermes-browser--request-generation origin)))
     (hermes--promise-then
      (hermes-browser--run-on-client
       (lambda (client)
@@ -93,9 +102,7 @@ on a failed GET come from the shared dashboard transport, which talks only to
   "Run ON-OK on PROMISE's resolved value, reporting any rejection."
   (hermes--promise-then
    promise on-ok
-   (lambda (reason)
-     (unless (eq reason hermes-kanban--superseded)
-       (message "Hermes: %s" reason)))))
+   #'hermes-kanban--report-rejection))
 
 (defvar hermes-kanban--board-request-id 0)
 (defvar hermes-kanban--boards-request-id 0)
@@ -386,19 +393,22 @@ status values."
 With IN-PLACE non-nil, refresh without re-displaying the buffer (used by revert,
 which already runs in the displayed window)."
   (let* ((instance (hermes-instance-resolve))
+         (target (get-buffer-create "*Hermes Kanban Boards*"))
          (hermes-instance instance)
          (request-id (hermes-kanban--begin-request
                       'hermes-kanban--boards-request-id)))
+    (with-current-buffer target
+      (unless (derived-mode-p 'hermes-kanban-boards-mode)
+        (hermes-kanban-boards-mode))
+      (hermes-browser--own-instance instance))
     (hermes--promise-then
-     (hermes-kanban--api "GET" "/boards")
+     (let ((hermes-kanban--request-owner target))
+       (hermes-kanban--api "GET" "/boards"))
      (lambda (payload)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--boards-request-id request-id)
          (let ((boards (hermes-transport--get payload 'boards)))
-           (with-current-buffer (get-buffer-create "*Hermes Kanban Boards*")
-             (unless (derived-mode-p 'hermes-kanban-boards-mode)
-               (hermes-kanban-boards-mode))
-             (hermes-browser--own-instance instance)
+           (with-current-buffer target
              (setq tabulated-list-entries (hermes-kanban--board-rows boards))
              ;; Display first so column widths use the live window.
              (unless in-place (pop-to-buffer (current-buffer)))
@@ -408,7 +418,7 @@ which already runs in the displayed window)."
      (lambda (reason)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--boards-request-id request-id)
-         (message "Hermes: %s" reason))))))
+         (hermes-kanban--report-rejection reason))))))
 
 (defun hermes-kanban--boards-revert (&rest _)
   "Refresh the boards overview in place."
@@ -683,11 +693,17 @@ With IN-PLACE non-nil, refresh without re-displaying the buffer (used by revert,
 which already runs in the displayed window).  When TASK-ID is non-nil, select
 that task after rendering."
   (let* ((instance (hermes-instance-resolve))
+         (target (get-buffer-create "*Hermes Kanban*"))
          (hermes-instance instance)
          (request-id (hermes-kanban--begin-request
                       'hermes-kanban--board-request-id)))
+    (with-current-buffer target
+      (unless (derived-mode-p 'hermes-kanban-mode)
+        (hermes-kanban-mode))
+      (hermes-browser--own-instance instance))
     (hermes-kanban--then
-     (hermes-kanban--api "GET" "/board" nil (and slug `((board . ,slug))))
+     (let ((hermes-kanban--request-owner target))
+       (hermes-kanban--api "GET" "/board" nil (and slug `((board . ,slug)))))
      (lambda (payload)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--board-request-id request-id)
@@ -1599,7 +1615,7 @@ re-displaying the buffer (used by revert)."
      (lambda (reason)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--diagnostics-request-id request-id)
-         (message "Hermes: %s" reason))))))
+         (hermes-kanban--report-rejection reason))))))
 
 ;;;###autoload
 (defun hermes-kanban-diagnostics ()
