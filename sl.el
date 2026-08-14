@@ -2,11 +2,11 @@
 
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
-;; Author: Sapling Emacs contributors
+;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Version: 0.2.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
-;; URL: https://example.invalid/sl.el
+;; URL: https://github.com/swithinchan/sl/tree/main
 
 ;; This file is not part of GNU Emacs.
 
