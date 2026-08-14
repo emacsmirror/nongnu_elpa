@@ -1375,6 +1375,26 @@ longer exist, and the error would come at composition time."
                  (intern (concat "vm-pcrisis-"
                                  (substring (symbol-name old) 5))))))))
 
+(ert-deftest vm-pcrisis-test-an-action-of-your-own-can-still-read-the-state ()
+  "REGRESSION: the two variables an action of one's own reads answer to
+their old names.
+
+`vm-pcrisis-actions' holds Lisp, so writing an action is ordinary, and one
+has to test `vm-pcrisis-current-buffer' to know whether the composition
+exists yet.  Neither variable is named in the manual, so the rename in #657
+left them without aliases and such an action signalled void-variable at
+composition time -- after the alias-carrying functions around it had
+already been renamed successfully."
+  (dolist (old '(vmpc-current-state vmpc-current-buffer))
+    (should (boundp old))
+    (should (eq (indirect-variable old)
+                (intern (concat "vm-pcrisis-" (substring (symbol-name old) 5))))))
+  ;; and the value follows, which is what the action tests
+  (let ((vm-pcrisis-current-buffer 'composition))
+    (should (eq vmpc-current-buffer 'composition)))
+  (let ((vmpc-current-state 'reply))
+    (should (eq vm-pcrisis-current-state 'reply))))
+
 (ert-deftest vm-pcrisis-test-an-old-option-carries-its-value-across ()
   "A value set under the old name is what the new name reads, which is what
 makes a customize file written years ago still describe this VM."

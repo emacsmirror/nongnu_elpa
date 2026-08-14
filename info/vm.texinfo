@@ -4375,6 +4375,26 @@ to the same recipient:
 @end example
 @end table
 
+@vindex vm-pcrisis-current-state
+@vindex vm-pcrisis-current-buffer
+An action of your own is an ordinary function named in
+@code{vm-pcrisis-actions}, and it runs twice: once before the composition
+buffer exists and once in it.  Two variables say which:
+@code{vm-pcrisis-current-buffer} is @code{none} the first time and
+@code{composition} the second, and @code{vm-pcrisis-current-state} is
+@code{reply}, @code{forward}, @code{resend}, @code{mail}, @code{newmail} or
+@code{automorph}.  So an action that sets a header tests the first before
+doing anything:
+
+@lisp
+(defun my-set-from (address)
+  (when (eq vm-pcrisis-current-buffer 'composition)
+    (vm-pcrisis-substitute-header "From" address)))
+@end lisp
+
+@noindent
+Both answer to their old @code{vmpc-} names as well.
+
 @section Automorph
 
 @findex vm-pcrisis-automorph

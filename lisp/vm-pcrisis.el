@@ -230,11 +230,15 @@ right for you will depend on how often you send email to new addresses using
   :type 'integer
   :group 'vm-pcrisis)
 
+(define-obsolete-variable-alias 'vmpc-current-state
+  'vm-pcrisis-current-state "8.3.3")
 (defvar vm-pcrisis-current-state nil
   "The current state of pcrisis.
 It is one of `reply', `forward', `resend', `automorph', `mail', or `newmail'.
 It controls which actions/functions can/will be run.") 
 
+(define-obsolete-variable-alias 'vmpc-current-buffer
+  'vm-pcrisis-current-buffer "8.3.3")
 (defvar vm-pcrisis-current-buffer nil
   "The current buffer, i.e. `none' or `composition'.
 It is `none' before running an adviced VM function and `composition' afterward,
