@@ -1467,6 +1467,10 @@ killed afterwards."
          (before (buffer-list)))
      (unwind-protect
          (let ((,(car spec) (expand-file-name "incoming" dir))
+               ;; visiting a folder pushes onto these, and the isolation
+               ;; restores values rather than list contents
+               (vm-folder-history vm-folder-history)
+               (vm-last-visit-folder vm-last-visit-folder)
                (vm-frame-per-composition nil)
                (vm-mutable-frame-configuration nil)
                (vm-mail-mode-hook nil)
@@ -1911,6 +1915,152 @@ carries: `vm-reply-list' is what says it is a reply."
       (setq vm-reply-list nil)
       (vm-mail-subject-cleanup)
       (should (equal (vm-reply-test--subject) "Re: hello")))))
+
+;;; Return receipts (emacs-vm/vm#656)
+
+(defconst vm-reply-test--receipt-requested
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: Alice Adams <alice@example.com>\n"
+          "To: me@example.com\n"
+          "Return-Receipt-To: receipts@example.com\n"
+          "Message-ID: <one@example.com>\n"
+          "Subject: badgers\n\n"
+          "The body of the message.\n\n")
+  "A message asking for a return receipt, addressed elsewhere than its author.")
+
+(defun vm-reply-test--composition-among (buffers)
+  "The composition buffer among the buffers not in BUFFERS, or nil.
+
+`vm-handle-return-receipt' works inside `save-excursion', so the
+composition it leaves is not the current buffer when it returns; it has to
+be found."
+  (car (seq-filter (lambda (buffer)
+                     (and (buffer-live-p buffer)
+                          (with-current-buffer buffer
+                            ;; VM's compositions are in mail-mode, with
+                            ;; vm-mail-mode-map bound over it
+                            (derived-mode-p 'mail-mode))))
+                   (seq-remove (lambda (b) (memq b buffers)) (buffer-list)))))
+
+(defmacro vm-reply-test--receipting (settings &rest body)
+  "Select a message asking for a receipt, run BODY with SETTINGS bound.
+BODY sees SENT, non-nil when the receipt was sent, and can call
+`vm-reply-test--composition-among' on BEFORE to find a composition left
+behind."
+  (declare (indent 1) (debug t))
+  `(vm-reply-test--composing (_folder vm-reply-test--receipt-requested)
+     (let ((before (buffer-list))
+           (sent nil))
+       (ignore sent)
+       (cl-letf (((symbol-function 'vm-mail-send-and-exit)
+                  (lambda (&rest _) (setq sent t))))
+         (let ,settings
+           ,@body)))))
+
+(ert-deftest vm-reply-test-a-receipt-goes-to-the-address-that-asked ()
+  "The receipt is addressed to Return-Receipt-To rather than to the author,
+and asks for no receipt of its own -- two of them answering each other would
+never stop.
+
+The command removes that header, which nothing can make it need to do: a
+reply composed by `vm-reply' does not carry the replied-to message's
+Return-Receipt-To.  Removing the call changes no test, so what is pinned
+here is the invariant rather than the call."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'edit))
+    (vm-handle-return-receipt)
+    (let ((composition (vm-reply-test--composition-among before)))
+      (should composition)
+      (with-current-buffer composition
+        (should (equal (vm-reply-test--header "To") "receipts@example.com"))
+        (should-not (vm-reply-test--header "Return-Receipt-To"))))))
+
+(ert-deftest vm-reply-test-a-receipt-says-when-and-quotes-the-message ()
+  "The body reports the message as received and quotes the beginning of it,
+so the sender can tell which message the receipt is about."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'edit))
+    (vm-handle-return-receipt)
+    (with-current-buffer (vm-reply-test--composition-among before)
+      (let ((text (buffer-string)))
+        (should (string-match-p "has been received on" text))
+        (should (string-match-p "Subject: badgers" text))
+        (should (string-match-p "The body of the message" text))
+        (should (string-match-p "\\[\\.\\.\\.\\]" text))))))
+
+(ert-deftest vm-reply-test-a-receipt-quotes-no-more-than-the-peek ()
+  "`vm-handle-return-receipt-peek' bounds how much of the message comes back.
+It is the reader's copy of somebody else's mail, so a small number means a
+small quotation rather than the whole message."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'edit)
+                              (vm-handle-return-receipt-peek 4))
+    (vm-handle-return-receipt)
+    (with-current-buffer (vm-reply-test--composition-among before)
+      (let ((text (buffer-string)))
+        (should (string-match-p "Subject: badgers" text))
+        (should-not (string-match-p "body of the message" text))))))
+
+(ert-deftest vm-reply-test-a-receipt-is-not-sent-in-edit-mode ()
+  "In `edit' mode the composition is left for the reader to look at and
+send; nothing goes out behind their back."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'edit))
+    (vm-handle-return-receipt)
+    (should-not sent)
+    (should (vm-reply-test--composition-among before))))
+
+(ert-deftest vm-reply-test-a-receipt-is-sent-in-auto-mode ()
+  "In any mode but `edit' the receipt is sent as soon as it is composed."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'auto))
+    (vm-handle-return-receipt)
+    (should sent)))
+
+(ert-deftest vm-reply-test-asking-about-a-receipt-takes-no-for-an-answer ()
+  "With `ask', a receipt is composed only if the reader says so.  Telling
+somebody their mail was read is the reader's business."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'ask))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+      (vm-handle-return-receipt))
+    (should-not sent)
+    (should-not (vm-reply-test--composition-among before))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-handle-return-receipt))
+    (should (vm-reply-test--composition-among before))))
+
+(ert-deftest vm-reply-test-a-mode-that-is-an-expression-is-evaluated ()
+  "The mode may be an expression, which decides per message."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode
+                              '(string-match "badgers"
+                                             (vm-su-subject
+                                              (car vm-message-pointer)))))
+    (vm-handle-return-receipt)
+    (should sent))
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode
+                              '(string-match "otters"
+                                             (vm-su-subject
+                                              (car vm-message-pointer)))))
+    (vm-handle-return-receipt)
+    (should-not sent)))
+
+(ert-deftest vm-reply-test-a-message-already-replied-to-gets-no-receipt ()
+  "A message that has been replied to is left alone: the sender has heard
+back, and a second receipt for the same message is noise."
+  (vm-reply-test--receipting ((vm-handle-return-receipt-mode 'auto))
+    (vm-set-replied-flag (car vm-message-pointer) t)
+    (vm-handle-return-receipt)
+    (should-not sent)))
+
+(ert-deftest vm-reply-test-a-message-not-asking-gets-no-receipt ()
+  "A message with no Return-Receipt-To header gets nothing, whatever the
+mode says."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let ((before (buffer-list))
+          (sent nil)
+          (vm-handle-return-receipt-mode 'auto))
+      (cl-letf (((symbol-function 'vm-mail-send-and-exit)
+                 (lambda (&rest _) (setq sent t)))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (error "asked about a receipt nobody wanted"))))
+        (vm-handle-return-receipt))
+      (should-not sent)
+      (should-not (vm-reply-test--composition-among before)))))
 
 (provide 'vm-reply-test)
 
