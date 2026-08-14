@@ -13,6 +13,7 @@
 - =elfeed-search-max-entries= and =elfeed-search-extend:= New customization variable
   and new command to extend truncated search list.
 - =elfeed-search= header line performance improvements.
+- =elfeed-tree-tag-face=: New face used for tags in =elfeed-tree=.
 
 * Version 4.1.1 (2026-08-01)
 

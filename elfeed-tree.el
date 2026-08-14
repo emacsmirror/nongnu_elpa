@@ -66,6 +66,10 @@
   '((t :inherit warning))
   "Face used in tree mode to highlight unread entries.")
 
+(defface elfeed-tree-tag-face
+  '((t :inherit font-lock-string-face))
+  "Face used in tree mode for tags.")
+
 (defvar elfeed-tree-header-function #'elfeed-tree--header
   "Function that returns the string to be used for the header line.")
 
@@ -340,7 +344,8 @@ INDENT is the indentation prefix, UNREAD and READ the respective counts,
 COUNT the number of feeds and TAGS the list of tags."
   (setq title
         (concat
-         indent (propertize " " 'invisible t) (format "%s" title)
+         indent (propertize " " 'invisible t)
+         (format (propertize "%s" 'face 'elfeed-search-tag-face) title)
          (propertize " "
                      'display (format " (%s/%s:%s)"
                                       (if (> unread 0)
@@ -351,11 +356,6 @@ COUNT the number of feeds and TAGS the list of tags."
                                         unread)
                                       (+ unread read)
                                       count))))
-  (add-face-text-property
-   0 (length title)
-   (aref outline-font-lock-faces
-         (1- (min (length indent) (length outline-font-lock-faces))))
-   'append title)
   (elfeed-add-properties
    title
    'elfeed-tree (mapconcat (lambda (x) (format "%s" x)) tags " ")
