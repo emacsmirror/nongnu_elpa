@@ -343,8 +343,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   "Computes the string to be used as the header line."
   (or
    (elfeed--header-jobs)
-   (let ((unread elfeed-search--unread-count)
-         (filter (when (and (not elfeed-search--filter-active)
+   (let ((filter (when (and (not elfeed-search--filter-active)
                             (string-match-p "[^ ]" elfeed-search-filter))
                    (elfeed-add-properties
                     (mapconcat
@@ -357,7 +356,8 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      (split-string elfeed-search-filter) " ")
                     'face 'elfeed-search-filter-face))))
      (concat (elfeed--header-update elfeed-search--last-update)
-             ", " unread (and filter ", ") filter))))
+             ", " elfeed-search--unread-count
+             (and filter ", ") filter))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
   "Major mode for listing elfeed feed entries."
