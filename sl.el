@@ -1313,7 +1313,7 @@ An empty DIRECTORY initializes the current directory."
 (defun sl-menu ()
   "Display a Magit-style dispatch menu for Sapling commands."
   (interactive)
-  (let ((choice (read-multiple-choice
+  (let* ((entry (read-multiple-choice
                  "Sl"
                  '((?s "status" "Show working copy status")
                    (?l "smartlog" "Show smartlog")
@@ -1343,7 +1343,8 @@ An empty DIRECTORY initializes the current directory."
                    (?B "bookmark" "Create bookmark")
                    (?F "pull" "Pull changes")
                    (?P "push" "Push changes")
-                   (?q "quit" "Quit")))))
+                   (?q "quit" "Quit"))))
+         (choice (car entry)))
     (cl-case choice
       (?s (sl-status))
       (?l (sl-smartlog))
