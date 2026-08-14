@@ -8418,22 +8418,44 @@ end of the path."
   'vm-list-mime-part-structure)
 
 ;;;###autoload
+(defun vm-nuke-alternative--enclosing-alternative (path)
+  "The nearest multipart/alternative in PATH, or nil if there is none.
+PATH runs from the immediate parent outwards, so the nearest one is the
+alternative whose choices the part is among."
+  (let ((tail path) (found nil))
+    (while (and tail (not found))
+      (when (vm-mime-types-match "multipart/alternative"
+                                 (car (vm-mm-layout-type (car tail))))
+        (setq found (car tail)))
+      (setq tail (cdr tail)))
+    found))
+
+(defun vm-nuke-alternative--has-plain-text-p (layout)
+  "Non-nil when the first part of LAYOUT is text/plain.
+That part is the copy the reader is left with, so it is what makes
+deleting the html safe; an alternative offering html alone is the only
+copy there is."
+  (let ((first (car (vm-mm-layout-parts layout))))
+    (and (vectorp first)
+         (vm-mime-types-match "text/plain" (car (vm-mm-layout-type first))))))
+
 (defun vm-nuke-alternative-text/html-internal (m)
   "Delete all text/html parts of multipart/alternative parts of message M.
 Returns the number of deleted parts.  text/html parts are only deleted iff
 the first sub part of a multipart/alternative is a text/plain part."
   (let ((deleted-count 0)
-        prev-type this-type parent-types
-        nuke-html)
+        this-type alternative)
     (vm-mime-map-layout-parts
      m
      (lambda (m layout path)
        (setq this-type (car (vm-mm-layout-type layout))
-             parent-types (mapcar (lambda (layout)
-                                    (car (vm-mm-layout-type layout)))
-                                  path))
-       (when (and nuke-html
-                  (member "multipart/alternative" parent-types)
+             ;; the alternative this part is offered under, which is the
+             ;; nearest one in the path: a text/html inside a
+             ;; multipart/related inside an alternative is still one of the
+             ;; alternatives on offer
+             alternative (vm-nuke-alternative--enclosing-alternative path))
+       (when (and alternative
+                  (vm-nuke-alternative--has-plain-text-p alternative)
                   (vm-mime-types-match "text/html" this-type))
          (with-current-buffer (vm-buffer-of m)
            (let ((buffer-read-only nil))
@@ -8449,11 +8471,7 @@ the first sub part of a multipart/alternative is a text/plain part."
               (vm-set-line-count-of m nil)
               (vm-set-stuff-flag-of m t)
               (vm-mark-for-summary-update m)))
-           (setq deleted-count (1+ deleted-count))))
-       (if (and (vm-mime-types-match "multipart/alternative" prev-type)
-                (vm-mime-types-match "text/plain" this-type))
-           (setq nuke-html t))
-       (setq prev-type this-type)))
+           (setq deleted-count (1+ deleted-count))))))
     deleted-count))
 
 ;;;###autoload
