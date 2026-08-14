@@ -2443,15 +2443,25 @@ Subject header."
           (setq count (1+ count)
                 start (match-end 0)))
         (when (> count 1)
+          ;; the number goes inside the reply prefix, so there has to be one:
+          ;; `vm-reply-subject-prefix' is nil by default, and passing that to
+          ;; `regexp-quote' below signalled wrong-type-argument
+          (unless vm-reply-subject-prefix
+            (error (concat "vm-mail-subject-cleanup: "
+                           "`vm-mail-subject-number-reply' needs "
+                           "`vm-reply-subject-prefix' set to the prefix to "
+                           "number, such as \"Re: \"")))
           (mail-position-on-field "Subject" t)
           (setq end (point))
           (if (re-search-backward "^Subject:" (point-min) t)
               (setq start (point))
-            (error "vm-mail-check-subject-cleanup: Could not find end of Subject header start"))
+            (error "vm-mail-subject-cleanup: no Subject header to number"))
           (goto-char start)
           (if (not (re-search-forward (regexp-quote vm-reply-subject-prefix)
                                       end t))
-              (error "vm-mail-check-subject-cleanup: Cound not find vm-reply-subject-prefix `%s' in header"
+              (error (concat "vm-mail-subject-cleanup: the Subject header "
+                             "does not begin with `vm-reply-subject-prefix' "
+                             "(%s), so there is nothing to number")
                      vm-reply-subject-prefix)
             (goto-char (match-end 0))
             (skip-chars-backward ": \t")
