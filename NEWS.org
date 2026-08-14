@@ -1,5 +1,14 @@
 #+title: emacs-hermes Changelog
 
+* Version 0.3.0 (2026-08-14)
+
+- Added named Hermes instances with per-instance dashboard endpoints and
+  instance selection across chats and management browsers.
+- Kept asynchronous reads, mutations, and singleton browsers scoped to their
+  owning instance; stale callbacks no longer leak state or report actions after
+  a buffer changes ownership.
+- Preserved the single-instance workflow as the default configuration.
+
 * Version 0.2.1 (2026-08-13)
 
 - Added a backend-driven provider-account browser for OAuth and external
