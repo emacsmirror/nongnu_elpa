@@ -772,6 +772,117 @@ the failing case."
             (set-buffer-modified-p nil)))
       (delete-directory dir t))))
 
+;;; Filing a copy automatically (emacs-vm/vm#667)
+
+(defmacro vm-postpone-test--auto-fccing (settings &rest body)
+  "Run BODY in a composition with SETTINGS bound, ready for `vm-mail-auto-fcc'.
+DIR is a temporary directory bound to `vm-folder-directory'."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+          (vm-folder-directory dir)
+          (vm-mail-folder-alist nil)
+          (mail-archive-file-name nil))
+     (unwind-protect
+         (let ,settings
+           (vm-postpone-test-with-mail-buffer
+             ,@body))
+       (delete-directory dir t))))
+
+(defun vm-postpone-test--fcc ()
+  "The FCC header of the composition, or nil."
+  (vm-mail-mode-get-header-contents "FCC:"))
+
+(ert-deftest vm-postpone-test-auto-fcc-files-where-the-alist-says ()
+  "The folder chosen for the message is written as an FCC header, under
+`vm-folder-directory' -- so a reply is filed where the reader's rules say
+rather than wherever Emacs happened to be."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-folder-alist '(("To:" ("recipient" . "recipient-folder")))))
+    (vm-mail-auto-fcc)
+    (should (equal (vm-postpone-test--fcc)
+                   (vm-abbreviate-file-name
+                    (expand-file-name "recipient-folder" dir))))))
+
+(ert-deftest vm-postpone-test-auto-fcc-falls-back-to-the-recipient ()
+  "With no rule matching, the folder is named after the recipient.
+
+That is the second element of `vm-mail-fcc-default', `vm-mail-to-fcc',
+which takes the address out of the To header.  Its own fallback is
+`mail-archive-file-name', so the third element of the default is never
+reached."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-folder-alist '(("To:" ("nobody" . "unused"))))
+       (mail-archive-file-name "archive"))
+    (vm-mail-auto-fcc)
+    (should (equal (vm-postpone-test--fcc)
+                   (vm-abbreviate-file-name (expand-file-name "recipient" dir))))))
+
+(ert-deftest vm-postpone-test-auto-fcc-uses-the-archive-with-no-recipient ()
+  "With nothing to take an address from, `mail-archive-file-name' is what
+is left."
+  (vm-postpone-test--auto-fccing
+      ((mail-archive-file-name "archive"))
+    (vm-mail-mode-remove-header "To:")
+    (vm-mail-auto-fcc)
+    (should (equal (vm-postpone-test--fcc)
+                   (vm-abbreviate-file-name (expand-file-name "archive" dir))))))
+
+(ert-deftest vm-postpone-test-auto-fcc-writes-one-header ()
+  "Running it twice leaves one FCC header, not two.
+
+It is meant for `vm-reply-hook', and a composition continued or replied
+from again would otherwise collect a header per run -- and be filed once
+per header."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-folder-alist '(("To:" ("recipient" . "recipient-folder")))))
+    (vm-mail-auto-fcc)
+    (vm-mail-auto-fcc)
+    (goto-char (point-min))
+    (should (= 1 (count-matches "^FCC:" (point-min)
+                                (save-excursion
+                                  (re-search-forward
+                                   (concat "^" (regexp-quote mail-header-separator) "$"))
+                                  (point)))))))
+
+(ert-deftest vm-postpone-test-auto-fcc-replaces-a-header-it-finds ()
+  "An FCC already in the composition is replaced rather than kept beside
+the new one."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-folder-alist '(("To:" ("recipient" . "recipient-folder")))))
+    (goto-char (point-min))
+    (insert "FCC: somewhere-else\n")
+    (vm-mail-auto-fcc)
+    (should-not (string-match-p "somewhere-else" (buffer-string)))
+    (should (string-match-p "recipient-folder" (vm-postpone-test--fcc)))))
+
+(ert-deftest vm-postpone-test-auto-fcc-adds-nothing-when-it-has-no-name ()
+  "A `vm-mail-fcc-default' that yields nothing writes no header, rather
+than filing the copy somewhere arbitrary."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-fcc-default nil))
+    (vm-mail-auto-fcc)
+    (should-not (vm-postpone-test--fcc))))
+
+(ert-deftest vm-postpone-test-auto-fcc-refuses-a-directory ()
+  "REGRESSION: a name that resolves to a directory is refused.
+
+The check was made on the name as the rules gave it, and the header
+written from that name joined to `vm-folder-directory' -- so it tested one
+file and wrote another.  A folder name that was a directory under
+`vm-folder-directory' passed it, and VM went on to file a copy into a
+directory."
+  (vm-postpone-test--auto-fccing
+      ((vm-mail-folder-alist '(("To:" ("recipient" . "a-directory"))))
+       (text-quoting-style 'grave))
+    (make-directory (expand-file-name "a-directory" dir))
+    (let ((err (should-error (vm-mail-auto-fcc) :type 'error)))
+      (should (string-match-p "a-directory" (error-message-string err)))
+      (should (string-match-p "is a directory" (error-message-string err)))
+      (should (string-match-p "vm-mail-folder-alist"
+                              (error-message-string err))))
+    ;; and nothing was written
+    (should-not (vm-postpone-test--fcc))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here

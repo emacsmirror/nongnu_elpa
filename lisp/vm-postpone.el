@@ -1045,11 +1045,18 @@ or if sure about what you are doing you can add it to `mail-send-hook'."
       
       (vm-mail-mode-remove-header "FCC:")
       (setq fcc (eval vm-mail-fcc-default))
-      (if fcc
-          (if (file-directory-p fcc)
-              (error "Folder `%s' in no file, but a directory!" fcc)
-            (progn (mail-position-on-field "FCC")
-                   (insert (vm-mail-fcc-file-join dir fcc))))))))
+      (when fcc
+        ;; the name as it will be written: the check has to be on the file
+        ;; the copy would go to, not on the same name read against whatever
+        ;; directory the composition happens to be in
+        (setq fcc (vm-mail-fcc-file-join dir fcc))
+        (if (file-directory-p fcc)
+            (error (concat "%s is a directory, so no copy can be filed there;"
+                           " name a folder in `vm-mail-folder-alist' or"
+                           " `mail-archive-file-name'")
+                   fcc)
+          (mail-position-on-field "FCC")
+          (insert fcc))))))
 
 ;;;###autoload
 (defun vm-mail-select-folder (folder-alist)
