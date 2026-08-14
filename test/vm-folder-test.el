@@ -3480,6 +3480,148 @@ so the next expunge takes it: not expunging now is a deferral, not an undo."
       (should (vm-deleted-flag (car vm-message-list)))
       (should-not (vm-deleted-flag (nth 1 vm-message-list))))))
 
+;;; Recovering and reverting a folder (emacs-vm/vm#652)
+;;
+;; After a recovery the buffer and the disk disagree, so new mail is blocked
+;; until a real save.  These drive the handler directly: what re-runs VM on
+;; the folder is `vm', which is stubbed here so the tests can see what it
+;; was asked to open.
+
+(defun vm-folder-test--write-folder-content (count)
+  "Return an mbox of COUNT messages for the recovery tests."
+  (mapconcat
+   (lambda (n)
+     (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                     "From: alice@example.com\n"
+                     "Subject: msg %d\n\nbody %d\n\n")
+             n n))
+   (number-sequence 1 count)
+   ""))
+
+(defvar vm-folder-test--reopened nil
+  "The arguments the recovery handler passed to `vm'.")
+
+(defmacro vm-folder-test--recovering (&rest body)
+  "Run BODY with `vm' and the virtual quit stubbed, watching the reopen.
+`vm-folder-test--reopened' collects the argument list of the `vm' call."
+  (declare (indent 0) (debug t))
+  `(let ((vm-folder-test--reopened nil))
+     (cl-letf (((symbol-function 'vm)
+                (lambda (&rest args) (setq vm-folder-test--reopened args)))
+               ((symbol-function 'vm-virtual-quit) #'ignore))
+       ,@body)))
+
+(ert-deftest vm-folder-test-a-recovery-blocks-new-mail ()
+  "New mail is blocked after a recovery and not after a reversion.
+
+The recovered buffer has not been written yet, so its idea of the folder
+and the file's disagree; letting new mail in would append to the file
+underneath it."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (vm-folder-test--recovering
+      (setq vm-block-new-mail nil)
+      (vm-handle-file-recovery-or-reversion nil)
+      (should-not vm-block-new-mail)
+      (vm-handle-file-recovery-or-reversion t)
+      (should vm-block-new-mail))))
+
+(ert-deftest vm-folder-test-getting-mail-while-blocked-is-refused ()
+  "`vm-get-spooled-mail' refuses while the block is on, and says what to do
+about it: the message names saving, which is what clears the block."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (let ((vm-block-new-mail t)
+          (text-quoting-style 'grave))
+      (let ((err (should-error (vm-get-spooled-mail) :type 'error)))
+        (should (string-match-p "save this folder"
+                                (error-message-string err)))))))
+
+(ert-deftest vm-folder-test-saving-unblocks-new-mail ()
+  "Saving the folder clears the block: the file and the buffer agree again."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (setq vm-block-new-mail t)
+    (vm-unblock-new-mail)
+    (should-not vm-block-new-mail)))
+
+(ert-deftest vm-folder-test-a-recovery-starts-vm-from-scratch ()
+  "The summary buffer goes and `major-mode' is reset before VM is re-run.
+
+VM decides what to do from the major mode; leaving it as `vm-mode' would
+have it pick up the old message list, whose markers point into text the
+recovery has replaced."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (let ((summary (generate-new-buffer " *test summary*")))
+      (setq vm-summary-buffer summary)
+      (vm-folder-test--recovering
+        (vm-handle-file-recovery-or-reversion t)
+        (should-not (buffer-live-p summary))
+        (should (eq major-mode 'fundamental-mode))
+        (should vm-folder-test--reopened)))))
+
+(ert-deftest vm-folder-test-a-recovered-server-folder-comes-back-connected ()
+  "A POP or IMAP folder is reopened through its server name, not its file.
+
+Reopening the cache file as a plain folder would leave the reader looking
+at something disconnected from the server, which is issue #425 all over
+again."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (dolist (case '((pop . "pop:mail.example.invalid:110:pass:alice:*")
+                    (imap . "imap:mail.example.invalid:143:inbox:login:alice:*")))
+      (let ((vm-folder-access-method (car case)))
+        (cl-letf (((symbol-function 'vm-pop-find-name-for-buffer)
+                   (lambda (&rest _) (cdr case)))
+                  ((symbol-function 'vm-imap-find-spec-for-buffer)
+                   (lambda (&rest _) (cdr case))))
+          (vm-folder-test--recovering
+            (vm-handle-file-recovery-or-reversion t)
+            (should (equal (nth 0 vm-folder-test--reopened) (cdr case)))
+            (should (eq (plist-get (cdr vm-folder-test--reopened) :access-method)
+                        (car case)))))))))
+
+(ert-deftest vm-folder-test-a-recovered-file-folder-comes-back-as-a-file ()
+  "A folder that is a plain file is reopened by its file name."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (setq buffer-file-name "/tmp/vm-test-not-really-there")
+    (let ((vm-folder-access-method nil))
+      (vm-folder-test--recovering
+        (vm-handle-file-recovery-or-reversion nil)
+        (should (equal (nth 0 vm-folder-test--reopened) buffer-file-name))))))
+
+(ert-deftest vm-folder-test-reverting-keeps-the-access-method ()
+  "`vm-revert-buffer' and `vm-recover-file' put the access method and data
+back after the operation that clears them, so a server folder is visited
+again as one rather than as the local file it is cached in."
+  (dolist (command '(vm-revert-buffer vm-recover-file))
+    (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+      (setq major-mode 'vm-mode)
+      (setq vm-folder-access-method 'imap
+            vm-folder-access-data (vector 'access 'data))
+      (let ((data vm-folder-access-data))
+        (vm-folder-test--recovering
+          (cl-letf (((symbol-function 'revert-buffer)
+                     ;; as the real one does, by way of the mode's own setup
+                     (lambda (&rest _)
+                       (setq vm-folder-access-method nil
+                             vm-folder-access-data nil)))
+                    ((symbol-function 'recover-file)
+                     (lambda (&rest _)
+                       (setq vm-folder-access-method nil
+                             vm-folder-access-data nil)))
+                    ((symbol-function 'vm-recover-folder-file-name)
+                     (lambda (&rest _) "/tmp/vm-test-not-really-there"))
+                    ((symbol-function 'call-interactively)
+                     (lambda (fn &rest _) (funcall fn))))
+            (funcall command))
+          (should (eq vm-folder-access-method 'imap))
+          (should (eq vm-folder-access-data data))
+          (should (eq (plist-get (cdr vm-folder-test--reopened) :access-method)
+                      'imap)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
