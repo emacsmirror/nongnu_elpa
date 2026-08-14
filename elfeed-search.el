@@ -50,7 +50,7 @@
 (defvar elfeed-search--marked nil
   "List of marked entries.")
 
-(defvar elfeed-search--unread-count ""
+(defvar elfeed-search--unread-count nil
   "Unread count in header line.")
 
 (defvar elfeed-search-update-hook (list #'elfeed-search-add-separators)
@@ -326,18 +326,19 @@ Movement is configured by `elfeed-search-remain-on-entry'."
 
 (defun elfeed-search--unread-count ()
   "Count the number of entries and feeds being currently displayed."
-  (cl-loop with feeds = (make-hash-table :test #'eq)
-           for entry in elfeed-search-entries
-           count entry into entry-count
-           count (elfeed-tagged-p 'unread entry) into unread-count
-           do (puthash (elfeed-entry-feed entry) t feeds)
-           finally return
-           (elfeed--header-button
-            #'elfeed-search-fetch-visible
-            (format
-             (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
-             unread-count entry-count
-             (hash-table-count feeds)))))
+  (with-memoization elfeed-search--unread-count
+    (cl-loop with feeds = (make-hash-table :test #'eq)
+             for entry in elfeed-search-entries
+             count entry into entry-count
+             count (elfeed-tagged-p 'unread entry) into unread-count
+             do (puthash (elfeed-entry-feed entry) t feeds)
+             finally return
+             (elfeed--header-button
+              #'elfeed-search-fetch-visible
+              (format
+               (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
+               unread-count entry-count
+               (hash-table-count feeds))))))
 
 (defun elfeed-search--header ()
   "Computes the string to be used as the header line."
@@ -356,7 +357,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      (split-string elfeed-search-filter) " ")
                     'face 'elfeed-search-filter-face))))
      (concat (elfeed--header-update elfeed-search--last-update)
-             ", " elfeed-search--unread-count
+             ", " (elfeed-search--unread-count)
              (and filter ", ") filter))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
@@ -948,7 +949,7 @@ Returns non-nil if the list has been updated."
       (cl-callf2 cl-delete-if-not (lambda (x) (memq x list))
                  elfeed-search--marked)
       (setq elfeed-search-entries list
-            elfeed-search--unread-count (elfeed-search--unread-count)
+            elfeed-search--unread-count nil
             elfeed-search--last-update (float-time)
             list-buffers-directory elfeed-search-filter)
       t)))
@@ -1103,6 +1104,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
 
 (defun elfeed-search-update-entry (&rest entries)
   "Redraw ENTRIES in the `elfeed-search' buffer."
+  (setq elfeed-search--unread-count nil)
   (if (length> entries 100)
       (elfeed-search-update :force)
     (cl-loop for entry in entries
