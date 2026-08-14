@@ -1118,6 +1118,54 @@
                      prior))
       (should (equal restored prior)))))
 
+(ert-deftest hermes-transport-dashboard-native-token-store-cleans-failed-first-write ()
+  "A failed first durable write leaves no native token behind."
+  (let* ((prior "machine unrelated.test login keep port api password safe\n")
+         (auth-file (make-temp-file "hermes-native-auth-" nil nil prior)))
+    (unwind-protect
+        (let* ((base "http://100.64.0.10:9119")
+               (fresh (list :access-token "fresh-access"
+                            :refresh-token "fresh-refresh"
+                            :expires-at 4102444800
+                            :provider "oauth"
+                            :user-id "user-1"))
+               (auth-sources (list auth-file))
+               (auth-source-save-behavior t)
+               (auth-source-do-cache nil)
+               (auth-source-netrc-cache nil)
+               (loads 0)
+               persisted-before-failure
+               reason)
+          (clrhash hermes-dashboard-transport--native-token-memory)
+          (cl-letf (((symbol-function
+                     'hermes-dashboard-transport--native-token-load-disk)
+                    (lambda (_url)
+                      (setq loads (1+ loads))
+                      (when (> loads 1)
+                        (with-temp-buffer
+                          (insert-file-contents auth-file)
+                          (setq persisted-before-failure
+                                (and (search-forward
+                                      hermes-dashboard-transport--native-auth-user
+                                      nil t)
+                                     (search-forward "fresh-access" nil t)))))
+                      nil)))
+            (condition-case err
+                (hermes-dashboard-transport--native-token-store base fresh)
+              (error (setq reason (error-message-string err)))))
+          (should (equal reason "Native token store verification failed"))
+          (should persisted-before-failure)
+          (should-not
+           (gethash (hermes-dashboard-transport--native-token-memory-key base)
+                    hermes-dashboard-transport--native-token-memory))
+          (with-temp-buffer
+            (insert-file-contents auth-file)
+            (should (equal (buffer-string) prior))))
+      (when (fboundp 'auth-source-forget-all-cached)
+        (auth-source-forget-all-cached))
+      (when (file-exists-p auth-file)
+        (delete-file auth-file)))))
+
 (ert-deftest hermes-transport-dashboard-redacts-websocket-process-name ()
   (let* ((token-url "ws://127.0.0.1:4567/api/ws?token=secret-token")
          (safe-url "ws://127.0.0.1:4567/api/ws?token=<redacted>")

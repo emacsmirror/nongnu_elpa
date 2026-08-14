@@ -724,16 +724,82 @@ When BODY omits refresh_token, keep PREVIOUS's refresh token if present."
   "Return the memory-cache key for BASE-URL."
   (or (hermes-dashboard-transport--normalize-base-url base-url) base-url))
 
+(defun hermes-dashboard-transport--native-token-netrc-files ()
+  "Return file-backed netrc/authinfo sources configured in `auth-sources'."
+  (delq nil
+        (mapcar
+         (lambda (source)
+           (condition-case nil
+               (let ((backend (auth-source-backend-parse source)))
+                 (when (and backend
+                            (eq (slot-value backend 'type) 'netrc))
+                   (let ((file (slot-value backend 'source)))
+                     (and (stringp file) (expand-file-name file)))))
+             (error nil)))
+         auth-sources)))
+
+(defun hermes-dashboard-transport--native-token-netrc-line-entry (line file)
+  "Return the auth-source entry represented by netrc LINE from FILE."
+  (condition-case nil
+      (with-temp-buffer
+        (insert line "\n")
+        (goto-char (point-min))
+        (car (auth-source-netrc-normalize
+              (auth-source-netrc-parse-entries (lambda (_entry) t) 1)
+              file)))
+    (error nil)))
+
+(defun hermes-dashboard-transport--native-token-netrc-entry-p (entry hosts)
+  "Return non-nil when ENTRY is this client's native token for HOSTS."
+  (and (member (plist-get entry :host) hosts)
+       (equal (plist-get entry :user)
+              hermes-dashboard-transport--native-auth-user)
+       (equal (plist-get entry :port)
+              hermes-dashboard-transport--native-auth-port)))
+
+(defun hermes-dashboard-transport--native-token-delete-netrc-file (file hosts)
+  "Delete this client's one-line native token entries for HOSTS from FILE."
+  (when (file-readable-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let ((changed nil))
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let* ((start (point))
+                 (end (line-beginning-position 2))
+                 (entry
+                  (hermes-dashboard-transport--native-token-netrc-line-entry
+                   (buffer-substring-no-properties start end) file)))
+            (if (hermes-dashboard-transport--native-token-netrc-entry-p
+                 entry hosts)
+                (progn
+                  (delete-region start end)
+                  (setq changed t))
+              (goto-char end))))
+        (when changed
+          (when auth-source-gpg-encrypt-to
+            (make-local-variable 'epa-file-encrypt-to)
+            (when (listp auth-source-gpg-encrypt-to)
+              (setq epa-file-encrypt-to auth-source-gpg-encrypt-to)))
+          (write-region (point-min) (point-max) file nil 'silent))))))
+
 (defun hermes-dashboard-transport--native-token-delete-disk (base-url)
   "Delete auth-source native token entries for BASE-URL."
-  (when (fboundp 'auth-source-forget-all-cached)
-    (auth-source-forget-all-cached))
-  (dolist (host (hermes-dashboard-transport--auth-source-hosts base-url))
-    (ignore-errors
-      (auth-source-delete
-       :host host
-       :user hermes-dashboard-transport--native-auth-user
-       :port hermes-dashboard-transport--native-auth-port)))
+  (let ((hosts (hermes-dashboard-transport--auth-source-hosts base-url)))
+    (when (fboundp 'auth-source-forget-all-cached)
+      (auth-source-forget-all-cached))
+    (dolist (host hosts)
+      (ignore-errors
+        (auth-source-delete
+         :host host
+         :user hermes-dashboard-transport--native-auth-user
+         :port hermes-dashboard-transport--native-auth-port)))
+    ;; The netrc backend documents that `auth-source-delete' is search-only.
+    ;; Remove the one-line records produced by its own save function directly.
+    (dolist (file (hermes-dashboard-transport--native-token-netrc-files))
+      (ignore-errors
+        (hermes-dashboard-transport--native-token-delete-netrc-file
+         file hosts))))
   (when (fboundp 'auth-source-forget-all-cached)
     (auth-source-forget-all-cached)))
 
@@ -747,14 +813,14 @@ When BODY omits refresh_token, keep PREVIOUS's refresh token if present."
             (port . ,hermes-dashboard-transport--native-auth-port)
             (secret . ,secret)))
          (host (car (hermes-dashboard-transport--auth-source-hosts base-url)))
-         (entry (and host
-                     (auth-source-search
-                      :host host
-                      :user hermes-dashboard-transport--native-auth-user
-                      :port hermes-dashboard-transport--native-auth-port
-                      :max 1
-                      :create t
-                      :require '(:secret)))))
+         (entry (car (and host
+                          (auth-source-search
+                           :host host
+                           :user hermes-dashboard-transport--native-auth-user
+                           :port hermes-dashboard-transport--native-auth-port
+                           :max 1
+                           :create t
+                           :require '(:secret))))))
     (when-let* ((save (and entry (plist-get entry :save-function))))
       (funcall save))
     (when (fboundp 'auth-source-forget-all-cached)
@@ -821,7 +887,9 @@ Failed writes restore any previously stored tokens."
                  (hermes-dashboard-transport--native-token-delete-disk base-url)
                  (hermes-dashboard-transport--native-token-write-disk
                   base-url prior)))
-           (remhash key hermes-dashboard-transport--native-token-memory))
+           (remhash key hermes-dashboard-transport--native-token-memory)
+           (ignore-errors
+             (hermes-dashboard-transport--native-token-delete-disk base-url)))
          (signal (car err) (cdr err))))))))
 
 (defun hermes-dashboard-transport--native-token-needs-refresh-p
