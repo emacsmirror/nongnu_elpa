@@ -10,6 +10,8 @@
   multiple entries.
 - =elfeed-db-save-idle=: New customization option to delay database saving.
 - =elfeed-use-libxml=: Enable by default if libxml is available.
+- =elfeed-search-max-entries= and =elfeed-search-extend:= New customization variable
+  and new command to extend truncated search list.
 
 * Version 4.1.1 (2026-08-01)
 

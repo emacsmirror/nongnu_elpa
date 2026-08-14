@@ -83,6 +83,10 @@ Set to nil to disable redraw on resize."
   :type 'string
   :local t)
 
+(defcustom elfeed-search-max-entries 500
+  "Number of entries which are maximally displayed."
+  :type '(choice (const nil) natnum))
+
 (defcustom elfeed-search-completion t
   "Enable tag and search filter completion."
   :type 'boolean)
@@ -890,7 +894,8 @@ expression, matching against entry link, title, and feed title."
           (if current-prefix-arg "" elfeed-search-filter)))
    elfeed-search-mode)
   (with-current-buffer (elfeed-search-buffer)
-    (setf elfeed-search-filter
+    (setf elfeed-search-max-entries (default-value 'elfeed-search-max-entries)
+          elfeed-search-filter
           (or new-filter (default-value 'elfeed-search-filter)))
     (elfeed-search-update :force)))
 
@@ -981,23 +986,41 @@ METHOD can be nil, :force to force a full entry update and redraw or
 :resize to preserve the entries and redraw.  Do not use this function
 directly.  Instead use `elfeed-search-update'."
   (when (and (buffer-live-p buffer)
-             (or (memq method '(:force :resize :live))
+             (or (memq method '(:force :resize :extend :live))
                  (and (not elfeed-search--filter-active)
                       (< elfeed-search--last-update (elfeed-db-last-update)))))
     ;; Run inside window such that save excursion moves the window point.
     (with-selected-window (or (get-buffer-window buffer) (selected-window))
       ;; If no window is found, we still have to execute in the buffer.
       (with-current-buffer buffer
-        (when (or (eq method :resize) (elfeed-search--update-list method))
+        (when (or (memq method '(:resize :extend))
+                  (elfeed-search--update-list method))
           (elfeed-with-position elfeed-entry
-            (let ((inhibit-read-only t)
-                  (standard-output (current-buffer)))
-              (erase-buffer)
-              (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
-              (dolist (entry elfeed-search-entries)
-                (elfeed-search--print-entry entry)
-                (insert ?\n))
-              (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)))
+            (let* ((inhibit-read-only t)
+                   (standard-output (current-buffer))
+                   (max (or elfeed-search-max-entries most-positive-fixnum))
+                   (limit max)
+                   (list elfeed-search-entries)
+                   (count (length list)))
+              (goto-char (point-max))
+              (if (eq method :extend)
+                  (let ((trunc (get-text-property (max (point-min) (1- (point)))
+                                                 'elfeed-search--truncated)))
+                    (if (not trunc)
+                        (setq limit 0 list nil)
+                      (forward-line -1)
+                      (delete-region (pos-bol) (point-max))
+                      (cl-callf2 drop trunc list)
+                      (decf limit trunc)))
+                (erase-buffer)
+                (remove-overlays nil nil 'category 'elfeed-search-marked-overlay))
+              (cl-loop for entry in list repeat limit do
+                       (elfeed-search--print-entry entry)
+                       (insert ?\n))
+              (unless (eq method :extend)
+                (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked))
+              (when (> count max)
+                (insert (elfeed-search--truncated count max)))))
           ;; Highlighting gets lost due to debouncing.
           (hl-line-highlight)
           (run-hooks 'elfeed-search-update-hook)))))
@@ -1005,6 +1028,19 @@ directly.  Instead use `elfeed-search-update'."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (force-mode-line-update))))
+
+(defun elfeed-search--truncated (count max)
+  "Truncation button given entry COUNT and MAX entries to display."
+  (propertize
+   (format
+    "[Click to extend truncated list (%s entries of %s, %s%%)]\n"
+    max count (/ (* 100 max) count))
+   'face 'button
+   'mouse-face 'highlight
+   'keymap (define-keymap
+             "RET" #'elfeed-search-extend
+             "<mouse-1>" #'elfeed-search-extend)
+   'elfeed-search--truncated max))
 
 (defun elfeed-search--update-force (&rest _)
   "Call `elfeed-search-update' with argument :force.
@@ -1365,8 +1401,8 @@ The update is delayed by `elfeed-search-live-delay'."
   "Filter the `elfeed-search' buffer as the filter is written."
   (interactive nil elfeed-search-mode)
   (unwind-protect
-      (setq elfeed-search-filter
-            (elfeed-search--prompt elfeed-search-filter :live))
+      (setq elfeed-search-max-entries (default-value 'elfeed-search-max-entries)
+            elfeed-search-filter (elfeed-search--prompt elfeed-search-filter :live))
     (elfeed-search-update :force)))
 
 (defun elfeed-search-new-live ()
@@ -1395,6 +1431,14 @@ The update is delayed by `elfeed-search-live-delay'."
                   'descending
                 'ascending))
   (elfeed-search-update :force))
+
+(defun elfeed-search-extend ()
+  "Extend truncated list."
+  (interactive nil elfeed-search-mode)
+  (setq-local elfeed-search-max-entries
+              (+ elfeed-search-max-entries
+                 (default-value 'elfeed-search-max-entries)))
+  (elfeed-search-update :extend))
 
 ;; Separators in search display
 
