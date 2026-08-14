@@ -219,12 +219,12 @@ With \\[universal-argument] pressed before, modify all entries of the list."
   "Place point on last entry."
   (interactive nil elfeed-search-mode)
   (goto-char (point-max))
+  (redisplay) ;; Enforce displaying last line
   (forward-line -1)
   (when (get-text-property (point) 'elfeed-search--truncated)
     (forward-line -1))
   (when (use-region-p)
-    (forward-line 1))
-  (recenter))
+    (forward-line 1)))
 
 (defun elfeed-search-first-entry ()
   "Place point on first entry."
