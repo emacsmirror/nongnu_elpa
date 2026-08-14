@@ -883,6 +883,76 @@ directory."
     ;; and nothing was written
     (should-not (vm-postpone-test--fcc))))
 
+;;; The summary of a folder of mail you sent (emacs-vm/vm#668)
+
+(defun vm-postpone-test--summary-f (headers &optional uninteresting)
+  "Return `vm-summary-function-f' for a message with HEADERS.
+UNINTERESTING is `vm-summary-uninteresting-senders', me@example.com by
+default -- the reader themselves, whose name the summary of a sent-mail
+folder should not be full of."
+  (vm-test-with-folder
+      (concat "From me@example.com Mon Jan  1 00:00:00 2024\n"
+              headers "\n" "The body.\n")
+    (let ((vm-summary-uninteresting-senders
+           (or uninteresting "me@example\\.com")))
+      (vm-summary-function-f (car vm-message-list)))))
+
+(ert-deftest vm-postpone-test-summary-f-shows-an-interesting-sender ()
+  "Mail from somebody else shows their address, with no label: the From
+header is what a summary shows anyway."
+  (should (equal (vm-postpone-test--summary-f
+                  "From: Alice <alice@example.com>\nTo: me@example.com\n")
+                 "alice@example.com")))
+
+(ert-deftest vm-postpone-test-summary-f-shows-who-you-wrote-to ()
+  "Mail from you shows the recipient instead, labelled with the header it
+came from.  That is the point of this summary function: a folder of sent
+mail otherwise says your own name on every line."
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nTo: Alice <alice@example.com>\n")
+                 "To: alice@example.com"))
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nCC: Bob <bob@example.com>\n")
+                 "CC: bob@example.com")))
+
+(ert-deftest vm-postpone-test-summary-f-keeps-a-newsgroup-whole ()
+  "REGRESSION: a newsgroup is shown as it is written.
+
+The Newsgroups header went through `mail-extract-address-components',
+which reads comp.emacs as somebody called \"comp emacs\" and shows the dot
+as a space."
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nNewsgroups: comp.emacs\n")
+                 "News:comp.emacs"))
+  ;; the first of several, as for several recipients
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nNewsgroups: comp.emacs,comp.mail.misc\n")
+                 "News:comp.emacs")))
+
+(ert-deftest vm-postpone-test-summary-f-labels-the-fallback-correctly ()
+  "REGRESSION: a message with nobody interesting in it shows the first
+address under its own label.
+
+`arrow' held whichever header was examined last, so mail you sent to
+yourself came out as \"Resent:me@example.com\": the address from From and
+the label from Resent-From."
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nTo: me@example.com\n")
+                 "me@example.com")))
+
+(ert-deftest vm-postpone-test-summary-f-has-nothing-to-say-about-nothing ()
+  "A message with none of those headers gives an empty string rather than
+a label with nothing after it."
+  (should (equal (vm-postpone-test--summary-f "Subject: nothing\n") "")))
+
+(ert-deftest vm-postpone-test-summary-f-with-nobody-uninteresting ()
+  "With `vm-summary-uninteresting-senders' matching nobody, the From
+address is always the answer, which is what the ordinary summary shows."
+  (should (equal (vm-postpone-test--summary-f
+                  "From: me@example.com\nTo: alice@example.com\n"
+                  "\\`\\'")
+                 "me@example.com")))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
