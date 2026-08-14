@@ -1031,7 +1031,7 @@ directly.  Instead use `elfeed-search-update'."
   "Truncation button given entry COUNT and MAX entries to display."
   (elfeed-add-properties
    (format
-    "[Click to extend truncated list (%s entries of %s, %s%%)]\n"
+    "[Extend truncated list, %s/%s, %s%%]\n"
     max count (/ (* 100 max) count))
    'face 'button
    'mouse-face 'highlight
