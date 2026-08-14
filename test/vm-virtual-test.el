@@ -1537,6 +1537,150 @@ what the bookmark argument is for."
       (funcall command)
       (should (eq (nth 4 vm-virtual-test--created) (car vm-message-pointer))))))
 
+;;; Building a virtual folder on the fly (emacs-vm/vm#660)
+;;
+;; Both commands define a folder, visit it, and leave
+;; `vm-virtual-folder-alist' as they found it.  These watch the definition
+;; they hand to `vm-visit-virtual-folder' rather than visiting anything: what
+;; is worth pinning is the clause built and the global left alone.
+
+(defvar vm-virtual-test--visited nil
+  "The name and definition passed to `vm-visit-virtual-folder'.")
+
+(defmacro vm-virtual-test--building (&rest body)
+  "Run BODY watching folder definition and visiting.
+`vm-virtual-test--visited' becomes (NAME . DEFINITION), the definition
+being `vm-virtual-folder-alist' as the command had bound it."
+  (declare (indent 0) (debug t))
+  `(let ((vm-virtual-test--visited nil)
+         (vm-use-menus nil))
+     (cl-letf (((symbol-function 'vm-visit-virtual-folder)
+                (lambda (name &rest _)
+                  (setq vm-virtual-test--visited
+                        (cons name (copy-tree vm-virtual-folder-alist)))))
+               ((symbol-function 'vm-build-threads-if-unbuilt) #'ignore))
+       ,@body)))
+
+(defun vm-virtual-test--definition ()
+  "The clauses of the folder the command defined."
+  (cdr (assoc (car vm-virtual-test--visited)
+              (cdr vm-virtual-test--visited))))
+
+(defmacro vm-virtual-test--in-a-small-folder (&rest body)
+  "Run BODY in a folder of two messages, ready for the building commands."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder
+       (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: sender@example.com\nSubject: one\n\nbody one\n\n"
+               "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: sender@example.com\nSubject: two\n\nbody two\n\n")
+     (setq major-mode 'vm-mode)
+     ,@body))
+
+(ert-deftest vm-virtual-test-a-thread-folder-selects-by-thread ()
+  "The clause wraps the selector in `thread', which is what makes the folder
+hold whole threads rather than the messages that matched."
+  (vm-virtual-test--in-a-small-folder
+    (vm-virtual-test--building
+      (vm-create-virtual-folder-of-threads 'author "sender")
+      (should (equal (vm-virtual-test--definition)
+                     `(((( get-buffer ,(buffer-name)))
+                        (thread (author "sender")))))))))
+
+(ert-deftest vm-virtual-test-a-thread-folder-with-no-argument-passes-none ()
+  "A selector that takes no argument gets a clause with none, rather than
+one carrying nil for it to test against."
+  (vm-virtual-test--in-a-small-folder
+    (vm-virtual-test--building
+      (vm-create-virtual-folder-of-threads 'unread)
+      (should (equal (vm-virtual-test--definition)
+                     `(((( get-buffer ,(buffer-name)))
+                        (thread (unread)))))))))
+
+(ert-deftest vm-virtual-test-a-thread-folder-can-follow-the-marks ()
+  "After `vm-next-command-uses-marks' the folder holds the marked messages'
+threads: the clause is the selector and the marks together."
+  (vm-virtual-test--in-a-small-folder
+    (vm-virtual-test--building
+      (let ((last-command 'vm-next-command-uses-marks))
+        (vm-create-virtual-folder-of-threads 'author "sender"))
+      (should (equal (vm-virtual-test--definition)
+                     `(((( get-buffer ,(buffer-name)))
+                        (and (marked) (thread (author "sender"))))))))))
+
+(ert-deftest vm-virtual-test-building-a-folder-leaves-the-alist-alone ()
+  "The definition is bound for the visit only.  A folder built to answer one
+question is not one the reader asked to keep, and adding it to
+`vm-virtual-folder-alist' would put it in the menu of known folders and in
+whatever they save."
+  (let ((vm-virtual-folder-alist '(("kept" ((("inbox")) (author "someone"))))))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (vm-create-virtual-folder-of-threads 'author "sender"))
+      (should (equal vm-virtual-folder-alist
+                     '(("kept" ((("inbox")) (author "someone")))))))))
+
+(ert-deftest vm-virtual-test-applying-a-folder-retargets-it-here ()
+  "`vm-apply-virtual-folder' runs a named folder's selectors over the current
+folder, so the clause names this buffer rather than the folders the
+definition names."
+  (let ((vm-virtual-folder-alist
+         '(("interesting" ((("inbox" "archive")) (author "someone"))))))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (vm-apply-virtual-folder "interesting")
+        (should (equal (vm-virtual-test--definition)
+                       `(((( get-buffer ,(buffer-name))) (author "someone")))))))))
+
+(ert-deftest vm-virtual-test-applying-a-folder-does-not-rewrite-it ()
+  "The definition is copied before its clauses are retargeted.
+
+Without the copy the reader's saved folder would be rewritten in place, so
+the next use of it would select from whichever folder it was last applied
+in rather than from the folders it names."
+  (let* ((definition '(("interesting" ((("inbox" "archive")) (author "someone")))))
+         (vm-virtual-folder-alist definition)
+         (before (copy-tree definition)))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (vm-apply-virtual-folder "interesting"))
+      (should (equal vm-virtual-folder-alist before)))))
+
+(ert-deftest vm-virtual-test-applying-a-folder-can-follow-the-marks ()
+  "With marks, the applied selectors are taken together and combined with
+the marks, so the result is the marked messages that the folder would have
+selected."
+  (let ((vm-virtual-folder-alist
+         '(("interesting" ((("inbox")) (author "someone") (subject "badgers"))))))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (let ((last-command 'vm-next-command-uses-marks))
+          (vm-apply-virtual-folder "interesting"))
+        (should (equal (vm-virtual-test--definition)
+                       `(((( get-buffer ,(buffer-name)))
+                          (and (marked)
+                               (or (author "someone") (subject "badgers")))))))))))
+
+(ert-deftest vm-virtual-test-applying-a-folder-that-is-not-defined-is-refused ()
+  "A name that is not in `vm-virtual-folder-alist' is reported, and named."
+  (let ((vm-virtual-folder-alist nil)
+        (text-quoting-style 'grave))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (let ((err (should-error (vm-apply-virtual-folder "absent") :type 'error)))
+          (should (string-match-p "absent" (error-message-string err))))))))
+
+(ert-deftest vm-virtual-test-an-applied-folder-is-named-after-both ()
+  "The new folder's name says which folder was applied to which."
+  (let ((vm-virtual-folder-alist
+         '(("interesting" ((("inbox")) (author "someone"))))))
+    (vm-virtual-test--in-a-small-folder
+      (vm-virtual-test--building
+        (vm-apply-virtual-folder "interesting")
+        (should (equal (car vm-virtual-test--visited)
+                       (vm-virtual-application-folder-name (buffer-name)
+                                                           "interesting")))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
