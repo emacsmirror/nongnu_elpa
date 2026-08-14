@@ -520,7 +520,7 @@ in BBDB."
   (vm-mail-mode-get-header-contents "Resent-[^:]+:"))
 
 (defun vm-mail-vs-unreplied ()
-  (not (vm-mail-vs-forwarded )))
+  (not (vm-mail-vs-replied)))
 (fset 'vm-mail-vs-unanswered 'vm-mail-vs-unreplied)
 
 (defun vm-mail-vs-unforwarded ()
