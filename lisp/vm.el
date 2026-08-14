@@ -1439,7 +1439,7 @@ summary buffer to select a folder."
 	     vm-mail-folder-alist	; ditto
 	     vm-virtual-folder-alist	; ditto
 	     ;; vm-mail-fcc-default - is this private?
-	     vmpc-actions vmpc-conditions 
+	     vm-pcrisis-actions vm-pcrisis-conditions 
 	     vmpc-actions-alist vmpc-reply-alist vmpc-forward-alist
 	     vmpc-resend-alist vmpc-newmail-alist vmpc-automorph-alist
 	     ;; email addresses

@@ -38,7 +38,7 @@
 ;; Then after I realized I was maintaining three different variables for
 ;; actually the same things.  They were `vm-auto-folder-alist' for automatic
 ;; selection of folders when saving messages, `vm-virtual-folder-alist' for my
-;; loved virtual folders and `vmpc-conditions' in order to solve the handling
+;; loved virtual folders and `vm-pcrisis-conditions' in order to solve the handling
 ;; of my different email-addresses.
 ;;
 ;; This was kind of annoying, since virtual folder selectors offer the
@@ -71,7 +71,7 @@
 ;; So by using theses new features I can maintain just one selector for
 ;; e.g. my private email-address and get the right folder for saving messages,
 ;; visiting the corresponding virtual folders, auto archiving, setting the FCC
-;; header and setting up `vmpc-conditions'.  Do you know a mailer than can
+;; header and setting up `vm-pcrisis-conditions'.  Do you know a mailer than can
 ;; beat this?
 ;;
 ;; My default selector for spam messages:
@@ -624,18 +624,18 @@ format:
                          "false")))))))
 
 ;;----------------------------------------------------------------------------
-(defvar vmpc-current-state nil)
+(defvar vm-pcrisis-current-state nil)
 ;;;###autoload
-(defun vmpc-virtual-check-selector (selector &optional folder-list)
-  "Checks SELECTOR based on the state of vmpc on the original or current."
+(defun vm-pcrisis-virtual-check-selector (selector &optional folder-list)
+  "Checks SELECTOR based on the Personality Crisis state, original or current."
   (setq selector (vm-virtual-get-selector selector folder-list))
   (if (null selector)
       (error "no virtual folder %s!" selector))
-  (cond ((or (eq vmpc-current-state 'reply)
-             (eq vmpc-current-state 'forward)
-             (eq vmpc-current-state 'resend))
+  (cond ((or (eq vm-pcrisis-current-state 'reply)
+             (eq vm-pcrisis-current-state 'forward)
+             (eq vm-pcrisis-current-state 'resend))
          (vm-virtual-check-selector selector (car vm-message-pointer)))
-        ((eq vmpc-current-state 'automorph)
+        ((eq vm-pcrisis-current-state 'automorph)
          (vm-virtual-check-selector selector))))
 
 ;;----------------------------------------------------------------------------
@@ -1465,6 +1465,9 @@ The element gets added to the `element-name' sublist of the
         ))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-obsolete-function-alias 'vmpc-virtual-check-selector
+  'vm-pcrisis-virtual-check-selector "8.3.3")
 
 (provide 'vm-avirtual)
 ;;; vm-avirtual.el ends here

@@ -453,15 +453,15 @@ calls.  The advice pcrisis installs on this command has its own copy of that
 validation and its own test; this is the plain command, so the advice is taken
 off for the duration if the module happens to be loaded."
   (require 'vm)
-  (let ((advised (advice-member-p 'vmpc--mail 'vm-mail-from-folder)))
-    (when advised (advice-remove 'vm-mail-from-folder 'vmpc--mail))
+  (let ((advised (advice-member-p 'vm-pcrisis--mail 'vm-mail-from-folder)))
+    (when advised (advice-remove 'vm-mail-from-folder 'vm-pcrisis--mail))
     (unwind-protect
         (vm-reply-test--in-folder ("")
           (should (null vm-message-list))
           (vm-mail-from-folder)
           (should (eq major-mode 'mail-mode))
           (should (string-match-p "^To:" (buffer-string))))
-      (when advised (advice-add 'vm-mail-from-folder :around #'vmpc--mail)))))
+      (when advised (advice-add 'vm-mail-from-folder :around #'vm-pcrisis--mail)))))
 
 (ert-deftest vm-reply-test-mail-from-folder-still-uses-the-sender ()
   "The control: with a message present the sender is still offered.

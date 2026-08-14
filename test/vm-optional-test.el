@@ -205,21 +205,21 @@ used to hand the job to `bbdb-get-addresses', which BBDB 3 does not have."
 
 (ert-deftest vm-optional-test-pcrisis-profiles-round-trip-through-bbdb ()
   "A profile stored on a BBDB record is read back.
-`vmpc-auto-profiles-file' set to BBDB keeps each address's profile in the
+`vm-pcrisis-auto-profiles-file' set to BBDB keeps each address's profile in the
 record's `vmpc-profile' field.  Writing it used `bbdb-record-putprop' and
 reading it `bbdb-get-field', neither of which BBDB 3 has."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-pcrisis)
   (vm-optional-test-with-bbdb
-    (let ((vmpc-auto-profiles-file 'BBDB)
-          (vmpc-auto-profiles nil)
-          (vmpc-auto-profiles-expunge-days nil))
-      (vmpc-save-profile-for-address "alice@example.com" '("work"))
+    (let ((vm-pcrisis-auto-profiles-file 'BBDB)
+          (vm-pcrisis-auto-profiles nil)
+          (vm-pcrisis-auto-profiles-expunge-days nil))
+      (vm-pcrisis-save-profile-for-address "alice@example.com" '("work"))
       ;; forget what is in memory and read it back from the database
-      (setq vmpc-auto-profiles nil)
-      (vmpc-load-auto-profiles)
+      (setq vm-pcrisis-auto-profiles nil)
+      (vm-pcrisis-load-auto-profiles)
       (should (equal '("work") (cadr (assoc "alice@example.com"
-                                            vmpc-auto-profiles)))))))
+                                            vm-pcrisis-auto-profiles)))))))
 
 ;;; The virtual folders BBDB records ask for
 

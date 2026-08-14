@@ -4065,6 +4065,7 @@ folder carefully if you do: it has to hold whatever the message holds.
 
 @node Personality Crisis, Postponing Messages, Saving copies, Sending Messages
 @section Personality Crisis: Programmable customization of message composition
+@cindex vm-pcrisis
 @cindex vmpc
 @cindex Personality Crisis
 
@@ -4076,29 +4077,37 @@ to set the ``From:'' header of the outgoing message to be the same as the
 email address at which you received the message.  This matters clearly if
 you have multiple email accounts.
 
-@findex vmpc-mode
+@findex vm-pcrisis-mode
 To use Personality Crisis, switch it on in your @code{vm-init-file}:
 
 @lisp
-(vmpc-mode 1)
+(vm-pcrisis-mode 1)
 @end lisp
 
 @noindent
 The mode is autoloaded, so no @code{require} is needed.  Turning it on advises
 VM's composition commands --- replying, forwarding, resending and starting a new
 message --- so that your rules are consulted as each composition begins;
-turning it off with @code{(vmpc-mode -1)} removes the advice again.
+turning it off with @code{(vm-pcrisis-mode -1)} removes the advice again.
 
 In earlier releases the advice was installed merely by loading the file, so
 @code{(require 'vm-pcrisis)} was how one switched it on, and there was no way to
 switch it off.  That still loads the file but no longer changes how VM behaves,
 so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
 
-@findex vmpc-my-identities
+@cindex vmpc
+Everything here was called @code{vmpc-} something in earlier releases, and
+still answers to that name: an option keeps a value you saved under the old name,
+and a rule that names @code{vmpc-signature} or @code{vmpc-header-match} runs
+what @code{vm-pcrisis-signature} and @code{vm-pcrisis-header-match} now are.
+The file @file{~/.vmpc-auto-profiles} keeps its name as well, being a file
+and not a symbol.
+
+@findex vm-pcrisis-my-identities
 As a quick start, you can add a line to define your email identities:
 
 @lisp
-(vmpc-my-identities "me@@work.com" "me@@home.net" "me@@other.org")
+(vm-pcrisis-my-identities "me@@work.com" "me@@home.net" "me@@other.org")
 @end lisp
 
 @noindent This sets up each email address as a ``From'' header option.  When
@@ -4106,20 +4115,20 @@ you compose a message to an unknown recipient, Personality Crisis will prompt yo
 choose which identity to use.  For more control, use the condition-action
 rules described below.
 
-@vindex vmpc-conditions
-@vindex vmpc-actions
+@vindex vm-pcrisis-conditions
+@vindex vm-pcrisis-actions
 Personality Crisis is based on condition-action rules.  You define a variable
-@code{vmpc-conditions} to contain a collection of named conditions that you
-can test for in the parent message, and a variable @code{vmpc-actions} to
+@code{vm-pcrisis-conditions} to contain a collection of named conditions that you
+can test for in the parent message, and a variable @code{vm-pcrisis-actions} to
 contain a collection of name actions that you can perform on the outgoing
 message.  These take the form:
 
 @example
-(set-variable 'vmpc-conditions
+(set-variable 'vm-pcrisis-conditions
               '(("condition-name1" @var{condition})
                 ("condition-name2" @var{condition})
                 ...))
-(set-variable 'vmpc-actions
+(set-variable 'vm-pcrisis-actions
               '(("action-name1" @var{action}...)
                 ("action-name2" @var{action}...)
                 ...))
@@ -4132,28 +4141,28 @@ a collection of condition-action rules, each of which is of the form:
 (@var{CONDITION-NAME} @var{ACTION-NAME1} @var{ACTION-NAME2}...)
 @end example
 @table @code
-@vindex vmpc-default-rules
-@item vmpc-default-rules
-@vindex vmpc-reply-rules
-@vindex vmpc-forward-rules
-@vindex vmpc-resend-rules
-@vindex vmpc-mail-rules
+@vindex vm-pcrisis-default-rules
+@item vm-pcrisis-default-rules
+@vindex vm-pcrisis-reply-rules
+@vindex vm-pcrisis-forward-rules
+@vindex vm-pcrisis-resend-rules
+@vindex vm-pcrisis-mail-rules
 Condition-action rules for composing messages based on a parent message,
 such as replying, forwarding, resending and mailing
 (@pxref{vm-mail-from-folder}).
 
-There are also specialized variables @code{vmpc-reply-rules},
-@code{vmpc-forward-rules}, @code{vmpc-resend-rules} and
-@code{vmpc-mail-rules}, which can override the general default rules in
-@code{vmpc-default-rules}.
+There are also specialized variables @code{vm-pcrisis-reply-rules},
+@code{vm-pcrisis-forward-rules}, @code{vm-pcrisis-resend-rules} and
+@code{vm-pcrisis-mail-rules}, which can override the general default rules in
+@code{vm-pcrisis-default-rules}.
 
-@vindex vmpc-newmail-rules
-@item vmpc-newmail-rules
+@vindex vm-pcrisis-newmail-rules
+@item vm-pcrisis-newmail-rules
 Condition-action rules for new message compositions with no parent message.
 (@pxref{vm-mail}).
 
-@vindex vmpc-automorph-rules
-@item vmpc-automorph-rules
+@vindex vm-pcrisis-automorph-rules
+@item vm-pcrisis-automorph-rules
 Condition-action rules for message compositions based on their own content
 (called ``automorphing'').
 @end table
@@ -4164,61 +4173,61 @@ resending etc.  Personality Crisis provides a collection of useful condition-che
 functions.  Others can be defined as needed.
 
 @table @code
-@findex vmpc-header-match
-@item vmpc-header-match
+@findex vm-pcrisis-header-match
+@item vm-pcrisis-header-match
 This condition checks if a header field of the message matches a regular
 expression pattern.  For example, the condition
 
 @example
-(vmpc-header-match "To\\|Cc" (regexp-quote "me@@myisp.net"))
+(vm-pcrisis-header-match "To\\|Cc" (regexp-quote "me@@myisp.net"))
 @end example
 
 @noindent checks if either the ``To'' or ``Cc'' header contains the pattern
 @code{me@@myisp.net}.
 
-@findex vmpc-only-from-match
-@item vmpc-only-from-match
-This is similar to @code{vmpc-header-match}, but assumes that the header
+@findex vm-pcrisis-only-from-match
+@item vm-pcrisis-only-from-match
+This is similar to @code{vm-pcrisis-header-match}, but assumes that the header
 field contains email addresses, and matches every one of the email addresses
 against the regular expression pattern.  For example, the condition
 
 @example
-(vmpc-only-from-match "To\\|Cc" (regexp-quote "@@mycompany.com"))
+(vm-pcrisis-only-from-match "To\\|Cc" (regexp-quote "@@mycompany.com"))
 @end example
 
 @noindent if every email address in the ``To'' and ``Cc'' headers is at
 @code{mycompany.com}.
 
-@findex vmpc-body-match
-@item vmpc-body-match
+@findex vm-pcrisis-body-match
+@item vm-pcrisis-body-match
 This condition checks if the body of the message contains the
 given regular expression pattern.
 
-@findex vmpc-folder-match
-@item vmpc-folder-match
+@findex vm-pcrisis-folder-match
+@item vm-pcrisis-folder-match
 This condition checks if the name of the folder contains the
 given regular expression pattern.
 
-@findex vmpc-folder-account-match
-@item vmpc-folder-account-match
+@findex vm-pcrisis-folder-account-match
+@item vm-pcrisis-folder-account-match
 This condition checks if the @acronym{POP}/@acronym{IMAP} account of the
 folder contains the given regular expression pattern.
 
-@findex vmpc-virtual-check-selector
-@item vmpc-virtual-check-selector
+@findex vm-pcrisis-virtual-check-selector
+@item vm-pcrisis-virtual-check-selector
 (This function is provided by the @code{vm-avirtual} package.)  This
 condition checks if the message matches a given virtual selector.
 
-@findex vmpc-other-cond
-@item vmpc-other-cond
+@findex vm-pcrisis-other-cond
+@item vm-pcrisis-other-cond
 This condition returns true if another named condition (defined earlier
-in @code{vmpc-conditions}) evaluated to true.  This allows building
+in @code{vm-pcrisis-conditions}) evaluated to true.  This allows building
 complex conditions from simpler ones.
 
-@findex vmpc-none-true-yet
-@item vmpc-none-true-yet
+@findex vm-pcrisis-none-true-yet
+@item vm-pcrisis-none-true-yet
 This condition returns true if none of the conditions that came before it
-in @code{vmpc-conditions} have returned true.  This is useful as a fallback
+in @code{vm-pcrisis-conditions} have returned true.  This is useful as a fallback
 to prompt for a profile when no other conditions match.
 @end table
 
@@ -4229,51 +4238,51 @@ own.
 
 The @i{actions} are executed by Personality Crisis itself, as a composition
 begins.  It runs the action list twice: once before the composition buffer
-exists, which is when @code{vmpc-pre-function} and the conditions get their
+exists, which is when @code{vm-pcrisis-pre-function} and the conditions get their
 look at the message being replied to, and once in the composition, which is
 where the actions below do their work.  Actions are not commands: calling one
 by hand where there is no composition tells you so rather than quietly doing
 nothing.
 
 @table @code
-@findex vmpc-substitute-header
-@item vmpc-substitute-header
+@findex vm-pcrisis-substitute-header
+@item vm-pcrisis-substitute-header
 This action substitutes a specified header field of the outgoing message
 with a given string.  For example, the action
 
 @example
-(vmpc-substitute-header "From" "me@@myisp.net")
+(vm-pcrisis-substitute-header "From" "me@@myisp.net")
 @end example
 
 @noindent sets the ``From'' header of the outgoing message to
 @code{me@@myisp.net}.
 
-@findex vmpc-add-header
-@item vmpc-add-header
+@findex vm-pcrisis-add-header
+@item vm-pcrisis-add-header
 This action adds a specified header field to the outgoing message
 with a given string.  If the header field already exists, nothing is done.
 
-@findex vmpc-insert-header
-@item vmpc-insert-header
+@findex vm-pcrisis-insert-header
+@item vm-pcrisis-insert-header
 This action appends a given string to a specified header field of the
 outgoing message.
 
-@findex vmpc-delete-header
-@item vmpc-delete-header
+@findex vm-pcrisis-delete-header
+@item vm-pcrisis-delete-header
 This action deletes a specified header field of the outgoing message
 with a given string.  Either the contents of the header field or the header
 itself can be deleted.
 
-@findex vmpc-signature
-@item vmpc-signature
+@findex vm-pcrisis-signature
+@item vm-pcrisis-signature
 
-The action @code{(vmpc-signature "signature-file")} inserts the signature
+The action @code{(vm-pcrisis-signature "signature-file")} inserts the signature
 from @code{signature-file}.  If there is already a signature in the outgoing
 message, then it replaces with the new signature.  If the argument is the empty
-string, as in @code{(vmpc-signature "")}, the signature is deleted and none is
+string, as in @code{(vm-pcrisis-signature "")}, the signature is deleted and none is
 inserted.
 
-@vindex vmpc-expect-default-signature
+@vindex vm-pcrisis-expect-default-signature
 @vindex mail-signature
 Personality Crisis can only replace or delete a signature whose extent it
 knows.  A signature it inserted itself, it knows; one that Emacs put there
@@ -4281,58 +4290,58 @@ because @code{mail-signature} is set, it does not, unless you tell it to expect
 one:
 
 @lisp
-(setq vmpc-expect-default-signature t)
+(setq vm-pcrisis-expect-default-signature t)
 @end lisp
 
-@noindent Without that, a rule saying @code{(vmpc-signature "")} has nothing to
+@noindent Without that, a rule saying @code{(vm-pcrisis-signature "")} has nothing to
 delete and leaves the signature where it is.
 
-@findex vmpc-pre-signature
-@item vmpc-pre-signature
-This action is similar to @code{vmpc-signature}, but inserts the new
+@findex vm-pcrisis-pre-signature
+@item vm-pcrisis-pre-signature
+This action is similar to @code{vm-pcrisis-signature}, but inserts the new
 signature at the top, above the message body.
 
-@findex vmpc-substitute-replied-header
-@item vmpc-substitute-replied-header
+@findex vm-pcrisis-substitute-replied-header
+@item vm-pcrisis-substitute-replied-header
 This action takes a header value from the message being replied to and
 inserts it as a header in the reply.  For example:
 
 @example
-(vmpc-substitute-replied-header "To" "From")
+(vm-pcrisis-substitute-replied-header "To" "From")
 @end example
 
 @noindent copies the ``From'' header of the original message to the ``To''
 header of the reply.
 
-@findex vmpc-pre-function
-@item vmpc-pre-function
+@findex vm-pcrisis-pre-function
+@item vm-pcrisis-pre-function
 This action evaluates a Lisp expression before VM creates the mail
 composition buffer.  This is useful for setting VM variables that need
 to be set early, such as message encoding.
 
-@findex vmpc-composition-buffer
-@item vmpc-composition-buffer
+@findex vm-pcrisis-composition-buffer
+@item vm-pcrisis-composition-buffer
 This action evaluates a Lisp expression in the composition buffer.
 Use this to set buffer-local variables or call functions that need the
 composition buffer to exist.
 
-@findex vmpc-prompt-for-profile
-@item vmpc-prompt-for-profile
+@findex vm-pcrisis-prompt-for-profile
+@item vm-pcrisis-prompt-for-profile
 This action prompts the user to choose a profile (action) to run.
 With an optional argument, it can remember the choice for future messages
 to the same recipient:
 
 @example
-(vmpc-prompt-for-profile)        ; prompt but don't remember
-(vmpc-prompt-for-profile t)      ; prompt and remember automatically
-(vmpc-prompt-for-profile 'prompt) ; prompt and ask whether to remember
+(vm-pcrisis-prompt-for-profile)        ; prompt but don't remember
+(vm-pcrisis-prompt-for-profile t)      ; prompt and remember automatically
+(vm-pcrisis-prompt-for-profile 'prompt) ; prompt and ask whether to remember
 @end example
 @end table
 
 @subsection Automorph
 
-@findex vmpc-automorph
-The @code{vmpc-automorph} function automatically customizes a mail
+@findex vm-pcrisis-automorph
+The @code{vm-pcrisis-automorph} function automatically customizes a mail
 composition based on its current headers.  This is useful for new mail
 compositions where you want to set up headers, signatures, etc. based on
 the ``To'' address you have typed.
@@ -4340,13 +4349,13 @@ the ``To'' address you have typed.
 To use automorph, bind it to a key in @code{vm-mail-mode-map}:
 
 @lisp
-(define-key vm-mail-mode-map [f7] 'vmpc-automorph)
+(define-key vm-mail-mode-map [f7] 'vm-pcrisis-automorph)
 @end lisp
 
 @noindent Or attach it to moving between headers:
 
 @lisp
-(define-key vm-mail-mode-map [tab] 'vmpc-tab-header-or-tab-stop)
+(define-key vm-mail-mode-map [tab] 'vm-pcrisis-tab-header-or-tab-stop)
 @end lisp
 
 @subsection Debugging Personality Crisis
@@ -4355,11 +4364,11 @@ To debug Personality Crisis configurations, examine these variables after compos
 a message:
 
 @itemize @bullet
-@item @code{vmpc-true-conditions} --- the list of conditions that evaluated to true
-@item @code{vmpc-actions-to-run} --- the list of actions that will be executed
+@item @code{vm-pcrisis-true-conditions} --- the list of conditions that evaluated to true
+@item @code{vm-pcrisis-actions-to-run} --- the list of actions that will be executed
 @end itemize
 
-You can also call @code{vmpc-build-true-conditions-list} interactively
+You can also call @code{vm-pcrisis-build-true-conditions-list} interactively
 to test your conditions.
 
 @node Postponing Messages,, Personality Crisis, Sending Messages
