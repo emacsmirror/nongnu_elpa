@@ -153,7 +153,7 @@ See also:    `vm-summary-uninteresting-senders'"
         header-name arrow
         addresses
         address
-        first)
+        first first-arrow)
 
     (while (and (not address) headers)
       (if (listp (car headers))
@@ -163,11 +163,19 @@ See also:    `vm-summary-uninteresting-senders'"
       (if addresses
           (setq addresses (vm-decode-mime-encoded-words-in-string addresses)
                 addresses
-                (or (if (functionp 'bbdb-extract-address-components)
-                        (bbdb-extract-address-components addresses t))
-                    (list (mail-extract-address-components addresses))
-                    addresses)))
-      (if (not first) (setq first (car addresses)))
+                (if (equal header-name "Newsgroups:")
+                    ;; a group is not an address: extraction reads
+                    ;; comp.emacs as somebody called "comp emacs"
+                    (mapcar (lambda (group) (list group nil))
+                            (vm-parse addresses
+                                      "[ \t\f\r\n,]*\\([^ \t\f\r\n,]+\\)"))
+                  (or (if (functionp 'bbdb-extract-address-components)
+                          (bbdb-extract-address-components addresses t))
+                      (list (mail-extract-address-components addresses))
+                      addresses))))
+      ;; the label goes with the address, so it is kept with it: the fallback
+      ;; below used whichever header was examined last
+      (if (not first) (setq first (car addresses) first-arrow arrow))
       (while addresses
         (if (or (not vm-summary-uninteresting-senders)
                 (and vm-summary-uninteresting-senders
@@ -180,7 +188,7 @@ See also:    `vm-summary-uninteresting-senders'"
     (if (and (null address) (null first))
         ""
       (if (and (null address) first)
-          (setq address first))
+          (setq address first arrow first-arrow))
       (concat arrow
               (cond ((functionp 'bbdb/vm-alternate-full-name)
                      (or (bbdb/vm-alternate-full-name (cadr address))
