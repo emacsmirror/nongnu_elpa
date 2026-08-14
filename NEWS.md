@@ -3,6 +3,29 @@
 If you are upgrading from a previous version of VM, look through the entries
 since that version to see how you might be affected.
 
+## Two features must now be switched on
+
+Loading a file no longer switches it on.  If your init file loads either of
+these and you have not added the line below, the feature is doing nothing --
+silently, since neither has anything to say when it is off.
+
+  * **Personality Crisis**: `(vm-pcrisis-mode 1)`
+
+    Without it, compositions are set up with none of your rules: no From
+    address chosen for you, no signature, no headers.  `(require 'vm-pcrisis)`
+    was how one switched it on in earlier releases, and now only loads the
+    file;
+    the mode is autoloaded, so the `require` is not needed at all
+    (emacs-vm/vm#561).
+
+  * **vm-biff**: `(vm-biff-mode 1)`
+
+    Without it, no new-mail notification (emacs-vm/vm#512).
+
+Both can be switched off again with an argument of -1, which is the reason
+for the change: a feature installed by loading a file could never be
+switched off.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a
@@ -154,9 +177,6 @@ since that version to see how you might be affected.
 
     Half of the file went as superseded or little used, and with it the `.`,
     `T` and `C-c C-a` rebindings, so those keys are VM's own again.
-
-  * vm-biff and Personality Crisis no longer switch themselves on merely by
-    being loaded (emacs-vm/vm#512, emacs-vm/vm#561).
 
   * VM says less as it works: `vm-verbosity` defaults to 5, the level its own
     documentation calls normal.
