@@ -116,6 +116,15 @@ Gotchas found the hard way:
   with them on and is expected to pass: an assertion that fires there is either
   a broken invariant or a test setting up a state no real caller is in, which is
   what four IMAP tests were doing until they were given a `process` buffer type.
+- **Anything that runs gpg needs a GNUPGHOME of its own.** Without one a test
+  writes into the keyring of whoever is running it, and signs with their real
+  key. `vm-epg-test--with-a-test-keyring` makes a temporary home, generates an
+  ed25519 key in it (0.4s, so no key is committed), and kills that home's
+  gpg-agent afterwards. A mutation run that removed the isolation put a test
+  key in the maintainer's real keyring.
+- **A mutation that makes a test skip reads as a surviving mutation.** ert
+  counts a skip among its expected results, so a harness watching only for
+  FAILED reports the test as blind when it never ran. Count skips too.
 
 ## Contributing workflow
 
