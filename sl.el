@@ -1,6 +1,6 @@
 ;;; sl.el --- Magit-like interface for Sapling  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026  Sapling Emacs contributors
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Sapling Emacs contributors
 ;; Version: 0.2.0
