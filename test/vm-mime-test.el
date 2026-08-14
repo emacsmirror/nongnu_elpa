@@ -3392,6 +3392,169 @@ it has to write the change out and the summary is recomputed."
       (should-not (vm-byte-count-of m))
       (should-not (vm-line-count-of m)))))
 
+;;; Attachment commands in a composition (emacs-vm/vm#661)
+
+(defmacro vm-mime-test--in-a-composition-with-a-file (&rest body)
+  "Run BODY in a composition holding one attached file.
+FILE is the attached file and DIR the directory it is in; point is at the
+start of the attachment tag, which is where the attachment commands look."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-attach" t)))
+          (file (expand-file-name "readme.txt" dir))
+          (mail-header-separator "--text follows this line--")
+          (vm-send-using-mime t))
+     (unwind-protect
+         (progn
+           (with-temp-file file (insert "The file's contents.\n"))
+           (with-temp-buffer
+             (mail-mode)
+             (insert "To: someone@example.com\n"
+                     "Subject: with an attachment\n"
+                     mail-header-separator "\n"
+                     "The body.\n")
+             (goto-char (point-max))
+             (vm-attach-file file "text/plain")
+             (goto-char (point-min))
+             (should (search-forward "[ATTACHMENT" nil t))
+             (goto-char (match-beginning 0))
+             ,@body))
+       (delete-directory dir t))))
+
+(defun vm-mime-test--disposition-at-point ()
+  "The disposition of the attachment at point."
+  (car (get-text-property (point) 'vm-mime-disposition)))
+
+(ert-deftest vm-mime-test-changing-a-disposition-changes-it ()
+  "The disposition read at the prompt is the one the attachment carries.
+It is what tells the recipient's mail reader whether to show the part or
+offer it as a file to save."
+  (vm-mime-test--in-a-composition-with-a-file
+    (dolist (want '("attachment" "inline" "unspecified"))
+      (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) want)))
+        (vm-mime-change-content-disposition))
+      (should (equal (vm-mime-test--disposition-at-point) want)))))
+
+(ert-deftest vm-mime-test-changing-a-disposition-reaches-the-encoded-message ()
+  "The new disposition is what the message goes out with, rather than only
+what the tag in the composition says."
+  (vm-mime-test--in-a-composition-with-a-file
+    ;; attachment, not inline: a text/plain file is attached inline by
+    ;; default, so asserting on inline would hold with the command doing
+    ;; nothing at all
+    (should (equal (vm-mime-test--disposition-at-point) "inline"))
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "attachment")))
+      (vm-mime-change-content-disposition))
+    (vm-mime-encode-composition)
+    (should (string-match-p "^Content-Disposition: attachment" (buffer-string)))
+    (should-not (string-match-p "^Content-Disposition: inline" (buffer-string)))))
+
+(ert-deftest vm-mime-test-changing-a-disposition-needs-an-attachment ()
+  "REGRESSION: away from an attachment the command says so, and says it
+before prompting.
+
+`vm-mime-set-attachment-disposition-at-point' does `setcar' on a text
+property that is nil where there is no attachment, so the reader was asked
+which disposition they wanted and then given
+`(wrong-type-argument consp nil)'.  `vm-mime-rename-attachment', directly
+above it in the file, has always guarded for this."
+  (vm-mime-test--in-a-composition-with-a-file
+    (goto-char (point-min))
+    (let ((asked nil)
+          (text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) (setq asked t) "inline")))
+        (let ((err (should-error (vm-mime-change-content-disposition)
+                                 :type 'error)))
+          (should (equal (error-message-string err) "No attachment here"))))
+      (should-not asked))))
+
+;;; Attaching a file that carries its own MIME headers
+
+(ert-deftest vm-mime-test-attaching-a-mime-file-keeps-its-headers ()
+  "`vm-attach-mime-file' attaches the file as it stands, headers and all:
+that is the difference from `vm-attach-file', which supplies them."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-attach" t)))
+         (file (expand-file-name "part.eml" dir))
+         (mail-header-separator "--text follows this line--")
+         (vm-send-using-mime t))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "Content-Type: text/plain; charset=us-ascii\n"
+                    "Content-Transfer-Encoding: 7bit\n\n"
+                    "Already MIME.\n"))
+          (with-temp-buffer
+            (mail-mode)
+            (insert "To: someone@example.com\nSubject: s\n"
+                    mail-header-separator "\nThe body.\n")
+            (goto-char (point-max))
+            (vm-attach-mime-file file "message/rfc822")
+            (goto-char (point-min))
+            (should (search-forward "[ATTACHMENT" nil t))
+            (goto-char (match-beginning 0))
+            ;; mimed: VM sends the file's own headers rather than making them
+            (should (get-text-property (point) 'vm-mime-object))
+            (should (equal (get-text-property (point) 'vm-mime-type)
+                           "message/rfc822"))
+            ;; marked as already encoded, so VM sends the file's own
+            ;; headers rather than writing its own around the contents
+            (should (get-text-property (point) 'vm-mime-encoded))
+            ;; which is the whole difference from `vm-attach-file'
+            (goto-char (point-max))
+            (vm-attach-file file "text/plain")
+            (goto-char (point-min))
+            (should (search-forward "[ATTACHMENT" nil t))
+            (should (search-forward "[ATTACHMENT" nil t))
+            (goto-char (match-beginning 0))
+            (should-not (get-text-property (point) 'vm-mime-encoded))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-attaching-a-mime-file-checks-the-file ()
+  "A directory, a file that is not there, and one that cannot be read are
+each refused by name, rather than attached and found wanting at send time."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-attach" t)))
+         (unreadable (expand-file-name "secret.txt" dir))
+         (vm-send-using-mime t)
+         (text-quoting-style 'grave))
+    (unwind-protect
+        (progn
+          (with-temp-file unreadable (insert "no\n"))
+          (set-file-modes unreadable #o000)
+          (with-temp-buffer
+            (mail-mode)
+            (let ((err (should-error (vm-attach-mime-file dir "text/plain")
+                                     :type 'error)))
+              (should (string-match-p "is a directory"
+                                      (error-message-string err))))
+            (let ((err (should-error
+                        (vm-attach-mime-file (expand-file-name "absent" dir)
+                                             "text/plain")
+                        :type 'error)))
+              (should (string-match-p "No such file"
+                                      (error-message-string err))))
+            ;; root can read anything, so this one only means something as
+            ;; an ordinary user
+            (unless (zerop (user-uid))
+              (let ((err (should-error (vm-attach-mime-file unreadable
+                                                            "text/plain")
+                                       :type 'error)))
+                (should (string-match-p "permission"
+                                        (error-message-string err)))))))
+      (set-file-modes unreadable #o600)
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-attaching-a-mime-file-needs-mime-sending ()
+  "With `vm-send-using-mime' off there is no way to send an attachment, so
+the command refuses and says which option turns it on."
+  (let ((vm-send-using-mime nil)
+        (text-quoting-style 'grave))
+    (with-temp-buffer
+      (mail-mode)
+      (let ((err (should-error (vm-attach-mime-file "/etc/hosts" "text/plain")
+                               :type 'error)))
+        (should (string-match-p "vm-send-using-mime"
+                                (error-message-string err)))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
