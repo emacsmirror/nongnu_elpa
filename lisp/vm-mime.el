@@ -8771,16 +8771,6 @@ match."
   "Return a subdir for the attachments of MSG.
 This will be done according to `vm-mime-auto-save-all-attachments-subdir'."
   (setq msg (vm-real-message-of msg))
-  (when (not (string-match 
-	      (regexp-quote (vm-reencode-mime-encoded-words-in-string
-			     (vm-su-full-name msg)))
-	      (vm-get-header-contents msg "From:")))
-    (backtrace)
-    (if (y-or-n-p (format "Is this wrong? %s <> %s "
-                         (vm-su-full-name msg)
-                         (vm-get-header-contents msg "From:")))
-        (error "Yes it is wrong!")))
-    
   (cond ((functionp vm-mime-auto-save-all-attachments-subdir)
          (funcall vm-mime-auto-save-all-attachments-subdir msg))
         ((stringp vm-mime-auto-save-all-attachments-subdir)
@@ -8824,9 +8814,11 @@ This will be done according to `vm-mime-auto-save-all-attachments-subdir'."
     (if (not vm-mime-attachment-save-directory)
         (error "Set `vm-mime-attachment-save-directory' for autosaving of attachments")
       (if subdir
-          (if (string-match "/$" vm-mime-attachment-save-directory)
-              (concat vm-mime-attachment-save-directory subdir)
-            (concat vm-mime-attachment-save-directory "/" subdir))
+          ;; the subdir may begin with a separator of its own, and two of
+          ;; them in a path is untidy rather than wrong
+          (concat (directory-file-name vm-mime-attachment-save-directory)
+                  (if (string-prefix-p "/" subdir) "" "/")
+                  subdir)
         vm-mime-attachment-save-directory))))
 
 ;;;###autoload

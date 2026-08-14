@@ -3555,6 +3555,99 @@ the command refuses and says which option turns it on."
         (should (string-match-p "vm-send-using-mime"
                                 (error-message-string err)))))))
 
+;;; Where auto-saved attachments go (emacs-vm/vm#669)
+
+(defmacro vm-mime-test--attachment-path-for (from &rest body)
+  "Run BODY with PATH bound to the attachment directory for a message FROM.
+Anything BODY asks the reader is an error: this runs from
+`vm-select-new-message-hook', where a question has nobody to answer it."
+  (declare (indent 1) (debug t))
+  `(let ((vm-mime-attachment-save-directory "/tmp/vm-test-attachments")
+         (vm-mime-auto-save-all-attachments-subdir nil))
+     (vm-test-with-folder
+         (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                 "From: " ,from "\n"
+                 "Subject: a subject\n"
+                 "Date: Mon, 1 Jan 2024 10:20:30 +0000\n\n"
+                 "The body.\n")
+       (cl-letf (((symbol-function 'y-or-n-p)
+                  (lambda (prompt) (error "asked: %s" prompt)))
+                 ((symbol-function 'yes-or-no-p)
+                  (lambda (prompt) (error "asked: %s" prompt))))
+         (let ((path (vm-mime-auto-save-all-attachments-path
+                      (car vm-message-list))))
+           (ignore path)
+           ,@body)))))
+
+(ert-deftest vm-mime-test-attachment-path-names-the-message ()
+  "The directory is the save directory and a subdirectory naming the
+message: when it was sent, who by, and what about."
+  (vm-mime-test--attachment-path-for "Alice Adams <alice@example.com>"
+    (should (equal path
+                   "/tmp/vm-test-attachments/2024_1_1-10_20_30--Alice_Adams--a_subject"))))
+
+(ert-deftest vm-mime-test-attachment-path-asks-nothing-about-encoded-names ()
+  "REGRESSION: a correspondent whose name is MIME-encoded is ordinary.
+
+The function compared the decoded full name with the raw From header and,
+when they differed, printed a backtrace and asked the reader `Is this
+wrong?', erroring if they said yes.  Any encoded name differs, and this
+runs from `vm-select-new-message-hook' while the reader moves through
+messages."
+  (vm-mime-test--attachment-path-for "=?utf-8?Q?Ren=C3=A9?= <rene@example.com>"
+    (should (string-prefix-p "/tmp/vm-test-attachments/" path))
+    (should (string-match-p "2024_1_1-10_20_30" path))))
+
+(ert-deftest vm-mime-test-attachment-path-has-one-separator ()
+  "The path has no doubled slash, whether or not the save directory ends
+in one."
+  (dolist (directory '("/tmp/vm-test-attachments" "/tmp/vm-test-attachments/"))
+    (let ((vm-mime-attachment-save-directory directory))
+      (vm-mime-test--attachment-path-for "Alice Adams <alice@example.com>"
+        (should-not (string-match-p "//" path))))))
+
+(ert-deftest vm-mime-test-attachment-path-takes-a-string-setting ()
+  "A string `vm-mime-auto-save-all-attachments-subdir' is a summary format,
+so the reader can name the subdirectory after anything a summary can show."
+  (let ((vm-mime-attachment-save-directory "/tmp/vm-test-attachments"))
+    (vm-test-with-folder
+        (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                "From: Alice Adams <alice@example.com>\n"
+                "Subject: a subject\n\nThe body.\n")
+      (let ((vm-mime-auto-save-all-attachments-subdir "%F"))
+        (should (equal (vm-mime-auto-save-all-attachments-path
+                        (car vm-message-list))
+                       "/tmp/vm-test-attachments/Alice Adams"))))))
+
+(ert-deftest vm-mime-test-attachment-path-takes-a-function-setting ()
+  "A function is called with the message, so the reader can decide the
+subdirectory however they like."
+  (let ((vm-mime-attachment-save-directory "/tmp/vm-test-attachments"))
+    (vm-test-with-folder
+        (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                "From: Alice Adams <alice@example.com>\n"
+                "Subject: a subject\n\nThe body.\n")
+      (let ((vm-mime-auto-save-all-attachments-subdir
+             (lambda (m) (concat "by-" (vm-su-from m)))))
+        (should (equal (vm-mime-auto-save-all-attachments-path
+                        (car vm-message-list))
+                       "/tmp/vm-test-attachments/by-alice@example.com"))))))
+
+(ert-deftest vm-mime-test-attachment-path-needs-a-save-directory ()
+  "With no `vm-mime-attachment-save-directory' there is nowhere to save,
+and the refusal names the option to set."
+  (let ((vm-mime-attachment-save-directory nil)
+        (text-quoting-style 'grave))
+    (vm-test-with-folder
+        (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                "From: Alice Adams <alice@example.com>\n"
+                "Subject: a subject\n\nThe body.\n")
+      (let ((err (should-error (vm-mime-auto-save-all-attachments-path
+                                (car vm-message-list))
+                               :type 'error)))
+        (should (string-match-p "vm-mime-attachment-save-directory"
+                                (error-message-string err)))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
