@@ -259,6 +259,8 @@ With \\[universal-argument] pressed before, modify all entries of the list."
   "-" #'elfeed-search-untag
   "<" #'elfeed-search-first-entry
   ">" #'elfeed-search-last-entry
+  "<remap> <beginning-of-buffer>" #'elfeed-search-first-entry
+  "<remap> <end-of-buffer>" #'elfeed-search-last-entry
   "<remap> <backward-paragraph>" #'elfeed-search-previous-separator
   "<remap> <forward-paragraph>" #'elfeed-search-next-separator
   "P" #'elfeed-search-previous-separator
