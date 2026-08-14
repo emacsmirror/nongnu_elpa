@@ -860,6 +860,101 @@ composition without one matches neither."
     (should-not (vm-mail-vs-older-than 1))
     (should-not (vm-mail-vs-newer-than 1))))
 
+;;; Making a virtual folder persistent (emacs-vm/vm#665)
+
+(ert-deftest vm-avirtual-test-making-a-folder-persistent-saves-them-all ()
+  "Every message of the virtual folder is written to a real folder named
+after it, not just the one at point.  The name is the buffer's without the
+parentheses VM puts around a virtual folder's name."
+  (vm-avirtual-test--with-folders (real virt-a virt-b 4)
+    (ignore real virt-b)
+    (with-current-buffer virt-a
+      (let ((saved nil))
+        (cl-letf (((symbol-function 'vm-save-message)
+                   (lambda (folder &optional count &rest _)
+                     (setq saved (cons folder count)))))
+          (vm-virtual-make-folder-persistent))
+        (should (equal (car saved) (substring (buffer-name) 1 -1)))
+        (should (= (cdr saved) (length vm-message-list)))
+        (should (= (cdr saved) 4))))))
+
+(ert-deftest vm-avirtual-test-making-a-real-folder-persistent-is-refused ()
+  "A real folder is already on disk, so the command says what it is for
+rather than saving the folder over itself."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (ignore virt-a virt-b)
+    (with-current-buffer real
+      (let ((text-quoting-style 'grave))
+        (cl-letf (((symbol-function 'vm-save-message)
+                   (lambda (&rest _) (error "saved a real folder"))))
+          (let ((err (should-error (vm-virtual-make-folder-persistent)
+                                   :type 'error)))
+            (should (string-match-p "not a virtual folder"
+                                    (error-message-string err)))))))))
+
+;;; The check for selectors one side has and the other lacks
+
+(defmacro vm-avirtual-test--checking-selectors (message-side mail-side &rest body)
+  "Run BODY with the two selector tables bound and `message' captured.
+BODY sees REPORT, what the check said."
+  (declare (indent 2) (debug t))
+  `(let ((vm-virtual-selector-function-alist ,message-side)
+         (vm-mail-virtual-selector-function-alist ,mail-side)
+         (report nil))
+     (cl-letf (((symbol-function 'message)
+                (lambda (format &rest args)
+                  (setq report (apply #'format format args)))))
+       ,@body)
+     report))
+
+(ert-deftest vm-avirtual-test-the-selector-check-names-what-is-missing ()
+  "The check reports the selectors the other table lacks, by name.  It is
+the only thing that notices the two tables drifting apart."
+  (let ((report (vm-avirtual-test--checking-selectors
+                    '((author . vm-vs-author) (folder-name . vm-vs-folder-name))
+                    '((author . vm-mail-vs-author))
+                  (vm-avirtual-check-for-missing-selectors))))
+    (should (string-match-p "folder-name" report))
+    (should (string-match-p "missing" report))
+    ;; the one both tables have is not reported
+    (should-not (string-match-p "author" report))))
+
+(ert-deftest vm-avirtual-test-the-selector-check-is-quiet-when-they-agree ()
+  "Two tables offering the same selectors report nothing missing."
+  (let ((report (vm-avirtual-test--checking-selectors
+                    '((author . vm-vs-author))
+                    '((author . vm-mail-vs-author))
+                  (vm-avirtual-check-for-missing-selectors))))
+    (should (equal report "No selectors are missing"))))
+
+(ert-deftest vm-avirtual-test-the-selector-check-looks-the-other-way-too ()
+  "With a prefix argument the check runs the other way round, reporting what
+the composition side has and the message side lacks."
+  (let ((report (vm-avirtual-test--checking-selectors
+                    '((author . vm-vs-author))
+                    '((author . vm-mail-vs-author) (mail-mode . vm-mail-vs-mail-mode))
+                  (vm-avirtual-check-for-missing-selectors t))))
+    (should (string-match-p "mail-mode" report)))
+  ;; and without it, that same pair reports nothing: the message side is
+  ;; the smaller of the two here
+  (let ((report (vm-avirtual-test--checking-selectors
+                    '((author . vm-vs-author))
+                    '((author . vm-mail-vs-author) (mail-mode . vm-mail-vs-mail-mode))
+                  (vm-avirtual-check-for-missing-selectors))))
+    (should (equal report "No selectors are missing"))))
+
+(ert-deftest vm-avirtual-test-every-composition-selector-has-a-message-one ()
+  "The composition selectors are a subset of the message ones.
+
+A composition has no folder, no flags and no uid, so the message side is
+larger; but a selector offered for compositions and not for messages would
+be one a reader could write in a vm-pcrisis condition and not in a virtual
+folder, which is a difference nobody intended."
+  (let ((missing (seq-remove
+                  (lambda (name) (assq name vm-virtual-selector-function-alist))
+                  (mapcar #'car vm-mail-virtual-selector-function-alist))))
+    (should (equal missing nil))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
