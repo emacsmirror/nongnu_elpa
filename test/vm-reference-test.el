@@ -239,7 +239,7 @@ examples chosen to pass."
 Everything else the manual indexes and that is a command has to be reachable
 before VM is loaded; see the test below.  The Personality Crisis conditions
 and actions are excluded by being functions rather than commands: they are
-written into `vmpc-conditions' and `vmpc-actions' and run from there.")
+written into `vm-pcrisis-conditions' and `vm-pcrisis-actions' and run from there.")
 
 (defun vm-reference-test--unautoloaded-commands ()
   "Documented commands that are not reachable from the loaddefs.

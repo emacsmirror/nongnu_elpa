@@ -173,7 +173,7 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 (get-buffer-create " *vm-nonexistent*")
 (get-buffer-create " *vm-nonexistent-summary*")
 
-;; And the scratch buffer `vmpc-split' works in, for the same reason: it is
+;; And the scratch buffer `vm-pcrisis-split' works in, for the same reason: it is
 ;; created on first use and kept, so whichever test split a string first was
 ;; reported as leaving it behind.
 (get-buffer-create " *split*")

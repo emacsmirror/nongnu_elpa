@@ -132,6 +132,15 @@ since that version to see how you might be affected.
   * vm-pcrisis and vm-pine are part of VM rather than add-ons to install.
     vm-pine is now called vm-postpone.
 
+  * Personality Crisis is named after VM: every `vmpc-` symbol is now
+    `vm-pcrisis-`, so the feature turns up when you complete `M-x vm-`, run
+    `C-h a vm-`, or look through the `vm` customize tree
+    (emacs-vm/vm#657).  Everything an init file can name keeps working under
+    its old name: the options carry a value saved by customize across, and
+    the conditions and actions are aliased too, since rules name them as
+    data.  `~/.vmpc-auto-profiles` keeps its name, being a file rather than
+    a symbol.
+
   * vm-rfaddons.el is gone, and with it `vm-enable-addons` (emacs-vm/vm#606).
     What was worth keeping is part of VM, each with an ordinary option:
 

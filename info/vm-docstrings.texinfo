@@ -8169,29 +8169,30 @@ timing out.  It can be set to nil to never time out.
 
 @end macro
 
-@macro vmdocvmpcautomorph
-@deffn Command vmpc-automorph
-@findex vmpc-automorph
+@macro vmdocvmpcrisisautomorph
+@deffn Command vm-pcrisis-automorph
+@findex vm-pcrisis-automorph
 Change contents of the current mail message based on its own headers.
-Unless @code{vmpc-current-state} is @code{no-automorph}, headers and signatures can be
+Unless @code{vm-pcrisis-current-state} is @code{no-automorph}, headers and
+signatures can be
 changed; pre-signatures added; functions called.
 
-Call @code{vmpc-no-automorph} to disable it for the current buffer.
+Call @code{vm-pcrisis-no-automorph} to disable it for the current buffer.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcbackwardtabheaderortabstop
-@deffn Command vmpc-backward-tab-header-or-tab-stop
-@findex vmpc-backward-tab-header-or-tab-stop
-Wrapper for @code{vmpc-tab-header-or-tab-stop} with BACKWARD set.
+@macro vmdocvmpcrisisbackwardtabheaderortabstop
+@deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
+@findex vm-pcrisis-backward-tab-header-or-tab-stop
+Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcbuildactionstorunlist
-@deffn Command vmpc-build-actions-to-run-list
-@findex vmpc-build-actions-to-run-list
+@macro vmdocvmpcrisisbuildactionstorunlist
+@deffn Command vm-pcrisis-build-actions-to-run-list
+@findex vm-pcrisis-build-actions-to-run-list
 Build a list of the actions to run.
 These are the true conditions mapped to actions.  Duplicates will be
 eliminated.  You may run it in a composition buffer in order to see what
@@ -8200,35 +8201,35 @@ actions will be run.
 
 @end macro
 
-@macro vmdocvmpcbuildtrueconditionslist
-@deffn Command vmpc-build-true-conditions-list
-@findex vmpc-build-true-conditions-list
+@macro vmdocvmpcrisisbuildtrueconditionslist
+@deffn Command vm-pcrisis-build-true-conditions-list
+@findex vm-pcrisis-build-true-conditions-list
 Build list of true conditions and store it in the variable 
-@code{vmpc-true-conditions}.
+@code{vm-pcrisis-true-conditions}.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcfixautoprofilesfile
-@deffn Command vmpc-fix-auto-profiles-file
-@findex vmpc-fix-auto-profiles-file
-Change @code{vmpc-auto-profiles-file} to the format used by v0.82+.
+@macro vmdocvmpcrisisfixautoprofilesfile
+@deffn Command vm-pcrisis-fix-auto-profiles-file
+@findex vm-pcrisis-fix-auto-profiles-file
+Change @code{vm-pcrisis-auto-profiles-file} to the format used by v0.82+.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcloadautoprofiles
-@deffn Command vmpc-load-auto-profiles
-@findex vmpc-load-auto-profiles
-Initialise @code{vmpc-auto-profiles} from @code{vmpc-auto-profiles-file}.
+@macro vmdocvmpcrisisloadautoprofiles
+@deffn Command vm-pcrisis-load-auto-profiles
+@findex vm-pcrisis-load-auto-profiles
+Initialise @code{vm-pcrisis-auto-profiles} from @code{vm-pcrisis-auto-profiles-file}.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcmigrateprofilestoBBDB
-@deffn Command vmpc-migrate-profiles-to-BBDB
-@findex vmpc-migrate-profiles-to-BBDB
-Migrate the profiles stored in @code{vmpc-auto-profiles-file} to the BBDB.
+@macro vmdocvmpcrisismigrateprofilestoBBDB
+@deffn Command vm-pcrisis-migrate-profiles-to-BBDB
+@findex vm-pcrisis-migrate-profiles-to-BBDB
+Migrate the profiles stored in @code{vm-pcrisis-auto-profiles-file} to the BBDB.
 
 This will automatically create records if they do not exist and add the new
 field @code{vmpc-profile} to the records which is a sexp not meant to be edited.
@@ -8236,12 +8237,13 @@ field @code{vmpc-profile} to the records which is a sexp not meant to be edited.
 
 @end macro
 
-@macro vmdocvmpcmode
-@deffn Command vmpc-mode &optional arg
-@findex vmpc-mode
+@macro vmdocvmpcrisismode
+@deffn Command vm-pcrisis-mode &optional arg
+@findex vm-pcrisis-mode
 Personality Crisis: vary the headers and body of a message you send.
 
-Which headers, and how, is decided by @code{vmpc-conditions} and @code{vmpc-actions};
+Which headers, and how, is decided by @code{vm-pcrisis-conditions} and
+@code{vm-pcrisis-actions};
 see the commentary at the top of vm-pcrisis.el.
 
 Turning this on advises VM’s composition commands -- replying, forwarding,
@@ -8249,16 +8251,16 @@ resending and starting a new message -- so that the rules are consulted as each
 composition begins.  Turning it off removes the advice, leaving those commands
 as VM defines them.
 
-This is a global minor mode.  If called interactively, toggle the ‘Vmpc
-mode’ mode.  If the prefix argument is positive, enable the mode, and if
-it is zero or negative, disable the mode.
+This is a global minor mode.  If called interactively, toggle the
+@code{Vm-Pcrisis mode} mode.  If the prefix argument is positive, enable the
+mode, and if it is zero or negative, disable the mode.
 
 If called from Lisp, toggle the mode if ARG is @code{toggle}.  Enable the
 mode if ARG is nil, omitted, or is a positive number.  Disable the mode
 if ARG is a negative number.
 
 To check whether the minor mode is enabled in the current buffer,
-evaluate @code{(default-value 'vmpc-mode)}.
+evaluate @code{(default-value 'vm-pcrisis-mode)}.
 
 The mode’s hook is called both when the mode is enabled and when it is
 disabled.
@@ -8266,17 +8268,19 @@ disabled.
 
 @end macro
 
-@macro vmdocvmpcpromptforprofile
-@deffn Command vmpc-prompt-for-profile &optional remember prompt
-@findex vmpc-prompt-for-profile
+@macro vmdocvmpcrisispromptforprofile
+@deffn Command vm-pcrisis-prompt-for-profile &optional remember prompt
+@findex vm-pcrisis-prompt-for-profile
 Find a profile or prompt for it and add its actions to the list of actions.
 
 A profile is an association between a recipient address and a set of the
-actions named in @code{vmpc-actions}.  When entering the list of actions, one has
+actions named in @code{vm-pcrisis-actions}.  When entering the list of actions,
+one has
 to press ENTER after each action and finish adding action by pressing ENTER
 without an action.
 
-The association is stored in @code{vmpc-auto-profiles-file} and in the future the
+The association is stored in @code{vm-pcrisis-auto-profiles-file} and in the
+future the
 stored actions will automatically run for messages to that address.
 
 REMEMBER can be set to t or @code{prompt}.  When set to @code{prompt} you will be asked if
@@ -8290,18 +8294,18 @@ PROMPT argument and call this function interactively in the composition buffer.
 
 @end macro
 
-@macro vmdocvmpcreadactions
-@deffn Command vmpc-read-actions prompt &optional default
-@findex vmpc-read-actions
-Read a list of actions to run and store it in @code{vmpc-actions-to-run}.
+@macro vmdocvmpcrisisreadactions
+@deffn Command vm-pcrisis-read-actions prompt &optional default
+@findex vm-pcrisis-read-actions
+Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
 The special action "none" will result in an empty action list.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcrunaction
-@deffn Command vmpc-run-action &optional action-regexp
-@findex vmpc-run-action
+@macro vmdocvmpcrisisrunaction
+@deffn Command vm-pcrisis-run-action &optional action-regexp
+@findex vm-pcrisis-run-action
 Run all actions with names matching the ACTION-REGEXP.
 If called interactively it prompts for the regexp.  You may also use
 completion.
@@ -8309,21 +8313,21 @@ completion.
 
 @end macro
 
-@macro vmdocvmpcrunactions
-@deffn Command vmpc-run-actions &optional actions verbose
-@findex vmpc-run-actions
-Run the argument actions, or the actions stored in @code{vmpc-actions-to-run}.
+@macro vmdocvmpcrisisrunactions
+@deffn Command vm-pcrisis-run-actions &optional actions verbose
+@findex vm-pcrisis-run-actions
+Run the argument actions, or the actions stored in @code{vm-pcrisis-actions-to-run}.
 If verbose is supplied, it should be a STRING, indicating the name of a
 buffer to which to write diagnostic output.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpctabheaderortabstop
-@deffn Command vmpc-tab-header-or-tab-stop &optional backward
-@findex vmpc-tab-header-or-tab-stop
+@macro vmdocvmpcrisistabheaderortabstop
+@deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
+@findex vm-pcrisis-tab-header-or-tab-stop
 If in a mail header field, moves to next useful header or body.
-When moving to the message body, calls the @code{vmpc-automorph} function.
+When moving to the message body, calls the @code{vm-pcrisis-automorph} function.
 If within the message body, runs @code{tab-to-tab-stop}.
 If BACKWARD is specified and non-nil, moves to previous useful header
 field, whether point is in the body or the headers.
@@ -8333,9 +8337,9 @@ field, whether point is in the body or the headers.
 
 @end macro
 
-@macro vmdocvmpctogglenoautomorph
-@deffn Command vmpc-toggle-no-automorph
-@findex vmpc-toggle-no-automorph
+@macro vmdocvmpcrisistogglenoautomorph
+@deffn Command vm-pcrisis-toggle-no-automorph
+@findex vm-pcrisis-toggle-no-automorph
 Disable automorph for the current buffer.
 When automorph is not doing the right thing and you want to disable it for the
 current composition, then call this function.
@@ -8343,28 +8347,175 @@ current composition, then call this function.
 
 @end macro
 
-@macro vmdocvmpctrueconditions
-@deffn Command vmpc-true-conditions
-@findex vmpc-true-conditions
+@macro vmdocvmpcrisistrueconditions
+@deffn Command vm-pcrisis-true-conditions
+@findex vm-pcrisis-true-conditions
 Return a list of all true conditions.
 Run this function in order to test/check your conditions.
 @end deffn
 
 @end macro
 
-@macro vmdocvmpcactions
-@defopt vmpc-actions
-@vindex vmpc-actions
+@macro vmdocvmpcrisisactions
+@defopt vm-pcrisis-actions
+@vindex vm-pcrisis-actions
 List of actions.
-Actions are associated with conditions from @code{vmpc-conditions} by one of
-@code{vmpc-default-rules}, @code{vmpc-reply-rules}, @code{vmpc-forward-rules},
-@code{vmpc-resend-rules}, @code{vmpc-mail-rules}, @code{vmpc-newmail-rules} or
-@code{vmpc-automorph-rules}. 
+Actions are associated with conditions from @code{vm-pcrisis-conditions} by one of
+@code{vm-pcrisis-default-rules}, @code{vm-pcrisis-reply-rules},
+@code{vm-pcrisis-forward-rules}, @code{vm-pcrisis-resend-rules},
+@code{vm-pcrisis-mail-rules}, @code{vm-pcrisis-newmail-rules} or
+@code{vm-pcrisis-automorph-rules}. 
 
 These are also the actions from which you can choose when using the newmail
-features of Personality Crisis, or the @code{vmpc-prompt-for-profile} action.
+features of Personality Crisis, or the @code{vm-pcrisis-prompt-for-profile} action.
 
 You may also define an action without associated commands, e.g. "none".
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisautoprofilesexpungedays
+@defopt vm-pcrisis-auto-profiles-expunge-days
+@vindex vm-pcrisis-auto-profiles-expunge-days
+Number of days after which to expunge old address-profile associations.
+Performance may suffer noticeably if this file becomes enormous, but in other
+respects it is preferable for this value to be fairly high.  The value that is
+right for you will depend on how often you send email to new addresses using
+@code{vm-pcrisis-prompt-for-profile}.
+
+Default value: @code{100}
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisautoprofilesfile
+@defopt vm-pcrisis-auto-profiles-file
+@vindex vm-pcrisis-auto-profiles-file
+File in which to save information used by @code{vm-pcrisis-prompt-for-profile}.
+When set to the symbol @code{BBDB}, profiles will be stored there.
+
+Default value: @code{"~/.vmpc-auto-profiles"}
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisautomorphrules
+@defopt vm-pcrisis-automorph-rules
+@vindex vm-pcrisis-automorph-rules
+Alist associating conditions with actions from @code{vm-pcrisis-actions}
+when automorphing.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisconditions
+@defopt vm-pcrisis-conditions
+@vindex vm-pcrisis-conditions
+List of conditions which will be checked by pcrisis.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisdefaultprofile
+@defopt vm-pcrisis-default-profile
+@vindex vm-pcrisis-default-profile
+The default profile to select if no profile was found.
+
+Default value: @code{"default"}
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisdefaultrules
+@defopt vm-pcrisis-default-rules
+@vindex vm-pcrisis-default-rules
+A default list of condition-action rules used for replying, forwarding,
+resending, composing and automorphing, unless overridden by more
+specific variables such as @code{vm-pcrisis-reply-rules}.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisexpectdefaultsignature
+@defopt vm-pcrisis-expect-default-signature
+@vindex vm-pcrisis-expect-default-signature
+Whether a signature is inserted by something other than Personality Crisis.
+Emacs inserts one when @code{mail-signature} is set, taking it from that variable or
+from the file @code{mail-signature-file} names, and VM does that as it builds a
+composition.  Personality Crisis can only act on a signature whose extent it
+knows, so @code{vm-pcrisis-signature} neither replaces nor deletes that one
+unless this is
+set; with it set, the signature already in a composition is found and comes
+under the same control as one Personality Crisis inserted itself.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisforwardrules
+@defopt vm-pcrisis-forward-rules
+@vindex vm-pcrisis-forward-rules
+A list of condition-action rules used when forwarding.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisismailrules
+@defopt vm-pcrisis-mail-rules
+@vindex vm-pcrisis-mail-rules
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
+when composing a message starting from a folder.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisismodehook
+@defopt vm-pcrisis-mode-hook
+@vindex vm-pcrisis-mode-hook
+Hook run after entering or leaving @code{vm-pcrisis-mode}.
+No problems result if this variable is not bound.
+@code{add-hook} automatically binds it.  (This is true for all hook variables.)
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisnewmailrules
+@defopt vm-pcrisis-newmail-rules
+@vindex vm-pcrisis-newmail-rules
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
+when composing.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisispromptforprofileheaders
+@defopt vm-pcrisis-prompt-for-profile-headers
+@vindex vm-pcrisis-prompt-for-profile-headers
+List of headers to check for email addresses.
+
+@code{vm-pcrisis-prompt-for-profile} will scan the given headers in the given order.
+
+Default value:
+@example
+((composition ("To" "CC" "BCC"))
+ (default ("From" "Sender" "Reply-To" "From" "Resent-From")))
+@end example
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisreplyrules
+@defopt vm-pcrisis-reply-rules
+@vindex vm-pcrisis-reply-rules
+A list of condition-action rules used during reply.
+@end defopt
+
+@end macro
+
+@macro vmdocvmpcrisisresendrules
+@defopt vm-pcrisis-resend-rules
+@vindex vm-pcrisis-resend-rules
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
+when resending.
 @end defopt
 
 @end macro
@@ -8374,32 +8525,7 @@ You may also define an action without associated commands, e.g. "none".
 @vindex vmpc-actions-alist
 A default list of condition-action rules used for replying, forwarding,
 resending, composing and automorphing, unless overridden by more
-specific variables such as @code{vmpc-reply-rules}.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcautoprofilesexpungedays
-@defopt vmpc-auto-profiles-expunge-days
-@vindex vmpc-auto-profiles-expunge-days
-Number of days after which to expunge old address-profile associations.
-Performance may suffer noticeably if this file becomes enormous, but in other
-respects it is preferable for this value to be fairly high.  The value that is
-right for you will depend on how often you send email to new addresses using
-@code{vmpc-prompt-for-profile}.
-
-Default value: @code{100}
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcautoprofilesfile
-@defopt vmpc-auto-profiles-file
-@vindex vmpc-auto-profiles-file
-File in which to save information used by @code{vmpc-prompt-for-profile}.
-When set to the symbol @code{BBDB}, profiles will be stored there.
-
-Default value: @code{"~/.vmpc-auto-profiles"}
+specific variables such as @code{vm-pcrisis-reply-rules}.
 @end defopt
 
 @end macro
@@ -8407,57 +8533,8 @@ Default value: @code{"~/.vmpc-auto-profiles"}
 @macro vmdocvmpcautomorphalist
 @defopt vmpc-automorph-alist
 @vindex vmpc-automorph-alist
-Alist associating conditions with actions from @code{vmpc-actions} when automorphing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcautomorphrules
-@defopt vmpc-automorph-rules
-@vindex vmpc-automorph-rules
-Alist associating conditions with actions from @code{vmpc-actions} when automorphing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcconditions
-@defopt vmpc-conditions
-@vindex vmpc-conditions
-List of conditions which will be checked by pcrisis.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcdefaultprofile
-@defopt vmpc-default-profile
-@vindex vmpc-default-profile
-The default profile to select if no profile was found.
-
-Default value: @code{"default"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcdefaultrules
-@defopt vmpc-default-rules
-@vindex vmpc-default-rules
-A default list of condition-action rules used for replying, forwarding,
-resending, composing and automorphing, unless overridden by more
-specific variables such as @code{vmpc-reply-rules}.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcexpectdefaultsignature
-@defopt vmpc-expect-default-signature
-@vindex vmpc-expect-default-signature
-Whether a signature is inserted by something other than Personality Crisis.
-Emacs inserts one when @code{mail-signature} is set, taking it from that variable or
-from the file @code{mail-signature-file} names, and VM does that as it builds a
-composition.  Personality Crisis can only act on a signature whose extent it
-knows, so @code{vmpc-signature} neither replaces nor deletes that one unless this is
-set; with it set, the signature already in a composition is found and comes
-under the same control as one Personality Crisis inserted itself.
+Alist associating conditions with actions from @code{vm-pcrisis-actions}
+when automorphing.
 @end defopt
 
 @end macro
@@ -8470,38 +8547,11 @@ A list of condition-action rules used when forwarding.
 
 @end macro
 
-@macro vmdocvmpcforwardrules
-@defopt vmpc-forward-rules
-@vindex vmpc-forward-rules
-A list of condition-action rules used when forwarding.
-@end defopt
-
-@end macro
-
 @macro vmdocvmpcmailalist
 @defopt vmpc-mail-alist
 @vindex vmpc-mail-alist
-An alist associating conditions with actions from @code{vmpc-actions}
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
 when composing a message starting from a folder.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcmailrules
-@defopt vmpc-mail-rules
-@vindex vmpc-mail-rules
-An alist associating conditions with actions from @code{vmpc-actions}
-when composing a message starting from a folder.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcmodehook
-@defopt vmpc-mode-hook
-@vindex vmpc-mode-hook
-Hook run after entering or leaving @code{vmpc-mode}.
-No problems result if this variable is not bound.
-@code{add-hook} automatically binds it.  (This is true for all hook variables.)
 @end defopt
 
 @end macro
@@ -8509,33 +8559,8 @@ No problems result if this variable is not bound.
 @macro vmdocvmpcnewmailalist
 @defopt vmpc-newmail-alist
 @vindex vmpc-newmail-alist
-An alist associating conditions with actions from @code{vmpc-actions}
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
 when composing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcnewmailrules
-@defopt vmpc-newmail-rules
-@vindex vmpc-newmail-rules
-An alist associating conditions with actions from @code{vmpc-actions}
-when composing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcpromptforprofileheaders
-@defopt vmpc-prompt-for-profile-headers
-@vindex vmpc-prompt-for-profile-headers
-List of headers to check for email addresses.
-
-@code{vmpc-prompt-for-profile} will scan the given headers in the given order.
-
-Default value:
-@example
-((composition ("To" "CC" "BCC"))
- (default ("From" "Sender" "Reply-To" "From" "Resent-From")))
-@end example
 @end defopt
 
 @end macro
@@ -8548,26 +8573,11 @@ A list of condition-action rules used during reply.
 
 @end macro
 
-@macro vmdocvmpcreplyrules
-@defopt vmpc-reply-rules
-@vindex vmpc-reply-rules
-A list of condition-action rules used during reply.
-@end defopt
-
-@end macro
-
 @macro vmdocvmpcresendalist
 @defopt vmpc-resend-alist
 @vindex vmpc-resend-alist
-An alist associating conditions with actions from @code{vmpc-actions} when resending.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcresendrules
-@defopt vmpc-resend-rules
-@vindex vmpc-resend-rules
-An alist associating conditions with actions from @code{vmpc-actions} when resending.
+An alist associating conditions with actions from @code{vm-pcrisis-actions}
+when resending.
 @end defopt
 
 @end macro
@@ -13830,11 +13840,16 @@ Default value: @code{"spam"}
 Non-nil value should be an alist that VM will use to choose a default
 folder name when messages are saved.  The alist should be of the form
 @example
-        ((VIRTUAL-FOLDER-NAME . FOLDER-NAME)
+        ((VIRTUAL-FOLDER-NAME FOLDER-NAME)
           ...)
 @end example
 where VIRTUAL-FOLDER-NAME is a string, and FOLDER-NAME
 is a string or an s-expression that evaluates to a string.
+
+Each entry is a two-element list, as the example below shows.  This said
+"(VIRTUAL-FOLDER-NAME . FOLDER-NAME)" until 2026-08-12; the entry is read
+with @code{cadr}, so a dotted pair whose tail is the folder name signals
+"wrong-type-argument listp" instead of saving anything.
 
 This allows you to extend @code{vm-virtual-auto-select-folder} to generate
 a folder name.  Your function may use @code{folder} to get the currently chosen
