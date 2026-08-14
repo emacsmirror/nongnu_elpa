@@ -1270,13 +1270,13 @@ This feeds the dashboard's per-session tool list via
 
 ;;; Header line
 
-;; Session identity for the header; written by the chat reducer via
-;; `hermes-chat--capture-session-identity', rendered here.
-
-(defface hermes-chat-header-profile
-  '((t :inherit (font-lock-variable-name-face bold)))
-  "Face for the profile leading a Hermes chat header."
+(defface hermes-chat-header-directory
+  '((t :inherit font-lock-keyword-face :weight bold))
+  "Face for the working directory leading a Hermes chat header."
   :group 'hermes)
+
+(define-obsolete-face-alias 'hermes-chat-header-profile
+  'hermes-chat-header-directory "0.4.0")
 
 (defface hermes-chat-header-model
   '((t :inherit font-lock-type-face))
@@ -1306,11 +1306,27 @@ This feeds the dashboard's per-session tool list via
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
 
-(defun hermes-chat--header-profile-name ()
-  "Return the selected profile name shown in the chat header."
-  (or (hermes-transport--non-empty-string hermes-chat--profile)
-      (hermes-transport--non-empty-string hermes-chat--agent-name)
-      "default"))
+(defvar-local hermes-chat--working-directory nil
+  "Gateway-native working directory for this chat session.
+This path belongs to the Hermes instance and need not exist on Emacs's host.")
+
+(defun hermes-chat--current-working-directory ()
+  "Return this chat's gateway working directory or local launch directory."
+  (or hermes-chat--working-directory default-directory))
+
+(defun hermes-chat--directory-basename (&optional directory)
+  "Return the final component of gateway-native DIRECTORY."
+  (let* ((directory (or directory (hermes-chat--current-working-directory)))
+         (trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory)))
+    (cond
+     ((string-empty-p trimmed) directory)
+     ((string-match "[^/\\\\]+\\'" trimmed) (match-string 0 trimmed))
+     (t trimmed))))
+
+(defun hermes-chat--header-directory-segment ()
+  "Return the propertized working-directory basename for the header."
+  (propertize (hermes-chat--directory-basename)
+              'face 'hermes-chat-header-directory))
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.
@@ -1382,13 +1398,7 @@ self-explanatory."
   "Return ordered semantic segments for the Hermes chat header."
   (delq nil
         (append
-         (list (and (> (length hermes-instances) 1)
-                    (consp hermes-instance)
-                    (stringp (car hermes-instance))
-                    (propertize (car hermes-instance)
-                                'face 'hermes-chat-header-profile))
-               (propertize (hermes-chat--header-profile-name)
-                           'face 'hermes-chat-header-profile)
+         (list (hermes-chat--header-directory-segment)
                (hermes-chat--header-status-segment)
                (hermes-chat--header-goal-segment)
                (hermes-chat--header-model-segment))
@@ -1396,7 +1406,7 @@ self-explanatory."
          (list (hermes-chat--header-context-segment)))))
 
 (defun hermes-chat--header-line ()
-  "Return the profile-first semantic header line for this chat."
+  "Return the directory-first semantic header line for this chat."
   (let* ((separator (propertize "  |  " 'face 'shadow))
          (text (concat " " (string-join (hermes-chat--header-parts)
                                          separator)

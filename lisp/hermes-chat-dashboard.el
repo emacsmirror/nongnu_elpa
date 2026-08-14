@@ -52,13 +52,14 @@
 (defvar hermes-chat--profile)
 (defvar hermes-chat--session-id)
 (defvar hermes-chat--status-state)
+(defvar hermes-chat--working-directory)
 (defvar hermes-chat--transport-generation)
 (defvar hermes-chat--lifecycle-generation)
 
 (defvar-local hermes-chat--title nil
   "Human title for this chat session.
-Set by `hermes-chat-rename'.  Shown in the buffer name and reported to the
-dashboard; nil falls back to the buffer name.")
+Set by `hermes-chat-rename' and reported to the dashboard.  Buffer identity is
+derived separately from the owning instance, profile, and working directory.")
 
 (defvar-local hermes-chat--title-manual-p nil
   "Non-nil when the user set this chat's title via `hermes-chat-rename'.
@@ -299,7 +300,10 @@ so a new session can be started afterwards."
   (hermes-chat--dashboard-activate-server-queued-turn assistant-id))
 
 (defun hermes-chat--dashboard-note-session-info (event)
-  "Record an explicit idle transition carried by session-info EVENT."
+  "Record working-directory and idle state from session-info EVENT."
+  (when-let* (((hermes-chat--session-info-event-p event))
+              (cwd (plist-get event :cwd)))
+    (hermes-chat--record-working-directory cwd))
   (when (and (hermes-chat--session-info-event-p event)
              (plist-member event :running)
              (not (plist-get event :running)))
@@ -546,6 +550,22 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (hermes-transport--scalar-string
    (hermes-transport--get-any result keys)))
 
+(defun hermes-chat--dashboard-result-cwd (result)
+  "Return the gateway working directory carried by RPC RESULT, or nil."
+  (hermes-transport--non-empty-string
+   (hermes-transport--scalar-string
+    (or (hermes-transport--get result 'cwd)
+        (and-let* ((info (hermes-transport--get result 'info)))
+          (hermes-transport--get info 'cwd))))))
+
+(defun hermes-chat--record-working-directory (directory)
+  "Record gateway-native DIRECTORY without changing Emacs's local directory."
+  (when (and directory
+             (not (equal directory hermes-chat--working-directory)))
+    (setq hermes-chat--working-directory directory)
+    (hermes-chat--refresh-buffer-name)
+    (force-mode-line-update)))
+
 (defun hermes-chat--dashboard-active-id-from-result (_client result)
   "Return the live dashboard session id from RPC RESULT.
 The shared CLIENT is transport-only; session identity is read from the
@@ -589,6 +609,8 @@ shared client."
       (when (hermes-transport--field-present-p result 'running)
         (setq hermes-chat--dashboard-running-p
               (eq (hermes-transport--get result 'running) t)))
+      (when-let* ((cwd (hermes-chat--dashboard-result-cwd result)))
+        (hermes-chat--record-working-directory cwd))
       (when (and (hermes-dashboard-transport-client-p client)
                  hermes-chat--dashboard-token)
         (hermes-dashboard-transport-subscribe-session
@@ -1031,6 +1053,7 @@ local FIFO submission."
      :cols (hermes-chat--dashboard-cols)
      :title (hermes-chat--dashboard-create-title)
      :profile hermes-chat--profile
+     :cwd (hermes-chat--current-working-directory)
      :resolve (hermes-chat--dashboard-session-resolver
                buffer client prompt nil resolve reject queued-p)
      :reject reject))))
@@ -1086,6 +1109,160 @@ a local FIFO submission."
    (t
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
+(defun hermes-chat--apply-directory (directory)
+  "Use gateway-native DIRECTORY as this chat's working directory."
+  (hermes-chat--record-working-directory directory)
+  (hermes-chat--insert-local-status
+   (format "Working directory: %s" directory)
+   'ready))
+
+(defun hermes-chat--set-live-directory
+    (client directory &optional generation session-id)
+  "Set CLIENT's live session working directory to DIRECTORY.
+GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
+  (let ((buffer (current-buffer))
+        (generation (or generation hermes-chat--lifecycle-generation))
+        (session-id (or session-id hermes-chat--dashboard-active-session-id)))
+    (when (hermes-chat--dashboard-context-current-p client generation session-id)
+      (hermes-dashboard-transport-session-cwd-set
+       client directory
+       :session-id session-id
+       :resolve
+       (lambda (result)
+         (hermes-chat--in-buffer buffer
+           (when (hermes-chat--dashboard-context-current-p
+                  client generation session-id)
+             (hermes-chat--apply-directory
+              (or (hermes-chat--dashboard-result-cwd result) directory)))))
+       :reject (hermes-chat--dashboard-action-rejecter
+                buffer client generation nil session-id)))))
+
+(defun hermes-chat--directory-parent (directory)
+  "Return the lexical parent of gateway-native DIRECTORY."
+  (cond
+   ((string-match-p "\\`[/\\\\]+\\'" directory) directory)
+   ((string-match-p "\\`[[:alpha:]]:[/\\\\]*\\'" directory) directory)
+   (t
+    (let* ((trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory))
+           (separator (string-match "[/\\\\][^/\\\\]*\\'" trimmed)))
+      (cond
+       ((null separator) directory)
+       ((zerop separator) (substring trimmed 0 1))
+       ((and (= separator 2)
+             (string-match-p "\\`[[:alpha:]]:" trimmed))
+        (substring trimmed 0 3))
+       (t (substring trimmed 0 separator)))))))
+
+(defun hermes-chat--directory-entry-candidate (entry)
+  "Return a browse completion candidate for directory ENTRY, or nil."
+  (when (eq (hermes-transport--get entry 'isDirectory) t)
+    (when-let* ((name (hermes-transport--field entry 'name))
+                (path (hermes-transport--field entry 'path)))
+      (cons (format "%s/" name) (list :action 'browse :path path)))))
+
+(defun hermes-chat--directory-candidates (directory result)
+  "Return completion candidates for gateway DIRECTORY from API RESULT."
+  (let* ((parent (hermes-chat--directory-parent directory))
+         (entries (hermes-transport--get result 'entries))
+         (children (delq nil
+                         (mapcar #'hermes-chat--directory-entry-candidate
+                                 (append entries nil)))))
+    (append
+     (list (cons (format "[Use current] %s" directory)
+                 (list :action 'select :path directory)))
+     (unless (equal parent directory)
+       (list (cons (format "../  %s" parent)
+                   (list :action 'browse :path parent))))
+     children
+     (list (cons "[Enter path manually]" (list :action 'manual))))))
+
+(defun hermes-chat--read-instance-directory
+    (client generation session-id &optional reason)
+  "Read a gateway path manually and set it through CLIENT.
+GENERATION and SESSION-ID identify the owning interaction.
+REASON, when non-nil, explains why remote completion was unavailable."
+  (when reason
+    (message "%s" reason))
+  (let ((directory
+         (read-string "Hermes instance directory: "
+                      (hermes-chat--current-working-directory))))
+    (when (and (not (string-empty-p directory))
+               (hermes-chat--dashboard-context-current-p
+                client generation session-id))
+      (hermes-chat--set-live-directory
+       client directory generation session-id))))
+
+(defun hermes-chat--choose-directory-candidate
+    (client generation session-id directory result)
+  "Choose CLIENT's next action at DIRECTORY using API RESULT.
+GENERATION and SESSION-ID identify the owning interaction."
+  (let* ((candidates (hermes-chat--directory-candidates directory result))
+         (label (completing-read "Hermes instance directory: "
+                                 candidates nil t nil nil (caar candidates)))
+         (choice (cdr (assoc label candidates))))
+    (when (hermes-chat--dashboard-context-current-p
+           client generation session-id)
+      (pcase (plist-get choice :action)
+        ('select (hermes-chat--set-live-directory
+                  client (plist-get choice :path) generation session-id))
+        ('browse (hermes-chat--browse-instance-directory
+                  client (plist-get choice :path) generation session-id))
+        ('manual (hermes-chat--read-instance-directory
+                  client generation session-id))))))
+
+(defun hermes-chat--browse-instance-directory
+    (client directory &optional generation session-id)
+  "Asynchronously browse gateway DIRECTORY through CLIENT.
+GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
+  (let ((buffer (current-buffer))
+        (generation (or generation hermes-chat--lifecycle-generation))
+        (session-id (or session-id hermes-chat--dashboard-active-session-id)))
+    (when (hermes-chat--dashboard-context-current-p client generation session-id)
+      (hermes--promise-then
+       (hermes-dashboard-transport-api-request-async
+        "GET" "/api/fs/list" :query (list (cons 'path directory)) :client client)
+       (lambda (result)
+         (hermes-chat--in-buffer buffer
+           (when (hermes-chat--dashboard-context-current-p
+                  client generation session-id)
+             (condition-case nil
+                 (if-let* ((error-message (hermes-transport--field result 'error)))
+                     (hermes-chat--read-instance-directory
+                      client generation session-id error-message)
+                   (hermes-chat--choose-directory-candidate
+                    client generation session-id directory result))
+               (quit nil)))))
+       (lambda (error-message)
+         (hermes-chat--in-buffer buffer
+           (when (hermes-chat--dashboard-context-current-p
+                  client generation session-id)
+             (condition-case nil
+                 (hermes-chat--read-instance-directory
+                  client generation session-id
+                  (format "Remote directory listing failed: %s" error-message))
+               (quit nil)))))))))
+
+;;;###autoload
+(defun hermes-chat-set-directory (&optional directory)
+  "Select or set this Hermes chat's gateway working DIRECTORY.
+Interactively, browse directories reported by the owning Hermes instance.
+With explicit DIRECTORY, pass its gateway-native spelling to the backend."
+  (interactive)
+  (unless (derived-mode-p 'hermes-chat-mode)
+    (user-error "Not in a Hermes chat buffer"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before changing directory"))
+  (when (and directory
+             (or (not (stringp directory)) (string-empty-p directory)))
+    (user-error "Working directory must be a non-empty path"))
+  (hermes-chat--with-dashboard-session
+   nil (current-buffer)
+   (lambda (client)
+     (if directory
+         (hermes-chat--set-live-directory client directory)
+       (hermes-chat--browse-instance-directory
+        client (hermes-chat--current-working-directory))))))
+
 (defun hermes-chat--dashboard-action-resolver
     (buffer client action generation &optional create-p)
   "Return a resolver to record CLIENT's session in BUFFER, then call ACTION.
@@ -1112,11 +1289,13 @@ so pending create-time runtime overrides are applied before ACTION."
         hermes-chat-dashboard-session-title))))
 
 (defun hermes-chat--dashboard-action-rejecter
-    (buffer client generation reject)
-  "Return BUFFER callback for REJECT scoped to CLIENT and GENERATION."
+    (buffer client generation reject &optional session-id)
+  "Return BUFFER callback for REJECT scoped to CLIENT and GENERATION.
+When SESSION-ID is non-nil, reject only while it still owns the buffer."
   (lambda (message)
     (hermes-chat--in-buffer buffer
-      (when (hermes-chat--dashboard-context-current-p client generation)
+      (when (hermes-chat--dashboard-context-current-p
+             client generation session-id)
         (if reject
             (funcall reject message)
           (hermes-chat--command-error message))))))
@@ -1143,6 +1322,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
        client
        :cols (hermes-chat--dashboard-cols)
        :title (hermes-chat--dashboard-create-title)
+       :cwd (hermes-chat--current-working-directory)
        :resolve (hermes-chat--dashboard-action-resolver
                  buffer client action generation t)
        :reject (hermes-chat--dashboard-action-rejecter
@@ -1199,25 +1379,30 @@ shared socket re-resumes every attached chat without waiting for the next send."
 ;; Dashboard-session behavior: server titles and /btw background
 ;; tasks live with the session lifecycle that drives them.
 
-(defun hermes-chat--buffer-name-for-title (profile title &optional instance)
-  "Return a chat buffer name from PROFILE, TITLE, and INSTANCE.
-PROFILE nil means the default profile.  With multiple configured instances,
-INSTANCE replaces the Hermes brand in the name.  A nil or empty TITLE yields a
-name with just the owner and profile, before a session title arrives."
+(defun hermes-chat--buffer-name (profile &optional instance directory)
+  "Return a project-specific chat name for PROFILE, INSTANCE, and DIRECTORY.
+PROFILE nil means the default profile.  An explicitly configured, valid named
+INSTANCE identifies the owner; otherwise use the Hermes brand.  DIRECTORY
+defaults to this chat's gateway working directory."
   (let* ((profile (or profile "default"))
          (instance (or instance (hermes-instance-context)))
-         (owner (if (and (hermes-instance-multiple-p)
+         (owner (if (and hermes-instances
                          (hermes-instance--valid-p instance))
                     (hermes-instance-name instance)
-                  "Hermes")))
-    (if (and title (not (string-empty-p title)))
-        (format "*%s@%s: %s*"
-                owner profile (hermes-session-title-chat-display title))
-      (format "*%s@%s*" owner profile))))
+                  "Hermes"))
+         (project (hermes-chat--directory-basename directory)))
+    (format "*%s@%s: [%s]*" owner profile project)))
+
+(defun hermes-chat--refresh-buffer-name ()
+  "Rename the current chat buffer from its live identity and working directory."
+  (let ((name (hermes-chat--buffer-name
+               hermes-chat--profile hermes-instance)))
+    (unless (equal name (buffer-name))
+      (rename-buffer name t))))
 
 (defun hermes-chat--push-session-title (title)
   "Push TITLE to the server with `session.title' when a session is attached.
-With no live session the rename stays buffer-local; report that instead."
+With no live session, keep the title as local session metadata."
   (if (and (hermes-chat--dashboard-session-attached-p)
            hermes-chat--dashboard-active-session-id)
       (let ((buffer (current-buffer)))
@@ -1232,19 +1417,15 @@ With no live session the rename stays buffer-local; report that instead."
          :reject (lambda (message)
                    (hermes-chat--in-buffer buffer
                      (hermes-chat--command-error message)))))
-    (message "Renamed buffer; no live session to update on the server")))
+    (message "Session title saved locally; no live session to update")))
 
 (defun hermes-chat--apply-session-title (title)
-  "Record TITLE and rename this buffer to match, without updating the server."
+  "Record TITLE without updating the server or project-specific buffer name."
   (setq hermes-chat--title title)
-  (let ((newname (hermes-chat--buffer-name-for-title
-                  hermes-chat--profile title hermes-instance)))
-    (unless (equal (buffer-name) newname)
-      (rename-buffer newname t)))
   (force-mode-line-update))
 
 (defun hermes-chat--should-apply-title-p (title current manual-p)
-  "Return non-nil when TITLE should replace CURRENT in the buffer name.
+  "Return non-nil when TITLE should replace CURRENT session metadata.
 TITLE applies only when it is a non-empty string, differs from CURRENT, and
 MANUAL-P is nil (the user has not pinned a title)."
   (and (not manual-p)
@@ -1264,7 +1445,7 @@ MANUAL-P is nil (the user has not pinned a title)."
         (hermes-chat--apply-session-title title)))))
 
 (defun hermes-chat--fetch-session-title (buffer)
-  "Fetch BUFFER's server session title and apply it to the buffer name.
+  "Fetch BUFFER's server session title and apply it as session metadata.
 Guards are re-checked here since this runs after the turn settles."
   (hermes-chat--in-buffer buffer
     (when (and (hermes-chat--dashboard-session-attached-p)
@@ -1288,9 +1469,9 @@ event handler.  A no-op without a live dashboard session or with a manual title.
 
 (defun hermes-chat-rename (title)
   "Rename this chat session to TITLE.
-Renames the buffer and, when a live dashboard session is attached, updates the
-server title via `session.title'.  A manual rename is kept against the automatic
-session-title refresh."
+When a live dashboard session is attached, update its server title via
+`session.title'.  A manual title is kept against automatic title refreshes and
+does not alter the project-specific buffer name."
   (interactive
    (list (read-string
           "Hermes chat title: "

@@ -99,6 +99,13 @@ surface as `emacs'; RESOLVE and REJECT receive the result or error."
   :params ((source . "emacs")))
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-cwd-set "session.cwd.set"
+  "Set CLIENT's live SESSION-ID working directory to CWD.
+The gateway rejects changes while the session is busy.  RESOLVE and REJECT
+receive the updated session info or error."
+  :args (cwd) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-list "session.list"
   "Send a `session.list' request for CLIENT.
 LIMIT caps the number of sessions returned.  RESOLVE and REJECT receive the

@@ -37,6 +37,19 @@
               ("session.resume" (session_id . "stored")
                (source . "emacs")))))))
 
+(ert-deftest hermes-dashboard-rpc-session-cwd-set-sends-session-and-directory ()
+  "Changing a session directory sends its live session id and cwd."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (setq request (cons method params)))))
+      (hermes-dashboard-transport-session-cwd-set
+       'client "/tmp/project" :session-id "sid"))
+    (should
+     (equal request
+            '("session.cwd.set" (session_id . "sid")
+              (cwd . "/tmp/project"))))))
+
 (ert-deftest hermes-dashboard-rpc-config-set-sends-reasoning-scope ()
   "Config writes preserve the Dashboard session and optional global scope."
   (let (request)
@@ -1926,6 +1939,7 @@ other's session."
                             (payload . ((model . "gpt-5.5")
                                         (provider . "openai-codex")
                                         (profile_name . "planner")
+                                        (cwd . "/srv/remote-project")
                                         (running . t)
                                         (reasoning_effort . "high")
                                         (fast . t)
@@ -1945,6 +1959,7 @@ other's session."
       (should (eq (plist-get event :running) t))
       (should (equal (plist-get event :model) "gpt-5.5"))
       (should (equal (plist-get event :agent-name) "planner"))
+      (should (equal (plist-get event :cwd) "/srv/remote-project"))
       (should (equal (plist-get event :reasoning-effort) "high"))
       (should (eq (plist-get event :fast) t))
       (should (plist-member event :yolo))

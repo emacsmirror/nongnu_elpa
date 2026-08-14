@@ -429,16 +429,17 @@
          (should (string-match-p "Ready" header))
          (should-not (string-match-p "terminal: make test" header)))))))
 
-(ert-deftest hermes-chat-rename-updates-buffer-and-title ()
-  "Renaming stores a canonical title while showing only its project label."
+(ert-deftest hermes-chat-rename-updates-title-not-project-identity ()
+  "Renaming stores a canonical title without changing project identity."
   (cl-letf (((symbol-function 'current-time)
              (lambda () (encode-time 45 30 18 7 8 2026 t))))
     (hermes-test-with-chat-buffer
-     (hermes-chat-rename "  My Project  ")
-     (should (equal hermes-chat--title
-                    "My Project--20260807T183045.000000Z--emacs"))
-     (should hermes-chat--title-manual-p)
-     (should (equal (buffer-name) "*Hermes@default: My Project*")))))
+     (let ((project-name (buffer-name)))
+       (hermes-chat-rename "  My Project  ")
+       (should (equal hermes-chat--title
+                      "My Project--20260807T183045.000000Z--emacs"))
+       (should hermes-chat--title-manual-p)
+       (should (equal (buffer-name) project-name))))))
 
 (ert-deftest hermes-chat-rename-rejects-empty-title ()
   (hermes-test-with-chat-buffer
@@ -463,44 +464,42 @@
 (ert-deftest hermes-chat-rename-preserves-canonical-session-timestamp ()
   "Renaming an identified session changes its label, not its timestamp."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--title "Old--20260102T030405.123456Z--emacs")
-   (hermes-chat-rename "New")
-   (should (equal hermes-chat--title
-                  "New--20260102T030405.123456Z--emacs"))
-   (should (equal (buffer-name) "*Hermes@default: New*"))))
+   (let ((project-name (buffer-name)))
+     (setq hermes-chat--title "Old--20260102T030405.123456Z--emacs")
+     (hermes-chat-rename "New")
+     (should (equal hermes-chat--title
+                    "New--20260102T030405.123456Z--emacs"))
+     (should (equal (buffer-name) project-name)))))
 
-(ert-deftest hermes-chat-buffer-name-for-title-formats ()
-  "Buffer names carry the profile, plus the title once present."
-  (should (equal (hermes-chat--buffer-name-for-title "coder" nil)
-                 "*Hermes@coder*"))
-  (should (equal (hermes-chat--buffer-name-for-title "coder" "Fix bug")
-                 "*Hermes@coder: Fix bug*"))
-  (should (equal (hermes-chat--buffer-name-for-title nil "Fix bug")
-                 "*Hermes@default: Fix bug*"))
-  (should (equal
-           (hermes-chat--buffer-name-for-title
-            nil "emacs-hermes--20260807T183045.123456Z--emacs")
-           "*Hermes@default: emacs-hermes*"))
-  (should (equal (hermes-chat--buffer-name-for-title nil "")
-                 "*Hermes@default*")))
+(ert-deftest hermes-chat-buffer-name-formats-project-identity ()
+  "Buffer names carry profile and gateway directory, never session title."
+  (should (equal (hermes-chat--buffer-name
+                  "coder" nil "/tmp/emacs-hermes/")
+                 "*Hermes@coder: [emacs-hermes]*"))
+  (should (equal (hermes-chat--buffer-name
+                  nil nil "C:\\Users\\Thanos\\project\\")
+                 "*Hermes@default: [project]*")))
 
 (ert-deftest hermes-chat-buffer-name-identifies-instance-when-multiple ()
-  "Multi-instance chat names use the instance before the profile."
+  "Named-instance chat buffers use the instance before the profile."
   (let* ((local '("local" . "http://127.0.0.1:9119"))
          (remote '("remote" . "https://hermes.example.test"))
          (hermes-instances (list local remote)))
-    (should (equal (hermes-chat--buffer-name-for-title nil nil local)
-                   "*local@default*"))
+    (should (equal (hermes-chat--buffer-name
+                    nil local "/tmp/emacs-hermes/")
+                   "*local@default: [emacs-hermes]*"))
     (should (equal
-             (hermes-chat--buffer-name-for-title "coder" "Fix bug" remote)
-             "*remote@coder: Fix bug*"))))
+             (hermes-chat--buffer-name
+              "coder" remote "/tmp/emacs-hermes/")
+             "*remote@coder: [emacs-hermes]*"))))
 
-(ert-deftest hermes-chat-buffer-name-keeps-brand-for-single-instance ()
-  "Single-instance chat names retain the established Hermes prefix."
+(ert-deftest hermes-chat-buffer-name-uses-named-single-instance ()
+  "A named single instance remains part of the project identity."
   (let* ((local '("local" . "http://127.0.0.1:9119"))
          (hermes-instances (list local)))
-    (should (equal (hermes-chat--buffer-name-for-title "coder" nil local)
-                   "*Hermes@coder*"))))
+    (should (equal (hermes-chat--buffer-name
+                    "coder" local "/tmp/emacs-hermes/")
+                   "*local@coder: [emacs-hermes]*"))))
 
 (ert-deftest hermes-chat-create-uses-project-canonical-title ()
   "Fresh dashboard sessions use a canonical title from the current project."
@@ -539,6 +538,21 @@
             (should (string-prefix-p "*Hermes@coder" (buffer-name))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest hermes-chat-uses-current-default-directory ()
+  "A new chat keeps the directory of the buffer that launched it."
+  (let ((origin (generate-new-buffer " *hermes-chat-origin*")) chat)
+    (unwind-protect
+        (save-window-excursion
+          (with-current-buffer origin
+            (setq default-directory
+                  (file-name-as-directory temporary-file-directory))
+            (setq chat (hermes-chat nil)))
+          (with-current-buffer chat
+            (should (equal default-directory
+                           (file-name-as-directory temporary-file-directory)))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (kill-buffer origin))))
+
 (ert-deftest hermes-chat-selects-instance-before-profile ()
   "Interactive chat selection pins the instance used to read its profile."
   (let ((instance '("remote" . "https://hermes.example.test"))
@@ -575,7 +589,7 @@
   (should-not (hermes-chat--should-apply-title-p nil "Old" nil)))
 
 (ert-deftest hermes-chat-done-refreshes-session-title ()
-  "A completed turn fetches the server title and renames the buffer, no push."
+  "A completed turn fetches title metadata without renaming or pushing."
   (let ((client (hermes-test--dashboard-client))
         callback (pushes 0))
     (cl-letf (((symbol-function 'hermes-transport-send)
@@ -597,13 +611,15 @@
                (lambda (&rest _a) (setq pushes (1+ pushes)))))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
-         (insert "hi")
-         (hermes-chat-send)
-         (funcall callback '(:type done))
-         ;; The title fetch is deferred off the event handler; let it run.
-         (sit-for 0.05)
-         (should (equal (buffer-name) "*Hermes@default: Auto Title*"))
-         (should (= pushes 0)))))))
+         (let ((project-name (buffer-name)))
+           (insert "hi")
+           (hermes-chat-send)
+           (funcall callback '(:type done))
+           ;; The title fetch is deferred off the event handler; let it run.
+           (sit-for 0.05)
+           (should (equal hermes-chat--title "Auto Title"))
+           (should (equal (buffer-name) project-name))
+           (should (= pushes 0))))))))
 
 (ert-deftest hermes-chat-manual-title-survives-refresh ()
   "A manually set title is not overwritten by the automatic refresh."
@@ -643,18 +659,21 @@
          (call-interactively #'hermes-switch-to-chat))
        (should (eq (current-buffer) target))))))
 
-(ert-deftest hermes-chat-session-info-updates-header-without-entry ()
-  "`session.info' sets the header model but adds no transcript entry."
+(ert-deftest hermes-chat-session-info-updates-header-and-working-directory ()
+  "`session.info' updates header state but adds no transcript entry."
   (hermes-test-with-chat-buffer
+   (setq default-directory "/tmp/local-editor/")
    (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
      (hermes-chat--handle-transport-event
-      "a1" '(:type status :event "session.info" :status "ready"
-             :model "gpt-5.5" :agent-name "openai-codex"
-             :goal (:status "active" :running t
-                            :turns-used 1 :max-turns 20)))
-     (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
-     (should (string-match-p "Goal 1/20" (hermes-test--header-line-string)))
-     (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
+       "a1" '(:type status :event "session.info" :status "ready"
+              :model "gpt-5.5" :agent-name "openai-codex" :cwd "/srv/project"
+              :goal (:status "active" :running t
+                             :turns-used 1 :max-turns 20)))
+      (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
+      (should (string-match-p "Goal 1/20" (hermes-test--header-line-string)))
+      (should (equal hermes-chat--working-directory "/srv/project"))
+      (should (equal default-directory "/tmp/local-editor/"))
+      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
 (ert-deftest hermes-chat-goal-status-preserves-turn-header ()
   "Goal notices preserve turn status and refresh vanilla goal state."
@@ -895,6 +914,8 @@
               #'hermes-chat-handoff))
   (should (eq (keymap-lookup hermes-chat-actions-map "x")
               #'hermes-dashboard-reconnect))
+  (should (eq (keymap-lookup hermes-chat-actions-map "w")
+              #'hermes-chat-set-directory))
   (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
          (groups (apply #'append rows))
          (group-names (mapcar (lambda (group) (plist-get group :name)) groups))
@@ -903,9 +924,24 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Turn" "Prompt" "Session" "Connection" "Browse" "Commands")))
+                   '("Turn" "Prompt" "Session" "Connection" "Workspace"
+                     "Browse" "Commands")))
+    (should (equal (mapcar (lambda (row)
+                             (mapcar (lambda (group)
+                                       (plist-get group :name))
+                                     row))
+                           rows)
+                   '(("Turn" "Prompt" "Session" "Connection")
+                     ("Workspace" "Browse" "Commands"))))
     (dolist (group groups)
       (should (<= (length (plist-get group :entries)) 4)))
+    (let ((directory-entry
+           (cl-find "w" entries :key (lambda (entry)
+                                       (plist-get entry :key))
+                    :test #'equal)))
+      (should directory-entry)
+      (should (eq (plist-get directory-entry :inapt-if)
+                  #'hermes-chat--active-turn-p)))
     (dolist (key '("n" "m" "x" "b" "t"))
       (should (cl-find key entries :key (lambda (entry)
                                          (plist-get entry :key))
@@ -4437,7 +4473,7 @@
 
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
   "Resuming a session keeps its durable id and owning profile."
-  (let (resume-args)
+  (let ((default-directory "/tmp/emacs-hermes/") resume-args)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
              (lambda (&rest _) (hermes-test--dashboard-client)))
             ((symbol-function 'hermes-dashboard-transport-session-resume)
@@ -4448,8 +4484,10 @@
               (should (derived-mode-p 'hermes-chat-mode))
               (should (equal hermes-chat--session-id "sid-42"))
               (should (equal hermes-chat--profile "work"))
+              (should (equal hermes-chat--title "My chat"))
               (should (equal (plist-get resume-args :profile) "work"))
-              (should (equal (buffer-name) "*Hermes@work: My chat*")))
+              (should (equal (buffer-name)
+                             "*Hermes@work: [emacs-hermes]*")))
           (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-drops-thinking-that-echoes-reply ()
@@ -4528,41 +4566,47 @@
          (should (memq 'commentary roles))
          (should (memq 'assistant roles)))))))
 
-(ert-deftest hermes-chat-header-shows-profile-status-model ()
-  "The header renders profile, status, and model from chat state."
+(ert-deftest hermes-chat-header-shows-directory-status-model ()
+  "The header renders directory, status, and model from chat state."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--profile "coder")
+   (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--working-directory "/tmp/emacs-hermes/"
+         hermes-chat--profile "coder")
    (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "claude-opus-4-8" :agent-name "planner"))
-   (let ((header (hermes-test--header-line-string)))
-     (should (string-prefix-p " coder" header))
-     (should-not (string-match-p "planner" header))
-     (should (string-match-p "claude-opus-4-8" header))
-     (should (string-match-p "Ready" header))
-     (should-not (string-match-p "Hermes" header))
-     (should-not (string-match-p "session " header)))))
+   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+     (let ((header (hermes-test--header-line-string)))
+       (should (string-prefix-p " emacs-hermes  | " header))
+       (should-not (string-match-p "coder" header))
+       (should-not (string-match-p "planner" header))
+       (should (string-match-p "claude-opus-4-8" header))
+       (should (string-match-p "Ready" header))
+       (should-not (string-match-p "session " header))))))
 
-(ert-deftest hermes-chat-header-shows-instance-when-multiple-configured ()
-  "Concurrent chats identify their owning instance in the header."
+(ert-deftest hermes-chat-header-omits-buffer-identity ()
+  "The header omits instance and profile already present in the buffer name."
   (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
                             ("remote" . "https://hermes.example.test"))))
     (cl-letf (((symbol-function 'hermes-instance-resolve)
                (lambda () (cadr hermes-instances))))
       (hermes-test-with-chat-buffer
+       (setq default-directory "/tmp/project/"
+             hermes-chat--working-directory "/tmp/project/"
+             hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
-         (should (string-prefix-p " remote  |  default" header)))))))
+         (should (string-prefix-p " project  | " header))
+         (should-not (string-match-p "remote" header))
+         (should-not (string-match-p "coder" header)))))))
 
-(ert-deftest hermes-chat-header-profile-falls-back-to-default ()
-  "Without explicit or backend profile state the header shows default."
-  (hermes-test-with-chat-buffer
-   (should (string-prefix-p " default" (hermes-test--header-line-string)))))
-
-(ert-deftest hermes-chat-header-profile-falls-back-to-backend-profile ()
-  "The backend profile is used when no explicit profile was selected."
-  (hermes-test-with-chat-buffer
-   (setq hermes-chat--agent-name "planner")
-   (should (string-prefix-p " planner" (hermes-test--header-line-string)))))
+(ert-deftest hermes-chat-header-uses-directory-basename ()
+  "The header directory segment handles Unix and Windows instance paths."
+  (should (equal (hermes-chat--directory-basename
+                  "/tmp/Projects/emacs-lisp/emacs-hermes/")
+                 "emacs-hermes"))
+  (should (equal (hermes-chat--directory-basename
+                  "C:\\Users\\Thanos\\Projects\\hermes-el\\")
+                 "hermes-el")))
 
 (ert-deftest hermes-chat-header-separates-runtime-flags-from-model ()
   "Reasoning effort, fast tier, and yolo render as separate segments."
@@ -4593,9 +4637,11 @@
    (should-not (hermes-chat--header-model-segment))))
 
 (ert-deftest hermes-chat-header-uses-compact-semantic-layout ()
-  "The compact header orders profile, activity, runtime, and context metadata."
+  "The compact header orders directory, activity, runtime, and context metadata."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--profile "scout"
+   (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--working-directory "/tmp/emacs-hermes/"
+         hermes-chat--profile "scout"
          hermes-chat--agent-name "default"
          hermes-chat--model "grok-4.5"
          hermes-chat--runtime-flags
@@ -4604,20 +4650,22 @@
          hermes-chat--status-state '(:status ready :activity "Ready"))
    (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
-                    (concat " scout  |  ✓ Ready  |  grok-4.5  |  medium"
+                    (concat " emacs-hermes  |  ✓ Ready  |  grok-4.5  |  medium"
                             "  |  fast  |  YOLO  |  25k/500k "))))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
-  "Profile, model, runtime flags, and context values use distinct faces."
+  "Directory, model, runtime flags, and context values use distinct faces."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--profile "scout"
+   (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--working-directory "/tmp/emacs-hermes/"
+         hermes-chat--profile "scout"
          hermes-chat--model "grok-4.5"
          hermes-chat--runtime-flags
          '(:reasoning-effort "medium" :fast t :yolo t)
          hermes-chat--context '(:used 24705 :max 500000 :percent 5))
    (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
      (let ((header (hermes-chat--header-line)))
-       (dolist (case '(("scout" . hermes-chat-header-profile)
+       (dolist (case '(("emacs-hermes" . hermes-chat-header-directory)
                        ("grok-4.5" . hermes-chat-header-model)
                        ("medium" . hermes-chat-header-reasoning)
                        ("fast" . hermes-chat-header-tier)
@@ -4629,18 +4677,20 @@
                        (cdr case)))))))))
 
 (ert-deftest hermes-chat-header-truncates-to-narrow-window ()
-  "A narrow header fits its window and preserves the leading profile face."
+  "A narrow header fits its window and preserves the leading directory face."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--profile "scout"
+   (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--working-directory "/tmp/emacs-hermes/"
+         hermes-chat--profile "scout"
          hermes-chat--model "grok-4.5")
    (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 10)))
      (let* ((header (hermes-chat--header-line))
-            (profile-position (string-match-p "scout" header)))
+            (directory-position (string-match-p "emacs" header)))
        (should (<= (string-width header) 10))
        (should (string-suffix-p "…" header))
-       (should profile-position)
-       (should (eq (get-text-property profile-position 'face header)
-                   'hermes-chat-header-profile))))))
+       (should directory-position)
+       (should (eq (get-text-property directory-position 'face header)
+                   'hermes-chat-header-directory))))))
 
 (ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
   "Tool lines keep the command/skill detail and carry the tool emoji."
@@ -4781,16 +4831,20 @@
               (when (buffer-live-p buffer) (kill-buffer buffer)))
             buffers))))
 
-(ert-deftest hermes-chat-new-buffer-names-after-profile-and-title ()
-  "The buffer name reflects the profile and a pinned title, never the bare name."
-  (let ((buffer (hermes-chat--new-buffer nil nil)))
-    (unwind-protect
-        (with-current-buffer buffer (should (equal (buffer-name) "*Hermes@default*")))
-      (kill-buffer buffer)))
-  (let ((buffer (hermes-chat--new-buffer "work" "deploy")))
+(ert-deftest hermes-chat-new-buffer-uses-project-identity ()
+  "Fresh buffer names reflect instance, profile, and launching project."
+  (let* ((default-directory "/tmp/emacs-hermes/")
+         (buffer (hermes-chat--new-buffer nil nil)))
     (unwind-protect
         (with-current-buffer buffer
-          (should (equal (buffer-name) "*Hermes@work: deploy*"))
+          (should (equal (buffer-name) "*Hermes@default: [emacs-hermes]*")))
+      (kill-buffer buffer)))
+  (let* ((default-directory "/tmp/emacs-hermes/")
+         (buffer (hermes-chat--new-buffer "work" "deploy")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (equal (buffer-name)
+                         "*Hermes@work: [emacs-hermes]*"))
           (should hermes-chat--title-manual-p))
       (kill-buffer buffer))))
 

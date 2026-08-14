@@ -270,6 +270,242 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not hermes-chat--dashboard-create-model)
          (should-not hermes-chat--dashboard-create-provider))))))
 
+(ert-deftest hermes-chat-dashboard-create-uses-chat-working-directory ()
+  "A fresh session starts in its gateway working directory."
+  (let ((client (hermes-test--dashboard-client)) create-cwd)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-cwd (plist-get args :cwd))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-new")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq default-directory "/tmp/local-editor/"
+               hermes-chat--working-directory "/srv/remote-project")
+         (insert "hi")
+         (hermes-chat-send)
+         (should (equal create-cwd "/srv/remote-project")))))))
+
+(ert-deftest hermes-chat-set-directory-uses-authoritative-backend-path ()
+  "Changing directory records the backend path without changing local editor cwd."
+  (let ((client (hermes-test--dashboard-client))
+        request)
+    (hermes-test-with-chat-buffer
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory "/srv/old"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client cwd &rest args)
+                  (setq request (list cwd (plist-get args :session-id)))
+                  (funcall (plist-get args :resolve)
+                           '((cwd . "/mnt/c/translated"))))))
+       (hermes-chat-set-directory "C:/project")
+       (should (equal request '("C:/project" "sid")))
+       (should (equal hermes-chat--working-directory "/mnt/c/translated"))
+       (should (equal default-directory "/tmp/local-editor/"))
+       (should (string-match-p "\[translated\]" (buffer-name)))))))
+
+(ert-deftest hermes-chat-directory-parent-handles-instance-path-syntax ()
+  "Parent navigation is lexical for Unix and Windows instance paths."
+  (should (equal (hermes-chat--directory-parent "/srv/project/") "/srv"))
+  (should (equal (hermes-chat--directory-parent "/srv") "/"))
+  (should (equal (hermes-chat--directory-parent "/") "/"))
+  (should (equal (hermes-chat--directory-parent "C:\\Users\\Thanos")
+                 "C:\\Users"))
+  (should (equal (hermes-chat--directory-parent "C:\\Users") "C:\\"))
+  (should (equal (hermes-chat--directory-parent "C:\\") "C:\\")))
+
+(ert-deftest hermes-chat-set-directory-ignores-stale-rejection ()
+  "A directory rejection cannot surface in a successor session."
+  (let ((client (hermes-test--dashboard-client)) reject surfaced)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid-old")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client _cwd &rest args)
+                  (setq reject (plist-get args :reject))))
+               ((symbol-function 'hermes-chat--command-error)
+                (lambda (message) (setq surfaced message))))
+       (hermes-chat-set-directory "/srv/new")
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall reject "old session rejected")
+       (should-not surfaced)
+       (should (equal hermes-chat--working-directory "/srv"))))))
+
+(ert-deftest hermes-chat-dashboard-record-session-records-authoritative-cwd ()
+  "Session creation records nested backend cwd without changing editor cwd."
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (setq default-directory "/tmp/local-editor/")
+     (hermes-chat--dashboard-record-session
+      client '((session_id . "sid") (info . ((cwd . "/srv/project")))))
+     (should (equal hermes-chat--working-directory "/srv/project"))
+     (should (equal default-directory "/tmp/local-editor/")))))
+
+(ert-deftest hermes-chat-set-directory-browses-instance-filesystem ()
+  "Interactive directory selection walks `/api/fs/list' on the owning instance."
+  (let ((client (hermes-test--dashboard-client)) requests set-cwd)
+    (hermes-test-with-chat-buffer
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (method path &rest args)
+                  (let ((directory (cdr (assq 'path (plist-get args :query)))))
+                    (push (list method path directory (plist-get args :client))
+                          requests)
+                    (hermes--promise-resolved
+                     (if (equal directory "/srv")
+                         '((entries . (((name . "project")
+                                        (path . "/srv/project")
+                                        (isDirectory . t))
+                                       ((name . "README")
+                                        (path . "/srv/README")
+                                        (isDirectory . :false)))))
+                       '((entries . ())))))))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt candidates &rest _)
+                  (car (seq-find
+                        (lambda (candidate)
+                          (let ((choice (cdr candidate)))
+                            (if (= (length requests) 1)
+                                (and (eq (plist-get choice :action) 'browse)
+                                     (equal (plist-get choice :path)
+                                            "/srv/project"))
+                              (eq (plist-get choice :action) 'select))))
+                        candidates))))
+               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client cwd &rest args)
+                  (setq set-cwd (list cwd (plist-get args :session-id)))
+                  (funcall (plist-get args :resolve)
+                           '((cwd . "/srv/project"))))))
+       (hermes-chat-set-directory)
+       (should (equal (reverse requests)
+                      (list (list "GET" "/api/fs/list" "/srv" client)
+                            (list "GET" "/api/fs/list" "/srv/project" client))))
+       (should (equal set-cwd '("/srv/project" "sid")))
+       (should (equal hermes-chat--working-directory "/srv/project"))
+       (should (equal default-directory "/tmp/local-editor/"))))))
+
+(ert-deftest hermes-chat-directory-browser-falls-back-to-manual-path ()
+  "An unavailable listing endpoint still accepts an instance-native path."
+  (let ((client (hermes-test--dashboard-client)) prompt-default set-cwd)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _) (hermes--promise-rejected "404 not found")))
+               ((symbol-function 'read-string)
+                (lambda (_prompt initial &rest _)
+                  (setq prompt-default initial)
+                  "/opt/manual"))
+               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client cwd &rest args)
+                  (setq set-cwd (list cwd (plist-get args :session-id)))
+                  (funcall (plist-get args :resolve)
+                           '((cwd . "/opt/manual"))))))
+       (hermes-chat-set-directory)
+       (should (equal prompt-default "/srv"))
+       (should (equal set-cwd '("/opt/manual" "sid")))
+       (should (equal hermes-chat--working-directory "/opt/manual"))))))
+
+(ert-deftest hermes-chat-directory-browser-ignores-stale-response ()
+  "A directory listing cannot prompt or mutate a successor session."
+  (let ((client (hermes-test--dashboard-client))
+        (promise (hermes--promise-make)) prompted)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid-old")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _) promise))
+               ((symbol-function 'completing-read)
+                (lambda (&rest _) (setq prompted t))))
+       (hermes-chat-set-directory)
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (hermes--promise-resolve promise '((entries . ())))
+       (should-not prompted)
+       (should (equal hermes-chat--working-directory "/srv"))))))
+
+(ert-deftest hermes-chat-directory-browser-ignores-session-change-in-completion ()
+  "A completion owned by an old session cannot browse or set its successor."
+  (let ((client (hermes-test--dashboard-client)) requests set-cwd)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid-old")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (_method _path &rest args)
+                  (push (cdr (assq 'path (plist-get args :query))) requests)
+                  (hermes--promise-resolved
+                   '((entries . (((name . "project")
+                                  (path . "/srv/project")
+                                  (isDirectory . t))))))))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt candidates &rest _)
+                  (setq hermes-chat--dashboard-active-session-id "sid-new")
+                  (car (seq-find
+                        (lambda (candidate)
+                          (eq (plist-get (cdr candidate) :action) 'browse))
+                        candidates))))
+               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (&rest _) (setq set-cwd t))))
+       (hermes-chat-set-directory)
+       (should (equal requests '("/srv")))
+       (should-not set-cwd)
+       (should (equal hermes-chat--working-directory "/srv"))))))
+
+(ert-deftest hermes-chat-directory-browser-ignores-session-change-in-manual-read ()
+  "A manual path owned by an old session cannot set its successor."
+  (let ((client (hermes-test--dashboard-client)) requests set-cwd)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid-old")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _)
+                  (setq requests (1+ (or requests 0)))
+                  (hermes--promise-rejected "listing unavailable")))
+               ((symbol-function 'read-string)
+                (lambda (&rest _)
+                  (setq hermes-chat--dashboard-active-session-id "sid-new")
+                  "/opt/project"))
+               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (&rest _) (setq set-cwd t))))
+       (hermes-chat-set-directory)
+       (should (= requests 1))
+       (should-not set-cwd)
+       (should (equal hermes-chat--working-directory "/srv"))))))
+
+(ert-deftest hermes-chat-set-directory-requires-chat-buffer ()
+  "The globally autoloaded directory command rejects non-chat buffers."
+  (with-temp-buffer
+    (should-error (hermes-chat-set-directory temporary-file-directory)
+                  :type 'user-error)))
+
+(ert-deftest hermes-chat-set-directory-rejects-active-turn ()
+  "Changing directory is unavailable while the current turn is active."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-running-p t)
+   (should-error (hermes-chat-set-directory "/tmp/") :type 'user-error)))
+
 (ert-deftest hermes-chat-dashboard-create-applies-reasoning-fast-via-config-set ()
   "Pre-session reasoning/fast picks apply via `config.set' after create."
   :tags '(shared-socket-isolation)

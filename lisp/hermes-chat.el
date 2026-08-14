@@ -91,6 +91,7 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--goal)
 (defvar hermes-chat--runtime-flags)
 (defvar hermes-chat--profile)
+(defvar hermes-chat--working-directory)
 (defvar hermes-chat--active-tools)
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-session-ready-p)
@@ -1195,24 +1196,26 @@ PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
 the owning Hermes instance.  A nil INSTANCE is resolved from the current
 context.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-With multiple instances the buffer is named `*INSTANCE@PROFILE*' (or
-`*INSTANCE@PROFILE: TITLE*'); the single-instance form remains
-`*Hermes@PROFILE*'.  This is the single side-effecting constructor every
-new-chat entry point funnels through."
-  (let ((instance (or instance (hermes-instance-resolve)))
+Buffer names identify the instance, profile, and launching project; TITLE stays
+session metadata.  This is the single side-effecting constructor every new-chat
+entry point funnels through."
+  (let ((directory default-directory)
+        (instance (or instance (hermes-instance-resolve)))
         (profile (hermes-chat--clean-profile profile))
         (title (hermes-transport--non-empty-string
                 (and title (string-trim title))))
         (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
+      (setq default-directory directory)
       (hermes-chat-mode)
-      (setq hermes-instance instance
+      (setq hermes-chat--working-directory directory
+            hermes-instance instance
             hermes-chat--profile profile)
       (when title
         (setq hermes-chat--title title
               hermes-chat--title-manual-p t))
       (rename-buffer
-       (hermes-chat--buffer-name-for-title profile title instance) t))
+       (hermes-chat--buffer-name profile instance directory) t))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
@@ -1371,23 +1374,28 @@ visible while reading."
 
 (defun hermes-chat-resume-session (session-id &optional title profile instance)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
-TITLE, when given, names the buffer.  PROFILE selects its owning profile, and
-INSTANCE selects its owning Hermes instance.  A nil INSTANCE is resolved from
-the current context.
+TITLE, when given, records its server title metadata.  PROFILE selects its
+owning profile, and INSTANCE selects its owning Hermes instance.  A nil
+INSTANCE is resolved from the current context.
 Over the dashboard transport the prior messages are fetched and rendered; the
 durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
-  (let ((instance (or instance (hermes-instance-resolve)))
+  (let ((directory default-directory)
+        (instance (or instance (hermes-instance-resolve)))
+        (title (hermes-transport--non-empty-string
+                (and title (string-trim title))))
         (buffer (generate-new-buffer
-                 (hermes-chat--buffer-name-for-title
-                  profile title instance))))
+                 (hermes-chat--buffer-name profile instance))))
     (with-current-buffer buffer
+      (setq default-directory directory)
       (hermes-chat-mode)
-      (setq hermes-instance instance
+      (setq hermes-chat--working-directory directory
+            hermes-instance instance
             hermes-chat--session-id session-id
-            hermes-chat--profile profile))
+            hermes-chat--profile profile
+            hermes-chat--title title))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
       (hermes-chat--load-session-history buffer))
@@ -1618,6 +1626,10 @@ result into the transient status text shown in the transcript."
   :group "Connection"
   "K" ("Connect provider" hermes-chat-connect-provider)
   "x" ("Reconnect socket" hermes-dashboard-reconnect)
+  :row
+  :group "Workspace"
+  "w" ("Set directory" hermes-chat-set-directory
+       :inapt-if #'hermes-chat--active-turn-p)
   :group "Browse"
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)

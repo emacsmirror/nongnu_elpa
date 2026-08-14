@@ -823,6 +823,9 @@ chat header can show them."
                 (hermes-transport--get payload 'model)))
         (agent (hermes-transport--scalar-string
                 (hermes-transport--get payload 'profile_name)))
+        (cwd (hermes-transport--non-empty-string
+              (hermes-transport--scalar-string
+               (hermes-transport--get payload 'cwd))))
         (effort (hermes-transport--non-empty-string
                  (hermes-transport--scalar-string
                   (hermes-transport--get payload 'reasoning_effort))))
@@ -831,6 +834,7 @@ chat header can show them."
       (setq event (plist-put event :running running)))
     (when model (setq event (plist-put event :model model)))
     (when agent (setq event (plist-put event :agent-name agent)))
+    (when cwd (setq event (plist-put event :cwd cwd)))
     (when effort (setq event (plist-put event :reasoning-effort effort)))
     (when (hermes-transport--field-present-p payload 'fast)
       (setq event (plist-put event :fast
