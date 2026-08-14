@@ -1396,10 +1396,14 @@ separate dedicated menu bar, depending on the value of
   (interactive "fRename folder: ")
   (if (file-exists-p folder)
       (rename-file folder
+		   ;; the folder's directory, so a name typed at the prompt
+		   ;; lands beside the folder rather than under it: the
+		   ;; folder is a file, and `directory-file-name' of a file
+		   ;; is that same file
 		   (read-file-name (concat "Rename "
 					   folder
 					   " to ")
-				   (directory-file-name folder)
+				   (file-name-directory folder)
 				   folder))
     (error "Folder %s does not exist." folder))
   (vm-menu-hm-make-folder-menu)
