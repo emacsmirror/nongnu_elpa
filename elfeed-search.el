@@ -491,7 +491,7 @@ The customization `elfeed-search-date-format' sets the formatting."
                        (- (if window (window-width window) (frame-width))
                           10 elfeed-search-trailing-width)
                        elfeed-search-title-max-width)))
-    (cons (propertize
+    (cons (elfeed-add-properties
            (elfeed-format-column title title-width :left)
            'face title-faces
            'mouse-face 'highlight

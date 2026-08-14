@@ -87,13 +87,13 @@ testing."
 
 (defun elfeed-format-column (string width &optional align)
   "Return STRING truncated or padded to WIDTH following alignment.
-ALIGN should be a keyword :left or :right.  Note that the function may
-return STRING as is, and does not allocate a new string in all cases."
+ALIGN should be a keyword :left or :right.  The function always returns
+a newly allocated string."
   (if (<= width 0)
       ""
     (let ((w (string-width string)))
       (cond
-       ((= w width) string)
+       ((= w width) (copy-sequence string))
        ((> w width) (truncate-string-to-width string width))
        ((eq align :left) (concat string (make-string (- width w) ?\s)))
        (t (concat (make-string (- width w) ?\s) string))))))
