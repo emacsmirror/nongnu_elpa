@@ -1398,6 +1398,145 @@ attributes were now their own."
       (should (equal (cadr (should-error (vm-toggle-virtual-mirror)))
                      "This is not a virtual folder.")))))
 
+;;; Building a search folder from the current message (emacs-vm/vm#650)
+;;
+;; The three same-* commands compose a selector out of the current message
+;; and a name out of that.  What they hand to `vm-create-virtual-folder' is
+;; the whole of their behaviour, so that is what these check; creating and
+;; visiting the folder is `vm-create-virtual-folder''s own business.
+
+(defvar vm-virtual-test--created nil
+  "The arguments the command under test passed to `vm-create-virtual-folder'.")
+
+(defmacro vm-virtual-test--creating-from (headers &rest body)
+  "Run BODY in a folder of one message with HEADERS, watching folder creation.
+`vm-virtual-test--created' is set to the argument list of the
+`vm-create-virtual-folder' call, which is not made."
+  (declare (indent 1) (debug t))
+  `(let ((vm-virtual-test--created nil))
+     (vm-test-with-folder
+         (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                 ,headers "\n" "The body.\n")
+       (setq major-mode 'vm-mode)
+       (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+                 ((symbol-function 'vm-create-virtual-folder)
+                  (lambda (&rest args) (setq vm-virtual-test--created args))))
+         ,@body))))
+
+(defun vm-virtual-test--selector ()
+  "The selector symbol of the watched `vm-create-virtual-folder' call."
+  (nth 0 vm-virtual-test--created))
+
+(defun vm-virtual-test--argument ()
+  "The selector argument of the watched call."
+  (nth 1 vm-virtual-test--created))
+
+(defun vm-virtual-test--folder-name ()
+  "The folder name of the watched call."
+  (nth 3 vm-virtual-test--created))
+
+(ert-deftest vm-virtual-test-same-subject-selects-the-sortable-subject ()
+  "The selector is the current message's subject with the reply prefix
+stripped, so the folder holds the thread rather than the one message."
+  (vm-virtual-test--creating-from "From: someone@example.com\nSubject: Re: the topic\n"
+    (vm-create-virtual-folder-same-subject)
+    (should (eq (vm-virtual-test--selector) 'sortable-subject))
+    (should (equal (vm-virtual-test--argument) (regexp-quote "the topic")))
+    (should (equal (vm-virtual-test--folder-name)
+                   (vm-virtual-folder-name (buffer-name) 'subject "the topic")))))
+
+(ert-deftest vm-virtual-test-same-subject-quotes-what-it-searches-for ()
+  "A subject holding regexp characters is quoted, so the folder collects
+messages with that subject rather than everything the subject would match
+if it were read as a regexp."
+  (vm-virtual-test--creating-from
+      "From: someone@example.com\nSubject: [PATCH] fix a.b (again)\n"
+    (vm-create-virtual-folder-same-subject)
+    (should (equal (vm-virtual-test--argument)
+                   (regexp-quote "[PATCH] fix a.b (again)")))
+    ;; and the quoted form really does match only the subject itself
+    (should (string-match-p (vm-virtual-test--argument)
+                            "[PATCH] fix a.b (again)"))
+    (should-not (string-match-p (vm-virtual-test--argument)
+                                "PATCH fix axb again"))))
+
+(ert-deftest vm-virtual-test-an-empty-subject-matches-only-empty-ones ()
+  "A message with no subject selects the other messages with none, rather
+than every message in the folder, and says so in the folder name."
+  (vm-virtual-test--creating-from "From: someone@example.com\nSubject: \n"
+    (vm-create-virtual-folder-same-subject)
+    (should (equal (vm-virtual-test--argument) "^$"))
+    (should (equal (vm-virtual-test--folder-name)
+                   (vm-virtual-folder-name (buffer-name) 'subject "\"\"")))))
+
+(ert-deftest vm-virtual-test-same-author-selects-the-author ()
+  "The author is taken from the current message and quoted."
+  (vm-virtual-test--creating-from
+      "From: A. Writer <writer+tag@example.com>\nSubject: a subject\n"
+    (vm-create-virtual-folder-same-author)
+    (should (eq (vm-virtual-test--selector) 'author))
+    (should (equal (vm-virtual-test--argument)
+                   (regexp-quote (vm-su-from (car vm-message-pointer)))))
+    (should (string-match-p (vm-virtual-test--argument)
+                            (vm-su-from (car vm-message-pointer))))))
+
+(ert-deftest vm-virtual-test-same-recipient-takes-the-first-addressee ()
+  "With several To addressees the first is used, as the docstring says, and
+the selector is author-or-recipient: the folder is the correspondence with
+that person, not only the mail sent to them."
+  (vm-virtual-test--creating-from
+      (concat "From: someone@example.com\n"
+              "To: first@example.com, second@example.com\n"
+              "Subject: a subject\n")
+    (vm-create-virtual-folder-same-recipient)
+    (should (eq (vm-virtual-test--selector) 'author-or-recipient))
+    (should (equal (vm-virtual-test--argument)
+                   (regexp-quote "first@example.com")))
+    (should-not (string-match-p (vm-virtual-test--argument)
+                                "second@example.com"))))
+
+(ert-deftest vm-virtual-test-an-empty-recipient-selects-none ()
+  "A message whose To header is empty selects the messages with none, and is
+named <none> rather than with an empty string nobody could read."
+  (vm-virtual-test--creating-from "From: someone@example.com\nTo: \nSubject: a subject\n"
+    (vm-create-virtual-folder-same-recipient)
+    (should (equal (vm-virtual-test--argument) "^$"))
+    (should (equal (vm-virtual-test--folder-name)
+                   (vm-virtual-folder-name (buffer-name)
+                                           'author-or-recipient "<none>")))))
+
+(ert-deftest vm-virtual-test-an-empty-author-selects-none ()
+  "The same for an empty From: the folder is of the messages with no author,
+not of every message."
+  (vm-virtual-test--creating-from "From: \nSubject: a subject\n"
+    (vm-create-virtual-folder-same-author)
+    (should (equal (vm-virtual-test--argument) "^$"))
+    (should (equal (vm-virtual-test--folder-name)
+                   (vm-virtual-folder-name (buffer-name) 'author "<none>")))))
+
+(ert-deftest vm-virtual-test-a-missing-recipient-falls-back-to-the-login-name ()
+  "A message with no To header at all is treated as addressed to you.
+
+`vm-su-do-addressees' reads To, then Apparently-To, then Newsgroups, and
+then -- its own comment says \"desperation\" -- `user-login-name'.  So this
+command builds a folder of correspondence with your login name rather than
+one of messages with no addressee, and the empty case above is reached only
+by a To header that is present and empty."
+  (vm-virtual-test--creating-from "From: someone@example.com\nSubject: a subject\n"
+    (vm-create-virtual-folder-same-recipient)
+    (should (equal (vm-virtual-test--argument)
+                   (regexp-quote (user-login-name))))))
+
+(ert-deftest vm-virtual-test-the-bookmark-is-the-message-it-was-called-on ()
+  "The new folder opens on the message the reader was looking at, which is
+what the bookmark argument is for."
+  (vm-virtual-test--creating-from "From: someone@example.com\nSubject: a subject\n"
+    (dolist (command '(vm-create-virtual-folder-same-subject
+                       vm-create-virtual-folder-same-author
+                       vm-create-virtual-folder-same-recipient))
+      (funcall command)
+      (should (eq (nth 4 vm-virtual-test--created) (car vm-message-pointer))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
