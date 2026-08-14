@@ -3280,6 +3280,118 @@ since a message attachment is a MIME part or it is nothing."
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (kill-buffer buffer))))))))
 
+;;; Nuking the html alternative (emacs-vm/vm#653)
+
+(defun vm-mime-test--message-with-parts (body)
+  "Return a one-message folder whose message body is BODY."
+  (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: sender@example.com\n"
+          "Subject: alternatives\n"
+          "MIME-Version: 1.0\n"
+          body))
+
+(defun vm-mime-test--alternative (boundary &rest parts)
+  "Return a multipart/alternative of PARTS, each a (TYPE . TEXT) pair."
+  (concat "Content-Type: multipart/alternative; boundary=\"" boundary "\"\n\n"
+          (mapconcat (lambda (part)
+                       (concat "--" boundary "\n"
+                               "Content-Type: " (car part) "\n\n"
+                               (cdr part) "\n"))
+                     parts "")
+          "--" boundary "--\n"))
+
+(defmacro vm-mime-test--nuking (body &rest checks)
+  "Build a message with BODY, nuke its html alternatives, run CHECKS.
+CHECKS see DELETED, the number of parts deleted, and the folder buffer."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder (vm-mime-test--message-with-parts ,body)
+     (setq major-mode 'vm-mode)
+     (let ((deleted (vm-nuke-alternative-text/html-internal
+                     (car vm-message-list))))
+       (ignore deleted)
+       ,@checks)))
+
+(ert-deftest vm-mime-test-nuking-html-keeps-the-plain-text ()
+  "The html copy goes and the plain-text one stays: that is the trade the
+command offers, and the reason it is safe at all."
+  (vm-mime-test--nuking
+      (vm-mime-test--alternative "IN" '("text/plain" . "the plain one")
+                                 '("text/html" . "<p>the html one</p>"))
+    (should (= deleted 1))
+    (should (string-match-p "the plain one" (buffer-string)))
+    (should-not (string-match-p "the html one" (buffer-string)))))
+
+(ert-deftest vm-mime-test-nuking-spares-html-that-has-no-plain-text ()
+  "REGRESSION: an alternative offering html alone keeps it, even when an
+earlier alternative in the same message was nuked.
+
+The flag that recorded \"this alternative has a text/plain first part\" was
+set once and never reset, so after one well-formed alternative every later
+text/html was deleted too -- including one that was the only copy of the
+content.  The command cannot be undone, so that was a permanent loss."
+  (vm-mime-test--nuking
+      (concat "Content-Type: multipart/mixed; boundary=\"OUT\"\n\n"
+              "--OUT\n"
+              (vm-mime-test--alternative "IN1" '("text/plain" . "the plain one")
+                                         '("text/html" . "<p>the html one</p>"))
+              "--OUT\n"
+              (vm-mime-test--alternative "IN2"
+                                         '("text/html" . "<p>the only copy</p>"))
+              "--OUT--\n")
+    (should (= deleted 1))
+    (should-not (string-match-p "the html one" (buffer-string)))
+    (should (string-match-p "the only copy" (buffer-string)))))
+
+(ert-deftest vm-mime-test-nuking-needs-the-plain-text-to-come-first ()
+  "An alternative whose first part is not text/plain keeps its html.
+The first part is the fallback a reader without html support is left with."
+  (vm-mime-test--nuking
+      (vm-mime-test--alternative "IN" '("text/enriched" . "the enriched one")
+                                 '("text/html" . "<p>the html one</p>"))
+    (should (= deleted 0))
+    (should (string-match-p "the html one" (buffer-string)))))
+
+(ert-deftest vm-mime-test-nuking-reaches-html-wrapped-in-a-related-part ()
+  "Html with inline images arrives as multipart/related inside the
+alternative, and that html is still one of the alternatives on offer.  This
+is the ordinary shape of html mail, so nuking has to reach it."
+  (vm-mime-test--nuking
+      (concat "Content-Type: multipart/alternative; boundary=\"ALT\"\n\n"
+              "--ALT\n"
+              "Content-Type: text/plain\n\nthe plain one\n"
+              "--ALT\n"
+              "Content-Type: multipart/related; boundary=\"REL\"\n\n"
+              "--REL\n"
+              "Content-Type: text/html\n\n<p>the html one</p>\n"
+              "--REL\n"
+              "Content-Type: image/png\n\nnot-really-a-png\n"
+              "--REL--\n"
+              "--ALT--\n")
+    (should (= deleted 1))
+    (should-not (string-match-p "the html one" (buffer-string)))
+    ;; the image is left alone: only the html copy was redundant
+    (should (string-match-p "not-really-a-png" (buffer-string)))))
+
+(ert-deftest vm-mime-test-nuking-leaves-html-that-is-the-whole-message ()
+  "A message that is simply text/html is not touched: there is no
+alternative, so there is nothing to fall back to."
+  (vm-mime-test--nuking
+      "Content-Type: text/html\n\n<p>the whole message</p>\n"
+    (should (= deleted 0))
+    (should (string-match-p "the whole message" (buffer-string)))))
+
+(ert-deftest vm-mime-test-nuking-marks-the-message-edited ()
+  "The message is marked edited and its counts cleared, so the folder knows
+it has to write the change out and the summary is recomputed."
+  (vm-mime-test--nuking
+      (vm-mime-test--alternative "IN" '("text/plain" . "the plain one")
+                                 '("text/html" . "<p>the html one</p>"))
+    (should (= deleted 1))
+    (let ((m (car vm-message-list)))
+      (should (vm-edited-flag m))
+      (should-not (vm-byte-count-of m))
+      (should-not (vm-line-count-of m)))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
