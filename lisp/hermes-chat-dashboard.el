@@ -627,8 +627,8 @@ shared client."
               (eq (hermes-transport--get result 'running) t)))
       (when-let* ((cwd (hermes-chat--dashboard-result-cwd result)))
         (hermes-chat--record-working-directory cwd))
-      (when (and (hermes-dashboard-transport-client-p client)
-                 hermes-chat--dashboard-token)
+      (when (hermes-dashboard-transport-client-p client)
+        (hermes-chat--ensure-idle-listener client (current-buffer))
         (hermes-dashboard-transport-subscribe-session
          client hermes-chat--dashboard-token active-id))
       (hermes-chat--dashboard-refresh-goal))))
@@ -777,16 +777,28 @@ shared client."
                           (hermes-chat--dashboard-event-for-session-p event))))
         (unless (and dashboard-p
                      (funcall hermes-chat--busy-submit-event-function event))
-          (when-let* ((target-id (if dashboard-p
-                                     (hermes-chat--dashboard-event-assistant-id
-                                      assistant-id event)
-                                   assistant-id)))
-            (if (and dashboard-p
-                     (hermes-chat--dashboard-suppressed-content-event-p
-                      event))
-                (hermes-chat--handle-suppressed-dashboard-terminal-event
-                 target-id event)
-              (hermes-chat--handle-transport-event target-id event))))))))
+          (if (and dashboard-p
+                   (hermes-chat--assistant-independent-event-p event))
+              (hermes-chat--handle-transport-event nil event)
+            (when dashboard-p
+              (hermes-chat--dashboard-start-server-turn
+               hermes-chat--dashboard-client event))
+            (when-let* ((target-id (if dashboard-p
+                                       (hermes-chat--dashboard-event-assistant-id
+                                        assistant-id event)
+                                     assistant-id)))
+              (if (and dashboard-p
+                       (hermes-chat--dashboard-suppressed-content-event-p
+                        event))
+                  (hermes-chat--handle-suppressed-dashboard-terminal-event
+                   target-id event)
+                (hermes-chat--handle-transport-event target-id event)))))))))
+
+(defun hermes-chat--assistant-independent-event-p (event)
+  "Return non-nil when dashboard EVENT does not belong to an assistant turn."
+  (or (eq (plist-get event :type) 'background)
+      (hermes-chat--reconnecting-status-event-p event)
+      (hermes-chat--reconnected-status-event-p event)))
 
 (defun hermes-chat--dashboard-bind-stream-callback (client assistant-id)
   "Bind CLIENT events to ASSISTANT-ID in the current buffer."
@@ -797,28 +809,34 @@ shared client."
       (current-buffer) assistant-id t
       (hermes-chat--next-transport-generation)))))
 
-(defun hermes-chat--background-listener-callback (buffer)
-  "Return a client callback that renders background results in BUFFER.
-Only `background.complete' events for BUFFER's session are handled; everything
-else is ignored.  Bound on an otherwise idle chat so a `/btw' result is still
-delivered when no turn is streaming a callback of its own."
-  (lambda (event)
-    (when (eq (plist-get event :type) 'background)
-      (hermes-chat--in-buffer buffer
-        (when (hermes-chat--dashboard-event-for-session-p event)
-          (hermes-chat--handle-background-complete event))))))
+(defun hermes-chat--dashboard-start-server-turn (client event)
+  "Create local turn state for a backend-owned CLIENT turn announced by EVENT."
+  (when (and (hermes-chat--message-start-status-event-p event)
+             (null hermes-chat--pending-assistant-id)
+             (null hermes-chat--dashboard-stream-assistant-id)
+             (null hermes-chat--server-queued-assistant-id))
+    (let ((assistant-id (hermes-chat--dashboard-insert-inflight-assistant)))
+      (hermes-chat--clear-active-tools)
+      (setq hermes-chat--dashboard-running-p t
+            hermes-chat--pending-assistant-id assistant-id
+            hermes-chat--process client
+            hermes-chat--dashboard-stream-assistant-id assistant-id
+            hermes-chat--dashboard-suppress-stream-p nil)
+      (hermes-chat--set-header-state
+       :status 'streaming :activity "Hermes is responding"
+       :assistant-id assistant-id)
+      assistant-id)))
 
-(defun hermes-chat--ensure-background-listener (client buffer)
-  "Subscribe a BUFFER background-result listener on CLIENT when it has no token.
-A no-op once BUFFER holds a subscriber token: its turn callback already routes
-background events.  A buffer that has never streamed a turn has no token yet --
-exactly the case a fresh `/btw' must cover.  The listener filters by session, so
-a result for a since-replaced session is dropped rather than misrouted."
+(defun hermes-chat--ensure-idle-listener (client buffer)
+  "Subscribe BUFFER to CLIENT events when it has no turn callback yet.
+The ordinary transport callback also creates a local assistant when an idle
+session later announces a backend-owned turn, such as a `/loop' wakeup."
   (when (and (hermes-dashboard-transport-client-p client)
              (not hermes-chat--dashboard-token))
     (setq hermes-chat--dashboard-token
           (hermes-dashboard-transport-subscribe
-           client (hermes-chat--background-listener-callback buffer)))))
+           client (hermes-chat--transport-callback
+                   buffer nil t (hermes-chat--next-transport-generation))))))
 
 (defun hermes-chat--dashboard-reattach-status-event ()
   "Return a fresh status event announcing a reattached running session.
@@ -1529,7 +1547,7 @@ BUFFER's client gains a result listener when no turn is streaming, so the
     (when task-id
       (push (cons task-id (list :number number :preview preview))
             hermes-chat--background-tasks))
-    (hermes-chat--ensure-background-listener hermes-chat--dashboard-client buffer)
+    (hermes-chat--ensure-idle-listener hermes-chat--dashboard-client buffer)
     ;; Insert above any pending reply so the active turn's answer stays last.
     (hermes-chat--insert-entry
      (hermes-chat--make-entry

@@ -1361,7 +1361,10 @@ visible while reading."
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session over the dashboard and render its prior messages."
   (with-current-buffer buffer
-    (let ((client (hermes-chat--dashboard-start #'ignore)))
+    (let ((client
+           (hermes-chat--dashboard-start
+            (hermes-chat--transport-callback
+             buffer nil t (hermes-chat--next-transport-generation)))))
       (hermes-dashboard-transport-session-resume
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)

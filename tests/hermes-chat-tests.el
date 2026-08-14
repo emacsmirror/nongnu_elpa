@@ -707,6 +707,106 @@
      (should-not (string-match-p "message start"
                                  (downcase (hermes-test--header-line-string)))))))
 
+(ert-deftest hermes-chat-control-session-renders-server-originated-turn ()
+  "A slash-created idle session renders a later backend-owned turn."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client)
+       (hermes-chat--dashboard-record-session
+        client '((session_id . "sid-loop")
+                 (stored_session_id . "stored-loop")))
+       (should hermes-chat--dashboard-token)
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type status :event "message.start" :status "started"
+                 :session-id "sid-loop"))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type delta :content "Hello from the loop"
+                 :session-id "sid-loop"))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type done :session-id "sid-loop"))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type status :event "message.start" :status "started"
+                 :session-id "sid-loop"))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type delta :content "Hello again"
+                 :session-id "sid-loop"))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type done :session-id "sid-loop"))
+       (let ((assistants
+              (cl-remove-if-not
+               (lambda (entry) (eq (plist-get entry :role) 'assistant))
+               (hermes-chat--entries))))
+         (should (equal (mapcar (lambda (entry) (plist-get entry :content))
+                                assistants)
+                        '("Hello from the loop" "Hello again")))
+         (should (cl-every (lambda (entry)
+                            (eq (plist-get entry :status) 'done))
+                          assistants)))
+       (should-not hermes-chat--pending-assistant-id)))))
+
+(ert-deftest hermes-chat-idle-session-renders-background-completion ()
+  "An idle subscriber renders a session-owned `/btw' completion."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--background-tasks
+             '(("bg-idle" :number 1 :preview "idle task")))
+       (hermes-chat--dashboard-record-session
+        client '((session_id . "sid-idle")
+                 (stored_session_id . "stored-idle")))
+       (hermes-dashboard-transport--dispatch-event
+        client '(:type background :task-id "bg-idle"
+                 :content "Idle task finished" :session-id "sid-idle"))
+       (should-not (assoc "bg-idle" hermes-chat--background-tasks))
+       (let ((entry (cl-find-if
+                     (lambda (item) (eq (plist-get item :role) 'background))
+                     (hermes-chat--entries))))
+         (should entry)
+         (should (equal (plist-get entry :content) "Idle task finished")))))))
+
+(ert-deftest hermes-chat-idle-session-reconnects-before-server-turn ()
+  "An idle control session resumes and renders after a socket reconnect."
+  (let ((client (hermes-test--dashboard-client)) resumed)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client stored-id &rest args)
+                 (setq resumed stored-id)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-resumed")
+                            (resumed . "stored-idle"))))))
+      (let ((hermes-chat-use-dashboard-transport t)
+            (hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client)
+         (hermes-chat--dashboard-record-session
+          client '((session_id . "sid-old")
+                   (stored_session_id . "stored-idle")))
+         (hermes-dashboard-transport--dispatch-event
+          client '(:type status :status reconnecting))
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not hermes-chat--dashboard-session-ready-p)
+         (hermes-dashboard-transport--dispatch-event
+          client '(:type status :status reconnected))
+         (should (equal resumed "stored-idle"))
+         (should (equal hermes-chat--dashboard-active-session-id "sid-resumed"))
+         (hermes-dashboard-transport--dispatch-event
+          client '(:type status :event "message.start" :status "started"
+                   :session-id "sid-resumed"))
+         (hermes-dashboard-transport--dispatch-event
+          client '(:type delta :content "Hello after reconnect"
+                   :session-id "sid-resumed"))
+         (hermes-dashboard-transport--dispatch-event
+          client '(:type done :session-id "sid-resumed"))
+         (let ((assistant (hermes-test--assistant-entry)))
+           (should (equal (plist-get assistant :content)
+                          "Hello after reconnect"))
+           (should (eq (plist-get assistant :status) 'done))))))))
+
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
     (hermes-test-with-chat-buffer
@@ -1296,28 +1396,49 @@
     (should-not (cdr continued))))
 
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
-  "Resuming a session renders its prior user/assistant/tool messages."
-  (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
-             (lambda (&rest _) (hermes-test--dashboard-client)))
-            ((symbol-function 'hermes-dashboard-transport-session-resume)
-             (lambda (_client _sid &rest args)
-               (funcall (plist-get args :resolve)
-                        '((session_id . "live-1")
-                          (messages . (((role . "user") (text . "hi there"))
-                                       ((role . "assistant") (text . "hello back"))
-                                       ((role . "tool") (name . "terminal")
-                                        (context . "make test")))))))))
-    (let ((buffer (hermes-chat-resume-session "sid-stored" "My Session")))
-      (unwind-protect
-          (with-current-buffer buffer
-            (should (equal (mapcar (lambda (entry) (plist-get entry :role))
-                                   (hermes-chat--entries))
-                           '(user assistant tool)))
-            (should (string-match-p "hi there" (buffer-string)))
-            (should (string-match-p "hello back" (buffer-string)))
-            (should (string-match-p "terminal: make test" (buffer-string)))
-            (should (equal hermes-chat--dashboard-active-session-id "live-1")))
-        (kill-buffer buffer)))))
+  "Resuming renders history and later backend-owned turns without duplicates."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _sid &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "live-1")
+                            (messages . (((role . "user") (text . "hi there"))
+                                         ((role . "assistant") (text . "hello back"))
+                                         ((role . "tool") (name . "terminal")
+                                          (context . "make test")))))))))
+      (let ((buffer (hermes-chat-resume-session "sid-stored" "My Session")))
+        (unwind-protect
+            (with-current-buffer buffer
+              (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                                     (hermes-chat--entries))
+                             '(user assistant tool)))
+              (dolist (content '("wake one" "wake two"))
+                (hermes-dashboard-transport--dispatch-event
+                 client '(:type status :event "message.start" :status "started"
+                          :session-id "live-1"))
+                (hermes-dashboard-transport--dispatch-event
+                 client (list :type 'delta :content content
+                              :session-id "live-1"))
+                (hermes-dashboard-transport--dispatch-event
+                 client '(:type done :session-id "live-1")))
+              (let ((assistants
+                     (cl-remove-if-not
+                      (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                      (hermes-chat--entries))))
+                (should (equal (mapcar (lambda (entry)
+                                         (plist-get entry :content))
+                                       assistants)
+                               '("hello back" "wake one" "wake two")))
+                (should (cl-every (lambda (entry)
+                                    (eq (plist-get entry :status) 'done))
+                                  assistants)))
+              (should-not hermes-chat--pending-assistant-id)
+              (should (string-match-p "terminal: make test" (buffer-string)))
+              (should (equal hermes-chat--dashboard-active-session-id "live-1")))
+          (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-send-queues-while-busy ()
   (let (sent callbacks)
