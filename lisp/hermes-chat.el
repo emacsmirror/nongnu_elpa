@@ -115,6 +115,7 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--server-queued-assistant-id)
 (defvar hermes-chat--server-queued-user-id)
 (defvar hermes-chat--server-queued-after-idle-count)
+(defvar hermes-chat--server-queued-prior-terminal-p)
 (defvar hermes-chat--busy-submit-context)
 (defvar hermes-chat--dashboard-idle-count)
 (defvar hermes-chat--dashboard-last-start-idle-count)
@@ -536,7 +537,8 @@ of its own."
       (setq hermes-chat--server-queued-user-id user-id
             hermes-chat--server-queued-assistant-id assistant-id
             hermes-chat--server-queued-after-idle-count
-            hermes-chat--dashboard-idle-count))))
+            hermes-chat--dashboard-idle-count
+            hermes-chat--server-queued-prior-terminal-p nil))))
 
 (defun hermes-chat--activate-backend-turn (content)
   "Record CONTENT as a backend-started turn and make it current."
@@ -553,6 +555,7 @@ of its own."
           hermes-chat--server-queued-assistant-id nil
           hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--server-queued-prior-terminal-p nil
           hermes-chat--process hermes-chat--dashboard-client)
     (hermes-chat--set-header-state
      :status 'pending :activity "Waiting for Hermes"
@@ -727,7 +730,8 @@ extends the input instead of prepending a blank line to it."
           hermes-chat--server-queued-assistant-id assistant-id
           hermes-chat--server-queued-user-id (plist-get context :user-id)
           hermes-chat--server-queued-after-idle-count
-          (plist-get context :idle-count))
+          (plist-get context :idle-count)
+          hermes-chat--server-queued-prior-terminal-p nil)
     (hermes-chat--set-header-state
      :status 'pending :activity "Queued by Hermes"
      :assistant-id assistant-id)))
@@ -739,8 +743,7 @@ extends the input instead of prepending a blank line to it."
         (terminal-p (plist-get context :post-start-terminal-p)))
     (when (and current-p (not terminal-p))
       (hermes-chat--prepare-server-queued-turn context))
-    (hermes-chat--insert-local-status
-     "Queued by Hermes" (if (or terminal-p (not current-p)) 'done 'pending))
+    (hermes-chat--insert-local-status "Queued by Hermes" 'done)
     (when-let* ((queue-id (plist-get context :queue-id)))
       (hermes-chat--queue-submit-accepted queue-id))
     (when (and current-p (not terminal-p))
@@ -816,6 +819,7 @@ extends the input instead of prepending a blank line to it."
           hermes-chat--server-queued-assistant-id nil
           hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--server-queued-prior-terminal-p nil
           hermes-chat--unsettled-submit-context (and dashboard-p context)
           hermes-chat--prepared-submit-assistant-id nil
           hermes-chat--interrupted-assistant-id nil
@@ -1037,7 +1041,8 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
       (hermes-chat--dashboard-finish-assistant assistant-id)))
   (setq hermes-chat--server-queued-assistant-id nil
         hermes-chat--server-queued-user-id nil
-        hermes-chat--server-queued-after-idle-count nil))
+        hermes-chat--server-queued-after-idle-count nil
+        hermes-chat--server-queued-prior-terminal-p nil))
 
 (defun hermes-chat--finish-reconciled-interrupt (assistant-id generation)
   "Finish ASSISTANT-ID when its GENERATION interrupt reaches backend idle."

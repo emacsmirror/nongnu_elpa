@@ -91,6 +91,7 @@ number and the prompt that launched it.")
 (defvar hermes-chat--server-queued-assistant-id)
 (defvar hermes-chat--server-queued-user-id)
 (defvar hermes-chat--server-queued-after-idle-count)
+(defvar hermes-chat--server-queued-prior-terminal-p)
 (defvar hermes-chat--busy-submit-context)
 (defvar hermes-chat--dashboard-idle-count)
 (defvar hermes-chat--dashboard-last-start-idle-count)
@@ -255,15 +256,21 @@ so a new session can be started afterwards."
   "Hold EVENT until the pending interrupt request settles."
   (push (copy-sequence event) hermes-chat--interrupted-events))
 
+(defun hermes-chat--server-queued-start-ready-p (idle-count)
+  "Return non-nil when IDLE-COUNT or a terminal event permits queue handoff."
+  (or hermes-chat--server-queued-prior-terminal-p
+      (> idle-count (or hermes-chat--server-queued-after-idle-count 0))))
+
 (defun hermes-chat--dashboard-activate-server-queued-turn (assistant-id)
   "Start rendering the backend-owned queued turn for ASSISTANT-ID."
   (when (and (equal assistant-id hermes-chat--server-queued-assistant-id)
              (numberp hermes-chat--server-queued-after-idle-count)
-             (> hermes-chat--dashboard-last-start-idle-count
-                hermes-chat--server-queued-after-idle-count))
+             (hermes-chat--server-queued-start-ready-p
+              hermes-chat--dashboard-last-start-idle-count))
     (setq hermes-chat--server-queued-assistant-id nil
           hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--server-queued-prior-terminal-p nil
           hermes-chat--dashboard-running-p t
           hermes-chat--pending-assistant-id assistant-id
           hermes-chat--process hermes-chat--dashboard-client
@@ -285,7 +292,8 @@ so a new session can be started afterwards."
       (hermes-chat--dashboard-finish-assistant assistant-id)))
   (setq hermes-chat--server-queued-assistant-id nil
         hermes-chat--server-queued-user-id nil
-        hermes-chat--server-queued-after-idle-count nil))
+        hermes-chat--server-queued-after-idle-count nil
+        hermes-chat--server-queued-prior-terminal-p nil))
 
 (defun hermes-chat--dashboard-handle-message-start (assistant-id)
   "Record a message boundary and activate ASSISTANT-ID when server-queued."
@@ -322,6 +330,12 @@ so a new session can be started afterwards."
   (and (equal assistant-id hermes-chat--server-queued-assistant-id)
        (not (hermes-chat--session-info-event-p event))))
 
+(defun hermes-chat--dashboard-note-server-queued-terminal (event)
+  "Record terminal EVENT as the boundary before a server-queued turn."
+  (when (and hermes-chat--server-queued-assistant-id
+             (hermes-chat--dashboard-terminal-event-p event))
+    (setq hermes-chat--server-queued-prior-terminal-p t)))
+
 (defun hermes-chat--dashboard-suppressed-content-event-p (event)
   "Return non-nil when suppressed EVENT must not update reply text."
   (and hermes-chat--dashboard-suppress-stream-p
@@ -353,8 +367,8 @@ FALLBACK-ID is the assistant id captured by the transport callback."
   (cond
    ((and hermes-chat--server-queued-assistant-id
          (hermes-chat--message-start-status-event-p event)
-         (> hermes-chat--dashboard-idle-count
-            (or hermes-chat--server-queued-after-idle-count 0)))
+         (hermes-chat--server-queued-start-ready-p
+          hermes-chat--dashboard-idle-count))
     hermes-chat--server-queued-assistant-id)
    (hermes-chat--dashboard-stream-assistant-id)
    (hermes-chat--dashboard-suppress-stream-p
@@ -415,7 +429,8 @@ settlement order lives in one place."
           (when (equal assistant-id hermes-chat--server-queued-assistant-id)
             (setq hermes-chat--server-queued-assistant-id nil
                   hermes-chat--server-queued-user-id nil
-                  hermes-chat--server-queued-after-idle-count nil))
+                  hermes-chat--server-queued-after-idle-count nil
+                  hermes-chat--server-queued-prior-terminal-p nil))
           (hermes-chat--handle-transport-event
            assistant-id (hermes-chat--closed-status-error-event event))
           (setq hermes-chat--dashboard-detached-assistant-id assistant-id
@@ -508,6 +523,7 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
 (defun hermes-chat--handle-transport-event (assistant-id event)
   "Apply transport EVENT to ASSISTANT-ID in the current chat buffer."
   (hermes-chat--dashboard-note-session-info event)
+  (hermes-chat--dashboard-note-server-queued-terminal event)
   (cond
    ;; A background (`/btw') result is owned by its own session and arrives out
    ;; of band, so handle it before the stale-turn guard would drop it and apart

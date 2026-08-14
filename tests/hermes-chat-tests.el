@@ -1589,8 +1589,8 @@
                     (plist-get (hermes-test--last-assistant-entry) :content)
                     "early second answer"))))))))
 
-(ert-deftest hermes-chat-dashboard-buffers-queued-turn-before-ack ()
-  "Queued-turn boundaries remain ordered when events beat the RPC response."
+(ert-deftest hermes-chat-dashboard-buffers-direct-handoff-before-queued-ack ()
+  "Direct queued handoff stays ordered when events beat the RPC response."
   (let ((client (hermes-test--dashboard-client)) second-resolve)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
@@ -1619,13 +1619,14 @@
           client "message.delta" '((text . "first answer")))
          (hermes-test--emit-dashboard-event
           client "message.complete" '((text . "done") (status . "done")))
-         (hermes-test--emit-dashboard-idle client)
          (hermes-test--emit-dashboard-event client "message.start" nil)
          (hermes-test--emit-dashboard-event
           client "message.delta" '((text . "early second answer")))
          (funcall second-resolve '((status . "queued")))
          (should (equal (plist-get (hermes-test--assistant-entry) :content)
                         "done"))
+         (should (eq (plist-get (hermes-test--assistant-entry) :status) 'done))
+         (should-not hermes-chat--server-queued-prior-terminal-p)
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "early second answer")))))))
 
@@ -1726,6 +1727,64 @@
           client "message.delta" '((text . "second answer")))
          (should (equal (plist-get (hermes-test--assistant-entry) :content)
                         "done"))
+         (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
+                        "second answer")))))))
+
+(ert-deftest hermes-chat-backend-queued-ack-is-settled-status ()
+  "Backend queue acceptance is an acknowledgement, not live progress."
+  (hermes-test-with-chat-buffer
+   (let* ((user (hermes-chat--make-entry 'user "queued" 'done))
+          (assistant (hermes-chat--make-entry 'assistant "" 'pending))
+          (context (list :user-id (plist-get user :id)
+                         :assistant-id (plist-get assistant :id)
+                         :generation hermes-chat--transport-generation
+                         :idle-count hermes-chat--dashboard-idle-count)))
+     (hermes-chat--insert-entry user)
+     (hermes-chat--insert-entry assistant)
+     (hermes-chat--busy-submit-queued context)
+     (let ((ack (cl-find-if
+                 (lambda (entry)
+                   (and (eq (plist-get entry :role) 'status)
+                        (equal (plist-get entry :content) "Queued by Hermes")))
+                 (hermes-chat--entries))))
+       (should ack)
+       (should (eq (plist-get ack :status) 'done))))))
+
+(ert-deftest hermes-chat-dashboard-queued-send-starts-after-terminal-without-idle ()
+  "A direct backend queue handoff does not require `session.info' idle."
+  (let ((client (hermes-test--dashboard-client)) submits)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (push text submits)
+                 (when-let* ((resolve (plist-get args :resolve)))
+                   (funcall resolve
+                            `((status . ,(if (equal text "first")
+                                             "streaming"
+                                           "queued"))))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (hermes-test--emit-dashboard-event
+          client "message.complete" '((text . "done") (status . "interrupted")))
+         (should hermes-chat--server-queued-prior-terminal-p)
+         (hermes-test--emit-dashboard-event client "message.start" nil)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "second answer")))
+         (should-not hermes-chat--server-queued-assistant-id)
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "second answer")))))))
 

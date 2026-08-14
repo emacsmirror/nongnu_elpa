@@ -82,6 +82,8 @@ without each one repeating the liveness guard."
   "User entry owned by the backend's queued next turn.")
 (defvar-local hermes-chat--server-queued-after-idle-count nil
   "Idle count that must advance before the server-queued turn can start.")
+(defvar-local hermes-chat--server-queued-prior-terminal-p nil
+  "Non-nil after the prior turn ends without an explicit idle event.")
 (defvar-local hermes-chat--busy-submit-context nil
   "Busy dashboard submission awaiting its policy result.")
 (defvar-local hermes-chat--unsettled-submit-context nil
@@ -451,6 +453,7 @@ text-property changes in the undo list."
           hermes-chat--server-queued-assistant-id nil
           hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--server-queued-prior-terminal-p nil
           hermes-chat--busy-submit-context nil
           hermes-chat--unsettled-submit-context nil
           hermes-chat--prepared-submit-assistant-id nil
@@ -486,6 +489,7 @@ text-property changes in the undo list."
         hermes-chat--server-queued-assistant-id nil
         hermes-chat--server-queued-user-id nil
         hermes-chat--server-queued-after-idle-count nil
+        hermes-chat--server-queued-prior-terminal-p nil
         hermes-chat--busy-submit-context nil
         hermes-chat--unsettled-submit-context nil
         hermes-chat--prepared-submit-assistant-id nil
