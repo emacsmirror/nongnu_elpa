@@ -1439,12 +1439,15 @@ The update is delayed by `elfeed-search-live-delay'."
                 'ascending))
   (elfeed-search-update :force))
 
-(defun elfeed-search-extend ()
-  "Extend truncated list."
-  (interactive nil elfeed-search-mode)
+(defun elfeed-search-extend (&optional all)
+  "Extend truncated list.
+With prefix argument ALL show all entries."
+  (interactive "P" elfeed-search-mode)
   (setq-local elfeed-search-max-entries
-              (+ elfeed-search-max-entries
-                 (default-value 'elfeed-search-max-entries)))
+              (and (not all)
+                   elfeed-search-max-entries
+                   (+ elfeed-search-max-entries
+                      (default-value 'elfeed-search-max-entries))))
   (elfeed-search-update :extend))
 
 ;; Separators in search display
