@@ -3828,7 +3828,11 @@ changes should be discarded."
 	       (or buffer-file-name buffer-offer-save)
 	       (not no-change)
 	       (not virtual))
-      (vm-save-folder))
+      ;; NO-EXPUNGE covers this save too: `vm-save-folder' expunges on
+      ;; `vm-expunge-before-save', which would undo the decision made above.
+      (let ((vm-expunge-before-save (and (not no-expunge)
+					 vm-expunge-before-save)))
+	(vm-save-folder)))
 
     ;; 5. Handle virtual folders
     ;;    If this is a virtual folder with component folders, quit the

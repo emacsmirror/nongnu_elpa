@@ -3381,6 +3381,105 @@ folder the other one fires and hides a broken interval branch."
       (vm-get-mail-itimer-function timer))
     (should (equal cancels 1))))
 
+;;; Quitting and saving without expunging (emacs-vm/vm#651)
+
+(defun vm-folder-test--write-three-message-folder (file)
+  "Write a three-message From_ folder to FILE."
+  (with-temp-file file
+    (dolist (n '(1 2 3))
+      (insert (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                              "From: alice@example.com\n"
+                              "Subject: msg %d\n\nbody %d\n\n")
+                      n n)))))
+
+(defun vm-folder-test--subjects-on-disk (file)
+  "The subjects in FILE, in order, read from disk rather than from a buffer."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let (subjects)
+      (goto-char (point-min))
+      (while (re-search-forward "^Subject: \\(.*\\)$" nil t)
+        (push (match-string-no-properties 1) subjects))
+      (nreverse subjects))))
+
+(defmacro vm-folder-test--after-deleting-one (settings command &rest body)
+  "Visit a three-message folder, delete the first, run COMMAND, then BODY.
+SETTINGS is a let-style binding list, normally of `vm-expunge-before-save'
+and `vm-expunge-before-quit'.  BODY sees FILE, the folder on disk."
+  (declare (indent 2) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-expunge" t)))
+          (file (expand-file-name "folder" dir)))
+     (unwind-protect
+         (progn
+           (vm-folder-test--write-three-message-folder file)
+           (let ,settings
+             (vm-folder-test--visiting file
+               (ignore warnings)
+               (vm-delete-message 1)
+               ,command))
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-quitting-without-expunging-keeps-the-message ()
+  "REGRESSION: `vm-quit-no-expunge' keeps deleted messages on disk even when
+`vm-expunge-before-save' is set.
+
+`vm-quit' skipped the expunge and then saved, and the save expunges on its
+own variable: a reader who deleted a message, thought better of it, and
+quit with the command that promises not to expunge lost it anyway."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save t) (vm-expunge-before-quit t))
+      (vm-quit-no-expunge)
+    (should (equal (vm-folder-test--subjects-on-disk file)
+                   '("msg 1" "msg 2" "msg 3")))))
+
+(ert-deftest vm-folder-test-quitting-with-a-prefix-does-not-expunge ()
+  "A prefix argument to `vm-quit' means no expunge, as its docstring says,
+whatever the two expunge variables are set to."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save t) (vm-expunge-before-quit t))
+      (let ((current-prefix-arg '(4)))
+        (call-interactively 'vm-quit))
+    (should (equal (vm-folder-test--subjects-on-disk file)
+                   '("msg 1" "msg 2" "msg 3")))))
+
+(ert-deftest vm-folder-test-quitting-expunges-when-asked-to ()
+  "`vm-quit' with `vm-expunge-before-quit' does expunge: the contrast that
+makes the no-expunge commands worth having."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save nil) (vm-expunge-before-quit t))
+      (vm-quit)
+    (should (equal (vm-folder-test--subjects-on-disk file)
+                   '("msg 2" "msg 3")))))
+
+(ert-deftest vm-folder-test-saving-without-expunging-keeps-the-message ()
+  "`vm-save-folder-no-expunge' writes the folder with the deleted message
+still in it, whatever `vm-expunge-before-save' says."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save t))
+      (vm-save-folder-no-expunge)
+    (should (equal (vm-folder-test--subjects-on-disk file)
+                   '("msg 1" "msg 2" "msg 3")))))
+
+(ert-deftest vm-folder-test-saving-expunges-when-asked-to ()
+  "`vm-save-folder' with `vm-expunge-before-save' expunges on the way out."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save t))
+      (vm-save-folder)
+    (should (equal (vm-folder-test--subjects-on-disk file)
+                   '("msg 2" "msg 3")))))
+
+(ert-deftest vm-folder-test-a-message-kept-by-no-expunge-is-still-deleted ()
+  "The message kept by `vm-save-folder-no-expunge' is still marked deleted,
+so the next expunge takes it: not expunging now is a deferral, not an undo."
+  (vm-folder-test--after-deleting-one
+      ((vm-expunge-before-save t))
+      (vm-save-folder-no-expunge)
+    (vm-folder-test--visiting file
+      (ignore warnings)
+      (should (vm-deleted-flag (car vm-message-list)))
+      (should-not (vm-deleted-flag (nth 1 vm-message-list))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
