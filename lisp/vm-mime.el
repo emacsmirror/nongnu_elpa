@@ -6786,6 +6786,12 @@ recipient\'s mail reader whether the part is meant to be shown as part of
 the message or offered as a file to save; `unspecified\' sends no
 Content-Disposition header and leaves the choice to them."
   (interactive)
+  ;; before the prompt, as `vm-mime-rename-attachment' does: an answer read
+  ;; and then thrown away is worse than the question not being asked
+  (unless (if (featurep 'xemacs)
+	      (vm-extent-at (point) 'vm-mime-type)
+	    (vm-mime-attachment-tag-bounds))
+    (error "No attachment here"))
   (vm-mime-set-attachment-disposition-at-point
    (intern
     (completing-read 
