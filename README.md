@@ -15,6 +15,11 @@ small and Windows-friendly.
   (`sl commit -I ...` / `sl amend -I ...`).
 - Magit-style single-key bindings in the status buffer (`c`, `a`, `d`, `m`,
   `x`, `r`, `z`, `F`, `P`, `n`, `p`, ...).
+- Emacs-style diff key: `=` or `C-x v =` in the status buffer, matching
+  `vc-diff`.
+- `sl-diff` uses `diff-mode`, so removed lines are shown in red and added
+  lines in green using Emacs-native font locking (no terminal color-code
+  parsing).
 - A lightweight dispatch menu (`M-x sl-menu`) with no external
   dependencies.
 - Stack workflows: `fold`, `graft`, `hide`, `unhide`, `uncommit`, `unamend`,
@@ -79,6 +84,7 @@ customize `sl-program`:
 | `c` | commit (marked files, or all changes if none are marked) |
 | `a` | amend current commit |
 | `d` | diff (marked files, file at point, or all changes) |
+| `=` / `C-x v =` | diff, like Emacs `vc-diff` |
 | `l` | graph log |
 | `b` | smartlog |
 | `x` | absorb (`C-u x` dry-run) |
@@ -104,6 +110,8 @@ customize `sl-program`:
 - `sl-program` — Sapling executable name or path (default `"sl"`).
 - `sl-log-limit` — number of commits in `sl-log` (default `100`).
 - `sl-w32-pipe-read-delay` — Windows pipe read delay in ms (default `0`).
+- `sl-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
+  coloring (default `t`).
 - `sl-status-buffer-name`, `sl-smartlog-buffer-name`,
   `sl-log-buffer-name`, `sl-diff-buffer-name`,
   `sl-output-buffer-name` — buffer names.

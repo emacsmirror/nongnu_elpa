@@ -43,6 +43,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'seq)
+(require 'diff-mode)
 
 (defgroup sl nil
   "Sapling SCM interface."
@@ -88,6 +89,13 @@
   "Value for `w32-pipe-read-delay' while reading `sl' output.
 Lower values make process output significantly faster on Windows."
   :type 'integer
+  :group 'sl)
+
+(defcustom sl-diff-use-diff-mode t
+  "When non-nil, show `sl-diff' output in `diff-mode'.
+This gives Emacs-native diff coloring (removed lines in red, added
+lines in green) without parsing Sapling's terminal color codes."
+  :type 'boolean
   :group 'sl)
 
 (defface sl-header-face
@@ -275,6 +283,8 @@ Signal an error if the command exits unsuccessfully."
     (define-key map (kbd "c")   #'sl-commit)
     (define-key map (kbd "a")   #'sl-amend)
     (define-key map (kbd "d")   #'sl-diff)
+    (define-key map (kbd "=")   #'sl-diff)
+    (define-key map (kbd "C-x v =") #'sl-diff)
     (define-key map (kbd "l")   #'sl-log)
     (define-key map (kbd "b")   #'sl-smartlog)
     (define-key map (kbd "x")   #'sl-absorb)
@@ -571,6 +581,23 @@ Signal an error if the command exits unsuccessfully."
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function #'sl-output-refresh))
 
+(defvar sl-diff-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map diff-mode-map)
+    (define-key map (kbd "g") #'sl-output-refresh)
+    (define-key map (kbd "q") #'quit-window)
+    map)
+  "Keymap for `sl-diff-mode'.")
+
+(define-derived-mode sl-diff-mode diff-mode "Sapling-Diff"
+  "Major mode for Sapling diff output.
+
+\\{sl-diff-mode-map}"
+  :group 'sl
+  (setq-local buffer-read-only t)
+  (setq-local truncate-lines t)
+  (setq-local revert-buffer-function #'sl-output-refresh))
+
 (defun sl--render-output-loading ()
   "Render a loading placeholder in the current output buffer."
   (let ((inhibit-read-only t))
@@ -614,12 +641,14 @@ Signal an error if the command exits unsuccessfully."
          (with-current-buffer buffer
            (sl--render-output title out code)))))))
 
-(defun sl--show-output (buffer-name args title directory)
-  "Show output of `sl ARGS' in BUFFER-NAME with TITLE."
+(cl-defun sl--show-output (buffer-name args title directory &key mode)
+  "Show output of `sl ARGS' in BUFFER-NAME with TITLE.
+When MODE is non-nil, use it as the major mode for BUFFER-NAME
+instead of `sl-output-mode'."
   (let ((buffer (get-buffer-create buffer-name)))
     (with-current-buffer buffer
-      (unless (derived-mode-p 'sl-output-mode)
-        (sl-output-mode))
+      (unless (derived-mode-p (or mode 'sl-output-mode))
+        (funcall (or mode #'sl-output-mode)))
       (setq default-directory directory
             sl--output-command args
             sl--output-title title
@@ -743,9 +772,12 @@ called outside the status buffer."
     (unless root
       (user-error "Not inside a Sapling repository"))
     (sl--show-output sl-diff-buffer-name
-                          (append '("diff") files)
-                          "Sapling Diff"
-                          root)))
+                     (append '("diff") files)
+                     "Sapling Diff"
+                     root
+                     :mode (if sl-diff-use-diff-mode
+                               #'sl-diff-mode
+                             #'sl-output-mode))))
 
 ;;;###autoload
 (defun sl-commit ()
