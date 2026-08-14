@@ -1344,7 +1344,7 @@ An empty DIRECTORY initializes the current directory."
                    (?F "pull" "Pull changes")
                    (?P "push" "Push changes")
                    (?q "quit" "Quit"))))
-         (choice (car entry)))
+         (choice (if (consp entry) (car entry) entry)))
     (cl-case choice
       (?s (sl-status))
       (?l (sl-smartlog))
