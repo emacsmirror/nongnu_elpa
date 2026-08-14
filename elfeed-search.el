@@ -325,11 +325,11 @@ Movement is configured by `elfeed-search-remain-on-entry'."
 
 (defun elfeed-search--count-unread ()
   "Count the number of entries and feeds being currently displayed."
-  (cl-loop with feeds = (make-hash-table :test #'equal)
+  (cl-loop with feeds = (make-hash-table :test #'eq)
            for entry in elfeed-search-entries
            count entry into entry-count
            count (elfeed-tagged-p 'unread entry) into unread-count
-           do (puthash (elfeed-feed-url (elfeed-entry-feed entry)) t feeds)
+           do (puthash (elfeed-entry-feed entry) t feeds)
            finally return
            (elfeed--header-button
             #'elfeed-search-fetch-visible
@@ -359,7 +359,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      (split-string elfeed-search-filter) " ")
                     'face 'elfeed-search-filter-face))))
      (concat (elfeed--header-update elfeed-search--last-update)
-             (and unread ", ") unread (and filter ", ") filter))))
+             ", " unread (and filter ", ") filter))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
   "Major mode for listing elfeed feed entries."
@@ -1083,11 +1083,12 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
   (elfeed-log 'info "Update visible feeds: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
   (run-hooks 'elfeed-update-init-hook)
-  (cl-loop with seen = (make-hash-table :test #'equal)
+  (cl-loop with feeds = (make-hash-table :test #'eq)
            for entry in elfeed-search-entries
-           for url = (elfeed-feed-url (elfeed-entry-feed entry))
-           unless (gethash url seen)
-           do (elfeed--update-feed (setf (gethash url seen) url))))
+           for feed = (elfeed-entry-feed entry)
+           unless (gethash feed feeds) do
+           (setf (gethash feed feeds) t)
+           (elfeed--update-feed (elfeed-feed-url feed))))
 
 (defun elfeed-search--update-line (&optional n)
   "Redraw line N, defaulting to the current line."
