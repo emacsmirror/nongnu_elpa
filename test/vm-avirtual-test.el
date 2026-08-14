@@ -738,6 +738,128 @@ leave that file alone and pass a narrower test."
       (should (equal (length vm-message-list) 2)))))
 
 
+;;; The composition-side selectors (emacs-vm/vm#648)
+;;
+;; These answer about the message being written, not about one in a folder:
+;; vm-pcrisis conditions and auto-virtual selectors run them in the
+;; composition buffer.
+
+(defmacro vm-avirtual-test--in-a-composition (headers &rest body)
+  "Run BODY in a composition whose headers are HEADERS.
+HEADERS is inserted before `mail-header-separator', which is what every one
+of these selectors splits the buffer on."
+  (declare (indent 1) (debug t))
+  `(let ((mail-header-separator "--text follows this line--"))
+     (with-temp-buffer
+       (mail-mode)
+       (insert ,headers mail-header-separator "\n"
+               "The body of the message.\n")
+       ,@body)))
+
+(ert-deftest vm-avirtual-test-replied-and-forwarded-read-their-own-list ()
+  "`replied' and `forwarded' report what the composition was started from.
+VM records the messages in `vm-reply-list' and `vm-forward-list' when it
+sets the composition up."
+  (vm-avirtual-test--in-a-composition "To: someone@example.com\n"
+    (let ((vm-reply-list nil) (vm-forward-list nil))
+      (should-not (vm-mail-vs-replied))
+      (should-not (vm-mail-vs-forwarded)))
+    (let ((vm-reply-list '(a-message)) (vm-forward-list nil))
+      (should (vm-mail-vs-replied))
+      (should-not (vm-mail-vs-forwarded)))
+    (let ((vm-reply-list nil) (vm-forward-list '(a-message)))
+      (should-not (vm-mail-vs-replied))
+      (should (vm-mail-vs-forwarded)))))
+
+(ert-deftest vm-avirtual-test-unreplied-is-about-replying ()
+  "REGRESSION: `unreplied' asks whether the composition is a reply.
+
+It called `vm-mail-vs-forwarded', so it answered about forwarding: a reply
+matched `unreplied', and a forward did not.  Both `unreplied' and
+`unanswered' are in `vm-mail-virtual-selector-function-alist', so any
+vm-pcrisis condition or auto-virtual selector written with either got the
+wrong answer."
+  (vm-avirtual-test--in-a-composition "To: someone@example.com\n"
+    ;; a reply is not unreplied
+    (let ((vm-reply-list '(a-message)) (vm-forward-list nil))
+      (should-not (vm-mail-vs-unreplied))
+      (should-not (vm-mail-vs-unanswered)))
+    ;; a forward is: it is not a reply
+    (let ((vm-reply-list nil) (vm-forward-list '(a-message)))
+      (should (vm-mail-vs-unreplied))
+      (should (vm-mail-vs-unanswered)))
+    ;; and a composition started from nothing is unreplied and unforwarded
+    (let ((vm-reply-list nil) (vm-forward-list nil))
+      (should (vm-mail-vs-unreplied))
+      (should (vm-mail-vs-unforwarded)))))
+
+(ert-deftest vm-avirtual-test-redistribution-is-read-from-the-headers ()
+  "`redistributed' is a header rather than a list: VM writes Resent- headers
+into the composition, and any of them counts."
+  (vm-avirtual-test--in-a-composition "To: someone@example.com\n"
+    (should-not (vm-mail-vs-redistributed))
+    (should (vm-mail-vs-unredistributed)))
+  (vm-avirtual-test--in-a-composition
+      "To: someone@example.com\nResent-To: another@example.com\n"
+    (should (vm-mail-vs-redistributed))
+    (should-not (vm-mail-vs-unredistributed))))
+
+(ert-deftest vm-avirtual-test-recipient-covers-every-recipient-header ()
+  "`recipient' matches To, CC and BCC, and their Resent- forms.
+A rule about who a message is going to must not miss the ones that are
+addressed only in CC, or only as a redistribution."
+  (dolist (header '("To" "CC" "BCC" "Resent-To" "Resent-CC" "Resent-BCC"))
+    (vm-avirtual-test--in-a-composition
+        (concat header ": someone@example.com\n")
+      (should (vm-mail-vs-recipient "someone@example\\.com"))
+      (should (vm-mail-vs-author-or-recipient "someone@example\\.com"))
+      (should-not (vm-mail-vs-recipient "nobody@example\\.com")))))
+
+(ert-deftest vm-avirtual-test-author-and-principal-are-different-headers ()
+  "`author' reads From (or Sender) and `principal' reads Reply-To, so a
+composition that redirects replies elsewhere is matched by the right one."
+  (vm-avirtual-test--in-a-composition
+      "From: writer@example.com\nReply-To: list@example.com\n"
+    (should (vm-mail-vs-author "writer@example\\.com"))
+    (should-not (vm-mail-vs-author "list@example\\.com"))
+    (should (vm-mail-vs-principal "list@example\\.com"))
+    (should-not (vm-mail-vs-principal "writer@example\\.com"))))
+
+(ert-deftest vm-avirtual-test-sortable-subject-ignores-the-reply-prefix ()
+  "`subject' matches what is written; `sortable-subject' matches the subject
+with the Re: stripped, which is how a rule follows a thread."
+  (vm-avirtual-test--in-a-composition "Subject: Re: the topic\n"
+    (should (vm-mail-vs-subject "Re: the topic"))
+    (should-not (vm-mail-vs-subject "\\`the topic"))
+    (should (vm-mail-vs-sortable-subject "\\`the topic"))))
+
+(ert-deftest vm-avirtual-test-header-and-text-stop-at-the-separator ()
+  "`header' searches above `mail-header-separator' and `text' below it, so a
+word in the body cannot match a header rule and the reverse."
+  (vm-avirtual-test--in-a-composition "Subject: a distinctive word\n"
+    (should (vm-mail-vs-header "distinctive"))
+    (should-not (vm-mail-vs-text "distinctive"))
+    (should (vm-mail-vs-text "body of the message"))
+    (should-not (vm-mail-vs-header "body of the message"))
+    ;; and header-or-text takes either
+    (should (vm-mail-vs-header-or-text "distinctive"))
+    (should (vm-mail-vs-header-or-text "body of the message"))))
+
+(ert-deftest vm-avirtual-test-older-and-newer-than-read-the-date ()
+  "`older-than' and `newer-than' count days from the Date header, and a
+composition without one matches neither."
+  (let ((old (format-time-string "%a, %d %b %Y %H:%M:%S %z"
+                                 (time-subtract (current-time)
+                                                (days-to-time 10)))))
+    (vm-avirtual-test--in-a-composition (concat "Date: " old "\n")
+      (should (vm-mail-vs-older-than 5))
+      (should-not (vm-mail-vs-older-than 20))
+      (should (vm-mail-vs-newer-than 20))
+      (should-not (vm-mail-vs-newer-than 5))))
+  (vm-avirtual-test--in-a-composition "To: someone@example.com\n"
+    (should-not (vm-mail-vs-older-than 1))
+    (should-not (vm-mail-vs-newer-than 1))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
