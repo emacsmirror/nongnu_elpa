@@ -1463,7 +1463,8 @@ summary buffer to select a folder."
 		   (vm-mapcar 
 		    (lambda (elem-xyz)
 		      (vm-mapcar (function vm-maildrop-sans-personal-info)
-				 elem-xyz)))
+				 elem-xyz))
+		    vm-spool-files)
 		 (vm-mapcar (function vm-maildrop-sans-personal-info)
 			    vm-spool-files))
 	     (error (vm-increment errors) vm-spool-files)))
