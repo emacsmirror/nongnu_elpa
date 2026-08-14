@@ -6,7 +6,7 @@
 ;; Version: 0.2.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
-;; URL: https://github.com/swithinchan/sl/tree/main
+;; URL: https://github.com/swithinchan/sl/
 
 ;; This file is not part of GNU Emacs.
 
