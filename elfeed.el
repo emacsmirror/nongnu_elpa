@@ -996,9 +996,9 @@ relative to the database according to BUFFER-UPDATE."
                                                    (seconds-to-time db-update))
                                'face 'elfeed-search-last-update-face))
                     (format "Updated %s ago"
-                            (propertize
+                            (elfeed-add-properties
                              (if (< delta 60)
-                                 "< 1 minute"
+                                 (copy-sequence "< 1 minute")
                                (compat-call seconds-to-string delta t))
                              'face 'elfeed-search-last-update-face)))))
     (concat
