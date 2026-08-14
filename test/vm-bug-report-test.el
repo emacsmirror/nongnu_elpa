@@ -138,6 +138,72 @@ the conversation that went wrong."
           (with-current-buffer trace (set-buffer-modified-p nil))
           (kill-buffer trace))))))
 
+;;; The configuration the report carries (emacs-vm/vm#644)
+
+(defun vm-bug-report-test--submit-and-read ()
+  "Return the text of the report `vm-submit-bug-report' composes.
+Kills the composition it leaves behind."
+  (let ((buffer nil))
+    (unwind-protect
+        (progn
+          (vm-submit-bug-report)
+          (setq buffer (current-buffer))
+          (buffer-string))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer))
+      ;; reporter.el builds the report in a scratch buffer of its own and
+      ;; leaves it behind for the next call to reuse
+      (let ((scratch (get-buffer " *tmp-reporter-buffer*")))
+        (when scratch (kill-buffer scratch))))))
+
+(ert-deftest vm-bug-report-test-spool-files-as-a-list-of-lists-are-reported ()
+  "REGRESSION: the report must carry `vm-spool-files' in its list-of-lists form.
+
+The mapping over that form was called with the function and no list, and
+`vm-mapcar' loops over `(car lists)' -- so it returned nil without signalling,
+the `condition-case' fallback never ran, and the report told the maintainer
+the user had no spool files at all.  Spool configuration is the first thing a
+mail-fetching bug report needs."
+  (let ((vm-spool-files
+         (list (list "/tmp/inbox"
+                     "pop:mail.example.invalid:110:pass:alice:s3cret"
+                     "/tmp/inbox.crash"))))
+    (let ((report (vm-bug-report-test--submit-and-read)))
+      (should (string-match-p "vm-bug-spool-files" report))
+      (should (string-match-p "mail\\.example\\.invalid" report))
+      (should (string-match-p "/tmp/inbox\\.crash" report)))))
+
+(ert-deftest vm-bug-report-test-spool-file-passwords-are-not-reported ()
+  "The report is mailed or pasted into a public issue, so the password and
+the login in a spool maildrop are replaced by stars.  Both forms of
+`vm-spool-files' are checked: the list-of-lists form went unredacted as well
+as unreported, since the mapping that redacts it was the one that did
+nothing."
+  (dolist (spool (list (list (list "/tmp/inbox"
+                                   "pop:mail.example.invalid:110:pass:alice:s3cret"
+                                   "/tmp/inbox.crash"))
+                       (list "pop:mail.example.invalid:110:pass:alice:s3cret")))
+    (let* ((vm-spool-files spool)
+           (report (vm-bug-report-test--submit-and-read)))
+      (should-not (string-match-p "s3cret" report))
+      (should-not (string-match-p "alice" report))
+      ;; what is left still identifies the server, which is the useful part
+      (should (string-match-p "pop:mail\\.example\\.invalid:110:pass:\\*:\\*"
+                              report)))))
+
+(ert-deftest vm-bug-report-test-account-alist-passwords-are-not-reported ()
+  "The IMAP and POP account and expunge alists are redacted the same way.
+They hold maildrop strings with passwords in them, and go into the same
+report."
+  (let* ((drop "imap:mail.example.invalid:143:inbox:login:alice:s3cret")
+         (vm-imap-account-alist (list (list drop "work")))
+         (vm-pop-folder-alist (list (list "pop:mail.example.invalid:110:pass:alice:s3cret"
+                                          "home")))
+         (report (vm-bug-report-test--submit-and-read)))
+    (should-not (string-match-p "s3cret" report))
+    (should (string-match-p "mail\\.example\\.invalid" report))))
+
 (provide 'vm-bug-report-test)
 
 ;;; vm-bug-report-test.el ends here
