@@ -78,6 +78,8 @@ This manual corresponds to VM version @value{VERSION}.
 * Navigating::  How to select messages for reading.
 * Reading Messages::    Previewing and paging through a message.
 * Sending Messages::    How to send messages from within VM.
+* Multiple Email Addresses:: Sending from whichever of your addresses
+                        fits, and other per-message setup.
 * Selecting Messages::    Running VM commands on arbitrary sets of messages.
 * Saving Messages::     How to save messages.
 * Deleting Messages::   How to delete, undelete and expunge messages.
@@ -96,11 +98,7 @@ This manual corresponds to VM version @value{VERSION}.
 * Customizing VM::      Where settings go, and per-folder settings
 * Hooks::               How you can make VM run your code at certain times.
 * Configuration::       Hints on how to configure VM to read and send mail
-
-Add-ons and Customizations:
-
-* Preface to Add-ons::  What are these?
-* Customizations::	Making VM behave the way you might want.
+* Customizations::      Making VM behave the way you might want.
 
 About VM:
 
@@ -3102,7 +3100,7 @@ the @code{smime-certificate-directory}), which is useful for automatically
 choosing certificates when sending mail. See @ref{Sending Secure @acronym{MIME},
 Sending Secure @acronym{MIME}} for more information.
 
-@node Sending Messages, Selecting Messages, Reading Messages, Top
+@node Sending Messages, Multiple Email Addresses, Reading Messages, Top
 @chapter Sending Messages
 
 When sending messages from within VM, you will be using the standard
@@ -3239,7 +3237,6 @@ headers will be used.
 * Replying::               Describes the various ways to reply to a message.
 * Forwarding Messages::    How to forward a message to a third party.
 * Saving copies::          Saving copies of sent mail.
-* Personality Crisis::     Programmable customization of message composition.
 * Postponing Messages::    Saving draft messages for later.
 @end menu
 
@@ -3990,7 +3987,7 @@ they reply to the message, the reply will go to the original sender.
 This behavior can be confusing to many users and, so, should be used
 with caution.
 
-@node Saving copies, Personality Crisis, Forwarding Messages, Sending Messages
+@node Saving copies, Postponing Messages, Forwarding Messages, Sending Messages
 @section Saving copies of sent mail
 
 @cindex FCC
@@ -4063,19 +4060,60 @@ Filing the copy before encoding is also how you keep an unencrypted version
 of a message you send encrypted.  Choose the character coding of the sent
 folder carefully if you do: it has to hold whatever the message holds.
 
-@node Personality Crisis, Postponing Messages, Saving copies, Sending Messages
-@section Personality Crisis: Programmable customization of message composition
+@node Postponing Messages,, Saving copies, Sending Messages
+@section Postponing Messages
+@cindex vm-postpone
+@cindex postponing message composition
+Sometimes, you might want to interrupt the composing of a message and
+continue it later.  This is called @dfn{postponing}.
+
+@findex vm-postpone-message
+@kindex C-c C-d
+@vindex vm-postponed-folder
+In a message composition buffer, the command @key{C-c C-d}
+(@code{vm-postpone-message})
+postpones the current composition.  The postponed message is stored in the
+folder specified in @code{vm-postponed-folder}.   (The default is a folder
+called ``postponed'').   When called with a prefix argument,
+@code{vm-postpone-message} will ask you for the folder to save the draft
+to.  You might also save it to your inbox in this way.
+
+@findex vm-continue-postponed-message
+You can continue composing the postponed messages by visiting
+@code{vm-postponed-folder}, selecting a message and running @kbd{M-x
+vm-continue-postponed-message}.  This constructs a new message composition
+buffer by copying the text from the VM Presentation buffer.  It also
+converts any @acronym{MIME} buttons into attachment buttons, which will be encoded as
+valid @acronym{MIME} attachments when the message is sent.  Unfortunately, any
+attachments that are displayed inline in the Presentation buffer will not be
+encoded.  This is a limitation of this feature.
+
+@vindex vm-auto-expunge-postponed-folder
+When you continue composition of a postponed message and send it, its
+previous draft is still retained in the postponed folder. To expunge such
+drafts automatically set @code{vm-auto-expunge-postponed-folder} to @code{t}
+in your VM configuration file.
+
+@node Multiple Email Addresses, Selecting Messages, Sending Messages, Top
+@chapter Multiple Email Addresses (Personality Crisis)
+@cindex email addresses, several of your own
+@cindex addresses, several of your own
+@cindex identities
+@cindex From header, choosing which address
+@cindex accounts, sending from the right one
+@cindex Personality Crisis
 @cindex vm-pcrisis
 @cindex vmpc
-@cindex Personality Crisis
 
-Personality Crisis (also known as ``vm-pcrisis'') is a powerful
-feature that allows you to automatically customize message
-compositions based on their parent messages.  The most immediate application
-is for composing replies where, for instance, you might want
-to set the ``From:'' header of the outgoing message to be the same as the
-email address at which you received the message.  This matters clearly if
-you have multiple email accounts.
+If you have more than one email address, VM can send from whichever of them
+fits the message you are writing.  A reply to mail that arrived at your work
+address goes out from your work address; the signature and any other header
+can follow the same rule.
+
+The feature that does this is called Personality Crisis, after the file
+@file{vm-pcrisis.el} it lives in.  It works on any composition, not only
+replies: forwards, resends, new mail, and a message you are already
+writing, which it calls automorphing.
 
 @findex vm-pcrisis-mode
 To use Personality Crisis, switch it on in your @code{vm-init-file}:
@@ -4095,7 +4133,6 @@ In earlier releases the advice was installed merely by loading the file, so
 switch it off.  That still loads the file but no longer changes how VM behaves,
 so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
 
-@cindex vmpc
 Everything here was called @code{vmpc-} something in earlier releases, and
 still answers to that name: an option keeps a value you saved under the old name,
 and a rule that names @code{vmpc-signature} or @code{vmpc-header-match} runs
@@ -4338,7 +4375,7 @@ to the same recipient:
 @end example
 @end table
 
-@subsection Automorph
+@section Automorph
 
 @findex vm-pcrisis-automorph
 The @code{vm-pcrisis-automorph} function automatically customizes a mail
@@ -4358,7 +4395,7 @@ To use automorph, bind it to a key in @code{vm-mail-mode-map}:
 (define-key vm-mail-mode-map [tab] 'vm-pcrisis-tab-header-or-tab-stop)
 @end lisp
 
-@subsection Debugging Personality Crisis
+@section Debugging Personality Crisis
 
 To debug Personality Crisis configurations, examine these variables after composing
 a message:
@@ -4371,41 +4408,7 @@ a message:
 You can also call @code{vm-pcrisis-build-true-conditions-list} interactively
 to test your conditions.
 
-@node Postponing Messages,, Personality Crisis, Sending Messages
-@section Postponing Messages
-@cindex vm-postpone
-@cindex postponing message composition
-Sometimes, you might want to interrupt the composing of a message and
-continue it later.  This is called @dfn{postponing}.
-
-@findex vm-postpone-message
-@kindex C-c C-d
-@vindex vm-postponed-folder
-In a message composition buffer, the command @key{C-c C-d}
-(@code{vm-postpone-message})
-postpones the current composition.  The postponed message is stored in the
-folder specified in @code{vm-postponed-folder}.   (The default is a folder
-called ``postponed'').   When called with a prefix argument,
-@code{vm-postpone-message} will ask you for the folder to save the draft
-to.  You might also save it to your inbox in this way.
-
-@findex vm-continue-postponed-message
-You can continue composing the postponed messages by visiting
-@code{vm-postponed-folder}, selecting a message and running @kbd{M-x
-vm-continue-postponed-message}.  This constructs a new message composition
-buffer by copying the text from the VM Presentation buffer.  It also
-converts any @acronym{MIME} buttons into attachment buttons, which will be encoded as
-valid @acronym{MIME} attachments when the message is sent.  Unfortunately, any
-attachments that are displayed inline in the Presentation buffer will not be
-encoded.  This is a limitation of this feature.
-
-@vindex vm-auto-expunge-postponed-folder
-When you continue composition of a postponed message and send it, its
-previous draft is still retained in the postponed folder. To expunge such
-drafts automatically set @code{vm-auto-expunge-postponed-folder} to @code{t}
-in your VM configuration file.
-
-@node Selecting Messages, Saving Messages, Sending Messages, Top
+@node Selecting Messages, Saving Messages, Multiple Email Addresses, Top
 @chapter Selecting Messages
 
 In the following sections, you will see various operations that you can do
@@ -7177,7 +7180,7 @@ doing it from this hook.
 
 @vmdocvmmailsendhook
 
-@node Configuration, Preface to Add-ons, Hooks, Top
+@node Configuration, Customizations, Hooks, Top
 @chapter Configuration of VM
 
 @unnumberedsec Hints on email environment configuration
@@ -7357,29 +7360,7 @@ upgrades it to @acronym{TLS} if the server requires @acronym{STARTTLS}.
 @code{starttls.el} before that.  VM needs Emacs 28.1, so there is no longer a
 configuration to describe for those.)
 
-@node Preface to Add-ons, Customizations, Configuration, Top
-@unnumbered What are Add-ons?
-
-Over the years, a number of users have contributed various functions
-and packages adding features and customizations to VM.  Many of them
-have been collected and included in the standard VM distribution.
-
-This part of the manual provides documentation for these features.
-
-The add-ons are classified into:
-
-@itemize
-@item Customizations.
-Small functions or settings that can be tagged on top of VM to make it
-easier to use, either in general or in particular environments.
-@item Add-ons.
-More elaborate features.
-@item Packages.
-Full-blown packages that add new functionality or interface to other
-packages in your environment.
-@end itemize
-
-@node Customizations, History and Administration, Preface to Add-ons, Top
+@node Customizations, History and Administration, Configuration, Top
 @chapter Customizations
 Useful ways to customize VM.
 @section Reading messages
