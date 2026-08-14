@@ -87,7 +87,8 @@ testing."
 
 (defun elfeed-format-column (string width &optional align)
   "Return STRING truncated or padded to WIDTH following alignment.
-ALIGN should be a keyword :left or :right."
+ALIGN should be a keyword :left or :right.  Note that the function may
+return STRING as is, and does not allocate a new string in all cases."
   (if (<= width 0)
       ""
     (let ((w (string-width string)))
