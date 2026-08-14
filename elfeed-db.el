@@ -93,7 +93,7 @@ old ~/.elfeed directory is present, it will be used instead."
   :type 'directory)
 
 (defcustom elfeed-db-cache-timeout 60
-  "Time in seconds to keep the cache buffer alive."
+  "Time in seconds to keep the archive cache alive."
   :type 'natnum)
 
 (defcustom elfeed-db-save-idle 10
@@ -546,6 +546,7 @@ since the scanner is not guarded against them."
   (let ((archive-index (elfeed-ref-archive-filename ".index")))
     (if (file-exists-p archive-index)
         (with-temp-buffer
+          (message "Loading archive...")
           (insert-file-contents archive-index)
           (setf elfeed-ref-archive (read (current-buffer))))
       (setf elfeed-ref-archive :empty))))
