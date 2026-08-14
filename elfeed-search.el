@@ -50,6 +50,9 @@
 (defvar elfeed-search--marked nil
   "List of marked entries.")
 
+(defvar elfeed-search--unread-count ""
+  "Unread count in header line.")
+
 (defvar elfeed-search-update-hook (list #'elfeed-search-add-separators)
   "List of functions to run immediately following a search buffer update.
 The functions may modify the search buffer or add overlays, for example
@@ -323,7 +326,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              (not (elfeed-search--remain-on-entry-p action)))
     (forward-line)))
 
-(defun elfeed-search--count-unread ()
+(defun elfeed-search--unread-count ()
   "Count the number of entries and feeds being currently displayed."
   (cl-loop with feeds = (make-hash-table :test #'eq)
            for entry in elfeed-search-entries
@@ -345,7 +348,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
    (let ((unread (if (and elfeed-search--filter-active
                           elfeed-search--filter-overflowing)
                      (propertize "?/?:?" 'face 'elfeed-search-unread-count-face)
-                   (elfeed-search--count-unread)))
+                   elfeed-search--unread-count))
          (filter (when (and (not elfeed-search--filter-active)
                             (string-match-p "[^ ]" elfeed-search-filter))
                    (elfeed-add-properties
@@ -950,6 +953,7 @@ Returns non-nil if the list has been updated."
       (cl-callf2 cl-delete-if-not (lambda (x) (memq x list))
                  elfeed-search--marked)
       (setq elfeed-search-entries list
+            elfeed-search--unread-count (elfeed-search--unread-count)
             elfeed-search--last-update (float-time)
             list-buffers-directory elfeed-search-filter)
       t)))
