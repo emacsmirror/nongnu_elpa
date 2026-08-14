@@ -451,7 +451,7 @@ The customization `elfeed-search-date-format' sets the formatting."
   '((t :inherit (lazy-highlight bold)))
   "Face for marked entries.")
 
-(put 'elfeed-search-marked-overlay 'face 'elfeed-search-marked-face)
+(put 'elfeed-search-marked 'face 'elfeed-search-marked-face)
 
 (defface elfeed-search-separator-face
   '((t :inherit (bold elfeed-search-date-face) :underline t :extend t))
@@ -1013,7 +1013,7 @@ directly.  Instead use `elfeed-search-update'."
                       (cl-callf2 drop trunc list)
                       (decf limit trunc)))
                 (erase-buffer)
-                (remove-overlays nil nil 'category 'elfeed-search-marked-overlay))
+                (remove-overlays nil nil 'category 'elfeed-search-marked))
               (cl-loop for entry in list repeat limit do
                        (elfeed-search--print-entry entry)
                        (insert ?\n))
@@ -1117,7 +1117,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
     (save-excursion
       (elfeed-goto-line (1+ n))
       (remove-overlays (pos-bol) (pos-eol)
-                       'category 'elfeed-search-marked-overlay))))
+                       'category 'elfeed-search-marked))))
 
 (defun elfeed-search--make-marked-overlay (entry)
   "Add mark overlay over ENTRY."
@@ -1125,7 +1125,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
     (save-excursion
       (elfeed-goto-line (1+ n))
       (overlay-put (make-overlay (pos-bol) (pos-eol))
-                   'category 'elfeed-search-marked-overlay))))
+                   'category 'elfeed-search-marked))))
 
 (defun elfeed-search-mark (&rest entries)
   "Mark ENTRIES at point."
