@@ -408,7 +408,7 @@ DEPTH the tree depth."
                            (make-list (- depth level -1) 0))
                 (elfeed-tree--count-unread unread read)
                 align1
-                (elfeed-add-properties
+                (propertize
                  (elfeed-format-column title title-width :left)
                  'face 'elfeed-search-feed-face)
                 align2
