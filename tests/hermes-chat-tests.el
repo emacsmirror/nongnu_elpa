@@ -3434,8 +3434,7 @@
               ((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client key value &rest args)
                  (setq set-args (list key value
-                                      (plist-get args :session-id)
-                                      (plist-get args :scope)))
+                                      (plist-get args :session-id)))
                  (funcall (plist-get args :resolve) '((value . "ultra")))))
               ((symbol-function 'hermes-dashboard-transport-config-get)
                (lambda (_client key &rest args)
@@ -3448,7 +3447,7 @@
              hermes-chat--runtime-flags '(:reasoning-effort "high"))
        (insert "/reasoning ultra")
        (hermes-chat-send)
-       (should (equal set-args '("reasoning" "ultra" "sid-active" nil)))
+       (should (equal set-args '("reasoning" "ultra" "sid-active")))
        (should (equal get-args '("reasoning" "sid-active")))
        (should-not
         (cl-find-if (lambda (entry)
@@ -3467,6 +3466,25 @@
                  '("ultra")))
   (should (equal (hermes-chat--reasoning-request "--global ultra")
                  '("ultra" . "global"))))
+
+(ert-deftest hermes-chat-global-reasoning-omits-live-session ()
+  "Global reasoning uses `config.set' without scoping it to the live session."
+  (let ((client (hermes-test--dashboard-client)) request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key value &rest args)
+                 (setq request
+                       (list key value (plist-get args :session-id)))
+                 (funcall (plist-get args :resolve) nil)))
+              ((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (&rest _args)
+                 (ert-fail "Global reasoning must use config.set"))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/reasoning ultra --global")
+       (hermes-chat-send)
+       (should (equal request '("reasoning" "ultra" nil)))))))
 
 (ert-deftest hermes-chat-reasoning-settlement-ignores-stale-session ()
   "A late reasoning setter cannot read into a replacement session."

@@ -50,19 +50,18 @@
             '("session.cwd.set" (session_id . "sid")
               (cwd . "/tmp/project"))))))
 
-(ert-deftest hermes-dashboard-rpc-config-set-sends-reasoning-scope ()
-  "Config writes preserve the Dashboard session and optional global scope."
+(ert-deftest hermes-dashboard-rpc-config-set-scopes-live-session ()
+  "Config writes preserve the Dashboard session."
   (let (request)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
                (lambda (_client method params &rest _)
                  (setq request (cons method params)))))
       (hermes-dashboard-transport-config-set
-       'client "reasoning" "ultra"
-       :session-id "sid" :scope "global"))
+       'client "reasoning" "ultra" :session-id "sid"))
     (should
      (equal request
             '("config.set" (key . "reasoning") (value . "ultra")
-              (session_id . "sid") (scope . "global"))))))
+              (session_id . "sid"))))))
 
 (ert-deftest hermes-transport-dashboard-approval-respond-payload ()
   (let ((client (hermes-test--dashboard-client))

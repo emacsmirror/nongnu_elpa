@@ -159,10 +159,10 @@ cache immediately after starting a client."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-config-set "config.set"
   "Send a `config.set' request setting KEY to VALUE on CLIENT.
-SESSION-ID scopes the change; SCOPE may request a global write.
+SESSION-ID scopes the change.
 CONFIRM-EXPENSIVE-MODEL acknowledges a pricier model when `config.set' asks
 for confirmation.  RESOLVE and REJECT receive the asynchronous result or error."
-  :args (key value) :keys (session-id scope confirm-expensive-model))
+  :args (key value) :keys (session-id confirm-expensive-model))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-config-get "config.get"

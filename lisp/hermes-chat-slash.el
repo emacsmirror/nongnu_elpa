@@ -220,7 +220,7 @@ accepted explicit spelling of the default session scope."
          (cons value scope))))
 
 (defun hermes-chat--dashboard-set-reasoning (arg)
-  "Set reasoning ARG on the owned dashboard session, then refresh it."
+  "Set reasoning ARG for its requested scope, then refresh the owned session."
   (let ((buffer (current-buffer))
         (preserve-content (concat "/reasoning " arg))
         (request (hermes-chat--reasoning-request arg)))
@@ -230,8 +230,8 @@ accepted explicit spelling of the default session scope."
        (let ((context (hermes-chat--command-context live-client)))
          (hermes-dashboard-transport-config-set
           live-client "reasoning" (car request)
-          :session-id (plist-get context :session-id)
-          :scope (cdr request)
+          :session-id (and (not (cdr request))
+                           (plist-get context :session-id))
           :resolve
           (lambda (_result)
             (hermes-chat--in-buffer buffer
@@ -246,30 +246,31 @@ accepted explicit spelling of the default session scope."
 
 (defun hermes-chat--dashboard-slash-exec (name arg raw)
   "Run RAW slash command for NAME and ARG, using native state paths when available."
-  (if (and (string-equal name "reasoning")
-           (hermes-chat--reasoning-request arg))
-      (hermes-chat--dashboard-set-reasoning arg)
-    (let ((buffer (current-buffer))
-          (preserve-content (concat "/" raw)))
-      (hermes-chat--with-dashboard-session
-       preserve-content buffer
-       (lambda (live-client)
-         (let ((context (hermes-chat--command-context live-client)))
-           (hermes-dashboard-transport-slash-exec
-            live-client raw
-            :session-id (plist-get context :session-id)
-            :resolve
-            (lambda (result)
-              (hermes-chat--in-buffer buffer
-                (when (hermes-chat--command-context-current-p context)
-                  (hermes-chat--handle-command-result result arg)
-                  (hermes-chat--refresh-state-after-command name context))))
-            :reject
-            (lambda (_message)
-              (hermes-chat--in-buffer buffer
-                (when (hermes-chat--command-context-current-p context)
-                  (hermes-chat--dashboard-dispatch-command
-                   name arg preserve-content context)))))))))))
+  (let ((reasoning-request (and (string-equal name "reasoning")
+                                (hermes-chat--reasoning-request arg))))
+    (if reasoning-request
+        (hermes-chat--dashboard-set-reasoning arg)
+      (let ((buffer (current-buffer))
+            (preserve-content (concat "/" raw)))
+        (hermes-chat--with-dashboard-session
+         preserve-content buffer
+         (lambda (live-client)
+           (let ((context (hermes-chat--command-context live-client)))
+             (hermes-dashboard-transport-slash-exec
+              live-client raw
+              :session-id (plist-get context :session-id)
+              :resolve
+              (lambda (result)
+                (hermes-chat--in-buffer buffer
+                  (when (hermes-chat--command-context-current-p context)
+                    (hermes-chat--handle-command-result result arg)
+                    (hermes-chat--refresh-state-after-command name context))))
+              :reject
+              (lambda (_message)
+                (hermes-chat--in-buffer buffer
+                  (when (hermes-chat--command-context-current-p context)
+                    (hermes-chat--dashboard-dispatch-command
+                     name arg preserve-content context))))))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."
