@@ -14,9 +14,18 @@ silently, since neither has anything to say when it is off.
     Without it, compositions are set up with none of your rules: no From
     address chosen for you, no signature, no headers.  `(require 'vm-pcrisis)`
     was how one switched it on in earlier releases, and now only loads the
-    file;
-    the mode is autoloaded, so the `require` is not needed at all
+    file; the mode is autoloaded, so the `require` is not needed at all
     (emacs-vm/vm#561).
+
+    While you are there: every name now begins with `vm-pcrisis-` where it
+    began with `vmpc-` (emacs-vm/vm#657).  Replacing that prefix is the whole
+    change -- `vm-pcrisis-conditions`, `vm-pcrisis-actions`,
+    `vm-pcrisis-reply-rules`, and the functions a rule names, such as
+    `vm-pcrisis-signature`.  The old names still work, so this can wait.
+
+    Two keep the old spelling, being files rather than symbols:
+    `~/.vmpc-auto-profiles`, and the `vmpc-profile` field written into BBDB
+    records.
 
   * **vm-biff**: `(vm-biff-mode 1)`
 
