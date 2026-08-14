@@ -200,10 +200,8 @@ Possible alignments are :left and :right."
   "When non-nil, Elfeed is currently reading a filter from the minibuffer.
 When live editing the filter, it is bound to :live.")
 
-(define-obsolete-variable-alias 'elfeed-search-filter-overflowing
-  'elfeed-search--filter-overflowing "4.0.0")
-(defvar elfeed-search--filter-overflowing nil
-  "When non-nil, the current live filter overflows the window.")
+(defvar elfeed-search-filter-overflowing nil)
+(make-obsolete-variable 'elfeed-search-filter-overflowing nil "4.0.0")
 
 (defun elfeed-search-tag-unread ()
   "Add the `unread' tag to all selected entries.
@@ -345,10 +343,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   "Computes the string to be used as the header line."
   (or
    (elfeed--header-jobs)
-   (let ((unread (if (and elfeed-search--filter-active
-                          elfeed-search--filter-overflowing)
-                     (propertize "?/?:?" 'face 'elfeed-search-unread-count-face)
-                   elfeed-search--unread-count))
+   (let ((unread elfeed-search--unread-count)
          (filter (when (and (not elfeed-search--filter-active)
                             (string-match-p "[^ ]" elfeed-search-filter))
                    (elfeed-add-properties
@@ -1386,8 +1381,9 @@ BUFFER is the active minibuffer."
              (limiter (if window (format "#%d " height) "#1 "))
              (elfeed-search-filter (concat limiter filter)))
         (elfeed-search-update :live)
-        (setf elfeed-search--filter-overflowing
-              (length= elfeed-search-entries height))))))
+        (when (length= elfeed-search-entries height)
+          (setq elfeed-search--unread-count
+                (propertize "?/?:?" 'face 'elfeed-search-unread-count-face)))))))
 
 (defun elfeed-search--live ()
   "Update the `elfeed-search' buffer live based on the contents of the minibuffer.
