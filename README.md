@@ -1,5 +1,7 @@
 # nightpanel-theme
 
+<img width="853" height="861" alt="image" src="https://github.com/user-attachments/assets/099e362c-ea2f-42b3-a07a-3a5a25de9896" />
+
 A dark Emacs theme modelled on a Saab instrument cluster seen at night.
 
 Pure black canvas, instrument-scale green for body text, amber for the things
