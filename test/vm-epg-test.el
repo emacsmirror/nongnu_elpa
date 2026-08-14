@@ -1196,6 +1196,149 @@ export becomes a base64 MIME part."
         (should (string-match-p "\\`[[:print:][:space:]]*\\'" composed))))))
 
 
+;;; The inline (cleartext) commands, over the test keyring
+
+(defun vm-epg-test--armored-context ()
+  "An OpenPGP context on the test keyring, producing ASCII armor."
+  (let ((context (epg-make-context 'OpenPGP)))
+    (setf (epg-context-armor context) t)
+    (setf (epg-context-home-directory context) epg-gpg-home-directory)
+    context))
+
+(defun vm-epg-test--encrypt-to-the-test-key (plain &optional sign)
+  "Return PLAIN encrypted to the test key as ASCII armor, signed if SIGN."
+  (let* ((context (vm-epg-test--armored-context))
+         (keys (epg-list-keys context vm-epg-test--address)))
+    (should keys)
+    (when sign
+      (setf (epg-context-signers context)
+            (epg-list-keys context vm-epg-test--address t)))
+    (epg-encrypt-string context plain keys sign)))
+
+(defun vm-epg-test--clearsign (plain)
+  "Return PLAIN as an inline cleartext-signed message, signed by the test key."
+  (let ((context (vm-epg-test--armored-context)))
+    (setf (epg-context-signers context)
+          (epg-list-keys context vm-epg-test--address t))
+    (epg-sign-string context plain 'clear)))
+
+(defmacro vm-epg-test--with-a-message (body-text &rest body)
+  "Run BODY in a folder of one message whose body is BODY-TEXT.
+
+The buffer is put in `vm-mode' because that is what the commands validate
+against; without it they refuse with \"No VM folder buffer associated with
+this buffer\" before reaching anything worth testing."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder
+       (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: sender@example.com\n"
+               "Subject: an inline PGP message\n\n"
+               ,body-text "\n")
+     (setq major-mode 'vm-mode)
+     ;; the folder buffer must be current when `vm-test-with-folder' cleans
+     ;; up, or it reads `vm-presentation-buffer' in whatever buffer the
+     ;; command left behind and the presentation copy is never killed
+     (save-current-buffer
+       ,@body)))
+
+(defmacro vm-epg-test--with-a-keyring-and-a-folder (body-text &rest body)
+  "Run BODY over a one-message folder whose body is BODY-TEXT, with a keyring.
+BODY-TEXT is evaluated inside the keyring, so it can encrypt or sign with the
+test key."
+  (declare (indent 1) (debug t))
+  `(vm-epg-test--with-a-test-keyring
+     (vm-epg-test--with-a-message ,body-text ,@body)))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-shows-the-plain-text ()
+  "`vm-epg-cleartext-decrypt' puts the plain text in the presentation copy.
+The armor is gone from it, and the state line says the message was
+encrypted."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (vm-epg-cleartext-decrypt)
+   (should (string-match-p "the secret body" (buffer-string)))
+   (should-not (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))
+   (should (member " encrypted" vm-epg-state))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-leaves-the-folder-alone ()
+  "The folder keeps the ciphertext: only the presentation copy is rewritten.
+Decrypting into the folder would write the plain text to disk on the next
+save, which is the opposite of what the sender asked for."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (let ((folder (current-buffer)))
+     (vm-epg-cleartext-decrypt)
+     (should-not (eq (current-buffer) folder))
+     (with-current-buffer folder
+       (should (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))
+       (should-not (string-match-p "the secret body" (buffer-string)))))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-refuses-a-read-only-folder ()
+  "A read-only folder is refused, as the docstring says.
+Only the presentation copy is written, so the check is a policy rather than
+a necessity -- which is exactly why it needs a test to keep it."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (let ((vm-folder-read-only t)
+         (text-quoting-style 'grave))
+     (let ((err (should-error (vm-epg-cleartext-decrypt) :type 'error)))
+       (should (string-match-p "read-only" (error-message-string err)))))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-reports-a-failure-in-place ()
+  "A message that cannot be decrypted shows the error where the armor was.
+The armor is left in place -- there is nothing to replace it with -- and the
+state says error rather than encrypted."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   ;; armor that is not decryptable with any key we have
+   (concat "-----BEGIN PGP MESSAGE-----\n\n"
+           "hQEMAwAAAAAAAAAAAQf/YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=\n"
+           "=abcd\n-----END PGP MESSAGE-----")
+   (vm-epg-cleartext-decrypt)
+   (should (member " ERROR" vm-epg-state))
+   (should (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-verifies-a-signed-plain-text ()
+  "When the plain text is itself inline-signed, the signature is verified too.
+Encrypt-then-sign is the common case, and the reader should be told about the
+signature without a second command."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key
+    (vm-epg-test--clearsign "signed and then encrypted\n"))
+   (vm-epg-cleartext-decrypt)
+   (should (string-match-p "signed and then encrypted" (buffer-string)))
+   (should (member " verified" vm-epg-state))))
+
+(ert-deftest vm-epg-test-cleartext-verify-reports-a-good-signature ()
+  "`vm-epg-cleartext-verify' replaces the armor with a description of the
+signature and reports it verified."
+  (vm-epg-test--with-a-test-keyring
+    (with-temp-buffer
+      (setq major-mode 'vm-presentation-mode)
+      (insert (vm-epg-test--clearsign "text that was signed\n"))
+      (vm-epg-cleartext-verify)
+      (let ((shown (buffer-string)))
+        (should (member " verified" vm-epg-state))
+        ;; the text survives; the armor around it does not
+        (should (string-match-p "text that was signed" shown))
+        (should-not (string-match-p "BEGIN PGP SIGNATURE" shown))
+        (should (string-match-p "Good signature from key" shown))))))
+
+(ert-deftest vm-epg-test-cleartext-verify-reports-a-broken-signature ()
+  "Text altered after signing is reported as an error, not as verified.
+This is the whole point of the command, so it is worth asserting that a
+signature that does not check comes back distinguishable from one that
+does."
+  (vm-epg-test--with-a-test-keyring
+    (with-temp-buffer
+      (setq major-mode 'vm-presentation-mode)
+      (insert (vm-epg-test--clearsign "text that was signed\n"))
+      (goto-char (point-min))
+      (should (search-forward "text that was signed" nil t))
+      (replace-match "text that was tampered with")
+      (vm-epg-cleartext-verify)
+      (should (member " ERROR" vm-epg-state))
+      (should-not (member " verified" vm-epg-state)))))
+
 (provide 'vm-epg-test)
 
 ;;; vm-epg-test.el ends here
