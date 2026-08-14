@@ -157,6 +157,7 @@ With prefix ARG, select the ARG'th previous message."
   "Select the next message in the current folder's history.
 With prefix ARG, select the ARG'th next message."
   (interactive "p")
+  (or arg (setq arg 1))
   (vm-message-history-backward (- arg)))
 
 (defvar vm-message-history-menu nil
