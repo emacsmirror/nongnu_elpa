@@ -678,10 +678,13 @@ down a replacement opened by manual reconnect."
          client
          (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))))
        ((hermes-dashboard-transport--should-reconnect-p client)
-        ;; Starting reconnect: install a fresh pending readiness promise so a
-        ;; request issued before the replacement socket emits `gateway.ready' is
-        ;; deferred instead of sent against the now-closed socket, then arm the
-        ;; ready timeout for this reconnect generation.
+        ;; Starting reconnect: move to a fresh connection generation before
+        ;; arming its readiness timeout.  The startup timeout remains scheduled,
+        ;; but its captured generation can no longer stop this reconnect early.
+        ;; Install a fresh pending readiness promise so a request issued before
+        ;; the replacement socket emits `gateway.ready' is deferred instead of
+        ;; sent against the now-closed socket.
+        (cl-incf (hermes-dashboard-transport-client-generation client))
         (setf (hermes-dashboard-transport-client-reconnecting-p client) t
               (hermes-dashboard-transport-client-reconnect-attempts client) 0)
         (hermes-dashboard-transport--reset-readiness client)

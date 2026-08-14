@@ -2588,6 +2588,37 @@ url.el flags every 4xx/5xx via the callback status; the useless
         (should-not opened)
         (should-not scheduled)))))
 
+(ert-deftest hermes-transport-dashboard-reconnect-ignores-startup-timeout ()
+  "A stale startup timeout cannot terminate a fresh reconnect window."
+  (let* ((ready (hermes--promise-make))
+         (client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 9119 :token "token"
+                  :refcount 1 :websocket 'old-websocket
+                  :ready-promise ready :callback #'ignore))
+         scheduled
+         (hermes-dashboard-transport-heartbeat-interval nil)
+         (hermes-dashboard-transport-ready-timeout 15)
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (hermes-dashboard-transport-reconnect-base-delay 1)
+         (hermes-dashboard-transport-reconnect-max-delay 1)
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay fn &rest args)
+            (setq scheduled
+                  (append scheduled (list (list delay fn args)))))))
+    (hermes-dashboard-transport--arm-ready-timeout client)
+    (hermes-dashboard-transport--handle-frame
+     client '((jsonrpc . "2.0") (method . "event")
+              (params . ((type . "gateway.ready")))))
+    (hermes-dashboard-transport--handle-socket-down
+     client "socket lost" 'old-websocket)
+    (let ((startup-timeout (nth 0 scheduled))
+          (reconnect-timeout (nth 1 scheduled)))
+      (apply (nth 1 startup-timeout) (nth 2 startup-timeout))
+      (should (hermes-dashboard-transport-client-reconnecting-p client))
+      (should-not (hermes-dashboard-transport-client-stopping-p client))
+      (apply (nth 1 reconnect-timeout) (nth 2 reconnect-timeout))
+      (should (hermes-dashboard-transport-client-stopping-p client)))))
+
 (ert-deftest hermes-transport-dashboard-reconnect-exhaustion-finalizes-client ()
   "Exhausted reconnects reject readiness and release all owned resources."
   (let* ((ready (hermes--promise-make)) rejected request-rejected closed deleted
