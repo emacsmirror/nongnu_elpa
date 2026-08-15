@@ -54,7 +54,7 @@
   "Query string added to filter."
   :type 'string)
 
-(defcustom elfeed-tree-icon-presets
+(defcustom elfeed-tree-style-alist
   '((box ;; Box drawing characters
      :branch "├─"
      :last   "╰─"
@@ -63,7 +63,7 @@
      :feed   "◦"
      :close  "▶"
      :open   "▼")
-    (ascii ;; Only ASCII characters
+    (ascii ;; ASCII characters
      :branch "|-"
      :last   "`-"
      :line   "| "
@@ -79,15 +79,19 @@
      :feed   ""
      :close  ""
      :open   ""))
-  "Icons presets for tree visualization, see `elfeed-tree-icon-style'."
+  "Presets for tree visualization, see `elfeed-tree-style'."
   :type '(alist :key-type symbol
                 :value-type (plist :key-type keyword
                                    :value-type string)))
 
-(defcustom elfeed-tree-icon-style
-  (if (char-displayable-p ?▶) 'box 'ascii)
-  "Selected icon style, see `elfeed-tree-icon-presets'."
-  :type 'symbol)
+(defcustom elfeed-tree-style
+  (if (char-displayable-p ?▶) 'box 'plain)
+  "Tree style, can be nil or one of `elfeed-tree-style-alist'."
+  :type '(choice (const :tag "Plain" nil)
+                 (const :tag "Nerd Fonts" nerd)
+                 (const :tag "ASCII" ascii)
+                 (const :tag "Box drawing" box)
+                 symbol))
 
 (defcustom elfeed-tree-display-action
   '(display-buffer-in-side-window
@@ -228,7 +232,7 @@
                                              'elfeed-tree--button t)))
         (goto-char (1+ button))
         (put-text-property button (1+ button) 'display
-                           (elfeed-tree--icon
+                           (elfeed-tree--style
                             (if (invisible-p (pos-eol)) :close :open)))))))
 
 ;;;###autoload
@@ -398,15 +402,14 @@ NODES is a list of tree nodes."
               (+ unread read))
     (format " %s" (+ unread read))))
 
-(defun elfeed-tree--icon (icon)
-  "Lookup tree ICON."
-  (copy-sequence (plist-get
-                  (alist-get elfeed-tree-icon-style elfeed-tree-icon-presets)
-                  icon)))
+(defun elfeed-tree--style (name)
+  "Lookup tree element NAME."
+  (copy-sequence
+   (plist-get (alist-get elfeed-tree-style elfeed-tree-style-alist) name)))
 
-(defun elfeed-tree--star (icon)
-  "Return star with displayed tree ICON."
-  (propertize "*" 'display (elfeed-tree--icon icon)))
+(defun elfeed-tree--star (name)
+  "Return star with displayed tree element NAME."
+  (propertize "*" 'display (elfeed-tree--style name)))
 
 (defun elfeed-tree--title (indent title unread read count tags)
   "Insert TITLE into buffer.
@@ -415,7 +418,7 @@ COUNT the number of feeds and TAGS the list of tags."
   (setq indent (concat
                 indent
                 (propertize "*"
-                            'display (elfeed-tree--icon :close)
+                            'display (elfeed-tree--style :close)
                             'elfeed-tree--button t)
                 " "))
   (elfeed-add-properties
