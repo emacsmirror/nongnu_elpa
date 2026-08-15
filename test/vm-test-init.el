@@ -468,6 +468,22 @@ exactly where someone is reading the output and wondering what went wrong."
                 reason)
        (ert-skip reason))))
 
+;;; Choosing between a live server and a mock one
+
+(defconst vm-test-live-environment-variable "VM_TEST_LIVE"
+  "Environment variable saying whether the live tests may use the network.
+Set it to 0, no, off or mock to run the mock servers alone on a machine that
+has test/vm-live-config.el.  The mock tests always run either way.")
+
+(defun vm-test-live-wanted-p ()
+  "Whether the live tests may run, according to the environment.
+True unless `vm-test-live-environment-variable' turns them off.  This is the
+default of `vm-imap-live-enabled' and `vm-pop-live-enabled', which the config
+file and a `let' can still override -- the variable is how a run says which
+servers it wants, not whether any are configured."
+  (let ((asked (getenv vm-test-live-environment-variable)))
+    (not (member (downcase (or asked "")) '("0" "no" "off" "mock" "false")))))
+
 ;;; Folder setup helpers
 
 ;; Load additional modules needed for folder operations

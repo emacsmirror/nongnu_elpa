@@ -50,10 +50,11 @@
 ;;; Opt-in
 ;;; ------------------------------------------------------------------
 
-(defvar vm-pop-live-enabled t
+(defvar vm-pop-live-enabled (vm-test-live-wanted-p)
   "Whether the live POP tests may run at all.
 As with `vm-imap-live-enabled', the config file is the real opt-in; bind this
-to nil to keep a configured checkout off the network.")
+to nil to keep a configured checkout off the network, and the default answers
+VM_TEST_LIVE.")
 
 (defvar vm-pop-test-servers nil
   "List of POP server plists, set by `vm-live-config-file'.

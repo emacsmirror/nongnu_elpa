@@ -118,6 +118,36 @@ and `make clean' removes it."
     (should-not (equal (file-name-directory (expand-file-name file))
                        (file-name-as-directory (expand-file-name "~"))))))
 
+;;; Asking for the mock servers on a machine that has a live one
+
+(defun vm-test-init-test--live-wanted (value)
+  "Whether the live tests are wanted with VM_TEST_LIVE set to VALUE."
+  (let ((process-environment
+         (cons (concat vm-test-live-environment-variable "=" value)
+               process-environment)))
+    (vm-test-live-wanted-p)))
+
+(ert-deftest vm-test-init-test-live-servers-are-wanted-by-default ()
+  "Unset, or set to anything that is not a refusal, means use the live
+servers -- the config file is the opt-in, and the variable only takes it
+away."
+  (let ((process-environment
+         (cons (concat vm-test-live-environment-variable "=")
+               process-environment)))
+    (should (vm-test-live-wanted-p)))
+  (should (vm-test-init-test--live-wanted "1"))
+  (should (vm-test-init-test--live-wanted "yes")))
+
+(ert-deftest vm-test-init-test-the-live-servers-can-be-refused ()
+  "VM_TEST_LIVE=0, and the other ways of saying no, run the mock servers
+alone on a machine that has a live one configured.  That is how the mock
+tests are checked where a live run would otherwise cover for them."
+  (should-not (vm-test-init-test--live-wanted "0"))
+  (should-not (vm-test-init-test--live-wanted "no"))
+  (should-not (vm-test-init-test--live-wanted "off"))
+  (should-not (vm-test-init-test--live-wanted "mock"))
+  (should-not (vm-test-init-test--live-wanted "MOCK")))
+
 (provide 'vm-test-init-test)
 
 ;;; vm-test-init-test.el ends here

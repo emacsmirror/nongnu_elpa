@@ -22,7 +22,7 @@ LEAK_REPORT = leak-report.el
 # Test targets
 ##############################################################################
 
-.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-send test-leaks \
+.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-mock test-send test-leaks \
 	compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
@@ -64,6 +64,17 @@ test-imap: compile-lisp
 # live ones want a POP server in test/vm-live-config.el and skip without one.
 test-pop: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
+
+# The IMAP and POP tests with the network taken away: the mock servers alone,
+# on a machine that has a live one configured.  This is how the mock tests are
+# checked on the machine most likely to break them -- a live run covers the
+# same ground, so a mock that has rotted goes unnoticed there.  VM_TEST_LIVE
+# works on any of the targets above; this is the shorthand.
+test-mock: compile-lisp
+	VM_TEST_LIVE=0 $(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
+	    -l $(srcdir)/$(IMAP_RUNNER)
+	VM_TEST_LIVE=0 $(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
+	    -l $(srcdir)/$(POP_RUNNER)
 
 # Send real mail and check that it arrives.  Not part of `make test': the live
 # IMAP and POP tests are, once configured, because they talk to a server on

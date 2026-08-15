@@ -50,11 +50,15 @@
 ;;; Opt-in
 ;;; ------------------------------------------------------------------
 
-(defvar vm-imap-live-enabled t
+(defvar vm-imap-live-enabled (vm-test-live-wanted-p)
   "Whether the live IMAP tests may run at all.
 They run only when `vm-live-config-file' also exists, so the config is the real
 opt-in.  Bind this to nil to keep a configured checkout from using the network
--- in CI, say -- without deleting the config.")
+-- in CI, say -- without deleting the config.
+
+The default answers VM_TEST_LIVE, so `make test-mock' and
+`VM_TEST_LIVE=0 make test' run the mock servers alone on a machine that has a
+live one.  See `vm-test-live-wanted-p\='.")
 
 (defvar vm-live-config-file
   (expand-file-name "vm-live-config.el" vm-test-dir)
