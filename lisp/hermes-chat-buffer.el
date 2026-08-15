@@ -940,10 +940,19 @@ METADATA is stored as the entry's `:metadata' plist."
       hermes-chat--unsettled-submit-context
       hermes-chat--queued-submit-id))
 
+(defun hermes-chat--trailing-active-assistant-node ()
+  "Return the trailing assistant node during an active turn, if any."
+  (when (hermes-chat--active-turn-p)
+    (when-let* ((node (and hermes-chat--ewoc
+                           (ewoc-nth hermes-chat--ewoc -1))))
+      (and (eq (plist-get (ewoc-data node) :role) 'assistant)
+           node))))
+
 (defun hermes-chat--insert-local-status (content &optional status)
   "Insert local status CONTENT with optional STATUS."
   (hermes-chat--insert-entry
-   (hermes-chat--make-entry 'status content (or status 'done))))
+   (hermes-chat--make-entry 'status content (or status 'done))
+   (hermes-chat--trailing-active-assistant-node)))
 
 (defun hermes-chat--command-error (message)
   "Render dashboard command error MESSAGE."
