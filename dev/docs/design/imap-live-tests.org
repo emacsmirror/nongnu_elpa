@@ -61,7 +61,8 @@ without deleting its config; =./test-runner --mock= is the shorthand, and the
 default run includes that pass. That is not a second opt-in; it is how the mock
 tests get checked on the machine where a live run would otherwise cover for
 them. =VM_TEST_OPTIONAL=0= does the same for BBDB, emacs-w3m and vcard, and the
-default run includes a pass without them too.
+default run includes a pass without them: the test files that name one, which
+is the only place their absence can show.
 
 * Configuration
 

@@ -18,9 +18,9 @@
 #                 so the mock servers run with nothing live covering for them.
 #                 Only where a live config exists; without one the suite was
 #                 already this
-#   no-optional   the suite again without BBDB, emacs-w3m and vcard, which is
-#                 how an ordinary checkout runs it.  Only where they are
-#                 installed
+#   no-optional   the test files that name BBDB, emacs-w3m or vcard, run
+#                 without them, which is how an ordinary checkout runs them.
+#                 Only where they are installed
 #   send          real mail, sent and read back, where the config says where to
 #
 # Every pass runs whichever fails, and the exit status is 1 if any did.
@@ -42,7 +42,7 @@ With no options: build, then every pass this machine can run.
   --pop            the POP tests alone
   --send           the mail-sending tests alone
   --mock           the IMAP and POP tests with the live servers skipped
-  --no-optional    the suite without BBDB, emacs-w3m and vcard
+  --no-optional    the tests that use BBDB, emacs-w3m and vcard, without them
   --assert         the suite with VM's own assertions checked
   --leaks          report tests that leave global state behind
   --coverage       write test/coverage-results.txt
@@ -166,6 +166,7 @@ pop_unreached=$(probe pop_unreached)
 send_configured=$(probe send_configured)
 send_to=$(probe send_to)
 optional_installed=$(probe optional_installed)
+optional_test_files=$(probe optional_test_files)
 
 say_servers () {
     kind=$1 servers=$2 reached=$3 unreached=$4
@@ -270,8 +271,19 @@ pass_mock () {
 }
 
 pass_no_optional () {
-    run_pass "suite without BBDB, emacs-w3m and vcard" \
-        emacs_run "$live" 0 -l "$root/test/run-tests.el"
+    if [ -z "$optional_test_files" ]; then
+        record "without the optional packages: no test file mentions one"
+        return
+    fi
+    # Only the files that name one: nothing else can tell whether a package is
+    # installed, and the whole suite again costs two minutes to prove it.
+    set --
+    for file in $optional_test_files; do
+        set -- "$@" -l "$root/test/$file"
+    done
+    run_pass "the tests that use BBDB, emacs-w3m and vcard, without them" \
+        emacs_run "$live" 0 -l "$root/test/vm-test-init.el" "$@" \
+        -f ert-run-tests-batch-and-exit
 }
 
 pass_send () {

@@ -68,7 +68,7 @@ runs each pass in its own Emacs, every one this machine can:
 
 | suite       | everything, with whatever this machine has                    |
 | mock        | IMAP and POP again with the live servers skipped, where a config exists |
-| no-optional | the suite again without bbdb, emacs-w3m and vcard, where they are installed |
+| no-optional | the tests that name bbdb, emacs-w3m or vcard, run without them, where they are installed |
 | send        | real mail, sent and read back, where the config says where to |
 
 Every pass runs whichever fails; the summary at the end names each one.
@@ -79,7 +79,7 @@ Options, from =./test-runner --help=:
 | --imap, --pop | those tests alone                          |
 | --send        | the mail-sending tests alone               |
 | --mock        | IMAP and POP with the live servers skipped |
-| --no-optional | the suite without the optional packages    |
+| --no-optional | those tests, run without the packages       |
 | --assert      | the suite with VM's own assertions checked |
 | --leaks       | what a run leaves behind, see below        |
 | --coverage    | writes test/coverage-results.txt           |
