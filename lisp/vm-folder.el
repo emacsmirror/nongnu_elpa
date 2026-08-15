@@ -4806,8 +4806,13 @@ implementation than the expected one damages mail -- so this asks instead."
 	    (save-excursion
 	      (setq work-buffer (vm-make-work-buffer))
 	      (set-buffer work-buffer)
+	      ;; The same separator the folder would be parsed by, so that
+	      ;; the count agrees with the messages a reader would see.
+	      ;; "^From " alone counts every body line beginning "From ",
+	      ;; and a folder written by something that does not quote
+	      ;; those has them (emacs-vm/vm#640).
 	      (cond ((memq type '(From_ BellFrom_ mboxcl2))
-		     (setq regexp "^From "))
+		     (setq regexp vm-leading-message-separator-regexp-From_))
 		    ((eq type 'mmdf)
 		     (setq regexp "^\001\001\001\001"))
 		    ((eq type 'babyl)
