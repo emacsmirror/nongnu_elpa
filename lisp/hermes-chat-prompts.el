@@ -130,6 +130,8 @@ Invisible buffers and batch sessions record every prompt and show a message."
                             (list prompt))
                          prompt)))
              (token (and existing (plist-get existing :response-token))))
+        (when (and existing (hash-table-p hermes-chat--auto-prompt-keys))
+          (remhash key hermes-chat--auto-prompt-keys))
         (when token
           (setq stored (plist-put stored :response-token token)))
         (puthash key stored table)
@@ -168,6 +170,44 @@ Invisible buffers and batch sessions record every prompt and show a message."
   (or hermes-chat--auto-prompt-keys
       (setq hermes-chat--auto-prompt-keys (make-hash-table :test #'equal))))
 
+(defun hermes-chat--release-auto-prompt-claim (key &optional claim)
+  "Release KEY's auto-prompt CLAIM when it remains current.
+With nil CLAIM, release any claim for KEY."
+  (when (and (hash-table-p hermes-chat--auto-prompt-keys)
+             (or (null claim)
+                 (eq (gethash key hermes-chat--auto-prompt-keys) claim)))
+    (remhash key hermes-chat--auto-prompt-keys)))
+
+(defun hermes-chat--prompt-owner-context (key &optional prompt claim)
+  "Return current ownership context for KEY, PROMPT, and scheduling CLAIM."
+  (list :client hermes-chat--dashboard-client
+        :session-id hermes-chat--dashboard-active-session-id
+        :generation hermes-chat--lifecycle-generation
+        :prompts hermes-chat--pending-prompts
+        :key key
+        :prompt prompt
+        :claim claim))
+
+(defun hermes-chat--prompt-owner-current-p (context)
+  "Return non-nil when prompt owner CONTEXT still owns this chat."
+  (let ((client (plist-get context :client))
+        (key (plist-get context :key))
+        (expected (plist-get context :prompt))
+        (claim (plist-get context :claim)))
+    (and (eq hermes-chat--dashboard-client client)
+         (hermes-dashboard-transport-client-p client)
+         (hermes-dashboard-transport-client-websocket client)
+         (equal hermes-chat--dashboard-active-session-id
+                (plist-get context :session-id))
+         (= hermes-chat--lifecycle-generation (plist-get context :generation))
+         (eq hermes-chat--pending-prompts (plist-get context :prompts))
+         (when-let* ((prompt (gethash key hermes-chat--pending-prompts)))
+           (and (or (null expected) (eq prompt expected))
+                (or (null claim)
+                    (and (hash-table-p hermes-chat--auto-prompt-keys)
+                         (eq (gethash key hermes-chat--auto-prompt-keys)
+                             claim))))))))
+
 (defun hermes-chat--prompt-notice-text (prompt)
   "Return a safe one-line notice for PROMPT."
   (let ((summary (or (plist-get prompt :content)
@@ -183,28 +223,33 @@ Invisible buffers and batch sessions record every prompt and show a message."
        (not noninteractive)
        (get-buffer-window buffer t)))
 
-(defun hermes-chat--run-auto-prompt (buffer key)
-  "Prompt for pending prompt KEY in BUFFER, when it is still safe to do so."
+(defun hermes-chat--run-auto-prompt (buffer key context)
+  "Prompt for KEY in BUFFER while prompt owner CONTEXT remains current."
   (hermes-chat--in-buffer buffer
-    (when (hash-table-p hermes-chat--auto-prompt-keys)
-      (remhash key hermes-chat--auto-prompt-keys))
-    (when-let* ((prompt (and hermes-chat--pending-prompts
-                             (gethash key hermes-chat--pending-prompts))))
-      (cond
-       ((not (hermes-chat--auto-prompt-schedulable-p buffer)) nil)
-       ((not (zerop (minibuffer-depth)))
-        (hermes-chat--schedule-auto-prompt prompt t 0.25))
-       (t
-        (condition-case err
-            (let ((hermes-chat--auto-prompting-p t))
-              (hermes-chat-respond-to-prompt key))
-          (quit
-           (message "Hermes prompt left pending: %s" key))
-          (user-error
-           (message "%s" (error-message-string err)))
-          (error
-           (message "Hermes auto prompt failed: %s"
-                    (error-message-string err)))))))))
+    (when (hermes-chat--prompt-owner-current-p context)
+      (when-let* ((prompt (gethash key hermes-chat--pending-prompts)))
+        (cond
+         ((not (hermes-chat--auto-prompt-schedulable-p buffer))
+          (hermes-chat--release-auto-prompt-claim
+           key (plist-get context :claim)))
+         ((or (hermes-chat--prompt-response-in-flight-p key)
+              (not (zerop (minibuffer-depth))))
+          (hermes-chat--release-auto-prompt-claim
+           key (plist-get context :claim))
+          (hermes-chat--schedule-auto-prompt prompt t 0.25))
+         (t
+          (hermes-chat--release-auto-prompt-claim
+           key (plist-get context :claim))
+          (condition-case err
+              (let ((hermes-chat--auto-prompting-p t))
+                (hermes-chat-respond-to-prompt key))
+            (quit
+             (message "Hermes prompt left pending: %s" key))
+            (user-error
+             (message "%s" (error-message-string err)))
+            (error
+             (message "Hermes auto prompt failed: %s"
+                      (error-message-string err))))))))))
 
 (defun hermes-chat--schedule-auto-prompt (prompt &optional quiet delay)
   "Announce PROMPT and schedule an automatic minibuffer response prompt.
@@ -221,9 +266,12 @@ number of seconds to wait before trying to prompt."
                (hermes-chat--auto-prompt-schedulable-p (current-buffer)))
       (let ((scheduled (hermes-chat--ensure-auto-prompt-keys)))
         (unless (gethash key scheduled)
-          (puthash key t scheduled)
-          (run-at-time (or delay 0) nil #'hermes-chat--run-auto-prompt
-                       (current-buffer) key))))))
+          (let ((claim (list key prompt)))
+            (puthash key claim scheduled)
+            (run-at-time (or delay 0) nil #'hermes-chat--run-auto-prompt
+                         (current-buffer) key
+                         (hermes-chat--prompt-owner-context
+                          key prompt claim))))))))
 
 (defun hermes-chat--prompt-session-match-p (prompt session-id)
   "Return non-nil if PROMPT belongs to SESSION-ID.
@@ -241,7 +289,8 @@ A nil SESSION-ID matches every prompt in the current buffer."
                    (push key keys)))
                hermes-chat--pending-prompts)
       (dolist (key keys)
-        (remhash key hermes-chat--pending-prompts))
+        (remhash key hermes-chat--pending-prompts)
+        (hermes-chat--release-auto-prompt-claim key))
       (when keys
         (hermes-chat--notify-state-change)))))
 
@@ -482,6 +531,7 @@ Return the next pending prompt."
          (remaining (and queue (nthcdr count queue)))
          (next (and remaining
                     (hermes-chat--approval-prompt-with-queue remaining))))
+    (hermes-chat--release-auto-prompt-claim key)
     (if next
         (progn
           (puthash key next hermes-chat--pending-prompts)
@@ -577,6 +627,16 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
                           (gethash key hermes-chat--pending-prompts))))
     (plist-get prompt :response-token)))
 
+(defun hermes-chat--release-all-prompt-response-claims ()
+  "Release response claims after lifecycle invalidation."
+  (when (hash-table-p hermes-chat--pending-prompts)
+    (maphash
+     (lambda (key prompt)
+       (when (plist-get prompt :response-token)
+         (puthash key (plist-put (copy-sequence prompt) :response-token nil)
+                  hermes-chat--pending-prompts)))
+     hermes-chat--pending-prompts)))
+
 (defun hermes-chat--prompt-response-context (client key prompt all)
   "Claim ownership context for CLIENT, KEY, PROMPT, and ALL scope."
   (unless (eq prompt (and (hash-table-p hermes-chat--pending-prompts)
@@ -584,6 +644,7 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
     (user-error "Hermes prompt request is no longer pending"))
   (when (hermes-chat--prompt-response-in-flight-p key)
     (user-error "Hermes is accepting the previous prompt response"))
+  (hermes-chat--release-auto-prompt-claim key)
   (let ((token (list key))
         (response-count
          (if (and all (hermes-chat--approval-prompt-p prompt))
@@ -604,11 +665,18 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
 
 (defun hermes-chat--release-prompt-response (context)
   "Release the response claim owned by CONTEXT."
-  (when-let* ((prompt (gethash (plist-get context :key)
-                               hermes-chat--pending-prompts)))
-    (puthash (plist-get context :key)
-             (plist-put (copy-sequence prompt) :response-token nil)
-             hermes-chat--pending-prompts)))
+  (let* ((key (plist-get context :key))
+         (prompt (gethash key hermes-chat--pending-prompts))
+         (claim (and (hash-table-p hermes-chat--auto-prompt-keys)
+                     (gethash key hermes-chat--auto-prompt-keys))))
+    (when prompt
+      (hermes-chat--release-auto-prompt-claim key claim)
+      (let ((restored (plist-put (copy-sequence prompt)
+                                 :response-token nil)))
+        (puthash key restored hermes-chat--pending-prompts)
+        (when claim
+          (hermes-chat--schedule-auto-prompt restored t))
+        restored))))
 
 (defun hermes-chat--prompt-response-current-p (context)
   "Return non-nil when prompt response CONTEXT still owns this chat."
@@ -652,9 +720,13 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
   (or (hermes-chat--event-string prompt '(:request-id :request_id)) key))
 
 (defun hermes-chat--send-prompt-response
-    (key prompt response all canceled &optional preserve-response)
+    (key prompt response all canceled &optional preserve-response owner)
   "Send RESPONSE for prompt KEY/PROMPT through the dashboard transport."
-  (let* ((client (hermes-chat--dashboard-control-client))
+  (when (and owner (not (hermes-chat--prompt-owner-current-p owner)))
+    (user-error "Hermes prompt request is no longer current"))
+  (let* ((client (if owner
+                     (plist-get owner :client)
+                   (hermes-chat--dashboard-control-client)))
          (context (hermes-chat--prompt-response-context
                    client key prompt all))
          (type (hermes-chat--prompt-event-type prompt)))
@@ -700,12 +772,15 @@ approvals in the dashboard session.  PRESERVE-RESPONSE keeps programmatic
 chat-tail input recoverable when the request fails."
   (interactive (list nil nil current-prefix-arg))
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
-         (prompt (hermes-chat--pending-prompt prompt-key)))
+         (prompt (hermes-chat--pending-prompt prompt-key))
+         (context (hermes-chat--prompt-owner-context prompt-key prompt)))
     (when (hermes-chat--prompt-response-in-flight-p prompt-key)
       (user-error "Hermes is accepting the previous prompt response"))
     (let ((answer (or response (hermes-chat--read-prompt-response prompt))))
+      (unless (hermes-chat--prompt-owner-current-p context)
+        (user-error "Hermes prompt request is no longer current"))
       (hermes-chat--send-prompt-response
-       prompt-key prompt answer all nil preserve-response))))
+       prompt-key prompt answer all nil preserve-response context))))
 
 (defun hermes-chat-cancel-prompt (&optional key)
   "Cancel pending prompt KEY by sending the protocol's safe empty/deny value."
@@ -716,6 +791,8 @@ chat-tail input recoverable when the request fails."
                        "deny"
                      "")))
     (hermes-chat--send-prompt-response prompt-key prompt response nil t)))
+
+(add-hook 'hermes-chat-lifecycle-invalidation-hook #'hermes-chat--release-all-prompt-response-claims)
 
 (provide 'hermes-chat-prompts)
 ;;; hermes-chat-prompts.el ends here

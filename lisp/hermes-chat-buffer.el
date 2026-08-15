@@ -478,6 +478,9 @@ text-property changes in the undo list."
   "Invalidate callbacks and pending work before releasing this buffer's client."
   (cl-incf hermes-chat--transport-generation)
   (cl-incf hermes-chat--lifecycle-generation)
+  (run-hooks 'hermes-chat-lifecycle-invalidation-hook)
+  (when (hash-table-p hermes-chat--auto-prompt-keys)
+    (clrhash hermes-chat--auto-prompt-keys))
   (setq hermes-chat--pending-assistant-id nil
         hermes-chat--queued-messages nil
         hermes-chat--queued-submit-id nil
@@ -858,6 +861,9 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
 (defun hermes-chat-register-state-change-function (function)
   "Add FUNCTION to `hermes-chat-state-change-hook'."
   (add-hook 'hermes-chat-state-change-hook function))
+
+(defvar hermes-chat-lifecycle-invalidation-hook nil
+  "Hook run before a Hermes chat releases lifecycle-owned state.")
 
 (defvar hermes-chat-submit-inhibit-functions nil
   "Functions returning a reason that this chat must reject submission.")

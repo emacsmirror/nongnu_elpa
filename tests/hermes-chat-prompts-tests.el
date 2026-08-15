@@ -11,6 +11,36 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(defun hermes-test--auto-prompt-calls (calls)
+  "Return automatic prompt timer CALLS in scheduling order."
+  (cl-remove-if-not (lambda (call)
+                      (eq (car call) #'hermes-chat--run-auto-prompt))
+                    calls))
+
+(defun hermes-test--last-auto-prompt-call (calls)
+  "Return the last automatic prompt timer call from CALLS."
+  (car (last (hermes-test--auto-prompt-calls calls))))
+
+(cl-defmacro hermes-test-with-auto-prompt-session
+    ((client calls prompted) &rest body)
+  "Run BODY in an automatic prompt session with captured timer CALLS."
+  (declare (indent 1))
+  `(let (,calls (,prompted 0))
+     (cl-letf (((symbol-function 'run-at-time)
+                (lambda (_secs _repeat function &rest args)
+                  (setq ,calls (append ,calls (list (cons function args))))
+                  'fake-timer))
+               ((symbol-function 'cancel-timer) #'ignore)
+               ((symbol-function 'get-buffer-window)
+                (lambda (&rest _args) (selected-window)))
+               ((symbol-function 'completing-read)
+                (lambda (&rest _args) (cl-incf ,prompted) "Deny")))
+       (let ((noninteractive nil)
+             (hermes-chat-auto-prompt-requests t))
+         (hermes-test-with-dashboard-prompt-session (,client)
+           (setq ,calls nil)
+           ,@body)))))
+
 (ert-deftest hermes-chat-prompt-notification-keeps-sensitive-content-generic ()
   "A secret request notifies without copying its command or prompt contents."
   (let (notice)
@@ -178,6 +208,93 @@
           (should prompted)
           (should-not (gethash "approval:sid-prompt"
                                hermes-chat--pending-prompts)))))))
+
+(ert-deftest hermes-chat-prompt-lifecycle-disconnect-invalidates-auto-prompt ()
+  "An automatic prompt scheduled by an old chat lifecycle cannot open later."
+  (hermes-test-with-auto-prompt-session (client timer-calls prompted)
+    (let (sent)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+                 (lambda (&rest _args) (setq sent t))))
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "first")))
+        (let ((call (hermes-test--last-auto-prompt-call timer-calls)))
+          (hermes-chat-disconnect)
+          (apply (car call) (cdr call)))
+        (should (zerop prompted))
+        (should-not sent)
+        (should (zerop (hash-table-count hermes-chat--auto-prompt-keys)))))))
+
+(ert-deftest hermes-chat-auto-prompt-removal-does-not-claim-successor ()
+  "A removed prompt's timer cannot claim a same-key successor."
+  (hermes-test-with-auto-prompt-session (client timer-calls prompted)
+    (let ((sent 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+                 (lambda (_client &rest args)
+                   (cl-incf sent)
+                   (funcall (plist-get args :resolve) '((resolved . 1))))))
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "first")))
+        (hermes-chat--clear-pending-prompts "sid-prompt")
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "second")))
+        (pcase-let* ((`(,old-call ,new-call)
+                      (hermes-test--auto-prompt-calls timer-calls))
+                     (new-context (nth 2 (cdr new-call))))
+          (apply (car old-call) (cdr old-call))
+          (should (zerop prompted))
+          (should (zerop sent))
+          (should (eq (gethash "approval:sid-prompt"
+                               hermes-chat--auto-prompt-keys)
+                      (plist-get new-context :claim)))
+          (apply (car new-call) (cdr new-call)))
+        (should (= prompted 1))
+        (should (= sent 1))))))
+
+(defun hermes-test--exercise-auto-prompt-response-race (reject-p)
+  "Prove a same-key successor survives response completion or REJECT-P."
+  (hermes-test-with-auto-prompt-session (client timer-calls prompted)
+    (let (callback (sent 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+                 (lambda (_client &rest args)
+                   (cl-incf sent)
+                   (if (= sent 1)
+                       (setq callback (plist-get args
+                                                 (if reject-p :reject :resolve)))
+                     (funcall (plist-get args :resolve) '((resolved . 1)))))))
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "first")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (setq timer-calls nil)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "second")))
+        (let ((stale-call (hermes-test--last-auto-prompt-call timer-calls)))
+          (funcall callback (if reject-p "transport failure" '((resolved . 1))))
+          (let* ((fresh-call (hermes-test--last-auto-prompt-call timer-calls))
+                 (fresh-context (nth 2 (cdr fresh-call))))
+            (apply (car stale-call) (cdr stale-call))
+            (should (zerop prompted))
+            (should (= sent 1))
+            (should (eq (gethash "approval:sid-prompt"
+                                 hermes-chat--auto-prompt-keys)
+                        (plist-get fresh-context :claim)))
+            (apply (car fresh-call) (cdr fresh-call))))
+        (should (= prompted 1))
+        (should (= sent 2))
+        (unless reject-p
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request" '((command . "third")))
+          (let ((call (hermes-test--last-auto-prompt-call timer-calls)))
+            (apply (car call) (cdr call)))
+          (should (= prompted 2))
+          (should (= sent 3)))))))
+
+(ert-deftest hermes-chat-auto-prompt-completion-refreshes-successor-claim ()
+  "Response completion refreshes a same-key successor's prompt claim."
+  (hermes-test--exercise-auto-prompt-response-race nil))
+
+(ert-deftest hermes-chat-auto-prompt-rejection-refreshes-owned-claim ()
+  "Response rejection refreshes only an existing automatic prompt claim."
+  (hermes-test--exercise-auto-prompt-response-race t))
 
 (ert-deftest hermes-chat-approval-candidates-follow-backend-choices ()
   (let* ((prompt '(:prompt-type "approval"
@@ -514,6 +631,87 @@ stays available."
       (should-not sent)
       (should-not (gethash "req-read-expire" hermes-chat--pending-prompts))
       (should-not (string-match-p "secret-value" (buffer-string))))))
+
+(ert-deftest hermes-chat-secret-read-rejects-owner-loss ()
+  "A secret read cannot cross disconnect or resurrect a stale client."
+  (dolist (mode '(disconnect stale-client))
+    (let (acquired sent)
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "secret.request"
+         '((request_id . "req-owner-loss") (prompt . "Enter secret")))
+        (cl-letf (((symbol-function 'read-passwd)
+                   (lambda (&rest _args)
+                     (if (eq mode 'disconnect)
+                         (hermes-chat-disconnect)
+                       (setf (hermes-dashboard-transport-client-websocket
+                              client) nil))
+                     "secret-value"))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _args)
+                     (setq acquired t)
+                     (hermes-test--dashboard-client)))
+                  ((symbol-function 'hermes-dashboard-transport-secret-respond)
+                   (lambda (&rest _args) (setq sent t))))
+          (should-error (hermes-chat-respond-to-prompt "req-owner-loss")
+                        :type 'user-error))
+        (should-not acquired)
+        (should-not sent)
+        (should-not (string-match-p "secret-value" (buffer-string)))))))
+
+(ert-deftest hermes-chat-prompt-disconnect-releases-response-claim ()
+  "Disconnect keeps an in-flight prompt recoverable by a successor owner."
+  (let (resolves (sent 0))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (cl-incf sent)
+                 (push (plist-get args :resolve) resolves))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "first")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (should (hermes-chat--prompt-response-in-flight-p
+                 "approval:sid-prompt"))
+        (hermes-chat-disconnect)
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts)))
+          (should prompt)
+          (should-not (plist-get prompt :response-token)))
+        (funcall (car resolves) '((resolved . 1)))
+        (should (gethash "approval:sid-prompt" hermes-chat--pending-prompts))
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "sid-prompt")
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "deny")
+        (should (= sent 2))))))
+
+(ert-deftest hermes-chat-auto-prompt-defers-behind-in-flight-response ()
+  "A successor timer remains recoverable while its predecessor is in flight."
+  (hermes-test-with-auto-prompt-session (client timer-calls prompted)
+    (let (reject-first (sent 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (cl-incf sent)
+                 (if (= sent 1)
+                     (setq reject-first (plist-get args :reject))
+                   (funcall (plist-get args :resolve) '((resolved . 1)))))))
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "first")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (setq timer-calls nil)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request" '((command . "second")))
+        (let ((first-call (hermes-test--last-auto-prompt-call timer-calls)))
+          (apply (car first-call) (cdr first-call))
+          (let ((deferred-call (hermes-test--last-auto-prompt-call timer-calls)))
+            (should-not (eq deferred-call first-call))
+            (funcall reject-first "transport failure")
+            (let ((fresh-call (hermes-test--last-auto-prompt-call timer-calls)))
+              (should-not (eq fresh-call deferred-call))
+              (apply (car deferred-call) (cdr deferred-call))
+              (should (zerop prompted))
+              (apply (car fresh-call) (cdr fresh-call)))))
+        (should (= prompted 1))
+        (should (= sent 2))))))
 
 (ert-deftest hermes-chat-handles-terminal-read-request ()
   (let (respond-request respond-text)
