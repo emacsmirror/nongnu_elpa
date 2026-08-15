@@ -397,6 +397,54 @@ went unnoticed."
       (vm-menu-hm-create-dir nil))
     (should (file-directory-p (expand-file-name "archive" dir)))))
 
+;;; The image menu and the ImageMagick option (emacs-vm/vm#676)
+
+(ert-deftest vm-menu-test-the-image-menu-follows-the-current-option ()
+  "REGRESSION: the image entries are enabled by whether ImageMagick is
+available, not by whether the obsolete override was set.
+
+They asked `(stringp vm-imagemagick-convert-program)', which is nil unless
+somebody set the option that was replaced in 8.4.0 -- so a reader who set
+`vm-imagemagick-program', which is the one the manual documents and the one
+found automatically, had every image entry greyed out."
+  (let ((enablers
+         (seq-filter (lambda (form) (and (consp form)
+                                         (memq (car form) '(stringp vm-imagemagick-available-p))))
+                     (apply #'append
+                            (mapcar (lambda (entry) (and (vectorp entry) (append entry nil)))
+                                    (cdr vm-menu-image-menu))))))
+    (should enablers)
+    (dolist (form enablers)
+      (should-not (equal form '(stringp vm-imagemagick-convert-program))))))
+
+(ert-deftest vm-menu-test-imagemagick-is-available-from-the-current-option ()
+  "`vm-imagemagick-available-p', which those entries now ask, is true when
+only the current option is set."
+  (let ((vm-imagemagick-program "/usr/bin/magick")
+        (vm-imagemagick-convert-program nil))
+    (should (vm-imagemagick-available-p)))
+  (let ((vm-imagemagick-program nil)
+        (vm-imagemagick-convert-program nil))
+    (should-not (vm-imagemagick-available-p)))
+  ;; and the obsolete override still works for anyone who set it
+  (let ((vm-imagemagick-program nil)
+        (vm-imagemagick-convert-program "/usr/bin/convert"))
+    (should (vm-imagemagick-available-p))))
+
+(ert-deftest vm-menu-test-image-converters-come-from-the-current-option ()
+  "REGRESSION: the image type converters are built from whichever
+ImageMagick VM has.
+
+`vm-mime-image-type-converter-alist' was built from the obsolete override
+alone, so it was empty for everyone who set only `vm-imagemagick-program',
+and VM had no way to convert an image type it cannot display."
+  (let ((converters (vm-mime-image-type-converters "/usr/bin/magick")))
+    (should (= (length converters) 7))
+    (should (member '("image" "image/png" "/usr/bin/magick - png:-") converters))
+    (should (member '("image" "image/jpeg" "/usr/bin/magick - jpeg:-") converters)))
+  ;; and with no ImageMagick there is nothing to offer
+  (should-not (vm-mime-image-type-converters nil)))
+
 (provide 'vm-menu-test)
 
 ;;; vm-menu-test.el ends here

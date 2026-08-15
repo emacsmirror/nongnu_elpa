@@ -2095,18 +2095,24 @@ If non-nil, overrides `vm-imagemagick-program' for identify operations."
 (make-obsolete-variable 'vm-imagemagick-identify-program
 			'vm-imagemagick-program "8.4.0")
 
+(defun vm-mime-image-type-converters (program)
+  "Return the image conversions PROGRAM can do, as converter alist entries.
+PROGRAM is an ImageMagick command; nil means there is none, and then there
+are no conversions."
+  (when (stringp program)
+    (mapcar (lambda (type)
+	      (list "image" (concat "image/" type)
+		    (format "%s - %s:-" program type)))
+	    '("png" "jpeg" "gif" "tiff" "xpm" "pbm" "xbm"))))
+
 (defvar vm-mime-image-type-converter-alist
-  (if (stringp vm-imagemagick-convert-program)
-      (let ((x vm-imagemagick-convert-program))
-	(list
-	 (list "image" "image/png" (format "%s - png:-" x))
-	 (list "image" "image/jpeg" (format "%s - jpeg:-" x))
-	 (list "image" "image/gif" (format "%s - gif:-" x))
-	 (list "image" "image/tiff" (format "%s - tiff:-" x))
-	 (list "image" "image/xpm" (format "%s - xpm:-" x))
-	 (list "image" "image/pbm" (format "%s - pbm:-" x))
-	 (list "image" "image/xbm" (format "%s - xbm:-" x))
-	))))
+  ;; The current option is `vm-imagemagick-program'; the other is the
+  ;; obsolete override, which is nil unless someone set it.  Reading only
+  ;; that one left this alist empty for everyone else, so VM had no way to
+  ;; convert an image type it cannot display (emacs-vm/vm#676).
+  (vm-mime-image-type-converters
+   (with-suppressed-warnings ((obsolete vm-imagemagick-convert-program))
+     (or vm-imagemagick-convert-program vm-imagemagick-program))))
 
 (defcustom vm-mime-delete-after-saving nil
   "*Non-nil value causes VM to delete MIME body contents from a folder
