@@ -2062,6 +2062,86 @@ mode says."
       (should-not sent)
       (should-not (vm-reply-test--composition-among before)))))
 
+;;; Where a composition lives (emacs-vm/vm#666)
+
+(defmacro vm-reply-test--composing-elsewhere (&rest body)
+  "Run BODY with the folder in one directory and `vm-folder-directory' in
+another, so a composition that takes the folder's directory is visible.
+
+DRAFTS is `vm-mail-auto-save-directory', unset unless a test binds it;
+FOLDERS is `vm-folder-directory', which is what VM falls back to."
+  (declare (indent 0) (debug t))
+  `(let* ((folders (file-name-as-directory (make-temp-file "vm-folders" t)))
+          (vm-folder-directory folders)
+          (vm-mail-auto-save-directory nil)
+          (auto-save-default t))
+     (unwind-protect
+         (vm-reply-test--composing (_folder vm-reply-test--incoming)
+           ,@body)
+       (delete-directory folders t))))
+
+(defun vm-reply-test--composition-directory ()
+  "The directory of the composition the last command made."
+  (directory-file-name (expand-file-name default-directory)))
+
+(ert-deftest vm-reply-test-a-reply-lives-where-vm-put-it ()
+  "REGRESSION: a reply's composition keeps the directory VM chose for it.
+
+`vm-mail-internal' sets it to `vm-mail-auto-save-directory' or
+`vm-folder-directory' so that auto-save files are written somewhere
+writable; `vm-do-reply' then put the folder's own directory back.  For an
+IMAP folder that is its local cache, so anything that recomputed the
+auto-save name -- `rename-buffer' does, and VM renames a composition after
+sending it -- wrote half-written mail into the cache directory."
+  (vm-reply-test--composing-elsewhere
+    (vm-reply 1)
+    (should (equal (vm-reply-test--composition-directory)
+                   (directory-file-name folders)))
+    (should (string-prefix-p (file-name-as-directory folders)
+                             buffer-auto-save-file-name))))
+
+(ert-deftest vm-reply-test-the-auto-save-directory-is-preferred ()
+  "`vm-mail-auto-save-directory' is where compositions go when it is set:
+that is what it is for, and nothing may put the folder's directory back
+over it."
+  (let ((drafts (file-name-as-directory (make-temp-file "vm-drafts" t))))
+    (unwind-protect
+        (vm-reply-test--composing-elsewhere
+          (let ((vm-mail-auto-save-directory drafts))
+            (vm-reply 1)
+            (should (equal (vm-reply-test--composition-directory)
+                           (directory-file-name drafts)))
+            (should (string-prefix-p drafts buffer-auto-save-file-name))))
+      (delete-directory drafts t))))
+
+(ert-deftest vm-reply-test-every-composition-lives-there ()
+  "Forwarding, resending and sending a digest choose the directory the same
+way a reply does: each of them used to put the folder's back."
+  ;; the two that can be started from an ordinary message; a bounced
+  ;; message and a digest each need a message of their own kind
+  (dolist (start (list (lambda () (vm-forward-message))
+                       (lambda () (vm-resend-message))))
+    (vm-reply-test--composing-elsewhere
+      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "someone@example.com"))
+                ((symbol-function 'completing-read) (lambda (&rest _) "rfc934"))
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (funcall start))
+      (should (equal (vm-reply-test--composition-directory)
+                     (directory-file-name folders))))))
+
+(ert-deftest vm-reply-test-the-auto-save-file-follows-a-rename ()
+  "Renaming the composition keeps its auto-save file where VM put it.
+
+Emacs recomputes the name from `default-directory' when a buffer with no
+file is renamed, and VM renames a composition to \"sent ...\" after sending
+it.  That is how the folder's directory used to end up holding drafts even
+though the name was right when the composition began."
+  (vm-reply-test--composing-elsewhere
+    (vm-reply 1)
+    (rename-buffer "sent reply to Alice Adams" t)
+    (should (string-prefix-p (file-name-as-directory folders)
+                             buffer-auto-save-file-name))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
