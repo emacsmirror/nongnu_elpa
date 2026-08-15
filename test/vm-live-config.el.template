@@ -8,8 +8,9 @@
 ;; passwords in the clear.  This template is checked in, so it must not.
 ;;
 ;; The file's presence is the opt-in for the live tests.  Without it every one
-;; of them skips and `make test' never touches the network; with it they run,
-;; as part of `make test' as well as `make test-imap' and `make test-pop'.
+;; of them skips and a run never touches the network; with it they run, as part
+;; of the default `test/test-runner' as well as `./test-runner --imap' and
+;; `--pop'.
 ;; Bind `vm-imap-live-enabled' or `vm-pop-live-enabled' to nil to suppress
 ;; either half without deleting this file.
 ;;
@@ -33,7 +34,7 @@
 ;; on purpose -- a suite that quietly skips a server it was told about has no
 ;; coverage.
 
-;; Sending mail is configured separately, and is not part of `make test': see
+;; Sending mail is configured separately, and is a pass of its own: see
 ;; `vm-send-test-config' at the end of this file.
 
 ;;; Code:
@@ -79,7 +80,7 @@
 	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
 	 :accounts (("vmtest1" . "PASSWORD1")))))
 
-;; The mail-sending tests, `make test-send'.  These send real mail, so they run
+;; The mail-sending tests, `./test-runner --send'.  These send real mail, so they run
 ;; only from that target and only with this set.  Leave it out and they skip.
 ;;
 ;; :to must be your own address.  The tests mark every message with an

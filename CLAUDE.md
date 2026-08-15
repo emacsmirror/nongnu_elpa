@@ -58,34 +58,44 @@ beside the others at the top of the file, with the arglist the definition has.
 ## Testing
 
 ```bash
-cd test && make test            # whole suite (ert, batch)
-cd test && make test-verbose    # with deeper printing
-cd test && make test-one testel=vm-imap-test.el
-cd test && make test-imap       # IMAP: mock server always, live if configured
-cd test && make test-pop        # POP: mock server always, live if configured
-cd test && make test-mock       # both, with the live servers refused
-cd test && make test-all        # everything this machine can run: test/test-runner
-cd test && make test-leaks      # report tests that leave global state behind
-cd test && make test-assert     # whole suite with VM's own assertions checked
+cd test && ./test-runner                        # every pass this machine can run
+cd test && ./test-runner --probe                # what is available, run nothing
+cd test && ./test-runner --one vm-imap-test.el  # one file
+cd test && ./test-runner --help                 # the rest of the options
+cd test && make test                            # the same, ARGS=... to pass options
 ```
 
-`VM_TEST_LIVE=0` (also `no`, `off`, `mock`) refuses the live servers for any
-of those targets, including `make test`, without deleting
-`test/vm-live-config.el`. Use it on a configured machine before pushing
-anything that touches IMAP or POP: a live run covers the same ground as the
-mock one, so a mock server that has stopped agreeing with the client fails
-nowhere until it reaches a machine with no config.
+**`test/test-runner` is the only thing that runs tests.** The Makefile has no
+Emacs of its own: `make test` forwards to the runner, and `ARGS` goes through
+(`make test ARGS="--one vm-imap-test.el"`). Add a pass to the runner, not a
+target to the Makefile.
 
-**`test/test-runner` is the one to run before pushing.** A non-zero exit from
-`make test` does not say whether VM is broken or the machine is short of a
-server: what is unconfigured skips, what is configured but unreachable fails.
-The runner asks first — `test/vm-test-probe.el` logs in to every configured
-server and reports what answered — prints that, then runs each pass in its own
-Emacs: the suite, the IMAP and POP tests again with the live servers refused,
-and the mail-sending tests when `vm-send-test-config` says where to send. Every
-pass runs whichever fails, and it ends with a summary naming each one.
-`test/test-runner --probe` prints the findings and runs nothing;
-`--no-send`, `--no-live` and `--no-build` are the other options.
+It probes first, because an exit status does not say whether VM is broken or
+the machine is short of a server: what is unconfigured skips, what is
+configured but unreachable fails. `test/vm-test-probe.el` logs in to every
+configured server, and the runner prints what answered, where mail would be
+sent, which optional packages are installed and whether gpg is there.
+
+Then it runs each pass in its own Emacs, and by default runs every one this
+machine can:
+
+| pass | what it adds |
+|------|--------------|
+| suite | everything, with whatever this machine has |
+| mock | IMAP and POP again with the live servers skipped, where a live config exists |
+| no-optional | the suite again without BBDB, emacs-w3m and vcard, where they are installed |
+| send | real mail, sent and read back, where `vm-send-test-config` says where to |
+
+Every pass runs whichever fails, and the summary at the end names each one.
+`--one FILE`, `--imap`, `--pop`, `--send`, `--mock`, `--no-optional`,
+`--assert`, `--leaks` and `--coverage` each run that alone; `--skip-live`,
+`--skip-send`, `--verbose` and `--no-build` modify a run.
+
+`VM_TEST_LIVE=0` (also `no`, `off`, `mock`) refuses the live servers and
+`VM_TEST_OPTIONAL=0` the optional packages, for a pass run by hand. The mock
+servers always run: on a configured machine a live run covers the same ground,
+so a mock that has stopped agreeing with the client would otherwise fail
+nowhere until it reached a machine with no config.
 
 `test/vm-fuzz-test.el` drives a folder through random operation sequences and
 checks its invariants after each one. It runs a small search as part of the
@@ -106,7 +116,7 @@ works without it.
 Each test runs with the global value of every VM variable saved and restored,
 and buffers it created killed — see `vm-test-isolate-global-state` in
 `test/vm-test-init.el`. Do not rely on state from an earlier test, and do not
-assume a test that leaks is harmless: `make test-leaks` shows what is being
+assume a test that leaks is harmless: `./test-runner --leaks` shows what is being
 leaked, and advice, non-VM hooks and files on disk are *not* restored.
 
 Gotchas found the hard way:
@@ -132,7 +142,7 @@ Gotchas found the hard way:
 - **`vm-assert` does nothing by default.** `vm-assertion-checking-off` defaults
   to t, so an assertion in the code under test is not a check you can rely on in
   the field. It also binds `debug-on-error`, so a test that wants assertions on
-  needs `inhibit-debugger` for batch. `make test-assert` runs the whole suite
+  needs `inhibit-debugger` for batch. `./test-runner --assert` runs the whole suite
   with them on and is expected to pass: an assertion that fires there is either
   a broken invariant or a test setting up a state no real caller is in, which is
   what four IMAP tests were doing until they were given a `process` buffer type.

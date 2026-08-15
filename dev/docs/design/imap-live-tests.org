@@ -42,8 +42,9 @@ The whole live suite is opt-in. Gate is the *presence* of
 =test/vm-live-config.el= (gitignored) *and* the enable flag that only the
 live runner sets. So:
 
-- =make test= :: never contacts a server, even on a configured box.
-- =make test-imap= :: loads the config, sets the flag, runs the live tests.
+- an unconfigured checkout :: never contacts a server.
+- =./test-runner= :: loads the config and runs the live tests, along with a
+  pass that skips them.
 
 Test files are named =vm-imap-live-*-test.el=, so normal discovery picks them
 up and they =skip-unless= the flag. No separate destructive opt-in: the
@@ -56,9 +57,11 @@ rots into permanent no-coverage.
 One environment variable takes the live servers away again: =VM_TEST_LIVE=0=
 (also =no=, =off=, =mock=) is the default of =vm-imap-live-enabled= and
 =vm-pop-live-enabled=, so a configured machine can run the mock servers alone
-without deleting its config. =make test-mock= is the shorthand. That is not a
-second opt-in; it is how the mock tests get checked on the machine where a
-live run would otherwise cover for them.
+without deleting its config; =./test-runner --mock= is the shorthand, and the
+default run includes that pass. That is not a second opt-in; it is how the mock
+tests get checked on the machine where a live run would otherwise cover for
+them. =VM_TEST_OPTIONAL=0= does the same for BBDB, emacs-w3m and vcard, and the
+default run includes a pass without them too.
 
 * Configuration
 
@@ -167,7 +170,7 @@ Names are load-bearing: the tests look for =pop= and =pop-tls=, as the IMAP
 ones look for =plain= and =tls=.  =:auth= is =pass= or =apop=; VM's POP spec
 is =pop:HOST:PORT:AUTH:USER:PASSWORD=, so passwords again cannot contain =:=.
 
-Run with =make test-pop= (mock plus live), or =make test= which includes both
+Run with =./test-runner --pop= (mock plus live), or the default run, which includes both
 and skips the live half when no POP server is configured.
 
 ** Seeding a maildrop

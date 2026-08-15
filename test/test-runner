@@ -1,21 +1,29 @@
 #!/bin/sh
 #
-# Run everything this machine can run, and say what it could not.
+# Run VM's tests: every pass this machine can run, and say what it could not.
+#
+# Nothing else runs them.  `make test' is this program, and the Makefile has no
+# Emacs of its own -- one place decides what a test run is.
 #
 # The suite skips what is not configured and fails what is configured but
-# unreachable, so a non-zero exit on its own does not say whether VM is broken
-# or the machine is short of a server.  This asks first -- test/vm-test-probe.el
-# reports what is there -- prints it, then runs each pass in its own Emacs and
-# ends with a summary naming every pass and why any was left out.
+# unreachable, so an exit status on its own does not say whether VM is broken
+# or the machine is short of a server.  This asks first: test/vm-test-probe.el
+# reports what is there, and the reasons are printed before anything runs.
 #
-# The passes:
+# The passes, all of which run by default, and each in its own Emacs:
 #
-#   suite       the whole of test/, live servers as configured
-#   mock        the IMAP and POP tests again with VM_TEST_LIVE=0, so the mock
-#               servers run with nothing live covering for them
-#   send        real mail, sent and read back, when the config says where to
+#   suite         the whole of test/, with whatever this machine has: live
+#                 servers as configured, BBDB and emacs-w3m if installed
+#   mock          the IMAP and POP tests again with the live servers skipped,
+#                 so the mock servers run with nothing live covering for them.
+#                 Only where a live config exists; without one the suite was
+#                 already this
+#   no-optional   the suite again without BBDB, emacs-w3m and vcard, which is
+#                 how an ordinary checkout runs it.  Only where they are
+#                 installed
+#   send          real mail, sent and read back, where the config says where to
 #
-# Every pass runs whichever fails; the exit status is 1 if any did.
+# Every pass runs whichever fails, and the exit status is 1 if any did.
 
 set -u
 
@@ -24,36 +32,77 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 
 usage () {
     cat <<EOF
-usage: $progname [--no-live] [--no-send] [--no-build] [--probe] [--help]
+usage: $progname [options]
 
-  --no-live   run as an unconfigured checkout would: mock servers only
-  --no-send   skip the sending pass even where it is configured
-  --no-build  do not byte-compile first (the tests then run from source)
-  --probe     print what this machine can test, run nothing
+With no options: build, then every pass this machine can run.
 
-The Emacs to use comes from \$EMACS, or from the configured test/Makefile,
-or is "emacs".
+  --probe          print what this machine can test, run nothing
+  --one FILE       run one test file, e.g. --one vm-imap-test.el
+  --imap           the IMAP tests alone
+  --pop            the POP tests alone
+  --send           the mail-sending tests alone
+  --mock           the IMAP and POP tests with the live servers skipped
+  --no-optional    the suite without BBDB, emacs-w3m and vcard
+  --assert         the suite with VM's own assertions checked
+  --leaks          report tests that leave global state behind
+  --coverage       write test/coverage-results.txt
+
+  --skip-live      no live servers in any pass
+  --skip-send      leave the sending pass out
+  --verbose        deeper printing of test results
+  --no-build       do not byte-compile first (the tests run from source)
+
+The Emacs used comes from \$EMACS, or from the configured test/Makefile, or is
+"emacs".  VM_TEST_LIVE and VM_TEST_OPTIONAL do what --skip-live and
+--no-optional do, for a pass run by hand.
 EOF
 }
 
-no_live=no
-no_send=no
+skip_live=no
+skip_send=no
 no_build=no
+verbose=no
 probe_only=no
+chosen=""
+one_file=""
 
-for arg in "$@"; do
-    case $arg in
-        --no-live)  no_live=yes ;;
-        --no-send)  no_send=yes ;;
-        --no-build) no_build=yes ;;
-        --probe)    probe_only=yes ;;
-        --help|-h)  usage; exit 0 ;;
-        *) echo "$progname: unknown argument $arg" >&2; usage >&2; exit 2 ;;
+add_choice () {
+    chosen="$chosen $1"
+}
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        --probe)       probe_only=yes ;;
+        --one)         shift
+                       [ $# -gt 0 ] || { echo "$progname: --one wants a file" >&2; exit 2; }
+                       one_file=$1; add_choice one ;;
+        --imap)        add_choice imap ;;
+        --pop)         add_choice pop ;;
+        --send)        add_choice send ;;
+        --mock)        add_choice mock ;;
+        --no-optional) add_choice no-optional ;;
+        --assert)      add_choice assert ;;
+        --leaks)       add_choice leaks ;;
+        --coverage)    add_choice coverage ;;
+        --skip-live)   skip_live=yes ;;
+        --skip-send)   skip_send=yes ;;
+        --verbose)     verbose=yes ;;
+        --no-build)    no_build=yes ;;
+        --help|-h)     usage; exit 0 ;;
+        *) echo "$progname: unknown argument $1" >&2; usage >&2; exit 2 ;;
     esac
+    shift
 done
 
+wanted () {
+    case " $chosen " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # The Emacs the tests were configured with, so this does not silently test a
-# different one from `make test'.
+# different one from the build.
 emacs_prog=${EMACS:-}
 if [ -z "$emacs_prog" ] && [ -f "$root/test/Makefile" ]; then
     emacs_prog=$(sed -n 's/^EMACS_PROG *= *//p' "$root/test/Makefile" | head -1)
@@ -65,16 +114,39 @@ emacs_prog=${emacs_prog:-emacs}
 # about, and not to wherever this was invoked from.
 cd "$root/test" || exit 2
 
-run_emacs () {
-    "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@"
+# One Emacs, told what this run wants: LIVE and OPTIONAL are what
+# VM_TEST_LIVE and VM_TEST_OPTIONAL are set to, the rest goes on the command
+# line.
+# The names here are its own: sh has no local variables, so calling this with
+# the mock pass' 0 once set $live to 0 for every pass after it, and the run
+# stopped using the live servers half way through without saying so.
+emacs_run () {
+    emacs_run_live=$1
+    emacs_run_optional=$2
+    shift 2
+    # What the pass asked for, so the log shows it rather than leaving the
+    # reader to work it out from the number of skips.
+    echo "   VM_TEST_LIVE=$emacs_run_live VM_TEST_OPTIONAL=$emacs_run_optional"
+    if [ "$verbose" = yes ]; then
+        env VM_TEST_LIVE="$emacs_run_live" \
+            VM_TEST_OPTIONAL="$emacs_run_optional" \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+            --eval '(setq ert-batch-print-level 5)' \
+            --eval '(setq ert-batch-print-length 10)' "$@"
+    else
+        env VM_TEST_LIVE="$emacs_run_live" \
+            VM_TEST_OPTIONAL="$emacs_run_optional" \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@"
+    fi
 }
 
 ##############################################################################
 # What is here
 ##############################################################################
 
-probe_output=$(run_emacs -l "$root/test/vm-test-probe.el" \
-                         -f vm-test-probe-batch 2>/dev/null)
+probe_output=$("$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+                             -l "$root/test/vm-test-probe.el" \
+                             -f vm-test-probe-batch 2>/dev/null)
 if [ -z "$probe_output" ]; then
     echo "$progname: could not probe this machine; is $emacs_prog usable?" >&2
     exit 2
@@ -93,16 +165,16 @@ pop_reached=$(probe pop_reached)
 pop_unreached=$(probe pop_unreached)
 send_configured=$(probe send_configured)
 send_to=$(probe send_to)
-gpg=$(probe gpg)
+optional_installed=$(probe optional_installed)
 
 say_servers () {
     kind=$1 servers=$2 reached=$3 unreached=$4
     if [ -z "$servers" ]; then
-        echo "  $kind: none configured, the live tests will skip"
+        echo "  $kind: none configured, the live tests skip"
     else
         echo "  $kind: $servers"
-        if [ -n "$reached" ]; then echo "    reached:   $reached"; fi
-        if [ -n "$unreached" ]; then echo "    UNREACHED: $unreached"; fi
+        if [ -n "$reached" ]; then echo "    answered:  $reached"; fi
+        if [ -n "$unreached" ]; then echo "    NO ANSWER: $unreached"; fi
     fi
 }
 
@@ -118,15 +190,19 @@ say_servers POP "$pop_servers" "$pop_reached" "$pop_unreached"
 if [ "$send_configured" = yes ]; then
     echo "  sending: to $send_to, read back from $(probe send_verify_server)"
 else
-    echo "  sending: not configured, those tests will skip"
+    echo "  sending: not configured, those tests skip"
 fi
-echo "  gpg: $gpg"
+if [ -n "$optional_installed" ]; then
+    echo "  optional: $optional_installed"
+else
+    echo "  optional: none installed, those tests skip (make optional-packages)"
+fi
+echo "  gpg: $(probe gpg)"
 
 if [ -n "$imap_unreached" ] || [ -n "$pop_unreached" ]; then
     echo
-    echo "A configured server that cannot be reached fails its tests rather"
-    echo "than skipping them, on purpose: see the reasons above before reading"
-    echo "the failures below."
+    echo "A configured server that does not answer fails its tests rather than"
+    echo "skipping them, on purpose: read those reasons before the failures."
 fi
 
 [ "$probe_only" = yes ] && exit 0
@@ -139,7 +215,7 @@ if [ "$no_build" = no ]; then
     echo
     echo "== building =="
     make -C "$root/lisp" || {
-        echo "$progname: the lisp did not build; not running anything" >&2
+        echo "$progname: the lisp did not build; nothing was run" >&2
         exit 2
     }
 fi
@@ -157,7 +233,7 @@ run_pass () {
     shift
     echo
     echo "== $name =="
-    if env "$@"; then
+    if "$@"; then
         record "$name: passed"
     else
         record "$name: FAILED"
@@ -165,36 +241,106 @@ run_pass () {
     fi
 }
 
-if [ "$no_live" = yes ]; then
-    run_pass "suite (live servers refused)" VM_TEST_LIVE=0 \
-        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
-        -l "$root/test/run-tests.el"
-    record "mock: covered by the pass above"
-else
-    run_pass "suite" VM_TEST_LIVE=1 \
-        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
-        -l "$root/test/run-tests.el"
+# 1 or 0, as VM_TEST_LIVE takes them.
+live=1
+[ "$skip_live" = yes ] && live=0
 
-    if [ "$config_present" = yes ]; then
-        run_pass "mock servers, live refused" VM_TEST_LIVE=0 \
-            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
-            -l "$root/test/run-imap-tests.el"
-        run_pass "mock servers, live refused (POP)" VM_TEST_LIVE=0 \
-            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
-            -l "$root/test/run-pop-tests.el"
+pass_suite () {
+    if [ "$skip_live" = yes ]; then
+        run_pass "suite (live servers skipped)" \
+            emacs_run "$live" 1 -l "$root/test/run-tests.el"
     else
-        record "mock: covered by the suite, there being no live config"
+        run_pass "suite" emacs_run "$live" 1 -l "$root/test/run-tests.el"
     fi
-fi
+}
 
-if [ "$no_send" = yes ]; then
-    record "send: not run, asked not to"
-elif [ "$send_configured" = yes ]; then
-    run_pass "sending real mail to $send_to" VM_TEST_LIVE=1 \
-        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
-        -l "$root/test/run-send-tests.el"
+pass_imap () {
+    run_pass "IMAP" emacs_run "$live" 1 -l "$root/test/run-imap-tests.el"
+}
+
+pass_pop () {
+    run_pass "POP" emacs_run "$live" 1 -l "$root/test/run-pop-tests.el"
+}
+
+pass_mock () {
+    run_pass "IMAP, live servers skipped" \
+        emacs_run 0 1 -l "$root/test/run-imap-tests.el"
+    run_pass "POP, live servers skipped" \
+        emacs_run 0 1 -l "$root/test/run-pop-tests.el"
+}
+
+pass_no_optional () {
+    run_pass "suite without BBDB, emacs-w3m and vcard" \
+        emacs_run "$live" 0 -l "$root/test/run-tests.el"
+}
+
+pass_send () {
+    run_pass "sending real mail to $send_to" \
+        emacs_run 1 1 -l "$root/test/run-send-tests.el"
+}
+
+pass_assert () {
+    run_pass "suite with VM's assertions checked" \
+        emacs_run "$live" 1 \
+        --eval '(setq inhibit-debugger t)' \
+        -l "$root/test/vm-test-init.el" \
+        --eval '(setq vm-assertion-checking-off nil)' \
+        -l "$root/test/run-tests.el"
+}
+
+pass_leaks () {
+    run_pass "leak report" emacs_run "$live" 1 -l "$root/test/leak-report.el"
+}
+
+pass_coverage () {
+    run_pass "coverage report" \
+        emacs_run "$live" 1 -l "$root/test/coverage-report.el"
+}
+
+pass_one () {
+    run_pass "$one_file" emacs_run "$live" 1 \
+        -l "$root/test/vm-test-init.el" -l "$root/test/$one_file" \
+        -f ert-run-tests-batch-and-exit
+}
+
+if [ -n "$chosen" ]; then
+    wanted one         && pass_one
+    wanted imap        && pass_imap
+    wanted pop         && pass_pop
+    wanted mock        && pass_mock
+    wanted no-optional && pass_no_optional
+    wanted assert      && pass_assert
+    wanted leaks       && pass_leaks
+    wanted coverage    && pass_coverage
+    if wanted send; then
+        if [ "$send_configured" = yes ]; then
+            pass_send
+        else
+            record "send: nothing to run, no vm-send-test-config"
+        fi
+    fi
 else
-    record "send: not run, no vm-send-test-config"
+    pass_suite
+
+    if [ "$config_present" = yes ] && [ "$skip_live" = no ]; then
+        pass_mock
+    else
+        record "mock servers: covered by the suite, which had no live servers"
+    fi
+
+    if [ -n "$optional_installed" ]; then
+        pass_no_optional
+    else
+        record "without the optional packages: covered by the suite, which had none"
+    fi
+
+    if [ "$skip_send" = yes ]; then
+        record "sending: not run, asked not to"
+    elif [ "$send_configured" = yes ]; then
+        pass_send
+    else
+        record "sending: not run, no vm-send-test-config"
+    fi
 fi
 
 echo

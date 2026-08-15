@@ -305,7 +305,7 @@ vm-buffer-types, lisp/vm-vars.el:7295, is a global stack, not a let-bound one.
   lisp/vm-macro.el:208, and vm-assertion-checking-off defaults to t,
   lisp/vm-vars.el:7289. All 48 buffer-type and session-type assertions in
   vm-imap.el are inert in a user's Emacs.
-- They are live under make test-assert, so the test suite is where an
+- They are live under ./test-runner --assert, so the test suite is where an
   interleaving bug would surface, and only if a test drives the interleaving.
 - The design should not assume the assertions protect the field. Either turn
   them on for the async path, or accept that the class of bug they catch
