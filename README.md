@@ -4,6 +4,11 @@ A fast, Magit-inspired Emacs interface for [Sapling](https://sapling-scm.com/)
 (`sl`). It is designed to feel familiar to Magit users while being intentionally
 small and Windows-friendly.
 
+`sl.el` provides the Sapling-specific status/smartlog/stack interface.
+`vc-sl.el` adds a Sapling backend for Emacs's generic VC commands
+(`C-x v d`, `C-x v =`, `C-x v l`, ...), so those commands continue to work
+without a second, parallel interface.
+
 ## Features
 
 - `M-x sl-status` opens a status buffer showing the smartlog and working
@@ -17,6 +22,9 @@ small and Windows-friendly.
   `x`, `r`, `z`, `F`, `P`, `n`, `p`, ...).
 - Emacs-style diff key: `=` or `C-x v =` in the status buffer, matching
   `vc-diff`.
+- A VC backend (`vc-sl`) for native Sapling repositories.  `C-x v d`
+  shows a directory status buffer, `C-x v =` diffs files or revisions,
+  `C-x v l` shows history, `C-x v v` commits, and `C-x v g` annotates.
 - `sl-diff` uses `diff-mode`, so removed lines are shown in red and added
   lines in green using Emacs-native font locking (no terminal color-code
   parsing).
@@ -47,10 +55,14 @@ For now, clone or copy this directory and add it to `load-path`:
 ;; Optional: bind the dispatch menu or status buffer to Magit-like keys.
 (global-set-key (kbd "C-x g") #'sl-status)
 (global-set-key (kbd "C-x v s") #'sl-menu)
+
+;; Optional: enable the generic VC backend for native .sl repositories.
+(require 'vc-sl)
+(add-to-list 'vc-handled-backends 'Sl)
 ```
 
-`sl.el` has `;;;###autoload` cookies, so it can also be installed with
-`package-install-file`.
+`sl.el` and `vc-sl.el` have `;;;###autoload` cookies, so the package can
+also be installed with `package-install-file`.
 
 ## Windows notes
 
@@ -124,6 +136,14 @@ customize `sl-program`:
   `sl-log-buffer-name`, `sl-diff-buffer-name`,
   `sl-output-buffer-name` — buffer names.
 
+The VC backend has a few options of its own:
+
+- `vc-sl-global-switches` — extra switches passed to every `sl` command
+  run by VC.
+- `vc-sl-diff-switches` — switches for `sl diff` under VC.
+- `vc-sl-log-short-format` / `vc-sl-log-format` — templates used for the
+  short and long VC log buffers.
+
 ## Status and roadmap
 
 This is an early, intentionally small implementation. Obvious next steps:
@@ -133,4 +153,4 @@ This is an early, intentionally small implementation. Obvious next steps:
 - Add an Emacs-native interface for `sl split` and `sl histedit` (both are
   interactive terminal programs, so they need a dedicated selection UI).
 - Optional `transient` menus when `transient` is installed.
-- Integrate with `project.el` and `vc`.
+- Integrate `sl-status` with `project.el`.
