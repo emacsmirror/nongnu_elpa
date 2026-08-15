@@ -945,6 +945,54 @@ and tests nothing."
     (vm-toggle-threads-display)
     (should (equal vm-ml-sort-keys "reversed-physical-order"))))
 
+(ert-deftest vm-thread-test-tracing-a-message-id-does-not-break-threading ()
+  "REGRESSION: `vm-traced-message-ids' is a list of message ids, and
+`vm-th-add-child' and `vm-th-delete-child' looked in its first element:
+
+  (member (symbol-name id-sym) (car vm-traced-message-ids))
+
+`member' on a string signals, so tracing any id made VM fail as soon as a
+reply was threaded -- which is on visiting the folder.  Every other place
+that consults the list has it right.
+
+`vm-trace-message-id' is how the list gets a value, so the test uses that
+rather than setting the variable itself."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((vm-traced-message-ids nil)
+          (vm-thread-debug nil))
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-trace-message-id)
+      (should (equal vm-traced-message-ids '("<reply1@example.com>")))
+      (vm-build-threads nil)
+      (should (vm-th-parent-of (intern-soft "<reply1@example.com>"
+                                            vm-thread-obarray))))))
+
+(defun vm-thread-test--ids (args)
+  "The message ids among ARGS, as strings.
+The tracing calls pass an id, a thread symbol or the message itself."
+  (delq nil (mapcar (lambda (thing)
+                      (cond ((stringp thing) thing)
+                            ((symbolp thing) (symbol-name thing))))
+                    args)))
+
+(ert-deftest vm-thread-test-a-traced-message-is-the-only-one-debugged ()
+  "The debugger is entered for a traced id and for no other message: for
+every message it would stop the folder being read at all."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((vm-traced-message-ids '("<reply1@example.com>"))
+          (vm-thread-debug t)
+          (vm-summary-show-threads t)
+          (traced nil))
+      (cl-letf (((symbol-function 'debug)
+                 (lambda (_what &rest args)
+                   (push (vm-thread-test--ids args) traced))))
+        (vm-build-threads nil))
+      (should traced)
+      (should-not (cl-remove-if
+                   (lambda (ids) (or (null ids)
+                                     (member "<reply1@example.com>" ids)))
+                   traced)))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here

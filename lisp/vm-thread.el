@@ -226,14 +226,14 @@ youngest or oldest date in its thread.  CRITERION must be one of
   (put id-sym 'children ml))
 
 (defun vm-th-add-child (parent-sym id-sym)
-  (if (member (symbol-name id-sym) (car vm-traced-message-ids))
+  (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-th-add-child id-sym))
   (unless (member id-sym (vm-th-children-of parent-sym))
     (vm-th-set-children-of
      parent-sym (cons id-sym (vm-th-children-of parent-sym)))))
 
 (defun vm-th-delete-child (parent-sym id-sym)
-  (if (member (symbol-name id-sym) (car vm-traced-message-ids) )
+  (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-th-delete-child id-sym))
   (let ((kids (vm-th-children-of parent-sym)))
     (vm-th-set-children-of parent-sym (remq id-sym kids))))
