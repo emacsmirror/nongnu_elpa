@@ -5,19 +5,21 @@
 
 ** General
 
-- =elfeed-db-save-idle=: New customization option to delay database saving.
-- =elfeed-use-libxml=: Enable by default if libxml is available.
-- =elfeed-default-directory=: Default to user home.
+- =elfeed-db-save-idle=: New customization option to delay database saving. This
+  helps to avoid pauses when quitting Elfeed windows.
+- =elfeed-use-libxml=: Enable libxml parsing by default if available.
+- =elfeed-default-directory=: Set to user home by default.
 
 ** Search
 
 - =elfeed-search-tag=, =elfeed-search-untag=, =elfeed-search-tag-unread=,
-  =elfeed-search-untag-unread=, =elfeed-search-toggle=: Shorter command names.
-  Improve doc strings.
-- =elfeed-search-confirm-tag=: New customization variable to confirm tagging
-  multiple entries.
+  =elfeed-search-untag-unread=, =elfeed-search-toggle=: Shorter command names and
+  doc string improvements.
+- =elfeed-search-confirm-tag=: New customization variable to require confirmation
+  when tagging multiple entries to avoid accidental modifications.
 - =elfeed-search-max-entries= and =elfeed-search-extend:= New customization variable
-  and new command to extend truncated search list.
+  and new command to extend truncated search list. The search list is truncated
+  by default to speed up rendering.
 - =elfeed-search= header line performance improvements.
 - =elfeed-search-date-filter=: Only include a single day.
 
@@ -28,10 +30,11 @@
 - Show feed statistics in tree header line.
 - =elfeed-tree-tag-face=: New face used for tags in =elfeed-tree=.
 - =elfeed-tree-display-action=: New customizable option.
-- =elfeed-tree-style=: Style to use for the tree (=nil=, =ascii=, =box=, =nerd=).
+- =elfeed-tree-style=: Style to use for the tree (=nil=, =ascii=, =box=, =nerd=). Defaults
+  to =box= or =ascii=. Set to =nerd= if you use the Nerd Fonts icons.
 - =elfeed-tree-style-alist=: Customizable variable defining style presets.
 - =elfeed-tree-and-search=: New entry point command to start Elfeed with tree and
-  search windows side by side.
+  search windows side by side. You can set =elfeed-entry-point= to this command.
 
 * Version 4.1.1 (2026-08-01)
 
