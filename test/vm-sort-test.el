@@ -871,6 +871,154 @@ the disk."
     (should (buffer-modified-p))
     (should vm-message-order-changed)))
 
+;;; Sorting by each key (emacs-vm/vm#674)
+;;
+;; The comparison functions are covered one by one above.  These go through
+;; `vm-sort-messages', which is what turns a key into a comparison: deleting
+;; the line that installs one changed nothing any test noticed.
+
+(defconst vm-sort-test--folder-of-three
+  (concat
+   "From carol@example.com Wed Mar  3 00:00:00 2024\n"
+   "From: Carol Clark <carol@example.com>\n"
+   "To: zoe@example.com\n"
+   "Subject: cherries\n"
+   "Date: Wed, 3 Mar 2024 00:00:00 +0000\n"
+   "X-Priority: 3\n\n"
+   "the third message\n\n"
+   "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+   "From: Alice Adams <alice@example.com>\n"
+   "To: yves@example.com\n"
+   "Subject: apples\n"
+   "Date: Mon, 1 Jan 2024 00:00:00 +0000\n"
+   "X-Priority: 1\n\n"
+   "the first message\n\n"
+   "From bob@example.com Tue Feb  2 00:00:00 2024\n"
+   "From: Bob Brown <bob@example.com>\n"
+   "To: xena@example.com\n"
+   "Subject: bananas\n"
+   "Date: Tue, 2 Feb 2024 00:00:00 +0000\n"
+   "X-Priority: 2\n\n"
+   "the second message\n\n")
+  "Three messages whose author, recipient, subject and date all disagree
+with the order they are stored in, so a sort by any of them is visible.")
+
+(defmacro vm-sort-test--sorting (&rest body)
+  "Run BODY in a folder of three messages, ready to sort."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-sort-test--folder-of-three
+     (setq major-mode 'vm-mode)
+     (vm-number-messages)
+     (cl-letf (((symbol-function 'vm-display) #'ignore)
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+               ((symbol-function 'vm-present-current-message) #'ignore)
+               ((symbol-function 'vm-inform) #'ignore))
+       ,@body)))
+
+(defun vm-sort-test--subjects ()
+  "The subjects of `vm-message-list', in its present order."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(ert-deftest vm-sort-test-sorting-by-author ()
+  "The author key orders by the address, and its reverse undoes it."
+  (vm-sort-test--sorting
+    (vm-sort-messages "author")
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))
+    (vm-sort-messages "reversed-author")
+    (should (equal (vm-sort-test--subjects) '("cherries" "bananas" "apples")))))
+
+(ert-deftest vm-sort-test-sorting-by-full-name ()
+  "The full-name key orders by the name in the From header rather than by
+the address: the two disagree often enough to be worth a key of its own."
+  (vm-sort-test--sorting
+    (vm-sort-messages "full-name")
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))
+    (vm-sort-messages "reversed-full-name")
+    (should (equal (vm-sort-test--subjects) '("cherries" "bananas" "apples")))))
+
+(ert-deftest vm-sort-test-sorting-by-recipients ()
+  "The recipients key orders by who the message went to, which is what a
+folder of sent mail is read by."
+  (vm-sort-test--sorting
+    (vm-sort-messages "recipients")
+    ;; xena, yves, zoe
+    (should (equal (vm-sort-test--subjects) '("bananas" "apples" "cherries")))
+    (vm-sort-messages "reversed-recipients")
+    (should (equal (vm-sort-test--subjects) '("cherries" "apples" "bananas")))))
+
+(ert-deftest vm-sort-test-sorting-by-a-header-of-your-own ()
+  "The header key sorts by any header, read from the minibuffer.  Nothing
+else offers that, and nothing tested it."
+  (vm-sort-test--sorting
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "X-Priority")))
+      (let ((vm-sort-compare-header nil))
+        (vm-sort-messages "header")))
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
+
+(ert-deftest vm-sort-test-sorting-by-auto-folder ()
+  "The auto-folder key groups the messages that would be filed together,
+which is what makes a run of them worth filing at once."
+  (vm-sort-test--sorting
+    ;; which folder a message would be filed to is
+    ;; `vm-virtual-auto-select-folder''s answer, and it has tests of its own;
+    ;; what is under test here is the key reaching the comparison at all
+    (let ((vm-sort-compare-auto-folder-cache nil)
+          (headed nil))
+      (cl-letf (((symbol-function 'vm-virtual-auto-select-folder)
+                 (lambda (m &rest _)
+                   (cond ((string-match-p "alice" (vm-su-from m)) "aye")
+                         ((string-match-p "bob" (vm-su-from m)) "bee")
+                         (t "cee"))))
+                ;; this key also heads each run in the summary with the
+                ;; folder its messages would go to, which wants a summary
+                ;; buffer; that it is asked for is what matters here
+                ((symbol-function 'vm-sort-insert-auto-folder-names)
+                 (lambda (&rest _) (setq headed t))))
+        (vm-sort-messages "auto-folder"))
+      (should headed))
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
+
+(ert-deftest vm-sort-test-sorting-by-thread ()
+  "The thread key orders by the thread each message belongs to, and builds
+the threads first if they are not built."
+  (vm-sort-test--sorting
+    (let ((before (vm-sort-test--subjects)))
+      (vm-sort-messages "thread")
+      ;; each message is a thread of its own, so they all survive the sort
+      (should (equal (sort (copy-sequence (vm-sort-test--subjects)) #'string<)
+                     (sort (copy-sequence before) #'string<)))
+      ;; and the threads are ordered by their date, youngest last
+      (should (equal (vm-sort-test--subjects)
+                     '("cherries" "apples" "bananas"))))))
+
+(ert-deftest vm-sort-test-sorting-by-activity ()
+  "The activity key orders by the youngest message in each thread, so a
+thread that has just been answered comes to the top."
+  (vm-sort-test--sorting
+    (vm-sort-messages "activity")
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
+
+(ert-deftest vm-sort-test-sorting-by-several-keys ()
+  "Keys are given as one string and tried in turn: the second decides only
+what the first leaves equal."
+  (vm-sort-test--sorting
+    ;; the first key leaves every pair equal, so the second decides
+    (cl-letf (((symbol-function 'vm-sort-compare-recipients)
+               (lambda (&rest _) '=)))
+      (vm-sort-messages "recipients date"))
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
+
+(ert-deftest vm-sort-test-sorting-records-that-the-order-changed ()
+  "A sort that moves messages marks the folder's order as changed, which is
+what makes VM write it out; a sort that changes nothing does not."
+  (vm-sort-test--sorting
+    (setq vm-message-order-changed nil)
+    (vm-sort-messages "author")
+    (should vm-message-order-changed)
+    (setq vm-message-order-changed nil)
+    (vm-sort-messages "author")
+    (should-not vm-message-order-changed)))
+
 (provide 'vm-sort-test)
 
 ;;; vm-sort-test.el ends here
