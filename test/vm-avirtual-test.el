@@ -955,6 +955,110 @@ folder, which is a difference nobody intended."
                   (mapcar #'car vm-mail-virtual-selector-function-alist))))
     (should (equal missing nil))))
 
+;;; Adding a message to the virtual folders that want it (emacs-vm/vm#638)
+
+(defmacro vm-avirtual-test--with-a-labelled-folder (order &rest body)
+  "Visit a folder of two messages and a virtual folder of the labelled ones.
+ORDER is `folder-first' or `virtual-first': which is visited first decides
+which buffer the virtual folder's clause resolves to, and the update only
+considers messages from that buffer.  FOLDER and VIRTUAL are the buffers."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-avirtual-update" t)))
+          (file (expand-file-name "inbox" dir))
+          (vm-folder-directory dir)
+          (vm-virtual-folder-alist
+           (list (list "wanted-only" (list (list file) '(label "wanted")))))
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list))
+          folder virtual)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (dolist (subject '("one" "two"))
+               (insert (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                                       "From: alice@example.com\n"
+                                       "Subject: %s\n\nThe body.\n\n")
+                               subject))))
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (if (eq ,order 'virtual-first)
+                 (progn
+                   (vm-visit-virtual-folder "wanted-only")
+                   (setq virtual (current-buffer))
+                   (setq folder (or (vm-get-folder-buffer file)
+                                    (progn (vm-visit-folder file) (current-buffer)))))
+               (vm-visit-folder file)
+               (setq folder (current-buffer))
+               (vm-visit-virtual-folder "wanted-only")
+               (setq virtual (current-buffer)))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (when (and (buffer-live-p buffer) (not (memq buffer before)))
+           (with-current-buffer buffer (set-buffer-modified-p nil))
+           (kill-buffer buffer)))
+       (delete-directory dir t))))
+
+(defun vm-avirtual-test--virtual-subjects (virtual)
+  "The subjects the virtual folder holds."
+  (with-current-buffer virtual (mapcar #'vm-su-subject vm-message-list)))
+
+(ert-deftest vm-avirtual-test-updating-adds-a-message-that-now-matches ()
+  "A message that has come to match an open virtual folder is added to it
+by `vm-virtual-update-folders'.
+
+Labelling a message does not itself add it anywhere: the virtual folder is
+still empty afterwards, which is what the command is for."
+  (vm-avirtual-test--with-a-labelled-folder 'folder-first
+    (should (equal (vm-avirtual-test--virtual-subjects virtual) nil))
+    (with-current-buffer folder
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-add-message-labels "wanted" 1)
+      (should (equal (vm-avirtual-test--virtual-subjects virtual) nil))
+      (vm-virtual-update-folders 1))
+    (should (equal (vm-avirtual-test--virtual-subjects virtual) '("two")))))
+
+(ert-deftest vm-avirtual-test-updating-works-whichever-was-visited-first ()
+  "The virtual folder may have opened the real one itself, in which case
+the message is in a buffer the virtual folder opened rather than one the
+reader did.  The update has to reach it either way, since it only
+considers messages from the buffer its own clause names."
+  (vm-avirtual-test--with-a-labelled-folder 'virtual-first
+    (with-current-buffer folder
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-add-message-labels "wanted" 1)
+      (vm-virtual-update-folders 1))
+    (should (equal (vm-avirtual-test--virtual-subjects virtual) '("two")))))
+
+(ert-deftest vm-avirtual-test-updating-leaves-out-what-does-not-match ()
+  "A message that matches nothing is not added, and one already there is
+not added twice."
+  (vm-avirtual-test--with-a-labelled-folder 'folder-first
+    (with-current-buffer folder
+      ;; the first message never gets the label
+      (setq vm-message-pointer vm-message-list)
+      (vm-virtual-update-folders 1)
+      (should (equal (vm-avirtual-test--virtual-subjects virtual) nil))
+      ;; the second does, twice over
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-add-message-labels "wanted" 1)
+      (vm-virtual-update-folders 1)
+      (vm-virtual-update-folders 1))
+    (should (equal (vm-avirtual-test--virtual-subjects virtual) '("two")))))
+
+(ert-deftest vm-avirtual-test-updating-takes-the-messages-it-is-given ()
+  "A caller can name the messages rather than leaving the command to take
+the count and the current message."
+  (vm-avirtual-test--with-a-labelled-folder 'folder-first
+    (with-current-buffer folder
+      (let ((second (nth 1 vm-message-list)))
+        ;; label the second while the pointer is on the first, so the
+        ;; message list given to the command is what decides
+        (setq vm-message-pointer (cdr vm-message-list))
+        (vm-add-message-labels "wanted" 1)
+        (setq vm-message-pointer vm-message-list)
+        (vm-virtual-update-folders 1 (list second))))
+    (should (equal (vm-avirtual-test--virtual-subjects virtual) '("two")))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
