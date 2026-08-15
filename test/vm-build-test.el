@@ -298,7 +298,10 @@ version, which no rule can name in advance."
       (goto-char (point-min))
       (should (re-search-forward "^OPTIONAL_STAMP *= *\\(.*\\)$" nil t))
       (goto-char (point-min))
-      (should (re-search-forward "^test: .*\\$(OPTIONAL_STAMP)" nil t)))))
+      (should (re-search-forward "^test: .*\\$(OPTIONAL_STAMP)" nil t))
+      ;; and the way past it, for a machine that cannot fetch them
+      (goto-char (point-min))
+      (should (re-search-forward "^test-no-opt:[ \t]*$" nil t)))))
 
 (provide 'vm-build-test)
 

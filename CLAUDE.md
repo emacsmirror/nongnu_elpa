@@ -72,8 +72,11 @@ target to the Makefile.
 
 `make test` fetches the optional packages first (BBDB, emacs-w3m, vcard) and
 records that with the stamp file `test/opt/installed`, so a run covers as much
-as the machine can. It needs the network once; a failure warns and the tests
-that use a package skip. To fetch again, remove the stamp.
+as the machine can. It needs the network once. A failure leaves no stamp and
+stops the run, so the next one tries again — a stamp written anyway would claim
+the packages are here and their tests would skip from then on with nothing to
+show for it. `make test-no-opt` runs everything without fetching, for a machine
+with no network.
 
 It probes first, because an exit status does not say whether VM is broken or
 the machine is short of a server: what is unconfigured skips, what is

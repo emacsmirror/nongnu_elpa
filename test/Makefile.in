@@ -27,7 +27,7 @@ ARGS =
 # version, which no rule can name in advance.
 OPTIONAL_STAMP = $(srcdir)/opt/installed
 
-.PHONY: test optional-packages clean distclean
+.PHONY: test test-no-opt optional-packages clean distclean
 
 # Everything this machine can run.  ARGS goes to the runner: --one FILE,
 # --imap, --pop, --send, --mock, --no-optional, --assert, --leaks, --coverage,
@@ -38,6 +38,12 @@ OPTIONAL_STAMP = $(srcdir)/opt/installed
 test: $(OPTIONAL_STAMP)
 	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
 
+# The same, without fetching anything: for a machine with no network, or one
+# where the fetch fails and the tests have to run regardless.  The tests that
+# use a companion then skip, which is what an ordinary checkout does.
+test-no-opt:
+	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
+
 optional-packages: $(OPTIONAL_STAMP)
 
 # Fetch the packages VM integrates with but does not require -- BBDB,
@@ -45,19 +51,20 @@ optional-packages: $(OPTIONAL_STAMP)
 # the tests that need one stop skipping.  With them installed a run also has a
 # pass without them, which is how an ordinary checkout runs those tests.
 #
-# This is the only part of the tests that needs the network, and a failure is
-# not fatal: a missing companion is the state the tests are written to
-# tolerate, so it warns, stamps, and lets them skip.  To try again, remove the
-# stamp.  Nothing here is committed: test/opt is ignored.
+# This is the only part of the tests that needs the network.  A failure leaves
+# no stamp, so it stops the run and the next one tries again: a stamp written
+# anyway would say the packages are here when they are not, and the tests they
+# cover would skip from then on with nothing to show for it.  `make
+# test-no-opt' is the way past it.  Nothing here is committed: test/opt is
+# ignored.
 $(OPTIONAL_STAMP):
-	-$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
-		-f vm-optional-install-batch $(srcdir)/opt
-	@mkdir -p $(srcdir)/opt
+	@$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
+		-f vm-optional-install-batch $(srcdir)/opt || { \
+	  echo "The optional packages did not install.  To run without them:"; \
+	  echo "    make test-no-opt"; \
+	  exit 1; \
+	}
 	@touch $@
-	@if [ ! -d $(srcdir)/opt/elpa ]; then \
-	  echo "Warning: no optional packages; the tests that use one will skip."; \
-	  echo "         To try again: rm $(OPTIONAL_STAMP)"; \
-	fi
 
 # Clean test artifacts
 clean:
