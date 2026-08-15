@@ -780,6 +780,103 @@ it usable for flipping between two messages."
     (vm-motion-test--go-to 1)
     (should-error (vm-previous-message 1 nil t))))
 
+;;; What vm-next-message does with a count, with marks and with a retry
+
+(ert-deftest vm-motion-test-next-message-without-a-count-moves-one ()
+  "Called from Lisp with no arguments at all, the move is one message: the
+count is only ever given by the prefix argument."
+  (vm-motion-test--with-folder
+    (vm-next-message)
+    (should (equal (vm-motion-test--here) "m2"))
+    (vm-previous-message)
+    (should (equal (vm-motion-test--here) "m1"))))
+
+(ert-deftest vm-motion-test-a-negative-count-goes-the-other-way ()
+  "A negative count reverses the command, which is what a negative prefix
+argument is for."
+  (vm-motion-test--with-folder
+    (vm-motion-test--go-to 3)
+    (vm-next-message -2)
+    (should (equal (vm-motion-test--here) "m1"))
+    (vm-previous-message -2)
+    (should (equal (vm-motion-test--here) "m3"))))
+
+(ert-deftest vm-motion-test-a-count-does-not-count-hidden-messages ()
+  "A message hidden in a folded thread is passed over without being
+counted, so a count of two moves two visible messages."
+  (vm-motion-test--with-folder
+    (cl-letf (((symbol-function 'vm-should-skip-hidden-message)
+               (lambda (mp) (equal (vm-su-subject (car mp)) "m2"))))
+      (vm-next-message 2)
+      (should (equal (vm-motion-test--here) "m4")))))
+
+(ert-deftest vm-motion-test-a-count-with-marks-counts-marked-messages ()
+  "After `vm-next-command-uses-marks' the count is in marked messages, so
+unmarked ones in between are passed over."
+  (vm-motion-test--with-folder
+    (vm-set-mark-of (nth 2 vm-message-list) t)      ; m3
+    (vm-set-mark-of (nth 3 vm-message-list) t)      ; m4
+    (let ((last-command 'vm-next-command-uses-marks)
+          (vm-circular-folders t))
+      (vm-next-message 2)
+      (should (equal (vm-motion-test--here) "m4")))))
+
+(ert-deftest vm-motion-test-a-count-with-one-mark-stops-on-it ()
+  "With one message marked, a count of two goes round the folder and stops
+where it started rather than running for ever or stopping on an unmarked
+message."
+  (vm-motion-test--with-folder
+    (vm-set-mark-of (nth 2 vm-message-list) t)      ; m3, and nothing else
+    (let ((last-command 'vm-next-command-uses-marks)
+          (vm-circular-folders t))
+      (vm-next-message 2)
+      (should (equal (vm-motion-test--here) "m3")))))
+
+(ert-deftest vm-motion-test-a-retry-forward-relaxes-the-skipping ()
+  "`vm-skip-deleted-messages' set to something other than t skips deleted
+messages on the way past but stops on one rather than bumping into the end
+of the folder.  The retry is what makes that difference: the first pass
+skips dogmatically, the second does not."
+  (vm-motion-test--with-folder
+    (let ((vm-skip-deleted-messages 'when-there-is-somewhere-else))
+      (vm-set-deleted-flag (nth 3 vm-message-list) t)     ; m4
+      (vm-motion-test--go-to 3)
+      (vm-next-message 1 t)
+      (should (equal (vm-motion-test--here) "m4")))))
+
+(ert-deftest vm-motion-test-a-retry-backward-relaxes-the-skipping ()
+  "The same going backwards, which is a separate arm of the command."
+  (vm-motion-test--with-folder
+    (let ((vm-skip-deleted-messages 'when-there-is-somewhere-else))
+      (vm-set-deleted-flag (car vm-message-list) t)       ; m1
+      (vm-motion-test--go-to 2)
+      (vm-previous-message 1 t)
+      (should (equal (vm-motion-test--here) "m1")))))
+
+(ert-deftest vm-motion-test-without-a-retry-the-move-is-refused ()
+  "Without the retry the same move stays where it was: the relaxed pass is
+the retry and nothing else."
+  (vm-motion-test--with-folder
+    (let ((vm-skip-deleted-messages 'when-there-is-somewhere-else))
+      (vm-set-deleted-flag (nth 3 vm-message-list) t)     ; m4
+      (vm-motion-test--go-to 3)
+      (should-error (vm-next-message 1 nil t) :type 'end-of-folder)
+      (should (equal (vm-motion-test--here) "m3"))
+      (vm-set-deleted-flag (car vm-message-list) t)       ; m1
+      (vm-motion-test--go-to 2)
+      (should-error (vm-previous-message 1 nil t) :type 'beginning-of-folder)
+      (should (equal (vm-motion-test--here) "m2")))))
+
+(ert-deftest vm-motion-test-a-move-that-goes-nowhere-is-not-recorded ()
+  "A refused move does not become the message last seen, so
+`vm-goto-message-last-seen' still goes back to where you really were."
+  (vm-motion-test--with-folder
+    (vm-motion-test--go-to 4)
+    (setq vm-last-message-pointer nil)
+    (vm-next-message 1)                 ; nowhere to go, errors are off
+    (should (equal (vm-motion-test--here) "m4"))
+    (should-not vm-last-message-pointer)))
+
 (provide 'vm-motion-test)
 
 ;;; vm-motion-test.el ends here
