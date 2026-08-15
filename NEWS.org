@@ -19,6 +19,7 @@
 - =elfeed-search-max-entries= and =elfeed-search-extend:= New customization variable
   and new command to extend truncated search list.
 - =elfeed-search= header line performance improvements.
+- =elfeed-search-date-filter=: Only include a single day.
 
 ** Tree
 
