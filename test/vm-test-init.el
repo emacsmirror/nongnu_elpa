@@ -55,6 +55,37 @@ developer's home directory and Emacs left a backup beside it.")
 ;; Add VM lisp directory to load path
 (add-to-list 'load-path vm-test-lisp-dir)
 
+;;; What this run wants: live servers, optional packages
+
+(defconst vm-test-live-environment-variable "VM_TEST_LIVE"
+  "Environment variable saying whether the live tests may use the network.
+Set it to 0, no, off or mock to run the mock servers alone on a machine that
+has test/vm-live-config.el.  The mock tests always run either way.")
+
+(defconst vm-test-optional-environment-variable "VM_TEST_OPTIONAL"
+  "Environment variable saying whether VM\='s optional companions are in play.
+Set it to 0, no or off to run as a machine without BBDB, emacs-w3m and vcard
+does, on one where `make optional-packages\=' has installed them.")
+
+(defun vm-test-environment-refuses-p (variable)
+  "Whether VARIABLE, an environment variable, says no."
+  (member (downcase (or (getenv variable) ""))
+          '("0" "no" "off" "mock" "false")))
+
+(defun vm-test-live-wanted-p ()
+  "Whether the live tests may run, according to the environment.
+True unless `vm-test-live-environment-variable' turns them off.  This is the
+default of `vm-imap-live-enabled' and `vm-pop-live-enabled', which the config
+file and a `let' can still override -- the variable is how a run says which
+servers it wants, not whether any are configured."
+  (not (vm-test-environment-refuses-p vm-test-live-environment-variable)))
+
+(defun vm-test-optional-wanted-p ()
+  "Whether the optional packages may be used, according to the environment.
+The tests that need one skip when it is missing, so refusing them here runs
+the suite as an ordinary checkout runs it."
+  (not (vm-test-environment-refuses-p vm-test-optional-environment-variable)))
+
 ;;; VM's optional companions
 
 (defvar vm-test-optional-dir
@@ -63,8 +94,10 @@ developer's home directory and Emacs left a backup beside it.")
 Absent unless that has been run; the tests that need one skip without it.")
 
 (defun vm-test-optional-load-path ()
-  "Put each installed optional package on `load-path'."
-  (when (file-directory-p vm-test-optional-dir)
+  "Put each installed optional package on `load-path'.
+Unless VM_TEST_OPTIONAL says not to: see `vm-test-optional-wanted-p'."
+  (when (and (vm-test-optional-wanted-p)
+             (file-directory-p vm-test-optional-dir))
     (dolist (dir (directory-files vm-test-optional-dir t "\\`[^.]"))
       (when (file-directory-p dir)
         (add-to-list 'load-path dir)))))
@@ -467,22 +500,6 @@ exactly where someone is reading the output and wondering what went wrong."
                     "this test")
                 reason)
        (ert-skip reason))))
-
-;;; Choosing between a live server and a mock one
-
-(defconst vm-test-live-environment-variable "VM_TEST_LIVE"
-  "Environment variable saying whether the live tests may use the network.
-Set it to 0, no, off or mock to run the mock servers alone on a machine that
-has test/vm-live-config.el.  The mock tests always run either way.")
-
-(defun vm-test-live-wanted-p ()
-  "Whether the live tests may run, according to the environment.
-True unless `vm-test-live-environment-variable' turns them off.  This is the
-default of `vm-imap-live-enabled' and `vm-pop-live-enabled', which the config
-file and a `let' can still override -- the variable is how a run says which
-servers it wants, not whether any are configured."
-  (let ((asked (getenv vm-test-live-environment-variable)))
-    (not (member (downcase (or asked "")) '("0" "no" "off" "mock" "false")))))
 
 ;;; Folder setup helpers
 

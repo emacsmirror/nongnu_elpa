@@ -69,6 +69,18 @@ of \"name: why not\"."
           (push name reached))))
     (cons (nreverse reached) (nreverse unreached))))
 
+(defun vm-test-probe-optional-packages ()
+  "The optional companions `make optional-packages\=' has installed.
+Their directory names, so that a version is visible: which BBDB is on the
+load path is the sort of thing a failure turns on."
+  (when (file-directory-p vm-test-optional-dir)
+    (seq-remove
+     (lambda (name) (equal name "archives"))
+     (mapcar #'file-name-nondirectory
+             (seq-filter #'file-directory-p
+                         (directory-files vm-test-optional-dir t
+                                          "\\`[^.]"))))))
+
 (defun vm-test-probe-report ()
   "What this machine can test, as an alist of key to string.
 Every key is always present, so a reader need not tell a missing key from an
@@ -101,7 +113,9 @@ empty one."
           ;; unsupported, and the tests using it pass all the same
           (cons "gpg" (if (ignore-errors
                             (alist-get 'program (epg-find-configuration 'OpenPGP)))
-                          "yes" "no")))))
+                          "yes" "no"))
+          (cons "optional_installed"
+                (string-join (vm-test-probe-optional-packages) " ")))))
 
 (defun vm-test-probe-batch ()
   "Print `vm-test-probe-report' as key=value lines and exit."

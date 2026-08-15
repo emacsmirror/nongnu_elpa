@@ -3,136 +3,42 @@
 ##############################################################################
 # VM Test Suite Makefile
 ##############################################################################
+#
+# The tests are run by ./test-runner, not from here: it probes what this
+# machine has -- live servers, a sending config, the optional packages -- and
+# runs a pass for each, saying what it left out and why.  This file forwards to
+# it, so that one place decides what a test run is.
+#
+#   make test                                every pass this machine can run
+#   make test ARGS="--one vm-imap-test.el"   one file
+#   make test ARGS=--probe                   what is available, run nothing
+#   ./test-runner --help                     the rest of the options
+##############################################################################
 
 SHELL = /bin/sh
 EMACS_PROG = @EMACS_PROG@
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 
-# Test files
-TEST_INIT = vm-test-init.el
-TEST_RUNNER = run-tests.el
-COVERAGE_RUNNER = coverage-report.el
-IMAP_RUNNER = run-imap-tests.el
-POP_RUNNER = run-pop-tests.el
-SEND_RUNNER = run-send-tests.el
-LEAK_REPORT = leak-report.el
+ARGS =
 
-##############################################################################
-# Test targets
-##############################################################################
+.PHONY: test optional-packages clean distclean
 
-.PHONY: test test-all test-assert test-coverage test-verbose test-one test-imap test-pop test-mock test-send test-leaks \
-	compile-lisp
-
-# Byte-compile the lisp first, so the tests exercise the compiled code
-# that users actually load.  It is not the same code: macros and
-# defsubst forms are expanded and inlined at compile time, so a test
-# that stubs one of those passes from source and does nothing when
-# compiled.  vm-test-init.el sets load-prefer-newer, so an edited
-# source file is still picked up if this build is skipped or fails to
-# run for some reason.
-compile-lisp:
-	$(MAKE) -C ../lisp
-
-# Run all tests in batch mode
-test: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
-
-# Run the suite with VM's own assertions checked.  `vm-assertion-checking-off'
-# defaults to t, so a `vm-assert' does nothing in the field and nothing in a
-# normal test run either: this target is the only thing that evaluates them.
-# `vm-assert' binds debug-on-error, which stops a batch run, hence
-# inhibit-debugger.  Keep this passing: an assertion that fires is either a
-# broken invariant or a test setting up a state no real caller is in.
-test-assert: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    --eval '(setq inhibit-debugger t)' \
-	    -l $(srcdir)/$(TEST_INIT) \
-	    --eval '(setq vm-assertion-checking-off nil)' \
-	    -l $(srcdir)/$(TEST_RUNNER)
-
-# Run only the IMAP tests, for when that is all you are working on.  The mock
-# ones need no server and always run, live config or not: a mock that only
-# runs where there is no live server is a mock that rots on the machines that
-# do have one.  The live ones want a server in test/vm-live-config.el and skip
-# without it.  See dev/docs/design/imap-live-tests.org.
-test-imap: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(IMAP_RUNNER)
-
-# Run only the POP tests.  The mock ones need no server and always run; the
-# live ones want a POP server in test/vm-live-config.el and skip without one.
-test-pop: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
-
-# The IMAP and POP tests with the network taken away: the mock servers alone,
-# on a machine that has a live one configured.  This is how the mock tests are
-# checked on the machine most likely to break them -- a live run covers the
-# same ground, so a mock that has rotted goes unnoticed there.  VM_TEST_LIVE
-# works on any of the targets above; this is the shorthand.
-test-mock: compile-lisp
-	VM_TEST_LIVE=0 $(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    -l $(srcdir)/$(IMAP_RUNNER)
-	VM_TEST_LIVE=0 $(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    -l $(srcdir)/$(POP_RUNNER)
-
-# Everything this machine can run, each pass in its own Emacs: the suite, then
-# the IMAP and POP tests with the live servers refused, then real mail where
-# that is configured.  It reports what it found -- which servers answered, what
-# is not configured -- before running anything, so a failure can be told from a
-# missing server.  ./test-runner --help for the options.
-test-all:
-	$(srcdir)/test-runner
-
-# Send real mail and check that it arrives.  Not part of `make test': the live
-# IMAP and POP tests are, once configured, because they talk to a server on
-# localhost, but sending leaves the machine and so is asked for by name.  Wants
-# a vm-send-test-config in test/vm-live-config.el and skips without one.
-test-send: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(SEND_RUNNER)
+# Everything this machine can run.  ARGS goes to the runner: --one FILE,
+# --imap, --pop, --send, --mock, --no-optional, --assert, --leaks, --coverage,
+# --skip-live, --skip-send, --verbose, --probe.
+test:
+	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
 
 # Fetch the packages VM integrates with but does not require -- BBDB,
 # emacs-w3m, vcard -- into test/opt/elpa, where vm-test-init.el finds them and
 # the tests that need one stop skipping.  Needs the network; nothing else in
-# the tests does.  Not committed: test/opt is ignored.
-.PHONY: optional-packages
+# the tests does.  Not committed: test/opt is ignored.  With them installed
+# `make test' also runs the suite once without them, which is how an ordinary
+# checkout runs it.
 optional-packages:
 	$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
 		-f vm-optional-install-batch $(srcdir)/opt
-
-# Run only the tests of those integrations.  They skip, one by one, for each
-# package that is not installed.
-test-optional: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/vm-test-init.el \
-		-l $(srcdir)/vm-optional-test.el -f ert-run-tests-batch-and-exit
-
-# Report which tests leave VM's global variables or stray buffers behind.
-# vm-test-init.el puts both back after every test, so this is not a way the
-# suite fails -- it is how to see what a fixture is not cleaning up, and what
-# the suite would depend on the order of if it were not for the isolation.
-# See issue #559.
-test-leaks: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(LEAK_REPORT)
-
-# Run tests with coverage collection
-test-coverage: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
-
-# Run tests with verbose output
-test-verbose: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    --eval '(setq ert-batch-print-level 5)' \
-	    --eval '(setq ert-batch-print-length 10)' \
-	    -l $(srcdir)/$(TEST_RUNNER)
-
-# Run a specific test, must specify testel=vm-sometest.el
-test-one: compile-lisp
-	@if [ "x${testel}" = "x" ] ; then \
-	   echo "Error: must specify testel=vm-sometest.el" >&2 ; \
-	   exit 1 ; \
-	fi
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/${testel} -f ert-run-tests-batch-and-exit
 
 # Clean test artifacts
 clean:

@@ -259,6 +259,34 @@ loaded on demand."
     (goto-char (point-min))
     (should-not (re-search-forward "^;;;###autoload" nil t))))
 
+(ert-deftest vm-build-test-the-makefiles-run-no-tests-themselves ()
+  "The tests are run by test/test-runner and by nothing else.
+
+Two places deciding what a test run is meant a pass that existed only as a
+Makefile target -- the live servers, the mock servers, the optional packages
+-- and no one place that knew about all of them.  A Makefile that loads a
+runner or vm-test-init.el is that split coming back."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (let ((line 0))
+          (while (not (eobp))
+            (setq line (1+ line))
+            (let ((text (buffer-substring-no-properties
+                         (line-beginning-position) (line-end-position))))
+              (unless (string-match-p "\\`[ \t]*\\(#\\|@#\\)" text)
+                (when (string-match-p
+                       "-l +[^ ]*\\(run-[a-z-]*tests\\|vm-test-init\\|leak-report\\|coverage-report\\)"
+                       text)
+                  (push (format "%s:%d: %s"
+                                (file-relative-name file vm-build-test--root)
+                                line text)
+                        offenders))))
+            (forward-line 1)))))
+    (should (equal (nreverse offenders) nil))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here

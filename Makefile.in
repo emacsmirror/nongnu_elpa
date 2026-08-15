@@ -168,13 +168,15 @@ elisp-lint:
 ##############################################################################
 # testing
 #
+# test/test-runner does the work; ARGS goes through to it, so
+# `make test ARGS=--probe' and `make test ARGS="--one vm-imap-test.el"' work
+# from here as well.
+ARGS =
+
 test:
-	$(MAKE) -C test $@
+	$(MAKE) -C test test ARGS='$(ARGS)'
 
-test-coverage:
-	$(MAKE) -C test $@
-
-.PHONY: test test-coverage
+.PHONY: test
 
 ##############################################################################
 # xemacs package (not tested)
