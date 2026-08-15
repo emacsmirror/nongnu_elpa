@@ -376,6 +376,46 @@
             (kill-buffer buffer)))
       (delete-file file))))
 
+(ert-deftest hermes-sessions-export-fallback-keeps-chat-transport-owner ()
+  "Export falls back to REST without rebinding its live chat session."
+  (let ((chat-owner 'shared-chat-client)
+        started stopped resumed request exported)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () chat-owner))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (setq started t)))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (&rest _) (setq stopped t)))
+              ((symbol-function 'hermes-dashboard-transport-session-history)
+               (lambda (_client _session-id &rest args)
+                 (funcall (plist-get args :reject) "session not found")))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (&rest _) (setq resumed t)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (client method path &optional body query)
+                 (should (eq client chat-owner))
+                 (setq request (list method path body query))
+                 (hermes--promise-resolved '((messages . nil)))))
+              ((symbol-function 'hermes-sessions--write-export)
+               (lambda (&rest _) (setq exported t))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render '(((id . "stored"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "stored")
+              (beginning-of-line)
+              (hermes-sessions-export "unused.md"))
+            (should exported)
+            (should (equal request
+                           '("GET" "/api/sessions/stored/messages" nil nil)))
+            (should (eq chat-owner 'shared-chat-client))
+            (should-not resumed)
+            (should-not started)
+            (should-not stopped))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
 (ert-deftest hermes-sessions-detail-renders-history-messages ()
   "The detail buffer renders user, assistant, and tool history readably."
   (let ((buffer (hermes-sessions--render-detail
@@ -468,12 +508,12 @@
           (when (get-buffer name)
             (kill-buffer name)))))))
 
-(ert-deftest hermes-sessions-view-stale-detail-live-id-resumes-durable-id ()
-  "Detail refresh resumes the durable id after stale live history fails."
+(ert-deftest hermes-sessions-view-stale-detail-live-id-reads-durable-rest ()
+  "Detail refresh reads durable history after stale live history fails."
   (let ((history-result '((count . 1)
                           (messages . (((role . "assistant")
-                                        (text . "resumed"))))))
-        history-session resume-session stopped)
+                                        (text . "stored"))))))
+        history-session rest-request resume-called stopped)
     (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
@@ -485,10 +525,12 @@
                  (setq history-session session-id)
                  (funcall (plist-get args :reject) "session not found")))
               ((symbol-function 'hermes-dashboard-transport-session-resume)
-               (lambda (client session-id &rest args)
+               (lambda (&rest _) (setq resume-called t)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (client method path &optional body query)
                  (should (eq client 'fake-client))
-                 (setq resume-session session-id)
-                 (funcall (plist-get args :resolve) history-result))))
+                 (setq rest-request (list method path body query))
+                 (hermes--promise-resolved history-result))))
       (unwind-protect
           (progn
             (hermes-sessions--render-detail
@@ -498,12 +540,91 @@
             (with-current-buffer "*Hermes Session: durable-1*"
               (hermes-sessions-view))
             (should (equal history-session "dead-live"))
-            (should (equal resume-session "durable-1"))
+            (should (equal rest-request
+                           '("GET" "/api/sessions/durable-1/messages" nil nil)))
+            (should-not resume-called)
             (should (eq stopped 'fake-client))
             (with-current-buffer "*Hermes Session: durable-1*"
-              (should (string-match-p "resumed" (buffer-string)))))
+              (should (string-match-p "stored" (buffer-string)))))
         (when (get-buffer "*Hermes Session: durable-1*")
           (kill-buffer "*Hermes Session: durable-1*"))))))
+
+(ert-deftest hermes-sessions-view-fallback-keeps-chat-transport-owner ()
+  "History fallback reads REST without rebinding its live chat session."
+  (let ((chat-owner 'shared-chat-client)
+        started stopped resumed request)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () chat-owner))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (setq started t)))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (&rest _) (setq stopped t)))
+              ((symbol-function 'hermes-dashboard-transport-session-history)
+               (lambda (_client _session-id &rest args)
+                 (funcall (plist-get args :reject) "session not found")))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (&rest _) (setq resumed t)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (client method path &optional body query)
+                 (should (eq client chat-owner))
+                 (setq request (list method path body query))
+                 (hermes--promise-resolved '((messages . nil))))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render '(((id . "stored"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "stored")
+              (beginning-of-line)
+              (hermes-sessions-view))
+            (should (equal request
+                           '("GET" "/api/sessions/stored/messages" nil nil)))
+            (should (eq chat-owner 'shared-chat-client))
+            (should-not resumed)
+            (should-not started)
+            (should-not stopped))
+        (dolist (name '("*Hermes Sessions*" "*Hermes Session: stored*"))
+          (when (get-buffer name) (kill-buffer name)))))))
+
+(ert-deftest hermes-sessions-rename-fallback-keeps-chat-transport-owner ()
+  "Rename fallback patches REST without rebinding its live chat session."
+  (let ((chat-owner 'shared-chat-client)
+        started stopped resumed request)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () chat-owner))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (setq started t)))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (&rest _) (setq stopped t)))
+              ((symbol-function 'read-string) (lambda (&rest _) "Renamed"))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :reject) "session not found")))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (&rest _) (setq resumed t)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (client method path &optional body query)
+                 (should (eq client chat-owner))
+                 (setq request (list method path body query))
+                 (hermes--promise-resolved '((title . "Renamed"))))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render
+             '(((id . "stored") (title . "Old"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "stored")
+              (beginning-of-line)
+              (hermes-sessions-rename))
+            (should (equal request
+                           '("PATCH" "/api/sessions/stored"
+                             ((title . "Renamed")) nil)))
+            (should (eq chat-owner 'shared-chat-client))
+            (should-not resumed)
+            (should-not started)
+            (should-not stopped))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
 
 (ert-deftest hermes-sessions-view-rejects-with-message ()
   "A failed history request reports the gateway error without rendering detail."

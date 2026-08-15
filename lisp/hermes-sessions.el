@@ -489,9 +489,8 @@ INSTANCE is inherited from the session browser when provided."
 
 (defun hermes-sessions--history-promise (client history-id resume-id profile)
   "Return a promise of HISTORY-ID history on CLIENT.
-The dashboard `session.history' RPC is live-session scoped in older gateways;
-when it reports a missing live session, resume RESUME-ID and resolve with the
-returned messages instead.  PROFILE selects another profile's stored session."
+PROFILE selects another profile's stored session.  When older gateways cannot
+find a default-profile live session, read RESUME-ID through non-attaching REST."
   (if profile
       (hermes-sessions--rest
        client "GET"
@@ -503,8 +502,9 @@ returned messages instead.  PROFILE selects another profile's stored session."
      (lambda (message)
        (if (and (hermes-sessions--session-not-found-message-p message)
                 (not (string-empty-p resume-id)))
-           (hermes-dashboard-transport-call-fn
-            #'hermes-dashboard-transport-session-resume client resume-id)
+           (hermes-sessions--rest
+            client "GET"
+            (concat "/api/sessions/" (url-hexify-string resume-id) "/messages"))
          (hermes--promise-rejected message))))))
 
 (defun hermes-sessions-view ()
@@ -557,8 +557,8 @@ returned messages instead.  PROFILE selects another profile's stored session."
 
 (defun hermes-sessions--set-title-promise (client session-id title profile)
   "Return a promise setting SESSION-ID's TITLE on CLIENT.
-On a missing-session error, resume SESSION-ID and retry the title on the live
-id it returns.  PROFILE targets another profile through REST."
+PROFILE targets another profile through REST.  When older gateways cannot find
+a default-profile live session, update its durable record without attaching it."
   (if profile
       (hermes-sessions--rest
        client "PATCH" (concat "/api/sessions/" (url-hexify-string session-id))
@@ -569,16 +569,10 @@ id it returns.  PROFILE targets another profile through REST."
       client :session-id session-id :title title)
      (lambda (message)
        (if (hermes-sessions--session-not-found-message-p message)
-           (hermes--promise-then
-            (hermes-dashboard-transport-call-fn
-             #'hermes-dashboard-transport-session-resume client session-id)
-            (lambda (result)
-              (let ((live-id (hermes-transport--display-field result 'session_id)))
-                (hermes-dashboard-transport-call-fn
-                 #'hermes-dashboard-transport-session-title
-                 client
-                 :session-id (if (string-empty-p live-id) session-id live-id)
-                 :title title))))
+           (hermes-sessions--rest
+            client "PATCH"
+            (concat "/api/sessions/" (url-hexify-string session-id))
+            `((title . ,title)))
          (hermes--promise-rejected message))))))
 
 (defun hermes-sessions--session-with-title (session title)
