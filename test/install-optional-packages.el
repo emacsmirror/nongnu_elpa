@@ -36,7 +36,8 @@
     ("melpa" . "https://melpa.org/packages/")))
 
 (defun vm-optional-install (directory)
-  "Install `vm-optional-packages' into DIRECTORY, reporting what happened."
+  "Install `vm-optional-packages' into DIRECTORY, reporting what happened.
+Returns the ones that failed, as (NAME . REASON), or nil if all are there."
   (let ((package-user-dir (expand-file-name "elpa" directory))
         (package-archives vm-optional-archives)
         (installed nil)
@@ -55,19 +56,21 @@
            (push (cons name (error-message-string err)) failed)))))
     (message "optional packages installed: %s"
              (mapconcat #'symbol-name (nreverse installed) " "))
-    (dolist (f (nreverse failed))
+    (setq failed (nreverse failed))
+    (dolist (f failed)
       (message "optional package %s FAILED: %s" (car f) (cdr f)))
-    (when failed
-      ;; Not an error: a missing companion is exactly the state the tests are
-      ;; written to tolerate.  Say so and let the suite skip.
-      (message "the tests for those will skip"))))
+    failed))
 
 (defun vm-optional-install-batch ()
-  "Install into the directory named on the command line."
+  "Install into the directory named on the command line.
+Exits non-zero if any package did not install.  The tests tolerate a missing
+companion -- they skip -- but this command does not: a caller told the fetch
+worked will believe the package is there, and `make test-no-opt' is how to
+run the tests without it."
   (let ((directory (or (car command-line-args-left)
                        (error "Usage: -f vm-optional-install-batch DIRECTORY"))))
     (setq command-line-args-left (cdr command-line-args-left))
-    (vm-optional-install directory)))
+    (kill-emacs (if (vm-optional-install directory) 1 0))))
 
 (provide 'install-optional-packages)
 

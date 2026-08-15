@@ -176,7 +176,10 @@ ARGS =
 test:
 	$(MAKE) -C test test ARGS='$(ARGS)'
 
-.PHONY: test
+test-no-opt:
+	$(MAKE) -C test test-no-opt ARGS='$(ARGS)'
+
+.PHONY: test test-no-opt
 
 ##############################################################################
 # xemacs package (not tested)

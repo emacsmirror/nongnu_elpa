@@ -89,10 +89,15 @@ Options, from =./test-runner --help=:
 =make test= fetches bbdb, emacs-w3m and vcard into =test/opt/elpa= before it
 runs anything, and records that with the stamp =test/opt/installed=: a run
 should cover as much as the machine can, not skip whatever nobody remembered
-to install.  That is the one thing in the tests that needs the network, it
-happens once, and a failure warns rather than stops -- a missing companion is
-the state those tests are written to tolerate.  To fetch again, remove the
-stamp.  =make optional-packages= is the same rule by name.
+to install.  That is the one thing in the tests that needs the network, and it
+happens once.
+
+A failure leaves no stamp and stops the run, so the next one tries again.  A
+stamp written anyway would say the packages are here when they are not, and
+their tests would skip from then on with nothing to show for it.  =make
+test-no-opt= is the way past it: everything, fetching nothing, those tests
+skipping.  =make optional-packages= is the fetch by name, and removing the
+stamp asks for it again.
 
 The optional packages are what the bbdb, w3m and vcard tests need; without them
 those tests skip.  Fetching them takes the network, so =make clean= leaves them
