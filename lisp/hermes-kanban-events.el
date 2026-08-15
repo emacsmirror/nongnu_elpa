@@ -50,7 +50,7 @@
 (cl-defstruct (hermes-kanban--events-tail
                (:constructor hermes-kanban--events-tail-create))
   "State for one board buffer's live-events WebSocket."
-  socket buffer slug (cursor 0) refresh-timer (backoff 1) reconnect-timer
+  socket buffer slug instance (cursor 0) refresh-timer (backoff 1) reconnect-timer
   (active t))
 
 (defconst hermes-kanban--events-debounce 0.4
@@ -294,16 +294,21 @@ dropped connection, instead of permanently killing the tail."
     (hermes-kanban--events-disconnect hermes-kanban--events-tail)
     (setq hermes-kanban--events-tail nil)))
 
+(defun hermes-kanban--events-tail-current-p (tail slug)
+  "Return non-nil when TAIL already follows SLUG on this buffer's instance."
+  (and (equal slug (hermes-kanban--events-tail-slug tail))
+       (equal (hermes-kanban--events-tail-instance tail) hermes-instance)))
+
 (defun hermes-kanban--events-retarget (slug cursor)
   "Retarget an enabled live tail to SLUG, seeding it from CURSOR."
   (when (and hermes-kanban--events-tail
-             (not (equal slug
-                         (hermes-kanban--events-tail-slug
-                          hermes-kanban--events-tail))))
+             (not (hermes-kanban--events-tail-current-p
+                   hermes-kanban--events-tail slug)))
     (hermes-kanban--events-disconnect hermes-kanban--events-tail)
     (setq hermes-kanban--events-tail
           (hermes-kanban--events-tail-create
-           :buffer (current-buffer) :slug slug :cursor (or cursor 0)))
+           :buffer (current-buffer) :slug slug
+           :instance hermes-instance :cursor (or cursor 0)))
     (hermes-kanban--events-connect hermes-kanban--events-tail)
     (force-mode-line-update)))
 
@@ -322,6 +327,7 @@ place; the mode line shows a live indicator."
         (message "Hermes kanban live updates off"))
     (let ((tail (hermes-kanban--events-tail-create
                  :buffer (current-buffer) :slug hermes-kanban--slug
+                 :instance hermes-instance
                  :cursor (or hermes-kanban--latest-event-id 0))))
       (setq hermes-kanban--events-tail tail)
       (add-hook 'kill-buffer-hook #'hermes-kanban--events-teardown nil t)

@@ -736,6 +736,51 @@
         (when (get-buffer "*Hermes Kanban*")
           (kill-buffer "*Hermes Kanban*"))))))
 
+(ert-deftest hermes-kanban-instance-switch-retargets-live-tail ()
+  "Reusing the board buffer for another instance replaces the live socket."
+  (let (disconnected connected)
+    (cl-letf (((symbol-function 'hermes-kanban--events-disconnect)
+               (lambda (tail)
+                 (setq disconnected (hermes-kanban--events-tail-slug tail))))
+              ((symbol-function 'hermes-kanban--events-connect)
+               (lambda (tail)
+                 (setq connected
+                       (list (hermes-kanban--events-tail-slug tail)
+                             (hermes-kanban--events-tail-instance tail))))))
+      (with-temp-buffer
+        (hermes-kanban-mode)
+        (setq hermes-instance '("a" . "http://a")
+              hermes-kanban--slug "work"
+              hermes-kanban--events-tail
+              (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :slug "work" :socket 'old))
+        (setq hermes-instance '("b" . "http://b"))
+        (hermes-kanban--events-retarget "work" 4)
+        (should (equal disconnected "work"))
+        (should (equal connected '("work" ("b" . "http://b"))))
+        (should (= 4 (hermes-kanban--events-tail-cursor
+                      hermes-kanban--events-tail)))))))
+
+(ert-deftest hermes-kanban-same-instance-retarget-keeps-live-tail ()
+  "A live refresh for the same board and instance does not reconnect."
+  (let (disconnected connected)
+    (cl-letf (((symbol-function 'hermes-kanban--events-disconnect)
+               (lambda (&rest _) (setq disconnected t)))
+              ((symbol-function 'hermes-kanban--events-connect)
+               (lambda (&rest _) (setq connected t))))
+      (with-temp-buffer
+        (hermes-kanban-mode)
+        (setq hermes-instance '("a" . "http://a")
+              hermes-kanban--events-tail
+              (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :slug "work"
+               :instance '("a" . "http://a") :socket 'old :cursor 2))
+        (hermes-kanban--events-retarget "work" 9)
+        (should-not disconnected)
+        (should-not connected)
+        (should (= 2 (hermes-kanban--events-tail-cursor
+                      hermes-kanban--events-tail)))))))
+
 (ert-deftest hermes-kanban-show-fetches-task-at-point ()
   "Showing fetches the task on the current row and renders its body."
   (let (show-path)
