@@ -1,7 +1,7 @@
 #+title: Elfeed News
 #+language: en
 
-* Development
+* Development (Upcoming 4.2.0)
 
 ** General
 
@@ -23,10 +23,11 @@
 ** Tree
 
 - Tree folders can be clicked to open or close them.
-- Tree formatting improved.
+- Tree formatting simplified and improved.
+- Show feed statistics in tree header line.
 - =elfeed-tree-tag-face=: New face used for tags in =elfeed-tree=.
 - =elfeed-tree-display-action=: New customizable option.
-- =elfeed-tree-icon-style=: Style to use for the tree icons (ascii, box, nerd).
+- =elfeed-tree-icon-style=: Style to use for the tree icons (=ascii=, =box=, =nerd=).
 - =elfeed-tree-icon-presets=: Customizable variable defining icon style presets.
 - =elfeed-tree-and-search=: New entry point command to start Elfeed with tree and
   search windows side by side.
