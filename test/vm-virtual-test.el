@@ -1681,6 +1681,48 @@ selected."
                        (vm-virtual-application-folder-name (buffer-name)
                                                            "interesting")))))))
 
+;;; A label added in one folder is a label in the others
+
+(defun vm-virtual-test--known-labels (buffer)
+  "The labels BUFFER's folder knows about, sorted."
+  (with-current-buffer buffer
+    (let (names)
+      (mapatoms (lambda (s) (push (symbol-name s) names)) vm-label-obarray)
+      (sort names #'string<))))
+
+(ert-deftest vm-virtual-test-a-label-added-here-is-known-there ()
+  "A label put on a message in a virtual folder is a label of the real
+folder and of every other virtual folder showing that message, so
+completion offers it in all of them and the summary can show it."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer virt-a
+      (vm-add-or-delete-message-labels "urgent" (list (car vm-message-list))
+                                       'all))
+    (should (member "urgent" (vm-virtual-test--known-labels real)))
+    (should (member "urgent" (vm-virtual-test--known-labels virt-b)))
+    (should (member "urgent" (vm-virtual-test--known-labels virt-a)))))
+
+(ert-deftest vm-virtual-test-deleting-a-label-teaches-nobody-about-it ()
+  "Deleting a label does not make the virtual folders start offering it:
+the label list of a folder is what its messages use, and a label just
+taken off is not one of them."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer real
+      (vm-add-or-delete-message-labels "gone" (list (car vm-message-list)) nil))
+    (should-not (member "gone" (vm-virtual-test--known-labels virt-a)))
+    (should-not (member "gone" (vm-virtual-test--known-labels virt-b)))
+    (should-not (member "gone" (vm-virtual-test--known-labels real)))))
+
+(ert-deftest vm-virtual-test-a-label-survives-a-killed-virtual-folder ()
+  "Quitting one virtual folder does not stop labelling working in the
+others: the killed buffer is passed over rather than selected."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (kill-buffer virt-b)
+    (with-current-buffer real
+      (vm-add-or-delete-message-labels "urgent" (list (car vm-message-list))
+                                       'all))
+    (should (member "urgent" (vm-virtual-test--known-labels virt-a)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
