@@ -274,6 +274,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
          (connection (hermes-dashboard--nonempty-string
                       (plist-get node :connection)))
          (instance (and (hermes-instance-multiple-p)
+                        (not (plist-get node :instance-grouped-p))
                         (hermes-dashboard--nonempty-string
                          (plist-get node :instance))))
          (session-id (hermes-dashboard--nonempty-string
@@ -329,6 +330,9 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 
 (defun hermes-dashboard--print-chat-node (node)
   "Insert chat dashboard NODE at point."
+  (when-let* ((heading (hermes-dashboard--nonempty-string
+                        (plist-get node :instance-heading))))
+    (insert "\n" (propertize heading 'face 'hermes-dashboard-heading) "\n"))
   (let* ((start (point))
          (buffer (plist-get node :buffer))
          (title (or (plist-get node :title)
@@ -462,6 +466,38 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
                     :status-label (hermes-dashboard--status-label status)
                     :stale-p stale-p)))))
 
+(defun hermes-dashboard--instance-group (heading nodes)
+  "Return NODES marked as one instance group headed by HEADING."
+  (when nodes
+    (cons (append (car nodes)
+                  (list :instance-grouped-p t :instance-heading heading))
+          (mapcar (lambda (node)
+                    (append node '(:instance-grouped-p t)))
+                  (cdr nodes)))))
+
+(defun hermes-dashboard--group-chat-nodes (nodes)
+  "Group chat NODES by configured instance when multiple are available."
+  (if (not (hermes-instance-multiple-p))
+      nodes
+    (let* ((names (mapcar #'hermes-instance-name
+                          (hermes-instance-configured)))
+           (known
+            (apply #'append
+                   (mapcar
+                    (lambda (name)
+                      (hermes-dashboard--instance-group
+                       name
+                       (seq-filter
+                        (lambda (node)
+                          (equal (plist-get node :instance) name))
+                        nodes)))
+                    names)))
+           (other
+            (seq-remove (lambda (node)
+                          (member (plist-get node :instance) names))
+                        nodes)))
+      (append known (hermes-dashboard--instance-group "Other" other)))))
+
 (defun hermes-dashboard--empty-node ()
   "Return the dashboard empty-state node."
   (list :id "empty:chats"
@@ -471,8 +507,10 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard--collect-nodes ()
   "Return dashboard nodes for actions and live chat buffers."
-  (let ((chat-nodes (mapcar #'hermes-dashboard--chat-node
-                            (hermes-dashboard--chat-buffers))))
+  (let ((chat-nodes
+         (hermes-dashboard--group-chat-nodes
+          (mapcar #'hermes-dashboard--chat-node
+                  (hermes-dashboard--chat-buffers)))))
     (append (hermes-dashboard--action-nodes)
             (if chat-nodes chat-nodes (list (hermes-dashboard--empty-node))))))
 

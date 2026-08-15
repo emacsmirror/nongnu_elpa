@@ -204,6 +204,42 @@
                     (hermes-dashboard--format-chat-detail
                      '(:instance "remote" :status ready))))))
 
+(ert-deftest hermes-dashboard-groups-chats-by-configured-instance ()
+  "Multiple instances render as stable dashboard sections."
+  (let (local-buffer local-name remote-buffer remote-name)
+    (hermes-test-with-chat-buffer
+     (setq local-buffer (current-buffer)
+           local-name (buffer-name)
+           hermes-instance '("local" . "http://127.0.0.1:9119"))
+     (hermes-test-with-chat-buffer
+      (setq remote-buffer (current-buffer)
+            remote-name (buffer-name)
+            hermes-instance '("remote" . "https://hermes.example.test"))
+      (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")
+                                ("remote" . "https://hermes.example.test"))))
+        (hermes-test-with-dashboard-buffer
+         (should (equal (hermes-dashboard--current-ids)
+                        (list "action:chat"
+                              (format "chat:%s" local-name)
+                              (format "chat:%s" remote-name))))
+         (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+           (should (< (string-match "local" text)
+                      (string-match (regexp-quote local-name) text)))
+           (should (< (string-match "remote" text)
+                      (string-match (regexp-quote remote-name) text)))
+           (should-not (string-match-p "instance local" text))
+           (should-not (string-match-p "instance remote" text)))
+         (should (eq (plist-get
+                      (hermes-test--dashboard-node-data
+                       (format "chat:%s" local-name))
+                      :buffer)
+                     local-buffer))
+         (should (eq (plist-get
+                      (hermes-test--dashboard-node-data
+                       (format "chat:%s" remote-name))
+                      :buffer)
+                     remote-buffer))))))))
+
 (ert-deftest hermes-dashboard-repeated-open-cleans-stale-refresh-timers ()
   (let ((hermes-dashboard-buffer-name (hermes-test--dashboard-buffer-name))
         (hermes-dashboard-stale-refresh-interval 3600)
