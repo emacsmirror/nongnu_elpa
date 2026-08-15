@@ -1,5 +1,16 @@
 #+title: emacs-hermes Changelog
 
+* Version 0.3.1 (2026-08-15)
+
+- Added shell-style completion and direct session switching for =/model= while
+  preserving the interactive model picker.
+- Serialized session handoffs and command mutations so stale callbacks,
+  disconnects, and overdue handoffs cannot race or permanently block chats.
+- Improved queued and background turn ordering, session working-directory
+  updates, credential-prompt expiry, and pending-reply rendering.
+- Hardened provider authentication, OAuth token rollback, reconnect readiness,
+  and bounded embedded-image parsing.
+
 * Version 0.3.0 (2026-08-14)
 
 - Added named Hermes instances with per-instance dashboard endpoints and
