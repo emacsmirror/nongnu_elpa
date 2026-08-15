@@ -1243,9 +1243,6 @@ called from an interactive use of a command."
     (let ((result (car (vm-pop-get-synchronization-data))))
       (vm-pop-end-session (vm-folder-pop-process))
       result )))
-(defalias 'vm-pop-folder-check-for-mail 'vm-pop-folder-check-mail)
-(make-obsolete 'vm-pop-folder-check-for-mail
-	       'vm-pop-folder-check-mail "8.2.0")
 
 
 ;;;###autoload

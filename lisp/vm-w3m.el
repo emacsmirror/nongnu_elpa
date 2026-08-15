@@ -83,10 +83,6 @@ this variable to nil if you consider all urls to be safe."
 		 (const :tag "All URLs are safe" nil)))
 
 
-(defvaralias 'vm-w3m-use-w3m-minor-mode-map 
-  'vm-use-presentation-minor-modes)
-(make-obsolete-variable 'vm-w3m-use-w3m-minor-mode-map
-			'vm-use-presentation-minor-modes "8.2.0")
 
 (defvar vm-w3m-minor-mode-map
   (let ((map (make-sparse-keymap)))

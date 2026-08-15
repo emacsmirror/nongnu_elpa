@@ -4151,9 +4151,6 @@ is being invoked interactively."
 	   (vm-inform 10 "%s: Checking for new mail... done"
 		       (buffer-name))
 	   result))))
-(defalias 'vm-imap-folder-check-for-mail 'vm-imap-folder-check-mail)
-(make-obsolete 'vm-imap-folder-check-for-mail
-	       'vm-imap-folder-check-mail "8.2.0")
 
 
 

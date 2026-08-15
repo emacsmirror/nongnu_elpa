@@ -2586,10 +2586,9 @@ variables were plain aliases, never marked obsolete, and are dropped."
                vm-mime-attach-files-in-directory-default-type
                vm-mime-attach-files-in-directory-default-charset))
     (should-not (boundp v)))
-  ;; the four that were marked obsolete in 8.1.1 stay until the next major
-  ;; release, which is #594's business rather than this one's
-  (should (boundp 'vm-mime-save-all-attachments-types))
-  (should (boundp 'vm-mime-delete-all-attachments-types)))
+  ;; the four marked obsolete in 8.1.1 are gone too now (#594)
+  (should-not (boundp 'vm-mime-save-all-attachments-types))
+  (should-not (boundp 'vm-mime-delete-all-attachments-types)))
 
 (ert-deftest vm-mime-test-auto-save-attachments-is-an-option ()
   "`vm-auto-save-all-attachments' replaces the vm-enable-addons flag."

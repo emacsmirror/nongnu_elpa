@@ -3621,9 +3621,6 @@ thread are affected."
   (vm-update-summary-and-mode-line))
 ;;;###autoload (autoload 'vm-unread-message "vm-folder" nil t)
 (defalias 'vm-unread-message 'vm-mark-message-unread)
-(defalias 'vm-flag-message-unread 'vm-mark-message-unread)
-(make-obsolete 'vm-flag-message-unread 
-	       'vm-mark-message-unread "8.2.0")
 
 ;;;###autoload
 (defun vm-mark-message-read (&optional count)
@@ -3660,9 +3657,6 @@ thread are affected."
       (let ((vm-circular-folders (and vm-circular-folders
 				      (eq vm-move-after-reading t))))
 	(vm-next-message count t executing-kbd-macro)))))
-(defalias 'vm-flag-message-read 'vm-mark-message-read)
-(make-obsolete 'vm-flag-message-read 
-	       'vm-mark-message-read "8.2.0")
 
 
 ;;;###autoload

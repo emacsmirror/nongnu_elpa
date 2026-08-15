@@ -536,10 +536,6 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 ;; The following functions have been integrated into vm-mime.el
 ;; USR, 2011-01-25
 
-(defalias 'vm-decode-postponed-mime-message
-  'vm-mime-convert-to-attachment-buttons)
-(make-obsolete 'vm-decode-postponed-mime-message
-	       'vm-mime-convert-to-attachment-buttons "8.2.0")
 
 ;; `vm-pine-fake-attachment-overlays' was aliased here to
 ;; `vm-mime-re-fake-attachment-overlays', which was deleted as unused in 2011
@@ -547,10 +543,6 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 ;; since, and `make-obsolete' was telling anyone who called it to use a name
 ;; that does not exist either, so both are gone.
 
-(defalias 'vm-decode-postponed-mime-button
-  'vm-mime-replace-by-attachment-button)
-(make-obsolete 'vm-decode-postponed-mime-button
-	       'vm-mime-replace-by-attachment-button "8.2.0")
 
 ;;-----------------------------------------------------------------------------
 (define-key vm-mail-mode-map "\C-c\C-d" 'vm-postpone-message)
