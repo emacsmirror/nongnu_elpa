@@ -1,7 +1,7 @@
 # sl.el
 
-A fast, Magit-inspired Emacs interface for [Sapling](https://sapling-scm.com/)
-(`sl`). It is designed to feel lighter than Magit while being intentionally
+A fast Emacs interface for [Sapling](https://sapling-scm.com/)
+(`sl`). It is designed to feel lighter while being intentionally
 small. Sl.el strives to make emacs version control in MS Windows more comfortable.
 
 `sl.el` provides the Sapling-specific status/smartlog/stack interface.
