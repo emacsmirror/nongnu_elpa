@@ -607,29 +607,47 @@ fetching remote images or redesigning rendering.")
   "Hard cap on base64 payload length before decoding an embedded image.
 Derived from `hermes-chat--max-embedded-image-decoded-bytes' (4/3 expand + pad).")
 
+(defconst hermes-chat--max-embedded-image-mime-length 127
+  "Hard cap on the MIME subtype portion of embedded image URLs.")
+
+(defun hermes-chat--string-prefix-at-p (prefix text start)
+  "Return non-nil when PREFIX occurs in TEXT at START."
+  (let ((end (+ start (length prefix))))
+    (and (<= end (length text))
+         (string= prefix (substring text start end)))))
+
+(defun hermes-chat--bounded-valid-run-length (text start invalid-regexp max-length)
+  "Return a valid run length in TEXT from START, or nil when oversized.
+INVALID-REGEXP matches the first forbidden character; MAX-LENGTH bounds work."
+  (let* ((end (min (length text) (+ start max-length 1)))
+         (sample (substring text start end))
+         (invalid (string-match-p invalid-regexp sample))
+         (run-length (or invalid (length sample))))
+    (and (<= run-length max-length) run-length)))
+
 (defun hermes-chat--data-image-url-at (text start)
   "Return (END . URL) for a data:image URL in TEXT at START, or nil."
   (when (and (stringp text)
              (<= 0 start)
-             (< start (length text))
-             (string-prefix-p hermes-chat--data-image-prefix
-                              (substring text start)))
+             (hermes-chat--string-prefix-at-p
+              hermes-chat--data-image-prefix text start))
     (let* ((mime-start (+ start (length hermes-chat--data-image-prefix)))
-           (cursor mime-start)
-           (len (length text)))
-      (while (and (< cursor len)
-                  (string-match-p "[[:alnum:]._+-]" (substring text cursor (1+ cursor))))
-        (setq cursor (1+ cursor)))
-      (when (and (> cursor mime-start)
-                 (string-prefix-p ";base64," (substring text cursor)))
-        (setq cursor (+ cursor (length ";base64,")))
-        (let ((base64-start cursor))
-          (while (and (< cursor len)
-                      (string-match-p "[[:alnum:]+/=]"
-                                      (substring text cursor (1+ cursor))))
-            (setq cursor (1+ cursor)))
-          (when (>= (- cursor base64-start) hermes-chat--min-embedded-image-base64)
-            (cons cursor (substring text start cursor))))))))
+           (mime-length
+            (hermes-chat--bounded-valid-run-length
+             text mime-start "[^[:alnum:]._+-]"
+             hermes-chat--max-embedded-image-mime-length))
+           (mime-end (and mime-length (+ mime-start mime-length))))
+      (when (and (> (or mime-length 0) 0)
+                 (hermes-chat--string-prefix-at-p ";base64," text mime-end))
+        (let* ((base64-start (+ mime-end (length ";base64,")))
+               (base64-length
+                (hermes-chat--bounded-valid-run-length
+                 text base64-start "[^[:alnum:]+/=]"
+                 hermes-chat--max-embedded-image-base64)))
+          (when (and base64-length
+                     (>= base64-length hermes-chat--min-embedded-image-base64))
+            (let ((end (+ base64-start base64-length)))
+              (cons end (substring text start end)))))))))
 
 (defun hermes-chat--extract-embedded-images (text)
   "Return (CLEANED . IMAGES) lifting data:image URLs out of TEXT.

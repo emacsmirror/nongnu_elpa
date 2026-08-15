@@ -5410,6 +5410,25 @@
     (should (equal (car result) "see this  please"))
     (should (equal (cdr result) (list png)))))
 
+(ert-deftest hermes-chat-extract-embedded-images-rejects-oversize-boundedly ()
+  "Oversized image data is rejected with bounded validation work."
+  (let* ((hermes-chat--max-embedded-image-base64 80)
+         (text (concat "data:image/png;base64," (make-string 100000 ?A)))
+         (real-bounded-run
+          (symbol-function 'hermes-chat--bounded-valid-run-length))
+         limits
+         result)
+    (cl-letf (((symbol-function 'hermes-chat--bounded-valid-run-length)
+               (lambda (&rest args)
+                 (push (nth 3 args) limits)
+                 (apply real-bounded-run args))))
+      (setq result (hermes-chat--extract-embedded-images text)))
+    (should (equal (car result) text))
+    (should-not (cdr result))
+    (should (equal (nreverse limits)
+                   (list hermes-chat--max-embedded-image-mime-length
+                         hermes-chat--max-embedded-image-base64)))))
+
 (ert-deftest hermes-chat-extract-embedded-images-ignores-short-payload ()
   "Short base64 payloads are left in prose."
   (let* ((short "data:image/png;base64,AAAA")
