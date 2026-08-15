@@ -574,6 +574,273 @@ makes the command usable for collecting bodies into one file."
               (should (string-match-p "The second body" saved))))
         (ignore-errors (delete-file target))))))
 
+;;; Saving a message to a folder (emacs-vm/vm#672)
+;;
+;; These drive `vm-save-message' itself over a folder on disk.  The tests
+;; above cover the pieces around it -- which folder is chosen, which flag is
+;; set -- and left the saving to nothing.
+
+(defmacro vm-save-test--with-a-folder-of (count &rest body)
+  "Visit a folder of COUNT messages and run BODY with a place to save to.
+
+DIR is a temporary directory and `vm-folder-directory'; SOURCE is the folder
+visited, TARGET a name in DIR that does not exist yet.  Everything the visit
+made is killed afterwards."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-save" t)))
+          (source (expand-file-name "inbox" dir))
+          (target (expand-file-name "archive" dir))
+          (vm-folder-directory dir)
+          (vm-foreign-folder-directory nil)
+          (vm-confirm-new-folders nil)
+          (vm-visit-when-saving nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-last-save-folder vm-last-save-folder)
+          (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (with-temp-file source
+             (dotimes (i ,count)
+               (insert (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                                       "From: alice@example.com\n"
+                                       "Subject: msg %d\n\nbody %d\n\n")
+                               (1+ i) (1+ i)))))
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder source)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-save-test--subjects-in (file)
+  "The subjects in FILE, in order."
+  (if (not (file-exists-p file))
+      'no-such-file
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let (subjects)
+        (goto-char (point-min))
+        (while (re-search-forward "^Subject: \\(.*\\)$" nil t)
+          (push (match-string-no-properties 1) subjects))
+        (nreverse subjects)))))
+
+(ert-deftest vm-save-test-saving-writes-the-message-to-the-folder ()
+  "The message reaches the folder named, whole: its own From_ line, headers
+and body, so the folder can be read back as a folder."
+  (vm-save-test--with-a-folder-of 3
+    (vm-save-message target 1)
+    (should (equal (vm-save-test--subjects-in target) '("msg 1")))
+    (with-temp-buffer
+      (insert-file-contents target)
+      (should (string-match-p "^From alice@example\\.com " (buffer-string)))
+      (should (string-match-p "^body 1$" (buffer-string))))))
+
+(ert-deftest vm-save-test-saving-takes-the-count-it-is-given ()
+  "Saving 3 saves the current message and the two after it, in order."
+  (vm-save-test--with-a-folder-of 4
+    (vm-save-message target 3)
+    (should (equal (vm-save-test--subjects-in target)
+                   '("msg 1" "msg 2" "msg 3")))))
+
+(ert-deftest vm-save-test-saving-appends-to-a-folder-that-exists ()
+  "A second save adds to the folder rather than replacing what is there."
+  (vm-save-test--with-a-folder-of 3
+    (vm-save-message target 1)
+    (vm-goto-message 2)
+    (vm-save-message target 1)
+    (should (equal (vm-save-test--subjects-in target) '("msg 1" "msg 2")))))
+
+(ert-deftest vm-save-test-saving-flags-the-message-filed ()
+  "A saved message is marked filed, which is how the summary shows that a
+copy of it is somewhere else, and how `vm-auto-archive-messages' knows to
+leave it alone."
+  (vm-save-test--with-a-folder-of 3
+    (should-not (vm-filed-flag (car vm-message-list)))
+    (vm-save-message target 2)
+    (should (vm-filed-flag (nth 0 vm-message-list)))
+    (should (vm-filed-flag (nth 1 vm-message-list)))
+    (should-not (vm-filed-flag (nth 2 vm-message-list)))))
+
+(ert-deftest vm-save-test-a-relative-name-goes-to-the-folder-directory ()
+  "A name with no directory in it is a folder of yours, not a file beside
+whatever `default-directory' happens to be."
+  (vm-save-test--with-a-folder-of 2
+    (let ((default-directory "/"))
+      (vm-save-message "archive" 1))
+    (should (equal (vm-save-test--subjects-in target) '("msg 1")))))
+
+(ert-deftest vm-save-test-saving-remembers-the-name-as-typed ()
+  "`vm-last-save-folder' keeps the name as given, so the next save offers
+it back the same way rather than as an expanded path."
+  (vm-save-test--with-a-folder-of 2
+    (vm-save-message "archive" 1)
+    (should (equal vm-last-save-folder "archive"))))
+
+(ert-deftest vm-save-test-a-new-folder-is-confirmed ()
+  "With `vm-confirm-new-folders', a folder that does not exist is offered
+before it is created, and answering no creates nothing."
+  (vm-save-test--with-a-folder-of 2
+    (let ((vm-confirm-new-folders t)
+          (asked nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (should-error (vm-save-message target 1) :type 'error))
+      (should asked)
+      (should (string-match-p "archive" asked))
+      (should (equal (vm-save-test--subjects-in target) 'no-such-file))
+      ;; and answering yes writes it
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-message target 1))
+      (should (equal (vm-save-test--subjects-in target) '("msg 1"))))))
+
+(ert-deftest vm-save-test-a-folder-of-unknown-type-is-refused ()
+  "A folder VM cannot make out is refused by name rather than appended to
+in a format that would corrupt it."
+  (vm-save-test--with-a-folder-of 2
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'vm-get-folder-type) (lambda (&rest _) 'unknown)))
+        (let ((err (should-error (vm-save-message target 1) :type 'error)))
+          (should (string-match-p "unrecognized" (error-message-string err))))))
+    (should (equal (vm-save-test--subjects-in target) 'no-such-file))))
+
+(ert-deftest vm-save-test-a-read-only-folder-is-not-saved-into ()
+  "Saving into a folder visited read-only is refused: the buffer would take
+the message and the file would never see it."
+  (vm-save-test--with-a-folder-of 2
+    (let ((buffer (find-file-noselect target)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (setq vm-folder-read-only t)
+            (setq major-mode 'vm-mode))
+        (let ((vm-visit-when-saving t)
+              (text-quoting-style 'grave))
+          (should-error (vm-save-message target 1) :type 'error)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
+(ert-deftest vm-save-test-a-new-folder-is-created-with-the-configured-bits ()
+  "`vm-default-folder-permission-bits' decides what a folder VM creates is
+readable by.  Mail is not for everyone on the machine."
+  (vm-save-test--with-a-folder-of 2
+    (let ((vm-default-folder-permission-bits #o600))
+      (vm-save-message target 1))
+    (should (equal (file-modes target) #o600))))
+
+(ert-deftest vm-save-test-saving-says-how-many-went ()
+  "The report says how many messages were saved and where, so a count
+given by a prefix argument can be seen to have been taken."
+  (vm-save-test--with-a-folder-of 3
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (setq said (apply #'format format args)))))
+        (vm-save-message target 2))
+      (should said)
+      (should (string-match-p "2 messages saved" said))
+      (should (string-match-p "archive" said)))))
+
+(ert-deftest vm-save-test-saving-with-no-count-saves-one ()
+  "Called from Lisp with no count, one message is saved: the default is
+what a command with no prefix argument means."
+  (vm-save-test--with-a-folder-of 3
+    (vm-save-message target)
+    (should (equal (vm-save-test--subjects-in target) '("msg 1")))))
+
+(ert-deftest vm-save-test-saving-takes-the-messages-it-is-given ()
+  "A caller can name the messages, and then the count and the current
+message do not decide: `vm-auto-archive-messages' saves this way."
+  (vm-save-test--with-a-folder-of 4
+    (vm-save-message target 1 (list (nth 2 vm-message-list)
+                                    (nth 3 vm-message-list)))
+    (should (equal (vm-save-test--subjects-in target) '("msg 3" "msg 4")))))
+
+(ert-deftest vm-save-test-saving-into-a-visited-folder-writes-the-buffer ()
+  "With `vm-visit-when-saving', a folder that is being visited takes the
+message into its buffer rather than having it appended to the file
+underneath it -- which the buffer would then overwrite."
+  (vm-save-test--with-a-folder-of 2
+    (write-region "" nil target nil 'quiet)
+    (let* ((vm-visit-when-saving t)
+           (buffer (find-file-noselect target))
+           (said nil))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'vm-inform)
+                       (lambda (_level format &rest args)
+                         (setq said (apply #'format format args)))))
+              (vm-save-message target 1))
+            ;; in the buffer, and not yet in the file
+            (with-current-buffer buffer
+              (should (string-match-p "Subject: msg 1" (buffer-string)))
+              (should (buffer-modified-p)))
+            (should (equal (vm-save-test--subjects-in target) nil))
+            (should (string-match-p "saved to buffer" said)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest vm-save-test-a-read-only-visited-folder-is-refused ()
+  "A visited folder that is read-only signals rather than taking the
+message: the buffer would hold it and the file would never see it."
+  (vm-save-test--with-a-folder-of 2
+    (write-region "" nil target nil 'quiet)
+    (let* ((vm-visit-when-saving t)
+           (buffer (find-file-noselect target)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (setq vm-folder-read-only t))
+            (should-error (vm-save-message target 1) :type 'folder-read-only)
+            (with-current-buffer buffer
+              (should-not (string-match-p "Subject: msg 1" (buffer-string)))))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest vm-save-test-the-remembered-name-is-not-the-automatic-one ()
+  "`vm-last-save-folder' is not overwritten when the folder saved to is the
+one VM would have chosen anyway.  It is the reader's last choice, not a
+record of what the rules did."
+  (vm-save-test--with-a-folder-of 2
+    (setq vm-last-save-folder "somewhere-else")
+    (cl-letf (((symbol-function 'vm-auto-select-folder)
+               (lambda (&rest _) "archive")))
+      (vm-save-message "archive" 1))
+    (should (equal vm-last-save-folder "somewhere-else"))))
+
+(ert-deftest vm-save-test-a-type-mismatch-is-refused-or-converted ()
+  "Saving a From_ message into a folder of another type is refused when
+`vm-convert-folder-types' is off, and converted when it is on.  Appending
+one format into a folder of another is how a folder stops being readable."
+  (vm-save-test--with-a-folder-of 2
+    ;; a target VM reads as mboxcl2, which needs a Content-Length
+    (write-region "From VM ...\n\n" nil target nil 'quiet)
+    (let ((text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'vm-get-folder-type) (lambda (&rest _) 'mboxcl2)))
+        (let ((vm-convert-folder-types nil)
+              (vm-check-folder-types t))
+          (let ((err (should-error (vm-save-message target 1) :type 'error)))
+            (should (string-match-p "type mismatch" (error-message-string err)))))
+        ;; nothing was appended to the folder on the way to refusing
+        (should-not (string-match-p "Subject: msg 1"
+                                    (with-temp-buffer
+                                      (insert-file-contents target)
+                                      (buffer-string))))
+        ;; and with conversion on, the message is written in the folder's
+        ;; own format: an mboxcl2 message carries a Content-Length
+        (let ((vm-convert-folder-types t)
+              (vm-check-folder-types t))
+          (vm-save-message target 1)
+          (with-temp-buffer
+            (insert-file-contents target)
+            (should (string-match-p "Subject: msg 1" (buffer-string)))
+            (should (string-match-p "^Content-Length:" (buffer-string)))))))))
+
 (provide 'vm-save-test)
 
 ;;; vm-save-test.el ends here
