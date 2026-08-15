@@ -154,3 +154,6 @@ This is an early, intentionally small implementation. Obvious next steps:
   interactive terminal programs, so they need a dedicated selection UI).
 - Optional `transient` menus when `transient` is installed.
 - Integrate `sl-status` with `project.el`.
+
+## contribution
+Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name.
