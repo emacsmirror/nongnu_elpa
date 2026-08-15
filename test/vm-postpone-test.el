@@ -948,6 +948,197 @@ address is always the answer, which is what the ordinary summary shows."
                   "\\`\\'")
                  "me@example.com")))
 
+;;; What `vm-continue-what-message' decides to do
+
+(defconst vm-postpone-test--draft
+  (concat "From me@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: me@example.com\n"
+          "To: alice@example.com\n"
+          "Subject: half written\n"
+          vm-postponed-header "(nil nil nil)\n"
+          "\n"
+          "As I was saying\n")
+  "A postponed message, as VM writes one into the drafts folder.")
+
+(defmacro vm-postpone-test--deciding (bindings &rest body)
+  "Run BODY with the world `vm-continue-what-message-composing' reads.
+`vm-folder-directory' is a temp directory, available to BODY as `dir',
+and `vm-postponed-folder' names \"postponed\" in it.  Nothing is being
+composed, no prefix argument was given, and `vm-continue-what-message'
+is `ask'.  BINDINGS are let bindings on top of that.
+
+A question is an error unless the test stubs `y-or-n-p' itself: batch ert
+has a terminal to read the answer from, so a question nothing answers
+hangs the run rather than failing it."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-test-" t)))
+          (vm-folder-directory dir)
+          (vm-postponed-folder "postponed")
+          (vm-continue-what-message 'ask)
+          (current-prefix-arg nil)
+          ,@bindings)
+     (unwind-protect
+         (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
+                   ((symbol-function 'vm-find-composition-buffer) #'ignore)
+                   ((symbol-function 'y-or-n-p)
+                    (lambda (prompt) (error "Asked unexpectedly: %s" prompt))))
+           ,@body)
+       (delete-directory dir t))))
+
+(defun vm-postpone-test--write-drafts (dir &optional contents)
+  "Write CONTENTS, one draft by default, as the drafts folder in DIR."
+  (let ((file (expand-file-name "postponed" dir)))
+    (with-temp-file file
+      (insert (or contents vm-postpone-test--draft)))
+    file))
+
+(defun vm-postpone-test--open-drafts (dir)
+  "Visit the drafts folder in DIR as VM would leave it: a folder buffer
+whose message pointer is on an undeleted draft."
+  (let ((buffer (find-file-noselect (vm-postpone-test--write-drafts dir))))
+    (with-current-buffer buffer
+      (vm-test-init-folder-variables)
+      (vm-build-message-list)
+      (dolist (m vm-message-list) (vm-test-init-message-data m))
+      (setq vm-message-pointer vm-message-list))
+    buffer))
+
+(ert-deftest vm-postpone-test-nothing-half-written-starts-a-new-message ()
+  "With no composition, no draft under the cursor and no drafts folder on
+disk, there is nothing to continue."
+  (vm-postpone-test--deciding ()
+    (should (eq (vm-continue-what-message-composing) 'new))))
+
+(ert-deftest vm-postpone-test-a-composition-in-progress-is-continued ()
+  "A composition buffer is what you meant, whatever is in the drafts
+folder."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir)
+    (cl-letf (((symbol-function 'vm-find-composition-buffer)
+               (lambda (&optional _) (current-buffer))))
+      (should (eq (vm-continue-what-message-composing) 'continue)))))
+
+(ert-deftest vm-postpone-test-a-prefix-argument-forces-a-continue ()
+  "C-u says continue even with nothing to continue, which is how the
+command offers the drafts folder anyway."
+  (vm-postpone-test--deciding ((current-prefix-arg '(4)))
+    (should (eq (vm-continue-what-message-composing) 'force-continue))))
+
+(ert-deftest vm-postpone-test-a-draft-under-the-cursor-is-continued ()
+  "A message in the current folder carrying `vm-postponed-header' is a
+draft, so it is continued rather than the drafts folder visited."
+  (vm-postpone-test--deciding ()
+    (vm-test-with-folder vm-postpone-test--draft
+      (let ((major-mode 'vm-mode))
+        (should (eq (vm-continue-what-message-composing) 'continue))))))
+
+(ert-deftest vm-postpone-test-an-ordinary-message-under-the-cursor-is-not ()
+  "A message without the postponed header is mail, not a draft."
+  (vm-postpone-test--deciding ()
+    (vm-test-with-folder
+        (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                "From: alice@example.com\nSubject: mail\n\nBody\n")
+      (let ((major-mode 'vm-mode))
+        (should (eq (vm-continue-what-message-composing) 'new))))))
+
+(ert-deftest vm-postpone-test-a-deleted-draft-under-the-cursor-is-not ()
+  "A draft you have marked for deletion is not one to continue."
+  (vm-postpone-test--deciding ()
+    (vm-test-with-folder vm-postpone-test--draft
+      ;; set the flag itself: vm-set-deleted-flag records undo and asks
+      ;; for a display update, neither of which this is about
+      (aset (vm-attributes-of (car vm-message-list)) 2 t)
+      (let ((major-mode 'vm-mode))
+        (should (eq (vm-continue-what-message-composing) 'new))))))
+
+(ert-deftest vm-postpone-test-a-drafts-folder-on-disk-is-visited ()
+  "Drafts saved in an earlier session are found by their folder, which VM
+offers to visit."
+  (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
+    (vm-postpone-test--write-drafts dir)
+    (should (eq (vm-continue-what-message-composing) 'visit))))
+
+(ert-deftest vm-postpone-test-an-empty-drafts-folder-holds-no-drafts ()
+  "An empty drafts folder is what expunging every draft leaves behind, and
+visiting it would show nothing."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir "")
+    (should (eq (vm-continue-what-message-composing) 'new))))
+
+(ert-deftest vm-postpone-test-a-drafts-folder-already-open-is-visited ()
+  "The drafts folder open but off screen is visited, which selects the
+buffer that is already there."
+  (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
+    (let ((buffer (vm-postpone-test--open-drafts dir)))
+      (unwind-protect
+          (should (eq (vm-continue-what-message-composing) 'visit))
+        (kill-buffer buffer)))))
+
+(ert-deftest vm-postpone-test-a-drafts-folder-on-screen-asks-you-to-pick ()
+  "The drafts folder already in a window is not visited again: VM selects
+that window and leaves the choice of draft to you."
+  (vm-postpone-test--deciding ()
+    (let ((buffer (vm-postpone-test--open-drafts dir)))
+      (unwind-protect
+          (save-window-excursion
+            (set-window-buffer (selected-window) buffer)
+            (should (eq (vm-continue-what-message-composing) 'none))
+            (should (eq (window-buffer (selected-window)) buffer)))
+        (kill-buffer buffer)))))
+
+(ert-deftest vm-postpone-test-an-open-drafts-folder-wins-over-the-file ()
+  "The open buffer is what is visited, not what is on disk: drafts written
+in this session are in the buffer before they are in the file."
+  (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
+    (let ((buffer (find-file-noselect (vm-postpone-test--write-drafts dir ""))))
+      (unwind-protect
+          (should (eq (vm-continue-what-message-composing) 'visit))
+        (kill-buffer buffer)))))
+
+(ert-deftest vm-postpone-test-a-deleted-draft-on-screen-is-not-yours-to-pick ()
+  "The drafts folder on screen showing a draft marked for deletion is not
+a draft to pick, so VM goes on and visits the folder."
+  (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
+    (let ((buffer (vm-postpone-test--open-drafts dir)))
+      (unwind-protect
+          (save-window-excursion
+            (set-window-buffer (selected-window) buffer)
+            (with-current-buffer buffer
+              (aset (vm-attributes-of (car vm-message-pointer)) 2 t))
+            (should (eq (vm-continue-what-message-composing) 'visit)))
+        (kill-buffer buffer)))))
+
+(ert-deftest vm-postpone-test-never-continuing-always-starts-a-message ()
+  "`vm-continue-what-message' nil is never continue, drafts or no drafts."
+  (vm-postpone-test--deciding ((vm-continue-what-message nil))
+    (vm-postpone-test--write-drafts dir)
+    (should (eq (vm-continue-what-message-composing) 'new))))
+
+(ert-deftest vm-postpone-test-asking-takes-no-for-a-new-message ()
+  "`ask' asks before visiting the drafts folder, and no starts a new
+message."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+      (should (eq (vm-continue-what-message-composing) 'new)))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
+      (should (eq (vm-continue-what-message-composing) 'visit)))))
+
+(ert-deftest vm-postpone-test-asking-is-only-about-the-drafts-folder ()
+  "`ask' asks about visiting the drafts folder and nothing else: a
+composition in progress is continued without a question."
+  (vm-postpone-test--deciding ()
+    (cl-letf (((symbol-function 'vm-find-composition-buffer)
+               (lambda (&optional _) (current-buffer))))
+      (should (eq (vm-continue-what-message-composing) 'continue)))))
+
+(ert-deftest vm-postpone-test-continuing-visits-the-drafts-folder-unasked ()
+  "`continue' is the answer to the question `ask' would have put, so it is
+not put."
+  (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
+    (vm-postpone-test--write-drafts dir)
+    (should (eq (vm-continue-what-message-composing) 'visit))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
