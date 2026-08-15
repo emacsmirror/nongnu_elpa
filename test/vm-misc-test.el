@@ -1127,6 +1127,73 @@ decision, and this keeps it from coming back."
                   odd)))))
     (should (equal nil odd))))
 
+;;; Taking a structured header apart
+
+;; The tests of this function that existed were in vm-mime-test.el and were
+;; all Content-Type: a semicolon, a quoted parameter value, nothing else.
+;; What an address header brings -- a comma inside a quoted phrase, a
+;; comment in parentheses, a backslash escape, a header that stops in the
+;; middle of one -- was untested.
+
+(defun vm-misc-test--parse (string &optional keep-quotes)
+  "Parse STRING as a comma-separated structured header."
+  (vm-parse-structured-header string ?, keep-quotes))
+
+(ert-deftest vm-misc-test-a-structured-header-splits-on-its-separator ()
+  "An address header is its addresses, and an empty one between two
+commas is not an address."
+  (should (equal (vm-misc-test--parse "alice@x, bob@y, carol@z")
+                 '("alice@x" "bob@y" "carol@z")))
+  (should (equal (vm-misc-test--parse "alice@x,, bob@y")
+                 '("alice@x" "bob@y"))))
+
+(ert-deftest vm-misc-test-a-separator-in-quotes-is-not-a-separator ()
+  "`\"Smith, John\" <js@x>' is one address, not two: the comma is inside
+the quoted phrase.  Splitting it would send the mail to `Smith'."
+  (should (equal (vm-misc-test--parse "\"Smith, John\" <js@x>, alice@y")
+                 '("Smith, John<js@x>" "alice@y"))))
+
+(ert-deftest vm-misc-test-quotes-come-off-unless-they-are-wanted ()
+  "The quotes around a phrase are punctuation, so they are removed, and an
+escaped quote inside it is not the end of the phrase.  KEEP-QUOTES asks for
+the phrase as it was written, which is what re-emitting a header needs."
+  (should (equal (vm-misc-test--parse "\"a\\\"b\" <c@x>") '("a\"b<c@x>")))
+  (should (equal (vm-misc-test--parse "\"a\\\"b\" <c@x>" t)
+                 '("\"a\"b\"<c@x>")))
+  (should (equal (vm-misc-test--parse "\"a\", \"b\"") '("a" "b"))))
+
+(ert-deftest vm-misc-test-a-comment-is-not-part-of-the-address ()
+  "A comment in parentheses is dropped, including one with parentheses of
+its own -- an address is what is left when the comments are taken out."
+  (should (equal (vm-misc-test--parse "alice@x (Alice Smith)") '("alice@x")))
+  (should (equal (vm-misc-test--parse "a@x (out (in) still) b") '("a@xb")))
+  (should (equal (vm-misc-test--parse "a@x (smiley \\) here) b") '("a@xb"))))
+
+(ert-deftest vm-misc-test-space-between-the-pieces-is-not-kept ()
+  "Space outside quotes is not part of what it separates: the pieces are
+run together, which is what makes `John Smith <j@x>' a single token."
+  (should (equal (vm-misc-test--parse "John Smith <j@x>") '("JohnSmith<j@x>")))
+  (should (equal (vm-misc-test--parse "  alice@x  ,  bob@y  ")
+                 '("alice@x" "bob@y"))))
+
+(ert-deftest vm-misc-test-a-header-that-stops-in-the-middle-still-parses ()
+  "A header cut short -- an unclosed quote, an unclosed comment, a
+backslash with nothing after it -- gives back what there was rather than
+running off the end of the buffer.  VM parses headers as they arrive, and
+a truncated one must not hang the folder."
+  (should (equal (vm-misc-test--parse "\"unterminated <a@x>")
+                 '("unterminated<a@x>")))
+  (should (equal (vm-misc-test--parse "a@x (unterminated") '("a@xunterminated")))
+  (should (equal (vm-misc-test--parse "trailing\\") '("trailing\\")))
+  (should (equal (vm-misc-test--parse "\"quoted trailing\\") '("quoted trailing"))))
+
+(ert-deftest vm-misc-test-without-a-separator-it-is-all-one-token ()
+  "With no separator character the whole header is one item, with the
+quotes and comments still taken out.  That is how VM reads a header it has
+no list syntax for."
+  (should (equal (vm-parse-structured-header "alice@x, bob@y (both)")
+                 '("alice@x,bob@y"))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
