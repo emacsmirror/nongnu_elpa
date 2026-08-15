@@ -101,19 +101,24 @@ it."
       (setq vm-trust-From_-with-Content-Length t))
     (should (eq t vm-trust-content-length))))
 
-(ert-deftest vm-custom-test-older-rename-still-aliased ()
-  "`vm-mime-delete-all-attachments-types' is a rename, not a typo, and stays.
-It has been an obsolete alias since 8.1.1, and pointed at the misspelling; it
-follows the corrected name rather than being dropped with it."
-  (require 'vm-vars)
-  (dolist (pair '((vm-mime-delete-all-attachments-types
-                   . vm-mime-deletable-types)
-                  (vm-mime-delete-all-attachments-types-exceptions
-                   . vm-mime-deletable-type-exceptions)))
-    (should (boundp (car pair)))
-    (should (eq (cdr pair) (indirect-variable (car pair))))
-    (should (get (car pair) 'byte-obsolete-variable))))
+(ert-deftest vm-custom-test-the-oldest-renames-are-gone ()
+  "The compatibility aliases from 8.1.1 and before are no longer defined.
 
+They had been telling people to stop for four release cycles.  This test
+replaces one that asserted `vm-mime-delete-all-attachments-types\' stays:
+it does not, and a test saying so would keep the name alive by accident."
+  (require 'vm-vars)
+  (dolist (name '(vm-mime-delete-all-attachments-types
+                  vm-mime-delete-all-attachments-types-exceptions
+                  vm-mime-save-all-attachments-types
+                  vm-mime-save-all-attachments-types-exceptions))
+    (should-not (boundp name)))
+  ;; and what they were renamed to is still here
+  (dolist (name '(vm-mime-deletable-types
+                  vm-mime-deletable-type-exceptions
+                  vm-mime-saveable-types
+                  vm-mime-saveable-type-exceptions))
+    (should (boundp name))))
 
 ;;; The generated manual files must not depend on the machine that built them
 

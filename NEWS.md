@@ -35,6 +35,33 @@ Both can be switched off again with an argument of -1, which is the reason
 for the change: a feature installed by loading a file could never be
 switched off.
 
+## Names that were obsolete are gone
+
+Thirty-four compatibility aliases have been removed (emacs-vm/vm#594).  Each
+had been marked obsolete for at least four release cycles, and each printed a
+warning when a byte-compiled configuration used it.  If your init file sets one
+of these, it now sets a variable nothing reads, or calls a function that does
+not exist:
+
+  * the sixteen `vm-summary-*-face` names, plus `vm-summary-filed` and
+    `vm-summary-written` -- use the face names without the suffix,
+    `vm-summary-deleted` and so on
+  * `vm-mime-save-all-attachments-types`, `vm-mime-delete-all-attachments-types`
+    and their `-exceptions` -- use `vm-mime-saveable-types`,
+    `vm-mime-deletable-types` and theirs
+  * `vm-flag-message-read`, `vm-flag-message-unread`,
+    `vm-imap-folder-check-for-mail`, `vm-pop-folder-check-for-mail`,
+    `vm-decode-postponed-mime-message`, `vm-decode-postponed-mime-button`,
+    `vm-mime-attach-object-from-message`, `vm-mime-nuke-alternative-text/html`,
+    `vm-sort-threads-by-youngest-date`
+  * `vm-mime-alternative-select-method`,
+    `vm-mime-attachment-infer-type-for-text-attachments`,
+    `vm-w3m-use-w3m-minor-mode-map`, `vm-mime-uuencode-decoder-program` and
+    `-switches`
+
+`C-h v` or `C-h f` on the old name will say it is void; the replacement for
+each is in the list above.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a

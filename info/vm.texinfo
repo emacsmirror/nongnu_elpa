@@ -2107,7 +2107,7 @@ that you can come back to them later.  You can do so with
 @code{M-x vm-toggle-flag-message}.  Running it again on a flagged
 message turns the flag off.  In the Summary display, the flagged
 messages are highlighted using the
-@code{vm-summary-high-priority-face}.  (@xref{predefined summary
+@code{vm-summary-high-priority} face.  (@xref{predefined summary
 faces}.)
 
 @findex vm-current-key-bindings
@@ -5724,7 +5724,7 @@ hides messages with the @code{deleted} face type.  By invoking it with
 a prefix argument, you can specify other face types that you might
 like to hide.  (Note that @code{deleted} face type does not necessarily
 mean deleted messages.  Whatever messages satisfy the condition
-associated with the @code{vm-summary-deleted-face} in
+associated with the @code{vm-summary-deleted} face in
 @code{vm-summary-faces-alist} will be hidden.)
 
 @subsubheading Predefined summary faces

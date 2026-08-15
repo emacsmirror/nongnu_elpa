@@ -1795,11 +1795,6 @@ The first matching list element will be used."
                  (repeat (list (string :tag "From type")
                                (string :tag "To type")
                                (string :tag "Converter program")))))
-(defvaralias 'vm-mime-alternative-select-method
-  'vm-mime-alternative-show-method)
-(make-obsolete-variable 'vm-mime-alternative-select-method
-			'vm-mime-alternative-show-method
-			"8.2.0")			
 
 
 (defcustom vm-mime-charset-converter-alist nil
@@ -2130,15 +2125,7 @@ deleting a MIME object with `vm-delete-mime-object'."
 ;; Renamed in 8.1.1; kept as obsolete aliases until the next major release
 ;; (issue #594), unlike the plain `vm-mime-' aliases of
 ;; `vm-attach-files-in-directory', which were never marked anything.
-(defvaralias 'vm-mime-save-all-attachments-types
-  'vm-mime-saveable-types)
-(make-obsolete-variable 'vm-mime-save-all-attachments-types
-			'vm-mime-saveable-types "8.1.1")
 
-(defvaralias 'vm-mime-save-all-attachments-types-exceptions
-  'vm-mime-saveable-type-exceptions)
-(make-obsolete-variable 'vm-mime-save-all-attachments-types-exceptions
-			'vm-mime-saveable-type-exceptions "8.1.1")
 
 (defvaralias 'vm-mime-savable-types
   'vm-mime-saveable-types)
@@ -2160,15 +2147,7 @@ deleting a MIME object with `vm-delete-mime-object'."
   :group 'vm-mime
   :type '(repeat (string :tag "MIME type" nil)))
 
-(defvaralias 'vm-mime-delete-all-attachments-types
-  'vm-mime-deletable-types)
-(make-obsolete-variable 'vm-mime-delete-all-attachments-types
-			'vm-mime-deletable-types "8.1.1")
 
-(defvaralias 'vm-mime-delete-all-attachments-types-exceptions
-  'vm-mime-deletable-type-exceptions)
-(make-obsolete-variable 'vm-mime-delete-all-attachments-types-exceptions
-			'vm-mime-deletable-type-exceptions "8.1.1")
 
 (defcustom vm-mime-deletable-types
   (append
@@ -2680,16 +2659,12 @@ and the type corresponding to the first match found is used."
   :group 'vm-mime
   :type 'boolean)
 
-(defvaralias 'vm-mime-attachment-infer-type-for-text-attachments
-  'vm-infer-mime-types-for-text)
 (defcustom vm-infer-mime-types-for-text nil
   "Non-nil value means VM should try to infer a MIME object's
   type from its filename also for text attachments, not only for
   application/octet-stream."
    :group 'vm-mime
    :type 'boolean)
-(make-obsolete-variable 'vm-mime-attachment-infer-type-for-text-attachments
-			'vm-infer-mime-types-for-text "8.2.0")
 
 (defcustom vm-mime-avoid-folding-content-type t
   "*Non-nil means don't send folded Content- headers in MIME messages.
@@ -2707,11 +2682,7 @@ non-nil may let your mail get through."
   :group 'vm-mime
   :type 'boolean)
 
-(define-obsolete-variable-alias 'vm-mime-uuencode-decoder-program
-  'uudecode-decoder-program "2024")
 
-(define-obsolete-variable-alias 'vm-mime-uuencode-decoder-switches
-  'uudecode-decoder-switches "2024")
 
 (defcustom vm-auto-next-message t
   "*Non-nil value causes VM to use `vm-next-message' to advance to the next
@@ -4071,8 +4042,6 @@ might be useful for very long threads."
 
 ;; This variable is not used any more because threads can be sorted by
 ;; "activity".  USR, 2011-02-09.
-(make-obsolete 'vm-sort-threads-by-youngest-date
-	       'vm-sort-messages "8.2.0")
 
 (defcustom vm-summary-uninteresting-senders nil
   "*Non-nil value should be a regular expression that matches
@@ -5211,8 +5180,6 @@ decide the face."
   "The face used in VM Summary buffers for the selected message."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-selected-face 'face-alias 'vm-summary-selected)
-(make-obsolete 'vm-summary-selected-face 'vm-summary-selected "8.2.0")
 
 (defface vm-summary-marked
   '(
@@ -5228,8 +5195,6 @@ decide the face."
   "The face used in VM Summary buffers for marked messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-marked-face 'face-alias 'vm-summary-marked)
-(make-obsolete 'vm-summary-marked-face 'vm-summary-marked "8.2.0")
 
 (if (featurep 'xemacs)
     (defface vm-summary-deleted
@@ -5275,8 +5240,6 @@ decide the face."
     "The face used in VM Summary buffers for deleted messages."
     :group 'vm-summary-faces))
 
-(put 'vm-summary-deleted-face 'face-alias 'vm-summary-deleted)
-(make-obsolete 'vm-summary-deleted-face 'vm-summary-deleted "8.2.0")
 
 (defface vm-summary-new
   '(
@@ -5293,8 +5256,6 @@ decide the face."
   "The face used in VM Summary buffers for new messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-new-face 'face-alias 'vm-summary-new)
-(make-obsolete 'vm-summary-new-face 'vm-summary-new "8.2.0")
 
 (defface vm-summary-unread
   '(
@@ -5315,8 +5276,6 @@ decide the face."
   "The face used in VM Summary buffers for unread messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-unread-face 'face-alias 'vm-summary-unread)
-(make-obsolete 'vm-summary-unread-face 'vm-summary-unread "8.2.0")
 
 (defface vm-summary-saved
   '(
@@ -5330,9 +5289,7 @@ decide the face."
   :group 'vm-summary-faces)
 
 (put 'vm-summary-filed-face 'face-alias 'vm-summary-saved)
-(make-obsolete 'vm-summary-filed 'vm-summary-saved "8.2.0")
 (put 'vm-summary-written-face 'face-alias 'vm-summary-saved)
-(make-obsolete 'vm-summary-written 'vm-summary-saved "8.2.0")
 
 (defface vm-summary-replied
   '(
@@ -5347,8 +5304,6 @@ decide the face."
   "The face used in VM Summary buffers for replied messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-replied-face 'face-alias 'vm-summary-replied)
-(make-obsolete 'vm-summary-replied-face 'vm-summary-replied "8.2.0")
 
 (defface vm-summary-forwarded
   '(
@@ -5367,18 +5322,12 @@ decide the face."
   "The face used in VM Summary buffers for forwarded messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-forwarded-face 'face-alias 'vm-summary-forwarded)
-(make-obsolete 'vm-summary-forwarded-face 'vm-summary-forwarded "8.2.0")
-(put 'vm-summary-redistributed-face 'face-alias 'vm-summary-forwarded)
-(make-obsolete 'vm-summary-redistributed-face 'vm-summary-forwarded "8.2.0")
 
 (defface vm-summary-edited 
   '((t ()))
   "The face used in VM Summary buffers for edited messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-edited-face 'face-alias 'vm-summary-edited)
-(make-obsolete 'vm-summary-edited-face 'vm-summary-edited "8.2.0")
 
 (defface vm-summary-outgoing
   '(
@@ -5391,8 +5340,6 @@ decide the face."
   "The face used in VM Summary buffers for outgoing messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-outgoing-face 'face-alias 'vm-summary-outgoing)
-(make-obsolete 'vm-summary-outgoing-face 'vm-summary-outgoing "8.2.0")
 
 (defface vm-summary-expanded
   '((t ()))
@@ -5400,8 +5347,6 @@ decide the face."
 expanded threads."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-expanded-face 'face-alias 'vm-summary-expanded)
-(make-obsolete 'vm-summary-expanded-face 'vm-summary-expanded "8.2.0")
 
 (defface vm-summary-collapsed
   '((t (:slant oblique)))
@@ -5409,8 +5354,6 @@ expanded threads."
 collapsed threads."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-collapsed-face 'face-alias 'vm-summary-collapsed)
-(make-obsolete 'vm-summary-collapsed-face 'vm-summary-collapsed "8.2.0")
 
 (defface vm-summary-high-priority
   '(
@@ -5425,8 +5368,6 @@ collapsed threads."
   "The face used in VM Summary buffers for high-priority messages."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-high-priority-face 'face-alias 'vm-summary-high-priority)
-(make-obsolete 'vm-summary-high-priority-face 'vm-summary-high-priority "8.2.0")
 
 (defface vm-summary-low-priority
   '(
@@ -5455,8 +5396,6 @@ collapsed threads."
   "The default face used in VM Summary buffers."
   :group 'vm-summary-faces)
 
-(put 'vm-summary-default-face 'face-alias 'vm-summary-default)
-(make-obsolete 'vm-summary-default-face 'vm-summary-default "8.2.0")
 
 (defcustom vm-visit-folder-hook nil
   "*List of hook functions called just after VM visits a folder.

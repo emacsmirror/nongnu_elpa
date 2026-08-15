@@ -6503,10 +6503,6 @@ COMPOSITION's name will be read from the minibuffer."
       (when work-buffer (kill-buffer work-buffer)))))
 (defalias 'vm-mime-attach-object-to-composition
   'vm-attach-object-to-composition)
-(defalias 'vm-mime-attach-object-from-message 
-  'vm-attach-object-to-composition)
-(make-obsolete 'vm-mime-attach-object-from-message
-	       'vm-attach-object-to-composition "8.2.0")
 
 
 (cl-defun vm-attach-object (object &key type params description 
@@ -8506,10 +8502,6 @@ This is a destructive operation and cannot be undone!"
   (when (vm-interactive-p)
     (vm-discard-cached-data count)
     (vm-present-current-message)))
-(defalias 'vm-mime-nuke-alternative-text/html
-  'vm-nuke-alternative-text/html)
-(make-obsolete 'vm-mime-nuke-alternative-text/html
-	       'vm-nuke-alternative-text/html "8.2.0")
 
 ;;-----------------------------------------------------------------------------
 ;; The following functions are taken from vm-postpone.el
