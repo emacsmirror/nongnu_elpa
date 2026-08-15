@@ -1293,7 +1293,8 @@ argument."
 
 (defun elfeed-search--date-filter (date)
   "Create filter string which matches a DATE."
-  (format-time-string "@%Y-%m-%d" (seconds-to-time date)))
+  (concat (format-time-string "@%Y-%m-%d" date)
+          (format-time-string "--%Y-%m-%d" (+ (* 24 60 60) date))))
 
 (defun elfeed-search--tag-filter (tag-or-tags-list)
   "Create filter string which matches a TAG-OR-TAGS-LIST."
