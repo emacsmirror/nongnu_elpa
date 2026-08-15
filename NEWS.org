@@ -3,18 +3,33 @@
 
 * Development
 
+** General
+
+- =elfeed-db-save-idle=: New customization option to delay database saving.
+- =elfeed-use-libxml=: Enable by default if libxml is available.
+- =elfeed-default-directory=: Default to user home.
+
+** Search
+
 - =elfeed-search-tag=, =elfeed-search-untag=, =elfeed-search-tag-unread=,
   =elfeed-search-untag-unread=, =elfeed-search-toggle=: Shorter command names.
   Improve doc strings.
 - =elfeed-search-confirm-tag=: New customization variable to confirm tagging
   multiple entries.
-- =elfeed-db-save-idle=: New customization option to delay database saving.
-- =elfeed-use-libxml=: Enable by default if libxml is available.
 - =elfeed-search-max-entries= and =elfeed-search-extend:= New customization variable
   and new command to extend truncated search list.
 - =elfeed-search= header line performance improvements.
+
+** Tree
+
+- Tree folders can be clicked to open or close them.
+- Tree formatting improved.
 - =elfeed-tree-tag-face=: New face used for tags in =elfeed-tree=.
-- =elfeed-default-directory=: Default to user home.
+- =elfeed-tree-display-action=: New customizable option.
+- =elfeed-tree-icon-style=: Style to use for the tree icons (ascii, box, nerd).
+- =elfeed-tree-icon-presets=: Customizable variable defining icon style presets.
+- =elfeed-tree-and-search=: New entry point command to start Elfeed with tree and
+  search windows side by side.
 
 * Version 4.1.1 (2026-08-01)
 

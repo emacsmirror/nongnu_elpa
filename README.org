@@ -264,19 +264,19 @@ For example the configuration
 leads to a tree of the following form.
 
 #+begin_example
-emacs
-  ├─● emacs-news
-  lists
-    ├─● emacs-devel
-    ╰─● emacs-bugs
-[all feeds]
+▼ emacs
+├─● emacs-news
+╰─▼ lists
+  ├─● emacs-devel
+  ╰─● emacs-bugs
+▼ [all feeds]
+├─● …
+╰─● emacs-devel
+▼ [all tags]
+├─● …
+╰─▼ emacs
   ├─● …
   ╰─● emacs-devel
-[all tags]
-  ├─● …
-  ╰─● emacs
-       ├─● …
-       ╰─● emacs-devel
 #+end_example
 
 ** Bookmarks

@@ -21,19 +21,19 @@
 ;;
 ;; will lead to a tree of the following form.
 ;;
-;;     emacs
-;;       ├─● emacs-news
-;;       lists
-;;         ├─● emacs-devel
-;;         ╰─● emacs-bugs
-;;     [all feeds]
+;;     ▼ emacs
+;;     ├─● emacs-news
+;;     ╰─▼ lists
+;;       ├─● emacs-devel
+;;       ╰─● emacs-bugs
+;;     ▼ [all feeds]
+;;     ├─● …
+;;     ╰─● emacs-devel
+;;     ▼ [all tags]
+;;     ├─● …
+;;     ╰─▼ emacs
 ;;       ├─● …
 ;;       ╰─● emacs-devel
-;;     [all tags]
-;;       ├─● …
-;;       ╰─● emacs
-;;            ├─● …
-;;            ╰─● emacs-devel
 ;;
 ;; `outline-minor-mode' is enabled in the tree buffer.  Unfold the
 ;; tree nodes with TAB or S-TAB, jump to an entry via RET or by
@@ -54,9 +54,47 @@
   "Query string added to filter."
   :type 'string)
 
-(defcustom elfeed-tree-nodes ["├─●" "╰─●" "│  " "   "]
-  "Strings used to visualize nodes of the tree."
-  :type '(vector string string string string))
+(defcustom elfeed-tree-icon-presets
+  '((box ;; Box drawing characters
+     :branch "├─"
+     :last   "╰─"
+     :line   "│ "
+     :space  "  "
+     :feed   "◦"
+     :close  "▶"
+     :open   "▼")
+    (ascii ;; Only ASCII characters
+     :branch "|-"
+     :last   "`-"
+     :line   "| "
+     :space  "  "
+     :feed   "-"
+     :close  ">"
+     :open   "v")
+    (nerd ;; Nerd font icons
+     :branch "├─"
+     :last   "╰─"
+     :line   "│ "
+     :space  "  "
+     :feed   ""
+     :close  ""
+     :open   ""))
+  "Icons presets for tree visualization, see `elfeed-tree-icon-style'."
+  :type '(alist :key-type symbol
+                :value-type (plist :key-type keyword
+                                   :value-type string)))
+
+(defcustom elfeed-tree-icon-style
+  (if (char-displayable-p ?▶) 'box 'ascii)
+  "Selected icon style, see `elfeed-tree-icon-presets'."
+  :type 'symbol)
+
+(defcustom elfeed-tree-display-action
+  '(display-buffer-in-side-window
+    (side . left)
+    (dedicated . t))
+  "Display action for the tree window."
+  :type 'sexp)
 
 (defgroup elfeed-tree-faces ()
   "Elfeed tree buffer faces."
@@ -87,6 +125,7 @@
   :parent special-mode-map
   "RET" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
+  "<elfeed-toggle>" #'outline-toggle-children
   "s" #'elfeed-search-new-live
   "n" #'next-line
   "p" #'previous-line
@@ -146,6 +185,8 @@
   "Major mode for listing elfeed feeds as a tree."
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
+              left-margin-width 1
+              right-margin-width 1
               mode-line-modified nil
               mode-line-mule-info nil
               mode-line-remote nil
@@ -155,7 +196,10 @@
               outline-regexp "\\*+"
               outline-minor-mode-cycle t
               outline-minor-mode-cycle-filter nil
-              hl-line-sticky-flag t)
+              hl-line-sticky-flag t
+              line-move-visual nil
+              buffer-display-table (make-display-table))
+  (set-display-table-slot buffer-display-table 'truncation ?\s)
   (elfeed--header-line-format 'elfeed-tree-header-function)
   (buffer-disable-undo)
   (hl-line-mode)
@@ -163,18 +207,35 @@
   (add-hook 'elfeed-tag-hook #'elfeed-tree--tag)
   (add-hook 'elfeed-update-hook #'elfeed-tree--update-debounce)
   (add-hook 'elfeed-update-init-hook #'elfeed-tree--update-force)
+  ;; outline-view-change-hook is obsolete without an adequate replacement
+  (with-no-warnings
+    (add-hook 'outline-view-change-hook #'elfeed-tree--update-buttons))
   (elfeed-db--save-on-quit)
   (elfeed-tree-update :force)
   (outline-minor-mode)
   (outline-hide-sublevels 1))
 
+(defun elfeed-tree--update-buttons ()
+  "Update open/close buttons."
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (goto-char (point-min))
+      (while-let ((button (text-property-any (point) (point-max)
+                                             'elfeed-tree--button t)))
+        (goto-char (1+ button))
+        (put-text-property button (1+ button) 'display
+                           (elfeed-tree--icon
+                            (if (invisible-p (pos-eol)) :close :open)))))))
+
 ;;;###autoload
 (defun elfeed-tree ()
-  "Enter `elfeed-tree' buffer."
+  "Display `elfeed-tree' buffer."
   (interactive)
-  (switch-to-buffer (elfeed-tree--buffer))
+  (pop-to-buffer (elfeed-tree--buffer) elfeed-tree-display-action)
   (unless (eq major-mode 'elfeed-tree-mode)
-    (elfeed-tree-mode)))
+    (elfeed-tree-mode))
+  ;; Update window margins
+  (set-window-buffer nil (current-buffer)))
 
 ;;;###autoload
 (defun elfeed-tree-and-search ()
@@ -338,31 +399,30 @@ NODES is a list of tree nodes."
             unread)
           (+ unread read)))
 
-(defun elfeed-tree--node (idx)
-  "Return string for the tree visualization given IDX."
-  (propertize (if (< idx 2) " " "*") 'display
-              (substring (aref elfeed-tree-nodes idx))))
+(defun elfeed-tree--icon (icon)
+  "Lookup tree ICON."
+  (copy-sequence (plist-get
+                  (alist-get elfeed-tree-icon-style elfeed-tree-icon-presets)
+                  icon)))
+
+(defun elfeed-tree--star (icon)
+  "Return star with displayed tree ICON."
+  (propertize "*" 'display (elfeed-tree--icon icon)))
 
 (defun elfeed-tree--title (indent title unread read count tags)
   "Insert TITLE into buffer.
 INDENT is the indentation prefix, UNREAD and READ the respective counts,
 COUNT the number of feeds and TAGS the list of tags."
-  (setq title
-        (concat
-         indent (propertize " " 'invisible t)
-         (format (propertize "%s" 'face 'elfeed-search-tag-face) title)
-         (propertize " "
-                     'display (format " (%s/%s:%s)"
-                                      (if (> unread 0)
-                                          (format
-                                           (propertize
-                                            "%s" 'face 'elfeed-tree-highlight-unread-face)
-                                           unread)
-                                        unread)
-                                      (+ unread read)
-                                      count))))
+  (setq indent (concat
+                indent
+                (propertize "*"
+                            'display (elfeed-tree--icon :close)
+                            'elfeed-tree--button t)
+                " "))
   (elfeed-add-properties
-   title
+   indent
+   'pointer 'hand
+   'follow-link [elfeed-toggle]
    'elfeed-tree (mapconcat (lambda (x) (format "%s" x)) tags " ")
    'elfeed-filter
    (elfeed-search--tag-filter
@@ -373,61 +433,77 @@ COUNT the number of feeds and TAGS the list of tags."
                          nconc (list x))))
       (if (and (> unread 0) (not (memq 'unread tags)))
           `(,@tags unread)
-        tags)))
-   'follow-link [elfeed-filter]
-   'mouse-face 'highlight)
-  (insert title ?\n))
+        tags))))
+  (insert indent
+          (format (propertize "%s"
+                              'face 'elfeed-search-tag-face
+                              'mouse-face 'highlight
+                              'follow-link [elfeed-filter])
+                  title)
+          ;; Use display property for unread count such that the name of the
+          ;; headline is not modified. This is important for outline mode to
+          ;; restore the folding state.
+          (propertize " "
+                      'follow-link [elfeed-filter]
+                      'pointer 'hand
+                      'display
+                      (format " (%s/%s:%s) "
+                              (if (> unread 0)
+                                  (format
+                                   (propertize
+                                    "%s" 'face 'elfeed-tree-highlight-unread-face)
+                                   unread)
+                                unread)
+                              (+ unread read)
+                              count))
+          ?\n))
 
-(defun elfeed-tree--print (indent tags title-width depth nodes)
+(defun elfeed-tree--print (level indent tags depth nodes)
   "Print tree NODES.
+LEVEL is the current indentation level.
 INDENT is the current indentation prefix string.
 TAGS the list of outer tags which are added to the filter.
-TITLE-WIDTH the width of the feed title.
 DEPTH the tree depth."
-  (setq indent (or indent (propertize "*" 'invisible t)))
   (cl-loop
-   with align1 = (+ 10 (* (+ 2 depth) (length (aref elfeed-tree-nodes 0))))
-   with align2 = (+ 1 align1 title-width)
-   with align1 = (propertize " " 'display `(space :align-to ,align1))
-   with align2 = (propertize " " 'display `(space :align-to ,align2))
-   with level = (length indent)
+   with align = (propertize " " 'display `(space :align-to ,(+ 14 (* 2 depth))))
    for (tag unread read count children leaves) in (elfeed-tree--sort nodes)
-   for node-idx downfrom (length nodes) do
-   (let ((subtags (append tags (list tag)))
-         (subindent (concat indent
-                            (elfeed-tree--node
-                             (if (or (= level 1) (= node-idx 1)) 3 2)))))
-     (elfeed-tree--title indent tag unread read count subtags)
-     (cl-loop
-      for (title unread read feed _tags) in (elfeed-tree--sort leaves)
-      for leaf-idx downfrom (length leaves) do
-      (insert
-       (elfeed-add-properties
-        (concat subindent
-                (elfeed-tree--node
-                 (if (and (not children) (= leaf-idx 1)) 1 0))
-                (mapconcat (lambda (_)
-                             (propertize
-                              " " 'display
-                              (substring (aref elfeed-tree-nodes 3))))
-                           (make-list (- depth level -1) 0))
-                (elfeed-tree--count-unread unread read)
-                align1
-                (elfeed-add-properties
-                 (elfeed-format-column title title-width :left)
-                 'face 'elfeed-search-feed-face)
-                align2
-                (elfeed-feed-id feed))
-        'elfeed-feed feed
-        'elfeed-tree (concat
-                      (mapconcat (lambda (x) (format "%s" x)) subtags " ")
-                      " " (elfeed-feed-id feed))
-        'elfeed-filter (concat (elfeed-search--feed-filter feed)
-                               (and (> unread 0) " +unread"))
-        'follow-link [elfeed-filter]
-        'mouse-face 'highlight)
-       "\n"))
-     (elfeed-tree--print subindent subtags title-width depth children))))
+   for node-idx downfrom (length nodes)
+   for titleindent = (when (> level 0)
+                       (concat indent (elfeed-tree--star
+                                       (if (= node-idx 1) :last :branch))))
+   for subindent = (when (> level 0)
+                     (concat indent (elfeed-tree--star
+                                     (if (= node-idx 1) :space :line))))
+   for subtags = (append tags (list tag))
+   do
+   (elfeed-tree--title titleindent tag unread read count subtags)
+   (cl-loop
+    for (title unread read feed _tags) in (elfeed-tree--sort leaves)
+    for leaf-idx downfrom (length leaves) do
+    (insert
+     (elfeed-add-properties
+      (concat
+       subindent
+       (elfeed-tree--star (if (and (not children) (= leaf-idx 1)) :last :branch))
+       (elfeed-tree--star :feed) " ")
+      'elfeed-feed feed
+      'elfeed-tree (concat
+                    (mapconcat (lambda (x) (format "%s" x)) subtags " ")
+                    " " (elfeed-feed-id feed))
+      'elfeed-filter (concat (elfeed-search--feed-filter feed)
+                             (and (> unread 0) " +unread"))
+      'follow-link [elfeed-filter]
+      'pointer 'hand)
+     (elfeed-add-properties
+      (concat
+       (apply #'concat (make-list (- depth level -1) (elfeed-tree--icon :space)))
+       (elfeed-tree--count-unread unread read)
+       align ;; Alignment for variable pitch
+       (propertize title 'face 'elfeed-search-feed-face))
+      'follow-link [elfeed-filter]
+      'mouse-face 'highlight)
+     ?\n))
+   (elfeed-tree--print (+ level 1) subindent subtags depth children)))
 
 (defun elfeed-tree--update-immediately (buffer &optional force)
   "Immediately update the `elfeed-tree' BUFFER.
@@ -444,22 +520,20 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                (tags (cdr feeds+tags))
                (nodes (elfeed-tree--build-nested feeds))
                (tree (elfeed-tree--stats (elfeed-tree--flatten (car nodes))))
-               (tree-depth (max 2 (elfeed-tree--depth tree)))
-               (untagged-feeds-tree (when (cadr nodes)
-                                      (elfeed-tree--stats
-                                       `(("[untagged feeds]" nil ,(cadr nodes))))))
-               (all-feeds-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds))))
-               (title-width (cl-loop for (title . _) in feeds
-                                     maximize (string-width title))))
+               (depth (max 2 (elfeed-tree--depth tree)))
+               (all-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds)))))
           (erase-buffer)
           (goto-char (point-min))
-          (elfeed-tree--print nil nil title-width tree-depth tree)
-          (elfeed-tree--print nil nil title-width tree-depth untagged-feeds-tree)
-          (elfeed-tree--print nil nil title-width tree-depth all-feeds-tree)
-          (elfeed-tree--print nil nil title-width tree-depth
+          (elfeed-tree--print 0 nil nil depth tree)
+          (elfeed-tree--print 0 nil nil depth
+                              (when (cadr nodes)
+                                (elfeed-tree--stats
+                                 `(("[untagged feeds]" nil ,(cadr nodes))))))
+          (elfeed-tree--print 0 nil nil depth all-tree)
+          (elfeed-tree--print 0 nil nil depth
                               (elfeed-tree--build-tags
                                feeds tags
-                               (take 3 (cdar all-feeds-tree))))
+                               (take 3 (cdar all-tree))))
           (when restore (funcall restore))
           (setq elfeed-tree--last-update (float-time))
           (run-hooks 'elfeed-tree-update-hook)))))
