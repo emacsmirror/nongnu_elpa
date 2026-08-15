@@ -37,6 +37,7 @@
 (require 'ewoc)
 (require 'goto-addr)
 (require 'keymap-popup)
+(require 'project)
 (require 'seq)
 (require 'subr-x)
 (require 'hermes-transport)
@@ -1538,6 +1539,50 @@ durable session continues on send."
    (lambda (buffer)
      (with-current-buffer buffer (derived-mode-p 'hermes-chat-mode)))
    (buffer-list)))
+
+(defun hermes-chat--project-root (&optional directory)
+  "Return the project root for DIRECTORY, or its normalized directory.
+When DIRECTORY is nil, use the current buffer's `default-directory'."
+  (let* ((directory (file-name-as-directory
+                     (expand-file-name (or directory default-directory))))
+         (project (project-current nil directory)))
+    (file-name-as-directory
+     (expand-file-name (if project (project-root project) directory)))))
+
+(defun hermes-chat--project-buffers (root buffers)
+  "Return members of BUFFERS whose local project identity is ROOT."
+  (seq-filter
+   (lambda (buffer)
+     (with-current-buffer buffer
+       (equal (hermes-chat--project-root) root)))
+   buffers))
+
+(defun hermes-chat--read-project-buffer (buffers)
+  "Read one chat from project-local BUFFERS with completion."
+  (let ((completion-extra-properties
+         (list :annotation-function #'hermes-chat--switch-annotation)))
+    (get-buffer
+     (completing-read "Project chat: "
+                      (mapcar #'buffer-name buffers) nil t))))
+
+;;;###autoload
+(defun hermes-project-chat (&optional new)
+  "Switch to a live chat for the current project, or create one.
+With prefix argument NEW, always create another project chat."
+  (interactive "P")
+  (let* ((root (hermes-chat--project-root))
+         (buffers (and (not new)
+                       (hermes-chat--project-buffers
+                        root (hermes-chat--live-buffers)))))
+    (cond
+     ((null buffers)
+      (let ((default-directory root))
+        (call-interactively #'hermes-chat)))
+     ((null (cdr buffers))
+      (pop-to-buffer-same-window (car buffers)))
+     (t
+      (pop-to-buffer-same-window
+       (hermes-chat--read-project-buffer buffers))))))
 
 (defun hermes-chat--switch-annotation (name)
   "Return a shadowed status annotation for chat buffer NAME in the switcher."

@@ -659,6 +659,112 @@
          (call-interactively #'hermes-switch-to-chat))
        (should (eq (current-buffer) target))))))
 
+(ert-deftest hermes-chat-project-root-prefers-project-and-falls-back-to-directory ()
+  "Project identity uses the project root or normalized directory fallback."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-root-" t)))
+         (nested (expand-file-name "src/lib/" root))
+         (outside (file-name-as-directory
+                   (make-temp-file "hermes-project-fallback-" t))))
+    (unwind-protect
+        (progn
+          (make-directory nested t)
+          (make-directory (expand-file-name ".git" root))
+          (should (equal (file-truename (hermes-chat--project-root nested))
+                         (file-truename root)))
+          (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil)))
+            (should (equal (hermes-chat--project-root outside) outside))))
+      (delete-directory root t)
+      (delete-directory outside t))))
+
+(ert-deftest hermes-project-chat-switches-single-exact-root-match ()
+  "Project chat switches directly to the sole exact-root chat."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-chat-" t)))
+         (other-root (file-name-as-directory
+                      (make-temp-file "hermes-project-other-" t)))
+         (nested (expand-file-name "src/" root))
+         (target (generate-new-buffer " *hermes-project-target*"))
+         (other (generate-new-buffer " *hermes-project-other*"))
+         shown)
+    (unwind-protect
+        (progn
+          (make-directory nested t)
+          (make-directory (expand-file-name ".git" root))
+          (dolist (entry `((,target . ,root) (,other . ,other-root)))
+            (with-current-buffer (car entry)
+              (setq default-directory (cdr entry))
+              (hermes-chat-mode)))
+          (with-temp-buffer
+            (setq default-directory nested)
+            (cl-letf (((symbol-function 'pop-to-buffer-same-window)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (hermes-project-chat)))
+          (should (eq shown target)))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list target other))
+      (delete-directory root t)
+      (delete-directory other-root t))))
+
+(ert-deftest hermes-project-chat-completes-among-same-root-siblings ()
+  "Multiple project chats offer only exact-root siblings."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-siblings-" t)))
+         (other-root (file-name-as-directory
+                      (make-temp-file "hermes-project-excluded-" t)))
+         (first (generate-new-buffer " *hermes-project-first*"))
+         (second (generate-new-buffer " *hermes-project-second*"))
+         (other (generate-new-buffer " *hermes-project-excluded*"))
+         offered shown)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (dolist (entry `((,first . ,root) (,second . ,root)
+                           (,other . ,other-root)))
+            (with-current-buffer (car entry)
+              (setq default-directory (cdr entry))
+              (hermes-chat-mode)))
+          (with-temp-buffer
+            (setq default-directory root)
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (_prompt candidates &rest _)
+                         (setq offered candidates)
+                         (buffer-name second)))
+                      ((symbol-function 'pop-to-buffer-same-window)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (hermes-project-chat)))
+          (should (equal (sort (copy-sequence offered) #'string<)
+                         (sort (mapcar #'buffer-name (list first second))
+                               #'string<)))
+          (should (eq shown second)))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list first second other))
+      (delete-directory root t)
+      (delete-directory other-root t))))
+
+(ert-deftest hermes-project-chat-prefix-creates-at-project-root ()
+  "Prefix always creates a sibling chat rooted at the current project."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-new-" t)))
+         (nested (expand-file-name "src/" root))
+         called directory)
+    (unwind-protect
+        (progn
+          (make-directory nested t)
+          (make-directory (expand-file-name ".git" root))
+          (with-temp-buffer
+            (setq default-directory nested)
+            (cl-letf (((symbol-function 'call-interactively)
+                       (lambda (command &rest _)
+                         (setq called command
+                               directory default-directory))))
+              (hermes-project-chat t)))
+          (should (eq called #'hermes-chat))
+          (should (equal (file-truename directory) (file-truename root))))
+      (delete-directory root t))))
+
 (ert-deftest hermes-chat-session-info-updates-header-and-working-directory ()
   "`session.info' updates header state but adds no transcript entry."
   (hermes-test-with-chat-buffer

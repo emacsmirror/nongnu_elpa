@@ -27,7 +27,8 @@
 (require 'seq)
 
 (defconst hermes-command-palette-commands
-  '(("New chat" . hermes-chat)
+  '(("Project chat" . hermes-project-chat)
+    ("New chat" . hermes-chat)
     ("Switch chat" . hermes-switch-to-chat)
     ("Sessions" . hermes-list-sessions)
     ("Profiles" . hermes-list-profiles)

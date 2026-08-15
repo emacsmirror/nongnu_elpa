@@ -1147,7 +1147,8 @@ a local FIFO submission."
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
 (defun hermes-chat--apply-directory (directory)
-  "Use gateway-native DIRECTORY as this chat's working directory."
+  "Apply gateway-native DIRECTORY to this chat's remote and local context."
+  (setq-local default-directory (file-name-as-directory directory))
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status
    (format "Working directory: %s" directory)

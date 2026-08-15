@@ -293,7 +293,7 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should (equal create-cwd "/srv/remote-project")))))))
 
 (ert-deftest hermes-chat-set-directory-uses-authoritative-backend-path ()
-  "Changing directory records the backend path without changing local editor cwd."
+  "Changing directory applies the authoritative backend path to the chat."
   (let ((client (hermes-test--dashboard-client))
         request)
     (hermes-test-with-chat-buffer
@@ -310,7 +310,7 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
        (hermes-chat-set-directory "C:/project")
        (should (equal request '("C:/project" "sid")))
        (should (equal hermes-chat--working-directory "/mnt/c/translated"))
-       (should (equal default-directory "/tmp/local-editor/"))
+       (should (equal default-directory "/mnt/c/translated/"))
        (should (string-match-p "\[translated\]" (buffer-name)))))))
 
 (ert-deftest hermes-chat-directory-parent-handles-instance-path-syntax ()
@@ -327,7 +327,8 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
   "A directory rejection cannot surface in a successor session."
   (let ((client (hermes-test--dashboard-client)) reject surfaced)
     (hermes-test-with-chat-buffer
-     (setq hermes-chat--working-directory "/srv"
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory "/srv"
            hermes-chat--dashboard-client client
            hermes-chat--dashboard-session-ready-p t
            hermes-chat--dashboard-active-session-id "sid-old")
@@ -340,7 +341,26 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
        (setq hermes-chat--dashboard-active-session-id "sid-new")
        (funcall reject "old session rejected")
        (should-not surfaced)
-       (should (equal hermes-chat--working-directory "/srv"))))))
+       (should (equal hermes-chat--working-directory "/srv"))
+       (should (equal default-directory "/tmp/local-editor/"))))))
+
+(ert-deftest hermes-chat-set-directory-ignores-stale-resolution ()
+  "A directory response cannot change a successor session's local context."
+  (let ((client (hermes-test--dashboard-client)) resolve)
+    (hermes-test-with-chat-buffer
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory "/srv"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid-old")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client _cwd &rest args)
+                  (setq resolve (plist-get args :resolve)))))
+       (hermes-chat-set-directory "/srv/new")
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve '((cwd . "/srv/new")))
+       (should (equal hermes-chat--working-directory "/srv"))
+       (should (equal default-directory "/tmp/local-editor/"))))))
 
 (ert-deftest hermes-chat-dashboard-record-session-records-authoritative-cwd ()
   "Session creation records nested backend cwd without changing editor cwd."
@@ -397,7 +417,7 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
                             (list "GET" "/api/fs/list" "/srv/project" client))))
        (should (equal set-cwd '("/srv/project" "sid")))
        (should (equal hermes-chat--working-directory "/srv/project"))
-       (should (equal default-directory "/tmp/local-editor/"))))))
+       (should (equal default-directory "/srv/project/"))))))
 
 (ert-deftest hermes-chat-directory-browser-falls-back-to-manual-path ()
   "An unavailable listing endpoint still accepts an instance-native path."
