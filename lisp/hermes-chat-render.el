@@ -221,10 +221,17 @@ Reject oversized payloads before and after base64 decode using
       (create-image data nil t :max-width 640))))
 
 (defun hermes-chat--insert-content-with-images (content insert-text &optional blocks)
-  "Insert CONTENT via INSERT-TEXT after lifting embedded image data URLs.
-BLOCKS is optional precomputed diff-block metadata for the cleaned text."
-  (pcase-let ((`(,text . ,images) (hermes-chat--extract-embedded-images content)))
-    (hermes-chat--insert-diffed (or text "") insert-text blocks)
+  "Insert CONTENT via INSERT-TEXT, lifting images outside diff blocks.
+BLOCKS is optional precomputed diff metadata for the original CONTENT."
+  (let (images)
+    (hermes-chat--insert-diffed
+     (or content "")
+     (lambda (segment)
+       (pcase-let ((`(,text . ,segment-images)
+                    (hermes-chat--extract-embedded-images segment)))
+         (funcall insert-text (or text ""))
+         (setq images (append images segment-images))))
+     blocks)
     (mapc #'hermes-chat--insert-image-url images)))
 
 (provide 'hermes-chat-render)

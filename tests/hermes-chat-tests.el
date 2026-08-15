@@ -1121,6 +1121,23 @@
      (should (string-match-p "-old-inline" diff))
      (should (string-match-p "+new-inline" diff)))))
 
+(ert-deftest hermes-chat-diff-preserves-embedded-data-image-url ()
+  "Diff buttons retain data URLs without lifting them as transcript images."
+  (let ((url (concat "data:image/png;base64," (make-string 80 ?A))))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--insert-entry
+      (hermes-chat--make-entry
+       'assistant
+       (concat "Changed:\n"
+               "--- a/style.css\n"
+               "+++ b/style.css\n"
+               "@@ -0,0 +1 @@\n"
+               "+background: url(" url ");\n")
+       'done))
+     (should (string-match-p (regexp-quote url)
+                             (hermes-test--view-diff-content)))
+     (should-not (string-match-p "\\[image\\]" (buffer-string))))))
+
 (ert-deftest hermes-chat-background-complete-renders-view-result-link ()
   "A `background' event renders a persistent #N notice with a View Result link."
   (hermes-test-with-chat-buffer
