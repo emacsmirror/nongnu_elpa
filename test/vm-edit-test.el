@@ -280,6 +280,200 @@ message's own markers -- and the separator before it -- have to survive."
                               (buffer-substring-no-properties
                                (vm-headers-of m) (vm-text-of m)))))))
 
+;;; Editing a message and putting it back (emacs-vm/vm#673)
+
+(defmacro vm-edit-test--in-a-folder (spec &rest body)
+  "Visit a folder of messages and run BODY, with FOLDER bound to its buffer.
+SPEC is (COUNT) or (COUNT TEXT): TEXT is written instead of the default
+two-message folder.  The message pointer is on the first message."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-edit" t)))
+          (file (expand-file-name "inbox" dir))
+          (vm-folder-directory dir)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-frame-per-edit nil)
+          (before (buffer-list))
+          folder)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (insert (or ,(cadr spec)
+                         (mapconcat
+                          (lambda (n)
+                            (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                                            "From: alice@example.com\n"
+                                            "Subject: msg %d\n\nbody %d\n\n")
+                                    n n))
+                          (number-sequence 1 ,(car spec)) ""))))
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder file)
+             (setq folder (current-buffer))
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-edit-test--folder-text (folder)
+  "The whole text of FOLDER, which VM keeps narrowed to one message."
+  (with-current-buffer folder
+    (save-restriction (widen) (buffer-substring-no-properties (point-min) (point-max)))))
+
+(defun vm-edit-test--messages-in (folder)
+  "How many messages FOLDER holds, counted by their From_ lines."
+  (let ((text (vm-edit-test--folder-text folder)) (n 0) (start 0))
+    (while (string-match "^From alice@example\\.com " text start)
+      (setq n (1+ n) start (match-end 0)))
+    n))
+
+(ert-deftest vm-edit-test-an-edit-reaches-the-folder ()
+  "What you type in the edit buffer is what the folder holds afterwards,
+and the message is marked edited.  The messages around it are untouched."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (goto-char (point-min))
+    (should (search-forward "body 1" nil t))
+    (replace-match "body one, rewritten")
+    (vm-edit-message-end)
+    (let ((text (vm-edit-test--folder-text folder)))
+      (should (string-match-p "body one, rewritten" text))
+      (should-not (string-match-p "body 1$" text))
+      (should (string-match-p "body 2" text)))
+    (with-current-buffer folder
+      (should (vm-edited-flag (car vm-message-list)))
+      (should-not (vm-edited-flag (nth 1 vm-message-list))))))
+
+(ert-deftest vm-edit-test-an-edit-can-change-the-headers ()
+  "Headers are edited like anything else: the edit buffer holds the message
+from its first header to its last line."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (goto-char (point-min))
+    (should (search-forward "Subject: msg 1" nil t))
+    (replace-match "Subject: a better subject")
+    (vm-edit-message-end)
+    (should (string-match-p "Subject: a better subject"
+                            (vm-edit-test--folder-text folder)))))
+
+(ert-deftest vm-edit-test-aborting-changes-nothing ()
+  "`vm-edit-message-abort' leaves the folder as it was, whatever was typed,
+and the message unedited."
+  (vm-edit-test--in-a-folder (2)
+    (let ((before (vm-edit-test--folder-text folder)))
+      (vm-edit-message)
+      (goto-char (point-min))
+      (should (search-forward "body 1" nil t))
+      (replace-match "this should not survive")
+      (vm-edit-message-abort)
+      (should (equal (vm-edit-test--folder-text folder) before))
+      (with-current-buffer folder
+        (should-not (vm-edited-flag (car vm-message-list)))))))
+
+(ert-deftest vm-edit-test-ending-an-unchanged-edit-says-so ()
+  "Ending an edit that changed nothing says so and leaves the folder alone,
+rather than writing the message back over itself and marking it edited."
+  (vm-edit-test--in-a-folder (2)
+    (let ((before (vm-edit-test--folder-text folder))
+          (said nil))
+      (vm-edit-message)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (setq said (apply #'format format args)))))
+        (vm-edit-message-end))
+      (should (equal said "No change."))
+      (should (equal (vm-edit-test--folder-text folder) before))
+      (with-current-buffer folder
+        (should-not (vm-edited-flag (car vm-message-list)))))))
+
+(ert-deftest vm-edit-test-a-prefix-argument-forgets-the-edit ()
+  "With a prefix argument the command marks the message unedited instead of
+opening an edit buffer: it is how you tell VM the message is as it came."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (goto-char (point-min))
+    (should (search-forward "body 1" nil t))
+    (replace-match "body one, rewritten")
+    (vm-edit-message-end)
+    (with-current-buffer folder
+      (should (vm-edited-flag (car vm-message-list)))
+      (let ((buffers (length (buffer-list))))
+        (vm-edit-message t)
+        (should-not (vm-edited-flag (car vm-message-list)))
+        ;; and no edit buffer was made
+        (should (= (length (buffer-list)) buffers))))))
+
+(ert-deftest vm-edit-test-an-edited-message-keeps-the-folder-whole ()
+  "A message that gains a line beginning \"From \" does not split the folder
+in two.  The separators are munged on the way back, which is what keeps an
+edit from turning one message into two."
+  (vm-edit-test--in-a-folder (2)
+    (should (= (vm-edit-test--messages-in folder) 2))
+    (vm-edit-message)
+    (goto-char (point-max))
+    (insert "From alice@example.com Tue Feb  2 00:00:00 2024\n"
+            "Subject: not a new message\n\n")
+    (vm-edit-message-end)
+    (should (= (vm-edit-test--messages-in folder) 2))
+    (with-current-buffer folder
+      (should (= (length vm-message-list) 2)))))
+
+(ert-deftest vm-edit-test-an-edited-message-ends-with-a-newline ()
+  "A message whose last line was left unterminated gets its newline back:
+without it the next message's From_ line would not start a line."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (goto-char (point-max))
+    (skip-chars-backward "\n")
+    (delete-region (point) (point-max))
+    (insert "no newline at the end")
+    (vm-edit-message-end)
+    (let ((text (vm-edit-test--folder-text folder)))
+      (should (string-match-p "no newline at the end\n" text))
+      (should (= (vm-edit-test--messages-in folder) 2)))))
+
+(ert-deftest vm-edit-test-editing-discards-what-was-cached ()
+  "The byte and line counts cached for the summary are dropped, so the
+summary shows the message as it is now rather than as it arrived."
+  (vm-edit-test--in-a-folder (2)
+    (with-current-buffer folder
+      (vm-set-byte-count-of (car vm-message-list) "999")
+      (vm-set-line-count-of (car vm-message-list) "999"))
+    (vm-edit-message)
+    (goto-char (point-min))
+    (should (search-forward "body 1" nil t))
+    (replace-match "a longer body than it had before")
+    (vm-edit-message-end)
+    (with-current-buffer folder
+      ;; discarded, and recomputed if anything asks again: what matters is
+      ;; that the stale value is gone
+      (should-not (equal (vm-byte-count-of (car vm-message-list)) "999"))
+      (should-not (equal (vm-line-count-of (car vm-message-list)) "999")))))
+
+(ert-deftest vm-edit-test-ending-outside-an-edit-buffer-is-refused ()
+  "`vm-edit-message-end' in a buffer that is not an edit buffer says so."
+  (let ((text-quoting-style 'grave))
+    (with-temp-buffer
+      (let ((vm-message-pointer nil))
+        (let ((err (should-error (vm-edit-message-end) :type 'error)))
+          (should (string-match-p "not a VM message edit buffer"
+                                  (error-message-string err))))
+        (let ((err (should-error (vm-edit-message-abort) :type 'error)))
+          (should (string-match-p "not a VM message edit buffer"
+                                  (error-message-string err))))))))
+
+(ert-deftest vm-edit-test-editing-a-read-only-folder-is-refused ()
+  "A folder visited read-only is not edited: the edit would have nowhere to
+go back to."
+  (vm-edit-test--in-a-folder (2)
+    (with-current-buffer folder
+      (setq vm-folder-read-only t)
+      (let ((text-quoting-style 'grave))
+        (should-error (vm-edit-message) :type 'folder-read-only)))))
+
 (provide 'vm-edit-test)
 
 ;;; vm-edit-test.el ends here
