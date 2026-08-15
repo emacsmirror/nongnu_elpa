@@ -64,6 +64,7 @@ cd test && make test-one testel=vm-imap-test.el
 cd test && make test-imap       # IMAP: mock server always, live if configured
 cd test && make test-pop        # POP: mock server always, live if configured
 cd test && make test-mock       # both, with the live servers refused
+cd test && make test-all        # everything this machine can run: test/test-runner
 cd test && make test-leaks      # report tests that leave global state behind
 cd test && make test-assert     # whole suite with VM's own assertions checked
 ```
@@ -74,6 +75,17 @@ of those targets, including `make test`, without deleting
 anything that touches IMAP or POP: a live run covers the same ground as the
 mock one, so a mock server that has stopped agreeing with the client fails
 nowhere until it reaches a machine with no config.
+
+**`test/test-runner` is the one to run before pushing.** A non-zero exit from
+`make test` does not say whether VM is broken or the machine is short of a
+server: what is unconfigured skips, what is configured but unreachable fails.
+The runner asks first — `test/vm-test-probe.el` logs in to every configured
+server and reports what answered — prints that, then runs each pass in its own
+Emacs: the suite, the IMAP and POP tests again with the live servers refused,
+and the mail-sending tests when `vm-send-test-config` says where to send. Every
+pass runs whichever fails, and it ends with a summary naming each one.
+`test/test-runner --probe` prints the findings and runs nothing;
+`--no-send`, `--no-live` and `--no-build` are the other options.
 
 `test/vm-fuzz-test.el` drives a folder through random operation sequences and
 checks its invariants after each one. It runs a small search as part of the
