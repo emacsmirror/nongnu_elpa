@@ -1138,6 +1138,18 @@
                              (hermes-test--view-diff-content)))
      (should-not (string-match-p "\\[image\\]" (buffer-string))))))
 
+(ert-deftest hermes-chat-background-owner-rejects-before-draft-mutation ()
+  "A session owner blocks background submission without consuming its draft."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--command-owner 'command-owner)
+   (let (bootstrapped)
+     (cl-letf (((symbol-function 'hermes-chat--with-dashboard-session)
+                (lambda (&rest _) (setq bootstrapped t))))
+       (insert "valuable background draft")
+       (should-error (hermes-chat-background) :type 'user-error)
+       (should (equal (hermes-chat-input-string) "valuable background draft"))
+       (should-not bootstrapped)))))
+
 (ert-deftest hermes-chat-background-complete-renders-view-result-link ()
   "A `background' event renders a persistent #N notice with a View Result link."
   (hermes-test-with-chat-buffer

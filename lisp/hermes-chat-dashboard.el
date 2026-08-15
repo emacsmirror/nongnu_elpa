@@ -1531,6 +1531,7 @@ With no PROMPT, use the input tail.  The task runs in its own session via
 later as a `background.complete' event rendered as a persistent [View Result]
 entry."
   (interactive)
+  (hermes-chat--ensure-submit-allowed)
   (let ((content (string-trim (or prompt (hermes-chat-input-string))))
         (buffer (current-buffer)))
     (when (string-empty-p content)
