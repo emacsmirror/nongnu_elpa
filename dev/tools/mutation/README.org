@@ -1,0 +1,80 @@
+#+TITLE: Mutation sweep
+
+A test suite tells you what it ran, not what it would notice.  This breaks the
+code one change at a time and reports whether the tests fail.  A mutation that
+survives is code the suite does not exercise, whatever its coverage says.
+
+* Running it
+
+: ./sweep.py setup                  # a worktree to mutate, built once
+: ./sweep.py run                    # every module that has a test file
+: ./sweep.py run vm-save vm-digest  # or just these
+: ./sweep.py report                 # scores per module, survivors by function
+: ./sweep.py verify 8               # do survivors survive the whole suite?
+: ./sweep.py clean                  # remove the worktree
+
+A full sweep of 25 modules takes about an hour.  Results accumulate in
+=$TMPDIR/vm-mutation/results.jsonl=; delete it to start over, or set
+=VM_MUTATION_DIR= to work somewhere else.
+
+* What it changes
+
+Mutations are made by parsing, never by editing text, so every mutant is a
+balanced program:
+
+- a =when=, =unless= or =if= condition replaced by t or nil, so the guard
+  stops guarding
+- a =setq=, =push=, =insert= or =delete-region= call replaced by nil, so the
+  effect does not happen
+- an integer literal replaced by its successor
+
+Sites are sampled per module, 60 for a module whose tests are quick and 12 for
+one whose tests are slow, so a sweep stays within an hour.
+
+* Reading the result
+
+Each mutation is judged by the test file that names the module: =lisp/vm-save.el=
+by =test/vm-save-test.el=.  So a survivor means that file did not notice; a
+neighbouring file might.  =verify= answers that by re-running survivors against
+the whole suite -- of the first seven sampled, six survived that too.
+
+Not every survivor is a gap worth filling:
+
+- =vm-menu=, =vm-window= and =vm-page= drive menubars and window layouts, which
+  do not exist in batch, so they score low honestly
+- the integer mutations are mostly buffer sizes and timeouts where any value
+  behaves the same; they are the weakest signal, at 13% caught against 25-29%
+  for the others
+- a guard whose condition is always true in practice is not a gap either
+
+What is left is worth reading.  The first sweep, in August 2026, judged 1144
+mutations across 25 modules and caught 283 of them: 25%.  Six of seven
+survivors sampled survived the entire suite, among them deleting the closing
+MIME boundary of an encapsulated digest.
+
+* Things that cost an afternoon
+
+- *It runs in a detached git worktree.*  A sweep killed mid-mutation leaves a
+  broken source file behind, and =make= will have compiled that mutant into a
+  =.elc= that outlives restoring the source.  A worktree keeps all of that away
+  from the tree you work in.
+- *One sweep at a time, under a lock, and every mutant read back before it is
+  judged.*  Three orphaned sweeps mutating the same files turned one hang into
+  fifty-eight and made a whole run's numbers meaningless.
+- *A short per-mutant timeout.*  Deleting =(setq x (cdr x))= inside a =while=
+  loop hangs; that is an ordinary outcome, not a fault, and it should cost
+  seconds rather than minutes.
+- *The worktree's =.elc= files are made newer than its sources.*  VM loads from
+  source when the source is newer, and a checkout is newer than everything, so
+  without this every test run loads the whole of VM from source: two minutes
+  instead of half a second.
+
+* Using it on new tests
+
+The suite's own rule is that a test ships with the mutation it was verified
+against.  This is the same idea, applied to code that already has tests:
+
+1. =./sweep.py run vm-save= to see where that module stands
+2. write tests for the functions the report names
+3. run it again -- the score says whether the tests got better, rather than
+   whether there are more of them
