@@ -70,6 +70,11 @@ Emacs of its own: `make test` forwards to the runner, and `ARGS` goes through
 (`make test ARGS="--one vm-imap-test.el"`). Add a pass to the runner, not a
 target to the Makefile.
 
+`make test` fetches the optional packages first (BBDB, emacs-w3m, vcard) and
+records that with the stamp file `test/opt/installed`, so a run covers as much
+as the machine can. It needs the network once; a failure warns and the tests
+that use a package skip. To fetch again, remove the stamp.
+
 It probes first, because an exit status does not say whether VM is broken or
 the machine is short of a server: what is unconfigured skips, what is
 configured but unreachable fails. `test/vm-test-probe.el` logs in to every

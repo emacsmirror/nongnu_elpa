@@ -22,23 +22,42 @@ top_srcdir = @top_srcdir@
 
 ARGS =
 
+# Records that the optional packages have been fetched.  A stamp rather than
+# the packages themselves: those land in directories whose names carry a
+# version, which no rule can name in advance.
+OPTIONAL_STAMP = $(srcdir)/opt/installed
+
 .PHONY: test optional-packages clean distclean
 
 # Everything this machine can run.  ARGS goes to the runner: --one FILE,
 # --imap, --pop, --send, --mock, --no-optional, --assert, --leaks, --coverage,
 # --skip-live, --skip-send, --verbose, --probe.
-test:
+#
+# The optional packages are fetched first, so that a run covers as much as the
+# machine can rather than skipping whatever nobody remembered to install.
+test: $(OPTIONAL_STAMP)
 	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
+
+optional-packages: $(OPTIONAL_STAMP)
 
 # Fetch the packages VM integrates with but does not require -- BBDB,
 # emacs-w3m, vcard -- into test/opt/elpa, where vm-test-init.el finds them and
-# the tests that need one stop skipping.  Needs the network; nothing else in
-# the tests does.  Not committed: test/opt is ignored.  With them installed
-# `make test' also runs the suite once without them, which is how an ordinary
-# checkout runs it.
-optional-packages:
-	$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
+# the tests that need one stop skipping.  With them installed a run also has a
+# pass without them, which is how an ordinary checkout runs those tests.
+#
+# This is the only part of the tests that needs the network, and a failure is
+# not fatal: a missing companion is the state the tests are written to
+# tolerate, so it warns, stamps, and lets them skip.  To try again, remove the
+# stamp.  Nothing here is committed: test/opt is ignored.
+$(OPTIONAL_STAMP):
+	-$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
 		-f vm-optional-install-batch $(srcdir)/opt
+	@mkdir -p $(srcdir)/opt
+	@touch $@
+	@if [ ! -d $(srcdir)/opt/elpa ]; then \
+	  echo "Warning: no optional packages; the tests that use one will skip."; \
+	  echo "         To try again: rm $(OPTIONAL_STAMP)"; \
+	fi
 
 # Clean test artifacts
 clean:
@@ -55,5 +74,6 @@ distclean: clean
 	@# is a poor trade.  They are not part of the checkout, so `distclean'
 	@# is where they go.
 	-rm -rf $(srcdir)/opt/elpa
+	-rm -f $(OPTIONAL_STAMP)
 	-rmdir $(srcdir)/opt 2> /dev/null || true
 	-rm -f Makefile
