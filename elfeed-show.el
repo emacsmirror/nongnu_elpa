@@ -107,7 +107,7 @@ All attachments are saved in the chosen directory."
   "d" #'elfeed-show-save-enclosure
   "n" #'elfeed-show-next
   "p" #'elfeed-show-prev
-  "s" #'elfeed-search-new-live
+  "s" #'elfeed-show-new-live-search
   "b" #'elfeed-show-visit
   "B" #'elfeed-show-visit-secondary
   "y" #'elfeed-show-yank
@@ -316,6 +316,12 @@ the browser defined by `browse-url-secondary-browser-function'."
   "Visit the current entry in your browser using the secondary browser."
   (interactive nil elfeed-show-mode)
   (elfeed-show-visit t))
+
+(defun elfeed-show-new-live-search ()
+  "Quit current window and start new live search in the `elfeed-search' buffer."
+  (interactive nil elfeed-show-mode)
+  (quit-window)
+  (elfeed-search :live))
 
 (defun elfeed-show-yank ()
   "Copy the current entry link URL to the clipboard."
@@ -680,8 +686,8 @@ content is stored in the entry metadata under the key :link-content."
       (position . ,(point))
       (handler . ,#'elfeed-show-bookmark-handler))))
 
-(define-obsolete-function-alias 'elfeed-show-new-live-search
-  #'elfeed-search-new-live "4.0.0")
+(define-obsolete-function-alias 'elfeed-search-new-live
+  #'elfeed-show-new-live-search "4.1.1")
 
 (provide 'elfeed-show)
 ;;; elfeed-show.el ends here

@@ -133,7 +133,7 @@
   "RET" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
   "<elfeed-toggle>" #'outline-toggle-children
-  "s" #'elfeed-search-new-live
+  "s" #'elfeed-tree-new-live-search
   "n" #'next-line
   "p" #'previous-line
   "T" #'elfeed-tree-set-title
@@ -188,6 +188,11 @@
    elfeed-tree-mode)
   (setf (elfeed-meta feed :title) title)
   (elfeed-tree-update :force))
+
+(defun elfeed-tree-new-live-search ()
+  "Start new live search in the `elfeed-search' buffer."
+  (interactive nil elfeed-tree-mode)
+  (elfeed-search :live))
 
 (define-derived-mode elfeed-tree-mode special-mode "elfeed-tree"
   "Major mode for listing elfeed feeds as a tree."

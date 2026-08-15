@@ -385,16 +385,19 @@ Movement is configured by `elfeed-search-remain-on-entry'."
 
 ;;;###autoload
 (defun elfeed-search (&optional new-filter)
-  "Display `elfeed-search' buffer, optionally with a NEW-FILTER."
+  "Display `elfeed-search' buffer, optionally with a NEW-FILTER.
+NEW-FILTER can be :live to start a live search."
   (interactive)
   (switch-to-buffer (elfeed-search-buffer))
   (unless (eq major-mode 'elfeed-search-mode)
     (elfeed-search-mode))
   (when new-filter
-    ;; Scroll to top when resetting the buffer
-    (goto-char (point-min))
-    (set-window-start nil (point-min))
-    (elfeed-search-set-filter new-filter)))
+    (if (eq new-filter :live)
+        (elfeed-search-live-filter)
+      ;; Scroll to top when resetting the buffer
+      (goto-char (point-min))
+      (set-window-start nil (point-min))
+      (elfeed-search-set-filter new-filter))))
 
 (defun elfeed-search-buffer ()
   "Create and return search buffer."
@@ -1408,13 +1411,6 @@ The update is delayed by `elfeed-search-live-delay'."
       (setq elfeed-search-max-entries (default-value 'elfeed-search-max-entries)
             elfeed-search-filter (elfeed-search--prompt elfeed-search-filter :live))
     (elfeed-search-update :force)))
-
-(defun elfeed-search-new-live ()
-  "Quit the current window, search again in the `elfeed-search' buffer."
-  (interactive nil elfeed-show-mode elfeed-tree-mode)
-  (quit-window)
-  (elfeed-search)
-  (elfeed-search-live-filter))
 
 (defun elfeed-search-cycle-order ()
   "Cycle between different sort functions."
