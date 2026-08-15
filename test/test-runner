@@ -1,0 +1,202 @@
+#!/bin/sh
+#
+# Run everything this machine can run, and say what it could not.
+#
+# The suite skips what is not configured and fails what is configured but
+# unreachable, so a non-zero exit on its own does not say whether VM is broken
+# or the machine is short of a server.  This asks first -- test/vm-test-probe.el
+# reports what is there -- prints it, then runs each pass in its own Emacs and
+# ends with a summary naming every pass and why any was left out.
+#
+# The passes:
+#
+#   suite       the whole of test/, live servers as configured
+#   mock        the IMAP and POP tests again with VM_TEST_LIVE=0, so the mock
+#               servers run with nothing live covering for them
+#   send        real mail, sent and read back, when the config says where to
+#
+# Every pass runs whichever fails; the exit status is 1 if any did.
+
+set -u
+
+progname=$(basename "$0")
+root=$(cd "$(dirname "$0")/.." && pwd)
+
+usage () {
+    cat <<EOF
+usage: $progname [--no-live] [--no-send] [--no-build] [--probe] [--help]
+
+  --no-live   run as an unconfigured checkout would: mock servers only
+  --no-send   skip the sending pass even where it is configured
+  --no-build  do not byte-compile first (the tests then run from source)
+  --probe     print what this machine can test, run nothing
+
+The Emacs to use comes from \$EMACS, or from the configured test/Makefile,
+or is "emacs".
+EOF
+}
+
+no_live=no
+no_send=no
+no_build=no
+probe_only=no
+
+for arg in "$@"; do
+    case $arg in
+        --no-live)  no_live=yes ;;
+        --no-send)  no_send=yes ;;
+        --no-build) no_build=yes ;;
+        --probe)    probe_only=yes ;;
+        --help|-h)  usage; exit 0 ;;
+        *) echo "$progname: unknown argument $arg" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# The Emacs the tests were configured with, so this does not silently test a
+# different one from `make test'.
+emacs_prog=${EMACS:-}
+if [ -z "$emacs_prog" ] && [ -f "$root/test/Makefile" ]; then
+    emacs_prog=$(sed -n 's/^EMACS_PROG *= *//p' "$root/test/Makefile" | head -1)
+fi
+emacs_prog=${emacs_prog:-emacs}
+
+# Every pass runs here: what VM writes during a run -- the IMAP cache of a
+# folder a live test visits -- goes to test/scratch, which `make clean' knows
+# about, and not to wherever this was invoked from.
+cd "$root/test" || exit 2
+
+run_emacs () {
+    "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@"
+}
+
+##############################################################################
+# What is here
+##############################################################################
+
+probe_output=$(run_emacs -l "$root/test/vm-test-probe.el" \
+                         -f vm-test-probe-batch 2>/dev/null)
+if [ -z "$probe_output" ]; then
+    echo "$progname: could not probe this machine; is $emacs_prog usable?" >&2
+    exit 2
+fi
+
+probe () {
+    printf '%s\n' "$probe_output" | sed -n "s/^$1=//p" | head -1
+}
+
+config_present=$(probe config_present)
+imap_servers=$(probe imap_servers)
+imap_reached=$(probe imap_reached)
+imap_unreached=$(probe imap_unreached)
+pop_servers=$(probe pop_servers)
+pop_reached=$(probe pop_reached)
+pop_unreached=$(probe pop_unreached)
+send_configured=$(probe send_configured)
+send_to=$(probe send_to)
+gpg=$(probe gpg)
+
+say_servers () {
+    kind=$1 servers=$2 reached=$3 unreached=$4
+    if [ -z "$servers" ]; then
+        echo "  $kind: none configured, the live tests will skip"
+    else
+        echo "  $kind: $servers"
+        if [ -n "$reached" ]; then echo "    reached:   $reached"; fi
+        if [ -n "$unreached" ]; then echo "    UNREACHED: $unreached"; fi
+    fi
+}
+
+echo "What this machine can test"
+if [ "$config_present" = yes ]; then
+    echo "  config: $(probe config_file)"
+else
+    echo "  config: none, so every live test skips (copy"
+    echo "          test/vm-live-config.el.template to test/vm-live-config.el)"
+fi
+say_servers IMAP "$imap_servers" "$imap_reached" "$imap_unreached"
+say_servers POP "$pop_servers" "$pop_reached" "$pop_unreached"
+if [ "$send_configured" = yes ]; then
+    echo "  sending: to $send_to, read back from $(probe send_verify_server)"
+else
+    echo "  sending: not configured, those tests will skip"
+fi
+echo "  gpg: $gpg"
+
+if [ -n "$imap_unreached" ] || [ -n "$pop_unreached" ]; then
+    echo
+    echo "A configured server that cannot be reached fails its tests rather"
+    echo "than skipping them, on purpose: see the reasons above before reading"
+    echo "the failures below."
+fi
+
+[ "$probe_only" = yes ] && exit 0
+
+##############################################################################
+# The passes
+##############################################################################
+
+if [ "$no_build" = no ]; then
+    echo
+    echo "== building =="
+    make -C "$root/lisp" || {
+        echo "$progname: the lisp did not build; not running anything" >&2
+        exit 2
+    }
+fi
+
+status=0
+summary=""
+
+record () {
+    summary="$summary
+  $1"
+}
+
+run_pass () {
+    name=$1
+    shift
+    echo
+    echo "== $name =="
+    if env "$@"; then
+        record "$name: passed"
+    else
+        record "$name: FAILED"
+        status=1
+    fi
+}
+
+if [ "$no_live" = yes ]; then
+    run_pass "suite (live servers refused)" VM_TEST_LIVE=0 \
+        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+        -l "$root/test/run-tests.el"
+    record "mock: covered by the pass above"
+else
+    run_pass "suite" VM_TEST_LIVE=1 \
+        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+        -l "$root/test/run-tests.el"
+
+    if [ "$config_present" = yes ]; then
+        run_pass "mock servers, live refused" VM_TEST_LIVE=0 \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+            -l "$root/test/run-imap-tests.el"
+        run_pass "mock servers, live refused (POP)" VM_TEST_LIVE=0 \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+            -l "$root/test/run-pop-tests.el"
+    else
+        record "mock: covered by the suite, there being no live config"
+    fi
+fi
+
+if [ "$no_send" = yes ]; then
+    record "send: not run, asked not to"
+elif [ "$send_configured" = yes ]; then
+    run_pass "sending real mail to $send_to" VM_TEST_LIVE=1 \
+        "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+        -l "$root/test/run-send-tests.el"
+else
+    record "send: not run, no vm-send-test-config"
+fi
+
+echo
+echo "== summary ==$summary"
+exit $status

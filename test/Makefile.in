@@ -22,7 +22,7 @@ LEAK_REPORT = leak-report.el
 # Test targets
 ##############################################################################
 
-.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-mock test-send test-leaks \
+.PHONY: test test-all test-assert test-coverage test-verbose test-one test-imap test-pop test-mock test-send test-leaks \
 	compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
@@ -75,6 +75,14 @@ test-mock: compile-lisp
 	    -l $(srcdir)/$(IMAP_RUNNER)
 	VM_TEST_LIVE=0 $(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
 	    -l $(srcdir)/$(POP_RUNNER)
+
+# Everything this machine can run, each pass in its own Emacs: the suite, then
+# the IMAP and POP tests with the live servers refused, then real mail where
+# that is configured.  It reports what it found -- which servers answered, what
+# is not configured -- before running anything, so a failure can be told from a
+# missing server.  ./test-runner --help for the options.
+test-all:
+	$(srcdir)/test-runner
 
 # Send real mail and check that it arrives.  Not part of `make test': the live
 # IMAP and POP tests are, once configured, because they talk to a server on
