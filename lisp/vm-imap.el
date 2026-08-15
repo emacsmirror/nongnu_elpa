@@ -4862,8 +4862,11 @@ is ignored, since it usually means the mailbox is there already."
 (defun vm-imap-save-composition ()
   "Saves the current composition in the IMAP folder given by the
 IMAP-FCC header.
-Add this to your `mail-send-hook' and start composing from an IMAP
-folder.
+
+VM calls this itself as it sends, so there is nothing to add to
+`mail-send-hook' any more (issue #68).  A configuration that still has it
+there does no harm: the header is removed by the time the hook runs, so
+this finds nothing to file.
 
 An `FCC:' header naming an IMAP maildrop is not this function\'s business:
 VM files those itself as it sends (`vm-do-fcc\'), so doing it here as well
