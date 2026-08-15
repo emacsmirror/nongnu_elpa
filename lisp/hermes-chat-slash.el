@@ -318,6 +318,87 @@ accepted explicit spelling of the default session scope."
             (hermes-chat--in-buffer buffer
               (hermes-chat--command-rejection context message)))))))))
 
+(defun hermes-chat--slash-model-name (arg)
+  "Return the model token from `/model' ARG for status display."
+  (or (car (split-string arg "[ \t\n]+" t)) arg))
+
+(defun hermes-chat--slash-model-request (context arg confirmed buffer)
+  "Set model ARG under CONTEXT for BUFFER with optional CONFIRMED consent."
+  (hermes-dashboard-transport-config-set
+   (plist-get context :client) "model" arg
+   :session-id (plist-get context :session-id)
+   :confirm-expensive-model confirmed
+   :resolve
+   (lambda (result)
+     (hermes-chat--in-buffer buffer
+       (hermes-chat--slash-model-result context arg result confirmed)))
+   :reject
+   (lambda (message)
+     (hermes-chat--in-buffer buffer
+       (hermes-chat--command-rejection context message)))))
+
+(defun hermes-chat--slash-model-confirm (context arg result)
+  "Prompt to confirm model ARG under its original CONTEXT using RESULT."
+  (let ((owner (plist-get context :owner))
+        (buffer (current-buffer))
+        prompt-returned accepted)
+    (unwind-protect
+        (progn
+          (setq accepted
+                (yes-or-no-p
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get result 'confirm_message))
+                     "Confirm switching to this model? "))
+                prompt-returned t)
+          (cond
+           ((not (hermes-chat--command-context-current-p context))
+            (hermes-chat--command-stop owner))
+           (accepted
+            (condition-case err
+                (hermes-chat--slash-model-request context arg t buffer)
+              (error
+               (hermes-chat--command-stop owner)
+               (signal (car err) (cdr err)))))
+           (t
+            (hermes-chat--command-finish
+             context
+             (lambda ()
+               (hermes-chat--insert-local-status
+                "Model switch cancelled" 'ready))))))
+      (unless prompt-returned
+        (hermes-chat--command-stop owner)))))
+
+(defun hermes-chat--slash-model-result (context arg result confirmed)
+  "Handle model ARG RESULT under CONTEXT after optional CONFIRMED consent."
+  (if (hermes-transport--get result 'confirm_required)
+      (if confirmed
+          (hermes-chat--command-finish
+           context
+           (lambda ()
+             (hermes-chat--command-error
+              "Model switch still requires confirmation")))
+        (if (hermes-chat--command-context-current-p context)
+            (hermes-chat--slash-model-confirm context arg result)
+          (hermes-chat--command-stop (plist-get context :owner))))
+    (hermes-chat--command-finish
+     context
+     (lambda ()
+       (hermes-chat--insert-local-status
+        (format "Model set to %s" (hermes-chat--slash-model-name arg))
+        'ready)))))
+
+(defun hermes-chat--dashboard-set-model (arg &optional confirmed)
+  "Set model ARG on the owned dashboard session.
+CONFIRMED acknowledges a prior expensive-model warning."
+  (let ((buffer (current-buffer))
+        (content (concat "/model " arg)))
+    (hermes-chat--command-run-owned
+     content
+     (lambda (client owner)
+       (hermes-chat--slash-model-request
+        (hermes-chat--command-context client owner)
+        arg confirmed buffer)))))
+
 (defun hermes-chat--dashboard-slash-exec (name arg raw)
   "Run RAW slash command for NAME and ARG, using native state paths when available."
   (let ((reasoning-request (and (string-equal name "reasoning")

@@ -112,6 +112,61 @@ identity is part of the selection."
               (push candidate other))))))
     (append (nreverse authed) (nreverse other))))
 
+(defvar-local hermes-chat--model-completion-client nil
+  "Client whose model catalog completion warmup is currently pending.")
+
+(defun hermes-chat--model-completion-bounds ()
+  "Return bounds of the `/model' argument at point, or nil."
+  (when (and (hermes-chat--point-in-input-p)
+             (hermes-chat--input-position))
+    (let* ((input (hermes-chat--input-position))
+           (text (buffer-substring-no-properties input (point))))
+      (when (string-match "\\`/model[ \t]+\\([^\n]*\\)\\'" text)
+        (cons (+ input (match-beginning 1)) (point))))))
+
+(defun hermes-chat--model-completion-candidates (payload)
+  "Return (VALUE . ANNOTATION) completion rows from cached PAYLOAD."
+  (mapcar
+   (lambda (candidate)
+     (let ((data (cdr candidate)))
+       (cons (hermes-chat--model-config-value data)
+             (concat "  " (plist-get data :label)))))
+   (cl-remove-if-not
+    (lambda (candidate) (plist-get (cdr candidate) :authenticated))
+    (hermes-chat--model-candidates payload))))
+
+(defun hermes-chat--warm-model-completions (client)
+  "Warm model completion data asynchronously for CLIENT once."
+  (unless (eq client hermes-chat--model-completion-client)
+    (setq hermes-chat--model-completion-client client)
+    (let ((buffer (current-buffer)))
+      (hermes-dashboard-transport-model-options-cached
+       client
+       :session-id hermes-chat--dashboard-active-session-id
+       :resolve (lambda (_result)
+                  (hermes-chat--in-buffer buffer
+                    (when (eq client hermes-chat--model-completion-client)
+                      (setq hermes-chat--model-completion-client nil))))
+       :reject (lambda (_message)
+                 (hermes-chat--in-buffer buffer
+                   (when (eq client hermes-chat--model-completion-client)
+                     (setq hermes-chat--model-completion-client nil))))))))
+
+(defun hermes-chat--model-capf ()
+  "Complete cached model arguments after `/model' in the input tail."
+  (when-let* ((bounds (hermes-chat--model-completion-bounds))
+              (client hermes-chat--dashboard-client))
+    (if-let* ((payload
+               (hermes-dashboard-transport-cached-model-options client))
+              (rows (hermes-chat--model-completion-candidates payload)))
+        (let ((values (mapcar #'car rows)))
+          (list (car bounds) (cdr bounds) values
+                :exclusive 'no
+                :annotation-function
+                (lambda (candidate) (cdr (assoc candidate rows)))))
+      (hermes-chat--warm-model-completions client)
+      nil)))
+
 (defun hermes-chat--model-display-name (candidate)
   "Return a compact display name for CANDIDATE."
   (if (stringp candidate)

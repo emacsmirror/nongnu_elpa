@@ -40,6 +40,73 @@
     (should (equal (hermes-chat--model-config-value (cdar cands))
                    "claude --provider anthropic"))))
 
+(ert-deftest hermes-chat-model-capf-completes-cached-authenticated-models ()
+  "`/model' arguments complete from cached authenticated provider models."
+  (let ((payload
+         '((providers
+            . (((slug . "openai-codex") (name . "OpenAI Codex")
+                (authenticated . t) (models . ("gpt-5.6")))
+               ((slug . "anthropic") (name . "Anthropic")
+                (authenticated . t) (models . ("claude-opus")))
+               ((slug . "openrouter") (name . "OpenRouter")
+                (authenticated . nil) (models . ("gpt-5.6"))))))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+               (lambda (_client) payload))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (&rest _args)
+                 (ert-fail "Warm completion must not issue an RPC"))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))
+       (goto-char (point-max))
+       (insert "/model gp")
+       (let* ((capf (hermes-chat--model-capf))
+              (candidates (nth 2 capf))
+              (annotation (plist-get (nthcdr 3 capf) :annotation-function)))
+         (should (= (nth 0 capf) (- (point) 2)))
+         (should (= (nth 1 capf) (point)))
+         (should (equal candidates
+                        '("gpt-5.6 --provider openai-codex"
+                          "claude-opus --provider anthropic")))
+         (should (string-match-p
+                  "OpenAI Codex"
+                  (funcall annotation "gpt-5.6 --provider openai-codex")))
+         (should-not (member "gpt-5.6 --provider openrouter" candidates)))))))
+
+(ert-deftest hermes-chat-model-capf-completes-at-point-in-chat-mode ()
+  "TAB-style completion inserts the unique cached `/model' argument."
+  (let ((payload
+         '((providers
+            . (((slug . "openai-codex") (name . "OpenAI Codex")
+                (authenticated . t) (models . ("gpt-5.6"))))))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+               (lambda (_client) payload)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))
+       (goto-char (point-max))
+       (insert "/model gp")
+       (completion-at-point)
+       (should (equal (hermes-chat-input-string)
+                      "/model gpt-5.6 --provider openai-codex"))))))
+
+(ert-deftest hermes-chat-model-capf-warms-cold-cache-asynchronously ()
+  "A cold `/model' completion starts one asynchronous catalog warmup."
+  (let ((requests 0) requested)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+               (lambda (_client) nil))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (cl-incf requests)
+                 (setq requested args))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))
+       (goto-char (point-max))
+       (insert "/model gp")
+       (should-not (hermes-chat--model-capf))
+       (should-not (hermes-chat--model-capf))
+       (should (= requests 1))
+       (should (equal (plist-get requested :session-id)
+                      hermes-chat--dashboard-active-session-id))))))
+
 (ert-deftest hermes-chat-switch-model-sets-chosen-model ()
   "Switching prompts from model.options and applies the choice via config.set."
   (let (set-key set-value set-session set-confirm)

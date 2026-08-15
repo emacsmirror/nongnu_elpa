@@ -3529,6 +3529,111 @@
        (hermes-chat-send)
        (should (equal request '("reasoning" "ultra" nil)))))))
 
+(ert-deftest hermes-chat-model-command-sets-explicit-model-on-live-session ()
+  "`/model MODEL' uses typed config.set without opening the model picker."
+  (let ((client (hermes-test--dashboard-client)) request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key value &rest args)
+                 (setq request
+                       (list key value (plist-get args :session-id)
+                             (plist-get args :confirm-expensive-model)))
+                 (funcall (plist-get args :resolve)
+                          `((value . ,value)))))
+              ((symbol-function 'hermes-chat-switch-model)
+               (lambda (&rest _args)
+                 (ert-fail "Explicit /model must not open completing-read")))
+              ((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (&rest _args)
+                 (ert-fail "Explicit /model must not use slash.exec"))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/model gpt-5.6 --provider openai-codex")
+       (hermes-chat-send)
+       (should (equal request
+                      '("model" "gpt-5.6 --provider openai-codex"
+                        "sid-active" nil)))
+       (should-not hermes-chat--command-owner)
+       (should (string-match-p "Model set to gpt-5.6"
+                               (buffer-string)))))))
+
+(ert-deftest hermes-chat-model-command-confirms-expensive-model ()
+  "`/model MODEL' retries an expensive switch only after confirmation."
+  (let ((client (hermes-test--dashboard-client))
+        (calls 0)
+        confirms)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (cl-incf calls)
+                 (push (plist-get args :confirm-expensive-model) confirms)
+                 (funcall (plist-get args :resolve)
+                          (if (= calls 1)
+                              '((confirm_required . t)
+                                (confirm_message . "Expensive model"))
+                            '((value . "gpt-5.6"))))))
+              ((symbol-function 'yes-or-no-p) (lambda (_prompt) t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/model gpt-5.6 --provider openai-codex")
+       (hermes-chat-send)
+       (should (= calls 2))
+       (should (equal (nreverse confirms) '(nil t)))
+       (should-not hermes-chat--command-owner)))))
+
+(ert-deftest hermes-chat-model-command-does-not-confirm-into-replacement-session ()
+  "An expensive confirmation cannot redirect its retry to a replacement session."
+  (let ((client (hermes-test--dashboard-client)) calls)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (push (plist-get args :session-id) calls)
+                 (funcall (plist-get args :resolve)
+                          '((confirm_required . t)
+                            (confirm_message . "Expensive model")))))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (_prompt)
+                 (setq hermes-chat--dashboard-active-session-id "sid-new")
+                 t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/model gpt-5.6 --provider openai-codex")
+       (hermes-chat-send)
+       (should (equal (nreverse calls) '("sid-old")))
+       (should-not hermes-chat--command-owner)))))
+
+(ert-deftest hermes-chat-model-command-stale-confirmation-releases-owner ()
+  "A confirmation response for a replaced session cannot leave ownership stuck."
+  (let ((client (hermes-test--dashboard-client)) resolve prompted)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (_prompt) (setq prompted t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/model gpt-5.6 --provider openai-codex")
+       (hermes-chat-send)
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve '((confirm_required . t)))
+       (should-not prompted)
+       (should-not hermes-chat--command-owner)))))
+
+(ert-deftest hermes-chat-model-command-without-argument-keeps-picker ()
+  "Bare `/model' retains the interactive cached model picker."
+  (let (picked)
+    (cl-letf (((symbol-function 'hermes-chat-switch-model)
+               (lambda (&rest _args) (setq picked t))))
+      (hermes-test-with-chat-buffer
+       (insert "/model")
+       (hermes-chat-send)
+       (should picked)))))
+
 (ert-deftest hermes-chat-reasoning-settlement-ignores-stale-session ()
   "A late reasoning setter cannot read into a replacement session."
   (let ((client (hermes-test--dashboard-client)) resolve-set config-gets)
