@@ -4011,6 +4011,12 @@ the ``parent folder'' for you composition).  If the parent folder is
 not an @acronym{IMAP} folder or if there is no parent folder, then the message
 copy will be saved in a folder on @code{vm-imap-default-account}.
 
+@findex vm-imap-save-composition
+As with @samp{FCC:}, VM files this copy itself when you send the message.
+In earlier releases it was filed by @code{vm-imap-save-composition} on
+@code{mail-send-hook}, which you had to add yourself; a configuration that
+still adds it is harmless, since by then there is nothing left to file.
+
 @vindex mail-default-headers
 @cindex default headers
 Adding the header by hand to every message is tedious.  To have it

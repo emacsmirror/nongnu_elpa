@@ -71,6 +71,12 @@ switched off.
     the composition, so correcting a message and sending it again files it
     again.
 
+    An `IMAP-FCC:` header is filed the same way, with nothing to add to
+    `mail-send-hook` (emacs-vm/vm#68).  It was wired up by hand until now,
+    so a reader who did not notice the instruction got no copy at all; a
+    configuration that still adds `vm-imap-save-composition` to the hook is
+    harmless, since by then the copy is filed and the header gone.
+
   * A long line survives the trip.  A line too long to send as it stands goes
     out quoted-printable, so it arrives as the one line you wrote instead of
     the whole message being BASE64 (emacs-vm/vm#593).

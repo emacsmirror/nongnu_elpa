@@ -2142,6 +2142,93 @@ though the name was right when the composition began."
     (should (string-prefix-p (file-name-as-directory folders)
                              buffer-auto-save-file-name))))
 
+;;; Filing a copy on the server without a hook (emacs-vm/vm#68)
+
+(defmacro vm-reply-test--sending-with-imap-fcc (headers &rest body)
+  "Compose a message with HEADERS, send it, and run BODY.
+APPENDED collects (MAILBOX . TEXT) for each copy VM files on the server,
+and SESSIONS the maildrops it opened a session for.  Nothing leaves the
+machine: the IMAP session and the append are stubbed."
+  (declare (indent 1) (debug t))
+  `(let ((appended nil)
+         (sessions nil)
+         (mail-header-separator "--text follows this line--")
+         (vm-fcc-filed nil))
+     (cl-letf (((symbol-function 'vm-imap-make-session)
+                (lambda (maildrop &rest _) (push maildrop sessions) 'a-process))
+               ((symbol-function 'vm-imap-end-session) #'ignore)
+               ((symbol-function 'vm-imap-append-message)
+                (lambda (_process mailbox string &rest _)
+                  (push (cons mailbox string) appended)))
+               ((symbol-function 'mail-send) #'ignore)
+               ((symbol-function 'vm-mail-mode-remove-tm-hooks) #'ignore))
+       (with-temp-buffer
+         (mail-mode)
+         (insert "To: someone@example.com\n"
+                 "Subject: with a copy on the server\n"
+                 ,headers
+                 mail-header-separator "\n"
+                 "The body.\n")
+         ,@body))))
+
+(ert-deftest vm-reply-test-an-imap-fcc-is-filed-without-a-hook ()
+  "An IMAP-FCC header files a copy on the server as VM sends, with nothing
+added to `mail-send-hook'.
+
+That request is issue #68, from 2010: the manual told the reader to wire
+`vm-imap-save-composition' up by hand, and a reader who did not notice got
+no copy at all."
+  (vm-reply-test--sending-with-imap-fcc "IMAP-FCC: Sent\n"
+    (let ((vm-imap-default-account "work")
+          (vm-imap-account-alist
+           '(("imap-ssl:mail.example.invalid:993:*:login:alice:*" "work"))))
+      (vm-mail-send))
+    (should (equal (length appended) 1))
+    (should (equal (car (car appended)) "Sent"))
+    (should (string-match-p "The body" (cdr (car appended))))
+    ;; and the header is not in the message that went out
+    (should-not (vm-mail-mode-get-header-contents "IMAP-FCC:"))))
+
+(ert-deftest vm-reply-test-an-imap-fcc-uses-the-account-it-came-from ()
+  "The mailbox is on the account of the folder being replied from, which is
+what makes IMAP-FCC easier to write than a full maildrop: no host, no
+password, just the mailbox."
+  (vm-reply-test--sending-with-imap-fcc "IMAP-FCC: Sent\n"
+    (let ((folder (generate-new-buffer " *test folder*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer folder
+              (setq major-mode 'vm-mode)
+              (setq vm-folder-access-method 'imap
+                    vm-folder-access-data (make-vector 20 nil))
+              (vm-set-folder-imap-maildrop-spec
+               "imap-ssl:mail.example.invalid:993:inbox:login:alice:*")
+              (setq vm-message-pointer nil))
+            (setq vm-mail-buffer folder)
+            (vm-mail-send))
+        (kill-buffer folder)))
+    (should (equal (car (car appended)) "Sent"))
+    (should (equal sessions
+                   '("imap-ssl:mail.example.invalid:993:inbox:login:alice:*")))))
+
+(ert-deftest vm-reply-test-an-imap-fcc-needs-an-account-to-file-to ()
+  "With no parent folder and no default account there is nowhere to file,
+and the refusal names the option to set."
+  (vm-reply-test--sending-with-imap-fcc "IMAP-FCC: Sent\n"
+    (let ((vm-imap-default-account nil)
+          (text-quoting-style 'grave))
+      (let ((err (should-error (vm-mail-send) :type 'error)))
+        (should (string-match-p "vm-imap-default-account"
+                                (error-message-string err)))))))
+
+(ert-deftest vm-reply-test-a-composition-with-no-imap-fcc-files-nothing ()
+  "A composition without the header opens no session: nobody who does not
+use IMAP-FCC pays for it."
+  (vm-reply-test--sending-with-imap-fcc ""
+    (vm-mail-send)
+    (should-not appended)
+    (should-not sessions)))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

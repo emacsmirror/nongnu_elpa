@@ -74,6 +74,7 @@
 (declare-function vm-mode "vm" (&optional read-only))
 ;; The Fcc of a composition may name an IMAP mailbox (emacs-vm/vm#605), so
 ;; this file calls into vm-imap.el, which requires this one.
+(declare-function vm-imap-save-composition "vm-imap" ())
 (declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
 (declare-function vm-imap-subst-CRLF-for-LF "vm-imap" (string))
 ;; A cl-defun taking &key arguments: spelling the arglist out here makes the
@@ -911,6 +912,14 @@ as replied to, forwarded, etc, if appropriate."
 	;; `vm-do-fcc-before-mime-encode' is set.
 	(unless vm-fcc-filed
 	  (vm-do-fcc-in-composition))
+	;; An IMAP-FCC header names a mailbox on the account the composition
+	;; came from, and VM files that copy too.  Until this it was done
+	;; only by `vm-imap-save-composition' on `mail-send-hook', which the
+	;; reader had to add by hand (emacs-vm/vm#68).  Anyone who added it
+	;; still has it, and finds nothing to do: the header is removed here,
+	;; before `mail-send' runs the hook, so no second copy is filed.
+	(when (vm-mail-mode-get-header-contents "IMAP-FCC:")
+	  (vm-imap-save-composition))
 	;; `mail-send' would file it again, through `mail-do-fcc', which
 	;; writes one format whatever the folder is -- see `vm-do-fcc'.  For
 	;; the length of the send it does the one part of its job still worth
