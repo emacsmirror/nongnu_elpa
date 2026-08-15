@@ -120,6 +120,9 @@
 (defvar elfeed-tree--last-update 0
   "The last time the buffer was redrawn in epoch seconds.")
 
+(defvar elfeed-tree--unread-count ""
+  "Unread count in header line.")
+
 (defvar-keymap elfeed-tree-mode-map
   :doc "Keymap for `elfeed-tree-mode'."
   :parent special-mode-map
@@ -137,7 +140,8 @@
 (defun elfeed-tree--header ()
   "Computes the string to be used as the header line."
   (or (elfeed--header-jobs)
-      (elfeed--header-update elfeed-tree--last-update)))
+      (concat (elfeed--header-update elfeed-tree--last-update)
+              ", " elfeed-tree--unread-count)))
 
 (easy-menu-define elfeed-tree-mode-menu elfeed-tree-mode-map
   "Menu for `elfeed-tree-mode'."
@@ -511,7 +515,8 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                (tags (cdr feeds+tags))
                (nodes (elfeed-tree--build-nested feeds))
                (tree (elfeed-tree--stats (elfeed-tree--flatten (car nodes))))
-               (all-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds)))))
+               (all-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds))))
+               (all-stats (cdar all-tree)))
           (erase-buffer)
           (goto-char (point-min))
           (elfeed-tree--print 0 nil nil tree)
@@ -525,7 +530,12 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                                feeds tags
                                (take 3 (cdar all-tree))))
           (when restore (funcall restore))
-          (setq elfeed-tree--last-update (float-time))
+          (setq elfeed-tree--unread-count (elfeed--header-unread-count
+                                           (car all-stats)
+                                           (+ (car all-stats) (cadr all-stats))
+                                           (caddr all-stats)
+                                           #'elfeed-update)
+                elfeed-tree--last-update (float-time))
           (run-hooks 'elfeed-tree-update-hook)))))
   ;; Always force a header line update
   (when (buffer-live-p buffer)

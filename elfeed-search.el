@@ -338,13 +338,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              count entry into entry-count
              count (elfeed-tagged-p 'unread entry) into unread-count
              do (puthash (elfeed-entry-feed entry) t feeds)
-             finally return
-             (elfeed--header-button
-              #'elfeed-search-fetch-visible
-              (format
-               (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
-               unread-count entry-count
-               (hash-table-count feeds))))))
+             finally return (elfeed--header-unread-count
+                             unread-count entry-count (hash-table-count feeds)
+                             #'elfeed-search-fetch-visible))))
 
 (defun elfeed-search--header ()
   "Computes the string to be used as the header line."

@@ -958,7 +958,14 @@ saved to your customization file."
               'help-echo (or help (format "Run `%s'" command))
               'mouse-face 'header-line-highlight))
 
-(defun elfeed--header-log-button ()
+(defun elfeed--header-unread-count (unread total feeds command)
+  "Button executing COMMAND showing UNREAD/TOTAL/FEEDS statistics."
+  (elfeed--header-button command
+                         (format
+                          (propertize "%s/%s:%s" 'face 'elfeed-search-unread-count-face)
+                          unread total feeds)))
+
+(defun elfeed--header-error-count ()
   "Button to show the Elfeed log."
   (when (> elfeed-log-error-count 0)
     (concat (elfeed--header-button
@@ -980,7 +987,7 @@ saved to your customization file."
       (when (> total 0)
         (let ((active (elfeed-queue-count-active)))
           (concat
-           (elfeed--header-log-button)
+           (elfeed--header-error-count)
            (format "%d jobs pending, %d active…"
                    (- total active) active))))))))
 
@@ -991,19 +998,16 @@ relative to the database according to BUFFER-UPDATE."
   (let* ((db-update (elfeed-db-last-update))
          (delta (- (float-time) db-update))
          (updated (if (> delta elfeed-last-update-relative)
-                      (concat "Updated "
-                              (elfeed-add-properties
-                               (format-time-string "%Y-%m-%d %H:%M"
-                                                   (seconds-to-time db-update))
-                               'face 'elfeed-search-last-update-face))
-                    (format "Updated %s ago"
-                            (elfeed-add-properties
-                             (if (< delta 60)
-                                 (copy-sequence "< 1 minute")
-                               (compat-call seconds-to-string delta t))
-                             'face 'elfeed-search-last-update-face)))))
+                      (elfeed-add-properties
+                       (format-time-string "%Y-%m-%d %H:%M"
+                                           (seconds-to-time db-update))
+                       'face 'elfeed-search-last-update-face)
+                    (format (propertize "%s ago" 'face 'elfeed-search-last-update-face)
+                            (if (< delta 60)
+                                "< 1 minute"
+                              (compat-call seconds-to-string delta t))))))
     (concat
-     (elfeed--header-log-button)
+     (elfeed--header-error-count)
      (elfeed--header-button #'elfeed-update updated)
      (when (> db-update buffer-update)
        (concat " " (elfeed--header-button #'revert-buffer
