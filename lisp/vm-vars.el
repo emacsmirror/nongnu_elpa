@@ -278,10 +278,6 @@ folders (context name `imap').  Messages larger than
   :group 'vm-external
   :type '(repeat (choice (const imap))))
 
-(defvar vm-load-headers-only nil
-  "This variable is replaced by `vm-enable-external-messages'.")
-(make-obsolete-variable 'vm-load-headers-only 
-			'vm-enable-external-messages "8.2.0")
 
 (defcustom vm-spool-files nil
   "If non-nil this variable's value should be a list of strings
@@ -715,23 +711,7 @@ lack of settings for auto-expunge.")
 folders.  It can be set to nil to prohibit the recognition of
 IMAP maildrops.")
 
-(defvar vm-imap-server-list nil
-  "List of IMAP maildrop specifications that tell VM the IMAP servers
-you have access to and how to log into them.  The IMAP maildrop
-specification in the same format used by `vm-spool-files' (which
-see).  The mailbox part of the specifiation is ignored and should
-be asterisk or some other placeholder.
 
-***This customization variable is deprecated.  Use `vm-imap-account-alist'
-instead. 
-
-Example:
- (setq vm-imap-server-list
-      \\='(\"imap-ssl:mail.foocorp.com:993:inbox:login:becky:*\"
-        \"imap:crickle.lex.ky.us:143:inbox:login:becky:*\"))")
-
-(make-obsolete-variable 'vm-imap-server-list
-			'vm-imap-account-alist "8.1.0")
 
 (defcustom vm-imap-account-alist nil
   "*Alist of IMAP account specifications and names that refer to them.
@@ -2640,14 +2620,7 @@ attach, any relative pathnames will be relative to this directory."
 (defvar vm-mime-save-all-attachments-history nil
   "Directory history to where the attachments should go.")
 
-(defvar vm-mime-yank-attachments nil
-  "*This variable, originally from vm-postpone, is deprecated.  It is
-replaced by `vm-include-mime-attachments'.")
 
-(defvaralias 'vm-mime-yank-attachments 'vm-include-mime-attachments)
-(make-obsolete-variable 'vm-mime-yank-attachments
-			'vm-include-mime-attachments
-			"8.2.0")			
 
 (defcustom vm-include-mime-attachments nil
   "*Non-nil value enables attachments to be included in quoted text in
@@ -3471,28 +3444,8 @@ A nil value means to use plain text forwarding."
           (const "rfc1153")
 	  (const :tag "Forward in plain text" nil)))
 
-(defcustom vm-mime-forward-local-external-bodies nil
-  "*Non-nil value means that the `message/external-body' MIME
-parts are retained in messages during forwarding, as long as
-their external bodies are on the local file system.  A nil value
-means that the externally referenced objects are fetched into the
-message before forwarding.  The fetching is only done for objects
-accessed with the `local-file' access method.  Objects referenced
-with other methods are not fetched.
 
-In particular, the MIME attachments that are saved to
-disk (using, for example, `vm-save-all-attachments') are
-represented in messages with `message/external-body' references.
-Setting the variable to a non-nil value causes these references
-to be sent in forwarded messages.  Setting it to nil causes the
-references to be expanded out with the actual attachments."
-  :group 'vm-mime
-  :type 'boolean)
-(make-obsolete-variable 'vm-mime-forward-local-external-bodies
-			'vm-mime-forward-saved-attachments "8.2.0")
-
-(defcustom vm-mime-forward-saved-attachments 
-  (not vm-mime-forward-local-external-bodies)
+(defcustom vm-mime-forward-saved-attachments t
   "*Non-nil value means that any attachments saved to local files
 using, for example `vm-mime-save-all-attachments', will be
 retrieved and re-attached to forwarded messages.  
@@ -5573,13 +5526,7 @@ See `vm-mime-compile-format-1' for valid format specifiers."
   :group 'vm-mime
   :type 'string)
 
-(defvar vm-mime-show-alternatives nil
-  "This variable is deprecated.  You can set
-`vm-mime-alternative-show-method' to `all' to get the same effect as
-setting this one to t.")
 
-(make-obsolete-variable 'vm-mime-show-alternatives 
-			'vm-mime-alternative-show-method "8.2.0")
 
 (defcustom vm-emit-messages-for-mime-decoding t
   "*Flag to allow minibuffer messages about the progress of MIME
@@ -7760,11 +7707,7 @@ cause trouble (abbrev-mode)."
   :group 'vm-compose
   :type '(repeat :tag "Mode" symbol))
 
-(defvar vm-summary-faces-mode nil
-  "Records whether VM Summary Faces mode is in use.")
 
-(make-obsolete-variable 'vm-summary-faces-mode 
-			'vm-summary-enable-faces "8.2.0")
 
 ;; Duplicate defintion. See above. TX
 
