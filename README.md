@@ -1,8 +1,8 @@
 # sl.el
 
 A fast, Magit-inspired Emacs interface for [Sapling](https://sapling-scm.com/)
-(`sl`). It is designed to feel familiar to Magit users while being intentionally
-small and Windows-friendly.
+(`sl`). It is designed to feel lighter than Magit while being intentionally
+small. Sl.el strives to make emacs version control in MS Windows more comfortable.
 
 `sl.el` provides the Sapling-specific status/smartlog/stack interface.
 `vc-sl.el` adds a Sapling backend for Emacs's generic VC commands
@@ -155,5 +155,6 @@ This is an early, intentionally small implementation. Obvious next steps:
 - Optional `transient` menus when `transient` is installed.
 - Integrate `sl-status` with `project.el`.
 
-## contribution
-Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name.
+## Thank you
+Thanks to feedback and comment by Philip Kaluđerčić.
+Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name. 
