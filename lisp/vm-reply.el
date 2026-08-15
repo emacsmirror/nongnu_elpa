@@ -165,7 +165,6 @@ COUNT is the prefix argument indicating how many consecutive
 messages of the folder are involved in this reply."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Reply to"))
-        (dir default-directory)
         (case-fold-search t)
         to cc subject in-reply-to references
         mp tmp tmp2 newsgroups)
@@ -263,8 +262,7 @@ messages of the folder are involved in this reply."
      :references references :newsgroups newsgroups)
     (make-local-variable 'vm-reply-list)
     (setq vm-system-state 'replying
-          vm-reply-list mlist
-          default-directory dir)
+          vm-reply-list mlist)
     (when include-text
       (save-excursion
 	(goto-char (point-min))
@@ -1339,8 +1337,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (let ((dir default-directory)
-	(miming (and vm-send-using-mime
+  (let ((miming (and vm-send-using-mime
 		     (not plain)
 		     (equal vm-forwarding-digest-type "mime")))
 	reply-buffer
@@ -1368,8 +1365,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 					  (car mlist)))))
 	(make-local-variable 'vm-forward-list)
 	(setq vm-system-state 'forwarding
-	      vm-forward-list mlist
-	      default-directory dir)
+	      vm-forward-list mlist)
 	;; current-buffer is now the reply buffer
 	(if miming
 	    (progn
@@ -1444,7 +1440,6 @@ you can change the recipient address before resending the message."
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (let ((b (current-buffer)) start
-	(dir default-directory)
 	(layout (vm-mm-layout (car vm-message-pointer)))
 	(lim (vm-text-end-of (car vm-message-pointer))))
     ;; We only want to select one message here
@@ -1503,8 +1498,7 @@ you can change the recipient address before resending the message."
       (if (vm-mail-mode-get-header-contents "Resent-To:")
 	  (mail-position-on-field "Resent-To")
 	(insert "Resent-To: \n")
-	(forward-char -1))
-      (setq default-directory dir)))
+	(forward-char -1))))
   (run-hooks 'vm-resend-bounced-message-hook)
   (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
@@ -1526,7 +1520,6 @@ You may also create a Resent-Cc header."
   (save-restriction
     (widen)
     (let ((b (current-buffer))
-	  (dir default-directory)
 	  (vmp vm-message-pointer)
 	  (start (vm-headers-of (car vm-message-pointer)))
 	  (lim (vm-text-end-of (car vm-message-pointer))))
@@ -1571,8 +1564,7 @@ You may also create a Resent-Cc header."
       (mail-position-on-field "Resent-To")
       (make-local-variable 'vm-redistribute-list)
       (setq vm-system-state 'redistributing
-	    vm-redistribute-list (list (car vmp))
-	    default-directory dir)
+	    vm-redistribute-list (list (car vmp)))
       (run-hooks 'vm-resend-message-hook)
       (vm-mail-mode-apply-options)
       (run-hooks 'vm-mail-mode-hook))))
@@ -1596,8 +1588,7 @@ collapsed threads in summary and thread operations are enabled via
 included in the digest."
   (interactive "P")
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (let ((dir default-directory)
-	(miming (and vm-send-using-mime (equal vm-digest-send-type "mime")))
+  (let ((miming (and vm-send-using-mime (equal vm-digest-send-type "mime")))
 	mp mail-buffer work-buffer ;; b
 	start header-end boundary) ;; ms
     (unless mlist
@@ -1630,8 +1621,7 @@ included in the digest."
       (setq mail-buffer (current-buffer))
       (make-local-variable 'vm-forward-list)
       (setq vm-system-state 'forwarding
-	    vm-forward-list mlist
-	    default-directory dir)
+	    vm-forward-list mlist)
       (if miming
 	  (progn
 	    ;; buffer is changed for only the mime case
@@ -1939,8 +1929,11 @@ Binds the `vm-mail-mode-map' and hooks"
     ;; asking the user to choose a safe coding system.
     (if (and (not (featurep 'xemacs)) (fboundp 'set-buffer-file-coding-system))
 	(set-buffer-file-coding-system 'raw-text))
-    ;; avoid trying to write auto-save files in potentially
-    ;; unwritable directories.
+    ;; Avoid trying to write auto-save files in potentially unwritable
+    ;; directories.  This is the composition's directory from here on: the
+    ;; commands that start one used to put the folder's own directory back
+    ;; afterwards, which for an IMAP folder is its local cache, and anything
+    ;; that recomputed the auto-save name then wrote there (emacs-vm/vm#666).
     (setq default-directory 
 	  (or vm-mail-auto-save-directory vm-folder-directory 
 	      (expand-file-name "~/")))
