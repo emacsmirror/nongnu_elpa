@@ -115,7 +115,9 @@ customize `sl-program`:
 - `sl-program` — Sapling executable name or path (default `"sl"`).
 - `sl-use-color` — colorize command output with ANSI colors (default `t`).
 - `sl-log-limit` — number of commits in `sl-log` (default `100`).
-- `sl-w32-pipe-read-delay` — Windows pipe read delay in ms (default `0`).
+- `sl-w32-pipe-read-delay` — Windows pipe read delay in ms.  Defaults to
+  the current `w32-pipe-read-delay`, or `0`; set to `nil` to leave the
+  global value unchanged.
 - `sl-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
   coloring (default `t`).
 - `sl-status-buffer-name`, `sl-smartlog-buffer-name`,

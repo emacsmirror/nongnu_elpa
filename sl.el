@@ -53,109 +53,95 @@
 
 (defcustom sl-program "sl"
   "Name of or path to the Sapling executable."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-status-buffer-name "*sl*"
   "Name of the Sapling status buffer."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-smartlog-buffer-name "*sl-smartlog*"
   "Name of the Sapling smartlog buffer."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-log-buffer-name "*sl-log*"
   "Name of the Sapling graph log buffer."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-diff-buffer-name "*sl-diff*"
   "Name of the Sapling diff buffer."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-output-buffer-name "*sl-output*"
   "Name of the generic Sapling output buffer."
-  :type 'string
-  :group 'sl)
+  :type 'string)
 
 (defcustom sl-log-limit 100
   "Number of commits to show in `sl-log'."
-  :type 'integer
-  :group 'sl)
+  :type 'natnum)
 
-(defcustom sl-w32-pipe-read-delay 0
-  "Value for `w32-pipe-read-delay' while reading `sl' output.
-Lower values make process output significantly faster on Windows."
-  :type 'integer
-  :group 'sl)
+(defcustom sl-w32-pipe-read-delay
+  (or (bound-and-true-p w32-pipe-read-delay) 0)
+  "Value to assign to `w32-pipe-read-delay' while reading `sl' output.
+
+`w32-pipe-read-delay' is a global variable and cannot be safely
+buffer-bound around the reads that happen in process filters, so
+this package assigns it directly while `sl' processes are running.
+Set this to nil to leave the global value unchanged."
+  :type '(choice integer
+                 (const :tag "Leave unchanged" nil)))
 
 (defcustom sl-use-color t
   "When non-nil, colorize Sapling command output.
 Sl commands that display text are run with ANSI color enabled and
 `ansi-color' translates the SGR sequences into Emacs faces.  This
 works on Windows as well as on Unix."
-  :type 'boolean
-  :group 'sl)
+  :type 'boolean)
 
 (defcustom sl-diff-use-diff-mode t
   "When non-nil, show `sl-diff' output in `diff-mode'.
 This gives Emacs-native diff coloring (removed lines in red, added
 lines in green) without parsing Sapling's terminal color codes."
-  :type 'boolean
-  :group 'sl)
+  :type 'boolean)
 
 (defface sl-header-face
   '((t :inherit bold))
-  "Face for Sapling section headers."
-  :group 'sl)
+  "Face for Sapling section headers.")
 
 (defface sl-status-modified-face
   '((t :foreground "orange"))
-  "Face for modified files."
-  :group 'sl)
+  "Face for modified files.")
 
 (defface sl-status-added-face
   '((t :foreground "green"))
-  "Face for added files."
-  :group 'sl)
+  "Face for added files.")
 
 (defface sl-status-removed-face
   '((t :foreground "red"))
-  "Face for removed files."
-  :group 'sl)
+  "Face for removed files.")
 
 (defface sl-status-missing-face
   '((t :foreground "red" :weight bold))
-  "Face for missing files."
-  :group 'sl)
+  "Face for missing files.")
 
 (defface sl-status-unknown-face
   '((t :foreground "magenta"))
-  "Face for untracked files."
-  :group 'sl)
+  "Face for untracked files.")
 
 (defface sl-status-ignored-face
   '((t :foreground "gray"))
-  "Face for ignored files."
-  :group 'sl)
+  "Face for ignored files.")
 
 (defface sl-status-clean-face
   '((t :foreground "gray"))
-  "Face for clean files."
-  :group 'sl)
+  "Face for clean files.")
 
 (defface sl-marked-face
   '((t :weight bold :box (:line-width 1)))
-  "Face for marked files in the status buffer."
-  :group 'sl)
+  "Face for marked files in the status buffer.")
 
 (defface sl-log-changeset-face
   '((t :foreground "yellow"))
-  "Face for changeset identifiers in Sapling smartlog output."
-  :group 'sl)
+  "Face for changeset identifiers in Sapling smartlog output.")
 
 ;;; Buffer-local state
 
@@ -188,10 +174,6 @@ lines in green) without parsing Sapling's terminal color codes."
 
 ;;; Process helpers
 
-(defun sl--windows-p ()
-  "Return non-nil when running on a Windows system."
-  (memq system-type '(ms-dos windows-nt cygwin)))
-
 (defun sl--sl-program ()
   "Return the absolute path to the Sapling executable."
   (or (executable-find sl-program)
@@ -202,8 +184,8 @@ lines in green) without parsing Sapling's terminal color codes."
   "Return a process command list for running `sl' with ARGS.
 On Windows, `.bat'/`.cmd' wrappers need to be run through the shell."
   (let* ((program (sl--sl-program))
-         (extension (downcase (or (file-name-extension program) ""))))
-    (if (member extension '("bat" "cmd" "com"))
+         (extension (file-name-extension program)))
+    (if (member-ignore-case (or extension "") '("bat" "cmd" "com"))
         (list shell-file-name shell-command-switch
               (mapconcat #'shell-quote-argument (cons program args) " "))
       (cons program args))))
@@ -219,6 +201,9 @@ where Sapling may otherwise use the native console color API."
 When `sl-use-color' is non-nil, allow colored output under Sapling's
 automation mode."
   (let ((env (copy-sequence process-environment)))
+    ;; HGPLAIN keeps output stable for scripts, and SL_AUTOMATION
+    ;; avoids pagination and interactive prompts.  The latter normally
+    ;; also disables color, so request color as an explicit exception.
     (dolist (var '("HGPLAIN=1" "SL_AUTOMATION=1"))
       (unless (member var env)
         (push var env)))
@@ -230,16 +215,18 @@ automation mode."
 (cl-defun sl--run-async (args &key name callback directory color)
   "Run `sl' with ARGS asynchronously.
 
-When CALLBACK is non-nil it is called with two arguments: the
-process output string and the exit code (or nil if the process did
-not exit normally).  DIRECTORY, when non-nil, is used as the process
-working directory.  When COLOR is non-nil, run `sl' with ANSI colors
-enabled."
+NAME is used to identify the process buffer.  When CALLBACK is
+non-nil, it is called with the process output string and the exit
+code (or nil if the process did not exit normally).  DIRECTORY, when
+non-nil, is used as the process working directory.  When COLOR is
+non-nil, run `sl' with ANSI colors enabled."
   (let* ((default-directory (or directory sl--repo-root default-directory))
          (buffer (generate-new-buffer (format " *sl-%s*" (or name "process"))))
          (process-environment (sl--process-environment)))
     ;; `w32-pipe-read-delay' is a global variable, so bindings around
     ;; `make-process' do not affect later reads.  Set it directly here.
+    ;; This intentionally affects other Windows subprocess reads while
+    ;; Sapling commands are running; see `sl-w32-pipe-read-delay'.
     (when (and (boundp 'w32-pipe-read-delay)
                sl-w32-pipe-read-delay)
       (setq w32-pipe-read-delay sl-w32-pipe-read-delay))
@@ -267,8 +254,8 @@ enabled."
          (when callback
            (funcall callback out code)))))))
 
-(defun sl--call-output (args &optional directory)
-  "Run `sl' with ARGS synchronously in DIRECTORY and return its output.
+(defun sl--call-output (directory &rest args)
+  "Run `sl' synchronously in DIRECTORY with ARGS and return its output.
 Signal an error if the command exits unsuccessfully."
   (let* ((default-directory (or directory sl--repo-root default-directory))
          (process-environment (sl--process-environment))
@@ -277,7 +264,7 @@ Signal an error if the command exits unsuccessfully."
       (let ((status (apply #'call-process (car command) nil (current-buffer) nil
                            (cdr command))))
         (unless (eq status 0)
-          (error "sl %s failed:\n%s"
+          (error "Sl %s failed:\n%s"
                  (mapconcat #'identity args " ")
                  (buffer-string)))
         (buffer-string)))))
@@ -288,7 +275,7 @@ Signal an error if the command exits unsuccessfully."
        directory
        (lambda (dir) (file-directory-p (expand-file-name ".sl" dir))))
       (let ((out (ignore-errors
-                   (sl--call-output '("root") directory))))
+                   (sl--call-output directory "root"))))
         (and out
              (let ((trimmed (string-trim out)))
                (unless (equal trimmed "")
@@ -301,8 +288,8 @@ Signal an error if the command exits unsuccessfully."
     (set-keymap-parent map special-mode-map)
     (define-key map (kbd "g")   #'sl-refresh)
     (define-key map (kbd "s")   #'sl-status)
-    (define-key map (kbd "q")   #'sl-quit)
-    (define-key map (kbd "?")   #'sl-help)
+    (define-key map (kbd "q")   #'quit-window)
+    (define-key map (kbd "?")   #'describe-mode)
     (define-key map (kbd "RET") #'sl-visit-file-at-point)
     (define-key map (kbd "SPC") #'sl-diff-file-at-point)
     (define-key map (kbd "m")   #'sl-mark)
@@ -341,7 +328,6 @@ Signal an error if the command exits unsuccessfully."
   "Major mode for Sapling status output.
 
 \\{sl-mode-map}"
-  :group 'sl
   (setq-local buffer-read-only t)
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function #'sl-refresh)
@@ -366,16 +352,6 @@ Signal an error if the command exits unsuccessfully."
           sl--commit-info nil
           sl--smartlog nil)
     (sl-refresh)))
-
-(defun sl-quit ()
-  "Quit the current Sapling buffer."
-  (interactive)
-  (quit-window))
-
-(defun sl-help ()
-  "Show help for the current Sapling mode."
-  (interactive)
-  (describe-mode))
 
 (defun sl-refresh ()
   "Refresh the current Sapling status buffer."
@@ -424,7 +400,9 @@ Signal an error if the command exits unsuccessfully."
            (sl--finish-refresh buffer root smartlog files info)))))))
 
 (defun sl--finish-refresh (buffer root smartlog files info)
-  "Populate BUFFER with refreshed Sapling data."
+  "Populate BUFFER with refreshed Sapling data.
+ROOT is the repository root, SMARTLOG is the smartlog text, FILES is
+the status file list, and INFO is the current commit metadata."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq sl--repo-root root
@@ -441,10 +419,8 @@ Signal an error if the command exits unsuccessfully."
   (set-buffer-modified-p nil))
 
 (defun sl--strip-cr (string)
-  "Return STRING without a trailing carriage return, if any."
-  (if (string-suffix-p "\r" string)
-      (substring string 0 -1)
-    string))
+  "Return STRING with any trailing carriage return removed."
+  (string-trim-right string "\r"))
 
 (defun sl--parse-status (text)
   "Parse `sl status' output TEXT into a list of (STATUS FILE)."
@@ -459,8 +435,7 @@ Signal an error if the command exits unsuccessfully."
   "Parse commit info line TEXT into (HASH BOOKMARK PHASE)."
   (let ((line (sl--strip-cr (car (split-string text "\n" t)))))
     (when line
-      (let ((parts (split-string line "\t")))
-        (list (nth 0 parts) (nth 1 parts) (nth 2 parts))))))
+      (seq-take (split-string line "\t") 3))))
 
 (defun sl--status-face (status)
   "Return the face for STATUS character."
@@ -517,7 +492,7 @@ Signal an error if the command exits unsuccessfully."
     (set-buffer-modified-p nil)))
 
 (defun sl--insert-file-line (status file)
-  "Insert a status FILE line with text properties."
+  "Insert a status line for STATUS and FILE with text properties."
   (let ((beg (point))
         (marked (member file sl--marked)))
     (insert (format "  %s %s" status file))
@@ -573,7 +548,7 @@ Signal an error if the command exits unsuccessfully."
   (sl--render-status))
 
 (defun sl-unmark-all ()
-  "Remove all marks in the status buffer."
+  "Unmark all files in the status buffer."
   (interactive)
   (setq sl--marked nil)
   (sl--render-status))
@@ -599,8 +574,6 @@ Signal an error if the command exits unsuccessfully."
 (defvar sl-output-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
-    (define-key map (kbd "g") #'sl-output-refresh)
-    (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `sl-output-mode'.")
 
@@ -617,7 +590,6 @@ Signal an error if the command exits unsuccessfully."
   "Major mode for Sapling command output.
 
 \\{sl-output-mode-map}"
-  :group 'sl
   (setq-local buffer-read-only t)
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function #'sl-output-refresh))
@@ -625,6 +597,8 @@ Signal an error if the command exits unsuccessfully."
 (defvar sl-diff-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map diff-mode-map)
+    ;; `diff-mode-map' does not inherit from `special-mode-map', so
+    ;; provide the refresh and quit bindings explicitly.
     (define-key map (kbd "g") #'sl-output-refresh)
     (define-key map (kbd "q") #'quit-window)
     map)
@@ -634,7 +608,8 @@ Signal an error if the command exits unsuccessfully."
   "Major mode for Sapling diff output.
 
 \\{sl-diff-mode-map}"
-  :group 'sl
+  ;; This exists to make diff output read-only and refreshable; the
+  ;; actual diff coloring is provided by `diff-mode' itself.
   (setq-local buffer-read-only t)
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function #'sl-output-refresh))
@@ -659,7 +634,7 @@ Signal an error if the command exits unsuccessfully."
   (let ((inhibit-read-only t)
         (text-beg nil))
     (erase-buffer)
-    (insert (propertize (format "%s\n" title) 'face 'sl-header-face))
+    (insert (propertize title 'face 'sl-header-face) "\n")
     (when text
       (setq text-beg (point))
       (insert text)
@@ -726,7 +701,8 @@ ANSI colors enabled."
           (sl-refresh))))))
 
 (defun sl--run-and-show (args title)
-  "Run `sl ARGS' and show its output, refreshing the status on success."
+  "Run `sl' with ARGS and show its output under TITLE.
+Refresh the status buffer after a successful run."
   (let* ((root (sl--find-root default-directory))
          (buffer (get-buffer-create sl-output-buffer-name)))
     (unless root
@@ -775,7 +751,7 @@ Returns nil when the current buffer is not a status buffer."
       (push file files))
     (nreverse files)))
 
-;;; Commands
+;;;; Commands
 
 ;;;###autoload
 (defun sl-smartlog ()
@@ -815,8 +791,8 @@ Returns nil when the current buffer is not a status buffer."
 
 ;;;###autoload
 (defun sl-diff (&optional files)
-  "Show the Sapling diff.
-When files are marked in the status buffer, diff only those files;
+  "Show the Sapling diff for FILES.
+When FILES are marked in the status buffer, diff only those files;
 otherwise diff the file at point, or the whole working copy when
 called outside the status buffer."
   (interactive
@@ -849,15 +825,21 @@ called outside the status buffer."
   (interactive)
   (sl--start-commit t))
 
+(defconst sl-commit-cut-line
+  "# ------------------------ >8 ------------------------"
+  "Line separating the commit message from the comment block.")
+
 (defun sl--start-commit (amend)
-  "Open a commit message buffer.  If AMEND is non-nil, amend instead."
+  "Open a commit message buffer.
+If AMEND is non-nil, amend the current commit instead of creating a
+new one."
   (let* ((root (sl--find-root default-directory))
          (status-buffer (and (derived-mode-p 'sl-mode) (current-buffer)))
          (files (and status-buffer sl--marked))
          (previous-message (when amend
                              (ignore-errors
                                (sl--call-output
-                                '("log" "-r" "." "-T" "{desc}") root))))
+                                root "log" "-r" "." "-T" "{desc}"))))
          (buffer-name (if amend "*sl-amend*" "*sl-commit*")))
     (unless root
       (user-error "Not inside a Sapling repository"))
@@ -874,14 +856,14 @@ called outside the status buffer."
           (when previous-message
             (insert previous-message)
             (unless (bolp) (insert "\n")))
-          (insert "\n# ------------------------ >8 ------------------------\n")
+          (insert "\n" sl-commit-cut-line "\n")
           (insert (sl--commit-comment root files amend)))
         (goto-char (point-min)))
       (pop-to-buffer buffer)
       (message "Describe your changes, then press C-c C-c to finish"))))
 
 (defun sl--commit-comment (root files amend)
-  "Build the comment block for a commit message buffer."
+  "Build the comment block for ROOT, FILES, and AMEND."
   (with-temp-buffer
     (insert (format "# Repository: %s\n" root))
     (if amend
@@ -899,7 +881,7 @@ called outside the status buffer."
   (let ((cut (save-excursion
                (goto-char (point-min))
                (re-search-forward
-                "^# ------------------------ >8 ------------------------$" nil t))))
+                (concat "^" (regexp-quote sl-commit-cut-line) "$") nil t))))
     (string-trim
      (if cut
          (buffer-substring-no-properties (point-min) (match-beginning 0))
@@ -949,7 +931,7 @@ called outside the status buffer."
                   (current-buffer)))))))))))
 
 (defun sl-commit-cancel ()
-  "Cancel the commit or amend in the current message buffer."
+  "Kill the commit message buffer, canceling the commit or amend."
   (interactive)
   (kill-buffer))
 
@@ -965,7 +947,6 @@ called outside the status buffer."
   "Major mode for editing a Sapling commit message.
 
 \\{sl-commit-mode-map}"
-  :group 'sl
   (setq-local header-line-format
               (substitute-command-keys
                "Sapling commit: \\[sl-commit-finish] finish, \
@@ -973,8 +954,9 @@ called outside the status buffer."
 
 ;;;###autoload
 (defun sl-absorb (&optional dry-run)
-  "Absorb working copy changes into the current stack.
-With a prefix argument, perform a dry run instead of applying."
+  "Absorb the working copy into the current stack.
+When DRY-RUN is non-nil, show what would be absorbed instead of
+applying it."
   (interactive "P")
   (let ((root (sl--find-root default-directory)))
     (unless root
@@ -1030,7 +1012,7 @@ With a prefix argument, perform a dry run instead of applying."
 
 ;;;###autoload
 (defun sl-shelve ()
-  "Shelve working copy changes."
+  "Shelve all pending modifications."
   (interactive)
   (let ((root (sl--find-root default-directory)))
     (unless root
@@ -1048,7 +1030,7 @@ With a prefix argument, perform a dry run instead of applying."
 
 ;;;###autoload
 (defun sl-pull ()
-  "Pull changes into the current Sapling repository."
+  "Pull from the configured remote repository."
   (interactive)
   (let ((root (sl--find-root default-directory)))
     (unless root
@@ -1057,7 +1039,7 @@ With a prefix argument, perform a dry run instead of applying."
 
 ;;;###autoload
 (defun sl-push ()
-  "Push changes from the current Sapling repository."
+  "Push to the configured remote repository."
   (interactive)
   (let ((root (sl--find-root default-directory)))
     (unless root
@@ -1096,17 +1078,17 @@ the confirmation prompt."
   (interactive (list (sl--marked-or-point-files)))
   (when (and (null files)
              (not current-prefix-arg)
-             (not (y-or-n-p "Revert all pending changes? ")))
+             (not (yes-or-no-p "Revert all pending changes? ")))
     (user-error "Aborted"))
   (sl--run-and-show (append '("revert") files) "Sl Revert"))
 
 ;;;###autoload
 (defun sl-clean (&optional dry-run)
   "Delete untracked files from the working copy.
-With a prefix argument, print what would be deleted instead."
+When DRY-RUN is non-nil, print what would be deleted instead."
   (interactive "P")
   (unless dry-run
-    (unless (y-or-n-p "Delete all untracked files? ")
+    (unless (yes-or-no-p "Delete all untracked files? ")
       (user-error "Aborted")))
   (sl--run-and-show
    (if dry-run '("clean" "--print") '("clean"))
@@ -1163,21 +1145,23 @@ With a prefix argument, print what would be deleted instead."
 ;;;###autoload
 (defun sl-undo (&optional arg)
   "Undo the last local Sapling command.
-With a prefix argument, undo that many local commands."
+When ARG is non-nil, undo that many local commands."
   (interactive "P")
-  (let ((args (if arg
-                  (list "undo" (number-to-string (prefix-numeric-value arg)))
-                '("undo"))))
+  (let ((args (cons "undo"
+                    (and arg
+                         (list (number-to-string
+                                (prefix-numeric-value arg)))))))
     (sl--run-and-show args "Sl Undo")))
 
 ;;;###autoload
 (defun sl-redo (&optional arg)
   "Redo the last undone Sapling command.
-With a prefix argument, redo that many local commands."
+When ARG is non-nil, redo that many local commands."
   (interactive "P")
-  (let ((args (if arg
-                  (list "redo" (number-to-string (prefix-numeric-value arg)))
-                '("redo"))))
+  (let ((args (cons "redo"
+                    (and arg
+                         (list (number-to-string
+                                (prefix-numeric-value arg)))))))
     (sl--run-and-show args "Sl Redo")))
 
 ;;;###autoload
@@ -1221,8 +1205,8 @@ the file at point is used as the initial FILE."
      (list (read-string "Revision (empty for current): ") file)))
   (let* ((root (or sl--repo-root (sl--find-root default-directory)))
          (args (append '("annotate")
-                       (unless (string-empty-p revision)
-                         (list "-r" revision))
+                       (and (not (string-empty-p revision))
+                            (list "-r" revision))
                        (list file))))
     (unless root
       (user-error "Not inside a Sl repository"))
@@ -1313,68 +1297,49 @@ An empty DIRECTORY initializes the current directory."
 (defun sl-menu ()
   "Display a Magit-style dispatch menu for Sapling commands."
   (interactive)
-  (let* ((entry (read-multiple-choice
-                 "Sl"
-                 '((?s "status" "Show working copy status")
-                   (?l "smartlog" "Show smartlog")
-                   (?L "log" "Show graph log")
-                   (?d "diff" "Show diff")
-                   (?c "commit" "Commit changes")
-                   (?a "amend" "Amend current commit")
-                   (?x "absorb" "Absorb changes into stack")
-                   (?r "rebase" "Rebase onto revision")
-                   (?f "fold" "Fold commits")
-                   (?g "graft" "Graft a commit")
-                   (?h "hide" "Hide a commit")
-                   (?H "unhide" "Unhide a commit")
-                   (?z "shelve" "Shelve changes")
-                   (?Z "unshelve" "Unshelve changes")
-                   (?n "next" "Check out next commit")
-                   (?p "previous" "Check out previous commit")
-                   (?u "undo" "Undo local command")
-                   (?R "redo" "Redo local command")
-                   (?A "add" "Add files")
-                   (?D "remove" "Remove files")
-                   (?K "forget" "Forget files")
-                   (?V "revert" "Revert files")
-                   (?e "metaedit" "Edit commit message")
-                   (?o "show" "Show current commit")
-                   (?J "journal" "Show journal")
-                   (?B "bookmark" "Create bookmark")
-                   (?F "pull" "Pull changes")
-                   (?P "push" "Push changes")
-                   (?q "quit" "Quit"))))
-         (choice (if (consp entry) (car entry) entry)))
-    (cl-case choice
-      (?s (sl-status))
-      (?l (sl-smartlog))
-      (?L (sl-log))
-      (?d (sl-diff))
-      (?c (sl-commit))
-      (?a (sl-amend))
-      (?x (sl-absorb))
-      (?r (call-interactively #'sl-rebase))
-      (?f (call-interactively #'sl-fold))
-      (?g (call-interactively #'sl-graft))
-      (?h (call-interactively #'sl-hide))
-      (?H (call-interactively #'sl-unhide))
-      (?z (sl-shelve))
-      (?Z (sl-unshelve))
-      (?n (sl-next))
-      (?p (sl-previous))
-      (?u (sl-undo))
-      (?R (sl-redo))
-      (?A (sl-add))
-      (?D (sl-remove))
-      (?K (sl-forget))
-      (?V (sl-revert))
-      (?e (call-interactively #'sl-metaedit))
-      (?o (sl-show))
-      (?J (call-interactively #'sl-journal))
-      (?B (call-interactively #'sl-bookmark-create))
-      (?F (sl-pull))
-      (?P (sl-push))
-      (?q nil))))
+  (let* ((table
+          '((?s "status" "Show working copy status" sl-status nil)
+            (?l "smartlog" "Show smartlog" sl-smartlog nil)
+            (?L "log" "Show graph log" sl-log nil)
+            (?d "diff" "Show diff" sl-diff nil)
+            (?c "commit" "Commit changes" sl-commit nil)
+            (?a "amend" "Amend current commit" sl-amend nil)
+            (?x "absorb" "Absorb changes into stack" sl-absorb nil)
+            (?r "rebase" "Rebase onto revision" sl-rebase t)
+            (?f "fold" "Fold commits" sl-fold t)
+            (?g "graft" "Graft a commit" sl-graft t)
+            (?h "hide" "Hide a commit" sl-hide t)
+            (?H "unhide" "Unhide a commit" sl-unhide t)
+            (?z "shelve" "Shelve changes" sl-shelve nil)
+            (?Z "unshelve" "Unshelve changes" sl-unshelve nil)
+            (?n "next" "Check out next commit" sl-next nil)
+            (?p "previous" "Check out previous commit" sl-previous nil)
+            (?u "undo" "Undo local command" sl-undo nil)
+            (?R "redo" "Redo local command" sl-redo nil)
+            (?A "add" "Add files" sl-add nil)
+            (?D "remove" "Remove files" sl-remove nil)
+            (?K "forget" "Forget files" sl-forget nil)
+            (?V "revert" "Revert files" sl-revert nil)
+            (?e "metaedit" "Edit commit message" sl-metaedit t)
+            (?o "show" "Show current commit" sl-show nil)
+            (?J "journal" "Show journal" sl-journal t)
+            (?B "bookmark" "Create bookmark" sl-bookmark-create t)
+            (?F "pull" "Pull changes" sl-pull nil)
+            (?P "push" "Push changes" sl-push nil)
+            (?q "quit" "Quit" nil nil)))
+         (choices (mapcar (lambda (item)
+                            (list (car item) (cadr item) (caddr item)))
+                          table))
+         (entry (read-multiple-choice "Sl" choices))
+         (choice (if (consp entry) (car entry) entry))
+         (selected (and choice (assq choice table))))
+    (pcase selected
+      (`(,_ ,_ ,_ ,cmd ,interactivep)
+       (when cmd
+         (if interactivep
+             (funcall-interactively cmd)
+           (funcall cmd))))
+      (_ nil))))
 
 (provide 'sl)
 
