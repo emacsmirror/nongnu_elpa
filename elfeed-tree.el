@@ -74,7 +74,7 @@
   "Function that returns the string to be used for the header line.")
 
 (defvar elfeed-tree-update-hook nil
- "Functions in this list are called after the tree buffer has been updated.")
+  "Functions in this list are called after the tree buffer has been updated.")
 
 (defvar elfeed-tree--update-timer nil
   "Timer to debounce search buffer updates.")
@@ -296,19 +296,17 @@ STATS is the unread/read/count statistics."
 NODES is a list of tree nodes."
   (cl-loop for (tag children leaves) in nodes
            for rec = (elfeed-tree--stats children)
-           collect
-           (list
-            tag
-            ;; Sum unread counts from children and leaves
-            (+ (cl-loop for (_t u _r . _) in rec sum u)
-               (cl-loop for (_t u _r . _) in leaves sum u))
-            ;; Sum read counts from children and leaves
-            (+ (cl-loop for (_t _u r . _) in rec sum r)
-               (cl-loop for (_t _u r . _) in leaves sum r))
-            ;; Sum feed number from children and leaves
-            (+ (cl-loop for (_t _u _r c . _) in rec sum c)
-               (length leaves))
-            rec leaves)))
+           collect (list tag
+                         ;; Sum unread counts from children and leaves
+                         (+ (cl-loop for (_t u _r . _) in rec sum u)
+                            (cl-loop for (_t u _r . _) in leaves sum u))
+                         ;; Sum read counts from children and leaves
+                         (+ (cl-loop for (_t _u r . _) in rec sum r)
+                            (cl-loop for (_t _u r . _) in leaves sum r))
+                         ;; Sum feed number from children and leaves
+                         (+ (cl-loop for (_t _u _r c . _) in rec sum c)
+                            (length leaves))
+                         rec leaves)))
 
 (defun elfeed-tree--flatten (nodes)
   "Flatten tree NODES."
@@ -322,7 +320,7 @@ NODES is a list of tree nodes."
              children (cadar children)))
      ;; Drop parent nodes with only a single feed as leaf.
      ;; Keep these nodes with this code:
-     ;;  (list tag (elfeed-tree--flatten children) leaves)
+     ;; (list tag (elfeed-tree--flatten children) leaves)
      (cl-loop for entry in (elfeed-tree--flatten children)
               for (_tg ts us) = entry
               if (and (not ts) (length= us 1)) collect (car us) into new-leaves
