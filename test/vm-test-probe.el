@@ -81,6 +81,25 @@ load path is the sort of thing a failure turns on."
                          (directory-files vm-test-optional-dir t
                                           "\\`[^.]"))))))
 
+(defconst vm-test-probe-optional-regexp "bbdb\\|w3m\\|vcard"
+  "What a test file mentions if it has anything to do with an optional package.
+Plainly, not as a symbol: a file that only names one in a comment costs a few
+seconds in that pass, and a rule that depends on the syntax table for whether
+`vm-w3m\=' counts is a rule nobody can predict.")
+
+(defun vm-test-probe-optional-test-files ()
+  "The test files that name BBDB, emacs-w3m or vcard.
+The pass that runs without those packages runs these, not the whole suite:
+nothing else can tell whether one is installed.  Found by looking rather than
+listed here, so a new test file that uses one is picked up."
+  (seq-filter
+   (lambda (file)
+     (with-temp-buffer
+       (insert-file-contents (expand-file-name file vm-test-dir))
+       (goto-char (point-min))
+       (re-search-forward vm-test-probe-optional-regexp nil t)))
+   (vm-test-discover-test-files)))
+
 (defun vm-test-probe-report ()
   "What this machine can test, as an alist of key to string.
 Every key is always present, so a reader need not tell a missing key from an
@@ -115,7 +134,9 @@ empty one."
                             (alist-get 'program (epg-find-configuration 'OpenPGP)))
                           "yes" "no"))
           (cons "optional_installed"
-                (string-join (vm-test-probe-optional-packages) " ")))))
+                (string-join (vm-test-probe-optional-packages) " "))
+          (cons "optional_test_files"
+                (string-join (vm-test-probe-optional-test-files) " ")))))
 
 (defun vm-test-probe-batch ()
   "Print `vm-test-probe-report' as key=value lines and exit."

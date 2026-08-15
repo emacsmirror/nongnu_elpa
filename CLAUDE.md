@@ -83,7 +83,7 @@ machine can:
 |------|--------------|
 | suite | everything, with whatever this machine has |
 | mock | IMAP and POP again with the live servers skipped, where a live config exists |
-| no-optional | the suite again without BBDB, emacs-w3m and vcard, where they are installed |
+| no-optional | the test files that name BBDB, emacs-w3m or vcard, run without them, where they are installed |
 | send | real mail, sent and read back, where `vm-send-test-config` says where to |
 
 Every pass runs whichever fails, and the summary at the end names each one.
