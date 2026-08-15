@@ -14,6 +14,7 @@
   and new command to extend truncated search list.
 - =elfeed-search= header line performance improvements.
 - =elfeed-tree-tag-face=: New face used for tags in =elfeed-tree=.
+- =elfeed-default-directory=: Default to user home.
 
 * Version 4.1.1 (2026-08-01)
 

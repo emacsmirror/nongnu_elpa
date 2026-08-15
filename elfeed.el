@@ -114,7 +114,7 @@ a performance boost over xml.el."
                       "Browse URL? "
                     (format "Browse %d URLs? " count))))))
 
-(defcustom elfeed-default-directory nil
+(defcustom elfeed-default-directory "~/"
   "Default directory for all Elfeed buffers."
   :type '(choice (const :tag "current" nil)
                  (const :tag "user home" "~/")
