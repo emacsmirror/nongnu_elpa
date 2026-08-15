@@ -53,9 +53,16 @@ If the config exists and the enable flag is set but the server is unreachable
 or auth fails, *fail* — do not skip. A configured suite that silently skips
 rots into permanent no-coverage.
 
+One environment variable takes the live servers away again: =VM_TEST_LIVE=0=
+(also =no=, =off=, =mock=) is the default of =vm-imap-live-enabled= and
+=vm-pop-live-enabled=, so a configured machine can run the mock servers alone
+without deleting its config. =make test-mock= is the shorthand. That is not a
+second opt-in; it is how the mock tests get checked on the machine where a
+live run would otherwise cover for them.
+
 * Configuration
 
-No environment variables. One gitignored elisp file, =test/vm-live-config.el=,
+One gitignored elisp file, =test/vm-live-config.el=,
 copied from =test/vm-live-config.el.template=, which is checked in and carries
 the documentation:
 

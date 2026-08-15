@@ -61,11 +61,19 @@ beside the others at the top of the file, with the arglist the definition has.
 cd test && make test            # whole suite (ert, batch)
 cd test && make test-verbose    # with deeper printing
 cd test && make test-one testel=vm-imap-test.el
-cd test && make test-imap       # live IMAP only (needs a server; skips without one)
+cd test && make test-imap       # IMAP: mock server always, live if configured
 cd test && make test-pop        # POP: mock server always, live if configured
+cd test && make test-mock       # both, with the live servers refused
 cd test && make test-leaks      # report tests that leave global state behind
 cd test && make test-assert     # whole suite with VM's own assertions checked
 ```
+
+`VM_TEST_LIVE=0` (also `no`, `off`, `mock`) refuses the live servers for any
+of those targets, including `make test`, without deleting
+`test/vm-live-config.el`. Use it on a configured machine before pushing
+anything that touches IMAP or POP: a live run covers the same ground as the
+mock one, so a mock server that has stopped agreeing with the client fails
+nowhere until it reaches a machine with no config.
 
 `test/vm-fuzz-test.el` drives a folder through random operation sequences and
 checks its invariants after each one. It runs a small search as part of the
