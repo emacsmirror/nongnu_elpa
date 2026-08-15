@@ -3088,24 +3088,22 @@ counting some other header: three messages and two Subject lines."
               "From: carol@example.com\n\nNo subject at all.\n\n")
     (should (equal (vm-count-messages-in-file file t) 3))))
 
-(ert-deftest vm-folder-test-counting-counts-a-From_-line-in-a-body ()
-  "A body line beginning \"From \" is counted as another message.
+(ert-deftest vm-folder-test-counting-ignores-a-From_-line-in-a-body ()
+  "REGRESSION: a body line beginning \"From \" is not a message.
 
-The count is grep -c of \"^From \", so an unquoted From_ line in a body adds
-one.  VM quotes those on the way out, so its own folders do not have them;
-one written by something else can, and then the folders summary shows a total
-one too many.  Filed as #640.
-
-This pins what the code does, not what it should do.  Two messages and one
-such line count as three."
+The count was `grep -c \"^From \"\', so every such line counted as one more
+message -- three for a folder of two.  VM quotes those on the way out, so a
+folder VM wrote has none; one written by something else does, and issue #562
+was exactly that, from Mailutils movemail.  The count now uses the separator
+the folder is parsed by, so it says what a reader would see."
   (vm-folder-test--with-file-of
       (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
               "From: alice@example.com\nSubject: one\n\n"
               "From here on, a body.\n\n"
               "From bob@example.com Sun Aug  9 16:00:00 2026\n"
               "From: bob@example.com\nSubject: two\n\nTwo.\n\n")
-    (should (equal (vm-count-messages-in-file file t) 3))
-    ;; and quoted, as VM writes it, the count is right
+    (should (equal (vm-count-messages-in-file file t) 2))
+    ;; and quoted, as VM writes it, the same
     (write-region
      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
              "From: alice@example.com\nSubject: one\n\n"
@@ -3705,6 +3703,55 @@ write; the refusal says so rather than saving the presentation."
                 ((symbol-function 'vm-display) #'ignore))
         (should-error (vm-save-buffer nil) :type 'error)
         (should-not saved)))))
+
+;;; Counting the messages in a file (emacs-vm/vm#640)
+
+(defmacro vm-folder-test--counting (text &rest body)
+  "Write TEXT to a folder file and run BODY with COUNT bound to VM's count."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-count" t)))
+          (file (expand-file-name "folder" dir)))
+     (unwind-protect
+         (progn
+           (write-region ,text nil file nil 'quiet)
+           (let ((count (vm-count-messages-in-file file t)))
+             (ignore count)
+             ,@body))
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-counting-counts-the-messages ()
+  "A folder of two messages counts two."
+  (vm-folder-test--counting
+      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+              "From: alice@example.com\nSubject: one\n\nA body.\n\n"
+              "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+              "From: bob@example.com\nSubject: two\n\nA body.\n\n")
+    (should (equal count 2))))
+
+(ert-deftest vm-folder-test-counting-agrees-with-what-is-parsed ()
+  "The count is what visiting the folder finds, which is the point of it:
+a total that disagrees with the folder misleads about mail waiting."
+  (let ((text (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+                      "From: alice@example.com\nSubject: one\n\n"
+                      "From here on, a body.\n"
+                      "From nowhere in particular\n\n"
+                      "From bob@example.com Sun Aug  9 16:00:00 2026\n"
+                      "From: bob@example.com\nSubject: two\n\nA body.\n\n")))
+    (vm-folder-test--counting text
+      (vm-test-with-folder text
+        (should (equal count (length vm-message-list)))))))
+
+(ert-deftest vm-folder-test-counting-a-quoted-From_-line ()
+  "A quoted separator, as VM writes them, is not counted either."
+  (vm-folder-test--counting
+      (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
+              "From: alice@example.com\nSubject: one\n\n"
+              ">From here on, a body.\n\n")
+    (should (equal count 1))))
+
+(ert-deftest vm-folder-test-counting-an-empty-folder ()
+  "An empty file holds no messages, and is not an error."
+  (vm-folder-test--counting "" (should (member count '(0 nil)))))
 
 (provide 'vm-folder-test)
 
