@@ -1130,17 +1130,15 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Turn" "Prompt" "Session" "Connection" "Workspace"
-                     "Browse" "Commands")))
+                   '("Turn" "Input" "Session" "Workspace" "System")))
     (should (equal (mapcar (lambda (row)
                              (mapcar (lambda (group)
                                        (plist-get group :name))
                                      row))
                            rows)
-                   '(("Turn" "Prompt" "Session" "Connection")
-                     ("Workspace" "Browse" "Commands"))))
+                   '(("Turn" "Input" "Session" "Workspace" "System"))))
     (dolist (group groups)
-      (should (<= (length (plist-get group :entries)) 4)))
+      (should (= (length (plist-get group :entries)) 4)))
     (let ((directory-entry
            (cl-find "w" entries :key (lambda (entry)
                                        (plist-get entry :key))

@@ -1673,30 +1673,27 @@ result into the transient status text shown in the transcript."
   "i" ("Interrupt" hermes-chat-interrupt)
   "k" ("Interrupt + send" hermes-chat-interrupt-and-send)
   "q" ("Queue message" hermes-chat-queue-message)
-  :group "Prompt"
+  :group "Input"
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt)
+  "c" ("Show commands" hermes-chat-show-commands)
+  "r" ("Refresh commands" hermes-chat-refresh-commands)
   :group "Session"
   "n" ("New chat" hermes-chat)
   "m" ("Switch model" hermes-chat-switch-model)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
-  :group "Connection"
-  "K" ("Connect provider" hermes-chat-connect-provider)
-  "x" ("Reconnect socket" hermes-dashboard-reconnect)
-  :row
   :group "Workspace"
   "w" ("Set directory" hermes-chat-set-directory
        :inapt-if #'hermes-chat--active-turn-p)
-  :group "Browse"
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
+  "P" ("Queue side panel" hermes-chat-queue-panel)
+  :group "System"
+  "K" ("Connect provider" hermes-chat-connect-provider)
+  "x" ("Reconnect socket" hermes-dashboard-reconnect)
   "u" ("Token usage" hermes-chat-show-usage)
-  "t" ("Session status" hermes-chat-show-status)
-  :group "Commands"
-  "c" ("Show commands" hermes-chat-show-commands)
-  "r" ("Refresh commands" hermes-chat-refresh-commands)
-  "P" ("Queue side panel" hermes-chat-queue-panel))
+  "t" ("Session status" hermes-chat-show-status))
 
 (defvar-keymap hermes-chat-mode-map
   :doc "Keymap for `hermes-chat-mode'."
