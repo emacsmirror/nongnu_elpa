@@ -964,20 +964,27 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
   "Steer active dashboard turn with CONTENT in BUFFER, or queue when unsupported."
   (if (not (hermes-chat--dashboard-session-attached-p))
       (hermes-chat--queue-content content "Steer unavailable; queued next message")
-    (let ((id (hermes-chat--steer-pending-status content)))
+    (let ((client hermes-chat--dashboard-client)
+          (session-id hermes-chat--dashboard-active-session-id)
+          (generation hermes-chat--lifecycle-generation)
+          (id (hermes-chat--steer-pending-status content)))
       (hermes-dashboard-transport-session-steer
-       hermes-chat--dashboard-client content
-       :session-id hermes-chat--dashboard-active-session-id
+       client content
+       :session-id session-id
        :resolve (lambda (result)
                   (hermes-chat--in-buffer buffer
-                    (if (equal (hermes-chat--status-name
-                                (hermes-chat--result-string result 'status))
-                               "rejected")
-                        (hermes-chat--steer-failed id content "rejected")
-                      (hermes-chat--steer-acknowledged id content))))
+                    (when (hermes-chat--dashboard-context-current-p
+                           client generation session-id)
+                      (if (equal (hermes-chat--status-name
+                                  (hermes-chat--result-string result 'status))
+                                 "rejected")
+                          (hermes-chat--steer-failed id content "rejected")
+                        (hermes-chat--steer-acknowledged id content)))))
        :reject (lambda (err)
                  (hermes-chat--in-buffer buffer
-                   (hermes-chat--steer-failed id content err)))))))
+                   (when (hermes-chat--dashboard-context-current-p
+                          client generation session-id)
+                     (hermes-chat--steer-failed id content err))))))))
 
 (defun hermes-chat--steer-or-submit (content buffer)
   "Steer active turn with CONTENT in BUFFER, or submit CONTENT when idle."
