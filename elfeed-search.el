@@ -389,7 +389,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
 
 ;;;###autoload
 (defun elfeed-search (&optional new-filter)
-  "Enter `elfeed-search' buffer, optionally with a NEW-FILTER."
+  "Display `elfeed-search' buffer, optionally with a NEW-FILTER."
   (interactive)
   (switch-to-buffer (elfeed-search-buffer))
   (unless (eq major-mode 'elfeed-search-mode)

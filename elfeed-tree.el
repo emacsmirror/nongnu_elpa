@@ -176,6 +176,13 @@
   (unless (eq major-mode 'elfeed-tree-mode)
     (elfeed-tree-mode)))
 
+;;;###autoload
+(defun elfeed-tree-and-search ()
+  "Display tree and search buffer side by side."
+  (interactive)
+  (elfeed-tree)
+  (elfeed-search))
+
 (defun elfeed-tree--buffer ()
   "Create and return tree buffer."
   (get-buffer-create "*elfeed-tree*"))

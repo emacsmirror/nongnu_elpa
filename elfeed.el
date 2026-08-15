@@ -59,6 +59,7 @@ You can set this either to the search or the tree command, or an
 alternative custom command if you use another custom frontend."
   :type '(choice (const :tag "Search buffer" elfeed-search)
                  (const :tag "Tree buffer" elfeed-tree)
+                 (const :tag "Tree and search buffer" elfeed-tree-and-search)
                  (command :tag "Custom command")))
 
 (defcustom elfeed-feed-functions
