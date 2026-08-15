@@ -621,28 +621,28 @@ do not allow menubar buttons.")
   `("Redisplay Image"
     ["4x Larger"
      (vm-mime-run-display-function-at-point 'vm-mime-larger-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["4x Smaller"
      (vm-mime-run-display-function-at-point 'vm-mime-smaller-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Rotate Left"
      (vm-mime-run-display-function-at-point 'vm-mime-rotate-image-left)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Rotate Right"
      (vm-mime-run-display-function-at-point 'vm-mime-rotate-image-right)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Mirror"
      (vm-mime-run-display-function-at-point 'vm-mime-mirror-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Brighter"
      (vm-mime-run-display-function-at-point 'vm-mime-brighten-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Dimmer"
      (vm-mime-run-display-function-at-point 'vm-mime-dim-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Monochrome"
      (vm-mime-run-display-function-at-point 'vm-mime-monochrome-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Revert to Original"
      (vm-mime-run-display-function-at-point 'vm-mime-revert-image)
      (get
