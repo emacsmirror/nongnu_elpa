@@ -101,7 +101,7 @@ FMT must be a string suitable for `format' given OBJECTS as arguments."
   (declare (completion elfeed--mode-p))
   (interactive)
   (setq elfeed-log-error-count 0)
-  (switch-to-buffer (elfeed-log-buffer)))
+  (switch-to-buffer-other-window (elfeed-log-buffer)))
 
 (provide 'elfeed-log)
 ;;; elfeed-log.el ends here
