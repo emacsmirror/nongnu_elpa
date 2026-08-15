@@ -282,6 +282,96 @@ message would recurse through the folder.  Issue #453."
   (should (eq 'key (hash-table-weakness vm-reverse-link-table)))
   (should (eq 'eq (hash-table-test vm-reverse-link-table))))
 
+;;; Re-encoding the cached summary data (emacs-vm/vm#671)
+;;
+;; `vm-mime-encode-words-in-cache-vector' is what turns the decoded cache
+;; back into something that can be written into the folder as X-VM-v5-Data.
+;; It copies fifty slots one at a time, and had fifteen surviving mutations:
+;; deleting any one of those copies loses a field silently, and the folder
+;; then carries a summary line with a hole in it.
+
+(defconst vm-message-test--decoded-slots
+  '(7 8 11 13 14 17 28 37 38 39 40)
+  "The slots holding decoded text as a string.
+Everything else is a number, an ASCII field, or a flag -- except slot 18,
+the tokenized summary, which is a list and is handled on its own.")
+
+(defconst vm-message-test--tokenized-slot 18
+  "The slot holding the tokenized summary: a list of strings and symbols.")
+
+(defun vm-message-test--decoded (string)
+  "STRING as MIME decoding leaves it: marked with the charset it came from."
+  (propertize string 'vm-string t 'vm-charset "utf-8" 'vm-coding 'utf-8))
+
+(defun vm-message-test--cache-vector ()
+  "A cache vector whose every slot says which slot it is."
+  (let ((vector (make-vector vm-cached-data-vector-length nil)))
+    (dotimes (i vm-cached-data-vector-length)
+      (aset vector i (cond ((memq i vm-message-test--decoded-slots)
+                            (vm-message-test--decoded (format "René %d" i)))
+                           ((= i vm-message-test--tokenized-slot)
+                            (list (vm-message-test--decoded "René 18")))
+                           (t (format "slot %d" i)))))
+    vector))
+
+(ert-deftest vm-message-test-the-cache-keeps-every-slot ()
+  "Every slot of the cache vector comes through.
+
+Losing one loses a field of the summary data written into the folder, and
+nothing else would notice: the folder is still well formed, and the missing
+field only shows as a summary line that has stopped saying something."
+  (let* ((vm-display-using-mime t)
+         (before (vm-message-test--cache-vector))
+         (after (vm-mime-encode-words-in-cache-vector before)))
+    (should (= (length after) vm-cached-data-vector-length))
+    (dotimes (i vm-cached-data-vector-length)
+      (should (aref after i))
+      ;; the encoded slots are base64, so the marker is read back rather
+      ;; than looked for: a round trip says the slot survived and says what
+      ;; was in it
+      (let* ((held (aref after i))
+             (text (if (listp held) (car held) held)))
+        (should (string-match-p (format "%d\\'" i)
+                                (vm-decode-mime-encoded-words-in-string text)))))))
+
+(ert-deftest vm-message-test-the-decoded-slots-are-encoded-again ()
+  "The decoded text goes back to MIME encoded words, because the folder is
+a file of ASCII: what is written is what another reader has to decode."
+  (let* ((vm-display-using-mime t)
+         (after (vm-mime-encode-words-in-cache-vector
+                 (vm-message-test--cache-vector))))
+    (dolist (slot vm-message-test--decoded-slots)
+      (should (string-match-p "=?utf-8?" (aref after slot)))
+      (should-not (string-match-p "é" (aref after slot))))
+    ;; the tokenized summary is a list, and its tokens are encoded too
+    (let ((tokens (aref after vm-message-test--tokenized-slot)))
+      (should (listp tokens))
+      (should (string-match-p "=?utf-8?" (car tokens))))))
+
+(ert-deftest vm-message-test-the-other-slots-are-left-alone ()
+  "A slot that was never decoded is copied as it stands.
+
+Not merely equal: encoding a number or a flag would be a way of quietly
+changing what the folder says."
+  (let* ((vm-display-using-mime t)
+         (before (vm-message-test--cache-vector))
+         (after (vm-mime-encode-words-in-cache-vector before)))
+    (dotimes (i vm-cached-data-vector-length)
+      (unless (or (memq i vm-message-test--decoded-slots)
+                  (= i vm-message-test--tokenized-slot))
+        (should (equal (aref after i) (aref before i)))))))
+
+(ert-deftest vm-message-test-the-cache-vector-is-a-copy ()
+  "The vector handed back is a new one: the message keeps its decoded cache
+for the summary, and the encoded copy is only for writing out."
+  (let* ((vm-display-using-mime t)
+         (before (vm-message-test--cache-vector))
+         (after (vm-mime-encode-words-in-cache-vector before)))
+    (should-not (eq after before))
+    (dolist (slot vm-message-test--decoded-slots)
+      ;; the original still holds the decoded text
+      (should (string-match-p "é" (aref before slot))))))
+
 (provide 'vm-message-test)
 
 ;;; vm-message-test.el ends here
