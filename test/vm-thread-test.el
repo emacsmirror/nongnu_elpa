@@ -972,7 +972,8 @@ rather than setting the variable itself."
 The tracing calls pass an id, a thread symbol or the message itself."
   (delq nil (mapcar (lambda (thing)
                       (cond ((stringp thing) thing)
-                            ((symbolp thing) (symbol-name thing))))
+                            ((symbolp thing) (symbol-name thing))
+                            ((vectorp thing) (vm-su-message-id thing))))
                     args)))
 
 (ert-deftest vm-thread-test-a-traced-message-is-the-only-one-debugged ()
@@ -989,9 +990,149 @@ every message it would stop the folder being read at all."
         (vm-build-threads nil))
       (should traced)
       (should-not (cl-remove-if
-                   (lambda (ids) (or (null ids)
-                                     (member "<reply1@example.com>" ids)))
+                   (lambda (ids) (member "<reply1@example.com>" ids))
                    traced)))))
+
+;;; What vm-build-reference-threads does with each of its arguments
+
+(defconst vm-thread-test--deep-reference-folder
+  (concat "From d@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: D <d@example.com>\n"
+          "Subject: Re: something long ago\n"
+          "Message-ID: <d@example.com>\n"
+          "References: <a@example.com> <b@example.com> <c@example.com>\n"
+          "\n"
+          "The only message of the thread we have.\n\n")
+  "One reply whose ancestors are named but not in the folder.")
+
+(defun vm-thread-test--sym (id)
+  "The thread symbol for message id ID, or nil if there is none."
+  (intern-soft id vm-thread-obarray))
+
+(ert-deftest vm-thread-test-an-untraced-ancestor-is-not-debugged ()
+  "The ancestors a References header names are threaded in a pass of their
+own, and the debugger is entered there for a traced id and no other."
+  (vm-test-with-folder vm-thread-test--deep-reference-folder
+    (let ((vm-traced-message-ids '("<d@example.com>"))
+          (vm-thread-debug t)
+          (vm-summary-show-threads t)
+          (traced nil))
+      (cl-letf (((symbol-function 'debug)
+                 (lambda (_what &rest args)
+                   (push (vm-thread-test--ids args) traced))))
+        (vm-build-threads nil))
+      (should traced)
+      (should-not (cl-remove-if
+                   (lambda (ids) (member "<d@example.com>" ids))
+                   traced)))))
+
+(ert-deftest vm-thread-test-references-thread-the-messages-we-lack ()
+  "A References header names the whole line of ancestors, and each one is
+recorded as the parent of the next even though none of them is in the
+folder.  That is what puts a reply under the right root when the earlier
+messages were never received or have been expunged."
+  (vm-test-with-folder vm-thread-test--deep-reference-folder
+    (vm-build-threads nil)
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<b@example.com>"))
+                (vm-thread-test--sym "<a@example.com>")))
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<c@example.com>"))
+                (vm-thread-test--sym "<b@example.com>")))
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<d@example.com>"))
+                (vm-thread-test--sym "<c@example.com>")))
+    (should-not (vm-th-parent-of (vm-thread-test--sym "<a@example.com>")))))
+
+(ert-deftest vm-thread-test-reindents-are-scheduled-only-when-asked ()
+  "SCHEDULE-REINDENTS is what says the summary is already on screen and the
+lines have to be redrawn.  Building the threads of a folder being visited
+does not ask for it, and must not throw away the thread lines it has just
+computed."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((m (car vm-message-list)))
+      (vm-set-thread-list-of m '(computed))
+      (vm-build-reference-threads (list m) nil nil)
+      (should (equal (vm-thread-list-of m) '(computed)))
+      (vm-build-reference-threads (list m) t nil)
+      (should-not (vm-thread-list-of m)))))
+
+(ert-deftest vm-thread-test-a-reply-invalidates-what-its-parent-cached ()
+  "A reply arriving into a folder whose threads are built clears the cached
+subtree of the message it answers: that subtree now has a message in it
+that was not there when it was computed."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-initializing-leaves-the-caches-alone ()
+  "INITIALIZING says the threads database is being built from nothing, so
+there is nothing cached to invalidate and the clearing is skipped.  The
+same call without it clears."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list root) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-a-message-with-no-parent-keeps-its-cache ()
+  "A message with no parent at all -- a thread root -- has its subtree
+cleared when it is threaded again, and not while the database is being
+initialized, when there is nothing there to be stale."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list root) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-build-reference-threads (list root) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-a-second-copy-of-a-reply-clears-the-cache ()
+  "The same reply seen twice -- a duplicate copy in the folder -- names the
+parent it already has, and the parent's cached subtree is cleared for it
+just the same, unless the database is being initialized."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root reply) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-build-reference-threads (list reply) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-progress-is-reported-every-so-many-messages ()
+  "Building threads reports its progress once every tenth message rather
+than for each one, a folder of thousands would otherwise spend its time in
+the minibuffer.  The percentage is of two passes over the folder, so eight
+messages report once, at ten steps of sixteen."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (level fmt &rest args)
+                   (when (string-match-p "Building threads" fmt)
+                     (push (cons level (apply #'format fmt args)) said)))))
+        (vm-build-reference-threads (append vm-message-list vm-message-list)
+                                    nil t))
+      (should (equal (length said) 1))
+      (should (string-match-p "62%" (cdr (car said))))
+      (should (equal (car (car said)) 7)))))
 
 (provide 'vm-thread-test)
 
