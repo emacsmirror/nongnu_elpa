@@ -773,6 +773,15 @@ The plist holds :used, :max, and :percent for the model's context window."
     (setq event (plist-put event :prompt-request-p t))
     (hermes-dashboard-transport--copy-prompt-fields event payload)))
 
+(defun hermes-dashboard-transport--prompt-expire-event (type params payload)
+  "Return an owned prompt expiry status event for TYPE/PARAMS/PAYLOAD."
+  (let* ((prompt-type (car (split-string type "\\." t)))
+         (event (hermes-dashboard-transport--status-event
+                 type params payload "expired"
+                 (format "%s request expired" (capitalize prompt-type)))))
+    (setq event (plist-put event :prompt-type prompt-type))
+    (plist-put event :prompt-expire-p t)))
+
 (defun hermes-dashboard-transport--payload-object (payload)
   "Return PAYLOAD as an object suitable for normalization."
   (cond
@@ -966,6 +975,9 @@ an Unknown error."
       ((or "approval.request" "clarify.request" "sudo.request"
            "secret.request" "terminal.read.request")
        (list (hermes-dashboard-transport--prompt-request-event
+              type params payload)))
+      ((or "sudo.expire" "secret.expire")
+       (list (hermes-dashboard-transport--prompt-expire-event
               type params payload)))
       ;; Voice mode and skin changes are client-UI concerns, not chat transcript
       ;; content; drop them so they do not render at all.

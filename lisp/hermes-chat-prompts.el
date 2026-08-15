@@ -66,6 +66,11 @@ Invisible buffers and batch sessions record every prompt and show a message."
   (and (eq (plist-get event :type) 'status)
        (plist-get event :prompt-request-p)))
 
+(defun hermes-chat--prompt-expire-event-p (event)
+  "Return non-nil when EVENT expires a dashboard prompt request."
+  (and (eq (plist-get event :type) 'status)
+       (plist-get event :prompt-expire-p)))
+
 (defun hermes-chat--ensure-pending-prompts ()
   "Return the current buffer's pending prompt table."
   (or hermes-chat--pending-prompts
@@ -130,6 +135,33 @@ Invisible buffers and batch sessions record every prompt and show a message."
         (puthash key stored table)
         stored)
     event))
+
+(defun hermes-chat--prompt-expiry-matches-p (prompt event)
+  "Return non-nil when expiry EVENT owns pending PROMPT exactly."
+  (and prompt
+       (equal (hermes-chat--prompt-event-type prompt)
+              (hermes-chat--prompt-event-type event))
+       (equal (hermes-chat--event-string prompt '(:request-id :request_id))
+              (hermes-chat--event-string event '(:request-id :request_id)))
+       (equal (hermes-chat--event-string prompt '(:session-id :session_id))
+              (hermes-chat--event-string event '(:session-id :session_id)))))
+
+(defun hermes-chat--expire-pending-prompt (event)
+  "Remove the exact pending prompt owned by expiry EVENT."
+  (when-let* ((key (hermes-chat--event-string event '(:request-id :request_id)))
+              ((hermes-chat--event-string event '(:session-id :session_id)))
+              (prompt (and (hash-table-p hermes-chat--pending-prompts)
+                           (gethash key hermes-chat--pending-prompts)))
+              ((hermes-chat--prompt-expiry-matches-p prompt event)))
+    (remhash key hermes-chat--pending-prompts)
+    (when (hash-table-p hermes-chat--auto-prompt-keys)
+      (remhash key hermes-chat--auto-prompt-keys))
+    (hermes-chat--notify-state-change)
+    (unless (hermes-chat--show-pending-prompt-state)
+      (hermes-chat--set-header-state
+       :status (if (hermes-chat--active-turn-p) 'running 'ready)
+       :activity (plist-get event :content)))
+    t))
 
 (defun hermes-chat--ensure-auto-prompt-keys ()
   "Return the current buffer's scheduled auto-prompt key table."
@@ -486,6 +518,12 @@ Return the next pending prompt."
   (and (hermes-chat--approval-prompt-p prompt)
        (equal (hermes-transport--get result 'resolved) 0)))
 
+(defun hermes-chat--prompt-response-expired-p (result)
+  "Return non-nil when RESULT reports an expired backend prompt."
+  (equal (hermes-transport--scalar-string
+          (hermes-transport--get result 'status))
+         "expired"))
+
 (defun hermes-chat--prompt-response-stale (context prompt)
   "Clear stale PROMPT owned by CONTEXT without claiming a response was sent."
   (let ((status (concat (hermes-chat--prompt-display-name prompt)
@@ -541,6 +579,9 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
 
 (defun hermes-chat--prompt-response-context (client key prompt all)
   "Claim ownership context for CLIENT, KEY, PROMPT, and ALL scope."
+  (unless (eq prompt (and (hash-table-p hermes-chat--pending-prompts)
+                          (gethash key hermes-chat--pending-prompts)))
+    (user-error "Hermes prompt request is no longer pending"))
   (when (hermes-chat--prompt-response-in-flight-p key)
     (user-error "Hermes is accepting the previous prompt response"))
   (let ((token (list key))
@@ -586,7 +627,8 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
   (lambda (result)
     (hermes-chat--in-buffer (plist-get context :buffer)
       (when (hermes-chat--prompt-response-current-p context)
-        (if (hermes-chat--approval-response-unresolved-p prompt result)
+        (if (or (hermes-chat--approval-response-unresolved-p prompt result)
+                (hermes-chat--prompt-response-expired-p result))
             (hermes-chat--prompt-response-stale context prompt)
           (hermes-chat--prompt-response-complete
            context prompt canceled result))))))

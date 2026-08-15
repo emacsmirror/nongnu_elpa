@@ -2475,6 +2475,21 @@ This is the contract that replaces hand-mirroring every event name: an invented
     (should-not (plist-member event :start))
     (should-not (plist-member event :count))))
 
+(ert-deftest hermes-transport-normalizes-secret-expiry ()
+  "A `secret.expire' becomes an owned prompt-expiry status event."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "secret.expire")
+                             (session_id . "sid")
+                             (payload . ((request_id . "req-secret")))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (eq (plist-get event :type) 'status))
+    (should (plist-get event :prompt-expire-p))
+    (should (equal (plist-get event :prompt-type) "secret"))
+    (should (equal (plist-get event :status) "expired"))
+    (should (equal (plist-get event :session-id) "sid"))
+    (should (equal (plist-get event :request-id) "req-secret"))
+    (should (equal (plist-get event :content) "Secret request expired"))))
+
 (ert-deftest hermes-transport-dashboard-normalizes-notification-metadata ()
   "notification.show carries level/kind/ttl/key/id; warning levels prefix the text."
   (let (events)

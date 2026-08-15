@@ -452,6 +452,69 @@ stays available."
         (should-not (string-match-p "secret-token-abc" (buffer-string)))
         (should-not (gethash "req-secret" hermes-chat--pending-prompts))))))
 
+(ert-deftest hermes-chat-expires-secret-request-without-clearing-newer-one ()
+  "A secret expiry removes only its exact pending request."
+  (let ((hermes-chat-auto-prompt-requests nil))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-expired") (prompt . "Old secret")))
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-current") (prompt . "Current secret")))
+      (puthash "req-expired" t (hermes-chat--ensure-auto-prompt-keys))
+      (hermes-test--emit-dashboard-prompt
+       client "secret.expire" '((request_id . "req-expired")))
+      (should-not (gethash "req-expired" hermes-chat--pending-prompts))
+      (should-not (gethash "req-expired" hermes-chat--auto-prompt-keys))
+      (should (gethash "req-current" hermes-chat--pending-prompts))
+      (hermes-test--emit-dashboard-prompt
+       client "secret.expire" '((request_id . "req-expired")))
+      (should (gethash "req-current" hermes-chat--pending-prompts))
+      (let ((header (hermes-test--header-line-string)))
+        (should (string-match-p "Secret requested" header))
+        (should (string-match-p "Current secret" header))
+        (should-not (string-match-p "expired" header)))
+      (should (string-match-p "Secret request expired" (buffer-string))))))
+
+(ert-deftest hermes-chat-does-not-claim-expired-secret-response-succeeded ()
+  "An expired response result must not render a false success."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
+             (lambda (_client _request-id _value &optional resolve _reject)
+               (funcall resolve '((status . "expired"))))))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-expired-result") (prompt . "Enter secret")))
+      (hermes-chat-respond-to-prompt "req-expired-result" "secret-value")
+      (should-not (gethash "req-expired-result" hermes-chat--pending-prompts))
+      (should (string-match-p "Secret request no longer pending"
+                              (buffer-string)))
+      (should-not (string-match-p "Secret response sent" (buffer-string)))
+      (should-not (string-match-p "secret-value" (buffer-string))))))
+
+(ert-deftest hermes-chat-does-not-send-secret-expired-while-reading ()
+  "Expiry during minibuffer input invalidates the captured prompt."
+  (let (sent)
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-read-expire") (prompt . "Enter secret")))
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _)
+                   (hermes-test--emit-dashboard-prompt
+                    client "secret.expire"
+                    '((request_id . "req-read-expire")))
+                   "secret-value"))
+                ((symbol-function 'hermes-dashboard-transport-secret-respond)
+                 (lambda (&rest _args) (setq sent t))))
+        (should-error
+         (hermes-chat-respond-to-prompt "req-read-expire")
+         :type 'user-error))
+      (should-not sent)
+      (should-not (gethash "req-read-expire" hermes-chat--pending-prompts))
+      (should-not (string-match-p "secret-value" (buffer-string))))))
+
 (ert-deftest hermes-chat-handles-terminal-read-request ()
   (let (respond-request respond-text)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-terminal-read-respond)
