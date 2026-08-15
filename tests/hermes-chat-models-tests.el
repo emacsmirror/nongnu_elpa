@@ -334,5 +334,33 @@
     (should (equal saved "deepseek"))
     (should (equal (car applied) "model"))))
 
+(ert-deftest hermes-chat-model-picker-does-not-key-connect-oauth-provider ()
+  "Picking an unauthenticated OAuth model never enters the API-key flow."
+  (let (read-key saved applied notice)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt labels &rest _) (car labels)))
+              ((symbol-function 'read-passwd)
+               (lambda (&rest _) (setq read-key t) "oauth-secret"))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (&rest _) (setq saved t)))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (&rest _) (setq applied t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq notice (apply #'format format-string args)))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-active-session-id "sid-oauth"
+              hermes-chat--dashboard-session-ready-p t)
+        (hermes-chat--prompt-and-set-model
+         (current-buffer) 'fake-client
+         '((providers . (((slug . "openai-codex") (name . "OpenAI Codex")
+                          (auth_type . "oauth") (authenticated . nil)
+                          (models . ("gpt-5.6")))))))))
+    (should-not read-key)
+    (should-not saved)
+    (should-not applied)
+    (should (string-match-p "OAuth" notice))
+    (should (string-match-p "OpenAI Codex" notice))))
+
 (provide 'hermes-chat-models-tests)
 ;;; hermes-chat-models-tests.el ends here

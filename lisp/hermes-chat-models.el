@@ -208,20 +208,31 @@ confirmation prompt."
         (if (null candidates)
             (message "Hermes: no models available to switch to")
           (let* ((choice (completing-read "Switch model: " labels nil t))
-                 (candidate (cdr (assoc choice candidates))))
+                 (candidate (cdr (assoc choice candidates)))
+                 (provider (and candidate
+                                (hermes-chat--find-provider
+                                 result (plist-get candidate :provider)))))
             (unless (or (string-empty-p choice) (null candidate))
               (if (not (hermes-chat--model-switch-current-p context))
                   (message "Hermes: model switch is stale or the chat is busy")
-                (if (plist-get candidate :authenticated)
+                (let ((auth-type (hermes-transport--scalar-string
+                                  (hermes-transport--get provider 'auth_type))))
+                  (cond
+                   ((plist-get candidate :authenticated)
                     (hermes-chat--apply-model
-                     buffer client candidate nil context)
-                  (hermes-chat--connect-provider-candidate
-                   buffer client
-                   (hermes-chat--find-provider
-                    result (plist-get candidate :provider))
-                   (lambda ()
-                     (hermes-chat--apply-model
-                      buffer client candidate nil context))))))))))))
+                     buffer client candidate nil context))
+                   ((equal auth-type "api_key")
+                    (hermes-chat--connect-provider-candidate
+                     buffer client provider
+                     (lambda ()
+                       (hermes-chat--apply-model
+                        buffer client candidate nil context))))
+                   (t
+                    (message
+                     "Hermes: %s requires %s authentication; authenticate it before switching models"
+                     (hermes-chat--model-provider-label provider)
+                     (if (equal auth-type "oauth") "OAuth"
+                       (or auth-type "external"))))))))))))))
 
 (defun hermes-chat-switch-model (&optional refresh)
   "Switch the model used by the current Hermes chat session.
