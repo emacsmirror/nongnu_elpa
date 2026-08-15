@@ -506,18 +506,14 @@ RUNS is the detail run list."
                                      (hermes-cron--profile job))
                                     profile))
                    (updates (hermes-cron--read-updates job)))
-              (when (and (hermes-cron--origin-instance-p origin owner)
-                         (hermes-browser--request-current-mode-p
-                          origin generation 'hermes-cron-mode))
+              (when (hermes-cron--origin-instance-p origin owner)
                 (hermes--promise-map
                  (hermes-cron--update-job client job-id job-profile updates)
-                 #'hermes-cron--checked-result)))))))
-     (lambda (_result)
-       (when (and (hermes-cron--origin-instance-p origin owner)
-                  (hermes-browser--request-current-mode-p
-                   origin generation 'hermes-cron-mode))
-         (message "Hermes: updated %s" job-id)
-         (hermes-cron--refresh-origin origin))))))
+                 (lambda (result)
+                   (hermes-cron--checked-result result)
+                   (when (hermes-cron--origin-instance-p origin owner)
+                     (message "Hermes: updated %s" job-id)
+                     (hermes-cron--refresh-origin origin)))))))))))))
 
 (defun hermes-cron-trigger ()
   "Trigger the cron job at point immediately."
