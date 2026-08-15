@@ -3622,6 +3622,90 @@ again as one rather than as the local file it is cached in."
           (should (eq (plist-get (cdr vm-folder-test--reopened) :access-method)
                       'imap)))))))
 
+;;; Which file the folder is cached in (emacs-vm/vm#670)
+
+(ert-deftest vm-folder-test-the-cache-file-of-an-imap-folder ()
+  "An IMAP folder answers with the file VM keeps it in locally, which is
+the one named after the maildrop rather than after the mailbox."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (spec "imap:mail.example.invalid:143:inbox:login:alice:*"))
+    (with-temp-buffer
+      (setq major-mode 'vm-mode)
+      (setq vm-folder-access-method 'imap
+            vm-folder-access-data (make-vector 20 nil))
+      (vm-set-folder-imap-maildrop-spec spec)
+      (should (equal (vm-folder-cache-file)
+                     (vm-imap-make-filename-for-spec spec)))
+      (should (string-prefix-p "/tmp/vm-test-cache/imap-cache-"
+                               (vm-folder-cache-file))))))
+
+(ert-deftest vm-folder-test-the-cache-file-of-a-pop-folder ()
+  "A POP folder answers the same way, through its own naming."
+  (let ((vm-pop-folder-cache-directory "/tmp/vm-test-cache")
+        (spec "pop:mail.example.invalid:110:pass:alice:*"))
+    (with-temp-buffer
+      (setq major-mode 'vm-mode)
+      (setq vm-folder-access-method 'pop
+            vm-folder-access-data (make-vector 20 nil))
+      (vm-set-folder-pop-maildrop-spec spec)
+      (should (equal (vm-folder-cache-file)
+                     (vm-pop-make-filename-for-spec spec))))))
+
+(ert-deftest vm-folder-test-a-local-folder-has-no-cache-file ()
+  "A folder that is a file is not cached anywhere: it is the file."
+  (with-temp-buffer
+    (setq major-mode 'vm-mode)
+    (setq vm-folder-access-method nil)
+    (should-not (vm-folder-cache-file))))
+
+(ert-deftest vm-folder-test-the-cache-file-can-be-asked-about-a-buffer ()
+  "The buffer to ask about can be given, so a reader in the summary or in
+another folder can ask about this one."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (spec "imap:mail.example.invalid:143:inbox:login:alice:*"))
+    (let ((folder (generate-new-buffer " *test folder*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer folder
+              (setq major-mode 'vm-mode)
+              (setq vm-folder-access-method 'imap
+                    vm-folder-access-data (make-vector 20 nil))
+              (vm-set-folder-imap-maildrop-spec spec))
+            (with-temp-buffer
+              (setq vm-folder-access-method nil)
+              (should (equal (vm-folder-cache-file folder)
+                             (vm-imap-make-filename-for-spec spec)))
+              ;; and about itself, still nothing
+              (should-not (vm-folder-cache-file))))
+        (kill-buffer folder)))))
+
+;;; Saving the folder buffer
+
+(ert-deftest vm-folder-test-saving-the-buffer-unblocks-new-mail ()
+  "`vm-save-buffer' clears the block a recovery puts on new mail: the file
+and the buffer agree again once it has written."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-mode)
+    (setq vm-block-new-mail t)
+    (cl-letf (((symbol-function 'save-buffer) #'ignore)
+              ((symbol-function 'vm-display) #'ignore)
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-write-index-file-maybe) #'ignore))
+      (vm-save-buffer nil))
+    (should-not vm-block-new-mail)))
+
+(ert-deftest vm-folder-test-saving-a-virtual-folder-is-refused ()
+  "A virtual folder holds no messages of its own, so there is nothing to
+write; the refusal says so rather than saving the presentation."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 2)
+    (setq major-mode 'vm-virtual-mode)
+    (let ((text-quoting-style 'grave)
+          (saved nil))
+      (cl-letf (((symbol-function 'save-buffer) (lambda (&rest _) (setq saved t)))
+                ((symbol-function 'vm-display) #'ignore))
+        (should-error (vm-save-buffer nil) :type 'error)
+        (should-not saved)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
