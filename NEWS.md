@@ -62,6 +62,27 @@ not exist:
 `C-h v` or `C-h f` on the old name will say it is void; the replacement for
 each is in the list above.
 
+Twelve more went with them, having been marked obsolete just as long but
+needing a little more than a deleted line:
+
+  * `vm-imap-server-list`, `vm-load-headers-only`, `vm-mime-show-alternatives`
+    and `vm-summary-faces-mode` (the variable; the command of that name stays)
+    were variables nothing read -- setting one had done nothing for years
+  * `vm-mime-yank-attachments` was an alias of `vm-include-mime-attachments`
+  * `vm-mime-save-all-attachments` and `vm-mime-delete-all-attachments` were
+    aliases of `vm-save-all-attachments` and `vm-delete-all-attachments`
+  * `vm-run-message-hook` and `vm-run-message-hook-with-args` took their
+    arguments the other way round from `vm-run-hook-on-message` and its
+    `-with-args`
+  * `vm-mime-fsfemacs-encode-composition` and
+    `vm-mime-fsfemacs-encode-text-part` were older copies of
+    `vm-mime-encode-composition-internal` and `vm-mime-encode-text-part`,
+    called from nowhere
+  * `vm-mime-forward-local-external-bodies` decided the default of
+    `vm-mime-forward-saved-attachments`, which is now simply `t`.  If you set
+    the old one to t, set `vm-mime-forward-saved-attachments` to nil instead:
+    it says the same thing the other way up.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a

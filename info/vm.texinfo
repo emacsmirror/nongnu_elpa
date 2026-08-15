@@ -1489,10 +1489,9 @@ names instead.  For example, visiting @code{becky:INBOX} would create a VM
 folder named @code{becky} and visiting @code{crickle:INBOX} would create a
 VM folder named @code{crickle}.
 
-@vindex vm-imap-server-list
-The customization variable @code{vm-imap-server-list}, used in older
-versions of VM, is deprecated.  Please use @code{vm-imap-account-alist}
-instead.
+The variable @code{vm-imap-server-list}, used in older versions of VM, was
+deprecated in 8.1.0 and is gone; @code{vm-imap-account-alist} replaces it,
+in a different format that names each account.
 
 @anchor{@acronym{IMAP} Synchronization}
 @unnumberedsubsec @acronym{IMAP} Synchronization
@@ -1650,11 +1649,10 @@ and previewing an external message fetches it.  So the message you are looking
 at is normally loaded, and a folder where every message should be external will
 still show one that is not.
 
-@vindex vm-load-headers-only
-The obsolete variable @code{vm-load-headers-only} was replaced by
-@code{vm-enable-external-messages} in version 8.2.0.  Setting it has no
-effect, so older instructions that mention it need translating to the two
-settings above.
+The variable @code{vm-load-headers-only} was replaced by
+@code{vm-enable-external-messages} in version 8.2.0 and is now gone, so
+older instructions that mention it need translating to the two settings
+above.
 
 @vindex vm-external-fetch-message-for-presentation
 Normally, the messages that are not present in the folder are fetched

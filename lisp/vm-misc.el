@@ -780,9 +780,6 @@ reconnected to its server by reading it."
 	(narrow-to-region (vm-headers-of message) (vm-text-end-of message))
 	(run-hooks hook-variable)))))
 
-(defun vm-run-message-hook (message hook-variable)
-  (vm-run-hook-on-message hook-variable message))
-(make-obsolete 'vm-run-message-hook 'vm-run-hook-on-message "8.2.0")
 
 (defun vm-run-hook-on-message-with-args (hook-variable message &rest args)
   (with-current-buffer (vm-buffer-of message)
@@ -792,10 +789,6 @@ reconnected to its server by reading it."
 	(narrow-to-region (vm-headers-of message) (vm-text-end-of message))
 	(apply 'run-hook-with-args hook-variable args)))))
 
-(defun vm-run-message-hook-with-args (message hook-variable &rest args)
-  (apply 'vm-run-hook-on-message-with-args hook-variable message args))
-(make-obsolete 'vm-run-message-hook-with-args
-	       'vm-run-hook-on-message-with-args "8.2.0")
 
 (defun vm-error-free-call (function &rest args)
   (condition-case nil

@@ -4,7 +4,7 @@
 @c what the code says about that symbol.
 
 @macro vmdocvmcompactfolder
-@deffn Command vm-compact-folder &rest rest
+@deffn Command vm-compact-folder &rest --cl-rest--
 @findex vm-compact-folder
 Expunge messages with the @code{deleted} attribute.
 For normal folders this means that the deleted messages are
@@ -90,7 +90,7 @@ Like vm-delete-message, except the deletion direction is reversed.
 @end macro
 
 @macro vmdocvmexpungefolder
-@deffn Command vm-expunge-folder &rest rest
+@deffn Command vm-expunge-folder &rest --cl-rest--
 @findex vm-expunge-folder
 Expunge messages with the @code{deleted} attribute.
 For normal folders this means that the deleted messages are
@@ -1671,7 +1671,7 @@ this facility is only available for IMAP folders.
 @end macro
 
 @macro vmdocvmreordermessageheaders
-@deffn Command vm-reorder-message-headers arg1 &rest rest
+@deffn Command vm-reorder-message-headers message &rest --cl-rest--
 @findex vm-reorder-message-headers
 
 @end deffn
@@ -1720,7 +1720,7 @@ run @code{vm-expunge-folder} followed by @code{vm-save-folder}.
 @macro vmdocvmsavebuffer
 @deffn Command vm-save-buffer prefix
 @findex vm-save-buffer
-
+Not documented.
 @end deffn
 
 @end macro
@@ -4221,7 +4221,7 @@ this case and not prompt you for it in the minibuffer.
 @end macro
 
 @macro vmdocvmattachfile
-@deffn Command vm-attach-file file type &optional charset description no-suggested-filename
+@deffn Command vm-attach-file file type &optional charset description _no-suggested-filename
 @findex vm-attach-file
 Attach a file to a VM composition buffer to be sent along with the message.
 The file is not inserted into the buffer and MIME encoded until
@@ -4596,7 +4596,7 @@ List mime part structure of the current message.
 @macro vmdocvmmimeQdecoderegion
 @deffn Command vm-mime-Q-decode-region start end
 @findex vm-mime-Q-decode-region
-
+Not documented.
 @end deffn
 
 @end macro
@@ -4636,7 +4636,7 @@ this case and not prompt you for it in the minibuffer.
 @end macro
 
 @macro vmdocvmmimeattachfile
-@deffn Command vm-mime-attach-file file type &optional charset description no-suggested-filename
+@deffn Command vm-mime-attach-file file type &optional charset description _no-suggested-filename
 @findex vm-mime-attach-file
 Attach a file to a VM composition buffer to be sent along with the message.
 The file is not inserted into the buffer and MIME encoded until
@@ -7016,7 +7016,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupattachmentmenu
 @deffn Command vm-menu-popup-attachment-menu event
 @findex vm-menu-popup-attachment-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7024,7 +7024,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupcontextmenu
 @deffn Command vm-menu-popup-context-menu event
 @findex vm-menu-popup-context-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7032,7 +7032,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupfsfemacsmenu
 @deffn Command vm-menu-popup-fsfemacs-menu event &optional menu
 @findex vm-menu-popup-fsfemacs-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7040,7 +7040,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupimagemenu
 @deffn Command vm-menu-popup-image-menu event
 @findex vm-menu-popup-image-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7048,7 +7048,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupmailtourlbrowsermenu
 @deffn Command vm-menu-popup-mailto-url-browser-menu event
 @findex vm-menu-popup-mailto-url-browser-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7056,7 +7056,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupmimedisposemenu
 @deffn Command vm-menu-popup-mime-dispose-menu event
 @findex vm-menu-popup-mime-dispose-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7064,7 +7064,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupmodemenu
 @deffn Command vm-menu-popup-mode-menu event
 @findex vm-menu-popup-mode-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7072,7 +7072,7 @@ as the recipient.  Not a reply: no subject, no references, no citation.
 @macro vmdocvmmenupopupurlbrowsermenu
 @deffn Command vm-menu-popup-url-browser-menu event
 @findex vm-menu-popup-url-browser-menu
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7160,7 +7160,7 @@ Default value: @code{32}
 @macro vmdocvmminibuffercompleteword
 @deffn Command vm-minibuffer-complete-word &optional exiting
 @findex vm-minibuffer-complete-word
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7209,7 +7209,7 @@ Mouse’.
 @macro vmdocvmmousepopuporselect
 @deffn Command vm-mouse-popup-or-select event
 @findex vm-mouse-popup-or-select
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7217,7 +7217,7 @@ Mouse’.
 @macro vmdocvmmousereadfilenamequithandler
 @deffn Command vm-mouse-read-file-name-quit-handler &optional normal-exit
 @findex vm-mouse-read-file-name-quit-handler
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7225,7 +7225,7 @@ Mouse’.
 @macro vmdocvmmousereadstringquithandler
 @deffn Command vm-mouse-read-string-quit-handler &optional normal-exit
 @findex vm-mouse-read-string-quit-handler
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7233,7 +7233,7 @@ Mouse’.
 @macro vmdocvmmousesendurlatevent
 @deffn Command vm-mouse-send-url-at-event event
 @findex vm-mouse-send-url-at-event
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7363,7 +7363,7 @@ Move backward to the nearest new or unread message, if there is one.
 @macro vmdocvmbiffdeletepopup
 @deffn Command vm-biff-delete-popup &optional wf
 @findex vm-biff-delete-popup
-
+Not documented.
 @end deffn
 
 @end macro
@@ -7440,7 +7440,7 @@ Put focus on the folder frame and select the appropriate message.
 @macro vmdocvmbiffselectmessagemouse
 @deffn Command vm-biff-select-message-mouse event
 @findex vm-biff-select-message-mouse
-
+Not documented.
 @end deffn
 
 @end macro
@@ -9215,7 +9215,7 @@ it is suppressed if the variable @code{vm-auto-next-message} is nil.
 @macro vmdocvmemitmimedecodingmessage
 @deffn Command vm-emit-mime-decoding-message format &rest args
 @findex vm-emit-mime-decoding-message
-
+Not documented.
 @end deffn
 
 @end macro
@@ -9232,7 +9232,7 @@ as necessary.
 @macro vmdocvmenergizeurls
 @deffn Command vm-energize-urls &optional clean-only
 @findex vm-energize-urls
-
+Not documented.
 @end deffn
 
 @end macro
@@ -9240,7 +9240,7 @@ as necessary.
 @macro vmdocvmenergizeurlsinmessageregion
 @deffn Command vm-energize-urls-in-message-region &optional start end
 @findex vm-energize-urls-in-message-region
-
+Not documented.
 @end deffn
 
 @end macro
@@ -9810,7 +9810,7 @@ as replied to, forwarded, etc, if appropriate.
 @end macro
 
 @macro vmdocvmmailsendandexit
-@deffn Command vm-mail-send-and-exit &rest ignored
+@deffn Command vm-mail-send-and-exit &rest _ignored
 @findex vm-mail-send-and-exit
 Send message and maybe delete the composition buffer.
 The value of @code{vm-keep-sent-messages} determines whether the composition buffer
@@ -10839,7 +10839,7 @@ This command should NOT be used to save message to mail folders; use
 @end macro
 
 @macro vmdocvmsavemessagetoimapfolder
-@deffn Command vm-save-message-to-imap-folder folder &optional count mlist quiet
+@deffn Command vm-save-message-to-imap-folder folder &optional count mlist _quiet
 @findex vm-save-message-to-imap-folder
 Save the current message to an IMAP folder.
 Prefix arg COUNT means save this message and the next COUNT-1
@@ -11369,6 +11369,18 @@ queried interactively.  The property is a keyword such as edited,
 collapsed or outgoing which has an associated face such as
 vm-summary-edited.  See @code{vm-summary-faces-alist} for a list
 of available face names.
+@end deffn
+
+@end macro
+
+@macro vmdocvmsummaryfacesmode
+@deffn Command vm-summary-faces-mode &optional arg
+@findex vm-summary-faces-mode
+Toggle @code{vm-summary-faces-mode}.  Optional argument ARG should be 0
+or 1, indicating whether the summary faces should be off or on.
+
+When it is on, the VM summary buffers are decorated with faces, i.e.,
+fonts and colors, for easy recogniton of the message status.
 @end deffn
 
 @end macro
@@ -12322,7 +12334,7 @@ in the buffer.  The function is expected to make the message
 @macro vmdocvmtoolbardeleteundeletemessage
 @deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
 @findex vm-toolbar-delete/undelete-message
-
+Not documented.
 @end deffn
 
 @end macro
@@ -12482,7 +12494,7 @@ the message.  See the documentation for the function vm-reply for details.
 @end macro
 
 @macro vmdocvmtoolbarvisitcommand
-@deffn Command vm-toolbar-visit-command arg1 &rest rest
+@deffn Command vm-toolbar-visit-command folder &optional read-only &rest --cl-rest--
 @findex vm-toolbar-visit-command
 Visit a mail file.
 VM will parse and present its messages to you in the usual way.
@@ -12952,7 +12964,7 @@ Default value: @code{12000}
 @end macro
 
 @macro vmdocvm
-@deffn Command vm &rest rest
+@deffn Command vm &optional folder &rest --cl-rest--
 @findex vm
 Read mail under Emacs.
 Optional first arg FOLDER specifies the folder to visit.  It can
@@ -12983,9 +12995,9 @@ deleted messages.  Use @code{###} to expunge deleted messages.
 @end macro
 
 @macro vmdocvmcomposemail
-@deffn Command vm-compose-mail &optional to subject other-headers continue switch-function yank-action send-actions return-action &rest ignored
+@deffn Command vm-compose-mail &optional to subject other-headers continue switch-function yank-action send-actions return-action &rest _ignored
 @findex vm-compose-mail
-
+Not documented.
 @end deffn
 
 @end macro
@@ -13379,7 +13391,7 @@ Customize VM by setting variables and store them in the @code{vm-init-file}.
 @end macro
 
 @macro vmdocvmotherframe
-@deffn Command vm-other-frame &rest rest
+@deffn Command vm-other-frame &optional folder read-only &rest --cl-rest--
 @findex vm-other-frame
 Like vm, but run in a newly created frame.
 @end deffn
@@ -13387,7 +13399,7 @@ Like vm, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmotherwindow
-@deffn Command vm-other-window &rest rest
+@deffn Command vm-other-window &optional folder read-only &rest --cl-rest--
 @findex vm-other-window
 Like vm, but run in a different window.
 @end deffn
@@ -13442,7 +13454,7 @@ Display and the value of the variable @code{vm-version-commit}.
 @end macro
 
 @macro vmdocvmvisitfolder
-@deffn Command vm-visit-folder arg1 &rest rest
+@deffn Command vm-visit-folder folder &optional read-only &rest --cl-rest--
 @findex vm-visit-folder
 Visit a mail file.
 VM will parse and present its messages to you in the usual way.
@@ -13465,7 +13477,7 @@ message-pointer, no retrieval of new mail.
 @end macro
 
 @macro vmdocvmvisitfolderotherframe
-@deffn Command vm-visit-folder-other-frame arg1 &rest rest
+@deffn Command vm-visit-folder-other-frame folder &optional read-only &rest --cl-rest--
 @findex vm-visit-folder-other-frame
 Like vm-visit-folder, but run in a newly created frame.
 @end deffn
@@ -13473,7 +13485,7 @@ Like vm-visit-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitfolderotherwindow
-@deffn Command vm-visit-folder-other-window arg1 &rest rest
+@deffn Command vm-visit-folder-other-window folder &optional read-only &rest --cl-rest--
 @findex vm-visit-folder-other-window
 Like vm-visit-folder, but run in a different window.
 @end deffn
@@ -13481,7 +13493,7 @@ Like vm-visit-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitimapfolder
-@deffn Command vm-visit-imap-folder arg1 &rest rest
+@deffn Command vm-visit-imap-folder folder &optional read-only &rest --cl-rest--
 @findex vm-visit-imap-folder
 Visit a IMAP mailbox.
 VM will present its messages to you in the usual way.  Messages
@@ -13505,7 +13517,7 @@ visited folder.
 @end macro
 
 @macro vmdocvmvisitimapfolderotherframe
-@deffn Command vm-visit-imap-folder-other-frame arg1 &rest rest
+@deffn Command vm-visit-imap-folder-other-frame folder &optional read-only &rest --cl-rest--
 @findex vm-visit-imap-folder-other-frame
 Like vm-visit-imap-folder, but run in a newly created frame.
 @end deffn
@@ -13513,7 +13525,7 @@ Like vm-visit-imap-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitimapfolderotherwindow
-@deffn Command vm-visit-imap-folder-other-window arg1 &rest rest
+@deffn Command vm-visit-imap-folder-other-window folder &optional read-only &rest --cl-rest--
 @findex vm-visit-imap-folder-other-window
 Like vm-visit-imap-folder, but run in a different window.
 @end deffn
@@ -13521,7 +13533,7 @@ Like vm-visit-imap-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitpopfolder
-@deffn Command vm-visit-pop-folder arg1 &rest rest
+@deffn Command vm-visit-pop-folder folder &optional read-only &rest --cl-rest--
 @findex vm-visit-pop-folder
 Visit a POP mailbox.
 VM will present its messages to you in the usual way.  Messages
@@ -13543,7 +13555,7 @@ visited folder.
 @end macro
 
 @macro vmdocvmvisitpopfolderotherframe
-@deffn Command vm-visit-pop-folder-other-frame arg1 &rest rest
+@deffn Command vm-visit-pop-folder-other-frame folder &optional read-only &rest --cl-rest--
 @findex vm-visit-pop-folder-other-frame
 Like vm-visit-pop-folder, but run in a newly created frame.
 @end deffn
@@ -13551,7 +13563,7 @@ Like vm-visit-pop-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitpopfolderotherwindow
-@deffn Command vm-visit-pop-folder-other-window arg1 &rest rest
+@deffn Command vm-visit-pop-folder-other-window folder &optional read-only &rest --cl-rest--
 @findex vm-visit-pop-folder-other-window
 Like vm-visit-pop-folder, but run in a different window.
 @end deffn
@@ -13559,7 +13571,7 @@ Like vm-visit-pop-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitthunderbirdfolder
-@deffn Command vm-visit-thunderbird-folder arg1 &rest rest
+@deffn Command vm-visit-thunderbird-folder folder &optional read-only &rest --cl-rest--
 @findex vm-visit-thunderbird-folder
 Visit a mail file maintained by Thunderbird.
 VM will parse and present its messages to you in the usual way.
