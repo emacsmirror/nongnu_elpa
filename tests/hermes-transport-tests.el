@@ -2204,6 +2204,26 @@ This is the contract that replaces hand-mirroring every event name: an invented
     (should-not (eq (plist-get event :type) 'unknown))
     (should (equal (plist-get event :content) "hello from the future"))))
 
+(ert-deftest hermes-transport-dashboard-generic-events-support-object-forms ()
+  "Generic frames preserve session identity across supported object forms."
+  (let* ((alist-frame
+          '((params . ((type . "subagent.progress")
+                       (session_id . "sid")
+                       (payload . ((text . "hello")))))))
+         (plist-frame
+          '(:params (:type "subagent.progress" :session_id "sid"
+                    :payload (:text "hello"))))
+         (hash-frame
+          (json-parse-string
+           "{\"params\":{\"type\":\"subagent.progress\",\"session_id\":\"sid\",\"payload\":{\"text\":\"hello\"}}}"
+           :object-type 'hash-table)))
+    (dolist (frame (list alist-frame plist-frame hash-frame))
+      (let ((event (car (hermes-dashboard-transport--normalize-event-frame
+                         frame))))
+        (should (eq (plist-get event :type) 'progress))
+        (should (equal (plist-get event :session-id) "sid"))
+        (should (equal (plist-get event :content) "hello"))))))
+
 (ert-deftest hermes-transport-dashboard-drops-voice-and-skin-events ()
   "Voice and skin events are dropped, not surfaced as Unknown events."
   (should-not (hermes-test--dashboard-events

@@ -859,12 +859,13 @@ chat header can show them."
 
 (defun hermes-dashboard-transport--generic-event (type params payload)
   "Return generic normalized event for TYPE/PARAMS/PAYLOAD."
-  (let* ((object (or (hermes-dashboard-transport--payload-object payload) '()))
-         (session-id (hermes-transport--get params 'session_id))
-         (raw (if session-id
-                  (append object `((session_id . ,session-id)))
-                object)))
-    (list (hermes-transport-normalize-event raw type))))
+  (let* ((object (or (hermes-dashboard-transport--payload-object payload)
+                     '((content))))
+         (event (hermes-transport-normalize-event object type))
+         (session-id (hermes-transport--get params 'session_id)))
+    (when session-id
+      (setq event (plist-put event :session-id session-id)))
+    (list event)))
 
 (defun hermes-dashboard-transport--tool-generating-event (type params payload)
   "Return a header-only `thinking' event for a `tool.generating' PAYLOAD.
