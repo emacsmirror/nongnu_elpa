@@ -56,9 +56,22 @@
 (defvar-local hermes-chat--handoff-poll nil
   "Active handoff poll state with :id, :timer, :backoff, :platform, and :deadline.")
 
+(defvar-local hermes-chat--handoff-owner nil
+  "Identity exclusively owning this session during a handoff lifecycle.")
+
+(defun hermes-chat--handoff-owner-current-p (id)
+  "Return non-nil when ID owns the current handoff lifecycle."
+  (and hermes-chat--handoff-owner
+       (eq id hermes-chat--handoff-owner)))
+
+(defun hermes-chat--handoff-submit-inhibit-reason ()
+  "Return the handoff submission guard while this session is transferring."
+  (and hermes-chat--handoff-owner "Session handoff is in progress"))
+
 (defun hermes-chat--handoff-poll-current-p (id)
   "Return non-nil when ID names the current handoff poll."
-  (and hermes-chat--handoff-poll
+  (and (hermes-chat--handoff-owner-current-p id)
+       hermes-chat--handoff-poll
        (eq id (plist-get hermes-chat--handoff-poll :id))))
 
 (defun hermes-chat--handoff-stop ()
@@ -66,7 +79,8 @@
   (when hermes-chat--handoff-poll
     (when-let* ((timer (plist-get hermes-chat--handoff-poll :timer)))
       (cancel-timer timer))
-    (setq hermes-chat--handoff-poll nil)))
+    (setq hermes-chat--handoff-poll nil))
+  (setq hermes-chat--handoff-owner nil))
 
 (defun hermes-chat--handoff-schedule (buffer delay &optional id)
   "Schedule BUFFER's ID poll after DELAY seconds."
@@ -115,28 +129,24 @@
           (_ (hermes-chat--handoff-reschedule buffer)))))))
 
 (defun hermes-chat--handoff-timeout (buffer &optional id)
-  "Fail BUFFER's ID handoff after its poll deadline elapses."
+  "Report BUFFER's overdue ID handoff while retaining exact ownership."
   (let ((id (or id (plist-get hermes-chat--handoff-poll :id))))
     (when (hermes-chat--handoff-poll-current-p id)
       (let ((platform (plist-get hermes-chat--handoff-poll :platform)))
-        (hermes-chat--handoff-stop)
-        (hermes-dashboard-transport-handoff-fail
-         hermes-chat--dashboard-client
-         :error "client poll timed out"
-         :session-id hermes-chat--dashboard-active-session-id
-         :resolve #'ignore :reject #'ignore)
-        (hermes-chat--in-buffer buffer
-          (hermes-chat--command-error
-           (format "Handoff to %s timed out" platform)))))))
+        (setq hermes-chat--handoff-poll
+              (plist-put hermes-chat--handoff-poll :deadline nil))
+        (hermes-chat--command-error
+         (format "Handoff to %s timed out; still waiting" platform))
+        (hermes-chat--handoff-reschedule buffer id)))))
 
 (defun hermes-chat--handoff-poll-tick (buffer &optional id)
   "Run one `handoff.state' poll for BUFFER and ID."
   (hermes-chat--in-buffer buffer
-    (let ((id (or id (plist-get hermes-chat--handoff-poll :id))))
+    (let* ((id (or id (plist-get hermes-chat--handoff-poll :id)))
+           (deadline (plist-get hermes-chat--handoff-poll :deadline)))
       (when (hermes-chat--handoff-poll-current-p id)
-        (if (time-less-p (plist-get hermes-chat--handoff-poll :deadline)
-                         (current-time))
-            (hermes-chat--handoff-timeout buffer)
+        (if (and deadline (time-less-p deadline (current-time)))
+            (hermes-chat--handoff-timeout buffer id)
           (hermes-dashboard-transport-handoff-state
            hermes-chat--dashboard-client
            :session-id hermes-chat--dashboard-active-session-id
@@ -149,17 +159,20 @@
                        (when (hermes-chat--handoff-poll-current-p id)
                          (hermes-chat--handoff-reschedule buffer))))))))))
 
-(defun hermes-chat--handoff-start-poll (platform)
-  "Begin bounded polling of `handoff.state' for PLATFORM in the current buffer."
-  (hermes-chat--handoff-stop)
-  (setq hermes-chat--handoff-poll
-        (list :id (gensym "hermes-handoff-")
-              :platform platform
-              :backoff hermes-chat--handoff-poll-initial-delay
-              :deadline (time-add (current-time)
-                                  hermes-chat--handoff-poll-deadline)))
-  (hermes-chat--handoff-schedule (current-buffer)
-                                 hermes-chat--handoff-poll-initial-delay))
+(defun hermes-chat--handoff-start-poll (platform &optional owner)
+  "Begin bounded polling for PLATFORM under optional handoff OWNER."
+  (let ((token (or owner (gensym "hermes-handoff-"))))
+    (when (or (null owner) (hermes-chat--handoff-owner-current-p token))
+      (when-let* ((timer (plist-get hermes-chat--handoff-poll :timer)))
+        (cancel-timer timer))
+      (setq hermes-chat--handoff-owner token
+            hermes-chat--handoff-poll
+            (list :id token :platform platform
+                  :backoff hermes-chat--handoff-poll-initial-delay
+                  :deadline (time-add (current-time)
+                                      hermes-chat--handoff-poll-deadline)))
+      (hermes-chat--handoff-schedule
+       (current-buffer) hermes-chat--handoff-poll-initial-delay token))))
 
 (defun hermes-chat--handoff-targets (result)
   "Return (PLATFORM . META) cells from a `complete.slash' RESULT.
@@ -191,28 +204,52 @@ falls back to free-form input when the gateway reports none."
 (defun hermes-chat--handoff-begin (buffer platform)
   "Queue a handoff of BUFFER's session to PLATFORM and start polling."
   (hermes-chat--in-buffer buffer
-    (hermes-chat--insert-local-status
-     (format "Requesting handoff to %s…" platform) 'handoff)
-    (hermes-chat--set-header-state :status 'handoff :activity platform)
-    (hermes-dashboard-transport-handoff-request
-     hermes-chat--dashboard-client platform
-     :session-id hermes-chat--dashboard-active-session-id
-     :resolve (lambda (_result)
-                (hermes-chat--in-buffer buffer
-                  (hermes-chat--handoff-start-poll platform)))
-     :reject (lambda (message)
-               (hermes-chat--in-buffer buffer
-                 (hermes-chat--command-error message))))))
+    (when hermes-chat--handoff-owner
+      (user-error "Session handoff is already in progress"))
+    (let ((owner (gensym "hermes-handoff-")))
+      (setq hermes-chat--handoff-owner owner)
+      (hermes-chat--insert-local-status
+       (format "Requesting handoff to %s…" platform) 'handoff)
+      (hermes-chat--set-header-state :status 'handoff :activity platform)
+      (condition-case err
+          (hermes-dashboard-transport-handoff-request
+           hermes-chat--dashboard-client platform
+           :session-id hermes-chat--dashboard-active-session-id
+           :resolve (lambda (_result)
+                      (hermes-chat--in-buffer buffer
+                        (hermes-chat--handoff-start-poll platform owner)))
+           :reject (lambda (message)
+                     (hermes-chat--in-buffer buffer
+                       (when (hermes-chat--handoff-owner-current-p owner)
+                         (hermes-chat--handoff-stop)
+                         (hermes-chat--command-error message)))))
+        (error
+         (when (hermes-chat--handoff-owner-current-p owner)
+           (hermes-chat--handoff-stop))
+         (signal (car err) (cdr err)))))))
+
+(defun hermes-chat--handoff-context-current-p (client session-id)
+  "Return non-nil when CLIENT and SESSION-ID remain attached and idle."
+  (and (eq client hermes-chat--dashboard-client)
+       (equal session-id hermes-chat--dashboard-active-session-id)
+       (hermes-chat--dashboard-session-attached-p)
+       (not (hermes-chat--active-turn-p))))
 
 (defun hermes-chat--handoff-prompt-platform (buffer)
   "Fetch live handoff targets for BUFFER, then prompt and begin the handoff."
-  (let ((pick (lambda (result)
-                (hermes-chat--in-buffer buffer
-                  (let ((platform (hermes-chat--handoff-read-target result)))
-                    (unless (string-empty-p platform)
-                      (hermes-chat--handoff-begin buffer platform)))))))
+  (let* ((client hermes-chat--dashboard-client)
+         (session-id hermes-chat--dashboard-active-session-id)
+         (pick (lambda (result)
+                 (hermes-chat--in-buffer buffer
+                   (when (hermes-chat--handoff-context-current-p
+                          client session-id)
+                     (let ((platform (hermes-chat--handoff-read-target result)))
+                       (when (and (not (string-empty-p platform))
+                                  (hermes-chat--handoff-context-current-p
+                                   client session-id))
+                         (hermes-chat--handoff-begin buffer platform))))))))
     (hermes-dashboard-transport-complete-slash
-     hermes-chat--dashboard-client "/handoff "
+     client "/handoff "
      :resolve pick
      :reject (lambda (_message) (funcall pick nil)))))
 
@@ -234,6 +271,8 @@ attached, idle session; the gateway transfers it to the platform's home channel.
         (hermes-chat--handoff-begin buffer given)
       (hermes-chat--handoff-prompt-platform buffer))))
 
+(hermes-chat-register-submit-inhibit-function
+ #'hermes-chat--handoff-submit-inhibit-reason)
 (hermes-chat-register-cleanup-function #'hermes-chat--handoff-stop)
 
 (provide 'hermes-chat-handoff)

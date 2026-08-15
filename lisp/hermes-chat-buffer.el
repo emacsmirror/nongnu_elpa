@@ -859,6 +859,22 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   "Add FUNCTION to `hermes-chat-state-change-hook'."
   (add-hook 'hermes-chat-state-change-hook function))
 
+(defvar hermes-chat-submit-inhibit-functions nil
+  "Functions returning a reason that this chat must reject submission.")
+
+(defun hermes-chat-register-submit-inhibit-function (function)
+  "Register FUNCTION as a submission ownership guard."
+  (add-hook 'hermes-chat-submit-inhibit-functions function))
+
+(defun hermes-chat--submit-inhibit-reason ()
+  "Return the first reason this chat must reject submission, or nil."
+  (run-hook-with-args-until-success 'hermes-chat-submit-inhibit-functions))
+
+(defun hermes-chat--ensure-submit-allowed ()
+  "Signal a user error when another operation exclusively owns this chat."
+  (when-let* ((reason (hermes-chat--submit-inhibit-reason)))
+    (user-error "%s" reason)))
+
 (defvar-local hermes-chat--status-state nil
   "Plist describing the live status shown in the chat header.")
 
@@ -938,7 +954,8 @@ METADATA is stored as the entry's `:metadata' plist."
       hermes-chat--dashboard-running-p
       hermes-chat--server-queued-assistant-id
       hermes-chat--unsettled-submit-context
-      hermes-chat--queued-submit-id))
+      hermes-chat--queued-submit-id
+      (hermes-chat--submit-inhibit-reason)))
 
 (defun hermes-chat--trailing-active-assistant-node ()
   "Return the trailing assistant node during an active turn, if any."
@@ -972,6 +989,7 @@ calls it so this file never references the submit pipeline defined above it.")
 (defun hermes-chat--queue-or-submit-content (content &optional display)
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
+  (hermes-chat--ensure-submit-allowed)
   (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
       (progn
         (hermes-chat--queue-content content nil display)

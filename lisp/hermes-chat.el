@@ -888,6 +888,7 @@ extends the input instead of prepending a blank line to it."
 DISPLAY lets a slash skill send its full payload while showing a compact line.
 QUEUE-ENTRY identifies a queued message retained until transport acceptance.
 Return non-nil when the transport request starts."
+  (hermes-chat--ensure-submit-allowed)
   (when (and (hermes-chat--active-turn-p) (null queue-entry))
     (user-error "%s" (hermes-chat--busy-message)))
   (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
@@ -913,6 +914,7 @@ Return non-nil when the transport request starts."
 (defun hermes-chat-queue-message (&optional message)
   "Queue MESSAGE to send after the active Hermes turn, or send now if idle."
   (interactive)
+  (hermes-chat--ensure-submit-allowed)
   (let ((content (string-trim (or message (hermes-chat-input-string)))))
     (when (string-empty-p content)
       (user-error "No Hermes input to queue"))
@@ -994,6 +996,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 (defun hermes-chat-steer-message (&optional message)
   "Steer the active dashboard run with MESSAGE, falling back to queue."
   (interactive)
+  (hermes-chat--ensure-submit-allowed)
   (let ((content (string-trim (or message (hermes-chat-input-string))))
         (buffer (current-buffer)))
     (when (string-empty-p content)
@@ -1136,6 +1139,7 @@ session key is preserved, so the conversation can still be resumed."
     (user-error "This Hermes chat has no session to disconnect"))
   (when-let* ((assistant-id hermes-chat--pending-assistant-id))
     (hermes-chat--mark-assistant assistant-id 'disconnected nil t))
+  (run-hooks 'hermes-chat-cleanup-functions)
   (hermes-chat--invalidate-transport-state)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
@@ -1418,6 +1422,7 @@ durable session continues on send."
     (user-error "Not in a Hermes chat buffer"))
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is not in the Hermes chat input area"))
+  (hermes-chat--ensure-submit-allowed)
   (let ((content (hermes-chat--trimmed-input))
         (clarify-key (hermes-chat--pending-clarify-key))
         sent-p)
