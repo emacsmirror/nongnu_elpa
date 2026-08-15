@@ -815,6 +815,82 @@ to tell the user about them."
         (vm-undo-describe (list 'vm-set-buffer-modified-p nil))
         (should-not said)))))
 
+;;; Adding and deleting labels
+
+(defmacro vm-undo-test--labelling (&rest body)
+  "Run BODY in a folder of two messages with an empty label obarray.
+`one' and `two' are the messages, and `known' is what the obarray holds."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder
+       (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+               "From: alice@example.com\nSubject: one\n\nBody.\n\n"
+               "From alice@example.com Sat Aug  8 14:25:13 2026\n"
+               "From: alice@example.com\nSubject: two\n\nBody.\n\n")
+     (setq major-mode 'vm-mode)
+     (setq vm-label-obarray (make-vector 29 0))
+     (let ((one (car vm-message-list))
+           (two (nth 1 vm-message-list)))
+       (cl-flet ((known ()
+                   (let (names)
+                     (mapatoms (lambda (s) (push (symbol-name s) names))
+                               vm-label-obarray)
+                     (sort names #'string<))))
+         ,@body))))
+
+(ert-deftest vm-undo-test-adding-a-label-keeps-the-labels-there-already ()
+  "A label is added to the labels the message has, not put in place of
+them, and it is added to the folder's list of labels so that completion
+offers it."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (should-not (vm-add-or-delete-message-labels "Urgent" (list one) 'all))
+    (should (equal (sort (copy-sequence (vm-decoded-labels-of one)) #'string<)
+                   '("urgent" "work")))
+    ;; a label is lower case whatever you typed
+    (should (equal (known) '("urgent")))
+    (should (vm-attribute-modflag-of one))))
+
+(ert-deftest vm-undo-test-adding-a-label-twice-adds-it-once ()
+  "Adding a label the message has already leaves one of it: the labels are
+a set, and a repeat would show twice in the summary."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (vm-add-or-delete-message-labels "work" (list one) 'all)
+    (should (equal (vm-decoded-labels-of one) '("work")))))
+
+(ert-deftest vm-undo-test-an-existing-only-label-must-be-known-already ()
+  "`vm-add-existing-message-labels' adds only labels the folder already
+uses, and returns the others rather than inventing them -- which is what
+makes a typo visible instead of making a new label."
+  (vm-undo-test--labelling
+    (vm-add-or-delete-message-labels "work" (list one) 'all)
+    (should (equal (vm-add-or-delete-message-labels "work bogus" (list two)
+                                                   'existing-only)
+                   '("bogus")))
+    (should (equal (vm-decoded-labels-of two) '("work")))
+    (should (equal (known) '("work")))))
+
+(ert-deftest vm-undo-test-deleting-a-label-leaves-the-others-alone ()
+  "Deleting a label takes that label off the message and touches nothing
+else -- not the other labels, and not the folder's list of labels, which
+`vm-expunge-label' is for."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work" "work" "urgent"))
+    (vm-add-or-delete-message-labels "urgent" (list one) nil)
+    (should (equal (vm-decoded-labels-of one) '("work" "work")))
+    (should-not (known))))
+
+(ert-deftest vm-undo-test-a-label-of-nothing-changes-no-message ()
+  "A string with no label in it is not a label to add: the messages are
+left as they are rather than being given an empty one."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (vm-set-attribute-modflag-of one nil)
+    (vm-add-or-delete-message-labels "   " (list one two) 'all)
+    (should (equal (vm-decoded-labels-of one) '("work")))
+    (should-not (vm-decoded-labels-of two))
+    (should-not (vm-attribute-modflag-of one))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here
