@@ -86,9 +86,13 @@ Options, from =./test-runner --help=:
 | --verbose     | deeper printing                            |
 | --skip-live, --skip-send, --no-build | modify a run              |
 
-=make optional-packages= fetches bbdb, emacs-w3m and vcard into
-=test/opt/elpa=; it is the one target left that is not the runner, because it
-downloads rather than tests.
+=make test= fetches bbdb, emacs-w3m and vcard into =test/opt/elpa= before it
+runs anything, and records that with the stamp =test/opt/installed=: a run
+should cover as much as the machine can, not skip whatever nobody remembered
+to install.  That is the one thing in the tests that needs the network, it
+happens once, and a failure warns rather than stops -- a missing companion is
+the state those tests are written to tolerate.  To fetch again, remove the
+stamp.  =make optional-packages= is the same rule by name.
 
 The optional packages are what the bbdb, w3m and vcard tests need; without them
 those tests skip.  Fetching them takes the network, so =make clean= leaves them

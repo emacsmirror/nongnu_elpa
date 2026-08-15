@@ -287,6 +287,19 @@ runner or vm-test-init.el is that split coming back."
             (forward-line 1)))))
     (should (equal (nreverse offenders) nil))))
 
+(ert-deftest vm-build-test-a-test-run-fetches-the-optional-packages-first ()
+  "The test target depends on the optional-package stamp, so a run covers as
+much as the machine can rather than skipping whatever nobody remembered to
+install.  A stamp because the packages land in directories whose names carry a
+version, which no rule can name in advance."
+  (let ((makefile (expand-file-name "test/Makefile.in" vm-build-test--root)))
+    (with-temp-buffer
+      (insert-file-contents makefile)
+      (goto-char (point-min))
+      (should (re-search-forward "^OPTIONAL_STAMP *= *\\(.*\\)$" nil t))
+      (goto-char (point-min))
+      (should (re-search-forward "^test: .*\\$(OPTIONAL_STAMP)" nil t)))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here
