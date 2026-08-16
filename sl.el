@@ -1334,7 +1334,7 @@ An empty DIRECTORY initializes the current directory."
                             (list (car item) (cadr item) (caddr item)))
                           table))
          (entry (read-multiple-choice "Sl" choices))
-         (choice (if (consp entry) (car entry) entry))
+         (choice (car entry))
          (selected (and choice (assq choice table))))
     (pcase selected
       (`(,_ ,_ ,_ ,cmd ,interactivep)
