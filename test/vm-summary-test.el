@@ -103,6 +103,27 @@
   "Test truncation when string is short enough."
   (should (equal (vm-truncate-string "hi" 10) "hi")))
 
+(ert-deftest vm-summary-test-truncate-string-negative ()
+  "A negative width keeps the last columns."
+  (should (equal (vm-truncate-string "hello world" -5) "world")))
+
+(ert-deftest vm-summary-test-truncate-string-wide-fits-the-width ()
+  "A double-width character that would cross the limit is dropped, not kept.
+Keeping it made a %-3s field three columns wide come back four, so every
+column after it in the summary line was out by one."
+  (should (equal (string-width (vm-truncate-string "あああ" 3)) 2))
+  (should (equal (vm-truncate-string "あああ" 3) "あ")))
+
+(ert-deftest vm-summary-test-truncate-string-wide-from-the-end ()
+  "The same when counting from the end."
+  (should (equal (string-width (vm-truncate-string "あああ" -3)) 2))
+  (should (equal (vm-truncate-string "あああ" -3) "あ")))
+
+(ert-deftest vm-summary-test-truncate-string-wide-on-a-boundary ()
+  "A width that a double-width character lands on exactly keeps it."
+  (should (equal (vm-truncate-string "あああ" 4) "ああ"))
+  (should (equal (vm-truncate-string "あああ" -4) "ああ")))
+
 ;;; vm-default-chop-full-name tests
 
 (ert-deftest vm-summary-test-chop-name-angle-brackets ()

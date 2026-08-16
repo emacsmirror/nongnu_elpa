@@ -1130,32 +1130,14 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
       (concat (make-string (- width sw) ?0) string))))
 
 (defun vm-truncate-string (string width)
-  "Truncate STRING to WIDTH number of columns."
-  (cond ((fboundp 'trucate-string-to-width)
-	 (truncate-string-to-width string width))
-	((fboundp 'char-width)
-	 (cond ((> width 0)
-		(let ((i 0)
-		      (lim (length string))
-		      (total 0))
-		  (while (and (< i lim) (< total width))
-		    (setq total (+ total (char-width (aref string i)))
-			  i (1+ i)))
-		  (if (< total width)
-		      string
-		    (substring string 0 i))))
-	       (t
-		(let ((i (1- (length string)))
-		      (lim -1)
-		      (total 0))
-		  (setq width (- width))
-		  (while (and (> i lim) (< total width))
-		    (setq total (+ total (char-width (aref string i)))
-			  i (1- i)))
-		  (if (< total width)
-		      string
-		    (substring string (1+ i)))))))
-	(t (vm-truncate-roman-string string width))))
+  "Truncate STRING to WIDTH number of columns.
+A negative WIDTH keeps the last (- WIDTH) columns rather than the first.
+Either way the result is never wider than asked for: a character that would
+cross the limit is dropped, not kept."
+  (if (>= width 0)
+      (truncate-string-to-width string width)
+    (let ((columns (string-width string)))
+      (truncate-string-to-width string columns (max 0 (+ columns width))))))
 
 (defun vm-truncate-roman-string (string width)
   "Truncate STRING in Roman alphabet to WIDTH number of columns."
