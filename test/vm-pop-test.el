@@ -532,6 +532,77 @@ Regression test for issue #460; see the IMAP counterpart."
       (delete-file file)
       (auth-source-forget-all-cached))))
 
+;;; One UIDL wait loop, not two (emacs-vm/vm#473)
+
+(defun vm-pop-test--uidl-obarray-alist (obarray-or-nil)
+  "The (UID . NUMBER) pairs OBARRAY-OR-NIL holds, sorted, or nil."
+  (when obarray-or-nil
+    (let (pairs)
+      (mapatoms (lambda (symbol)
+                  (push (cons (symbol-name symbol) (symbol-value symbol))
+                        pairs))
+                obarray-or-nil)
+      (sort pairs (lambda (a b) (string< (car a) (car b)))))))
+
+(defmacro vm-pop-test--getting-uidl-data (responses &rest body)
+  "Run BODY with `vm-pop-get-uidl-data' reading RESPONSES.
+The folder's process is the mock one, and the command it sends goes into
+the same buffer it reads from, which is what the real session does."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-pop-session ,responses
+     (let ((process vm-test-mock-process))
+       (setq vm-pop-read-point (point-min-marker))
+       ;; `vm-folder-pop-process' is a defsubst, so a compiled caller has it
+       ;; inlined and stubbing the symbol does nothing: the folder's access
+       ;; data is set instead, which is what it reads.
+       (setq vm-folder-access-data (make-vector 5 nil))
+       (aset vm-folder-access-data 1 process)
+       (cl-letf (((symbol-function 'vm-pop-send-command) #'ignore))
+         ,@body))))
+
+(ert-deftest vm-pop-test-uidl-data-is-the-uids-by-number ()
+  "`vm-pop-get-uidl-data' answers an obarray of UID to message number.
+That is the way round `vm-pop-get-synchronization-data' asks the question:
+it has a UID from the local cache and wants to know which message on the
+server it is."
+  (vm-pop-test--getting-uidl-data
+      '("+OK\r\n1 UID001\r\n2 UID002\r\n3 UID003\r\n.\r\n")
+    (should (equal (vm-pop-test--uidl-obarray-alist (vm-pop-get-uidl-data))
+                   '(("UID001" . "1") ("UID002" . "2") ("UID003" . "3"))))))
+
+(ert-deftest vm-pop-test-uidl-data-without-uidl-support ()
+  "A server that refuses UIDL gives nil, not an empty obarray: the caller
+has to tell \"no UIDs\" from \"no messages\", and only one of those means it
+cannot synchronize at all."
+  (vm-pop-test--getting-uidl-data '("-ERR UIDL not supported\r\n")
+    (should-not (vm-pop-get-uidl-data))))
+
+(ert-deftest vm-pop-test-uidl-data-for-an-empty-mailbox ()
+  "An empty mailbox gives an empty obarray, which is not nil.  The server
+answered; it has nothing to say."
+  (vm-pop-test--getting-uidl-data '("+OK\r\n.\r\n")
+    (let ((there (vm-pop-get-uidl-data)))
+      (should there)
+      (should-not (vm-pop-test--uidl-obarray-alist there)))))
+
+(ert-deftest vm-pop-test-uidl-is-read-in-one-place ()
+  "REGRESSION: `vm-pop-get-uidl-data' reads through
+`vm-pop-read-uidl-long-response' rather than repeating its wait loop.
+
+It used to carry a copy -- the same `re-search-forward' for the dot, the
+same `vm-pop-accept-process-output', the same parser -- so a fix to one
+missed the other, and the asynchronous rewrite (emacs-vm/vm#473) would have
+converted one and left the other blocking."
+  (let ((called nil))
+    (vm-pop-test--getting-uidl-data '("+OK\r\n1 UID001\r\n.\r\n")
+      (cl-letf* ((standard (symbol-function 'vm-pop-read-uidl-long-response))
+                 ((symbol-function 'vm-pop-read-uidl-long-response)
+                  (lambda (&rest args)
+                    (setq called t)
+                    (apply standard args))))
+        (vm-pop-get-uidl-data)))
+    (should called)))
+
 (provide 'vm-pop-test)
 
 ;;; vm-pop-test.el ends here
