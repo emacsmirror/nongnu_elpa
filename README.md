@@ -44,5 +44,9 @@ which is already a good fit for them.
 - `vc-sl-global-switches` — extra switches passed to every `sl` command
   run by VC.
 - `vc-sl-diff-switches` — switches for `sl diff` under VC.
+
+## Thank you
+
+Thanks to feedback and comment by Philip Kaluđerčić. Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name.
 - `vc-sl-log-short-format` / `vc-sl-log-format` — templates used for the
   short and long VC log buffers.
