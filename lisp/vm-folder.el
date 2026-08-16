@@ -4814,6 +4814,67 @@ implementation than the expected one damages mail -- so this asks instead."
 (defun vm-movemail-specific-spool-file-p (file)
   (string-match "^po:[^:]+$" file))
 
+;; The non-blocking POP layer, which the mail check uses.  Required here
+;; rather than declared: the check runs from a timer, and a timer is a poor
+;; place to discover that a file has not been loaded.
+(require 'vm-pop-net)
+
+(defvar vm-mail-check-answers nil
+  "What the last check of each of this folder's maildrops said.
+An alist of maildrop to t or nil.  A check that does not wait cannot answer
+in the round that started it, so its answer is kept here and counted by the
+rounds after it (emacs-vm/vm#473).")
+(make-variable-buffer-local 'vm-mail-check-answers)
+
+(defvar vm-mail-checks-outstanding nil
+  "The maildrops of this folder with a check still to answer.
+One check at a time for each: the timer fires every
+`vm-mail-check-interval\=' seconds, and a server slower than that would
+otherwise be asked again before it had answered the first time.")
+(make-variable-buffer-local 'vm-mail-checks-outstanding)
+
+(defun vm-mail-waiting-p (maildrop)
+  "What the last check of MAILDROP said, for this folder."
+  (cdr (assoc maildrop vm-mail-check-answers)))
+
+(defun vm-note-mail-waiting (buffer maildrop answer)
+  "Record in BUFFER what a check of MAILDROP found, and show it.
+
+ANSWER is t, nil, or the error that stopped the check -- an error leaves
+the last answer standing rather than reporting no mail, which is what a
+folder would show while a server was down.
+
+Called from a process filter, so it takes the buffer it was given: the one
+that is current belongs to whoever was typing."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq vm-mail-checks-outstanding
+	    (delete maildrop vm-mail-checks-outstanding))
+      (unless (and answer (not (eq answer t)))
+	(setf (alist-get maildrop vm-mail-check-answers nil nil #'equal)
+	      answer)
+	(let ((waiting (and (rassq t vm-mail-check-answers) t)))
+	  (unless (eq waiting vm-spooled-mail-waiting)
+	    (setq vm-spooled-mail-waiting waiting)
+	    (intern (buffer-name) vm-buffers-needing-display-update)
+	    (run-hooks 'vm-spooled-mail-waiting-hook)
+	    (vm-update-summary-and-mode-line)))))))
+
+(defun vm-start-mail-check (maildrop)
+  "Ask MAILDROP whether it has mail, and carry on without the answer."
+  (unless (member maildrop vm-mail-checks-outstanding)
+    (let ((buffer (current-buffer)))
+      (setq vm-mail-checks-outstanding
+	    (cons maildrop vm-mail-checks-outstanding))
+      (condition-case err
+	  (vm-pop-net-check-mail
+	   maildrop
+	   (lambda (answer) (vm-note-mail-waiting buffer maildrop answer)))
+	(error
+	 (setq vm-mail-checks-outstanding
+	       (delete maildrop vm-mail-checks-outstanding))
+	 (signal (car err) (cdr err)))))))
+
 (defun vm-check-for-spooled-mail (&optional interactive this-buffer-only)
   (if vm-global-block-new-mail
       nil
@@ -4850,16 +4911,28 @@ implementation than the expected one damages mail -- so this asks instead."
 			  ((vm-pop-folder-spec-p maildrop)
 			   (setq meth 'vm-pop-check-mail))
 			  (t (setq meth 'vm-spool-check-mail)))
-		    (if (not interactive)
-			;; allow no error to be signaled
-			(condition-case nil
-			    (setq mail-waiting
-				  (or mail-waiting
-				      (funcall meth maildrop)))
-			  (error nil))
+		    (cond
+		     ;; A POP maildrop VM can ask without waiting is asked
+		     ;; without waiting: the check is started here and its
+		     ;; answer arrives at `vm-note-mail-waiting'.  What this
+		     ;; round contributes is the answer the last one got
+		     ;; (emacs-vm/vm#473).
+		     ((and (eq meth 'vm-pop-check-mail)
+			   (vm-pop-net-checkable-p maildrop))
+		      (vm-start-mail-check maildrop)
+		      (setq mail-waiting
+			    (or mail-waiting (vm-mail-waiting-p maildrop))))
+		     ((not interactive)
+		      ;; allow no error to be signaled
+		      (condition-case nil
+			  (setq mail-waiting
+				(or mail-waiting
+				    (funcall meth maildrop)))
+			(error nil)))
+		     (t
 		      (setq mail-waiting
 			    (or mail-waiting
-				(funcall meth maildrop)))))))
+				(funcall meth maildrop))))))))
 	  (setq triples (cdr triples)))
 	mail-waiting ))))
 

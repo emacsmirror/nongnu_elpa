@@ -275,6 +275,21 @@ has already seen, and saying \"no mail\" would be a guess."
       (when (process-live-p process)
 	(process-send-string process "QUIT\r\n")))))
 
+(defun vm-pop-net-checkable-p (source)
+  "Whether SOURCE can be checked for mail without waiting.
+
+Plain POP with a password VM holds.  A pop-ssl or pop-ssh maildrop still
+negotiates or starts a tunnel inside the connect, and a maildrop whose
+password is `*\=' would ask for one -- neither of which a timer should do
+behind the reader."
+  (condition-case nil
+      (let ((parts (vm-pop-parse-spec-to-list source)))
+	(and (equal (car parts) "pop")
+	     (nth 5 parts)
+	     (not (equal (nth 5 parts) "*"))
+	     t))
+    (error nil)))
+
 (defun vm-pop-net-check-mail (source callback)
   "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
 

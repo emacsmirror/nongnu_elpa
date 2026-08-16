@@ -279,6 +279,120 @@ then a caller that meets this uses the blocking implementation."
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
                 :type 'vm-pop-net-unsupported))
 
+;;; The mail check that runs on a timer
+
+(defmacro vm-pop-net-test--in-a-folder-with-spool (spec &rest body)
+  "Visit a folder whose spool file is MOCK's maildrop, and run BODY in it.
+SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
+  (declare (indent 1) (debug t))
+  `(vm-pop-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((dir (file-name-as-directory (make-temp-file "vm-check" t)))
+            (folder (expand-file-name "inbox" dir))
+            (crash (expand-file-name "crash" dir))
+            (vm-init-file nil)
+            (vm-preferences-file nil)
+            (vm-confirm-quit nil)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (vm-folder-history vm-folder-history)
+            (vm-last-visit-folder vm-last-visit-folder)
+            (vm-global-block-new-mail nil)
+            ;; visiting must not fetch the mail first: what is being tested
+            ;; is the check that says whether there is any
+            (vm-auto-get-new-mail nil)
+            (vm-pop-server-timeout 3)
+            (vm-pop-retrieved-messages nil)
+            (vm-crash-box crash)
+            (vm-spool-files (list (list folder (vm-pop-mock-spec ,(car spec))
+                                        crash)))
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (write-region "" nil folder nil 'quiet)
+             (cl-letf (((symbol-function 'vm-display) #'ignore))
+               (vm-visit-folder folder)
+               ,@body))
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory dir t)))))
+
+(defun vm-pop-net-test--settle (&optional seconds)
+  "Let the outstanding mail checks answer."
+  (let ((deadline (+ (float-time) (or seconds 5))))
+    (while (and vm-mail-checks-outstanding (< (float-time) deadline))
+      (accept-process-output nil 0.05))))
+
+(ert-deftest vm-pop-net-test-the-mail-check-does-not-wait ()
+  "`vm-check-for-spooled-mail' starts the check and returns.  It cannot know
+the answer yet -- the connection has only just been made -- and that is the
+point: the check runs on a timer, and every round of it stopped Emacs for as
+long as the server took."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let ((started (float-time)))
+      (should-not (vm-check-for-spooled-mail nil t))
+      (should (< (- (float-time) started) 0.5))
+      (should vm-mail-checks-outstanding))
+    ;; and the answer arrives afterwards
+    (vm-pop-net-test--settle)
+    (should vm-spooled-mail-waiting)
+    (should-not vm-mail-checks-outstanding)))
+
+(ert-deftest vm-pop-net-test-the-next-round-counts-the-last-answer ()
+  "The round after the answer reports the mail: a check that cannot answer
+in the round that started it would otherwise never report anything."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (vm-check-for-spooled-mail nil t)
+    (vm-pop-net-test--settle)
+    (should (vm-check-for-spooled-mail nil t))))
+
+(ert-deftest vm-pop-net-test-an-empty-maildrop-reports-nothing ()
+  "A maildrop with nothing in it answers nil, and the folder says so."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages nil)
+    (vm-check-for-spooled-mail nil t)
+    (vm-pop-net-test--settle)
+    (should-not vm-spooled-mail-waiting)
+    (should-not (vm-check-for-spooled-mail nil t))))
+
+(ert-deftest vm-pop-net-test-one-check-at-a-time-for-a-maildrop ()
+  "A second round while the first check is still out does not start another.
+The timer fires every `vm-mail-check-interval' seconds and a server slower
+than that would otherwise collect a connection per round."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice)
+                                                 :silent-on "UIDL")
+    (vm-check-for-spooled-mail nil t)
+    (should (equal (length vm-mail-checks-outstanding) 1))
+    (vm-check-for-spooled-mail nil t)
+    (vm-check-for-spooled-mail nil t)
+    (should (equal (length vm-mail-checks-outstanding) 1))))
+
+(ert-deftest vm-pop-net-test-a-failed-check-leaves-the-last-answer ()
+  "A check that fails does not report \"no mail\": a folder that had mail
+waiting goes on saying so while the server is down, which is the truth as
+far as anyone knows."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (vm-check-for-spooled-mail nil t)
+    (vm-pop-net-test--settle)
+    (should vm-spooled-mail-waiting)
+    (vm-note-mail-waiting (current-buffer)
+                          (nth 1 (car vm-spool-files))
+                          '(vm-pop-net-error "server said no"))
+    (should vm-spooled-mail-waiting)))
+
+(ert-deftest vm-pop-net-test-a-maildrop-that-needs-waiting-is-left-alone ()
+  "A pop-ssl maildrop is checked the old way: its connect negotiates, which
+is a wait of its own and not converted yet.  `vm-pop-net-checkable-p' is
+what tells the two apart."
+  (should (vm-pop-net-checkable-p "pop:127.0.0.1:110:pass:user:secret"))
+  (should-not (vm-pop-net-checkable-p "pop-ssl:host:995:pass:user:secret"))
+  (should-not (vm-pop-net-checkable-p "pop:127.0.0.1:110:pass:user:*")))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
