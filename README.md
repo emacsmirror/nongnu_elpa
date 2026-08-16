@@ -1,16 +1,16 @@
-# sl.el
+# sapling.el
 
 A fast Emacs interface for [Sapling](https://sapling-scm.com/)
 (`sl`). It is designed to feel lighter while being intentionally
-small. Sl.el strives to make emacs version control in MS Windows more comfortable.
+small. Sapling.el strives to make emacs version control in MS Windows more comfortable.
 
 For Emacs's generic version-control commands (`C-x v d`, `C-x v =`,
-`C-x v l`, ...), install the separate [`vc-sl`](https://github.com/swithinchan/vc-sl)
+`C-x v l`, ...), install the separate [`vc-sapling`](https://github.com/swithinchan/vc-sapling)
 package.
 
 ## Features
 
-- `M-x sl-status` opens a status buffer showing the smartlog and working
+- `M-x sapling-status` opens a status buffer showing the smartlog and working
   copy changes.
 - Async process output: status, smartlog, log, diff, pull, push, rebase, etc.
   do not block Emacs.
@@ -21,13 +21,13 @@ package.
   `x`, `r`, `z`, `F`, `P`, `n`, `p`, ...).
 - Emacs-style diff key: `=` or `C-x v =` in the status buffer, matching
   `vc-diff`.
-- `sl-diff` uses `diff-mode`, so removed lines are shown in red and added
+- `sapling-diff` uses `diff-mode`, so removed lines are shown in red and added
   lines in green using Emacs-native font locking (no terminal color-code
   parsing).
 - Other output commands (`log`, `smartlog`, `show`, `grep`, etc.) run with
-  ANSI color enabled and `sl-status` highlights smartlog changesets in
+  ANSI color enabled and `sapling-status` highlights smartlog changesets in
   yellow, matching colored `sl` output in a terminal.
-- A lightweight dispatch menu (`M-x sl-menu`) with no external
+- A lightweight dispatch menu (`M-x sapling-menu`) with no external
   dependencies.
 - Stack workflows: `fold`, `graft`, `hide`, `unhide`, `uncommit`, `unamend`,
   `undo`, `redo`, `next`, `previous`.
@@ -45,15 +45,15 @@ package.
 For now, clone or copy this directory and add it to `load-path`:
 
 ```elisp
-(add-to-list 'load-path "/path/to/sl")
-(require 'sl)
+(add-to-list 'load-path "/path/to/sapling")
+(require 'sapling)
 
 ;; Optional: bind the dispatch menu or status buffer to Magit-like keys.
-(global-set-key (kbd "C-x g") #'sl-status)
-(global-set-key (kbd "C-x v s") #'sl-menu)
+(global-set-key (kbd "C-x g") #'sapling-status)
+(global-set-key (kbd "C-x v s") #'sapling-menu)
 ```
 
-`sl.el` has `;;;###autoload` cookies, so it can also be installed with
+`sapling.el` has `;;;###autoload` cookies, so it can also be installed with
 `package-install-file`.
 
 ## Windows notes
@@ -67,18 +67,18 @@ The package targets Windows Emacs explicitly:
 - Output is decoded as UTF-8 (`utf-8-auto`), which also normalizes CRLF output
   from Windows processes.
 - `HGPLAIN=1` and `SL_AUTOMATION=1` are set for every `sl` process so output is
-  not paginated or interactive.  When `sl-use-color` is non-nil,
+  not paginated or interactive.  When `sapling-use-color` is non-nil,
   `SL_AUTOMATION_EXCEPT=color` and `--config color.mode=ansi --color=always`
   force ANSI color codes, which Emacs translates into faces.
-- `w32-pipe-read-delay` is lowered to `sl-w32-pipe-read-delay` (default
+- `w32-pipe-read-delay` is lowered to `sapling-w32-pipe-read-delay` (default
   `0`) while talking to `sl`, which makes process output significantly faster
   on Windows.
 
 If your Sapling is installed as `sl.exe` but `sl` is not on `exec-path`,
-customize `sl-program`:
+customize `sapling-program`:
 
 ```elisp
-(setq sl-program "C:/Program Files/Sapling/sl.exe")
+(setq sapling-program "C:/Program Files/Sapling/sl.exe")
 ```
 
 ## Status buffer keys
@@ -116,17 +116,17 @@ customize `sl-program`:
 
 ## Configuration
 
-- `sl-program` — Sapling executable name or path (default `"sl"`).
-- `sl-use-color` — colorize command output with ANSI colors (default `t`).
-- `sl-log-limit` — number of commits in `sl-log` (default `100`).
-- `sl-w32-pipe-read-delay` — Windows pipe read delay in ms.  Defaults to
+- `sapling-program` — Sapling executable name or path (default `"sl"`).
+- `sapling-use-color` — colorize command output with ANSI colors (default `t`).
+- `sapling-log-limit` — number of commits in `sapling-log` (default `100`).
+- `sapling-w32-pipe-read-delay` — Windows pipe read delay in ms.  Defaults to
   the current `w32-pipe-read-delay`, or `0`; set to `nil` to leave the
   global value unchanged.
-- `sl-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
+- `sapling-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
   coloring (default `t`).
-- `sl-status-buffer-name`, `sl-smartlog-buffer-name`,
-  `sl-log-buffer-name`, `sl-diff-buffer-name`,
-  `sl-output-buffer-name` — buffer names.
+- `sapling-status-buffer-name`, `sapling-smartlog-buffer-name`,
+  `sapling-log-buffer-name`, `sapling-diff-buffer-name`,
+  `sapling-output-buffer-name` — buffer names.
 
 ## Status and roadmap
 
@@ -137,8 +137,8 @@ This is an early, intentionally small implementation. Obvious next steps:
 - Add an Emacs-native interface for `sl split` and `sl histedit` (both are
   interactive terminal programs, so they need a dedicated selection UI).
 - Optional `transient` menus when `transient` is installed.
-- Integrate `sl-status` with `project.el`.
+- Integrate `sapling-status` with `project.el`.
 
 ## Thank you
 Thanks to feedback and comment by Philip Kaluđerčić.
-Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name. 
+Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthand for her name. 
