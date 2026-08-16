@@ -30,6 +30,7 @@ SOURCES += vm-mime.el
 SOURCES += vm-smime.el
 SOURCES += vm-minibuf.el
 SOURCES += vm-misc.el
+SOURCES += vm-net.el
 SOURCES += vm-motion.el
 SOURCES += vm-mouse.el
 SOURCES += vm-page.el
