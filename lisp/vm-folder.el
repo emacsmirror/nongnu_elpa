@@ -4948,15 +4948,16 @@ interactive queries to the user.  The possible values are t,
 	 (vm-pop-synchronize-folder :interactive interactive 
 				    :do-retrieves t))
 	((eq vm-folder-access-method 'imap)
-	 (if vm-imap-sync-on-get
-	     (progn
+	 (or (vm-imap-net-get-spooled-mail)
+	     (if vm-imap-sync-on-get
+		 (progn
+		   (vm-imap-synchronize-folder :interactive interactive
+					       :do-local-expunges t
+					       :do-retrieves t
+					       :save-attributes t
+					       :retrieve-attributes t))
 	       (vm-imap-synchronize-folder :interactive interactive
-					   :do-local-expunges t 
-					   :do-retrieves t 
-					   :save-attributes t 
-					   :retrieve-attributes t))
-	   (vm-imap-synchronize-folder :interactive interactive 
-				       :do-retrieves t)))
+					   :do-retrieves t))))
 	(t (vm-get-spooled-mail-normal interactive))))
 
 (defun vm-get-spooled-mail-normal (&optional interactive)

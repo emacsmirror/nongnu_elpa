@@ -67,6 +67,9 @@ would otherwise land in the user's home."
             (before (buffer-list)))
        (unwind-protect
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
+                  ;; visiting starts the fetch and returns without waiting for
+                  ;; it, so what waits for the mail is whoever wants the mail
+                  (vm-imap-net-wait nil 10)
                   ,@body)
          (dolist (buffer (buffer-list))
            (unless (memq buffer before)
@@ -260,8 +263,11 @@ with a shorter list is worth knowing."
 
 (ert-deftest vm-imap-mock-test-a-truncated-fetch-is-an-error ()
   "A download the server cuts off short is an error, not half a message.
-The connection goes with it, so what VM says is that it is not connected --
-the point being that the folder does not end up holding the fragment."
+The point is that the folder does not end up holding the fragment.
+
+Visiting no longer signals it: the fetch happens after the visit has
+returned, so the failure is a warning when it happens rather than an error
+where the command was typed."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice)
                            :truncate-fetch t)
     (let* ((cache (make-temp-file "vm-imap-mock-cache" t))
@@ -269,9 +275,16 @@ the point being that the folder does not end up holding the fragment."
            (vm-imap-server-timeout 10)
            (vm-frame-per-folder nil)
            (vm-mutable-frame-configuration nil)
+           (warned nil)
            (before (buffer-list)))
       (unwind-protect
-          (should-error (vm-visit-imap-folder (vm-imap-mock-spec mock)))
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_l _secs &rest args)
+                       (push (apply #'format args) warned))))
+            (vm-visit-imap-folder (vm-imap-mock-spec mock))
+            (vm-imap-net-wait nil 10)
+            (should (null vm-message-list))
+            (should warned))
         (dolist (buffer (buffer-list))
           (unless (memq buffer before)
             (when (buffer-live-p buffer)
@@ -352,6 +365,7 @@ list is what tells it not to fetch them again, and what
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))
     (should (equal (length vm-imap-retrieved-messages) 2))
@@ -364,8 +378,10 @@ so the messages are not fetched again and the folder does not grow."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-message-list) 2))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-message-list) 2))))
 
 (ert-deftest vm-imap-mock-test-expunging-what-has-been-retrieved ()
@@ -375,6 +391,7 @@ and closes the mailbox, which is what expunges them."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       (vm-expunge-imap-messages))
@@ -502,6 +519,7 @@ is taken off the server behind VM's back, and the list comes back to one."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-imap-retrieved-messages) 2))
     (setf (vm-imap-mock-message-expunged
            (car (vm-imap-mock-messages mock "INBOX")))
@@ -517,6 +535,7 @@ is taken off the server behind VM's back, and the list comes back to one."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
@@ -880,6 +899,7 @@ its unwind-protect, so it too came back a frame short."
       ;; what vm-quit leaves behind for the next session to act on
       (setq vm-imap-messages-to-expunge (list (cons uid validity)))
       (vm-imap-expunge-remote-messages)
+      (vm-imap-net-wait nil 10)
       (should (equal (length vm-buffer-types) before))
       ;; and the message really went, so this is the expunge path and not an
       ;; early return that never reached the stack at all

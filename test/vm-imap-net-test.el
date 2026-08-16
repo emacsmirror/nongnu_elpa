@@ -360,6 +360,9 @@ than against a buffer a test invented."
             (before (buffer-list)))
        (unwind-protect
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
+                  ;; visiting starts the fetch and returns without waiting for
+                  ;; it, so what waits for the mail is whoever wants the mail
+                  (vm-imap-net-wait nil 10)
                   ,@body)
          (dolist (buffer (buffer-list))
            (unless (memq buffer before)

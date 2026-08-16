@@ -3712,9 +3712,14 @@ headers-only form."
 
 (defun vm-imap-expunge-remote-messages ()
   "Expunge from the IMAP server messages listed in
-`vm-imap-messages-to-expunge'." 
+`vm-imap-messages-to-expunge'.
+
+Through the driver where the maildrop allows it, in which case this returns
+before the server has done it and says so when it has."
   ;; New code.  Kyle's version was piggybacking on IMAP spool
   ;; file code and wasn't ideal.
+  (if (vm-imap-net-expunge-remote-messages)
+      t
   (let* ((folder-buffer (current-buffer))
 	 (process (vm-folder-imap-process))
 	 (imapdrop (vm-folder-imap-maildrop-spec))
@@ -3848,7 +3853,7 @@ headers-only form."
     (vm-set-folder-imap-retrieved-count
      (- (vm-folder-imap-retrieved-count) expunge-count))
     (vm-mark-folder-modified-p)
-    ))
+    )))
 
 (defun vm-imap-bunch-retrieve-list (retrieve-list)
   "RETRIEVE-LIST consists of pairs (message-sequence-number boolean)
@@ -4119,6 +4124,8 @@ be saved to the IMAP folder, not only those of changed messages."
   ;;--------------------------
   (vm-buffer-type:set 'folder)
   ;;--------------------------
+  (if (and (null all-flags) (vm-imap-net-save-attributes))
+      t
   (let* ((process (vm-folder-imap-process))
 	 (mp vm-message-list)
 	 (errors 0))
@@ -4139,7 +4146,7 @@ be saved to the IMAP folder, not only those of changed messages."
 	  (vm-inform 3 "%s: Updating attributes on the IMAP server... %d errors" 
 		     (buffer-name) errors)
 	(vm-inform 6 "%s: Updating attributes on the IMAP server... done"
-		   (buffer-name)))))
+		   (buffer-name))))))
 
 
 (defun vm-imap-synchronize (&optional full)
