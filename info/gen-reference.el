@@ -101,19 +101,43 @@ build produced."
     (nreverse files)))
 
 (defun vm-reference-load-everything ()
-  "Load every VM module, so that every symbol is defined."
-  (let ((dir (or (locate-library "vm-vars")
-                 (error "VM is not on `load-path'; pass -L path/to/lisp"))))
+  "Load every VM module from source, so that every symbol is defined.
+
+From source because a compiled function does not carry the argument names
+its definition was written with: `vm-reorder-message-headers\=' comes back
+as \"arg1 &rest rest\" from the .elc and \"message &rest --cl-rest--\"
+from the .el.  Which of those the manual says must not depend on whether
+anyone ran `make\=' first (issue #699).
+
+`require\=' is shadowed rather than `load-suffixes\=' narrowed: narrowing it
+sends Emacs looking for a cl-macs.el that an installed Emacs does not ship.
+Loading each file twice does not work either -- a second load replaces the
+file\='s `load-history\=' entry, and a definition guarded by `fboundp\=' is not
+made again, so `symbol-file\=' forgets it.  That is what dropped the
+vm-toolbar-*-command aliases out of the manual while this was being
+written."
+  (let* ((dir (or (locate-library "vm-vars")
+                  (error "VM is not on `load-path'; pass -L path/to/lisp")))
+         (standard-require (symbol-function 'require)))
     (setq dir (file-name-directory dir))
-    (require 'vm-vars)
-    (require 'vm)
-    (dolist (file (vm-reference-module-files dir))
-      (unless (member file vm-reference-excluded-files)
-        (let ((feature (intern (file-name-sans-extension file))))
-          (condition-case err
-              (require feature nil t)
-            (error (message "gen-reference: %s: %s" file
-                            (error-message-string err)))))))))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional filename noerror)
+                 (let ((source (expand-file-name
+                                (concat (symbol-name feature) ".el") dir)))
+                   (if (and (not (featurep feature))
+                            (file-readable-p source))
+                       ;; nosuffix: the name is the file, not a stem
+                       (load source noerror t t)
+                     (funcall standard-require feature filename noerror))))))
+      (require 'vm-vars)
+      (require 'vm)
+      (dolist (file (vm-reference-module-files dir))
+        (unless (member file vm-reference-excluded-files)
+          (let ((feature (intern (file-name-sans-extension file))))
+            (condition-case err
+                (require feature nil t)
+              (error (message "gen-reference: %s: %s" file
+                              (error-message-string err))))))))))
 
 ;;; Docstrings to texinfo
 
@@ -331,12 +355,21 @@ defining file would put all of them in one section."
 (defun vm-reference-node-name (title)
   (concat "Reference for " title))
 
+(defun vm-reference-argument-name (argument)
+  "ARGUMENT as the manual should print it.
+`cl-defun\=' expands its `&rest\=' argument to the internal name
+`--cl-rest--\=', which says nothing to a reader of the manual."
+  (let ((name (format "%s" argument)))
+    (if (string-match "\\`--cl-\\(.+\\)--\\'" name)
+        (match-string 1 name)
+      name)))
+
 (defun vm-reference-insert-command (symbol)
   (let ((args (help-function-arglist symbol t))
         (doc (vm-reference-command-documentation symbol)))
     (insert (format "@deffn Command %s%s\n" symbol
                     (if args
-                        (concat " " (mapconcat (lambda (a) (format "%s" a))
+                        (concat " " (mapconcat #'vm-reference-argument-name
                                                args " "))
                       "")))
     (insert (format "@findex %s\n" symbol))
