@@ -270,11 +270,11 @@ a minute."
       (should (equal (length (process-list)) processes)))))
 
 (ert-deftest vm-pop-net-test-a-maildrop-it-cannot-open-says-so ()
-  "A maildrop whose connection would itself be a wait -- pop-ssl, pop-ssh,
-or one whose password VM does not hold -- signals rather than pretending.
-Those connect paths are converted with the connect, not here, and until
-then a caller that meets this uses the blocking implementation."
-  (should-error (vm-pop-net-open "pop-ssl:example.com:995:pass:user:secret" "x")
+  "A maildrop whose connection would itself be a wait signals rather than
+pretending: a pop-ssh one runs a tunnel program, and one whose password VM
+does not hold would ask for it.  A caller that meets either uses the
+blocking implementation until those are converted too."
+  (should-error (vm-pop-net-open "pop-ssh:example.com:110:pass:user:secret" "x")
                 :type 'vm-pop-net-unsupported)
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
                 :type 'vm-pop-net-unsupported))
@@ -386,12 +386,62 @@ far as anyone knows."
     (should vm-spooled-mail-waiting)))
 
 (ert-deftest vm-pop-net-test-a-maildrop-that-needs-waiting-is-left-alone ()
-  "A pop-ssl maildrop is checked the old way: its connect negotiates, which
-is a wait of its own and not converted yet.  `vm-pop-net-checkable-p' is
-what tells the two apart."
+  "A pop-ssh maildrop is checked the old way: its connect starts a tunnel
+program, which is a wait of its own.  So is a maildrop whose password VM
+does not hold, which would ask for one from a timer.  POP over TLS is fine:
+Emacs negotiates it as the connection comes up."
   (should (vm-pop-net-checkable-p "pop:127.0.0.1:110:pass:user:secret"))
-  (should-not (vm-pop-net-checkable-p "pop-ssl:host:995:pass:user:secret"))
+  (should (vm-pop-net-checkable-p "pop-ssl:host:995:pass:user:secret"))
+  (should-not (vm-pop-net-checkable-p "pop-ssh:host:110:pass:user:secret"))
   (should-not (vm-pop-net-checkable-p "pop:127.0.0.1:110:pass:user:*")))
+
+;;; Connecting, which does not wait either
+
+(ert-deftest vm-pop-net-test-a-refused-connection-answers-the-callback ()
+  "A port with nothing listening ends the session through its sentinel, so
+the caller is told rather than left waiting.  `make-network-process' with
+:nowait returns before it knows, and this is where the answer arrives."
+  (let ((answer 'not-called)
+        (vm-pop-retrieved-messages nil)
+        (vm-pop-server-timeout 3)
+        ;; a port nothing is on: opened and closed again, so it is free
+        (port (let* ((probe (make-network-process
+                             :name "vm-pop-net-probe" :server t :host 'local
+                             :service t :family 'ipv4 :noquery t))
+                     (number (process-contact probe :service)))
+                (delete-process probe)
+                number)))
+    (vm-pop-net-check-mail (format "pop:127.0.0.1:%d:pass:user:secret" port)
+                           (lambda (result) (setq answer result)))
+    (let ((deadline (+ (float-time) 5)))
+      (while (and (eq answer 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    (should (consp answer))
+    (should (memq (car answer) '(vm-net-connection-lost file-error)))))
+
+(ert-deftest vm-pop-net-test-a-connection-is-open-before-it-is-open ()
+  "The session starts while the connection is still coming up: the generator
+asks for input and the filter feeds it when there is any.  Nothing here
+waits for the connect, which is what `:nowait' is for."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let* ((opened (let ((vm-pop-server-timeout 3))
+                     (vm-pop-net-open (vm-pop-mock-spec mock) "POP test")))
+           (session (car opened))
+           (process (vm-net-session-process session)))
+      (unwind-protect
+          (progn
+            (should (memq (process-status process) '(connect open run)))
+            (vm-net-start session (vm-pop-net-session (nth 1 opened)
+                                                      (nth 2 opened)))
+            (let ((deadline (+ (float-time) 5)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (should (equal (car (vm-net-session-value session)) 1)))
+        (when (process-live-p process) (delete-process process))
+        (let ((buffer (vm-net-session-buffer session)))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (provide 'vm-pop-net-test)
 

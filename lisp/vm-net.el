@@ -85,6 +85,25 @@
   "Whether SESSION is still to finish."
   (memq (vm-net-session-state session) '(new running)))
 
+(defun vm-net--sentinel (process event)
+  "Fail PROCESS's session when the connection goes, saying what EVENT was.
+
+A connection made with :nowait is not open when `make-network-process\='
+returns, so this is where a refused or unreachable server is heard about --
+and where a server that hangs up mid-session is, which would otherwise leave
+a generator waiting for input that cannot arrive."
+  (let ((session (process-get process 'vm-net-session)))
+    (when (and session (vm-net-session-live-p session)
+	       (not (memq (process-status process) '(open run connect))))
+      (setf (vm-net-session-error session)
+	    (list 'vm-net-connection-lost
+		  (format "%s connection %s"
+			  (or (vm-net-session-name session) "network")
+			  (string-trim event))))
+      (vm-net-abandon session))))
+
+(define-error 'vm-net-connection-lost "Network connection lost")
+
 (defun vm-net-start (session iterator)
   "Set ITERATOR going as SESSION's work, and let its process feed it.
 
@@ -97,6 +116,7 @@ function, which is called with the session whether it returned or signalled."
       (unless (vm-net-session-buffer session)
 	(setf (vm-net-session-buffer session) (process-buffer process)))
       (set-process-filter process #'vm-net--filter)
+      (set-process-sentinel process #'vm-net--sentinel)
       (process-put process 'vm-net-session session)))
   (vm-net--resume session nil)
   session)
