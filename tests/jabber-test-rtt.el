@@ -134,20 +134,41 @@
     (setq-local jabber-chatting-with "them@example.org")
     (setq-local jabber-rtt-send-seq 7)
     (setq-local jabber-rtt-outgoing-events '((t nil "x")))
-    (let (sent)
+    (put 'test-connection :state :session-established)
+    (unwind-protect
+        (let ((jabber-connections '(test-connection))
+              sent)
+          (cl-letf (((symbol-function 'jabber-send-sexp)
+                     (lambda (_connection stanza)
+                       (setq sent stanza))))
+            (jabber-rtt--send-queued-events (current-buffer)))
+          (should
+           (equal
+            `(message ((to . "them@example.org") (type . "chat"))
+                      (rtt ((xmlns . ,jabber-rtt-xmlns)
+                            (seq . "8")
+                            (event . "edit"))
+                           (t nil "x")))
+            sent))
+          (should-not jabber-rtt-outgoing-events))
+      (put 'test-connection :state nil))))
+
+(ert-deftest jabber-test-rtt-send-ignores-dead-connection ()
+  "A delayed send callback does not send after the session is gone."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection 'dead-jc)
+    (setq-local jabber-chatting-with "them@example.org")
+    (setq-local jabber-rtt-send-seq 7)
+    (setq-local jabber-rtt-outgoing-events '((t nil "x")))
+    (let ((jabber-connections nil)
+          sent)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_connection stanza)
-                   (setq sent stanza))))
+                 (lambda (_jc _stanza)
+                   (setq sent t)
+                   (error "dead-jc has no connection"))))
         (jabber-rtt--send-queued-events (current-buffer)))
-      (should
-       (equal
-        `(message ((to . "them@example.org") (type . "chat"))
-                  (rtt ((xmlns . ,jabber-rtt-xmlns)
-                        (seq . "8")
-                        (event . "edit"))
-                       (t nil "x")))
-        sent))
-      (should-not jabber-rtt-outgoing-events))))
+      (should-not sent)
+      (should (equal '((t nil "x")) jabber-rtt-outgoing-events)))))
 
 (provide 'jabber-test-rtt)
 ;;; jabber-test-rtt.el ends here

@@ -309,7 +309,8 @@ PRE-CHANGE-LENGTH is how many characters were replaced."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq jabber-rtt-send-timer nil)
-      (when jabber-rtt-outgoing-events
+      (when (and jabber-rtt-outgoing-events
+		 (jabber-connection-active-p jabber-buffer-connection))
 	(let ((event (if jabber-rtt-send-seq "edit" "new")))
 	  (setq jabber-rtt-send-seq
 		(if jabber-rtt-send-seq
