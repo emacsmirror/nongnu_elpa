@@ -84,6 +84,14 @@ FLAGS is a list of strings such as (\"\\\\Seen\")."
       (push (cons mailbox (list message)) (vm-imap-mock-mailboxes mock)))
     (vm-imap-mock-message-uid message)))
 
+(defun vm-imap-mock-add-mailbox (mock mailbox)
+  "Give MOCK an empty MAILBOX, as CREATE would.
+For a test that needs somewhere to copy to: a mailbox with a message in it
+would be indistinguishable from the copy having gone somewhere it should not."
+  (unless (assoc mailbox (vm-imap-mock-mailboxes mock))
+    (push (cons mailbox nil) (vm-imap-mock-mailboxes mock)))
+  mailbox)
+
 (defun vm-imap-mock-messages (mock mailbox)
   "The messages MAILBOX holds on MOCK, expunged ones left out."
   (cl-remove-if #'vm-imap-mock-message-expunged
