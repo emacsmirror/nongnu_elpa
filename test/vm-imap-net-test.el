@@ -450,6 +450,79 @@ about it, rather than the callback never coming."
       (should (string-match-p "server says" (error-message-string result)))
       (should (null vm-message-list)))))
 
+
+;;; Flags, going up
+
+(ert-deftest vm-imap-net-test-a-changed-flag-goes-to-the-server ()
+  "Marking a message read in the folder stores \\Seen on the server, in the
+same session as the fetch and before the server\='s own flags are read -- or
+what was just fetched would be written back over the change."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (vm-imap-mock-received-p mock "STORE 1 \\+FLAGS"))
+    ;; flag names are case-insensitive in IMAP, and what VM sends for this
+    ;; one is lower case
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))))
+
+(ert-deftest vm-imap-net-test-a-flag-the-server-refuses-is-not-lost ()
+  "A STORE the server says NO to leaves the message with its modification
+flag set, so the next synchronisation offers it again, and the fetch carries
+on regardless."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t)
+      (setf (vm-imap-mock-refuse mock) "STORE")
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+      (should (equal (vm-imap-net-test--get-mail mock) 1))
+      (should (vm-attribute-modflag-of message))
+      (should (equal (length vm-message-list) 2)))))
+
+;;; What the server no longer has
+
+(ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
+  "A message expunged on the server is expunged from the folder, which is
+what keeps the two the same view of the mailbox."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    ;; take the first one off the server, as another client would
+    (let ((message (car (vm-imap-mock-messages mock "INBOX"))))
+      (setf (vm-imap-mock-message-expunged message) t))
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (equal (length vm-message-list) 1))
+    (should (string-match-p "otters"
+                            (vm-su-subject (car vm-message-list))))))
+
+
+;;; Through the folder's own command
+
+(ert-deftest vm-imap-net-test-get-new-mail-goes-through-the-driver ()
+  "`vm-get-new-mail' on an IMAP folder starts the session and returns.  What
+it returns is that it started, not what arrived: the messages land while
+Emacs carries on, which is the point of the whole conversion."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (vm-imap-net-get-spooled-mail))
+    ;; not here yet: nothing waited for it
+    (should (null vm-message-list))
+    (should (vm-imap-net-busy-p))
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 1))))
+
+(ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-left-to-the-old-path ()
+  "A maildrop this cannot open without waiting answers nil, which is the
+caller\='s cue to use the blocking implementation rather than to fail."
+  (vm-imap-net-test--visiting (mock)
+    (cl-letf (((symbol-function 'vm-folder-imap-maildrop-spec)
+               (lambda () "imap-ssh:host:143:INBOX:login:someone:*")))
+      (should-not (vm-imap-net-get-spooled-mail)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
