@@ -3048,35 +3048,15 @@ pending for a later retry (issue #270).  This is called in the process buffer."
 	    (vm-imap-flag-list-string wanted))))))
     accepted))
 
-(defun vm-imap-save-message-flags (process m &optional by-uid)
-  "Saves the message flags of a message on the IMAP server,
-adding or deleting flags on the server as necessary.  Monotonic
-flags, however, are not deleted.
+(defun vm-imap-message-flag-changes (m)
+  "What M's flags on the server would have to be to match VM's.
+Answers (MESSAGE-NUM CACHED-FLAGS FLAGS+ FLAGS-): the sequence number the
+server knows M by, the flags VM last saw it with, and the flags to add and
+to remove.  MESSAGE-NUM nil means the server does not have the message and
+there is nothing to do.
 
-Optional argument BY-UID says that the save commands to the
-server should be issued by UID, not message sequence number."
-
-  ;; Comment by USR
-  ;; According to RFC 2060, it is not an error to store flags that
-  ;; are not listed in PERMANENTFLAGS.  Removed unnecessary checks to
-  ;; this effect.
-
-  ;; There are 
-  ;; - monotonic flags that can only be set, and 
-  ;; - reversible flags that can be set or unset.
-  ;; For monotonic flags that are set in VM, we set them on the
-  ;; server.
-  ;; For reversible flags, we copy the state from VM to the server.
-  ;; (We don't know which one has precedence, but we punt that issue.)
-  ;; The cache needs to be maintained consistently.
-
-  ;;-----------------------------------------------------
-  (vm-buffer-type:assert 'folder)
-  (or by-uid (vm-imap-folder-session-type:assert 'valid))
-  ;;-----------------------------------------------------
-  (if (not (equal (vm-imap-uid-validity-of m)
-		  (vm-folder-imap-uid-validity)))
-      (vm-imap-normal-error "message UIDVALIDITY does not match the server"))
+Folder-side and no I/O, so both the blocking and the non-blocking paths
+compute the change the same way and only the sending of it differs."
   (let* ((uid (vm-imap-uid-of m))
 	 (uid-key1 (intern uid (vm-folder-imap-uid-obarray)))
 	 (uid-key2 (intern-soft uid (vm-folder-imap-flags-obarray)))
@@ -3126,8 +3106,45 @@ server should be issued by UID, not message sequence number."
       ;; message it synced -- ignored by servers that are polite about it and
       ;; another BAD from the ones that are not (issue #389).
       (setq flags+ (delete "\\recent" (delete "\\Recent" flags+)))
-      (setq flags- (delete "\\recent" (delete "\\Recent" flags-)))
+      (setq flags- (delete "\\recent" (delete "\\Recent" flags-))))
+    (list message-num cached-flags flags+ flags-)))
 
+(defun vm-imap-save-message-flags (process m &optional by-uid)
+  "Saves the message flags of a message on the IMAP server,
+adding or deleting flags on the server as necessary.  Monotonic
+flags, however, are not deleted.
+
+Optional argument BY-UID says that the save commands to the
+server should be issued by UID, not message sequence number."
+
+  ;; Comment by USR
+  ;; According to RFC 2060, it is not an error to store flags that
+  ;; are not listed in PERMANENTFLAGS.  Removed unnecessary checks to
+  ;; this effect.
+
+  ;; There are 
+  ;; - monotonic flags that can only be set, and 
+  ;; - reversible flags that can be set or unset.
+  ;; For monotonic flags that are set in VM, we set them on the
+  ;; server.
+  ;; For reversible flags, we copy the state from VM to the server.
+  ;; (We don't know which one has precedence, but we punt that issue.)
+  ;; The cache needs to be maintained consistently.
+
+  ;;-----------------------------------------------------
+  (vm-buffer-type:assert 'folder)
+  (or by-uid (vm-imap-folder-session-type:assert 'valid))
+  ;;-----------------------------------------------------
+  (if (not (equal (vm-imap-uid-validity-of m)
+		  (vm-folder-imap-uid-validity)))
+      (vm-imap-normal-error "message UIDVALIDITY does not match the server"))
+  (let* ((changes (vm-imap-message-flag-changes m))
+	 (uid (vm-imap-uid-of m))
+	 (message-num (nth 0 changes))
+	 (cached-flags (nth 1 changes))
+	 (flags+ (nth 2 changes))
+	 (flags- (nth 3 changes)))
+    (when message-num
       (unwind-protect
 	  (with-current-buffer (process-buffer process)
 	    ;;----------------------------------

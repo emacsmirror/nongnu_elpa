@@ -4818,6 +4818,7 @@ implementation than the expected one damages mail -- so this asks instead."
 ;; rather than declared: the check runs from a timer, and a timer is a poor
 ;; place to discover that a file has not been loaded.
 (require 'vm-pop-net)
+(require 'vm-imap-net)
 
 (defvar vm-mail-check-answers nil
   "What the last check of each of this folder's maildrops said.

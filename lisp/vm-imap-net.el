@@ -573,5 +573,461 @@ to decide."
 	   (iter-yield-from (vm-imap-net-capabilities))
 	   (iter-yield-from (vm-imap-net-login user password))))))
 
+;;; Getting new mail into a folder
+
+(declare-function vm-imap-cleanup-region "vm-imap" (start end))
+(declare-function vm-imap-bunch-retrieve-list "vm-imap" (retrieve-list))
+(declare-function vm-imap-get-synchronization-data "vm-imap" (&optional do-retrieves))
+(declare-function vm-imap-update-message-flags "vm-imap" (m flags &optional norecord))
+(declare-function vm-folder-imap-uid-message-size "vm-imap" (uid))
+(declare-function vm-folder-imap-uid-message-flags "vm-imap" (uid))
+(declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
+(declare-function vm-folder-imap-uid-validity "vm-folder" ())
+(declare-function vm-set-folder-imap-uid-validity "vm-folder" (value))
+(declare-function vm-set-folder-imap-mailbox-count "vm-folder" (value))
+(declare-function vm-folder-imap-retrieved-count "vm-folder" ())
+(declare-function vm-set-folder-imap-retrieved-count "vm-folder" (value))
+(declare-function vm-set-folder-imap-recent-count "vm-folder" (value))
+(declare-function vm-set-folder-imap-read-write "vm-folder" (value))
+(declare-function vm-set-folder-imap-can-delete "vm-folder" (value))
+(declare-function vm-set-folder-imap-body-peek "vm-folder" (value))
+(declare-function vm-set-folder-imap-permanent-flags "vm-folder" (value))
+(declare-function vm-set-folder-imap-uid-list "vm-folder" (value))
+(declare-function vm-set-folder-imap-uid-obarray "vm-folder" (value))
+(declare-function vm-set-folder-imap-flags-obarray "vm-folder" (value))
+(declare-function vm-folder-imap-mailbox-count "vm-folder" ())
+(declare-function vm-munge-message-separators "vm-folder" (folder-type start end))
+(declare-function vm-leading-message-separator "vm-folder" (&optional folder-type message for-other-folder))
+(declare-function vm-trailing-message-separator "vm-folder" (&optional folder-type))
+(declare-function vm-convert-folder-type-headers "vm-folder" (old new))
+(declare-function vm-assimilate-new-messages "vm-folder" (&rest keys))
+(declare-function vm-update-summary-and-mode-line "vm-summary" ())
+(declare-function vm-mark-for-summary-update "vm-summary" (m &optional dont-kill-cache))
+(declare-function vm-set-imap-uid-of "vm-message" (m uid))
+(declare-function vm-set-imap-uid-validity-of "vm-message" (m validity))
+(declare-function vm-set-byte-count-of "vm-message" (m count))
+(declare-function vm-set-stuff-flag-of "vm-message" (m flag))
+(declare-function vm-set-body-to-be-retrieved-of "vm-message" (m flag))
+(declare-function vm-set-body-to-be-discarded-of "vm-message" (m flag))
+(declare-function vm-run-hook-on-message "vm-misc" (hook message))
+
+(defvar vm-folder-type)
+(defvar vm-default-folder-type)
+(defvar vm-message-list)
+(defvar vm-spooled-mail-waiting)
+(defvar vm-buffers-needing-display-update)
+(defvar vm-modification-counter)
+(defvar vm-arrived-message-hook)
+(defvar vm-imap-max-message-size)
+(defvar vm-enable-external-messages)
+
+(defun vm-imap-net-install-message-data (data count)
+  "Put DATA, from `vm-imap-net-message-data\\=', into the folder's own tables.
+The current buffer is the folder.  What
+`vm-imap-retrieve-uid-and-flags-data\\=' installs after its own blocking
+fetch -- and having installed it, that function finds the list already there
+and asks for nothing, which is what lets the synchronisation code below run
+unchanged.
+
+The obarrays are sized for the mailbox rather than fixed at 67 buckets: a
+mailbox of 100,000 messages put 1,500 symbols in each of those buckets, and
+every lookup walked one."
+  (let* ((buckets (max 67 (/ count 4)))
+	 (uids (make-vector buckets 0))
+	 (flags (make-vector buckets 0)))
+    (dolist (tuple data)
+      (set (intern (cadr tuple) uids) (car tuple))
+      (set (intern (cadr tuple) flags) (nthcdr 2 tuple)))
+    (vm-set-folder-imap-uid-list data)
+    (vm-set-folder-imap-uid-obarray uids)
+    (vm-set-folder-imap-flags-obarray flags)))
+
+(defun vm-imap-net-plan (data count)
+  "Work out what has to be fetched, and answer with (RETRIEVE-LIST BUNCHES).
+The current buffer is the folder.  RETRIEVE-LIST is (UID SEQUENCE-NUMBER
+HEADERS-ONLY) per message, in the order the messages will arrive; BUNCHES is
+what to ask the server for, `vm-imap-message-bunch-size\\=' at a time."
+  (vm-imap-net-install-message-data data count)
+  (let* ((sync (vm-imap-get-synchronization-data t))
+	 (headers-only (or (eq vm-enable-external-messages t)
+			   (memq 'imap vm-enable-external-messages)))
+	 (limit (or vm-imap-max-message-size most-positive-fixnum))
+	 (retrieve-list
+	  (mapcar (lambda (pair)
+		    (let ((size (string-to-number
+				 (or (vm-folder-imap-uid-message-size (car pair))
+				     "0"))))
+		      (list (car pair) (cdr pair)
+			    (and (> size limit) headers-only))))
+		  (nth 0 sync))))
+    (list retrieve-list
+	  (vm-imap-bunch-retrieve-list (mapcar #'cdr retrieve-list))
+	  (nth 2 sync)
+	  (nth 3 sync))))
+
+(defun vm-imap-net-store (folder folder-type source start end)
+  "Copy the message between START and END of SOURCE into FOLDER.
+The same cleaning up the blocking path does, in the same order: CRLF to LF,
+the separators the folder's own type wants, and the headers that go with
+them."
+  (with-current-buffer folder
+    (save-excursion
+      (save-restriction
+	(widen)
+	(goto-char (point-max))
+	(let ((buffer-read-only nil)	; a folder buffer is read-only
+	      (start-of-message (point))
+	      (end-of-message nil))
+	  (insert-buffer-substring source start end)
+	  (goto-char (point-max))
+	  (unless (bolp) (insert "\n"))
+	  (setq end-of-message (point-marker))
+	  (vm-imap-cleanup-region start-of-message end-of-message)
+	  (vm-munge-message-separators folder-type start-of-message
+				       end-of-message)
+	  (goto-char start-of-message)
+	  (insert (vm-leading-message-separator folder-type))
+	  (save-restriction
+	    (narrow-to-region (point) end-of-message)
+	    (vm-convert-folder-type-headers 'baremessage folder-type))
+	  (goto-char end-of-message)
+	  (insert-before-markers (vm-trailing-message-separator folder-type))
+	  (set-marker end-of-message nil))))))
+
+(defun vm-imap-net-assimilate (retrieve-list uid-validity)
+  "Take the messages just written into the folder into the message list.
+The current buffer is the folder.  Answers with the new messages.  Each is
+given the UID it was fetched under and the flags the server reported for it,
+which is what `vm-imap-retrieve-messages\\=' does at the end of its own
+loop."
+  (setq vm-spooled-mail-waiting nil)
+  (vm-set-folder-imap-retrieved-count (vm-folder-imap-mailbox-count))
+  (intern (buffer-name) vm-buffers-needing-display-update)
+  (let* ((new-messages (vm-assimilate-new-messages :read-attributes nil))
+	 (messages new-messages)
+	 (entries retrieve-list))
+    (when new-messages
+      (setq vm-modification-counter (1+ vm-modification-counter)))
+    (while messages
+      (let* ((message (car messages))
+	     (entry (car entries))
+	     (uid (car entry)))
+	(when (nth 2 entry)
+	  (vm-set-body-to-be-retrieved-of message t)
+	  (vm-set-body-to-be-discarded-of message nil))
+	(vm-set-imap-uid-of message uid)
+	(vm-set-imap-uid-validity-of message uid-validity)
+	(vm-set-byte-count-of message (vm-folder-imap-uid-message-size uid))
+	(vm-imap-update-message-flags
+	 message (vm-folder-imap-uid-message-flags uid) t)
+	(vm-mark-for-summary-update message)
+	(vm-set-stuff-flag-of message t))
+      (setq messages (cdr messages)
+	    entries (cdr entries)))
+    (vm-update-summary-and-mode-line)
+    (when vm-arrived-message-hook
+      (dolist (message new-messages)
+	(vm-run-hook-on-message 'vm-arrived-message-hook message)))
+    (run-hooks 'vm-arrived-messages-hook)
+    new-messages))
+
+(declare-function vm-expunge-folder "vm-folder" (&rest keys))
+(declare-function vm-add-or-delete-message-labels "vm-undo" (string mlist action))
+
+(defun vm-imap-net-expunge-locally (local-expunge-list stale-list)
+  "Take out of the folder what the server no longer has.
+The current buffer is the folder.  A message whose UIDVALIDITY is stale is
+labelled rather than removed: the blocking path asks whether to expunge
+those, and there is nobody to ask from inside a filter, so the safe half of
+the choice is taken and the label says which messages it was taken for."
+  (when local-expunge-list
+    (vm-expunge-folder :quiet t :just-these-messages local-expunge-list))
+  (dolist (message stale-list)
+    (vm-add-or-delete-message-labels "stale" (list message) 'all)))
+
+(iter-defun vm-imap-net-get-new-mail (folder mailbox user password)
+  "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
+The messages are written into FOLDER as they arrive, a bunch at a time; the
+folder takes them into its message list once they are all there, as the
+blocking path does."
+  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
+	 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t))
+	 (select (iter-yield-from (vm-imap-net-select mailbox)))
+	 (count (nth 0 select))
+	 (uid-validity (nth 2 select))
+	 (source (current-buffer))
+	 (folder-type nil)
+	 (data nil)
+	 (plan nil)
+	 (retrieved 0))
+    (with-current-buffer folder
+      (let ((known (vm-folder-imap-uid-validity)))
+	(when (and known uid-validity (not (equal known uid-validity)))
+	  ;; The blocking path asks whether to refresh the cache.  There is
+	  ;; nobody to ask from inside a filter, and going on regardless would
+	  ;; fetch every message again under UIDs that mean something else.
+	  (vm-imap-normal-error
+	   "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
+	   mailbox)))
+      (setq folder-type (or vm-folder-type vm-default-folder-type))
+      (vm-set-folder-imap-uid-validity uid-validity)
+      (vm-set-folder-imap-mailbox-count count)
+      (unless (vm-folder-imap-retrieved-count)
+	(vm-set-folder-imap-retrieved-count count))
+      (vm-set-folder-imap-recent-count (nth 1 select))
+      (vm-set-folder-imap-read-write (nth 3 select))
+      (vm-set-folder-imap-can-delete (nth 4 select))
+      (vm-set-folder-imap-body-peek body-peek)
+      (vm-set-folder-imap-permanent-flags (nth 5 select)))
+    ;; the folder's own changes go up before its picture of the server is
+    ;; taken, or the flags just fetched would be written back over them
+    (iter-yield-from (vm-imap-net-save-flags folder))
+    (setq data (if (zerop count)
+		   nil
+		 (iter-yield-from (vm-imap-net-message-data 1 count))))
+    (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
+    (let ((retrieve-list (nth 0 plan))
+	  (bunches (nth 1 plan)))
+      (with-current-buffer folder
+	(vm-imap-net-expunge-locally (nth 2 plan) (nth 3 plan)))
+      (dolist (bunch bunches)
+	(let* ((range (car bunch))
+	       (headers-only (cadr bunch))
+	       (store (lambda (_uid start end)
+			(vm-imap-net-store folder folder-type source start end))))
+	  (iter-yield-from
+	   (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
+			      store))
+	  (setq retrieved (+ retrieved (1+ (- (cdr range) (car range)))))
+	  (vm-inform 6 "%s: %d of %d messages"
+		     (buffer-name folder) retrieved (length retrieve-list))))
+      (with-current-buffer folder
+	(vm-imap-net-assimilate retrieve-list uid-validity))
+      retrieved)))
+
+;;; Flags, and what the server would not take
+
+(declare-function vm-imap-message-flag-changes "vm-imap" (m))
+(declare-function vm-imap-flag-list-string "vm-imap" (flags))
+(declare-function vm-attribute-modflag-of "vm-message" (m))
+(declare-function vm-set-attribute-modflag-of "vm-message" (m flag))
+(declare-function vm-imap-uid-validity-of "vm-message" (m))
+
+(defvar vm-imap-refused-flags)
+
+(iter-defun vm-imap-net-store-flags-1 (sign id flags)
+  "Send one STORE of FLAGS, and read its answer.
+SIGN is \"+\" or \"-\" and ID the message's sequence number.  Signals
+`vm-imap-normal-error\\=' if the server refuses the command."
+  (iter-yield-from
+   (vm-imap-net-command (format "STORE %s %sFLAGS.SILENT %s"
+				id sign (vm-imap-flag-list-string flags))
+			(format "STORE %sFLAGS.SILENT" sign)))
+  t)
+
+(iter-defun vm-imap-net-store-flags (sign id flags)
+  "Store FLAGS, one command if the server will take them, singly if not.
+Answers with the flags it accepted.
+
+A server need not accept every keyword, and Exchange refuses the whole STORE
+when it meets one it does not know, so a single unknown keyword would
+otherwise stop \\Deleted and everything else in the same command from being
+stored (issue #391).  What is refused on its own is remembered in
+`vm-imap-refused-flags\\=' and not offered again this session; a refusal of
+every flag is re-signalled, which leaves the message pending for a later try
+(issue #270)."
+  (let ((wanted (seq-remove (lambda (flag) (member flag vm-imap-refused-flags))
+			    flags))
+	(accepted nil)
+	(refused nil)
+	(failure nil))
+    (when wanted
+      (let ((error-data nil))
+	(condition-case caught
+	    (progn (iter-yield-from (vm-imap-net-store-flags-1 sign id wanted))
+		   (setq accepted wanted))
+	  (vm-imap-normal-error (setq error-data caught)))
+	(when error-data
+	  ;; the server refused the lot; find out what it will take, unless
+	  ;; there was only one, which has just been refused on its own
+	  (dolist (flag (if (cdr wanted) wanted nil))
+	    (let ((one-failed nil))
+	      (condition-case caught
+		  (iter-yield-from (vm-imap-net-store-flags-1 sign id (list flag)))
+		(vm-imap-normal-error (setq one-failed caught)))
+	      (if one-failed
+		  (progn (push flag refused)
+			 (push flag vm-imap-refused-flags))
+		(push flag accepted))))
+	  (when refused
+	    (vm-warn 1 2 "IMAP server refused %s"
+		     (mapconcat #'identity (nreverse refused) ", ")))
+	  (unless accepted
+	    (setq failure error-data)))))
+    (when failure
+      (signal (car failure) (cdr failure)))
+    accepted))
+
+(iter-defun vm-imap-net-save-message-flags (folder message)
+  "Send MESSAGE's flags to the server, and note what it took.
+Answers t when something was sent.  The change itself is worked out in the
+folder by `vm-imap-message-flag-changes\\=', the same function the blocking
+path uses; only the sending of it is here."
+  (let* ((changes (with-current-buffer folder
+		    (vm-imap-message-flag-changes message)))
+	 (number (nth 0 changes))
+	 (cached-flags (nth 1 changes))
+	 (flags+ (nth 2 changes))
+	 (flags- (nth 3 changes)))
+    (when number
+      (when flags+
+	;; only what the server took goes in the cache, or the next sync would
+	;; think a refused flag was already there
+	(nconc cached-flags
+	       (iter-yield-from (vm-imap-net-store-flags "+" number flags+))))
+      (when flags-
+	(dolist (flag (iter-yield-from
+		       (vm-imap-net-store-flags "-" number flags-)))
+	  (delete flag cached-flags)))
+      (with-current-buffer folder
+	(vm-set-attribute-modflag-of message nil))
+      t)))
+
+(iter-defun vm-imap-net-save-flags (folder)
+  "Send the flags of every message in FOLDER whose own have changed.
+Answers with how many were sent.  A message the server refuses is counted as
+an error and left with its modification flag set, so the next synchronisation
+tries it again, and the rest are still sent."
+  (let ((messages (with-current-buffer folder
+		    (seq-filter (lambda (message)
+				  (and (vm-attribute-modflag-of message)
+				       (equal (vm-imap-uid-validity-of message)
+					      (vm-folder-imap-uid-validity))))
+				vm-message-list)))
+	(saved 0)
+	(errors 0))
+    (dolist (message messages)
+      (let ((failed nil))
+	(condition-case caught
+	    (when (iter-yield-from (vm-imap-net-save-message-flags folder message))
+	      (setq saved (1+ saved)))
+	  (vm-imap-normal-error (setq failed caught)))
+	(when failed
+	  (setq errors (1+ errors)))))
+    (when (> errors 0)
+      (vm-warn 1 2 "%s: %d message%s whose flags the server would not take"
+	       (buffer-name folder) errors (if (= errors 1) "" "s")))
+    saved))
+
+;;; Expunging on the server
+
+(declare-function vm-imap-uid-of "vm-message" (m))
+(declare-function vm-folder-imap-uid-msn "vm-imap" (uid))
+
+(iter-defun vm-imap-net-expunge (uids)
+  "Delete the messages with UIDS on the server, and expunge them.
+Answers with how many were expunged.  Marked by UID and expunged in one
+command each: a sequence number means something different after every
+expunge, and a UID does not."
+  (if (null uids)
+      0
+    (iter-yield-from
+     (vm-imap-net-command
+      (format "UID STORE %s +FLAGS.SILENT (\\Deleted)"
+	      (mapconcat #'identity uids ","))
+      "UID STORE"))
+    (iter-yield-from (vm-imap-net-command "EXPUNGE" "EXPUNGE"))
+    (length uids)))
+
+(defun vm-imap-net-get-mail (source callback)
+  "Fetch into the current folder what SOURCE has that it has not, and
+tell CALLBACK.
+
+CALLBACK is called in the folder buffer with the number of messages
+fetched, or with the error that stopped the session.  Nothing waits: the
+whole of it happens in the process filter, and the folder is left usable
+while it does.
+
+Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
+is a caller\\='s cue to use the blocking implementation."
+  (let* ((folder (current-buffer))
+	 (opened (vm-imap-net-open source "IMAP fetch"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (when (buffer-live-p folder)
+	      (with-current-buffer folder
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))))
+    (vm-net-start session
+		  (vm-imap-net-get-new-mail folder (nth 1 opened) (nth 2 opened)
+					    (nth 3 opened)))
+    session))
+
+(declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
+(declare-function vm-inform "vm-misc" (level &rest args))
+
+(defvar vm-imap-net-session nil
+  "The fetch this folder has running, if it has one.")
+(make-variable-buffer-local 'vm-imap-net-session)
+
+(defun vm-imap-net-busy-p (&optional folder)
+  "Whether FOLDER, or the current buffer, has a fetch running."
+  (with-current-buffer (or folder (current-buffer))
+    (and vm-imap-net-session
+	 (vm-net-session-live-p vm-imap-net-session))))
+
+(defun vm-imap-net-get-spooled-mail ()
+  "Start fetching this IMAP folder's new mail, and answer with whether it did.
+
+Nil means this maildrop is one that cannot be opened without waiting -- over
+ssh, preauthenticated, or with a password VM has not been told -- and the
+caller is to use the blocking implementation.  Anything else means the fetch
+is under way: it has not happened yet, and this returns before it does, so
+the folder is usable while it runs and says what arrived when it lands.
+
+A folder already fetching is left to finish.  The mail check runs from a
+timer, and two fetches writing into one folder would interleave their
+messages."
+  (let ((folder (current-buffer)))
+    (cond
+     ((vm-imap-net-busy-p)
+      (vm-inform 6 "%s: already fetching" (buffer-name folder))
+      t)
+     (t
+      (condition-case nil
+	  (progn
+	    (setq vm-imap-net-session
+		  (vm-imap-net-get-mail
+		   (vm-folder-imap-maildrop-spec)
+		   (lambda (result)
+		     (cond ((and (consp result) (symbolp (car result))
+				 (get (car result) 'error-conditions))
+			    (vm-warn 0 2 "%s: %s" (buffer-name folder)
+				     (error-message-string result)))
+			   ((and (numberp result) (> result 0))
+			    (vm-inform 5 "%s: %d new message%s"
+				       (buffer-name folder)
+				       result (if (= result 1) "" "s")))
+			   (t
+			    (vm-inform 5 "%s: no new mail"
+				       (buffer-name folder)))))))
+	    t)
+	(vm-imap-net-unsupported nil))))))
+
+(defun vm-imap-net-wait (&optional folder seconds)
+  "Wait for FOLDER's fetch to finish, up to SECONDS.
+For a caller that has to have the mail before it goes on -- a test, or a
+command that was asked to do something with what arrives.  Nothing in VM's
+own path calls this: waiting is what the conversion is for getting rid of."
+  (let ((deadline (+ (float-time) (or seconds 30))))
+    (while (and (vm-imap-net-busy-p folder) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (not (vm-imap-net-busy-p folder))))
+
 (provide 'vm-imap-net)
 ;;; vm-imap-net.el ends here
