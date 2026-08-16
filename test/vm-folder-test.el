@@ -3753,6 +3753,74 @@ a total that disagrees with the folder misleads about mail waiting."
   "An empty file holds no messages, and is not an error."
   (vm-folder-test--counting "" (should (member count '(0 nil)))))
 
+;;; Visiting a folder another mail client maintains
+
+(defmacro vm-folder-test--with-a-thunderbird-folder (&rest body)
+  "Write a folder in a directory standing in for Thunderbird's and run BODY.
+DIR is that directory, bound to `vm-thunderbird-folder-directory', and FILE
+the folder in it."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-thunderbird" t)))
+          (file (expand-file-name "Inbox" dir))
+          (vm-thunderbird-folder-directory dir)
+          (vm-folder-directory nil)
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (insert "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                     "From: alice@example.com\nSubject: from thunderbird\n"
+                     "\nA message Thunderbird put here.\n\n"))
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-thunderbird-folder-is-visited-as-a-folder ()
+  "`vm-visit-thunderbird-folder' reads the file as any other folder, and
+remembers where it came from: `vm-foreign-folder-directory' is what makes a
+save from it offer the other Thunderbird folders rather than VM's own."
+  (vm-folder-test--with-a-thunderbird-folder
+    (vm-visit-thunderbird-folder file)
+    (should (eq major-mode 'vm-mode))
+    (should (equal (length vm-message-list) 1))
+    (should (equal (vm-su-subject (car vm-message-list)) "from thunderbird"))
+    (should (equal vm-foreign-folder-directory dir))
+    (should (local-variable-p 'vm-foreign-folder-directory))
+    (should (equal vm-last-visit-folder file))))
+
+(ert-deftest vm-folder-test-a-thunderbird-folder-name-is-taken-as-relative ()
+  "A name with no directory in it is looked for in
+`vm-thunderbird-folder-directory', which is the point of having the setting:
+the folders are somewhere the user does not want to type."
+  (vm-folder-test--with-a-thunderbird-folder
+    (vm-visit-thunderbird-folder "Inbox")
+    (should (equal (buffer-file-name) file))
+    (should (equal vm-foreign-folder-directory dir))))
+
+;;; A command that needs something this Emacs has not had for years
+
+(ert-deftest vm-folder-test-summarizing-folders-says-what-it-needs ()
+  "`vm-folders-summarize' wants Berkeley DB, which Emacs dropped long ago.
+It says so rather than failing somewhere further in, and the message names
+what is missing."
+  (let ((text-quoting-style 'grave))
+    (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
+              ((symbol-function 'vm-check-for-killed-summary) #'ignore))
+      (let ((err (should-error (vm-folders-summarize) :type 'error)))
+        (should (string-match-p "Berkeley DB" (error-message-string err)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

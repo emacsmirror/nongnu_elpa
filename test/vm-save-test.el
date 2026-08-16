@@ -841,6 +841,87 @@ one format into a folder of another is how a folder stops being readable."
             (should (string-match-p "Subject: msg 1" (buffer-string)))
             (should (string-match-p "^Content-Length:" (buffer-string)))))))))
 
+;;; Archiving by the auto-folder rules
+
+(defun vm-save-test--folder-subjects (file)
+  "The Subject of every message in FILE, in order."
+  (when (file-exists-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (let (subjects)
+        (while (re-search-forward "^Subject: \\(.*\\)$" nil t)
+          (push (match-string 1) subjects))
+        (nreverse subjects)))))
+
+(defmacro vm-save-test--archiving (&rest body)
+  "Visit a folder of three messages and run BODY, ready to auto-archive.
+`vm-auto-folder-alist' sends the odd-numbered subjects to `odd' and the even
+ones to `even', both in DIR, so what went where is visible afterwards.  No
+confirmation is asked: the command is called from Lisp here."
+  (declare (indent 0) (debug t))
+  `(vm-save-test--with-a-folder-of 3
+     (let ((vm-auto-folder-alist
+            (list (list "Subject"
+                        (cons "msg [13]" (expand-file-name "odd" dir))
+                        (cons "msg 2" (expand-file-name "even" dir)))))
+           (vm-save-using-auto-folders t)
+           (vm-confirm-for-auto-archive nil)
+           (vm-delete-after-archiving nil))
+       ,@body)))
+
+(ert-deftest vm-save-test-archiving-files-each-message-by-its-rule ()
+  "`vm-auto-archive-messages' saves every message to the folder its rules
+name, and marks it filed so that a second archive does not save it again."
+  (vm-save-test--archiving
+    (vm-auto-archive-messages)
+    (should (equal (vm-save-test--folder-subjects (expand-file-name "odd" dir))
+                   '("msg 1" "msg 3")))
+    (should (equal (vm-save-test--folder-subjects (expand-file-name "even" dir))
+                   '("msg 2")))
+    (dolist (m vm-message-list)
+      (should (vm-filed-flag m)))
+    ;; and again, with everything filed, files nothing more
+    (vm-auto-archive-messages)
+    (should (equal (vm-save-test--folder-subjects (expand-file-name "odd" dir))
+                   '("msg 1" "msg 3")))))
+
+(ert-deftest vm-save-test-archiving-passes-over-a-deleted-message ()
+  "A message marked for deletion is not archived: it is on its way out, and
+filing it would put it in the archive as well as in the folder."
+  (vm-save-test--archiving
+    (vm-set-deleted-flag (car vm-message-list) t)
+    (vm-auto-archive-messages)
+    (should (equal (vm-save-test--folder-subjects (expand-file-name "odd" dir))
+                   '("msg 3")))
+    (should-not (vm-filed-flag (car vm-message-list)))))
+
+(ert-deftest vm-save-test-archiving-can-delete-what-it-filed ()
+  "`vm-delete-after-archiving' marks each archived message deleted, which is
+what makes archiving a way of emptying the folder."
+  (vm-save-test--archiving
+    (let ((vm-delete-after-archiving t))
+      (vm-auto-archive-messages))
+    (should (equal (vm-save-test--folder-subjects (expand-file-name "odd" dir))
+                   '("msg 1" "msg 3")))
+    (dolist (m vm-message-list)
+      (should (vm-deleted-flag m)))))
+
+(ert-deftest vm-save-test-archiving-asks-first-when-told-to ()
+  "`vm-confirm-for-auto-archive' is the guard against a mistyped `A': saying
+no leaves the folder alone."
+  (vm-save-test--archiving
+    (let ((vm-confirm-for-auto-archive t)
+          (text-quoting-style 'grave))
+      ;; `vm-interactive-p' is a macro over `called-interactively-p', so it
+      ;; is the latter that a test can stub
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'called-interactively-p) (lambda (&rest _) t)))
+        (should-error (vm-auto-archive-messages) :type 'error))
+      (should-not (vm-save-test--folder-subjects (expand-file-name "odd" dir)))
+      (dolist (m vm-message-list)
+        (should-not (vm-filed-flag m))))))
+
 (provide 'vm-save-test)
 
 ;;; vm-save-test.el ends here
