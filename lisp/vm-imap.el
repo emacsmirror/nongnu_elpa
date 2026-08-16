@@ -3573,8 +3573,9 @@ headers-only form."
 		     (vm-safe-imapdrop-string imapdrop)))
 	 (use-body-peek (vm-folder-imap-body-peek))
 	 (uid-validity (vm-folder-imap-uid-validity))
-	 uid r-list r-entry range new-messages message-size 
+	 uid r-list r-entry range new-messages message-size
 	 statblob old-eob pos k mp pair
+	 (sizes (make-hash-table))	; message sequence number -> size
 	 (headers-only (or (eq vm-enable-external-messages t)
 			  (memq 'imap vm-enable-external-messages)))
 	 (n 0))
@@ -3587,14 +3588,15 @@ headers-only form."
        (goto-char (point-max))
        (when (null vm-imap-max-message-size)
 	 (setq vm-imap-max-message-size most-positive-fixnum))
-       ;; Annotate retrieve-list with headers-only flags
+       ;; Annotate retrieve-list with headers-only flags, keeping the sizes
+       ;; the UID FETCH already told us for the status display below.
        (setq retrieve-list
-	     (mapcar 
+	     (mapcar
 	      (lambda (pair)
-		(if (> (read (vm-folder-imap-uid-message-size (car pair)))
-		       vm-imap-max-message-size)
-		    (list (car pair) (cdr pair) headers-only)
-		  (list (car pair) (cdr pair) nil)))
+		(let ((size (read (vm-folder-imap-uid-message-size (car pair)))))
+		  (puthash (cdr pair) size sizes)
+		  (list (car pair) (cdr pair)
+			(and (> size vm-imap-max-message-size) headers-only))))
 	      retrieve-list))
        (setq r-list (vm-imap-bunch-retrieve-list 
 		     (mapcar (function cdr) retrieve-list)))
@@ -3613,9 +3615,12 @@ headers-only form."
 			 range (car pair)
 			 headers-only (cadr pair))
 		   (vm-set-imap-status-currmsg statblob n)
-		   (setq message-size 
-			 (vm-imap-get-message-size
-			  process (car range))) ; sloppy, one size fits all
+		   ;; The size of the first message of the bunch, as the
+		   ;; status display's estimate for all of them.  It comes
+		   ;; from the UID FETCH that opened the folder: asking the
+		   ;; server again cost a round trip per bunch, which on a
+		   ;; mailbox of 100,000 messages was 10,000 of them.
+		   (setq message-size (gethash (car range) sizes))
 		   (vm-set-imap-status-need statblob message-size)
 		   ;;----------------------------------
 		   (vm-imap-session-type:assert 'valid)

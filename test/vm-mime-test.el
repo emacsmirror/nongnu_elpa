@@ -3821,6 +3821,26 @@ had no effect since Emacs 20 decided a buffer's charset for itself
   (should-not (fboundp 'vm-mime-set-8bit-composition-charset))
   (should-not (boundp 'vm-mime-8bit-composition-charset)))
 
+(ert-deftest vm-mime-test-emacs-w3-is-gone ()
+  "Emacs/W3 is no longer offered as an HTML viewer (emacs-vm/vm#707).
+The browser was dropped from Emacs and is in no archive, so `auto-select'
+choosing it left every HTML part failing on a void `w3-region'."
+  (should-not (fboundp 'vm-mime-display-internal-emacs-w3-text/html))
+  (should-not (memq 'emacs-w3
+                    (vm-mime-test--custom-constants 'vm-mime-text/html-handler)))
+  (should-not (memq 'url-w3
+                    (vm-mime-test--custom-constants 'vm-url-retrieval-methods)))
+  (let ((vm-mime-text/html-handler 'auto-select))
+    (should-not (eq (vm-mime-text/html-handler) 'emacs-w3))))
+
+(defun vm-mime-test--custom-constants (variable)
+  "The symbols a `const' in VARIABLE's customize type offers."
+  (let ((type (get variable 'custom-type)))
+    (delq nil (mapcar (lambda (branch)
+                        (and (consp branch) (eq (car branch) 'const)
+                             (car (last branch))))
+                      (cdr type)))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

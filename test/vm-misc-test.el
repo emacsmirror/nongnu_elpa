@@ -1228,6 +1228,81 @@ how a reader is given time to see it."
       (vm-inform 5 "something happened")
       (should (equal waited 3)))))
 
+;;; Timing and the log (vm-verbose-timing, vm-log-level)
+
+(defmacro vm-misc-test--with-log (&rest body)
+  "Run BODY with a log buffer of its own, and answer with what it holds."
+  (declare (indent 0) (debug t))
+  `(let ((vm-log-buffer-name " *vm-misc-test-log*")
+         (vm-last-message-time nil))
+     (unwind-protect
+         (progn ,@body
+                (if (get-buffer vm-log-buffer-name)
+                    (with-current-buffer vm-log-buffer-name (buffer-string))
+                  ""))
+       (when (get-buffer vm-log-buffer-name)
+         (kill-buffer vm-log-buffer-name)))))
+
+(ert-deftest vm-misc-test-timing-is-off-by-default ()
+  "Nothing is prefixed to a message until it is asked for."
+  (let ((vm-verbose-timing nil)
+        (vm-log-level nil))
+    (should (equal '("five") (vm-misc-test--messages-at
+                              5 (lambda () (vm-inform 5 "five")))))))
+
+(ert-deftest vm-misc-test-timing-says-when-and-how-long ()
+  "`vm-verbose-timing' prefixes the clock time, and after the first message
+the real and CPU seconds since the one before it.  Which step of a slow
+operation the time went to is the question it answers."
+  (let ((vm-verbose-timing t)
+        (vm-log-level nil)
+        (vm-last-message-time nil))
+    (let ((said (vm-misc-test--messages-at
+                 5 (lambda () (vm-inform 5 "first") (vm-inform 5 "second")))))
+      (should (equal (length said) 2))
+      (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\}  first\\'"
+                              (nth 0 said)))
+      (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\} \\+[0-9.]+s \\+[0-9.]+cpu  second\\'"
+                              (nth 1 said))))))
+
+(ert-deftest vm-misc-test-the-log-keeps-what-verbosity-hides ()
+  "`vm-log-level' records a message the minibuffer never sees, which is how
+to keep the detail of a slow operation without the churn.  The two are
+independent: nothing is shown, and the line is still there."
+  (let ((vm-verbosity 5)
+        (vm-log-level 10)
+        (vm-verbal-time 0)
+        (said nil))
+    (let ((log (vm-misc-test--with-log
+                 (cl-letf (((symbol-function 'message)
+                            (lambda (&rest args) (push (apply #'format args) said))))
+                   (should-not (vm-inform 9 "a detail worth keeping"))))))
+      (should-not said)
+      (should (string-match-p "\\[9\\] a detail worth keeping" log))
+      (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\." log)))))
+
+(ert-deftest vm-misc-test-the-log-keeps-warnings-too ()
+  "A warning is recorded on the same terms, so a run that ends in one has it
+in the same place as what led up to it."
+  (let ((vm-verbosity 5)
+        (vm-log-level 10)
+        (vm-current-warning nil))
+    (let ((log (vm-misc-test--with-log
+                (cl-letf (((symbol-function 'message) #'ignore)
+                          ((symbol-function 'sit-for) (lambda (&rest _) t)))
+                  (vm-warn 1 0 "something is wrong")))))
+      (should (string-match-p "\\[1\\] something is wrong" log)))))
+
+(ert-deftest vm-misc-test-an-unrecorded-message-does-not-move-the-interval ()
+  "A message that is neither shown nor recorded costs nothing and is not
+timed: the next interval is measured from the last message that was."
+  (let ((vm-verbosity 5)
+        (vm-log-level nil)
+        (vm-verbose-timing t)
+        (vm-last-message-time nil))
+    (vm-misc-test--messages-at 5 (lambda () (vm-inform 9 "not shown")))
+    (should-not vm-last-message-time)))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

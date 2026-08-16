@@ -1930,7 +1930,6 @@ attached in \"multipart/signed\" parts."
   "*The library used for displaying HTML messages.  The possible
 values are:
   emacs-w3m  The emacs interface to the w3m viewer,
-  emacs-w3   The emacs interface to the w3 viewer,
   w3m        The w3m viewer used externally to convert to plain text,
   lynx       The lynx viewer used externally to convert to plain text,
   auto-select Automatic selection among these alternatives, and
@@ -1940,7 +1939,6 @@ values are:
   :type '(choice (const :tag "Do not display HTML messages." nil)
                  (const :tag "Autoselect best method" auto-select)
                  (const emacs-w3m)
-                 (const emacs-w3)
                  (const w3m)
                  (const lynx)))
 
@@ -4033,6 +4031,32 @@ progress.  Nothing above 1 is a warning."
   :group 'vm-misc
   :type 'integer)
 
+(defcustom vm-verbose-timing nil
+  "*Non-nil means each message VM shows says when it was shown.
+The message is prefixed with the clock time, the real seconds since VM's
+previous message and the CPU seconds VM used in that interval:
+
+  14:03:12.481 +2.140s +0.310cpu  INBOX: Retrieving message 400 (of 100000)...
+
+Raising `vm-verbosity' and turning this on says which step of a slow
+operation the time went to, and how much of it was VM's own work rather than
+waiting for a server."
+  :group 'vm-misc
+  :type 'boolean)
+
+(defcustom vm-log-level nil
+  "*Level up to which VM records its messages in the buffer *VM Log*.
+The scale is `vm-verbosity''s, and the two are independent: a level recorded
+here need not be one that is shown, which is how to keep the detail of a
+slow operation without the minibuffer churn -- and without
+`vm-verbal-time' pausing for each of them.  Every recorded line carries the
+timing `vm-verbose-timing' describes.
+
+A nil value records nothing.  The buffer is never trimmed, so a long run at
+a high level makes a large one."
+  :group 'vm-misc
+  :type '(choice (const :tag "Record nothing" nil) integer))
+
 (defcustom vm-verbal-time 0
   "*Number of seconds for which to display VM's minibuffer messages.
 This number should be normally 0.  Otherwise, it will delay VM's
@@ -4538,9 +4562,7 @@ with the following meanings
         curl - means VM should try to use the curl program.
 
 The list can contain all these values and VM will try them all,
-but not in any particular order, except that the url-w3 method
-will likely be tried last since it is likely to be the slowest
-retrieval method.
+but not in any particular order.
 
 If `vm-url-retrieval-methods' value is nil, VM will not try to
 use any URL retrieval methods."
@@ -4549,8 +4571,7 @@ use any URL retrieval methods."
 	      (const wget)
 	      (const w3m)
 	      (const fetch)
-	      (const curl)
-	      (const url-w3)))
+	      (const curl)))
 
 (defcustom vm-url-browser 'browse-url
   "*The default web browser to be used for following URLs (hyperlinks)

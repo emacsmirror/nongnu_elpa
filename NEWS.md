@@ -83,6 +83,37 @@ needing a little more than a deleted line:
     the old one to t, set `vm-mime-forward-saved-attachments` to nil instead:
     it says the same thing the other way up.
 
+## Emacs/W3 is no longer one of the HTML viewers
+
+The W3 browser was dropped from Emacs and is in no package archive, so nothing
+could supply it (emacs-vm/vm#707).  If your init file sets
+`vm-mime-text/html-handler` to `emacs-w3`, set it to `emacs-w3m`, `w3m`, `lynx`
+or nil; the default `auto-select` no longer considers it.  `vm-url-browser`
+values `w3-fetch` and `w3-fetch-other-frame` are gone the same way, as is the
+`url-w3` entry in `vm-url-retrieval-methods`, which no code ever implemented.
+
+emacs-w3m is a different package and is unaffected.
+
+## Two ways to find out where VM's time goes
+
+  * `vm-verbose-timing`, when non-nil, prefixes every message VM shows with
+    the clock time, the real seconds since its previous message and the CPU
+    seconds it used in between:
+
+    ```
+    14:03:12.481 +2.140s +0.310cpu  INBOX: Retrieving message 400 (of 100000)...
+    ```
+
+    An interval that is all real time and no CPU went on the network.
+
+  * `vm-log-level` takes a level on `vm-verbosity`'s scale and records every
+    message up to it in the buffer `*VM Log*`, shown or not, each line timed
+    the same way.  `(setq vm-log-level 10)` leaves the display alone and
+    keeps the whole of what VM did, which is what to send with a report of
+    something slow.
+
+Both are off by default.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a

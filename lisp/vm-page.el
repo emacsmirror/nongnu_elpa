@@ -606,10 +606,6 @@ Negative arg means scroll forward."
    "Use mouse button 2 to send the URL to %s.
 Use mouse button 3 to choose a Web browser for the URL."
    (cond ((stringp vm-url-browser) vm-url-browser)
-	 ((eq vm-url-browser 'w3-fetch)
-	  "Emacs W3")
-	 ((eq vm-url-browser 'w3-fetch-other-frame)
-	  "Emacs W3")
 	 ((eq vm-url-browser 'vm-mouse-send-url-to-mosaic)
 	  "Mosaic")
 	 ((eq vm-url-browser 'vm-mouse-send-url-to-netscape)
