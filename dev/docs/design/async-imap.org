@@ -19,6 +19,23 @@ default that keeps today's behaviour.  Every converted path is asynchronous
 from the moment it lands.  That is why the work happens on a branch of its
 own rather than on develop.
 
+*** Generators, not hand-written CPS
+
+The parser is written with =iter-defun= (option 3).  The spike answered every
+question that stood in its way: =unwind-protect= and =condition-case= survive a
+yield, =iter-yield-from= carries a nested parse back, and the driver feeds the
+parser by passing a value to =iter-next=.  See "The generator spike" below for
+what was run and what it cost.
+
+What that buys is the hardest part of the conversion for almost nothing:
+vm-imap-read-object keeps its recursive shape, with =iter-yield= where it waits
+and =iter-yield-from= where it recurses, instead of being turned inside out
+into a reified stack of parser frames.
+
+What it costs: about 1.5 microseconds a yield, so the parser yields when it
+wants input and not per token; and an iterator nobody closes runs no cleanup,
+so every path that abandons a session calls =iter-close=.
+
 *** develop-async
 
 =develop-async= is the integration branch for this work.  It is on
@@ -494,9 +511,39 @@ to yield.
 - An iter-defun cannot be called from an ordinary function, so the same
   explicit driver boundary as option 2 is needed, and the same two drivers sit
   on it.
-- Unverified: whether generator.el's CPS transform copes with the whole of
-  vm-imap-read-object, in particular unwind-protect inside an iter-defun. This
-  needs a spike before the option is chosen.
+- Verified by the spike below: generator.el copes with everything
+  vm-imap-read-object needs.
+
+*** The generator spike, and what it answered
+
+Run against Emacs 30.2 in batch.  Each of these was a question that decided
+whether option 3 is available at all.
+
+- =unwind-protect= around =iter-yield= compiles and runs, and the cleanup runs
+  when the iterator finishes.  This was the blocking question.
+- =iter-close= on an iterator abandoned half way runs the cleanup.  Dropping
+  the last reference and garbage-collecting instead does *not*: the cleanup is
+  silently skipped.  So a converted session has to be closed explicitly, and
+  "what does an interrupted POP session do about pending DELEs" is answered by
+  whoever owns the iterator, not by the garbage collector.
+- =condition-case= spanning a yield catches an error signalled after the
+  resume, and the handler's value becomes the iterator's return value.
+- =iter-yield-from= returns the sub-iterator's return value, which is what a
+  recursive descent parser needs: vm-imap-read-object's 8 self-calls become
+  =iter-yield-from= and still yield a parse tree.
+- The value passed to =iter-next= becomes the value of the =iter-yield= that
+  suspended the iterator.  That is the shape of "here is more input, carry
+  on", so the driver hands the parser what arrived rather than the parser
+  reaching for it.
+- Cost: 20,000 yields took 0.031s against 0.005s for the same loop without
+  them, so roughly 1.5 microseconds a yield, six times a plain call.  That is
+  affordable if the parser yields when it needs *input*, as it does today at
+  four places, and is not if it yields per token.
+
+The one thing to hold on to: nothing runs a cleanup for an iterator nobody
+closes.  Today an =unwind-protect= in a blocking read runs whatever happens,
+including on C-g; under generators it runs when the driver says so.  Every
+driver path that abandons a session must call =iter-close=.
 
 *** Option 4: threads
 
@@ -682,10 +729,8 @@ On =develop-async=, each step its own merge request into that branch.
    none of them is asynchronous: the duplicated POP UIDL loop, distinct IMAP
    tags, per-session vm-buffer-types, the sleep-for pauses.  POP read timeouts
    are done (issue #639).
-2. Spike generator.el against vm-imap-read-object, including unwind-protect
-   inside iter-defun.  Decide option 2's hand-written CPS or option 3's
-   iter-defun on the result.  This decides how the parser is written, not
-   whether the result blocks.
+2. Done: the generator spike, and with it the decision to write the parser
+   with iter-defun.  See "Decisions taken" and "The generator spike".
 3. Build the state object and the filter driver, covered by the mock servers,
    using the fault injections for the abandoned-continuation cases.
 4. Convert POP first: 23 call sites, 6 frames, no recursion.  It lands
@@ -708,11 +753,10 @@ tested by running it, not by leaving it switched off.
 
 ** Open questions
 
-- Does generator.el's transform handle unwind-protect inside iter-defun well
-  enough for vm-imap-read-object? Unverified, and it decides between option 2
-  and option 3.
-- What does an interrupted POP session do about pending DELEs? Whether an
-  abandoned continuation reaches QUIT decides between losing deletes and
+- What does an interrupted POP session do about pending DELEs?  Under
+  generators this is decided by whether the driver closes the iterator, not by
+  the garbage collector: see the spike above.  Whether an abandoned
+  continuation reaches QUIT decides between losing deletes and
   losing mail. Needs a test against test/vm-pop-mock.el rather than an
   argument. The mock's silent-on fault aimed at RETR or DELE is one way to
   provoke it; not tried.
@@ -720,7 +764,12 @@ tested by running it, not by leaving it switched off.
   (lisp/vm-vars.el:7289) and they are the only check on the invariants an
   interleaving would break.
 - Can vm-buffer-types be made per-session without disturbing the 95 sites that
-  use the four buffer-type macros in vm-imap.el? Not investigated.
+  use the four buffer-type macros in vm-imap.el?  Partly investigated
+  (issue #705).  Counting pushes against pops per function found two that took
+  a frame they never pushed, now fixed; the rest balance.  The stack itself is
+  dynamic-extent state that has to survive a resume, so it belongs in the
+  session state object rather than in a global -- which means it is not a
+  separate piece of work but part of building that object.
 
 ** References
 
