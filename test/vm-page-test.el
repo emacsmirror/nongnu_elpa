@@ -655,6 +655,35 @@ docstring says: negative N to `vm-next-button' moves to the Nth previous."
         (vm-previous-button -1)
         (should (equal (point) second))))))
 
+;;; Moving about in the message being read
+
+(ert-deftest vm-page-test-beginning-of-message-goes-to-the-top ()
+  "`vm-beginning-of-message' puts point at the start of the message and, with
+page delimiters honoured, shows the first page again -- which is what makes it
+a way back from the bottom of a long message."
+  (vm-page-test-with-paged-message
+    (save-window-excursion
+      (set-window-buffer (selected-window) (current-buffer))
+      (vm-page-test--goto-last-page)
+      (should (string-match-p "page three" (buffer-string)))
+      (vm-beginning-of-message)
+      (should (equal (point) (point-min)))
+      (should (string-match-p "page one text" (buffer-string)))
+      (should-not (string-match-p "page three" (buffer-string))))))
+
+(ert-deftest vm-page-test-end-of-message-goes-to-the-bottom ()
+  "`vm-end-of-message' shows the message if it was only being previewed, puts
+point at its end, and leaves the last page showing."
+  (vm-page-test-with-paged-message
+    (save-window-excursion
+      (set-window-buffer (selected-window) (current-buffer))
+      (setq vm-system-state 'previewing)
+      (vm-end-of-message)
+      (should (eq vm-system-state 'reading))
+      (should (equal (point) (point-max)))
+      (should (string-match-p "page three text" (buffer-string)))
+      (should-not (string-match-p "page one" (buffer-string))))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here
