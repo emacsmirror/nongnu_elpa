@@ -2720,11 +2720,6 @@ Under FSF Emacs, `vm-page-continuation-glyph' must be a string."
       (((- (0 0 80 10) (0 10 80 40))
 	((nil summary) (nil message))
 	((nil nil nil t) (nil nil nil nil))))))
-    (vm-folders-summarize
-     ((((top . 70) (left . 70)))
-      (((- (0 0 80 10) (0 10 80 40))
-	((nil folders-summary) (nil message))
-	((nil nil nil t) (nil nil nil nil))))))
    )
   "Default window configuration for VM if the user does not specify one.
 If you want to completely turn off VM's window configuration
@@ -4155,56 +4150,6 @@ subject are significant."
   :type '(choice (const :tag "All Characters" nil) 
 		 (integer :tag "Number of characters")))
 
-(defcustom vm-folders-summary-database "~/.vm.folders.db"
-  "*Name of Berkeley DB file used to store summary information about folders.
-This file is consulted to produce the folders summary."
-  :group 'vm-summary
-  :type 'file)
-
-(defcustom vm-folders-summary-format
-      "  %12f %4t total, %n new, %u unread, %s spooled\n"
-  "*String that specifies the folders summary format.
-The string may contain the printf-like `%' conversion specifiers which
-substitute information about the folder into the final summary line.
-
-Recognized specifiers are:
-   d - the number of deleted messages in the folder
-   f - the name of the folder without the directory part
-   n - the number of new messages in the folder
-   t - the total number of messages in the folder
-   u - the number of old but still unread messages in the folder
-   ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatenation of
-       group of format specifiers.  Example: \"%.35(%d, %t, %f%)\"
-       specifies a maximum display width of 35 characters for the
-       concatenation of the content description, content type and
-       suggested file name.
-   ) - ends a group.
-
-Use %% to get a single %.
-
-A numeric field width may be given between the `%' and the specifier;
-this causes right justification of the substituted string.  A negative field
-width causes left justification.
-
-The field width may be followed by a `.' and a number specifying
-the maximum allowed length of the substituted string.  If the
-string is longer than this value the right end of the string is
-truncated.  If the value is negative, the string is truncated on
-the left instead of the right.
-
-The summary format need not be one line per folder, but it should end with
-a newline."
-  :group 'vm-summary
-  :type 'string)
-
-(defcustom vm-folders-summary-directories
-      (list (or vm-folder-directory (file-name-directory vm-primary-inbox)))
-  "*List of directories containing folders to be listed in the folders summary.
-List the directories in the order you wish them to appear in the summary."
-  :group 'vm-summary
-  :type '(repeat directory))
-
 (defvaralias 'vm-mutable-windows 
   'vm-mutable-window-configuration)
 (defcustom vm-mutable-window-configuration pop-up-windows
@@ -4262,17 +4207,6 @@ VM will use them."
 Nil means the `vm-summarize' command will use the current frame.
 This variable does not apply to `vm-summarize-other-frame', which
 always create a new frame.
-
-This variable has no meaning if you're not running under an Emacs
-capable of displaying multiple real or virtual frames.  Note that
-Emacs supports multiple virtual frames on dumb terminals, and
-VM will use them."
-  :group 'vm-frames
-  :type 'boolean)
-
-(defcustom vm-frame-per-folders-summary nil
-  "Non-nil value causes VM to display the \"all folders\" summary in its own frame.
-Nil means the `vm-folders-summarize' command will use the current frame.
 
 This variable has no meaning if you're not running under an Emacs
 capable of displaying multiple real or virtual frames.  Note that
@@ -4360,8 +4294,6 @@ of frame that the following PARAMLIST applies to.
    (e.g. created by `vm-edit-message-other-frame')
 ``folder'' specifies parameters for frames created by `vm' and the
    ``vm-visit-'' commands.
-``folders-summary'' specifies parameters for frames created by the
-   ``vm-folders-summarize'' command.
 ``primary-folder'' specifies parameters for the frame created by running
    `vm' without any arguments.
 ``summary'' specifies parameters for frames that display a summary buffer
@@ -4374,7 +4306,6 @@ the function `make-frame'."
 			       (const composition)
 			       (const edit)
 			       (const folder)
-			       (const folders-summary)
 			       (const primary-folder)
 			       (const summary))
 		       (repeat (cons symbol sexp)))))
@@ -5397,12 +5328,6 @@ You should use the new name."
   :group 'vm-hooks
   :type 'hook)
 
-(defcustom vm-folders-summary-mode-hook nil
-  "*List of hook functions to run when a VM folders summary buffer is created.
-The current buffer will be that buffer when the hooks are run."
-  :group 'vm-hooks
-  :type 'hook)
-
 (defcustom vm-virtual-mode-hook nil
   "*List of hook functions to run when a VM virtual folder buffer is created.
 The current buffer will be that buffer when the hooks are run."
@@ -6019,7 +5944,6 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     ;; but no harm in suppressing.  USR, 2011-04-27
     (suppress-keymap map)
     (define-key map "h" 'vm-summarize)
-    (define-key map "H" 'vm-folders-summarize)
     (define-key map "\M-n" 'vm-next-unread-message)
     (define-key map "\M-p" 'vm-previous-unread-message)
     (define-key map "n" 'vm-next-message)
@@ -6278,9 +6202,6 @@ folded (collapsed) in VM summary windows.")
 (defvar vm-summary-mode-map vm-mode-map
   "Keymap for VM Summary mode")
 
-(defvar vm-folders-summary-mode-map vm-mode-map
-  "Keymap for VM Folders Summary mode")
-
 (defvar vm-mail-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\C-c\C-v" vm-mode-map)
@@ -6408,10 +6329,6 @@ current message.")
   "A pointer into the `vm-message-list' indicating the position of the
 message last viewed.")
 (make-variable-buffer-local 'vm-last-message-pointer)
-(defvar vm-folders-summary-hash nil)
-(defvar vm-folders-summary-spool-hash nil)
-(defvar vm-folders-summary-folder-hash nil)
-(defvar vm-folders-summary-buffer nil)
 (defvar vm-mail-buffer nil
   "The folder buffer of the current buffer.")
 (make-variable-buffer-local 'vm-mail-buffer)
@@ -6602,7 +6519,6 @@ still accepted where a type is given, and is not offered here.")
     ("vm-expunge-folder")
     ("vm-expunge-imap-messages")
     ("vm-expunge-pop-messages")
-    ("vm-folders-summarize")
     ("vm-followup")
     ("vm-followup-include-text")
     ("vm-followup-include-text-other-frame")
@@ -6961,7 +6877,6 @@ Should be just a list of strings, not an alist or an obarray.")
 (defvar vm-completion-auto-space t
   "Non-nil value means that `vm-minibuffer-complete-word' should automatically
 append a space to words that complete unambiguously.")
-(defconst vm-folder-summary-vector-length 15)
 (defconst vm-startup-message-lines
   '("Please use \\[vm-submit-bug-report] to report bugs."
     "For discussion about the VM mail reader, see the gnu.emacs.vm.info newsgroup"
@@ -7221,8 +7136,6 @@ that has a match.")
 (make-variable-buffer-local 'vm-summary-overlay)
 (defvar vm-summary-tokenized-compiled-format-alist nil)
 (defvar vm-summary-untokenized-compiled-format-alist nil)
-(defvar vm-folders-summary-compiled-format-alist nil)
-(defvar vm-folders-summary-overlay nil)
 (defvar vm-spool-file-message-count-hash (make-vector 61 0))
 (defvar vm-page-end-overlay nil)
 (make-variable-buffer-local 'vm-page-end-overlay)

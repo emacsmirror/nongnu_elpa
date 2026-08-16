@@ -2899,7 +2899,6 @@ directory that nothing has written yet."
                (vm-frame-per-folder nil)
                (vm-mutable-frame-configuration nil)
                (vm-default-folder-permission-bits #o600)
-               (vm-folders-summary-database nil)
                (vm-current-warning vm-current-warning))
            (write-region vm-folder-test--state-message nil ,(car spec) nil 'quiet)
            (cl-letf (((symbol-function 'vm-display) #'ignore))
@@ -3809,60 +3808,19 @@ the folders are somewhere the user does not want to type."
     (should (equal (buffer-file-name) file))
     (should (equal vm-foreign-folder-directory dir))))
 
-;;; A command that needs something this Emacs has not had for years
-
-(ert-deftest vm-folder-test-summarizing-folders-says-what-it-needs ()
-  "`vm-folders-summarize' wants Berkeley DB, which Emacs dropped long ago.
-It says so rather than failing somewhere further in, and the message names
-what is missing."
-  (let ((text-quoting-style 'grave))
-    (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
-              ((symbol-function 'vm-check-for-killed-summary) #'ignore))
-      (let ((err (should-error (vm-folders-summarize) :type 'error)))
-        (should (string-match-p "Berkeley DB" (error-message-string err)))))))
-
-;;; Moving between the folders that are open
-
-(ert-deftest vm-folder-test-switching-to-another-open-folder ()
-  "`vm-switch-to-folder' goes to a folder that is already open, by name, and
-leaves it selected and summarized -- it is how a reader with several folders
-open moves between them without visiting anything again."
-  (let* ((dir (file-name-as-directory (make-temp-file "vm-switch" t)))
-         (first (expand-file-name "first" dir))
-         (second (expand-file-name "second" dir))
-         (vm-init-file nil)
-         (vm-preferences-file nil)
-         (vm-confirm-quit nil)
-         (vm-frame-per-folder nil)
-         (vm-mutable-frame-configuration nil)
-         (vm-folder-history vm-folder-history)
-         (vm-last-visit-folder vm-last-visit-folder)
-         (before (buffer-list)))
-    (unwind-protect
-        (cl-letf (((symbol-function 'vm-display) #'ignore))
-          (dolist (pair (list (cons first "in the first")
-                              (cons second "in the second")))
-            (with-temp-file (car pair)
-              (insert "From alice@example.com Sat Aug  8 14:24:13 2026\n"
-                      "From: alice@example.com\n"
-                      "Subject: " (cdr pair) "\n\nBody.\n\n")))
-          (vm-visit-folder first)
-          (vm-visit-folder second)
-          (should (equal (buffer-name) "second"))
-          (vm-switch-to-folder "first")
-          (should (equal (buffer-name) "first"))
-          (should (equal (vm-su-subject (car vm-message-list)) "in the first"))
-          ;; the folder it went to is the one whose summary is on screen
-          (should (buffer-live-p vm-summary-buffer))
-          (should (equal (buffer-name (with-current-buffer vm-summary-buffer
-                                        vm-mail-buffer))
-                         "first")))
-      (dolist (buffer (buffer-list))
-        (unless (memq buffer before)
-          (when (buffer-live-p buffer)
-            (with-current-buffer buffer (set-buffer-modified-p nil))
-            (kill-buffer buffer))))
-      (delete-directory dir t))))
+(ert-deftest vm-folder-test-the-folders-summary-is-gone ()
+  "The folders summary is removed (emacs-vm/vm#701).  It kept its counts in
+Berkeley DB, an XEmacs package GNU Emacs has never had, so on the only Emacs
+VM supports the command signalled before doing anything and the counts were
+never written.  Nothing of it is left to call."
+  (dolist (name '(vm-folders-summarize vm-get-folder-totals
+                  vm-store-folder-totals vm-modify-folder-totals
+                  vm-do-folders-summary vm-follow-folders-summary-cursor))
+    (should-not (fboundp name)))
+  (dolist (name '(vm-folders-summary-database vm-folders-summary-format
+                  vm-folders-summary-directories vm-frame-per-folders-summary
+                  vm-folders-summary-buffer))
+    (should-not (boundp name))))
 
 (provide 'vm-folder-test)
 

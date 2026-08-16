@@ -58,7 +58,6 @@ given."
    (list
     (cond (current-prefix-arg (prefix-numeric-value current-prefix-arg))
 	  ((vm-follow-summary-cursor) nil)
-	  ((vm-follow-folders-summary-cursor) nil)
 	  (t
 	   (let ((last-command last-command)
 		 (this-command this-command))

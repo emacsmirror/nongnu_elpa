@@ -427,8 +427,7 @@ carried VM 8 bindings from here on."
   (require 'vm)
   (let ((vm-mode-map (copy-keymap vm-mode-map))
         (vm-mode-virtual-map (copy-keymap vm-mode-virtual-map))
-        (vm-summary-mode-map (copy-keymap vm-summary-mode-map))
-        (vm-folders-summary-mode-map (copy-keymap vm-folders-summary-mode-map)))
+        (vm-summary-mode-map (copy-keymap vm-summary-mode-map)))
     (vm-v8-key-bindings)
     (vm-integration-test--check-bindings)))
 
@@ -446,7 +445,7 @@ carried VM 8 bindings from here on."
                                     broken)))))
                    map)))
       (dolist (m '(vm-mode-map vm-summary-mode-map vm-mail-mode-map
-                   vm-mime-reader-map vm-folders-summary-mode-map
+                   vm-mime-reader-map
                    vm-mode-virtual-map vm-mode-mark-map vm-mode-window-map
                    vm-mode-pipe-map))
         (when (and (boundp m) (keymapp (symbol-value m)))

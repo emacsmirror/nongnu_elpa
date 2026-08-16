@@ -182,7 +182,7 @@
 	(throw 'done nil))
     (let ((nonexistent " *vm-nonexistent*")
 	  (nonexistent-summary " *vm-nonexistent-summary*")
-	  folders-summary summary message composition edit config)
+	  summary message composition edit config)
       (while (and tags (null config))
 	(setq config (assq (car tags) vm-window-configurations)
 	      tags (cdr tags)))
@@ -194,11 +194,6 @@
 	     (if (or (null vm-mail-buffer) (null (buffer-name vm-mail-buffer)))
 		 (throw 'done nil)
 	       (setq summary (current-buffer))
-	       (setq message vm-mail-buffer)))
-	    ((eq major-mode 'vm-folders-summary-mode)
-	     (if (or (null vm-mail-buffer) (null (buffer-name vm-mail-buffer)))
-		 (throw 'done nil)
-	       (setq folders-summary (current-buffer))
 	       (setq message vm-mail-buffer)))
 	    ((eq major-mode 'vm-mode)
 	     (setq message (current-buffer)))
@@ -224,8 +219,6 @@
       (if vm-presentation-buffer
 	  (setq message vm-presentation-buffer))
       (vm-check-for-killed-summary)
-      (or folders-summary (setq folders-summary (or vm-folders-summary-buffer
-						    nonexistent)))
       (or summary (setq summary (or vm-summary-buffer nonexistent-summary)))
       (or composition (setq composition nonexistent))
       (or edit (setq edit nonexistent))
@@ -233,7 +226,6 @@
              (lambda (label)
                (cl-ecase label
 	         (summary summary)
-	         (folders-summary folders-summary)
 	         (composition composition)
 	         (message message)
 	         (edit edit)))))
@@ -318,8 +310,6 @@ window configurations."
   (with-current-buffer buf
     (cond ((eq major-mode 'vm-summary-mode)
 	   'summary)
-	  ((eq major-mode 'vm-folders-summary-mode)
-	   'folders-summary)
 	  ((eq major-mode 'mail-mode)
 	   'composition)
 	  ((eq major-mode 'vm-mode)
@@ -555,19 +545,6 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	(if (null w)
 	    (progn
 	      (vm-goto-new-frame 'summary)
-	      (vm-set-hooks-for-frame-deletion))
-	  (save-excursion
-	    (select-window w)
-	    (and vm-warp-mouse-to-new-frame
-		 (vm-warp-mouse-to-frame-maybe (vm-window-frame w))))))))
-
-(defun vm-goto-new-folders-summary-frame-maybe ()
-  (if (and vm-mutable-frame-configuration vm-frame-per-folders-summary
-	   (vm-multiple-frames-possible-p))
-      (let ((w (vm-get-buffer-window vm-folders-summary-buffer)))
-	(if (null w)
-	    (progn
-	      (vm-goto-new-frame 'folders-summary)
 	      (vm-set-hooks-for-frame-deletion))
 	  (save-excursion
 	    (select-window w)

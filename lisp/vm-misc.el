@@ -370,18 +370,14 @@ need to add quotes or leave them undecoded.             RWF"
 (defun vm-check-for-killed-summary ()
   "If the current folder's summary buffer has been killed, reset
 the vm-summary-buffer variable and all the summary markers in the
-folder so that it remains a valid folder.  Take care of
-vm-folders-summary-buffer in a similar way."
+folder so that it remains a valid folder."
   (and (bufferp vm-summary-buffer) (null (buffer-name vm-summary-buffer))
        (let ((mp vm-message-list))
 	 (setq vm-summary-buffer nil)
 	 (while mp
 	   (vm-set-su-start-of (car mp) nil)
 	   (vm-set-su-end-of (car mp) nil)
-	   (setq mp (cdr mp)))))
-  (and (bufferp vm-folders-summary-buffer)
-       (null (buffer-name vm-folders-summary-buffer))
-       (setq vm-folders-summary-buffer nil)))
+	   (setq mp (cdr mp))))))
 
 (defun vm-check-for-killed-presentation ()
   "If the current folder's Presentation buffer has been killed, reset
