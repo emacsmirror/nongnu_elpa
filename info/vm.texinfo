@@ -7509,7 +7509,10 @@ seconds VM used in that interval:
 
 @noindent
 The two numbers together separate VM's own work from waiting for a server:
-an interval that is all real time and no CPU went on the network.
+an interval that is all real time and no CPU went on the network.  These are
+the messages VM shows, so they appear in the echo area and in
+@samp{*Messages*} as they always did; the buffer below is what collects them
+on their own.
 
 @vindex vm-log-level
 Raising @code{vm-verbosity} to see the detail also fills the echo area with
