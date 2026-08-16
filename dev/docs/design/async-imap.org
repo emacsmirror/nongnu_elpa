@@ -3,6 +3,35 @@
 All line references were verified against the tree at the time of writing.
 Where a claim is not verified, it says so.
 
+** Decisions taken
+
+*** Non-blocking only
+
+The network layer becomes asynchronous and stays that way.  There is no
+synchronous driver, no dual mode, no per-command choice.  Option 2 below
+described one CPS path with two drivers, and the driver that blocks is not
+being built: a mode that is never exercised is a mode that rots, and keeping
+it would mean every question in the rest of this document has to be answered
+twice.
+
+What that costs: the conversion cannot be shipped a piece at a time behind a
+default that keeps today's behaviour.  Every converted path is asynchronous
+from the moment it lands.  That is why the work happens on a branch of its
+own rather than on develop.
+
+*** develop-async
+
+=develop-async= is the integration branch for this work.  It is on
+=emacs-vm/vm= so that others can test it.
+
+- Branches for individual steps are cut from =develop-async= and their merge
+  requests target =develop-async=, not =develop=.
+- =develop= is merged into =develop-async= regularly, so the branch does not
+  drift.  Merge, never rebase: the branch is published and other people have
+  it checked out.
+- =develop-async= reaches =develop= when the whole conversion is done and the
+  test suite passes against the mock servers and a live dovecot.
+
 ** Problem Statement
 
 - VM blocks Emacs for the whole of every IMAP and POP network operation.
@@ -395,9 +424,15 @@ All-or-nothing within one call chain:
 
 ** Can blocking remain an option?
 
-Yes, and it should. But only in one direction: async underneath, synchronous
-on top. The reverse is not available, because a blocking primitive cannot be
-made to yield.
+It could have; it will not.  See "Decisions taken" above: the answer below was
+written before that decision and is kept because the reasoning about what is
+and is not possible still holds, and because option 2's shape -- one CPS path,
+a state object, a poll function the two protocols share -- is what is being
+built.  What is dropped is its synchronous driver.
+
+The one-directional point stands: async underneath, synchronous on top is
+available, and the reverse is not, because a blocking primitive cannot be made
+to yield.
 
 *** Option 1: two code paths, sync and async twins
 
@@ -641,21 +676,29 @@ capability. https://github.com/skeeto/emacs-aio
 
 ** Migration path
 
-1. The staged items above, each on its own: the duplicated POP UIDL loop,
-   distinct IMAP tags, per-session vm-buffer-types, the sleep-for pauses. POP
-   read timeouts are done (issue #639).
+On =develop-async=, each step its own merge request into that branch.
+
+1. The staged items, each on its own, and each mergeable to =develop= because
+   none of them is asynchronous: the duplicated POP UIDL loop, distinct IMAP
+   tags, per-session vm-buffer-types, the sleep-for pauses.  POP read timeouts
+   are done (issue #639).
 2. Spike generator.el against vm-imap-read-object, including unwind-protect
-   inside iter-defun. Decide option 2 or option 3 on the result.
-3. Build the state object and the two drivers. Cover them with the mock
-   servers, using the fault injections for the abandoned-continuation cases.
-4. Convert POP first: 23 call sites, 6 frames, no recursion. Ship it with the
-   synchronous driver as the default so nothing changes for users.
+   inside iter-defun.  Decide option 2's hand-written CPS or option 3's
+   iter-defun on the result.  This decides how the parser is written, not
+   whether the result blocks.
+3. Build the state object and the filter driver, covered by the mock servers,
+   using the fault injections for the abandoned-continuation cases.
+4. Convert POP first: 23 call sites, 6 frames, no recursion.  It lands
+   asynchronous.
 5. Convert IMAP session setup, then vm-imap-select-mailbox, then the fetch
-   path, each behind the same driver choice.
-6. Switch the default driver to asynchronous only after the mock suite passes
-   both ways.
-7. Remove the synchronous driver only if it earns removal. Under option 2 it
-   is small enough to keep indefinitely.
+   path.
+6. Run the whole suite against the mock servers and against a live dovecot,
+   including the relay's fault injections, before =develop-async= goes near
+   =develop=.
+
+What is no longer in this path: shipping each converted piece behind a
+synchronous default.  There is no such default now, so a converted piece is
+tested by running it, not by leaving it switched off.
 
 ** Existing examples elsewhere
 
