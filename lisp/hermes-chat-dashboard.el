@@ -1572,7 +1572,8 @@ BUFFER's client gains a result listener when no turn is streaming, so the
                    (hermes-chat--background-started result content buffer)))
       :reject (lambda (message)
                 (hermes-chat--in-buffer buffer
-                  (hermes-chat--command-error message)))))))
+                  (hermes-chat--command-error message)
+                  (hermes-chat--preserve-control-content content)))))))
 
 (defun hermes-chat--handle-background-complete (event)
   "Insert a persistent result entry for a `background' EVENT.

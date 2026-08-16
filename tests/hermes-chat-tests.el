@@ -1254,6 +1254,21 @@
        (should (equal (hermes-chat-input-string) "valuable background draft"))
        (should-not bootstrapped)))))
 
+(ert-deftest hermes-chat-background-reject-restores-input ()
+  "A rejected background launch restores the consumed draft."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-background)
+               (lambda (_client _text &rest args)
+                 (funcall (plist-get args :reject) "session busy"))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client client
+              hermes-chat--dashboard-active-session-id "sid-bg"
+              hermes-chat--dashboard-session-ready-p t)
+        (insert "valuable background draft")
+        (hermes-chat-background)
+        (should (equal (hermes-chat-input-string) "valuable background draft"))
+        (should-not hermes-chat--background-tasks)))))
+
 (ert-deftest hermes-chat-background-complete-renders-view-result-link ()
   "A `background' event renders a persistent #N notice with a View Result link."
   (hermes-test-with-chat-buffer
