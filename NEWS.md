@@ -94,25 +94,26 @@ values `w3-fetch` and `w3-fetch-other-frame` are gone the same way, as is the
 
 emacs-w3m is a different package and is unaffected.
 
-## Two ways to find out where VM's time goes
+## A log of what VM did, and how long it took
 
-  * `vm-verbose-timing`, when non-nil, prefixes every message VM shows with
-    the clock time, the real seconds since its previous message and the CPU
-    seconds it used in between:
+`vm-log-level` takes a level on `vm-verbosity`'s scale and records every
+message up to it in the buffer `*VM Log*`, whether or not it is shown.
+`M-x vm-show-log` shows the buffer.
 
-    ```
-    14:03:12.481 +2.140s +0.310cpu  INBOX: Retrieving message 400 (of 100000)...
-    ```
+```
+(setq vm-log-level 10)
+```
 
-    An interval that is all real time and no CPU went on the network.
+leaves the display exactly as it was and keeps the whole of what VM did,
+which is what to send with a report of something slow.  Each line says when,
+and how long since the line before it:
 
-  * `vm-log-level` takes a level on `vm-verbosity`'s scale and records every
-    message up to it in the buffer `*VM Log*`, shown or not, each line timed
-    the same way.  `(setq vm-log-level 10)` leaves the display alone and
-    keeps the whole of what VM did, which is what to send with a report of
-    something slow.
+```
+14:03:12.481 +2.140s +0.310cpu [6] INBOX: Retrieving message 400 (of 100000)...
+```
 
-Both are off by default.
+An interval that is all real time and no CPU went on the network.  Off by
+default; the buffer is never trimmed.
 
 ## VM 8.x.x released
 

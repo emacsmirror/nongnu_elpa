@@ -1228,7 +1228,7 @@ how a reader is given time to see it."
       (vm-inform 5 "something happened")
       (should (equal waited 3)))))
 
-;;; Timing and the log (vm-verbose-timing, vm-log-level)
+;;; The log (vm-log-level)
 
 (defmacro vm-misc-test--with-log (&rest body)
   "Run BODY with a log buffer of its own, and answer with what it holds."
@@ -1243,27 +1243,35 @@ how a reader is given time to see it."
        (when (get-buffer vm-log-buffer-name)
          (kill-buffer vm-log-buffer-name)))))
 
-(ert-deftest vm-misc-test-timing-is-off-by-default ()
-  "Nothing is prefixed to a message until it is asked for."
-  (let ((vm-verbose-timing nil)
-        (vm-log-level nil))
-    (should (equal '("five") (vm-misc-test--messages-at
-                              5 (lambda () (vm-inform 5 "five")))))))
+(ert-deftest vm-misc-test-what-is-shown-carries-no-timing ()
+  "The message in the echo area says what it always did.  The time goes to
+the log, where there is room for it and where it can be read afterwards."
+  (let ((vm-log-level 10)
+        (said nil))
+    (let ((log (vm-misc-test--with-log
+                 (setq said (vm-misc-test--messages-at
+                             5 (lambda () (vm-inform 5 "five")))))))
+      (should (equal said '("five")))
+      ;; and the line that does carry it is in the log
+      (should (string-match-p "\\[5\\] five" log)))))
 
-(ert-deftest vm-misc-test-timing-says-when-and-how-long ()
-  "`vm-verbose-timing' prefixes the clock time, and after the first message
-the real and CPU seconds since the one before it.  Which step of a slow
-operation the time went to is the question it answers."
-  (let ((vm-verbose-timing t)
-        (vm-log-level nil)
-        (vm-last-message-time nil))
-    (let ((said (vm-misc-test--messages-at
-                 5 (lambda () (vm-inform 5 "first") (vm-inform 5 "second")))))
-      (should (equal (length said) 2))
-      (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\}  first\\'"
-                              (nth 0 said)))
-      (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\} \\+[0-9.]+s \\+[0-9.]+cpu  second\\'"
-                              (nth 1 said))))))
+(ert-deftest vm-misc-test-the-log-says-when-and-how-long ()
+  "The first line is the clock time; each after it adds the real and CPU
+seconds since the line before.  Which step of a slow operation the time went
+to is the question the log answers."
+  (let ((vm-verbosity 5)
+        (vm-log-level 10))
+    (let ((log (vm-misc-test--with-log
+                 (cl-letf (((symbol-function 'message) #'ignore)
+                           ((symbol-function 'sit-for) (lambda (&rest _) t)))
+                   (vm-inform 5 "first")
+                   (vm-inform 5 "second")))))
+      (let ((lines (split-string log "\n" t)))
+        (should (equal (length lines) 2))
+        (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\} \\[5\\] first\\'"
+                                (nth 0 lines)))
+        (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\} \\+[0-9.]+s \\+[0-9.]+cpu \\[5\\] second\\'"
+                                (nth 1 lines)))))))
 
 (ert-deftest vm-misc-test-the-log-keeps-what-verbosity-hides ()
   "`vm-log-level' records a message the minibuffer never sees, which is how
@@ -1298,10 +1306,24 @@ in the same place as what led up to it."
 timed: the next interval is measured from the last message that was."
   (let ((vm-verbosity 5)
         (vm-log-level nil)
-        (vm-verbose-timing t)
         (vm-last-message-time nil))
     (vm-misc-test--messages-at 5 (lambda () (vm-inform 9 "not shown")))
     (should-not vm-last-message-time)))
+
+(ert-deftest vm-misc-test-showing-an-empty-log-says-how-to-fill-it ()
+  "`vm-show-log' with nothing recorded names the variable that records,
+rather than showing an empty buffer that says nothing about why."
+  (let ((vm-log-level nil)
+        (vm-verbosity 5)
+        (said nil))
+    (vm-misc-test--with-log
+      (cl-letf (((symbol-function 'message)
+                 (lambda (&rest args) (push (apply #'format args) said)))
+                ((symbol-function 'display-buffer)
+                 (lambda (&rest _) (error "there was nothing to show"))))
+        (vm-show-log)))
+    (should (equal (length said) 1))
+    (should (string-match-p "vm-log-level" (car said)))))
 
 (provide 'vm-misc-test)
 
