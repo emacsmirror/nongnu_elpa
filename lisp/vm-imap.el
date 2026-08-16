@@ -4452,28 +4452,15 @@ May throw exceptions."
     retval ))
 
 (defun vm-imap-create-mailbox (process mailbox
-			       &optional dont-create-parent-directories)
-  "Create a MAILBOX using the IMAP PROCESS.  The optional argument
-DONT-CREATE-PARENT-DIRECTORIES is defunct, but it should always be `t'."
-  ;; IMAP protocol says that the parent directories will created
-  ;; automatically. 
-  ;; The defunct argument should be gotten rid of and the dead code
-  ;; should be removed.  USR, 2012-06-10
-  (if (not dont-create-parent-directories)
-      (let (dir sep sep-regexp i)
-	(setq sep (vm-imap-directory-separator process "")
-	      sep-regexp (regexp-quote sep)
-	      i 0)
-	(while (string-match sep-regexp mailbox i)
-	  (setq dir (substring mailbox i (match-end 0)))
-	  (vm-imap-create-mailbox process dir t)
-	  ;; ignore command result since creating a directory will
-	  ;; routinely fail with "File exists".  We'll generate a
-	  ;; real error if the final mailbox creation fails.
-	  (vm-imap-read-boolean-response process)
-	  (setq i (match-end 0)))))
-  (vm-imap-send-command 
-   process 
+			       &optional _dont-create-parent-directories)
+  "Create a MAILBOX using the IMAP PROCESS.
+
+The server makes the parent directories, RFC 3501 6.3.3 requiring it of any
+server that takes a hierarchical name.  DONT-CREATE-PARENT-DIRECTORIES was
+for making them here and is ignored; it is kept so that the callers passing
+it still compile."
+  (vm-imap-send-command
+   process
    (format "CREATE %s" (vm-imap-quote-mailbox-name mailbox)))
   (if (null (vm-imap-read-boolean-response process))
       (vm-imap-normal-error "creation of %s failed" mailbox)))

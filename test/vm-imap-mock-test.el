@@ -775,6 +775,21 @@ verbosity ordinary progress is reported at."
         (vm-save-message-to-imap-folder target 2)
         (should (string-match-p "\\`2 messages saved to " (cdr (car said))))))))
 
+(ert-deftest vm-imap-mock-test-creating-a-mailbox-leaves-the-parents-alone ()
+  "REGRESSION: creating a mailbox inside a directory asks for that mailbox
+and nothing else.  Issue #691: `vm-imap-create-mailbox\=' walked the name and
+sent a CREATE for each parent first -- \"vmtest/\" for \"vmtest/saved\" -- which
+a server refuses as a name in its own right, and then read one response too
+many, so the session was out of step with what it had asked.  RFC 3501 has
+the server make the parents."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (vm-save-message-to-imap-folder
+     (vm-imap-mock-test--spec-for mock "Parent/Child"))
+    (should (member "Parent/Child" (vm-imap-mock-mailbox-names mock)))
+    (should (equal (vm-imap-mock-test--saved-subjects mock "Parent/Child")
+                   '("badgers")))
+    (should-not (vm-imap-mock-received-p mock "CREATE \"Parent/\""))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
