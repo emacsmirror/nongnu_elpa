@@ -301,22 +301,18 @@ a POP server, find its cache file on the file system"
 	      (if (null (car response))
 		  ;; (nil . nil) is returned if there are no
 		  ;; messages in the mailbox.
-		  (progn
-		    (vm-store-folder-totals source '(0 0 0 0))
-		    (throw 'done nil))
+		  (throw 'done nil)
 		(while response
 		  (if (not (and (setq x (assoc (cdr (car response)) retrieved))
 				(equal (nth 1 x) popdrop)
 				(eq (nth 2 x) 'uidl)))
 		      (vm-increment count))
 		  (setq response (cdr response))))
-	      (vm-store-folder-totals source (list count 0 0 0))
 	      (throw 'done (not (eq count 0))))
 	    (vm-pop-send-command process "STAT")
 	    (setq response (vm-pop-read-stat-response process))
 	    (if (null response)
 		nil
-	      (vm-store-folder-totals source (list (car response) 0 0 0))
 	      (not (equal 0 (car response))))))
       (and process (vm-pop-end-session process nil vm-pop-ok-to-ask)))))
 

@@ -356,9 +356,7 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; alter the new message count and confuse themselves.
       (when full-startup
 	;; save blurb so we can repeat it later as necessary.
-	(setq totals-blurb (vm-emit-totals-blurb))
-	(if buffer-file-name
-	    (vm-store-folder-totals buffer-file-name (cdr vm-totals))))
+	(setq totals-blurb (vm-emit-totals-blurb)))
 
       (vm-thoughtfully-select-message)
       (vm-update-summary-and-mode-line)
@@ -1269,74 +1267,6 @@ current message is selected as the recipient of the new composition."
     (vm-mail-internal :to nil :guessed-to guess :subject subject)
     (run-hooks 'vm-mail-hook)
     (run-hooks 'vm-mail-mode-hook)))
-
-(defalias 'vm-folders-summary-mode 'vm-mode)
-(put 'vm-folders-summary-mode 'mode-class 'special)
-
-;;;###autoload
-(defun vm-folders-summarize (&optional display raise)
-  "Generate a summary of the folders in your folder directories.
-Set `vm-folders-summary-directories' to specify the folder directories.
-Press RETURN or click mouse button 2 on an entry in the folders
-summary buffer to select a folder."
-  (interactive "p\np")
-  (vm-session-initialization)
-  (vm-check-for-killed-summary)
-  (if (not (featurep 'berkeley-db))
-      (error "Berkeley DB support needed to run this command"))
-  (if (null vm-folders-summary-database)
-      (error "'vm-folders-summary-database' must be non-nil to run this command"))
-  (if (null vm-folders-summary-buffer)
-      (let ((_folder-buffer (and (eq major-mode 'vm-mode)
-				 (current-buffer)))
-	    (summary-buffer-name "VM Folders Summary"))
-	(setq vm-folders-summary-buffer
-	      (or (get-buffer summary-buffer-name)
-		  (vm-generate-new-multibyte-buffer summary-buffer-name)))
-	(with-current-buffer vm-folders-summary-buffer
-	  (abbrev-mode 0)
-	  (auto-fill-mode 0)
-	  (vm-fsfemacs-nonmule-display-8bit-chars)
-	  (buffer-disable-undo (current-buffer))
-	  (vm-folders-summary-mode-internal))
-	(vm-make-folders-summary-associative-hashes)
-	(vm-do-folders-summary)))
-  ;; if this command was run from a VM related buffer, select
-  ;; the folder buffer in the folders summary, but only if that
-  ;; folder has an entry there.
-  (when vm-mail-buffer
-    (vm-check-for-killed-folder))
-  (save-excursion
-    (when vm-mail-buffer
-      (vm-select-folder-buffer-and-validate 0 (vm-interactive-p)))
-    (vm-check-for-killed-summary)
-    (let ((folder-buffer (and (eq major-mode 'vm-mode)
-			      (current-buffer)))
-	  fs )
-      (if (or (null vm-folders-summary-hash) (null folder-buffer)
-	      (null buffer-file-name))
-	  nil
-	(setq fs (symbol-value (intern-soft (vm-make-folders-summary-key
-					     buffer-file-name)
-					    vm-folders-summary-hash)))
-	(if (null fs)
-	    nil
-	  (vm-mark-for-folders-summary-update buffer-file-name)
-	  (set-buffer vm-folders-summary-buffer)
-	  (setq vm-mail-buffer folder-buffer)))))
-  (if display
-      (save-excursion
-	(vm-goto-new-folders-summary-frame-maybe)
-	(vm-display vm-folders-summary-buffer t
-		    '(vm-folders-summarize)
-		    (list this-command) (not raise))
-	;; need to do this after any frame creation because the
-	;; toolbar sets frame-specific height and width specifiers.
-	(set-buffer vm-folders-summary-buffer)
-	(vm-toolbar-install-or-uninstall-toolbar))
-    (vm-display nil nil '(vm-folders-summarize)
-		(list this-command)))
-  (vm-update-summary-and-mode-line))
 
 (defvar mail-reply-action)
 (defvar mail-send-actions)

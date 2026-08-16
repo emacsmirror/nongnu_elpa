@@ -777,7 +777,6 @@ Returns a boolean value."
 		      ;; recent-count (nth 1 select)
 		      uid-validity (nth 2 select))
 		(when (zerop msg-count)
-		  (vm-store-folder-totals source '(0 0 0 0))
 		  (throw 'end-of-session nil))
 		;; sweep through the retrieval list, removing entries
 		;; that have been invalidated by the new UIDVALIDITY
@@ -792,9 +791,7 @@ Returns a boolean value."
 		  (if (null (car response))
 		      ;; (nil . nil) is returned if there are no
 		      ;; messages in the mailbox.
-		      (progn
-			(vm-store-folder-totals source '(0 0 0 0))
-			(throw 'end-of-session nil))
+		      (throw 'end-of-session nil)
 		    (while response
 		      (if (not (and (setq x (assoc (cdr (car response))
 						   retrieved))
@@ -802,7 +799,6 @@ Returns a boolean value."
 				    (eq (nth 2 x) 'uid)))
 			  (vm-increment count))
 		      (setq response (cdr response))))
-		  (vm-store-folder-totals source (list count 0 0 0))
 		  (throw 'end-of-session (not (eq count 0))))
 		(not (equal 0 (car select)))))
 

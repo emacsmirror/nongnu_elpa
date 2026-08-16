@@ -362,8 +362,7 @@ Callers catch that condition by name, so a plain `error' would not do."
                             vm-summary-mode))
       (setq major-mode mode)
       (should (vm-buffer-p)))
-    (dolist (mode '(fundamental-mode text-mode mail-mode
-                                     vm-folders-summary-mode))
+    (dolist (mode '(fundamental-mode text-mode mail-mode))
       (setq major-mode mode)
       (should-not (vm-buffer-p)))))
 

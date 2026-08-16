@@ -85,9 +85,8 @@
 
 (defun leak-report--keymap-variables (variables)
   "Those of VARIABLES whose global value is a keymap, one per keymap.
-Several variables can hold the same map: vm-mode-map, vm-summary-mode-map and
-vm-folders-summary-mode-map are one object, so reporting each would be
-reporting one mutation three times.  The name kept is the first, and the
+Several variables can hold the same map: vm-mode-map and vm-summary-mode-map
+are one object, so reporting each would be reporting one mutation twice.  The name kept is the first, and the
 others are named with it."
   (let (found seen)
     (dolist (symbol variables)

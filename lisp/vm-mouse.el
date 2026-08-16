@@ -70,10 +70,6 @@ mouse is clicked.  See Info node `(VM) Using the Mouse'."
 	     nil
 	   (setq this-command 'vm-scroll-forward)
 	   (call-interactively 'vm-scroll-forward)))
-	((eq major-mode 'vm-folders-summary-mode)
-	 (mouse-set-point event)
-	 (beginning-of-line)
-	 (vm-follow-folders-summary-cursor))
 	((memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode))
 	 (vm-mouse-popup-or-select event))))
 

@@ -600,7 +600,6 @@ Toolbars are updated."
       (vm-inform 7 "%s: Recreating summary... done" 
 		 (buffer-name vm-mail-buffer))
       (setq vm-messages-needing-summary-update nil)))
-  (vm-do-needed-folders-summary-update)
   (vm-force-mode-line-update))
 
 (defun vm-reverse-link-messages ()
@@ -3861,10 +3860,6 @@ changes should be discarded."
       ;; vm-display is not supposed to change the current buffer.
       ;; still it's better to be safe here.
       (set-buffer mail-buffer)
-      ;; if folder is selected in the folders summary, force
-      ;; selcetion of some other folder.
-      (if buffer-file-name
-	  (vm-mark-for-folders-summary-update buffer-file-name))
       (vm-delete-auto-save-file-if-necessary)
       ;; this is a hack to suppress another confirmation dialogue
       ;; coming from kill-buffer
@@ -4097,9 +4092,6 @@ This function is only used in background tasks.  USR 2012-12-22."
        (vm-stuff-folder-data :interactive t :abort-if-input-pending nil)
        (vm-inform 7 "%s: Stuffing cached data... done" (buffer-name))
        (when vm-message-list
-	 (when (and vm-folders-summary-database buffer-file-name)
-	   (vm-compute-totals)
-	   (vm-store-folder-totals buffer-file-name (cdr vm-totals)))
 	 ;; get summary cache up-to-date
 	 (vm-inform 8 "%s: Stuffing folder data..." (buffer-name))
 	 (vm-update-summary-and-mode-line)
@@ -4128,10 +4120,6 @@ This function is only used in background tasks.  USR 2012-12-22."
   (intern (buffer-name) vm-buffers-needing-display-update)
   (setq vm-block-new-mail nil)
   (vm-display nil nil '(vm-save-buffer) '(vm-save-buffer))
-  (if (and vm-folders-summary-database buffer-file-name)
-      (progn
-	(vm-compute-totals)
-	(vm-store-folder-totals buffer-file-name (cdr vm-totals))))
   (vm-update-summary-and-mode-line)
   (vm-write-index-file-maybe))
 
@@ -4159,10 +4147,6 @@ Refuses on a virtual folder, which has no file of its own."
 			    vm-default-folder-permission-bits))
 	  (call-interactively 'write-file))
       (and oldmodebits (set-default-file-modes oldmodebits)))
-    (if (and vm-folders-summary-database buffer-file-name)
-	(progn
-	  (vm-compute-totals)
-	  (vm-store-folder-totals buffer-file-name (cdr vm-totals))))
     (if (not (equal (buffer-name) old-buffer-name))
 	(progn
 	  (vm-check-for-killed-summary)
@@ -4304,10 +4288,6 @@ folder."
 	  (setq vm-messages-not-on-disk 0)
 	  (setq vm-block-new-mail nil)
 	  (vm-write-index-file-maybe)
-	  (if (and vm-folders-summary-database buffer-file-name)
-	      (progn
-		(vm-compute-totals)
-		(vm-store-folder-totals buffer-file-name (cdr vm-totals))))
 	  (vm-update-summary-and-mode-line)
 	  (and (zerop (buffer-size))
 	       vm-delete-empty-folders
@@ -4786,7 +4766,6 @@ implementation than the expected one damages mail -- so this asks instead."
 	    (if (null count)
 		nil
 	      (set (intern source hash) (list size count))
-	      (vm-store-folder-totals source (list count 0 0 0))
 	      (> count 0))))))))
 
 (defun vm-count-messages-in-file (file &optional quietly)
@@ -4995,9 +4974,6 @@ interactive queries to the user.  The possible values are t,
 		      (funcall retrieval-function maildrop crash))
 		(when (vm-gobble-crash-box crash)
 		  (setq got-mail t)
-		  (when (not non-file-maildrop)
-		    (vm-store-folder-totals maildrop
-					    '(0 0 0 0)))
 		  (vm-inform 5 "Got mail from %s."
 			   safe-maildrop)))))
 	  (setq triples (cdr triples)))
@@ -5251,11 +5227,6 @@ files."
     ;; first time indicator along with the new messages being equal
     ;; to the whole message list.
     (when new-messages
-      (if (and (not read-attributes)
-	       (or (not (eq new-messages vm-message-list))
-		   (null gobble-order)))
-	  (vm-modify-folder-totals buffer-file-name 'arrived
-				   (length new-messages)))
       ;; copy the new-messages list because sorting might scramble
       ;; it.  Also something the user does when
       ;; vm-arrived-message-hook is run might affect it.

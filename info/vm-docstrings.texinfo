@@ -3415,15 +3415,6 @@ in the edit buffer.
 
 @end macro
 
-@macro vmdocvmfolderssummarymodehook
-@defopt vm-folders-summary-mode-hook
-@vindex vm-folders-summary-mode-hook
-List of hook functions to run when a VM folders summary buffer is created.
-The current buffer will be that buffer when the hooks are run.
-@end defopt
-
-@end macro
-
 @macro vmdocvmforwardmessagehook
 @defopt vm-forward-message-hook
 @vindex vm-forward-message-hook
@@ -4457,7 +4448,6 @@ D               vm-decode-mime-message
 E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
-H               vm-folders-summarize
 K               vm-kill-thread-subtree
 L               vm-optional-key
 N               vm-next-message-no-skip
@@ -5007,7 +4997,6 @@ D               vm-decode-mime-message
 E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
-H               vm-folders-summarize
 K               vm-kill-thread-subtree
 L               vm-optional-key
 N               vm-next-message-no-skip
@@ -11581,71 +11570,6 @@ asked.
 
 @end macro
 
-@macro vmdocvmfolderssummarydatabase
-@defopt vm-folders-summary-database
-@vindex vm-folders-summary-database
-Name of Berkeley DB file used to store summary information about folders.
-This file is consulted to produce the folders summary.
-
-Default value: @code{"~/.vm.folders.db"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmfolderssummarydirectories
-@defopt vm-folders-summary-directories
-@vindex vm-folders-summary-directories
-List of directories containing folders to be listed in the folders summary.
-List the directories in the order you wish them to appear in the summary.
-
-Default value: @code{("~/")}
-@end defopt
-
-@end macro
-
-@macro vmdocvmfolderssummaryformat
-@defopt vm-folders-summary-format
-@vindex vm-folders-summary-format
-String that specifies the folders summary format.
-The string may contain the printf-like @code{%} conversion specifiers which
-substitute information about the folder into the final summary line.
-
-Recognized specifiers are:
-@example
-   d - the number of deleted messages in the folder
-   f - the name of the folder without the directory part
-   n - the number of new messages in the folder
-   t - the total number of messages in the folder
-   u - the number of old but still unread messages in the folder
-   ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatenation of
-       group of format specifiers.  Example: "%.35(%d, %t, %f%)"
-       specifies a maximum display width of 35 characters for the
-       concatenation of the content description, content type and
-       suggested file name.
-   ) - ends a group.
-
-@end example
-Use %% to get a single %.
-
-A numeric field width may be given between the @code{%} and the specifier;
-this causes right justification of the substituted string.  A negative field
-width causes left justification.
-
-The field width may be followed by a @code{.} and a number specifying
-the maximum allowed length of the substituted string.  If the
-string is longer than this value the right end of the string is
-truncated.  If the value is negative, the string is truncated on
-the left instead of the right.
-
-The summary format need not be one line per folder, but it should end with
-a newline.
-
-Default value: @code{"  %12f %4t total, %n new, %u unread, %s spooled\\n"}
-@end defopt
-
-@end macro
-
 @macro vmdocvmfollowsummarycursor
 @defopt vm-follow-summary-cursor
 @vindex vm-follow-summary-cursor
@@ -12982,181 +12906,6 @@ Edit the @code{vm-init-file}.
 
 @end macro
 
-@macro vmdocvmfolderssummarize
-@deffn Command vm-folders-summarize &optional display raise
-@findex vm-folders-summarize
-Generate a summary of the folders in your folder directories.
-Set @code{vm-folders-summary-directories} to specify the folder directories.
-Press RETURN or click mouse button 2 on an entry in the folders
-summary buffer to select a folder.
-@end deffn
-
-@end macro
-
-@macro vmdocvmfolderssummarymode
-@deffn Command vm-folders-summary-mode &optional read-only
-@findex vm-folders-summary-mode
-Major mode for reading mail.
-
-This is VM.
-
-Use M-x vm-submit-bug-report to submit a bug report.
-
-Commands:
-@example
-Key             Binding
--------------------------------------------------------------------------------
-0 .. 9          digit-argument
-
-C-d             vm-delete-message-backward
-TAB             vm-goto-message-last-seen
-RET             vm-goto-message
-C-t             vm-toggle-threads-display
-C-_             vm-undo
-SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
--               negative-argument
-.               vm-mark-message-read
-=               vm-optional-key
-?               vm-help
-@@               vm-send-digest
-A               vm-auto-archive-messages
-B               vm-resend-message
-C               vm-collapse-all-threads
-D               vm-decode-mime-message
-E               vm-expand-all-threads
-F               vm-followup-include-text
-G               vm-sort-messages
-H               vm-folders-summarize
-K               vm-kill-thread-subtree
-L               vm-optional-key
-N               vm-next-message-no-skip
-O               vm-unload-message
-P               vm-previous-message-no-skip
-R               vm-reply-include-text
-S               vm-save-folder
-T               vm-toggle-thread
-U               vm-mark-message-unread
-Z               vm-forward-message-plain
-[               vm-move-to-previous-button
-]               vm-move-to-next-button
-^               vm-goto-parent-message
-a .. b          vm-optional-key
-c               vm-continue-composing-message
-d               vm-delete-message
-e               vm-optional-key
-f               vm-followup
-g               vm-get-new-mail
-h               vm-summarize
-i               vm-optional-key
-j               vm-discard-cached-data
-k               vm-kill-subject
-m               vm-mail-from-folder
-n               vm-next-message
-o               vm-load-message
-p               vm-previous-message
-q               vm-quit
-r               vm-reply
-s               vm-save-message
-t               vm-expose-hidden-headers
-u               vm-undelete-message
-v               vm-visit-folder
-w               vm-optional-key
-x               vm-quit-no-change
-z               vm-forward-message
-DEL             vm-scroll-backward
-C-/             vm-undo
-<backspace>     vm-scroll-backward
-<delete>        vm-scroll-backward
-
-C-c C-d         vm-delete-all-attachments
-C-c C-e         vm-edit-message
-C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
-
-C-x C-q         vm-toggle-read-only
-C-x C-s         vm-save-folder
-C-x C-w         vm-write-file
-C-x u           vm-undo
-
-C-M-n           vm-move-message-forward
-C-M-p           vm-move-message-backward
-M-C             vm-show-copying-restrictions
-M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
-M-n             vm-next-unread-message
-M-p             vm-previous-unread-message
-M-r             vm-resend-bounced-message
-M-s             vm-isearch-forward
-
-M ?             vm-mark-help
-M A             vm-mark-messages-same-author
-M C             vm-mark-messages-by-selector
-M M             vm-mark-message
-M N             vm-next-command-uses-marks
-M R             vm-mark-summary-region
-M S             vm-mark-messages-same-subject
-M T             vm-mark-thread-subtree
-M U             vm-unmark-message
-M V             vm-toggle-all-marks
-M X             vm-mark-messages-by-virtual-folder
-M a             vm-unmark-messages-same-author
-M c             vm-unmark-messages-by-selector
-M m             vm-mark-all-messages
-M n             vm-next-command-uses-marks
-M r             vm-unmark-summary-region
-M s             vm-unmark-messages-same-subject
-M t             vm-unmark-thread-subtree
-M u             vm-clear-all-marks
-M x             vm-unmark-messages-by-virtual-folder
-
-V !             vm-create-flagged-virtual-folder
-V ?             vm-virtual-help
-V A             vm-create-virtual-folder-same-author
-V C             vm-create-virtual-folder
-V M             vm-toggle-virtual-mirror
-V R             vm-create-virtual-folder-same-recipient
-V S             vm-create-virtual-folder-same-subject
-V T             vm-create-virtual-folder-of-threads
-V V             vm-visit-virtual-folder
-V X             vm-apply-virtual-folder
-V a             vm-create-author-virtual-folder
-V d             vm-create-date-virtual-folder
-V l             vm-create-label-virtual-folder
-V n             vm-create-new-virtual-folder
-V r             vm-create-author-or-recipient-virtual-folder
-V s             vm-create-subject-virtual-folder
-V t             vm-create-text-virtual-folder
-V u             vm-create-unseen-virtual-folder
-
-W ?             vm-window-help
-W D             vm-delete-window-configuration
-W S             vm-save-window-configuration
-W W             vm-apply-window-configuration
-
-l a             vm-add-message-labels
-l d             vm-delete-message-labels
-l e             vm-add-existing-message-labels
-
-| d             vm-pipe-message-to-command-discard-output
-| n             vm-pipe-messages-to-command-discard-output
-| s             vm-pipe-messages-to-command
-| |             vm-pipe-message-to-command
-
-# # #           vm-expunge-folder
-@end example
-
-
-Customize VM by setting variables and store them in the @code{vm-init-file}.
-@end deffn
-
-@end macro
-
 @macro vmdocvmmail
 @deffn Command vm-mail &optional to subject
 @findex vm-mail
@@ -13234,7 +12983,6 @@ D               vm-decode-mime-message
 E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
-H               vm-folders-summarize
 K               vm-kill-thread-subtree
 L               vm-optional-key
 N               vm-next-message-no-skip
@@ -14413,8 +14161,6 @@ of frame that the following PARAMLIST applies to.
    (e.g. created by @code{vm-edit-message-other-frame})
 @code{‘folder}’ specifies parameters for frames created by @code{vm} and the
    @code{‘vm-visit-}’ commands.
-@code{‘folders-summary}’ specifies parameters for frames created by the
-   @code{‘vm-folders-summarize}’ command.
 @code{‘primary-folder}’ specifies parameters for the frame created by running
    @code{vm} without any arguments.
 @code{‘summary}’ specifies parameters for frames that display a summary buffer
@@ -14502,20 +14248,6 @@ Emacs supports multiple virtual frames on dumb terminals, and
 VM will use them.
 
 Default value: @code{t}
-@end defopt
-
-@end macro
-
-@macro vmdocvmframeperfolderssummary
-@defopt vm-frame-per-folders-summary
-@vindex vm-frame-per-folders-summary
-Non-nil value causes VM to display the "all folders" summary in its own frame.
-Nil means the @code{vm-folders-summarize} command will use the current frame.
-
-This variable has no meaning if you’re not running under an Emacs
-capable of displaying multiple real or virtual frames.  Note that
-Emacs supports multiple virtual frames on dumb terminals, and
-VM will use them.
 @end defopt
 
 @end macro
