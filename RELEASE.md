@@ -1,5 +1,19 @@
 # RELEASE
 
+# Aidermacs 1.12
+
+## What's Changed
+
+* Add model filtering and configured model support by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
+* Add docs and keymap for aidermacs file diff by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
+* Update example path for litellm prices file by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
+* Fix OpenRouter price fetching and improve cache staleness handling by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/218
+* Suppress unused error variable in condition-case by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/218
+* Fix comment spacing and docstring formatting by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/219
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.11...v1.12
+
+
 # Aidermacs 1.11
 
 ## What's Changed
