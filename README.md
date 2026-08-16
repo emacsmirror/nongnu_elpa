@@ -1,27 +1,27 @@
-# vc-sl.el
+# vc-sapling.el
 
 A [VC](https://www.gnu.org/software/emacs/manual/html_node/emacs/Version-Control.html)
 backend for [Sapling](https://sapling-scm.com/) (`sl`).
 
-`vc-sl` provides the generic Emacs VC commands for native Sapling
+`vc-sapling` provides the generic Emacs VC commands for native Sapling
 repositories.  Sapling-specific smartlog, stack, and working-copy workflows
-are provided by the separate [`sl`](https://github.com/swithinchan/sl)
+are provided by the separate [`sapling`](https://github.com/swithinchan/sapling)
 package.
 
 ## Requirements
 
 - Emacs 26.1 or later.
 - Sapling `sl` on `exec-path`.
-- The `sl` Emacs package.
+- The `sapling` Emacs package.
 
 ## Installation
 
-Install the `sl` package first, then install `vc-sl`:
+Install the `sapling` package first, then install `vc-sapling`:
 
 ```elisp
-(require 'sl)
-(require 'vc-sl)
-(add-to-list 'vc-handled-backends 'Sl)
+(require 'sapling)
+(require 'vc-sapling)
+(add-to-list 'vc-handled-backends 'Sapling)
 ```
 
 The VC backend recognizes native Sapling repositories (identified by their
@@ -41,12 +41,13 @@ which is already a good fit for them.
 
 ## Configuration
 
-- `vc-sl-global-switches` — extra switches passed to every `sl` command
+- `vc-sapling-global-switches` — extra switches passed to every `sl` command
   run by VC.
-- `vc-sl-diff-switches` — switches for `sl diff` under VC.
+- `vc-sapling-diff-switches` — switches for `sl diff` under VC.
+- `vc-sapling-log-short-format` / `vc-sapling-log-format` — templates used for the
+  short and long VC log buffers.
 
 ## Thank you
 
-Thanks to feedback and comment by Philip Kaluđerčić. Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthard for her name.
-- `vc-sl-log-short-format` / `vc-sl-log-format` — templates used for the
-  short and long VC log buffers.
+Thanks to feedback and comment by Philip Kaluđerčić.
+Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthand for her name.
