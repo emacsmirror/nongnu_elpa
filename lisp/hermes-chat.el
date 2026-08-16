@@ -1642,16 +1642,23 @@ FETCH takes CLIENT plus :session-id/:resolve/:reject; RENDER turns the
 result into the transient status text shown in the transcript."
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "This Hermes chat has no live session"))
-  (let ((buffer (current-buffer)))
-    (funcall fetch (hermes-chat--dashboard-control-client)
-             :session-id hermes-chat--dashboard-active-session-id
+  (let ((buffer (current-buffer))
+        (client (hermes-chat--dashboard-control-client))
+        (generation hermes-chat--lifecycle-generation)
+        (session-id hermes-chat--dashboard-active-session-id))
+    (funcall fetch client
+             :session-id session-id
              :resolve (lambda (result)
                         (hermes-chat--in-buffer buffer
-                          (hermes-chat--insert-local-status
-                           (funcall render result) 'done)))
+                          (when (hermes-chat--dashboard-context-current-p
+                                 client generation session-id)
+                            (hermes-chat--insert-local-status
+                             (funcall render result) 'done))))
              :reject (lambda (message)
                        (hermes-chat--in-buffer buffer
-                         (hermes-chat--command-error message))))))
+                         (when (hermes-chat--dashboard-context-current-p
+                                client generation session-id)
+                           (hermes-chat--command-error message)))))))
 
 (defun hermes-chat-show-usage ()
   "Show this session's token usage via `session.usage'."

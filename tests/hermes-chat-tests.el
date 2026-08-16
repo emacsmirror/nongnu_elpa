@@ -5607,6 +5607,23 @@
        (should (equal seen-session "sid-usage"))
        (should (string-match-p "Usage: 2 calls" (buffer-string)))))))
 
+(ert-deftest hermes-chat-show-usage-ignores-stale-session ()
+  "A late usage result cannot render into a replacement session."
+  (let (resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-usage)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-chat--dashboard-control-client)
+               (lambda () hermes-chat--dashboard-client)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-old")
+       (hermes-chat-show-usage)
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve '((calls . 2) (input . 10) (output . 5) (total . 15)))
+       (should-not (string-match-p "Usage:" (buffer-string)))))))
+
 (ert-deftest hermes-chat-notification-clear-adds-no-transcript-entry ()
   "notification.clear retracts a keyed notice; it must not render an entry."
   (should-not (hermes-chat--transcript-event-p
