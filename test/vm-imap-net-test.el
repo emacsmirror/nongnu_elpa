@@ -236,6 +236,112 @@ read as the answer to this one."
       (should (equal (mapcar (lambda (c) (car (split-string c " "))) commands)
                      '("vm1" "vm2" "vm3" "vm4"))))))
 
+
+;;; A mailbox, and what is in it
+
+(iter-defun vm-imap-net-test--open-and-select (mailbox &optional examine)
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select mailbox examine)))
+
+(ert-deftest vm-imap-net-test-select-says-what-the-mailbox-holds ()
+  "SELECT answers the count, the UIDVALIDITY and whether the mailbox can be
+written to, which is what the folder needs before it can ask for anything."
+  (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice
+                                                        vm-imap-net-test--bob))
+    (let* ((session (vm-imap-net-test--run
+                     mock (vm-imap-net-test--open-and-select "INBOX")))
+           (answer (vm-net-session-value session)))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (equal (nth 0 answer) 2))
+      (should (stringp (nth 2 answer)))
+      (should (nth 3 answer))
+      (should (nth 4 answer)))))
+
+(ert-deftest vm-imap-net-test-examine-is-read-only ()
+  "EXAMINE says the mailbox is not writable, which is what stops VM from
+trying to store flags into one it opened only to read."
+  (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice))
+    (let* ((session (vm-imap-net-test--run
+                     mock (vm-imap-net-test--open-and-select "INBOX" t)))
+           (answer (vm-net-session-value session)))
+      (should (eq (vm-net-session-state session) 'done))
+      (should-not (nth 3 answer))
+      (should (vm-imap-mock-received-p mock "EXAMINE")))))
+
+(iter-defun vm-imap-net-test--data (mailbox)
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select mailbox))
+  (iter-yield-from (vm-imap-net-message-data 1 2)))
+
+(ert-deftest vm-imap-net-test-the-bulk-fetch-brings-uid-size-and-flags ()
+  "One command for the whole mailbox: the UIDs to know what is new, the
+sizes to know what is too large, the flags to know what is read."
+  (vm-imap-net-test--with-session (mock :messages
+                                        (list (cons vm-imap-net-test--alice
+                                                    '("\\Seen"))
+                                              vm-imap-net-test--bob))
+    (let* ((session (vm-imap-net-test--run
+                     mock (vm-imap-net-test--data "INBOX")))
+           (data (vm-net-session-value session)))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (equal (length data) 2))
+      (let ((first (assoc 1 data)))
+        (should (equal (nth 1 first) "1"))
+        (should (equal (nth 2 first)
+                       (number-to-string (length vm-imap-net-test--alice))))
+        (should (member "\\seen" (nthcdr 3 first))))
+      (should-not (nthcdr 3 (assoc 2 data))))))
+
+;;; Fetching
+
+(defvar vm-imap-net-test--stored nil
+  "What the store function was handed, newest last.")
+
+(defun vm-imap-net-test--store (uid start end)
+  (push (cons uid (buffer-substring-no-properties start end))
+        vm-imap-net-test--stored))
+
+(iter-defun vm-imap-net-test--fetch-range (mailbox first last)
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select mailbox))
+  (iter-yield-from (vm-imap-net-fetch first last t nil
+                                      #'vm-imap-net-test--store)))
+
+(ert-deftest vm-imap-net-test-a-fetched-message-is-handed-over-as-it-arrives ()
+  "Each message goes to the store function as its response is read, with the
+UID it came with -- a server may answer a range in any order, and the copy
+has to know which message it is looking at (issue #185)."
+  (let ((vm-imap-net-test--stored nil))
+    (vm-imap-net-test--with-session (mock :messages
+                                          (list vm-imap-net-test--alice
+                                                vm-imap-net-test--bob))
+      (let ((session (vm-imap-net-test--run
+                      mock (vm-imap-net-test--fetch-range "INBOX" 1 2))))
+        (should (eq (vm-net-session-state session) 'done))
+        (should (equal (vm-net-session-value session) 2))
+        (let ((stored (nreverse vm-imap-net-test--stored)))
+          (should (equal (mapcar #'car stored) '("1" "2")))
+          (should (string-match-p "badgers" (cdr (nth 0 stored))))
+          (should (string-match-p "The second body" (cdr (nth 1 stored)))))))))
+
+(ert-deftest vm-imap-net-test-headers-only-fetches-headers ()
+  "A message too large to want whole is fetched as its headers, and what
+comes back is the headers and not the body."
+  (let ((vm-imap-net-test--stored nil))
+    (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice))
+      (vm-imap-net-test--run
+       mock
+       (let ((store #'vm-imap-net-test--store))
+         (vm-imap-net-test--fetch-headers "INBOX" store)))
+      (let ((text (cdr (car vm-imap-net-test--stored))))
+        (should (string-match-p "Subject: badgers" text))
+        (should-not (string-match-p "The first body" text))))))
+
+(iter-defun vm-imap-net-test--fetch-headers (mailbox store)
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select mailbox))
+  (iter-yield-from (vm-imap-net-fetch 1 1 t t store)))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
