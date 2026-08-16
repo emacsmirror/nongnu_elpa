@@ -7002,6 +7002,17 @@ for POP/IMAP accounts, which is insecure."
 (defvar vm-pop-messages-to-expunge nil)
 (make-variable-buffer-local 'vm-pop-messages-to-expunge)
 
+(defvar vm-imap-tag-counter 0
+  "How many tagged commands this IMAP session has sent.
+Buffer-local to a process buffer.  The next tag is made from it, so that no
+two commands of a session carry the same one, which is what lets a response
+be told from the answer to a command that has already been answered.")
+
+(defvar vm-imap-current-tag nil
+  "The tag of the last command sent on this IMAP session.
+Buffer-local to a process buffer.  A response pattern written `VM\=' means
+this tag: see `vm-imap-response-matches\='.")
+
 (defvar vm-imap-read-point nil
   "Position in an IMAP process buffer where the next read must
 take place.  In general, IMAP process reading functions move the
