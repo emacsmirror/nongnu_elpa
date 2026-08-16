@@ -64,7 +64,8 @@ Each active subagent's goal is indented by its spawn depth."
   "Interrupt the subagent at point."
   (interactive)
   (let ((id (tabulated-list-get-id))
-        (origin (current-buffer)))
+        (origin (current-buffer))
+        (owner hermes-instance))
     (unless id (user-error "No subagent on this line"))
     (when (yes-or-no-p (format "Interrupt subagent %s? " id))
       (hermes-browser--run-on-client
@@ -72,10 +73,11 @@ Each active subagent's goal is indented by its spawn depth."
          (hermes-dashboard-transport-call-fn
           #'hermes-dashboard-transport-subagent-interrupt client id))
        (lambda (result)
-         (if (eq (hermes-transport--get result 'found) t)
-             (message "Hermes: interrupted %s" id)
-           (message "Hermes: subagent %s already finished or was not found" id))
-         (when (hermes-browser--buffer-mode-p origin 'hermes-subagents-mode)
+         (when (and (hermes-browser--buffer-mode-p origin 'hermes-subagents-mode)
+                    (equal owner (buffer-local-value 'hermes-instance origin)))
+           (if (eq (hermes-transport--get result 'found) t)
+               (message "Hermes: interrupted %s" id)
+             (message "Hermes: subagent %s already finished or was not found" id))
            (with-current-buffer origin
              (hermes-subagents--revert))))))))
 

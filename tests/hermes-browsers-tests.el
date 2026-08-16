@@ -1029,5 +1029,31 @@
           (hermes--promise-resolve promise '((found . t)))
           (should (eq refreshed origin)))))))
 
+(ert-deftest hermes-subagents-late-interrupt-does-not-report-or-refresh ()
+  "An instance A interrupt cannot report or refresh after retargeting to B."
+  (let ((promise (hermes--promise-make)) messages refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-subagents--revert)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (with-temp-buffer
+        (hermes-subagents-mode)
+        (hermes-browser--own-instance '("a" . "http://a"))
+        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-subagents-interrupt)
+        (hermes-browser--own-instance '("b" . "http://b"))
+        (hermes--promise-resolve promise '((found . t)))
+        (should-not refreshed)
+        (should-not messages)))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here
