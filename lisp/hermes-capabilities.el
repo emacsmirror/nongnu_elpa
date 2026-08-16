@@ -547,7 +547,14 @@ re-registers."
 
 (defun hermes-capabilities--connect (provider)
   "Resolve the capability `/api/ws' URL and open PROVIDER's socket."
-  (let ((generation (1+ (hermes-capabilities--provider-generation provider))))
+  (let* ((generation (1+ (hermes-capabilities--provider-generation provider)))
+         (buffer (hermes-capabilities--provider-buffer provider))
+         (instance (and (buffer-live-p buffer)
+                        (with-current-buffer buffer
+                          (hermes-instance-context))))
+         (hermes-dashboard-transport-url
+          (or (and instance (hermes-instance-url instance))
+              hermes-dashboard-transport-url)))
     (setf (hermes-capabilities--provider-generation provider) generation)
     (hermes--promise-then
      (funcall hermes-capabilities--url-function)

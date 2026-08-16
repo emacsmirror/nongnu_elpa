@@ -346,6 +346,42 @@ touched."
         (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
         (should (zerop reconnects))))))
 
+(ert-deftest hermes-capabilities-connect-uses-owner-instance-url ()
+  "Connect resolves the owner buffer's instance URL, not the current buffer's."
+  (let ((owner (generate-new-buffer " hermes-cap-owner"))
+        (other (generate-new-buffer " hermes-cap-current"))
+        (remote '("remote" . "https://hermes.example.test"))
+        (local '("local" . "http://127.0.0.1:9119"))
+        (hermes-instances
+         '(("local" . "http://127.0.0.1:9119")
+           ("remote" . "https://hermes.example.test")))
+        (hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        seen-url
+        provider)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-capabilities--reconnect) #'ignore))
+          (with-current-buffer owner
+            (setq hermes-instance remote))
+          (with-current-buffer other
+            (setq hermes-instance local)
+            (let ((hermes-capabilities--url-function
+                   (lambda (&rest _)
+                     (setq seen-url hermes-dashboard-transport-url)
+                     (hermes--promise-rejected "stop"))))
+              (setq provider
+                    (hermes-capabilities--provider-create
+                     :active t :buffer owner :target "emacs-pair"))
+              (hermes-capabilities--connect provider)))
+          (should (equal seen-url (hermes-instance-url remote)))
+          (should-not (hermes-capabilities--provider-reconnect-timer provider))
+          (should-not
+           (cl-find-if (lambda (timer)
+                         (eq (timer--function timer)
+                             #'hermes-capabilities--do-reconnect))
+                       timer-list)))
+      (when (buffer-live-p owner) (kill-buffer owner))
+      (when (buffer-live-p other) (kill-buffer other)))))
+
 (ert-deftest hermes-capabilities-method-not-found-graceful ()
   "A `method not found' registration rejection deactivates the provider."
   (hermes-capabilities-test--with-clean-registry
