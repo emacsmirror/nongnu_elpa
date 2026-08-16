@@ -375,6 +375,93 @@
     (should (equal saved '("deepseek" "sk-secret" "sid-1")))
     (should on-ran)))
 
+(ert-deftest hermes-chat-connect-provider-uses-owner-buffer-context ()
+  "A connect started outside the chat still saves against that chat session."
+  (let (saved)
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (_client slug key &rest args)
+                 (setq saved (list slug key (plist-get args :session-id)))
+                 (funcall (plist-get args :resolve)
+                          '((provider . ((slug . "deepseek"))))))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "sid-1"
+              hermes-chat--dashboard-session-ready-p t)
+        (let ((chat (current-buffer))
+              (client hermes-chat--dashboard-client))
+          (with-temp-buffer
+            (hermes-chat--connect-provider-candidate
+             chat client
+             '((slug . "deepseek") (name . "DeepSeek")
+               (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY")))))))
+    (should (equal saved '("deepseek" "sk-secret" "sid-1")))))
+
+(ert-deftest hermes-chat-connect-provider-ignores-key-after-disconnect ()
+  "A provider key read across disconnect is not saved or applied."
+  (let (saved applied chat)
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _)
+                 (with-current-buffer chat
+                   (hermes-chat-disconnect))
+                 "sk-secret"))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (&rest _)))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (&rest _) (setq saved t)))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (&rest _) (setq applied t))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "sid-1"
+              hermes-chat--dashboard-session-ready-p t
+              chat (current-buffer))
+        (let ((client hermes-chat--dashboard-client))
+          (with-temp-buffer
+            (should-error
+             (hermes-chat--connect-provider-candidate
+              chat client
+              '((slug . "deepseek") (name . "DeepSeek")
+                (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY"))
+              (lambda () (setq applied t)))
+             :type 'user-error))
+          (should-not saved)
+          (should-not applied)
+          (should-not (string-match-p "sk-secret" (buffer-string))))))))
+
+(ert-deftest hermes-chat-connect-provider-stale-save-callbacks-are-inert ()
+  "Late save-key callbacks cannot mutate a chat after ownership is lost."
+  (let (resolve reject invalidated applied)
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (&rest _)))
+              ((symbol-function 'hermes-dashboard-transport-invalidate-model-options)
+               (lambda (&rest _) (setq invalidated t)))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (_client _slug _key &rest args)
+                 (setq resolve (plist-get args :resolve)
+                       reject (plist-get args :reject)))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "sid-1"
+              hermes-chat--dashboard-session-ready-p t)
+        (let ((chat (current-buffer))
+              (client hermes-chat--dashboard-client))
+          (with-temp-buffer
+            (hermes-chat--connect-provider-candidate
+             chat client
+             '((slug . "deepseek") (name . "DeepSeek")
+               (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY"))
+             (lambda () (setq applied t))))
+          (hermes-chat-disconnect)
+          (funcall resolve '((ok . t)))
+          (funcall reject "transport failure")
+          (should-not invalidated)
+          (should-not applied)
+          (should-not (string-match-p "Connected provider" (buffer-string)))
+          (should-not (string-match-p "transport failure" (buffer-string)))
+          (should-not (string-match-p "sk-secret" (buffer-string))))))))
+
 (ert-deftest hermes-chat-model-picker-connects-unauthed-then-applies ()
   "Picking an unauthenticated provider's model connects it, then applies it."
   (let (saved applied)

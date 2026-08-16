@@ -332,27 +332,33 @@ refetch it from the dashboard instead."
 ON-CONNECTED, when given, runs after a successful save -- the model picker uses
 it to apply the model the user originally chose."
   (require 'hermes-onboarding)
-  (let* ((slug (hermes-transport--scalar-string
+  (let* ((context (with-current-buffer buffer
+                    (hermes-chat--model-switch-context)))
+         (slug (hermes-transport--scalar-string
                 (hermes-transport--get provider 'slug)))
          (name (or (hermes-transport--scalar-string
                     (hermes-transport--get provider 'name))
                    slug))
          (key (hermes-onboarding--read-key provider)))
+    (unless (hermes-chat--model-switch-current-p context)
+      (user-error "Hermes provider request is no longer current"))
     (with-current-buffer buffer
       (hermes-dashboard-transport-model-save-key
        client slug key
-       :session-id hermes-chat--dashboard-active-session-id
+       :session-id (plist-get context :session-id)
        :resolve (lambda (_result)
-                  ;; Saving a key flips a provider's authentication, so drop the
-                  ;; cached catalog; the next picker refetches the fresh list.
-                  (hermes-dashboard-transport-invalidate-model-options)
-                  (hermes-chat--in-buffer buffer
-                    (hermes-chat--insert-local-status
-                     (format "Connected provider %s" name) 'ready)
-                    (when on-connected (funcall on-connected))))
+                  (when (hermes-chat--model-switch-current-p context)
+                    ;; Saving a key flips a provider's authentication, so drop
+                    ;; the cached catalog; the next picker refetches the list.
+                    (hermes-dashboard-transport-invalidate-model-options)
+                    (hermes-chat--in-buffer buffer
+                      (hermes-chat--insert-local-status
+                       (format "Connected provider %s" name) 'ready)
+                      (when on-connected (funcall on-connected)))))
        :reject (lambda (message)
-                 (hermes-chat--in-buffer buffer
-                   (hermes-chat--command-error message)))))))
+                 (when (hermes-chat--model-switch-current-p context)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--command-error message))))))))
 
 (defun hermes-chat-connect-provider ()
   "Connect an API-key provider to the current Hermes chat session.
