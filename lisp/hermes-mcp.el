@@ -329,16 +329,18 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
       (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
                   (hermes-mcp--redact-display name)))
     (let ((next (not (hermes-mcp--enabled-p server)))
-          (buffer (current-buffer)))
+          (buffer (current-buffer))
+          (generation (hermes-browser--next-request-generation)))
       (hermes-browser--run-on-client
        (lambda (client)
          (hermes-mcp--api "PUT" (hermes-mcp--server-path name "/enabled")
                           `((enabled . ,(if next t :false))) nil :client client))
        (lambda (_result)
-         (message "Hermes: %s %s; change applies to new sessions/gateway reload"
-                  (if next "enabled" "disabled")
-                  (hermes-mcp--redact-display name))
-         (when (hermes-browser--buffer-mode-p buffer 'hermes-mcp-mode)
+         (when (hermes-browser--request-current-mode-p
+                buffer generation 'hermes-mcp-mode)
+           (message "Hermes: %s %s; change applies to new sessions/gateway reload"
+                    (if next "enabled" "disabled")
+                    (hermes-mcp--redact-display name))
            (with-current-buffer buffer
              (hermes-mcp--revert))))))))
 
