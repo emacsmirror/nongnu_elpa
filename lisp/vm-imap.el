@@ -932,7 +932,7 @@ on all the relevant IMAP servers and then immediately expunges."
 		 (vm-warn 0 2 "Something signaled: %s"
 			  (prin1-to-string error-data))
 		 (vm-inform 0 "Skipping rest of mailbox %s..." folder)
-		 (sleep-for 2)
+		 (vm-pause 2)
 		 (while (equal (nth 2 (car mp)) source)
 		   (setq mp (cdr mp)))
 		 (throw 'replay t)))
@@ -1229,6 +1229,8 @@ Returns the process or nil if the session could not be created."
 	    (setq vm-folder-type (or folder-type vm-default-folder-type))
 	    (buffer-disable-undo imap-buffer)
 	    (make-local-variable 'vm-imap-read-point)
+	    (set (make-local-variable 'vm-imap-tag-counter) 0)
+	    (set (make-local-variable 'vm-imap-current-tag) nil)
 	    ;; clear the trace buffer of old output
 	    (erase-buffer)
 	    ;; Tell MULE not to mess with the text.
@@ -1307,7 +1309,7 @@ Returns the process or nil if the session could not be created."
 		(vm-imap-forget-password source-nopwd-nombox host port user)
 		;; don't sleep unless we're running synchronously.
 		(if vm-imap-ok-to-ask	; (eq interactive t) ?
-		    (sleep-for 2))
+		    (vm-pause 2))
 		(throw 'end-of-session nil))
 	      (unless (assoc source-nopwd-nombox vm-imap-passwords)
 		(setq vm-imap-passwords (cons (list source-nopwd-nombox pass)
@@ -1352,7 +1354,7 @@ Returns the process or nil if the session could not be created."
 		  (vm-inform 0 "IMAP password for %s incorrect" folder)
 		  ;; don't sleep unless we're running synchronously.
 		  (if vm-imap-ok-to-ask	; (eq interactive t)?
-		      (sleep-for 2))
+		      (vm-pause 2))
 		  (throw 'end-of-session nil))
 		(setq success t)
 		(unless (assoc source-nopwd-nombox vm-imap-passwords)
@@ -1366,7 +1368,7 @@ Returns the process or nil if the session could not be created."
 		(vm-inform 0 "IMAP session was not pre-authenticated")
 		;; don't sleep unless we're running synchronously.
 		(if vm-imap-ok-to-ask	; (eq interactive t)?
-		    (sleep-for 2))
+		    (vm-pause 2))
 		(throw 'end-of-session nil))
 	      (setq success t)
 	      ;;-------------------------------
@@ -1530,6 +1532,15 @@ as well."
 	 (vm-imap-protocol-error
 	  "IMAP process %s's buffer has been killed" process))))
 
+(defun vm-imap-next-tag ()
+  "The tag for the next command of this session, and remember it.
+Every command gets its own, so a response can be told from the answer to a
+command that has already been answered.  Every command carried the tag \"VM\"
+until this was written, which is why nothing could have more than one
+outstanding (emacs-vm/vm#473)."
+  (setq vm-imap-current-tag
+	(format "vm%d" (setq vm-imap-tag-counter (1+ vm-imap-tag-counter)))))
+
 (defun vm-imap-send-command (process command &optional tag no-tag)
   (vm-imap-log-token 'send)
   ;;------------------------------
@@ -1540,7 +1551,9 @@ as well."
       (vm-imap-log-tokens (list 'send1 (point) (point-max))))
   (goto-char (point-max))
 
-  (unless no-tag (insert-before-markers (or tag "VM") " "))
+  (unless no-tag
+    (setq tag (or tag (vm-imap-next-tag)))
+    (insert-before-markers tag " "))
   (let ((case-fold-search t))
     (if (string-match "^LOGIN" command)
 	(insert-before-markers "LOGIN <parameters omitted>\r\n")
@@ -1550,7 +1563,7 @@ as well."
   ;; to avoid extra consing but that caused a lot of packet overhead.
   (if no-tag
       (process-send-string process (format "%s\r\n" command))
-    (process-send-string process (format "%s %s\r\n" (or tag "VM") command))))
+    (process-send-string process (format "%s %s\r\n" tag command))))
 
 (defun vm-imap-select-mailbox (process mailbox &optional 
 				       just-retrieve just-examine)
@@ -2482,12 +2495,20 @@ Numbers are included among atoms."
 	      ;; this must to come after all the comparisons for
 	      ;; specific symbols.
 	      ((symbolp e)
-	       (if (or (not (eq (car r) 'atom))
-		       (save-excursion
-			 (goto-char (nth 1 r))
-			 (not (eq (search-forward (symbol-name e) (nth 2 r) t)
-				  (nth 2 r)))))
-		   (throw 'done nil))))
+	       ;; `VM' in a pattern is the tag of the command being waited
+	       ;; for, whatever this session numbered it.  It was the literal
+	       ;; tag of every command until commands were given tags of their
+	       ;; own (emacs-vm/vm#473), and the thirty-odd patterns that say
+	       ;; it read the same either way.
+	       (let ((name (if (eq e 'VM)
+			       (or vm-imap-current-tag "VM")
+			     (symbol-name e))))
+		 (if (or (not (eq (car r) 'atom))
+			 (save-excursion
+			   (goto-char (nth 1 r))
+			   (not (eq (search-forward name (nth 2 r) t)
+				    (nth 2 r)))))
+		     (throw 'done nil)))))
 	(setq response (cdr response)
 	      expr (cdr expr)))
       t )))
@@ -2700,13 +2721,15 @@ tracing purposes. Returns the IMAP process or nil if unsuccessful."
 		    )
 	      ;;---------------------------------
 	      (vm-imap-session-type:set 'active)
-	      (vm-buffer-type:exit)
 	      ;;---------------------------------
 	      (if read-write
 		  process
 		(vm-imap-end-session process)
 		nil))
-	  ;; unwind-protections
+	  ;; unwind-protections.  The exit is here and nowhere else: it used
+	  ;; to be done on the success path as well, and this runs on that
+	  ;; path too, so a session established this way came back having
+	  ;; taken its caller's buffer-type frame (emacs-vm/vm#705).
 	  ;;--------------------
 	  (vm-buffer-type:exit)
 	  ;;--------------------
@@ -3719,7 +3742,11 @@ headers-only form."
 	      (setq expunge-count 0)	; number of messages expunged
 	      (with-current-buffer (process-buffer process)
 		;;---------------------------
-		(vm-buffer-type:set 'process)
+		;; enter, not set: this pushes the frame the exit in the
+		;; unwind-protect below pops.  `vm-buffer-type:set' replaces
+		;; the top of the stack rather than pushing one, so the pop
+		;; took the caller's frame (emacs-vm/vm#705).
+		(vm-buffer-type:enter 'process)
 		;;---------------------------
 		(mapc (lambda (range)
 			(vm-imap-delete-messages

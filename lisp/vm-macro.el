@@ -283,7 +283,7 @@ purposes.")
 vm-buffer-types stack."
   (while (and vm-buffer-types 
 	      (eq (car vm-buffer-types) 'process))
-    (sleep-for 1)))
+    (sit-for 1)))
 
 
 (provide 'vm-macro)
