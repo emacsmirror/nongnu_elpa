@@ -49,5 +49,5 @@ which is already a good fit for them.
 
 ## Thank you
 
-Thanks to feedback and comment by Philip Kaluđerčić.
-Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthand for her name.
+Thanks to feedback and comment by Philip Kaluđerčić, Stéphane Marks.
+Thanks to my wife, Sophia Li for always supporting me.
