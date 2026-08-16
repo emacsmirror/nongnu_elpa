@@ -1029,42 +1029,26 @@ popdrop
     process ))
 
 (defun vm-pop-get-uidl-data ()
+  "Ask the server for the UID of every message, as an obarray.
+The UID is the symbol and the message number its value, which is the way
+round `vm-pop-get-synchronization-data\=' wants it.
+
+The reading is `vm-pop-read-uidl-long-response\=', which is the only place
+that waits for a UIDL response.  This function had a copy of that wait loop
+and its parser, so a fix to one of them missed the other, and a rewrite of
+the network layer would have converted one and left the other blocking."
   (let ((there (make-vector 67 0))
 	(process (vm-folder-pop-process)))
     (with-current-buffer (process-buffer process)
       (vm-pop-send-command process "UIDL")
-      (let ((start vm-pop-read-point)
-	    n uidl)
-	(catch 'done
-	  (goto-char start)
-	  (while (not (re-search-forward "^\\.\r\n\\|^-ERR .*$" nil 0))
-	    (beginning-of-line)
-	    ;; save-excursion doesn't work right
-	    (let ((opoint (point)))
-	      (vm-pop-check-connection process)
-	      (vm-pop-accept-process-output process)
-	      (goto-char opoint)))
-	  (setq vm-pop-read-point (point-marker))
-	  (goto-char start)
-	  ;; no uidl support, bail.
-	  (if (not (looking-at "\\+OK"))
-	      (throw 'done nil))
-	  (forward-line 1)
-	  (while (not (eq (char-after (point)) ?.))
-	    ;; not loking at a number, bail.
-	    (if (not (looking-at "[0-9]"))
-		(throw 'done nil))
-	    (setq n (int-to-string (read (current-buffer))))
-	    (skip-chars-forward " ")
-	    (setq start (point))
-	    (skip-chars-forward "\041-\176")
-	    ;; no tag after the message number, bail.
-	    (if (= start (point))
-		(throw 'done nil))
-	    (setq uidl (buffer-substring start (point)))
-	    (set (intern uidl there) n)
-	    (forward-line 1))
-	  there )))))
+      (let ((pairs (vm-pop-read-uidl-long-response process)))
+	(when pairs
+	  ;; a mailbox with nothing in it answers (nil . nil), which is not a
+	  ;; message and not a failure: the obarray comes back empty
+	  (dolist (pair pairs)
+	    (when (car pair)
+	      (set (intern (cdr pair) there) (car pair))))
+	  there)))))
 
 (defun vm-pop-get-synchronization-data ()
   "Compares the UID's of messages in the local cache and the POP
