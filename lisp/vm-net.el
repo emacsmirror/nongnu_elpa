@@ -240,6 +240,13 @@ What the IMAP parser wants: it re-reads from where it was and asks again."
   (let ((size (buffer-size)))
     (lambda () (> (buffer-size) size))))
 
+(defun vm-net-request-position (position)
+  "A request that is satisfied when the process buffer reaches POSITION.
+What a read of a known length asks with -- an IMAP literal, whose octet
+count arrives before its octets do.  One resume for the whole of it, however
+many chunks it comes in."
+  (lambda () (>= (point-max) position)))
+
 (defun vm-net-request-match (regexp &optional start)
   "A request that is satisfied when REGEXP is in the process buffer.
 Searched from START, or from where the reader is now.  What the POP reads

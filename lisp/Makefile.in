@@ -20,6 +20,7 @@ SOURCES += vm-epg.el
 SOURCES += vm-folder.el
 SOURCES += vm-grepmail.el
 SOURCES += vm-imap.el
+SOURCES += vm-imap-net.el
 SOURCES += vm-license.el
 SOURCES += vm-macro.el
 SOURCES += vm-mark.el
