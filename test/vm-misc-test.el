@@ -1194,6 +1194,40 @@ no list syntax for."
   (should (equal (vm-parse-structured-header "alice@x, bob@y (both)")
                  '("alice@x,bob@y"))))
 
+;;; Pausing to be read (emacs-vm/vm#473)
+
+(ert-deftest vm-misc-test-a-pause-can-be-typed-through ()
+  "`vm-pause' waits with `sit-for', so a reader who has read the message
+carries on rather than waiting out the rest of it.  `sleep-for' does not
+return early for anything, and every message pause in the IMAP and POP code
+was one until this was written."
+  (let (waited)
+    (cl-letf (((symbol-function 'sit-for) (lambda (n) (setq waited n) t))
+              ((symbol-function 'sleep-for)
+               (lambda (&rest _) (error "vm-pause used sleep-for"))))
+      (vm-pause 2)
+      (should (equal waited 2)))))
+
+(ert-deftest vm-misc-test-a-pause-of-nothing-does-not-wait ()
+  "Zero seconds is no pause at all, which is what `vm-verbal-time' is by
+default: every `vm-inform' would otherwise stop for it."
+  (let ((waited nil))
+    (cl-letf (((symbol-function 'sit-for) (lambda (n) (setq waited n) t)))
+      (vm-pause 0)
+      (vm-pause nil)
+      (should-not waited))))
+
+(ert-deftest vm-misc-test-informing-pauses-for-the-verbal-time ()
+  "`vm-inform' shows the message and pauses for `vm-verbal-time', which is
+how a reader is given time to see it."
+  (let ((vm-verbosity 5)
+        (vm-verbal-time 3)
+        waited)
+    (cl-letf (((symbol-function 'message) (lambda (&rest args) (car args)))
+              ((symbol-function 'sit-for) (lambda (n) (setq waited n) t)))
+      (vm-inform 5 "something happened")
+      (should (equal waited 3)))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

@@ -66,7 +66,7 @@
 (defun vm-inform (level &rest args)
   (when (<= level vm-verbosity)
     (let ((message (apply 'message args)))
-      (sleep-for vm-verbal-time)
+      (vm-pause vm-verbal-time)
       message)))
 
 (defun vm-warn (l secs &rest args)
@@ -78,7 +78,18 @@ message."
       (unless (equal vm-current-warning warning)
 	(setq vm-current-warning warning)
 	(message warning)
-	(sleep-for secs)))))
+	(vm-pause secs)))))
+
+(defun vm-pause (seconds)
+  "Leave the last message on screen for SECONDS, or until the user types.
+
+`sit-for\=' rather than `sleep-for\=': both let a process filter run, and only
+one of them lets the reader carry on.  A pause here is for reading a
+message that the next one would overwrite -- it is never part of a
+protocol, and a reader who has read it should not have to wait out the
+rest (emacs-vm/vm#473)."
+  (when (and seconds (> seconds 0))
+    (sit-for seconds)))
 
 ;; garbage-collector result
 (defconst gc-fields '(:conses :syms :miscs 
