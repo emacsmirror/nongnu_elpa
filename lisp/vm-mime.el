@@ -1732,17 +1732,13 @@ The STORAGE specification is given in the same format as for
 (defun vm-determine-proper-charset (beg end)
   "Work out what MIME character set to use for sending a message.
 
-Uses `us-ascii' if the message is entirely ASCII compatible.  If MULE is not
-available, and the message contains contains non-ASCII characters, consults
-the variable `vm-mime-8bit-composition-charset' or uses `iso-8859-1.' if
-that is nil.
+Uses `us-ascii' if the message is entirely ASCII compatible.
 
-Under MULE, `vm-coding-system-priorities' is searched, in order, for a coding
-system that will encode all the characters in the message. If none is found,
-consults the variable `vm-mime-8bit-composition-charset' or uses `iso-2022-jp',
-which will preserve information for all the character sets of which Emacs is
-aware - at the expense of being incompatible with the recipient's software, if
-that recipient is outside of East Asia."
+`vm-coding-system-priorities' is searched, in order, for a coding system that
+will encode all the characters in the message.  If none is found, uses
+`iso-2022-jp', which will preserve information for all the character sets of
+which Emacs is aware - at the expense of being incompatible with the
+recipient's software, if that recipient is outside of East Asia."
   (save-excursion
     (save-restriction
       (narrow-to-region beg end)
@@ -1891,8 +1887,6 @@ that recipient is outside of East Asia."
 	   ;; Couldn't do any magic with vm-coding-system-priorities. Pass
 	   ;; back a Japanese iso-2022 MIME character set.
 	   (t "iso-2022-jp")
-	   ;; Revision 493 had `vm-mime-8bit-composition-charset' preferred
-	   ;; here; that was undone.
 	   ))))))
 
 (defun vm-mime-longest-line-length ()
@@ -7198,8 +7192,7 @@ If none is specified, quoted-printable is used."
     (while (re-search-forward vm-mime-encode-headers-words-regexp (point-max) t)
       (setq start (match-beginning 1)
             end   (copy-marker (match-end 0) t)
-            charset (or (vm-determine-proper-charset start end)
-                        vm-mime-8bit-composition-charset)
+            charset (vm-determine-proper-charset start end)
             coding (vm-mime-charset-to-coding charset))
       ;; encode coding system body
       (when (and  coding (not (eq coding 'no-conversion)))
@@ -8335,24 +8328,6 @@ buffer."
 
 
 ;;; Attachment commands, from vm-rfaddons.el (issue #606)
-
-(defun vm-mime-set-8bit-composition-charset (charset &optional buffer-local)
-  "*Set `vm-mime-8bit-composition-charset' to CHARSET.
-With the optional BUFFER-LOCAL prefix arg, this only affects the current
-buffer."
-  (interactive (list (completing-read 
-		      ;; prompt
-		      "Composition charset: "
-		      ;; collection
-		      vm-mime-charset-completion-alist
-		      ;; predicate, require-match
-		      nil t)
-		     current-prefix-arg))
-  (if (or (featurep 'xemacs) (not (featurep 'xemacs)))
-      (error "vm-mime-8bit-composition-charset has no effect in XEmacs/MULE"))
-  (if buffer-local
-      (set (make-local-variable 'vm-mime-8bit-composition-charset) charset)
-    (setq vm-mime-8bit-composition-charset charset)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-attach-files-in-directory (directory &optional regexp)

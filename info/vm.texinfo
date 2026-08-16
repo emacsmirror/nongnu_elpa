@@ -3444,12 +3444,6 @@ setting the variable @code{vm-mime-7bit-composition-charset}.  The
 value of this variable should be a string specifying the character
 set.
 
-@vindex vm-mime-8bit-composition-charset
-If there are character codes in the composition greater than 128, the
-variable @code{vm-mime-8bit-composition-charset} tells VM what character 
-set to assume when encoding the message.  The default is
-@samp{iso-8859-1}.
-
 Character codes greater than 128 may not be transported reliably
 across the Internet in mail messages.  Some machines will refuse
 to accept messages containing such characters and some will accept

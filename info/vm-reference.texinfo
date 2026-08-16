@@ -4178,13 +4178,6 @@ If optional argument FUNCTION is given, run it instead.
 					          USR, 2011-03-07
 @end deffn
 
-@deffn Command vm-mime-set-8bit-composition-charset charset &optional buffer-local
-@findex vm-mime-set-8bit-composition-charset
-Set @code{vm-mime-8bit-composition-charset} to CHARSET.
-With the optional BUFFER-LOCAL prefix arg, this only affects the current
-buffer.
-@end deffn
-
 @deffn Command vm-nuke-alternative-text/html &optional count mlist
 @findex vm-nuke-alternative-text/html
 Removes the text/html part of all multipart/alternative message parts.
@@ -4508,21 +4501,6 @@ the file coding system of the composition buffer to a single MIME
 character set that can display all the buffer’s characters.
 
 Default value: @code{"us-ascii"}
-@end defopt
-
-@defopt vm-mime-8bit-composition-charset
-@vindex vm-mime-8bit-composition-charset
-Character set that VM should assume if it finds non-US-ASCII characters
-in a composition buffer.  Composition buffers are assumed to use
-US-ASCII unless the buffer contains a byte with the high bit set.
-This variable specifies what character set VM should assume if
-such a character is found.
-
-This variable is unused in XEmacs/MULE and FSF Emacs starting
-with version 20.  Since multiple character sets can be displayed
-in a single buffer under MULE, VM will map the file coding system
-of the buffer to a single MIME character set that can display all
-the buffer’s characters.
 @end defopt
 
 @defopt vm-mime-8bit-header-charsets

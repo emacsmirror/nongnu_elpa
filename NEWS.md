@@ -83,6 +83,17 @@ needing a little more than a deleted line:
     the old one to t, set `vm-mime-forward-saved-attachments` to nil instead:
     it says the same thing the other way up.
 
+## A command and a setting that could not work are gone
+
+`vm-mime-set-8bit-composition-charset` and `vm-mime-8bit-composition-charset`
+have been removed (emacs-vm/vm#697).
+
+The command never set anything: it began by signalling "has no effect in
+XEmacs/MULE", under a condition true in every Emacs there is.  The variable it
+would have set has had no effect since Emacs 20, MULE deciding a buffer's
+charset from what is in it; the docstring said so.  `vm-coding-system-priorities`
+is what chooses the charset of a composition.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a
