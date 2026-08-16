@@ -49,5 +49,5 @@ which is already a good fit for them.
 
 ## Thank you
 
-Thanks to feedback and comment by Philip Kaluđerčić, Stéphane Marks.
+Thanks to feedback and comment by Russel Mok, Philip Kaluđerčić, Stéphane Marks.
 Thanks to my wife, Sophia Li for always supporting me.
