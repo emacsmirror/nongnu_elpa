@@ -1059,6 +1059,83 @@ the count and the current message."
         (vm-virtual-update-folders 1 (list second))))
     (should (equal (vm-avirtual-test--virtual-subjects virtual) '("two")))))
 
+;;; The spam word list
+
+(defmacro vm-avirtual-test--with-spam-words (words &rest body)
+  "Run BODY with a spam words file holding WORDS, a list of strings.
+The file, the list read from it and the regexp built from it are all
+temporary: `vm-spam-words' is a cache of the file and outlives a test that
+does not put it back."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-spam" t)))
+          (vm-spam-words-file (expand-file-name "spam-words" dir))
+          (vm-spam-words nil)
+          (vm-spam-words-regexp nil)
+          (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (with-temp-file vm-spam-words-file
+             (dolist (word ,words) (insert word "\n")))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-avirtual-test--spam-words-on-disk ()
+  "The words the spam words file holds."
+  (with-temp-buffer
+    (insert-file-contents vm-spam-words-file)
+    (split-string (buffer-string) "\n" t)))
+
+(ert-deftest vm-avirtual-test-a-spam-word-is-added-to-the-file ()
+  "`vm-add-spam-word' writes the word to `vm-spam-words-file', which is what
+makes it survive the session, and does not add it twice."
+  (vm-avirtual-test--with-spam-words '("lottery")
+    ;; the list is read from the file by the selector, not by the adding
+    (vm-vs-spam-word nil)
+    (should (member "lottery" vm-spam-words))
+    (vm-add-spam-word "viagra")
+    (should (equal (sort (vm-avirtual-test--spam-words-on-disk) #'string<)
+                   '("lottery" "viagra")))
+    (vm-add-spam-word "viagra")
+    (should (equal (sort (vm-avirtual-test--spam-words-on-disk) #'string<)
+                   '("lottery" "viagra")))))
+
+(ert-deftest vm-avirtual-test-a-spam-word-file-without-a-final-newline ()
+  "A word is added on a line of its own even when the file does not end in a
+newline: two words on one line are one word nobody matches."
+  (vm-avirtual-test--with-spam-words '("lottery")
+    (with-temp-file vm-spam-words-file (insert "lottery"))
+    (vm-add-spam-word "viagra")
+    (should (equal (vm-avirtual-test--spam-words-on-disk)
+                   '("lottery" "viagra")))))
+
+(ert-deftest vm-avirtual-test-rebuilding-reads-the-file-again ()
+  "The file is read once and cached, so a word added to it by hand is not
+seen until `vm-spam-words-rebuild' throws the cache away and reads it again.
+That is what the command is for."
+  (vm-avirtual-test--with-spam-words '("lottery")
+    (vm-vs-spam-word nil)
+    (should (equal vm-spam-words '("lottery")))
+    (with-temp-file vm-spam-words-file (insert "lottery\nviagra\n"))
+    ;; still the old list: nothing re-reads the file by itself
+    (vm-vs-spam-word nil)
+    (should (equal vm-spam-words '("lottery")))
+    (vm-spam-words-rebuild)
+    (should (equal (sort (copy-sequence vm-spam-words) #'string<)
+                   '("lottery" "viagra")))
+    (should (string-match-p "viagra" vm-spam-words-regexp))))
+
+(ert-deftest vm-avirtual-test-a-comment-is-not-a-spam-word ()
+  "Lines beginning # or ; are comments, so a file can say what a word is for."
+  (vm-avirtual-test--with-spam-words
+      '("# the words that fill my inbox" "lottery" "; and another comment")
+    (vm-vs-spam-word nil)
+    (should (equal vm-spam-words '("lottery")))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here

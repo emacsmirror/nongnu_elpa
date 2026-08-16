@@ -3821,6 +3821,49 @@ what is missing."
       (let ((err (should-error (vm-folders-summarize) :type 'error)))
         (should (string-match-p "Berkeley DB" (error-message-string err)))))))
 
+;;; Moving between the folders that are open
+
+(ert-deftest vm-folder-test-switching-to-another-open-folder ()
+  "`vm-switch-to-folder' goes to a folder that is already open, by name, and
+leaves it selected and summarized -- it is how a reader with several folders
+open moves between them without visiting anything again."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-switch" t)))
+         (first (expand-file-name "first" dir))
+         (second (expand-file-name "second" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore))
+          (dolist (pair (list (cons first "in the first")
+                              (cons second "in the second")))
+            (with-temp-file (car pair)
+              (insert "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                      "From: alice@example.com\n"
+                      "Subject: " (cdr pair) "\n\nBody.\n\n")))
+          (vm-visit-folder first)
+          (vm-visit-folder second)
+          (should (equal (buffer-name) "second"))
+          (vm-switch-to-folder "first")
+          (should (equal (buffer-name) "first"))
+          (should (equal (vm-su-subject (car vm-message-list)) "in the first"))
+          ;; the folder it went to is the one whose summary is on screen
+          (should (buffer-live-p vm-summary-buffer))
+          (should (equal (buffer-name (with-current-buffer vm-summary-buffer
+                                        vm-mail-buffer))
+                         "first")))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
