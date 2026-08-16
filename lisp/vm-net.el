@@ -243,12 +243,35 @@ What the IMAP parser wants: it re-reads from where it was and asks again."
 (defun vm-net-request-match (regexp &optional start)
   "A request that is satisfied when REGEXP is in the process buffer.
 Searched from START, or from where the reader is now.  What the POP reads
-want: each of them waits for a terminator."
-  (let ((from (or start (point))))
+want: each of them waits for a terminator.
+
+The filter asks once per chunk that arrives, so each ask searches only what
+has turned up since the last one, back to the start of the line the last one
+ended in -- far enough for a terminator split across two chunks, and REGEXP
+is a terminator, which does not span a line.  Searching the whole response
+every time made reading it quadratic: a 2 MB message arriving in TCP-sized
+chunks spent seconds in `re-search-forward' and a 20 MB one minutes, which
+is what a hung Emacs looks like from the outside.
+
+Answering yes is remembered, so a request that has been satisfied stays
+satisfied however often it is asked: what it reports is that the response is
+complete, and searching only the new text would otherwise make that answer
+depend on when it was asked."
+  (let ((from (or start (point)))
+	(searched nil)
+	(found nil))
     (lambda ()
-      (save-excursion
-	(goto-char from)
-	(and (re-search-forward regexp nil t) t)))))
+      (or found
+	  (let ((begin (if searched
+			   (max from (save-excursion
+				       (goto-char (min searched (point-max)))
+				       (forward-line 0)
+				       (point)))
+			 from)))
+	    (setq searched (point-max))
+	    (setq found (save-excursion
+			  (goto-char begin)
+			  (and (re-search-forward regexp nil t) t))))))))
 
 (provide 'vm-net)
 ;;; vm-net.el ends here

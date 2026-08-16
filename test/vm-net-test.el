@@ -219,6 +219,53 @@ everything there is and wants more than that."
       (insert " more")
       (should (funcall request)))))
 
+(defvar vm-net-test--scanned 0
+  "Characters offered to `re-search-forward' while a request was polled.")
+
+(defun vm-net-test--count-scan (original &rest args)
+  (setq vm-net-test--scanned (+ vm-net-test--scanned (- (point-max) (point))))
+  (apply original args))
+
+(ert-deftest vm-net-test-a-match-request-searches-only-what-arrived ()
+  "The filter polls the pending request once per chunk, so a request that
+searches the whole response each time is quadratic in its size: reading a
+2 MB message took seconds and a 20 MB one minutes, with Emacs blocked
+throughout.
+
+Counted rather than timed: the characters `re-search-forward' is given must
+stay within a small multiple of the response, not a multiple of the number
+of chunks it arrived in."
+  (let* ((line "line of the body, padded out to make the line reasonably long\n")
+         (body (mapconcat #'identity (make-list 4000 line) ""))
+         (response (concat (replace-regexp-in-string "\n" "\r\n" body) ".\r\n"))
+         (chunk 1400)
+         (vm-net-test--scanned 0)
+         (sent 0))
+    (advice-add 're-search-forward :around #'vm-net-test--count-scan)
+    (unwind-protect
+        (with-temp-buffer
+          (let ((request (vm-net-request-match "^\\.\r\n" (point-max))))
+            (while (< sent (length response))
+              (let ((end (min (length response) (+ sent chunk))))
+                (goto-char (point-max))
+                (insert (substring response sent end))
+                (setq sent end))
+              (funcall request))
+            (should (funcall request))))
+      (advice-remove 're-search-forward #'vm-net-test--count-scan))
+    (should (> (/ (length response) chunk) 100)) ; enough chunks to tell
+    (should (< vm-net-test--scanned (* 4 (length response))))))
+
+(ert-deftest vm-net-test-a-match-request-sees-a-terminator-split-in-two ()
+  "The terminator arriving in two pieces is still found, which is what the
+request may not skip over when it searches only the new text."
+  (with-temp-buffer
+    (let ((request (vm-net-request-match "^\\.\r\n" (point-max))))
+      (insert "+OK\r\nbody\r\n.\r")
+      (should-not (funcall request))
+      (insert "\n")
+      (should (funcall request)))))
+
 (ert-deftest vm-net-test-a-match-request-is-about-a-terminator ()
   "`vm-net-request-match' is what the POP reads ask with: each waits for the
 end of its response, and searches from where the reader is."
