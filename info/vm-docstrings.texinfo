@@ -4,7 +4,7 @@
 @c what the code says about that symbol.
 
 @macro vmdocvmcompactfolder
-@deffn Command vm-compact-folder &rest --cl-rest--
+@deffn Command vm-compact-folder &rest rest
 @findex vm-compact-folder
 Expunge messages with the @code{deleted} attribute.
 For normal folders this means that the deleted messages are
@@ -90,7 +90,7 @@ Like vm-delete-message, except the deletion direction is reversed.
 @end macro
 
 @macro vmdocvmexpungefolder
-@deffn Command vm-expunge-folder &rest --cl-rest--
+@deffn Command vm-expunge-folder &rest rest
 @findex vm-expunge-folder
 Expunge messages with the @code{deleted} attribute.
 For normal folders this means that the deleted messages are
@@ -1671,7 +1671,7 @@ this facility is only available for IMAP folders.
 @end macro
 
 @macro vmdocvmreordermessageheaders
-@deffn Command vm-reorder-message-headers message &rest --cl-rest--
+@deffn Command vm-reorder-message-headers message &rest rest
 @findex vm-reorder-message-headers
 
 @end deffn
@@ -12390,7 +12390,7 @@ the message.  See the documentation for the function vm-reply for details.
 @end macro
 
 @macro vmdocvmtoolbarvisitcommand
-@deffn Command vm-toolbar-visit-command folder &optional read-only &rest --cl-rest--
+@deffn Command vm-toolbar-visit-command folder &optional read-only &rest rest
 @findex vm-toolbar-visit-command
 Visit a mail file.
 VM will parse and present its messages to you in the usual way.
@@ -12860,7 +12860,7 @@ Default value: @code{12000}
 @end macro
 
 @macro vmdocvm
-@deffn Command vm &optional folder &rest --cl-rest--
+@deffn Command vm &optional folder &rest rest
 @findex vm
 Read mail under Emacs.
 Optional first arg FOLDER specifies the folder to visit.  It can
@@ -13111,7 +13111,7 @@ Customize VM by setting variables and store them in the @code{vm-init-file}.
 @end macro
 
 @macro vmdocvmotherframe
-@deffn Command vm-other-frame &optional folder read-only &rest --cl-rest--
+@deffn Command vm-other-frame &optional folder read-only &rest rest
 @findex vm-other-frame
 Like vm, but run in a newly created frame.
 @end deffn
@@ -13119,7 +13119,7 @@ Like vm, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmotherwindow
-@deffn Command vm-other-window &optional folder read-only &rest --cl-rest--
+@deffn Command vm-other-window &optional folder read-only &rest rest
 @findex vm-other-window
 Like vm, but run in a different window.
 @end deffn
@@ -13174,7 +13174,7 @@ Display and the value of the variable @code{vm-version-commit}.
 @end macro
 
 @macro vmdocvmvisitfolder
-@deffn Command vm-visit-folder folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-folder folder &optional read-only &rest rest
 @findex vm-visit-folder
 Visit a mail file.
 VM will parse and present its messages to you in the usual way.
@@ -13197,7 +13197,7 @@ message-pointer, no retrieval of new mail.
 @end macro
 
 @macro vmdocvmvisitfolderotherframe
-@deffn Command vm-visit-folder-other-frame folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-folder-other-frame folder &optional read-only &rest rest
 @findex vm-visit-folder-other-frame
 Like vm-visit-folder, but run in a newly created frame.
 @end deffn
@@ -13205,7 +13205,7 @@ Like vm-visit-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitfolderotherwindow
-@deffn Command vm-visit-folder-other-window folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-folder-other-window folder &optional read-only &rest rest
 @findex vm-visit-folder-other-window
 Like vm-visit-folder, but run in a different window.
 @end deffn
@@ -13213,7 +13213,7 @@ Like vm-visit-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitimapfolder
-@deffn Command vm-visit-imap-folder folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-imap-folder folder &optional read-only &rest rest
 @findex vm-visit-imap-folder
 Visit a IMAP mailbox.
 VM will present its messages to you in the usual way.  Messages
@@ -13237,7 +13237,7 @@ visited folder.
 @end macro
 
 @macro vmdocvmvisitimapfolderotherframe
-@deffn Command vm-visit-imap-folder-other-frame folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-imap-folder-other-frame folder &optional read-only &rest rest
 @findex vm-visit-imap-folder-other-frame
 Like vm-visit-imap-folder, but run in a newly created frame.
 @end deffn
@@ -13245,7 +13245,7 @@ Like vm-visit-imap-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitimapfolderotherwindow
-@deffn Command vm-visit-imap-folder-other-window folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-imap-folder-other-window folder &optional read-only &rest rest
 @findex vm-visit-imap-folder-other-window
 Like vm-visit-imap-folder, but run in a different window.
 @end deffn
@@ -13253,7 +13253,7 @@ Like vm-visit-imap-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitpopfolder
-@deffn Command vm-visit-pop-folder folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-pop-folder folder &optional read-only &rest rest
 @findex vm-visit-pop-folder
 Visit a POP mailbox.
 VM will present its messages to you in the usual way.  Messages
@@ -13275,7 +13275,7 @@ visited folder.
 @end macro
 
 @macro vmdocvmvisitpopfolderotherframe
-@deffn Command vm-visit-pop-folder-other-frame folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-pop-folder-other-frame folder &optional read-only &rest rest
 @findex vm-visit-pop-folder-other-frame
 Like vm-visit-pop-folder, but run in a newly created frame.
 @end deffn
@@ -13283,7 +13283,7 @@ Like vm-visit-pop-folder, but run in a newly created frame.
 @end macro
 
 @macro vmdocvmvisitpopfolderotherwindow
-@deffn Command vm-visit-pop-folder-other-window folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-pop-folder-other-window folder &optional read-only &rest rest
 @findex vm-visit-pop-folder-other-window
 Like vm-visit-pop-folder, but run in a different window.
 @end deffn
@@ -13291,7 +13291,7 @@ Like vm-visit-pop-folder, but run in a different window.
 @end macro
 
 @macro vmdocvmvisitthunderbirdfolder
-@deffn Command vm-visit-thunderbird-folder folder &optional read-only &rest --cl-rest--
+@deffn Command vm-visit-thunderbird-folder folder &optional read-only &rest rest
 @findex vm-visit-thunderbird-folder
 Visit a mail file maintained by Thunderbird.
 VM will parse and present its messages to you in the usual way.
