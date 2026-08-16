@@ -523,6 +523,46 @@ caller\='s cue to use the blocking implementation rather than to fail."
                (lambda () "imap-ssh:host:143:INBOX:login:someone:*")))
       (should-not (vm-imap-net-get-spooled-mail)))))
 
+
+;;; Bodies kept on the server
+
+(ert-deftest vm-imap-net-test-a-body-comes-back-without-waiting ()
+  "`vm-load-message' starts the fetch and returns; the body arrives in the
+filter and the message has it then.  One UID FETCH for however many bodies
+were asked for."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((vm-enable-external-messages '(imap))
+          (messages vm-message-list))
+      (vm-unload-message 2 t)
+      (should (vm-body-to-be-retrieved-of (car messages)))
+      (should (vm-body-to-be-retrieved-of (cadr messages)))
+      (should (vm-imap-net-load-message-bodies messages))
+      (should (vm-imap-net-busy-p))
+      (should (vm-imap-net-wait nil 10))
+      (should-not (vm-body-to-be-retrieved-of (car messages)))
+      (should (string-match-p "The first body"
+                              (vm-imap-net-test--body-of (car messages))))
+      (should (string-match-p "The second body"
+                              (vm-imap-net-test--body-of (cadr messages))))
+      ;; one command for both of them
+      (should (equal (cl-count-if (lambda (c) (string-match-p "UID FETCH" c))
+                                  (vm-imap-mock-commands mock))
+                     1)))))
+
+(ert-deftest vm-imap-net-test-load-message-goes-through-the-driver ()
+  "The command `vm-load-message' itself takes the same path, so a body that
+takes a minute to arrive does not stop Emacs for a minute."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      (should (equal (vm-imap-net-test--body-of message) ""))
+      (vm-load-message 1)
+      (should (vm-imap-net-wait nil 10))
+      (should (string-match-p "The first body"
+                              (vm-imap-net-test--body-of message))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

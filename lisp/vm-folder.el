@@ -6026,6 +6026,13 @@ thread are loaded."
     (unwind-protect
 	(save-excursion
 	  (vm-inform 8 "Retrieving message body...")
+	  ;; IMAP bodies go through the driver where the maildrop allows it:
+	  ;; one command for all of them, and nothing waits for the answer.
+	  (let ((wanted (vm-imap-messages-to-fetch mlist)))
+	    (when (and wanted (vm-imap-net-load-message-bodies wanted))
+	      (setq mlist (seq-remove
+			   (lambda (m) (memq (vm-real-message-of m) wanted))
+			   mlist))))
 	  ;; More than one body to fetch from the same IMAP folder is one
 	  ;; command, not one each (issue #185).
 	  (let ((bunch (vm-messages-to-fetch-together mlist)))
@@ -6192,6 +6199,23 @@ a mixed list gets.  Issue #185."
 	 (reals (delete-dups (mapcar #'vm-real-message-of wanted)))
 	 (buffers (delete-dups (mapcar #'vm-buffer-of reals))))
     (and (cdr reals)			; more than one
+	 (null (cdr buffers))		; all in the same folder
+	 reals)))
+
+(defun vm-imap-messages-to-fetch (mlist)
+  "The messages of MLIST whose bodies are to be fetched from one IMAP folder.
+Like `vm-messages-to-fetch-together\=', but a single message counts: the
+driver sends one command either way, and there is no round trip to save by
+treating one differently from four."
+  (let* ((wanted (seq-filter
+		  (lambda (m)
+		    (let ((mm (vm-real-message-of m)))
+		      (and (vm-body-to-be-retrieved-of mm)
+			   (eq (vm-message-access-method-of mm) 'imap))))
+		  mlist))
+	 (reals (delete-dups (mapcar #'vm-real-message-of wanted)))
+	 (buffers (delete-dups (mapcar #'vm-buffer-of reals))))
+    (and reals
 	 (null (cdr buffers))		; all in the same folder
 	 reals)))
 
