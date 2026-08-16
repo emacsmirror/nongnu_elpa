@@ -1461,6 +1461,37 @@ tell the two apart."
           (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
         (vm-imap-live-close conn)))))
 
+(ert-deftest vm-imap-live-test-a-saved-to-mailbox-can-be-inside-a-directory ()
+  "REGRESSION: saving to a mailbox in a directory that VM has to create works.
+Issue #691.  Against a real server because it is the server that refuses
+\"vmtest/\" as a mailbox name, and dovecot does: VM created the parents itself,
+one CREATE per component, rather than leaving it to the server as RFC 3501
+requires."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let* ((server (vm-imap-live-server "plain"))
+         (account (car (plist-get server :accounts)))
+         (conn (vm-imap-live--open server))
+         (mailbox nil)
+         (vm-imap-server-timeout vm-imap-live-timeout)
+         (vm-imap-passwords vm-imap-passwords)
+         (vm-kept-imap-buffers vm-kept-imap-buffers)
+         (vm-imap-keep-trace-buffer nil)
+         (vm-delete-after-saving nil))
+    (unwind-protect
+        (progn
+          (vm-imap-live-login conn server account)
+          (vm-imap-live-namespace conn)
+          ;; a name with the separator in it, which is what went wrong
+          (setq mailbox (concat (vm-imap-live-mailbox-name conn) "/inside"))
+          (vm-imap-live-test--with-a-file-folder ("saved into a directory")
+            (vm-save-message-to-imap-folder
+             (vm-imap-live-spec server account mailbox) 1))
+          (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))
+      (when mailbox
+        (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
+      (vm-imap-live-close conn))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
