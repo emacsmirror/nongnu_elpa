@@ -1,5 +1,18 @@
 #+title: emacs-hermes Changelog
 
+* Version 0.3.2 (2026-08-16)
+
+- Added =hermes-project-chat= to reuse or create a chat at the current
+  project root; a prefix argument always opens another.
+- Grouped the dashboard by Hermes instance, rebalanced chat action popup
+  groups, and reused one status line for compression warnings.
+- Isolated prompt, steer, background-submit, and session-panel ownership so
+  stale callbacks cannot mutate a successor chat or restore a rejected draft
+  into the wrong buffer.
+- Kept instance-scoped browsers, Kanban tails, cron edits, MCP toggles,
+  rollback restores, provider-key saves, capability connects, and subagent
+  interrupts from leaking across instance switches or list refreshes.
+
 * Version 0.3.1 (2026-08-15)
 
 - Added shell-style completion and direct session switching for =/model= while
