@@ -5528,7 +5528,6 @@ The library used for displaying HTML messages.  The possible
 values are:
 @example
   emacs-w3m  The emacs interface to the w3m viewer,
-  emacs-w3   The emacs interface to the w3 viewer,
   w3m        The w3m viewer used externally to convert to plain text,
   lynx       The lynx viewer used externally to convert to plain text,
   auto-select Automatic selection among these alternatives, and
@@ -10602,9 +10601,7 @@ with the following meanings
 
 @end example
 The list can contain all these values and VM will try them all,
-but not in any particular order, except that the url-w3 method
-will likely be tried last since it is likely to be the slowest
-retrieval method.
+but not in any particular order.
 
 If @code{vm-url-retrieval-methods} value is nil, VM will not try to
 use any URL retrieval methods.

@@ -1961,8 +1961,6 @@ means to that function that the region is encoded already.")
                    ;; every HTML part fails or waits for a process that is
                    ;; not there.
                    'emacs-w3m)
-                  ((locate-library "w3")
-                   'emacs-w3)
                   ((executable-find "w3m")
                    'w3m)
                   ((executable-find "lynx")
@@ -2767,14 +2765,12 @@ does not come out as wide as the window the message was read in."
 		      ;; TODO: write the image to a file and replace the link
 		      )
 		  (insert "blocked:"))))
-	    ;; w3-region apparently deletes all the text in the
-	    ;; region and then insert new text.  This makes the
-	    ;; end == start.  The fix is to move the end marker
-	    ;; forward with a placeholder character so that when
-	    ;; w3-region delete all the text, end will still be
-	    ;; ahead of the insertion point and so will be moved
-	    ;; forward when the new text is inserted.  We'll
-	    ;; delete the placeholder afterward.
+	    ;; A renderer that replaces the region deletes all of the
+	    ;; text first, which makes end == start.  The fix is to move
+	    ;; the end marker forward with a placeholder character so
+	    ;; that end stays ahead of the insertion point and is moved
+	    ;; forward when the new text is inserted.  We'll delete the
+	    ;; placeholder afterward.
 	    (goto-char end)
 	    (insert-before-markers "z")
 	    ;; the view port (scrollbar) is sometimes messed up, try to avoid it
@@ -3600,13 +3596,7 @@ current buffer."
 	       (error (signal 'vm-mime-error (cdr data))))))
 	  ((and (string= access-method "url")
 		vm-url-retrieval-methods)
-	   (defvar w3-configuration-directory) ; for bytecompiler
-	   (let ((url (vm-mime-get-parameter layout "url"))
-		 ;; needed or url-retrieve will bitch
-		 (w3-configuration-directory
-		  (if (boundp 'w3-configuration-directory)
-		      w3-configuration-directory
-		    "~")))
+	   (let ((url (vm-mime-get-parameter layout "url")))
 	     (if (null url)
 		 (vm-mime-error
 		  "%s access type missing `url' parameter"

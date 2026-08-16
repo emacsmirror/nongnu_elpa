@@ -2391,18 +2391,15 @@ displayed in Emacs using a variety of packages.  VM knows about:
 
 @cindex lynx
 @cindex w3m
-@cindex w3
 @cindex Emacs-w3m
 @multitable @columnfractions .15 .85
-@item lynx   
+@item lynx
   @tab The @command{lynx} browser used externally to convert @acronym{HTML}
   to plain text
-@item w3m    
+@item w3m
   @tab The @command{w3m} browser used externally to convert @acronym{HTML}
   to plain text
-@item emacs-w3 
-  @tab  The @samp{Emacs/W3} browser used internally in Emacs
-@item emacs-w3m 
+@item emacs-w3m
   @tab  The @samp{Emacs-W3M} browser used internally in Emacs.
         @xref{top,, Emacs-w3m, emacs-w3m, Emacs-w3m User's Manual}.
 @end multitable

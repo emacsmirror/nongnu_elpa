@@ -83,6 +83,17 @@ needing a little more than a deleted line:
     the old one to t, set `vm-mime-forward-saved-attachments` to nil instead:
     it says the same thing the other way up.
 
+## Emacs/W3 is no longer one of the HTML viewers
+
+The W3 browser was dropped from Emacs and is in no package archive, so nothing
+could supply it (emacs-vm/vm#707).  If your init file sets
+`vm-mime-text/html-handler` to `emacs-w3`, set it to `emacs-w3m`, `w3m`, `lynx`
+or nil; the default `auto-select` no longer considers it.  `vm-url-browser`
+values `w3-fetch` and `w3-fetch-other-frame` are gone the same way, as is the
+`url-w3` entry in `vm-url-retrieval-methods`, which no code ever implemented.
+
+emacs-w3m is a different package and is unaffected.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a

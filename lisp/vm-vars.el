@@ -1930,7 +1930,6 @@ attached in \"multipart/signed\" parts."
   "*The library used for displaying HTML messages.  The possible
 values are:
   emacs-w3m  The emacs interface to the w3m viewer,
-  emacs-w3   The emacs interface to the w3 viewer,
   w3m        The w3m viewer used externally to convert to plain text,
   lynx       The lynx viewer used externally to convert to plain text,
   auto-select Automatic selection among these alternatives, and
@@ -1940,7 +1939,6 @@ values are:
   :type '(choice (const :tag "Do not display HTML messages." nil)
                  (const :tag "Autoselect best method" auto-select)
                  (const emacs-w3m)
-                 (const emacs-w3)
                  (const w3m)
                  (const lynx)))
 
@@ -4538,9 +4536,7 @@ with the following meanings
         curl - means VM should try to use the curl program.
 
 The list can contain all these values and VM will try them all,
-but not in any particular order, except that the url-w3 method
-will likely be tried last since it is likely to be the slowest
-retrieval method.
+but not in any particular order.
 
 If `vm-url-retrieval-methods' value is nil, VM will not try to
 use any URL retrieval methods."
@@ -4549,8 +4545,7 @@ use any URL retrieval methods."
 	      (const wget)
 	      (const w3m)
 	      (const fetch)
-	      (const curl)
-	      (const url-w3)))
+	      (const curl)))
 
 (defcustom vm-url-browser 'browse-url
   "*The default web browser to be used for following URLs (hyperlinks)

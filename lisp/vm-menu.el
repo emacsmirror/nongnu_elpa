@@ -478,44 +478,37 @@ do not allow menubar buttons.")
     ["Delete" vm-delete-mime-object t]))
 
 (defconst vm-menu-url-browser-menu
-  (let ((w3 (cond ((fboundp 'w3-fetch-other-frame)
-		   'w3-fetch-other-frame)
-		  ((fboundp 'w3-fetch)
-		   'w3-fetch)
-		  (t 'w3-fetch-other-frame))))
-    `("Send URL to ..."
-      ["Window system (Copy)"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-window-system)
-       t]
-      ["X Clipboard"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-clipboard)
-       t]
-      ["browse-url"
-       (vm-mouse-send-url-at-position (point) 'browse-url) 
-       browse-url-browser-function]
-      ["Emacs W3" (vm-mouse-send-url-at-position (point) (quote ,w3))
-       (fboundp (quote ,w3))]
-      ["Emacs W3M" (vm-mouse-send-url-at-position (point) 'w3m-browse-url)
-       (fboundp 'w3m-browse-url)]
-      "---"
-      ["Firefox"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-firefox)
-       vm-firefox-program]
-      ["Konqueror"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-konqueror)
-       vm-konqueror-client-program]
-      ["Mozilla"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-mozilla)
-       vm-mozilla-program]
-      ["Opera"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-opera)
-       vm-opera-program])))
+  '("Send URL to ..."
+    ["Window system (Copy)"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-window-system)
+     t]
+    ["X Clipboard"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-clipboard)
+     t]
+    ["browse-url"
+     (vm-mouse-send-url-at-position (point) 'browse-url)
+     browse-url-browser-function]
+    ["Emacs W3M" (vm-mouse-send-url-at-position (point) 'w3m-browse-url)
+     (fboundp 'w3m-browse-url)]
+    "---"
+    ["Firefox"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-firefox)
+     vm-firefox-program]
+    ["Konqueror"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-konqueror)
+     vm-konqueror-client-program]
+    ["Mozilla"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-mozilla)
+     vm-mozilla-program]
+    ["Opera"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-opera)
+     vm-opera-program]))
 
 (defconst vm-menu-mailto-url-browser-menu
   `("Send Mail using ..."
