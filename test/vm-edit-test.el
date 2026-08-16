@@ -474,6 +474,116 @@ go back to."
       (let ((text-quoting-style 'grave))
         (should-error (vm-edit-message) :type 'folder-read-only)))))
 
+;;; The edit buffer itself
+
+(ert-deftest vm-edit-test-the-edit-buffer-holds-the-whole-message ()
+  "The buffer holds the message from its first header to its last line, and
+knows which folder it belongs to.  `vm-edit-message-end' reads all of that
+back, so a buffer set up short of it writes a truncated message."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (should (eq vm-mail-buffer folder))
+    (should (eq vm-system-state 'editing))
+    (should buffer-offer-save)
+    (should (equal (length vm-message-pointer) 1))
+    (let ((text (buffer-string)))
+      (should (string-match-p "\\`From: alice@example\\.com" text))
+      (should (string-match-p "Subject: msg 1" text))
+      (should (string-match-p "body 1" text))
+      ;; the message and not the folder: the From_ separator is not part of
+      ;; what is edited, nor is the message after it
+      (should-not (string-match-p "^From alice@example\\.com Mon" text))
+      (should-not (string-match-p "body 2" text)))))
+
+(ert-deftest vm-edit-test-editing-again-returns-to-the-same-buffer ()
+  "A second `vm-edit-message' on a message already being edited goes back to
+that buffer with what has been typed in it, rather than starting again and
+losing it."
+  (vm-edit-test--in-a-folder (2)
+    (vm-edit-message)
+    (let ((edit-buf (current-buffer)))
+      (goto-char (point-max))
+      (insert "a line typed but not finished\n")
+      (with-current-buffer folder (vm-edit-message))
+      (should (eq (current-buffer) edit-buf))
+      (should (string-match-p "not finished" (buffer-string))))))
+
+;;; Editing a message that is not the reader's to edit
+
+(ert-deftest vm-edit-test-an-unmirrored-virtual-message-is-refused ()
+  "A virtual folder that does not mirror its real folder holds copies of the
+messages, and editing one would change a copy that nothing writes back.  The
+command says so rather than pretending to edit."
+  (vm-edit-test--in-a-folder (2)
+    (let* ((file (buffer-file-name folder))
+           (vm-virtual-mirror nil)
+           (vm-virtual-folder-alist
+            (list (list "everything" (list (list file) '(any)))))
+           (text-quoting-style 'grave))
+      (cl-letf (((symbol-function 'vm-display) #'ignore))
+        (vm-visit-virtual-folder "everything"))
+      (should (eq major-mode 'vm-virtual-mode))
+      (let ((err (should-error (vm-edit-message) :type 'error)))
+        (should (string-match-p "unmirrored" (error-message-string err)))))))
+
+;;; A folder that carries its own lengths
+
+(ert-deftest vm-edit-test-an-edit-recomputes-the-content-length ()
+  "In an mboxcl2 folder the body length is a header, and an edit that changes
+the body has to change it too: a Content-Length that disagrees with the body
+runs one message into the next when the folder is next read."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-edit-cl2" t)))
+         (file (expand-file-name "inbox" dir))
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-frame-per-edit nil)
+         (vm-trust-content-length t)
+         (before (buffer-list))
+         folder)
+    (unwind-protect
+        (progn
+          ;; written here rather than with vm-mboxcl2-test.el's own writer:
+          ;; a test file has to stand on its own, `--one' loading it alone
+          (with-temp-file file
+            (dolist (message '(("one" . "the first body\n")
+                               ("two" . "the second body\n")))
+              (insert "From sender@example.com Sat Aug  8 14:24:13 2026\n"
+                      "From: sender@example.com\n"
+                      "Subject: " (car message) "\n"
+                      (format "Content-Length: %d\n"
+                              (string-bytes (cdr message)))
+                      "\n" (cdr message))))
+          (cl-letf (((symbol-function 'vm-display) #'ignore))
+            (vm-visit-folder file)
+            (setq folder (current-buffer))
+            (setq vm-message-pointer vm-message-list)
+            (should (eq (vm-message-type-of (car vm-message-list)) 'mboxcl2))
+            (vm-edit-message)
+            (goto-char (point-min))
+            (should (search-forward "the first body" nil t))
+            (replace-match "a first body that is a good deal longer")
+            (vm-edit-message-end))
+          (let ((text (vm-edit-test--folder-text folder)))
+            ;; one length, not the old one as well
+            (should (equal (length (split-string text "Content-Length:" t)) 3))
+            (let ((body "a first body that is a good deal longer\n"))
+              (should (string-match-p
+                       (format "Content-Length: %d" (string-bytes body))
+                       text))))
+          ;; and the folder still reads back as two messages
+          (with-current-buffer folder
+            (vm-save-folder))
+          (with-temp-buffer
+            (insert-file-contents file)
+            (should (equal (how-many "^From sender@example\\.com ") 2))
+            (should (equal (how-many "^Subject: two$") 1))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-edit-test)
 
 ;;; vm-edit-test.el ends here
