@@ -367,6 +367,149 @@ connection is authenticated, and several advertise fewer before it."
 		    "LOGIN"))
   (iter-yield-from (vm-imap-net-capabilities)))
 
+;;; A mailbox
+
+(declare-function vm-imap-quote-mailbox-name "vm-imap" (mailbox))
+(declare-function vm-imap-scan-list-for-flag "vm-imap" (list flag))
+(declare-function vm-inform "vm-misc" (level &rest args))
+
+(defun vm-imap-net-number (token)
+  "The number TOKEN is, read from the process buffer."
+  (string-to-number (buffer-substring (nth 1 token) (nth 2 token))))
+
+(iter-defun vm-imap-net-select (mailbox &optional examine)
+  "Select MAILBOX, or EXAMINE it, and answer with what the server said of it.
+The answer is (COUNT RECENT UID-VALIDITY READ-WRITE CAN-DELETE
+PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
+  (let* ((command (if examine "EXAMINE" "SELECT"))
+	 (lines (iter-yield-from
+		 (vm-imap-net-command
+		  (format "%s %s" command (vm-imap-quote-mailbox-name mailbox))
+		  command)))
+	 (count nil) (recent nil) (uid-validity nil)
+	 (read-write (not examine)) (flags nil) (permanent-flags nil))
+    (dolist (response lines)
+      (cond ((vm-imap-response-matches response '* 'OK 'vector)
+	     (let ((contents (cdr (nth 2 response))))
+	       (cond ((vm-imap-response-matches contents 'UIDVALIDITY 'atom)
+		      (let ((token (nth 1 contents)))
+			(setq uid-validity
+			      (buffer-substring (nth 1 token) (nth 2 token)))))
+		     ((vm-imap-response-matches contents 'PERMANENTFLAGS 'list)
+		      (setq permanent-flags (nth 1 contents))))))
+	    ((vm-imap-response-matches response '* 'FLAGS 'list)
+	     (setq flags (nth 2 response)))
+	    ((vm-imap-response-matches response '* 'atom 'EXISTS)
+	     (setq count (vm-imap-net-number (nth 1 response))))
+	    ((vm-imap-response-matches response '* 'atom 'RECENT)
+	     (setq recent (vm-imap-net-number (nth 1 response))))
+	    ((vm-imap-response-matches response 'VM 'OK '(vector READ-WRITE))
+	     (setq read-write t))
+	    ((vm-imap-response-matches response 'VM 'OK '(vector READ-ONLY))
+	     (setq read-write nil))))
+    (unless flags
+      (vm-imap-protocol-error "FLAGS missing from %s responses" command))
+    (unless count
+      (vm-imap-protocol-error "EXISTS missing from %s responses" command))
+    (unless uid-validity
+      (vm-imap-protocol-error "UIDVALIDITY missing from %s responses" command))
+    (list count recent uid-validity read-write
+	  (and (vm-imap-scan-list-for-flag flags "\\Deleted") t)
+	  permanent-flags)))
+
+;;; What is in it
+
+(iter-defun vm-imap-net-message-data (first last)
+  "Ask for the UID, size and flags of the messages FIRST to LAST.
+Answers an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
+`vm-imap-get-message-data-list\\=' answers, newest first."
+  (let ((lines (iter-yield-from
+		(vm-imap-net-command
+		 (format "FETCH %s:%s (UID RFC822.SIZE FLAGS)" first last)
+		 "FETCH")))
+	(data nil))
+    (dolist (response lines)
+      (when (vm-imap-response-matches response '* 'atom 'FETCH 'list)
+	(let ((number (vm-imap-net-number (nth 1 response)))
+	      (contents (cdr (nth 3 response)))
+	      (uid nil) (size nil) (flags nil))
+	  (while contents
+	    (cond
+	     ((vm-imap-response-matches contents 'UID 'atom)
+	      (let ((token (nth 1 contents)))
+		(setq uid (buffer-substring (nth 1 token) (nth 2 token))))
+	      (setq contents (nthcdr 2 contents)))
+	     ((vm-imap-response-matches contents 'RFC822\.SIZE 'atom)
+	      (let ((token (nth 1 contents)))
+		(setq size (buffer-substring (nth 1 token) (nth 2 token))))
+	      (setq contents (nthcdr 2 contents)))
+	     ((vm-imap-response-matches contents 'FLAGS 'list)
+	      (dolist (token (cdr (nth 1 contents)))
+		(unless (eq (car token) 'atom)
+		  (vm-imap-protocol-error
+		   "expected atom in FLAGS list in FETCH response"))
+		(push (downcase (buffer-substring (nth 1 token) (nth 2 token)))
+		      flags))
+	      (setq contents (nthcdr 2 contents)))
+	     (t
+	      (vm-imap-protocol-error
+	       "expected UID, RFC822.SIZE and (FLAGS list) in FETCH response"))))
+	  (push (cons number (cons uid (cons size (nreverse flags)))) data))))
+    data))
+
+(defun vm-imap-net-fetch-items (body-peek headers-only)
+  "What to ask a FETCH for, as `vm-imap-fetch-messages\\=' asks for it.
+The UID comes back with the body because a server may answer for a range in
+any order, and the responses have to be told apart (issue #185)."
+  (cond ((and headers-only body-peek) "(UID BODY.PEEK[HEADER])")
+	(headers-only "(UID RFC822.HEADER)")
+	(body-peek "(UID BODY.PEEK[])")
+	(t "(UID RFC822.PEEK)")))
+
+(defun vm-imap-net-fetch-message-text (response)
+  "Where in the process buffer RESPONSE's message is: (UID START END).
+Signals unless RESPONSE is a FETCH carrying a UID and one string."
+  (let ((contents (cdr (nth 3 response)))
+	(uid nil) (text nil))
+    (while contents
+      (cond ((vm-imap-response-matches contents 'UID 'atom)
+	     (let ((token (nth 1 contents)))
+	       (setq uid (buffer-substring (nth 1 token) (nth 2 token))))
+	     (setq contents (nthcdr 2 contents)))
+	    ((vm-imap-response-matches contents 'atom 'string)
+	     (setq text (nth 1 contents))
+	     (setq contents (nthcdr 2 contents)))
+	    ((vm-imap-response-matches contents 'atom '(vector) 'string)
+	     (setq text (nth 2 contents))
+	     (setq contents (nthcdr 3 contents)))
+	    (t
+	     (vm-imap-protocol-error "unexpected FETCH response contents"))))
+    (unless (and uid text)
+      (vm-imap-protocol-error "expected a UID and a message in FETCH response"))
+    (list uid (nth 1 text) (nth 2 text))))
+
+(iter-defun vm-imap-net-fetch (first last body-peek headers-only store)
+  "Fetch messages FIRST to LAST, handing each to STORE as it arrives.
+STORE is called in the process buffer with the message's UID and the
+positions its text lies between, so it can copy the message out without
+another one being made of it first.  It is called before the next message is
+read, which is what keeps a mailbox of any size out of memory."
+  (vm-imap-net-send (format "FETCH %s:%s %s" first last
+			    (vm-imap-net-fetch-items body-peek headers-only)))
+  (let ((done nil)
+	(count 0)
+	response)
+    (while (not done)
+      (setq response (iter-yield-from
+		      (vm-imap-net-read-response-and-verify "FETCH")))
+      (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+	     (let ((message (vm-imap-net-fetch-message-text response)))
+	       (apply store message)
+	       (setq count (1+ count))))
+	    ((vm-imap-response-matches response 'VM 'OK)
+	     (setq done t))))
+    count))
+
 ;;; Connecting
 
 (declare-function vm-parse "vm-misc" (string regexp &optional matchn matches))
