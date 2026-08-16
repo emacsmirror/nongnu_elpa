@@ -502,6 +502,21 @@ again is the only place the two can disagree."
             (push (list symbol said actual) wrong)))))
     (should (equal nil (nreverse wrong)))))
 
+;;; The generated appendix does not print Lisp internals
+
+(ert-deftest vm-reference-test-no-internal-argument-names-in-the-manual ()
+  "The generated files name no `--cl-…--' argument.
+
+`cl-defun' expands its `&rest' argument to `--cl-rest--', and printing that
+in the appendix tells a reader nothing: `vm-compact-folder &rest --cl-rest--'
+was in the manual until `vm-reference-argument-name' started stripping it
+(emacs-vm/vm#699)."
+  (dolist (file '("../info/vm-reference.texinfo" "../info/vm-docstrings.texinfo"))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name file vm-test-dir))
+      (goto-char (point-min))
+      (should-not (re-search-forward "--cl-[a-z-]+--" nil t)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
