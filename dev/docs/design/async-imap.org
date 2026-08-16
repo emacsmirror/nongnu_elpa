@@ -540,6 +540,17 @@ whether option 3 is available at all.
   affordable if the parser yields when it needs *input*, as it does today at
   four places, and is not if it yields per token.
 
+Two more, found while writing the POP protocol with generators:
+
+- =(condition-case nil FORM (my-error nil))= inside an =iter-defun= answers
+  with the *error object*, not nil.  A named variable, or a handler body that
+  is not nil, behaves as it does outside a generator.  It cost an afternoon
+  once; write handlers with an explicit value.
+- A marker used as the read point is moved by =set-marker=, so a substring
+  taken afterwards from "the marker" is empty.  Take =marker-position= first.
+  The blocking code has the same hazard and avoids it by accident, reading
+  before it moves.
+
 The one thing to hold on to: nothing runs a cleanup for an iterator nobody
 closes.  Today an =unwind-protect= in a blocking read runs whatever happens,
 including on C-g; under generators it runs when the driver says so.  Every
