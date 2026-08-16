@@ -584,6 +584,197 @@ The mock answers NO, which is what a server does, and VM has to notice."
                        (vm-imap-mock-test--spec-for mock "Nowhere"))))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX"))))))
 
+;;; Saving a message to an IMAP folder
+
+(defmacro vm-imap-mock-test--saving-from-a-file (spec &rest body)
+  "Visit a file folder of two messages and run BODY, with MOCK serving IMAP.
+SPEC is (MOCK-VAR &rest ARGS) as for `vm-imap-mock-start'.  This is the
+half of `vm-save-message-to-imap-folder' that has to send the message: the
+source folder is not on the server, so the save is an APPEND."
+  (declare (indent 1) (debug t))
+  `(vm-imap-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((dir (file-name-as-directory (make-temp-file "vm-imap-save" t)))
+            (folder (expand-file-name "incoming" dir))
+            (cache (make-temp-file "vm-imap-mock-cache" t))
+            (vm-imap-folder-cache-directory cache)
+            (vm-imap-server-timeout 10)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (vm-delete-after-saving nil)
+            (vm-last-save-imap-folder nil)
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (write-region
+              (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                      vm-imap-mock-test--alice "\n"
+                      "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                      vm-imap-mock-test--bob "\n")
+              nil folder nil 'quiet)
+             (cl-letf (((symbol-function 'vm-display) #'ignore))
+               (vm-visit-folder folder)
+               (setq vm-message-pointer vm-message-list)
+               ,@body))
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory cache t)
+         (delete-directory dir t)))))
+
+(defun vm-imap-mock-test--saved-subjects (mock mailbox)
+  "The Subject of every message MAILBOX holds on MOCK.
+Without its carriage return: a message goes up in CRLF, which is what
+`vm-imap-mock-test-saving-a-message-appends-it-to-the-mailbox' is about."
+  (mapcar (lambda (message)
+            (let ((text (vm-imap-mock-message-text message)))
+              (when (string-match "^Subject: \\(.*?\\)\r?$" text)
+                (match-string 1 text))))
+          (vm-imap-mock-messages mock mailbox)))
+
+(defun vm-imap-mock-test--wait-for (mock regexp)
+  "Wait up to two seconds for MOCK to receive a command matching REGEXP.
+VM sends LOGOUT without waiting for the answer -- some servers do not give
+one -- so the server may not have read it when the command returns."
+  (let ((deadline (+ 20 0)))
+    (while (and (> deadline 0) (not (vm-imap-mock-received-p mock regexp)))
+      (accept-process-output nil 0.1)
+      (setq deadline (1- deadline))))
+  (vm-imap-mock-received-p mock regexp))
+
+(ert-deftest vm-imap-mock-test-saving-a-message-appends-it-to-the-mailbox ()
+  "Saving to an IMAP folder sends the message to the server and marks it
+filed here.  The mailbox is created on the way: saving to a folder that does
+not exist yet is how the first one is made."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
+      (vm-save-message-to-imap-folder target)
+      (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
+                     '("badgers")))
+      (should (vm-imap-mock-received-p mock "APPEND"))
+      ;; in CRLF, as the protocol has it, and counted in octets: a literal
+      ;; whose count disagrees with what follows loses the session
+      (should (string-match-p
+               "\r\n" (vm-imap-mock-message-text
+                        (car (vm-imap-mock-messages mock "Saved")))))
+      (should (vm-imap-mock-received-p mock "APPEND \"Saved\" .* {[0-9]+}"))
+      (should (vm-filed-flag (car vm-message-list)))
+      (should-not (vm-filed-flag (nth 1 vm-message-list))))))
+
+(ert-deftest vm-imap-mock-test-saving-remembers-the-folder-it-saved-to ()
+  "`vm-last-save-imap-folder' is what the next save offers, so it is the
+folder that was saved to and not the one before it."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
+      (vm-save-message-to-imap-folder target)
+      (should (equal vm-last-save-imap-folder target)))))
+
+(ert-deftest vm-imap-mock-test-saving-without-a-count-saves-one-message ()
+  "Called from Lisp with no count, one message is saved: the count comes
+from the prefix argument, and defaulting it to nothing would save the whole
+folder or none of it."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (should (equal (length (vm-imap-mock-messages mock "Saved")) 1))))
+
+(ert-deftest vm-imap-mock-test-saving-a-count-of-two-saves-both ()
+  "A count of two saves this message and the next, in that order."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (vm-save-message-to-imap-folder
+     (vm-imap-mock-test--spec-for mock "Saved") 2)
+    (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
+                   '("badgers" "otters")))
+    ;; one session for the lot, not one per message: a server counts
+    ;; connections, and logging in again for each is what makes a save of a
+    ;; hundred messages a hundred logins
+    (should (equal (length (cl-remove-if-not
+                            (lambda (line) (string-match-p "LOGIN" line))
+                            (vm-imap-mock-commands mock)))
+                   1))))
+
+(ert-deftest vm-imap-mock-test-saving-a-given-list-ignores-the-count ()
+  "A caller that passes the messages gets those messages saved.  That is how
+`vm-save-message' and the marked-messages commands reach this, and the count
+they also pass is not a second opinion about which."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (vm-save-message-to-imap-folder
+     (vm-imap-mock-test--spec-for mock "Saved") 1 (cdr vm-message-list))
+    (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
+                   '("otters")))))
+
+(ert-deftest vm-imap-mock-test-deleting-after-saving-is-a-setting ()
+  "`vm-delete-after-saving' deletes the message that was saved and no other,
+and leaves it alone when it is off -- a folder emptied by a save nobody asked
+to empty is not a small mistake."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
+      (vm-save-message-to-imap-folder target)
+      (should-not (vm-deleted-flag (car vm-message-list)))
+      (let ((vm-delete-after-saving t))
+        (vm-save-message-to-imap-folder target))
+      (should (vm-deleted-flag (car vm-message-list)))
+      (should-not (vm-deleted-flag (nth 1 vm-message-list))))))
+
+(ert-deftest vm-imap-mock-test-saving-ends-the-session-it-opened ()
+  "The session opened for the save is closed again: VM keeps no connection
+for a command that is over, and a server counts them (dovecot's
+`mail_max_userip_connections')."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (should (vm-imap-mock-test--wait-for mock "LOGOUT"))))
+
+(ert-deftest vm-imap-mock-test-saving-on-the-same-server-copies ()
+  "Saving from an IMAP folder to another mailbox on the same server is a
+COPY on the server, not a message sent back up: the message need not come
+down here at all."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-delete-after-saving nil)
+          (vm-last-save-imap-folder nil))
+      (vm-imap-mock-add-mailbox mock "Saved")
+      (vm-save-message-to-imap-folder
+       (vm-imap-mock-test--spec-for mock "Saved"))
+      (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
+                     '("badgers")))
+      (should (vm-imap-mock-received-p mock "UID COPY"))
+      (should-not (vm-imap-mock-received-p mock "APPEND"))
+      ;; and the message is not fetched to be copied: the point of asking the
+      ;; server to do it is that the message never comes down
+      (should-not (vm-imap-mock-received-p mock "BODY\\[\\]"))
+      (should (vm-filed-flag (car vm-message-list))))))
+
+(ert-deftest vm-imap-mock-test-copying-wants-the-mailbox-to-exist-already ()
+  "Saving from an IMAP folder to a mailbox that is not there fails, where
+saving to it from a file folder creates it: the copy path issues UID COPY and
+takes the server's NO, and only the append path sends CREATE first."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (let ((vm-delete-after-saving nil)
+          (vm-last-save-imap-folder nil))
+      (should-error (vm-save-message-to-imap-folder
+                     (vm-imap-mock-test--spec-for mock "Nowhere")))
+      (should-not (member "Nowhere" (vm-imap-mock-mailbox-names mock))))))
+
+(ert-deftest vm-imap-mock-test-saving-says-how-many-and-where ()
+  "The line at the end of a save is what tells the user it happened, so it
+counts the messages, agrees with itself about the plural, and is at the
+verbosity ordinary progress is reported at."
+  (vm-imap-mock-test--saving-from-a-file (mock)
+    (let ((target (vm-imap-mock-test--spec-for mock "Saved"))
+          (said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (level fmt &rest args)
+                   (when (string-match-p "saved to" fmt)
+                     (push (cons level (apply #'format fmt args)) said)))))
+        (vm-save-message-to-imap-folder target)
+        (should (equal (length said) 1))
+        (should (equal (car (car said)) 5))
+        (should (string-match-p "\\`1 message saved to " (cdr (car said))))
+        (setq said nil)
+        (vm-save-message-to-imap-folder target 2)
+        (should (string-match-p "\\`2 messages saved to " (cdr (car said))))))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

@@ -1334,6 +1334,133 @@ Checked by catching the skip rather than being skipped by it."
     (should-error (funcall (lambda () (vm-send-live-skip-unless-configured)))
                   :type 'ert-test-skipped))))
 
+;;; ------------------------------------------------------------------
+;;; Saving a message into an IMAP folder
+;;; ------------------------------------------------------------------
+
+(defun vm-imap-live-test--select-count (conn mailbox)
+  "How many messages MAILBOX holds on CONN."
+  (let ((text (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)))
+    (when (string-match "^\\* \\([0-9]+\\) EXISTS" text)
+      (string-to-number (match-string 1 text)))))
+
+(defun vm-imap-live-test--body-on-server (conn mailbox n)
+  "Message N of MAILBOX on CONN, headers and all."
+  (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
+  (vm-imap-live-cmd-ok conn "FETCH %d (BODY.PEEK[])" n))
+
+(defmacro vm-imap-live-test--with-a-file-folder (spec &rest body)
+  "Visit a file folder of one message and run BODY in it.
+SPEC is (SUBJECT).  The folder is a real file: saving from one to IMAP is
+the path that sends the message, the other being a copy on the server."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-imap-save" t)))
+          (folder (expand-file-name "outgoing" dir))
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-delete-after-saving nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (write-region
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "From: alice@example.com\n"
+                    "To: vmtest@example.com\n"
+                    (format "Subject: %s\n" ,(car spec))
+                    "\n"
+                    "The body of a message being saved.\n\n")
+            nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-imap-live-test-saving-a-message-reaches-the-server ()
+  "A message saved from a file folder arrives in the IMAP mailbox, with the
+flags it had here.  This is the other half of #38: that one saves between two
+IMAP folders and the server copies; this sends the message, so what the server
+ends up with is what VM put on the wire.
+
+Read back with the harness' own client rather than with vm-imap.el."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain")
+    (let ((vm-imap-server-timeout vm-imap-live-timeout)
+          (account (car (plist-get server :accounts)))
+          (subject "saved from a file folder"))
+      (vm-imap-live-test--with-a-file-folder (subject)
+        (let ((m (car vm-message-list)))
+          (vm-set-new-flag m nil)
+          (vm-set-unread-flag m nil)
+          (vm-set-replied-flag m t)
+          (vm-save-message-to-imap-folder
+           (vm-imap-live-spec server account mailbox) 1)
+          (should (vm-filed-flag m))))
+      (should (equal (vm-imap-live-test--select-count conn mailbox) 1))
+      (should (string-match-p (regexp-quote subject)
+                              (vm-imap-live-test--body-on-server conn mailbox 1)))
+      (let ((flags (vm-imap-live-flags-of conn mailbox 1)))
+        (should (member "\\Seen" flags))
+        (should (member "\\Answered" flags))))))
+
+(ert-deftest vm-imap-live-test-saving-deletes-the-message-when-asked ()
+  "`vm-delete-after-saving' marks the message deleted here once the server
+has it, and not before: the deletion is the last thing the save does."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain")
+    (let ((vm-imap-server-timeout vm-imap-live-timeout)
+          (account (car (plist-get server :accounts))))
+      (vm-imap-live-test--with-a-file-folder ("saved and deleted")
+        (let ((vm-delete-after-saving t)
+              (m (car vm-message-list)))
+          (vm-save-message-to-imap-folder
+           (vm-imap-live-spec server account mailbox) 1)
+          (should (vm-deleted-flag m))))
+      (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))))
+
+(ert-deftest vm-imap-live-test-saving-to-another-account-sends-the-message ()
+  "Two mailboxes on one server but under different logins are not a copy the
+server can make: VM has to send the message.  The account is part of what
+decides that, not just the host, and the second account is the only way to
+tell the two apart."
+  (vm-imap-live-skip-unless-server "plain")
+  (let* ((server (vm-imap-live-server "plain"))
+         (accounts (plist-get server :accounts)))
+    (vm-test-skip-unless
+     (cdr accounts)
+     (concat "Only one account on the server called plain.  The cross-account "
+             "tests want two; see test/vm-live-config.el.template."))
+    (require 'vm)
+    (let* ((other (cadr accounts))
+           (conn (vm-imap-live--open server))
+           (mailbox nil)
+           (vm-imap-server-timeout vm-imap-live-timeout)
+           (vm-imap-passwords vm-imap-passwords)
+           (vm-kept-imap-buffers vm-kept-imap-buffers)
+           (vm-imap-keep-trace-buffer nil))
+      (unwind-protect
+          (progn
+            (vm-imap-live-login conn server other)
+            (vm-imap-live-namespace conn)
+            (setq mailbox (vm-imap-live-mailbox-name conn))
+            (vm-imap-live-cmd-ok conn "CREATE \"%s\"" mailbox)
+            (vm-imap-live-test--with-a-file-folder ("saved across accounts")
+              (vm-save-message-to-imap-folder
+               (vm-imap-live-spec server other mailbox) 1))
+            (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))
+        (when mailbox
+          (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
+        (vm-imap-live-close conn)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
