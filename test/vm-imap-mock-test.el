@@ -885,6 +885,32 @@ its unwind-protect, so it too came back a frame short."
       ;; early return that never reached the stack at all
       (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1)))))
 
+(ert-deftest vm-imap-mock-test-a-bunch-costs-one-round-trip ()
+  "Retrieval asks for a bunch of bodies and nothing else.
+It used to ask the server for the size of the first message of every bunch,
+which the bulk UID FETCH that opened the folder had already told it -- one
+round trip per bunch, so 10,000 of them on a mailbox of 100,000 messages,
+each one a wait on a server VM cannot do anything else during."
+  (let ((messages (mapcar (lambda (n)
+                            (format "From: sender%d@example.com\nSubject: m%d\n\nBody %d.\n"
+                                    n n n))
+                          (number-sequence 1 25)))
+        (vm-imap-message-bunch-size 10))
+    (vm-imap-mock-test--visiting (mock :messages messages)
+      (should (equal (length vm-message-list) 25))
+      (let ((commands (vm-imap-mock-commands mock)))
+        ;; the sizes come with the UIDs and flags, in one command
+        (should (cl-some (lambda (c)
+                           (string-match-p "FETCH 1:25 (UID RFC822\\.SIZE FLAGS)" c))
+                         commands))
+        ;; and nothing asks for a size on its own
+        (should-not (cl-some (lambda (c) (string-match-p "(RFC822\\.SIZE)" c))
+                             commands))
+        ;; three bunches, three fetches
+        (should (equal (cl-count-if (lambda (c) (string-match-p "BODY\\.PEEK" c))
+                                    commands)
+                       3))))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
