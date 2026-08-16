@@ -115,7 +115,7 @@
 (defvar elfeed-tree-header-function #'elfeed-tree--header
   "Function that returns the string to be used for the header line.")
 
-(defvar elfeed-tree-update-hook nil
+(defvar elfeed-tree-update-hook (list #'elfeed-tree--update-buttons)
   "Functions in this list are called after the tree buffer has been updated.")
 
 (defvar elfeed-tree--update-timer nil
