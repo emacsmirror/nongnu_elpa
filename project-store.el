@@ -4,7 +4,6 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Author: Lin Jian <me@linj.tech>
-;; Maintainer: Lin Jian <me@linj.tech>
 ;; URL: https://github.com/jian-lin/project-store
 ;; Keywords: nix store project tools
 ;; Version: 0.9.0
