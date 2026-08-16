@@ -128,7 +128,8 @@ browser reports the error and still releases a transient client."
   (interactive)
   (let ((hash (tabulated-list-get-id))
         (session-id (hermes-rollback--require-session-id))
-        (origin (current-buffer)))
+        (origin (current-buffer))
+        (owner hermes-instance))
     (unless hash (user-error "No checkpoint on this line"))
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
@@ -141,8 +142,9 @@ browser reports the error and still releases a transient client."
            :session-id session-id)
           #'hermes-rollback--checked-restore))
        (lambda (_result)
-         (message "Hermes: restored %s" (hermes-rollback--short hash))
-         (when (hermes-browser--buffer-mode-p origin 'hermes-rollback-mode)
+         (when (and (hermes-browser--buffer-mode-p origin 'hermes-rollback-mode)
+                    (equal owner (buffer-local-value 'hermes-instance origin)))
+           (message "Hermes: restored %s" (hermes-rollback--short hash))
            (with-current-buffer origin
              (hermes-rollback--revert))))))))
 
