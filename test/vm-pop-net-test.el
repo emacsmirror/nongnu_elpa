@@ -443,6 +443,108 @@ waits for the connect, which is what `:nowait' is for."
         (let ((buffer (vm-net-session-buffer session)))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
+;;; Fetching
+
+(defun vm-pop-net-test--fetch (mock retrieved &optional delete seconds)
+  "Fetch from MOCK what RETRIEVED does not have, and answer with the result."
+  (let ((answer 'not-called)
+        (vm-pop-server-timeout 3)
+        (vm-pop-max-message-size nil)
+        (vm-pop-messages-per-session nil))
+    (vm-pop-net-fetch (vm-pop-mock-spec mock) retrieved
+                      (lambda (result) (setq answer result))
+                      delete)
+    (let ((deadline (+ (float-time) (or seconds 5))))
+      (while (and (eq answer 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    answer))
+
+(ert-deftest vm-pop-net-test-fetching-brings-back-every-new-message ()
+  "The messages come back oldest first, each with the UID it is known by --
+which is what the folder needs to remember so it does not fetch it twice."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let ((fetched (vm-pop-net-test--fetch mock nil)))
+      (should (equal (length fetched) 2))
+      (should (string-match-p "badgers" (cdr (nth 0 fetched))))
+      (should (string-match-p "otters" (cdr (nth 1 fetched))))
+      (should (cl-every #'stringp (mapcar #'car fetched))))))
+
+(ert-deftest vm-pop-net-test-fetching-passes-over-what-it-has ()
+  "A message whose UID is in `vm-pop-retrieved-messages' is not fetched
+again: that list is how VM remembers, and fetching twice is how a folder
+gets duplicates."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let* ((spec (vm-pop-mock-spec mock))
+           (popdrop (vm-popdrop-sans-password spec))
+           (all (vm-pop-net-test--fetch mock nil))
+           (first-uid (car (nth 0 all))))
+      (should (equal (length all) 2))
+      (let ((rest (vm-pop-net-test--fetch
+                   mock (list (list first-uid popdrop 'uidl)))))
+        (should (equal (length rest) 1))
+        (should (string-match-p "otters" (cdr (car rest))))))))
+
+(ert-deftest vm-pop-net-test-fetching-can-delete-as-it-goes ()
+  "With DELETE the messages are marked deleted, and the QUIT at the end is
+what makes the server act on that.  Without it they are left where they
+are."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (should (equal (length (vm-pop-net-test--fetch mock nil t)) 1))
+    (should (vm-pop-mock-received-p mock "\\`DELE 1"))
+    (should (vm-pop-mock-received-p mock "\\`QUIT")))
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (should (equal (length (vm-pop-net-test--fetch mock nil nil)) 1))
+    (should-not (vm-pop-mock-received-p mock "\\`DELE"))))
+
+(ert-deftest vm-pop-net-test-fetching-stops-at-the-session-limit ()
+  "`vm-pop-messages-per-session' bounds one session's work: a maildrop with
+a great many messages in it should not be one command that runs for ever."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let ((answer 'not-called)
+          (vm-pop-server-timeout 3)
+          (vm-pop-max-message-size nil)
+          (vm-pop-messages-per-session 1))
+      (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
+                        (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (equal (length answer) 1)))))
+
+(ert-deftest vm-pop-net-test-fetching-passes-over-a-message-too-big ()
+  "`vm-pop-max-message-size' is asked before RETR, not after: the size comes
+from LIST, so an enormous message is never pulled down to be measured."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((answer 'not-called)
+          (vm-pop-server-timeout 3)
+          (vm-pop-max-message-size 10)
+          (vm-pop-messages-per-session nil))
+      (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
+                        (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should-not answer)
+      (should-not (vm-pop-mock-received-p mock "\\`RETR")))))
+
+(ert-deftest vm-pop-net-test-a-fetch-that-fails-says-so ()
+  "A fetch that cannot log in hands the error to the callback, rather than
+an empty list that reads as an empty maildrop."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((answer 'not-called)
+          (vm-pop-server-timeout 3)
+          (spec (replace-regexp-in-string ":[^:]*\\'" ":wrong"
+                                          (vm-pop-mock-spec mock))))
+      (vm-pop-net-fetch spec nil (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (consp answer))
+      (should (eq (car answer) 'vm-pop-net-error)))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here

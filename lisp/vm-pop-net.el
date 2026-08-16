@@ -323,5 +323,101 @@ Nothing waits: this returns as soon as the connection is made."
 					  popdrop retrieved))
     session))
 
+
+;;; Fetching what has not been fetched
+
+(defvar vm-pop-max-message-size)
+(defvar vm-pop-messages-per-session)
+
+(iter-defun vm-pop-net-fetch-new (user password source retrieved
+				       &optional delete)
+  "Fetch the messages of this maildrop that are not in RETRIEVED.
+
+RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
+its password, which is how an entry there names where it came from.  DELETE
+non-nil says to mark each fetched message deleted on the server.
+
+Answers a list of (UID . TEXT), oldest first: the caller puts them in the
+folder, which is folder work and does not belong in a process filter.
+
+Stops at `vm-pop-messages-per-session\=' if that is set, and passes over a
+message bigger than `vm-pop-max-message-size\=' -- the same two limits the
+blocking implementation honours, and for the same reason: a maildrop with a
+thousand messages in it should not be one command."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-pop-net-greeting))
+	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((uids (iter-yield-from (vm-pop-net-uidl)))
+	      (sizes nil)
+	      (fetched nil)
+	      (count 0))
+	  (when uids
+	    (setq sizes (iter-yield-from (vm-pop-net-sizes)))
+	    (dolist (pair uids)
+	      (let* ((number (car pair))
+		     (uid (cdr pair))
+		     (seen (assoc uid retrieved))
+		     (size (cdr (assq number sizes))))
+		(when (and (not (and seen
+				     (equal (nth 1 seen) source)
+				     (eq (nth 2 seen) 'uidl)))
+			   (or (null vm-pop-messages-per-session)
+			       (< count vm-pop-messages-per-session))
+			   (or (null vm-pop-max-message-size)
+			       (null size)
+			       (<= size vm-pop-max-message-size)))
+		  (push (cons uid (iter-yield-from
+				   (vm-pop-net-retrieve number)))
+			fetched)
+		  (setq count (1+ count))
+		  (when delete
+		    (iter-yield-from (vm-pop-net-delete number)))))))
+	  (nreverse fetched)))
+    (let ((process (get-buffer-process (current-buffer))))
+      (when (process-live-p process)
+	(process-send-string process "QUIT\r\n")))))
+
+(iter-defun vm-pop-net-sizes ()
+  "Answer with the sizes of the maildrop, as (NUMBER . OCTETS).
+LIST rather than a RETR that turns out to be enormous: the size decides
+whether a message is fetched at all."
+  (condition-case _err
+      (let ((lines (iter-yield-from (vm-pop-net-command-multiline "LIST"))))
+	(delq nil
+	      (mapcar (lambda (line)
+			(let ((fields (split-string line "[ \t]+" t)))
+			  (when (cdr fields)
+			    (cons (string-to-number (car fields))
+				  (string-to-number (cadr fields))))))
+		      lines)))
+    (vm-pop-net-error nil)))
+
+(defun vm-pop-net-fetch (source retrieved callback &optional delete)
+  "Fetch what SOURCE holds that RETRIEVED does not, and tell CALLBACK.
+
+CALLBACK is given a list of (UID . TEXT), oldest first, or the error that
+stopped the session.  DELETE non-nil marks each fetched message deleted on
+the server, which takes effect when the session says QUIT.
+
+Nothing waits.  The caller does the folder work when the callback comes:
+appending to the folder and remembering the UIDs is done where a folder
+buffer is, not in a process filter."
+  (let* ((popdrop (vm-popdrop-sans-password source))
+	 (opened (vm-pop-net-open source "POP fetch"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (funcall callback (or (vm-net-session-error finished)
+				  (vm-net-session-value finished)))))
+    (vm-net-start session
+		  (vm-pop-net-fetch-new (nth 1 opened) (nth 2 opened)
+					popdrop retrieved delete))
+    session))
+
 (provide 'vm-pop-net)
 ;;; vm-pop-net.el ends here
