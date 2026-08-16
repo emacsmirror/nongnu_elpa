@@ -3647,6 +3647,150 @@ and the refusal names the option to set."
         (should (string-match-p "vm-mime-attachment-save-directory"
                                 (error-message-string err)))))))
 
+;;; Attaching everything in a directory
+
+(defmacro vm-mime-test--with-a-directory-of-files (&rest body)
+  "Make a directory of three files and a subdirectory, then run BODY.
+DIR is the directory: it holds notes.txt, more.txt, picture.png and a
+subdirectory, which is enough to tell a regexp from a wildcard and a file
+from a directory."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-attach-dir" t)))
+          (vm-mime-all-attachments-directory nil)
+          (vm-attach-files-in-directory-default-type "application/octet-stream")
+          (vm-attach-files-in-directory-default-charset "us-ascii"))
+     (unwind-protect
+         (progn
+           (write-region "the notes\n" nil (expand-file-name "notes.txt" dir)
+                         nil 'quiet)
+           (write-region "more notes\n" nil (expand-file-name "more.txt" dir)
+                         nil 'quiet)
+           (write-region "\211PNG\r\n\032\n" nil
+                         (expand-file-name "picture.png" dir) nil 'quiet)
+           (make-directory (expand-file-name "a-subdirectory" dir))
+           ,@body)
+       (delete-directory dir t))))
+
+(defun vm-mime-test--attachment-names ()
+  "The file names named by the attachment tags in this composition."
+  (let (names)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "\\[ATTACHMENT \\([^,]*\\)" nil t)
+        (push (file-name-nondirectory (match-string 1)) names)))
+    (nreverse names)))
+
+(ert-deftest vm-mime-test-attaching-a-directory-attaches-its-files ()
+  "`vm-attach-files-in-directory' attaches every file that matches, giving
+each the type its name implies, and passes over the subdirectories -- there
+is no such thing as attaching a directory."
+  (vm-mime-test--with-a-directory-of-files
+    (vm-mime-test--composing
+      (goto-char (point-max))
+      (vm-attach-files-in-directory dir "")
+      (should (equal (sort (vm-mime-test--attachment-names) #'string<)
+                     '("more.txt" "notes.txt" "picture.png")))
+      (vm-mime-encode-composition)
+      (let ((encoded (buffer-string)))
+        (should (string-match-p "Content-Type: image/png" encoded))
+        (should (string-match-p "Content-Type: text/plain" encoded))
+        (should (string-match-p "the notes" encoded))))))
+
+(ert-deftest vm-mime-test-attaching-a-directory-takes-a-regexp ()
+  "The regexp is what picks the files out: it is a regexp and not a shell
+pattern, so it matches anywhere in the name unless it is anchored."
+  (vm-mime-test--with-a-directory-of-files
+    (vm-mime-test--composing
+      (goto-char (point-max))
+      (vm-attach-files-in-directory dir "\\.txt\\'")
+      (should (equal (sort (vm-mime-test--attachment-names) #'string<)
+                     '("more.txt" "notes.txt"))))))
+
+(ert-deftest vm-mime-test-attaching-a-directory-with-nothing-in-it ()
+  "A regexp that matches no file says so.  Silently attaching nothing would
+look exactly like the attachment having worked."
+  (vm-mime-test--with-a-directory-of-files
+    (vm-mime-test--composing
+      (goto-char (point-max))
+      (let ((text-quoting-style 'grave))
+        (let ((err (should-error (vm-attach-files-in-directory dir "\\.pdf\\'")
+                                 :type 'error)))
+          (should (string-match-p "No matching files"
+                                  (error-message-string err)))))
+      (should-not (vm-mime-test--attachment-names)))))
+
+(ert-deftest vm-mime-test-attaching-a-directory-remembers-it ()
+  "The directory is remembered, so the next attachment starts where the last
+one did rather than in whatever directory the composition is visiting."
+  (vm-mime-test--with-a-directory-of-files
+    (vm-mime-test--composing
+      (goto-char (point-max))
+      (vm-attach-files-in-directory dir "\\.txt\\'")
+      (should (equal vm-mime-all-attachments-directory dir)))))
+
+;;; Listing what a message is made of
+
+(defconst vm-mime-test--nested-message
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: what is in here\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"outer\"\n\n"
+          "--outer\n"
+          "Content-Type: multipart/alternative; boundary=\"inner\"\n\n"
+          "--inner\nContent-Type: text/plain\n\nThe plain text.\n"
+          "--inner\nContent-Type: text/html\n\n<p>The HTML.</p>\n"
+          "--inner--\n"
+          "--outer\n"
+          "Content-Type: image/png\n"
+          "Content-Disposition: attachment; filename=\"picture.png\"\n\n"
+          "PNGDATA\n"
+          "--outer--\n")
+  "A message with a part inside a part, and an attachment beside it.")
+
+(defun vm-mime-test--part-listing (&optional verbose)
+  "What `vm-list-mime-part-structure' prints for the current message.
+`with-electric-help' is stubbed: it displays the buffer and then waits for a
+key, which in batch is a read from a terminal that is not there."
+  (let (listing)
+    (cl-letf (((symbol-function 'with-electric-help)
+               (lambda (thunk &rest _)
+                 (with-temp-buffer
+                   (let ((standard-output (current-buffer)))
+                     (funcall thunk))
+                   (setq listing (buffer-string))))))
+      (vm-list-mime-part-structure verbose))
+    listing))
+
+(ert-deftest vm-mime-test-listing-the-parts-of-a-message ()
+  "`vm-list-mime-part-structure' names the subject and then every part, one
+per line, indented by how deep it is: a part inside a multipart is a level
+in, which is how a reader tells nesting from a list of siblings."
+  (vm-test-with-folder vm-mime-test--nested-message
+    (setq major-mode 'vm-mode)
+    (let ((lines (split-string (vm-mime-test--part-listing) "\n" t)))
+      (should (equal (car lines) "what is in here"))
+      (should (equal (nth 1 lines) "(\"multipart/mixed\" \"boundary=outer\")"))
+      ;; the alternative is one level in, its two texts another
+      (should (string-match-p "\\` (\"multipart/alternative\"" (nth 2 lines)))
+      (should (string-match-p "\\`  (\"text/plain\")\\'" (nth 3 lines)))
+      (should (string-match-p "\\`  (\"text/html\")\\'" (nth 4 lines)))
+      ;; and the attachment is back out beside the alternative, with what
+      ;; the disposition says about it
+      (should (string-match-p "\\` (\"image/png\")" (nth 5 lines)))
+      (should (string-match-p "filename=picture.png" (nth 5 lines))))))
+
+(ert-deftest vm-mime-test-listing-the-parts-verbosely ()
+  "With a prefix argument each line is the layout itself, which is what a
+maintainer reading a bug report wants: the same parts, all of the fields."
+  (vm-test-with-folder vm-mime-test--nested-message
+    (setq major-mode 'vm-mode)
+    (let ((listing (vm-mime-test--part-listing t)))
+      (should (string-match-p "multipart/mixed" listing))
+      (should (string-match-p "text/html" listing))
+      ;; a layout carries the positions of the part in the folder, which the
+      ;; short form does not print
+      (should (string-match-p "#<marker" listing)))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
