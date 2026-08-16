@@ -744,17 +744,22 @@ down here at all."
       (should-not (vm-imap-mock-received-p mock "BODY\\[\\]"))
       (should (vm-filed-flag (car vm-message-list))))))
 
-(ert-deftest vm-imap-mock-test-copying-wants-the-mailbox-to-exist-already ()
-  "Saving from an IMAP folder to a mailbox that is not there fails, where
-saving to it from a file folder creates it: the copy path issues UID COPY and
-takes the server's NO, and only the append path sends CREATE first."
+(ert-deftest vm-imap-mock-test-copying-makes-the-mailbox-if-it-is-missing ()
+  "REGRESSION: saving to a folder that does not exist yet makes it, whichever
+path the save takes.  Issue #690: the append path sent CREATE first and the
+copy path did not, so `S\=' to a new folder name worked from a file folder and
+failed with the server\='s NO [TRYCREATE] from an IMAP one -- a difference the
+user did not ask for and cannot see."
   (vm-imap-mock-test--visiting
       (mock :messages (list vm-imap-mock-test--alice))
     (let ((vm-delete-after-saving nil)
           (vm-last-save-imap-folder nil))
-      (should-error (vm-save-message-to-imap-folder
-                     (vm-imap-mock-test--spec-for mock "Nowhere")))
-      (should-not (member "Nowhere" (vm-imap-mock-mailbox-names mock))))))
+      (vm-save-message-to-imap-folder
+       (vm-imap-mock-test--spec-for mock "Nowhere"))
+      (should (member "Nowhere" (vm-imap-mock-mailbox-names mock)))
+      (should (equal (vm-imap-mock-test--saved-subjects mock "Nowhere")
+                     '("badgers")))
+      (should (vm-imap-mock-received-p mock "CREATE")))))
 
 (ert-deftest vm-imap-mock-test-saving-says-how-many-and-where ()
   "The line at the end of a save is what tells the user it happened, so it
