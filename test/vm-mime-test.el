@@ -3791,6 +3791,44 @@ maintainer reading a bug report wants: the same parts, all of the fields."
       ;; short form does not print
       (should (string-match-p "#<marker" listing)))))
 
+;;; Two commands about how much decoding to do
+
+(ert-deftest vm-mime-test-toggling-the-alternative-method ()
+  "`vm-toggle-best-mime' turns `vm-mime-alternative-show-method' between the
+part VM can show itself and the best part whatever shows it, and decodes the
+message again each way -- the setting decides which half of a
+multipart/alternative you read."
+  (vm-test-with-folder vm-mime-test--nested-message
+    (setq major-mode 'vm-mode)
+    (let ((vm-mime-alternative-show-method 'best-internal)
+          (said nil))
+      (cl-letf (((symbol-function 'vm-decode-mime-message) #'ignore)
+                ((symbol-function 'message)
+                 (lambda (format &rest args)
+                   (setq said (apply #'format format args)))))
+        (vm-toggle-best-mime)
+        (should (eq vm-mime-alternative-show-method 'best))
+        (should (equal said "using best MIME decoding"))
+        (vm-toggle-best-mime)
+        (should (eq vm-mime-alternative-show-method 'best-internal))
+        (should (equal said "using best internal MIME decoding"))))))
+
+(ert-deftest vm-mime-test-setting-the-8bit-charset-is-refused ()
+  "`vm-mime-set-8bit-composition-charset' cannot do anything under any Emacs
+this runs on: `vm-mime-8bit-composition-charset' has no effect where MULE
+decides the charset, and the command says so instead of setting a variable
+nothing reads.
+
+The condition it says that under is `(or (featurep \\='xemacs) (not (featurep
+\\='xemacs)))', which is every Emacs there is.  Pinned as it stands: whether the
+command should go is emacs-vm/vm#697."
+  (let ((text-quoting-style 'grave)
+        (vm-mime-8bit-composition-charset "us-ascii"))
+    (let ((err (should-error (vm-mime-set-8bit-composition-charset "iso-8859-1")
+                             :type 'error)))
+      (should (string-match-p "no effect" (error-message-string err))))
+    (should (equal vm-mime-8bit-composition-charset "us-ascii"))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
