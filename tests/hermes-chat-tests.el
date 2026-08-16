@@ -813,6 +813,33 @@
      (should-not (string-match-p "message start"
                                  (downcase (hermes-test--header-line-string)))))))
 
+(ert-deftest hermes-chat-warn-status-reuses-one-transcript-line ()
+  "Repeated compression-blocked warnings replace one status line."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--run-turn-reducer
+    "a1" '(:type status :event "status.update" :status "warn"
+                 :session-id "sid"
+                 :content "Context over threshold (~477,446 tokens >= 425,000) blocked (cooldown:60)."))
+   (hermes-chat--run-turn-reducer
+    "a2" '(:type status :event "status.update" :status "warn"
+                 :session-id "sid"
+                 :content "Context over threshold (~528,669 tokens >= 425,000) blocked (cooldown:60)."))
+   (hermes-chat--run-turn-reducer
+    "a2" '(:type status :event "status.update" :status "loop"
+                 :session-id "sid" :content "Loop set (every 30m)"))
+   (let ((text (buffer-substring-no-properties
+                (point-min) (hermes-chat--input-position)))
+         (warns (ewoc-collect
+                 hermes-chat--ewoc
+                 (lambda (entry)
+                   (and (eq (plist-get entry :role) 'status)
+                        (string-match-p "over threshold"
+                                        (or (plist-get entry :content) "")))))))
+     (should (= 1 (length warns)))
+     (should (string-match-p "528,669" (plist-get (car warns) :content)))
+     (should-not (string-match-p "477,446" text))
+     (should (string-match-p "Loop set" text)))))
+
 (ert-deftest hermes-chat-control-session-renders-server-originated-turn ()
   "A slash-created idle session renders a later backend-owned turn."
   (let ((client (hermes-test--dashboard-client)))

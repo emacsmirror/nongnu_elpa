@@ -203,19 +203,30 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
     (unless (string-empty-p value)
       value)))
 
+(defun hermes-chat--session-scoped-status-id (event)
+  "Return a buffer-global id for operational status EVENT, or nil.
+`warn' and `compacting' are session-scoped notices: the gateway may re-emit
+them on every blocked compression attempt, and assistant ids rotate mid-turn.
+Key them by kind so later frames replace one line instead of appending."
+  (let ((status (hermes-chat--status-name (plist-get event :status))))
+    (and (member status '("warn" "compacting"))
+         (concat "status:" status))))
+
 (defun hermes-chat--transport-entry-id (event)
   "Return stable EWOC entry id for keyed transport EVENT, or nil."
   (pcase (plist-get event :type)
     ('status
-     (when-let* ((key (or (hermes-chat--transport-key-fragment
-                           event '(:prompt-key :prompt_key
-                                               :request-id :request_id
-                                               :status-key :status_key :key :run-id
-                                               :run_id :session-id :session_id
-                                               :message-id :message_id))
-                          (hermes-chat--transport-key-fragment
-                           event '(:event)))))
-       (concat "status:" key)))
+     (or (hermes-chat--session-scoped-status-id event)
+         (when-let* ((key (or (hermes-chat--transport-key-fragment
+                               event '(:prompt-key :prompt_key
+                                                   :request-id :request_id
+                                                   :status-key :status_key :key
+                                                   :notification-key
+                                                   :run-id :run_id
+                                                   :message-id :message_id))
+                              (hermes-chat--transport-key-fragment
+                               event '(:event)))))
+           (concat "status:" key))))
     ((or 'progress 'tool)
      ;; Without a call id the tool name is the key, so two concurrent
      ;; same-named calls coalesce into one entry: gateways that interleave
@@ -725,7 +736,10 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   "Insert or update a compact transport EVENT for ASSISTANT-ID."
   (let* ((role (hermes-chat--transport-entry-role event))
          (event-id (hermes-chat--transport-entry-id event))
-         (id (and event-id (format "%s:%s" assistant-id event-id)))
+         (id (and event-id
+                  (if (hermes-chat--session-scoped-status-id event)
+                      event-id
+                    (format "%s:%s" assistant-id event-id))))
          (status (hermes-chat--transport-entry-status event))
          (content (or (hermes-chat--transport-entry-content event) ""))
          (metadata (hermes-chat--transport-entry-metadata assistant-id event)))
