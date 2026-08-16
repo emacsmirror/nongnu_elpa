@@ -419,5 +419,119 @@ buffer is, not in a process filter."
 					popdrop retrieved delete))
     session))
 
+
+;;; Putting what was fetched into a folder
+
+(declare-function vm-get-folder-type "vm-folder"
+		  (&optional file start end ignore-visited))
+(declare-function vm-munge-message-separators "vm-folder"
+		  (folder-type start end))
+(declare-function vm-pop-cleanup-region "vm-pop" (start end))
+(declare-function vm-leading-message-separator "vm-folder"
+		  (&optional folder-type message for-other-folder))
+(declare-function vm-trailing-message-separator "vm-folder"
+		  (&optional folder-type))
+(declare-function vm-convert-folder-type-headers "vm-folder"
+		  (old-type new-type))
+(declare-function vm-safe-popdrop-string "vm-misc" (string))
+
+(defvar vm-folder-type)
+(defvar vm-default-folder-type)
+(defvar vm-pop-auto-expunge-alist)
+(defvar vm-pop-expunge-after-retrieving)
+
+(defun vm-pop-net-auto-expunge-p (source)
+  "Whether messages fetched from SOURCE are to be deleted from the server.
+`vm-pop-auto-expunge-alist\=' first, by the maildrop with its password and
+then without, and `vm-pop-expunge-after-retrieving\=' failing those."
+  (let ((entry (or (assoc source vm-pop-auto-expunge-alist)
+		   (assoc (vm-popdrop-sans-password source)
+			  vm-pop-auto-expunge-alist))))
+    (if entry (cdr entry) vm-pop-expunge-after-retrieving)))
+
+(defun vm-pop-net-write-crash-box (messages crash-box folder-type)
+  "Write MESSAGES to CRASH-BOX in FOLDER-TYPE, and answer with how many.
+
+MESSAGES is what `vm-pop-net-fetch\=' answers with.  A crash box rather than
+the folder itself, because that is what VM recovers from when Emacs dies
+between the fetch and the folder being written: `vm-gobble-crash-box\=' is
+what reads it, here and after a crash alike.
+
+The messages arrive in CRLF and with the separators the server chose, or
+with none: the same cleaning up the blocking path does, in the same order."
+  (let ((count 0))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      ;; set here rather than let-bound outside: vm-folder-type is
+      ;; buffer-local, so a binding made in the folder buffer is not what
+      ;; this buffer sees, and the separators would come out empty
+      (setq-local vm-folder-type folder-type)
+      (dolist (message messages)
+	(let ((start (point))
+	      (end nil))
+	  (insert (cdr message))
+	  (goto-char (point-max))
+	  (unless (bolp) (insert "\n"))
+	  (setq end (point-marker))
+	  (vm-pop-cleanup-region start end)
+	  ;; Some servers send the separators and some do not, which is what
+	  ;; the type of what arrived says.  Without them the message is a
+	  ;; bare one and is given the folder's own, the same way and in the
+	  ;; same order as vm-pop-retrieve-to-target does it.
+	  (when (eq (vm-get-folder-type nil start end) 'unknown)
+	    (vm-munge-message-separators folder-type start end)
+	    (goto-char start)
+	    (insert (vm-leading-message-separator folder-type))
+	    (save-restriction
+	      (narrow-to-region (point) end)
+	      (vm-convert-folder-type-headers 'baremessage folder-type))
+	    (goto-char end)
+	    (insert-before-markers (vm-trailing-message-separator folder-type)))
+	  (goto-char (point-max))
+	  (setq count (1+ count))))
+      (let ((coding-system-for-write 'binary)
+	    (selective-display nil))
+	(write-region (point-min) (point-max) crash-box nil 'quiet)))
+    count))
+
+(defun vm-pop-net-note-retrieved (messages source)
+  "Remember the UIDs of MESSAGES as fetched from SOURCE.
+This is `vm-pop-retrieved-messages\=', the list that stops a message being
+fetched a second time, and it is buffer-local to the folder."
+  (let ((popdrop (vm-popdrop-sans-password source)))
+    (dolist (message messages)
+      (setq vm-pop-retrieved-messages
+	    (cons (list (car message) popdrop 'uidl)
+		  vm-pop-retrieved-messages)))))
+
+(defun vm-pop-net-get-mail (source crash-box callback)
+  "Fetch new mail from SOURCE into CRASH-BOX, and tell CALLBACK.
+
+CALLBACK is called in the folder buffer this was started from, with the
+number of messages written, or with the error that stopped the fetch.  It
+is for the caller to gobble the crash box: this writes it and remembers the
+UIDs, and what to do with a folder is the folder's business.
+
+Nothing waits.  Whether the messages are deleted from the server is
+`vm-pop-net-auto-expunge-p\=', as it is for the blocking path."
+  (let ((folder (current-buffer))
+	;; an empty folder has no type of its own yet, and a crash box has
+	;; to be written in some type or nothing can read it back
+	(folder-type (or vm-folder-type vm-default-folder-type)))
+    (vm-pop-net-fetch
+     source vm-pop-retrieved-messages
+     (lambda (result)
+       (when (buffer-live-p folder)
+	 (with-current-buffer folder
+	   (funcall callback
+		    (if (and (consp result) (symbolp (car result))
+			     (get (car result) 'error-conditions))
+			result
+		      (let ((count (vm-pop-net-write-crash-box
+				    result crash-box folder-type)))
+			(vm-pop-net-note-retrieved result source)
+			count))))))
+     (vm-pop-net-auto-expunge-p source))))
+
 (provide 'vm-pop-net)
 ;;; vm-pop-net.el ends here

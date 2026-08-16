@@ -29,9 +29,11 @@
   "From: bob@example.com\r\nTo: me@example.com\r\nSubject: otters\r\n\r\nThe second body.\r\n"
   "Another, so a test can tell one from the next.")
 
-(defun vm-pop-net-test--run (mock iterator &optional timeout)
+(defun vm-pop-net-test--run (mock iterator &optional timeout wait)
   "Run ITERATOR as a POP session against MOCK and answer with the session.
-Waits for it to finish, or for TIMEOUT seconds, whichever comes first."
+TIMEOUT is the session's own, WAIT how long this waits for it to finish --
+longer than TIMEOUT where the point is to see the session time out, or the
+two race and the test sometimes sees the process being torn down instead."
   (let* ((buffer (generate-new-buffer " *vm-pop-net-test*"))
          (process (make-network-process
                    :name "vm-pop-net-test" :host 'local
@@ -41,7 +43,7 @@ Waits for it to finish, or for TIMEOUT seconds, whichever comes first."
                                   :timeout (or timeout 5))))
     (with-current-buffer buffer (vm-pop-net-init))
     (vm-net-start session iterator)
-    (let ((deadline (+ (float-time) (or timeout 5))))
+    (let ((deadline (+ (float-time) (or wait timeout 5))))
       (while (and (vm-net-session-live-p session) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
     (when (process-live-p process) (delete-process process))
@@ -144,7 +146,7 @@ is about, and here it is a test that finishes in a fifth of a second."
     (let ((session (vm-pop-net-test--run
                     mock (vm-pop-net-session (vm-pop-mock-user mock)
                                              (vm-pop-mock-password mock))
-                    0.4)))
+                    0.4 3)))
       (should (eq (vm-net-session-state session) 'failed))
       (should (string-match-p "timed out"
                               (error-message-string
@@ -544,6 +546,96 @@ an empty list that reads as an empty maildrop."
           (accept-process-output nil 0.05)))
       (should (consp answer))
       (should (eq (car answer) 'vm-pop-net-error)))))
+
+;;; Into a folder
+
+(defun vm-pop-net-test--get-mail (mock crash &optional seconds)
+  "Fetch from MOCK into CRASH from the current folder, and answer the result."
+  (let ((answer 'not-called)
+        (vm-pop-server-timeout 3)
+        (vm-pop-max-message-size nil)
+        (vm-pop-messages-per-session nil))
+    (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash
+                         (lambda (result) (setq answer result)))
+    (let ((deadline (+ (float-time) (or seconds 5))))
+      (while (and (eq answer 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    answer))
+
+(ert-deftest vm-pop-net-test-mail-arrives-in-a-crash-box-vm-can-read ()
+  "The fetched messages are written where VM recovers from: a crash box, in
+the folder's own type, which `vm-gobble-crash-box' reads here and after a
+crash alike.  Gobbling it leaves the folder holding them."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice
+                                                       vm-pop-net-test--bob))
+    (let* ((crash (nth 2 (car vm-spool-files)))
+           (written (vm-pop-net-test--get-mail mock crash)))
+      (should (equal written 2))
+      (should (file-exists-p crash))
+      ;; gobbling puts the text in the folder; making messages of it is the
+      ;; next thing the folder does, and is what a caller would do here
+      (vm-gobble-crash-box crash)
+      (vm-assimilate-new-messages)
+      (should (equal (length vm-message-list) 2))
+      (should (equal (mapcar #'vm-su-subject vm-message-list)
+                     '("badgers" "otters"))))))
+
+(ert-deftest vm-pop-net-test-what-arrived-is-not-fetched-again ()
+  "The UIDs go into `vm-pop-retrieved-messages', so a second fetch brings
+nothing: that list is what stops a folder filling with duplicates."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let ((crash (nth 2 (car vm-spool-files))))
+      (should (equal (vm-pop-net-test--get-mail mock crash) 1))
+      (should (equal (length vm-pop-retrieved-messages) 1))
+      (should (equal (vm-pop-net-test--get-mail mock crash) 0)))))
+
+(ert-deftest vm-pop-net-test-a-failed-fetch-writes-no-crash-box ()
+  "A fetch that fails hands the error on and leaves no crash box behind: a
+crash box is a promise that there is mail in it."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice)
+                                                 :drop-on "UIDL")
+    (let* ((crash (nth 2 (car vm-spool-files)))
+           (result (vm-pop-net-test--get-mail mock crash)))
+      (should (consp result))
+      (should-not (file-exists-p crash)))))
+
+(ert-deftest vm-pop-net-test-the-callback-runs-in-the-folder ()
+  "The callback is given the folder buffer it was started from, not whatever
+buffer the reader happened to be in when the answer arrived."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let* ((folder (current-buffer))
+           (crash (nth 2 (car vm-spool-files)))
+           (seen nil)
+           (answer 'not-called)
+           (vm-pop-server-timeout 3))
+      (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash
+                           (lambda (result)
+                             (setq seen (current-buffer) answer result)))
+      (with-temp-buffer
+        (let ((deadline (+ (float-time) 5)))
+          (while (and (eq answer 'not-called) (< (float-time) deadline))
+            (accept-process-output nil 0.05))))
+      (should (eq seen folder)))))
+
+(ert-deftest vm-pop-net-test-expunging-follows-the-setting ()
+  "Whether the server is told to delete what was fetched is
+`vm-pop-auto-expunge-alist' and `vm-pop-expunge-after-retrieving', the same
+two the blocking path asks.  A maildrop is named there without its password
+but with the colon and star that stands in for it, which is what
+`vm-popdrop-sans-password' makes of it."
+  (let ((vm-pop-expunge-after-retrieving t)
+        (vm-pop-auto-expunge-alist nil))
+    (should (vm-pop-net-auto-expunge-p "pop:h:110:pass:user:secret")))
+  (let ((vm-pop-expunge-after-retrieving nil)
+        (vm-pop-auto-expunge-alist '(("pop:h:110:pass:user:*" . t))))
+    (should (vm-pop-net-auto-expunge-p "pop:h:110:pass:user:secret")))
+  (let ((vm-pop-expunge-after-retrieving t)
+        (vm-pop-auto-expunge-alist '(("pop:h:110:pass:user:*" . nil))))
+    (should-not (vm-pop-net-auto-expunge-p "pop:h:110:pass:user:secret"))))
 
 (provide 'vm-pop-net-test)
 
