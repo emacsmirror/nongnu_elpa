@@ -195,7 +195,7 @@
   (elfeed-search :live))
 
 (define-derived-mode elfeed-tree-mode special-mode "elfeed-tree"
-  "Major mode for listing elfeed feeds as a tree."
+  "Major mode for listing Elfeed feeds as a tree."
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
               left-margin-width 1

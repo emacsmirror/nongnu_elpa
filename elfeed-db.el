@@ -1,4 +1,4 @@
-;;; elfeed-db.el --- database and model for elfeed -*- lexical-binding: t; -*-
+;;; elfeed-db.el --- Database and model for Elfeed -*- lexical-binding: t; -*-
 
 ;; This is free and unencumbered software released into the public domain.
 
@@ -85,7 +85,7 @@ to the feed."
 
 (defcustom elfeed-db-directory
   (locate-user-emacs-file "elfeed" "~/.elfeed")
-  "Directory where elfeed will store its database.
+  "Directory where Elfeed will store its database.
 You may want to customize this setting in your user configuration.
 Elfeed uses a subdirectory of your Emacs configuration by default, e.g.,
 ~/.config/emacs/elfeed, in order to keep the user home clean.  But if an

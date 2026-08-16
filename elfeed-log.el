@@ -35,23 +35,23 @@
 
 (defface elfeed-log-date-face
   '((t :inherit font-lock-type-face))
-  "Face for showing the date in the elfeed log buffer.")
+  "Face for showing the date in the Elfeed log buffer.")
 
 (defface elfeed-log-error-level-face
   '((t :foreground "red"))
-  "Face for showing the `error' log level in the elfeed log buffer.")
+  "Face for showing the `error' log level in the Elfeed log buffer.")
 
 (defface elfeed-log-warn-level-face
   '((t :foreground "goldenrod"))
-  "Face for showing the `warn' log level in the elfeed log buffer.")
+  "Face for showing the `warn' log level in the Elfeed log buffer.")
 
 (defface elfeed-log-info-level-face
   '((t :foreground "deep sky blue"))
-  "Face for showing the `info' log level in the elfeed log buffer.")
+  "Face for showing the `info' log level in the Elfeed log buffer.")
 
 (defface elfeed-log-debug-level-face
   '((t :foreground "magenta2"))
-  "Face for showing the `debug' log level in the elfeed log buffer.")
+  "Face for showing the `debug' log level in the Elfeed log buffer.")
 
 (defun elfeed-log-buffer ()
   "Returns the buffer for `elfeed-log', creating it as needed."

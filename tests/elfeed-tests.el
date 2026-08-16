@@ -1,4 +1,4 @@
-;;; elfeed-tests.el --- tests for elfeed -*- lexical-binding: t; -*-
+;;; elfeed-tests.el --- Tests for Elfeed -*- lexical-binding: t; -*-
 
 ;; emacs -batch -Q -L .. -L . -l elfeed-tests.el -f ert-run-tests-batch
 

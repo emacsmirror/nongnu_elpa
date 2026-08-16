@@ -834,7 +834,7 @@ if another update is already running."
 
 ;;;###autoload
 (defun elfeed ()
-  "Enter elfeed via `elfeed-entry-point'."
+  "Enter Elfeed via `elfeed-entry-point'."
   (interactive)
   (call-interactively elfeed-entry-point))
 

@@ -553,7 +553,7 @@ Prompts for ENCLOSURE-INDEX when called interactively."
 (cl-defun elfeed-show--fetch (cb &key url key headers force)
   "Fetch link content, store result in the entry metadata and call CB.
 The callback CB is first called with the URL and :fetching as arguments,
-and then with content string on success in the show buffer. On error CB
+and then with content string on success in the show buffer.  On error CB
 is called with URL and :error.  URL defaults to the entry link.  The
 content is stored under KEY, defaulting to :link-content in the entry
 metadata.  HEADERS are optional HTTP headers.  If FORCE is non-nil do

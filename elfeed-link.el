@@ -1,4 +1,4 @@
-;;; elfeed-link.el --- misc functions for elfeed -*- lexical-binding: t; -*-
+;;; elfeed-link.el --- Org linking for Elfeed -*- lexical-binding: t; -*-
 
 ;; This is free and unencumbered software released into the public domain.
 
@@ -17,7 +17,7 @@
 
 ;;;###autoload
 (defun elfeed-link-store-link ()
-  "Store a link to an elfeed search or entry buffer.
+  "Store a link to an Elfeed entry or search buffer.
 
 When storing a link to an entry, automatically extract all the
 entry metadata.  These can be used in the capture templates as
@@ -104,7 +104,7 @@ Org-mode HTML quote."
 
 ;;;###autoload
 (defun elfeed-link-open (filter-or-id)
-  "Jump to an elfeed entry or search.
+  "Jump to an Elfeed entry or search buffer.
 
 Depending on what FILTER-OR-ID looks like, we jump to either
 search buffer or show a concrete entry."

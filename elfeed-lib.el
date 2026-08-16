@@ -1,4 +1,4 @@
-;;; elfeed-lib.el --- misc functions for elfeed -*- lexical-binding: t; -*-
+;;; elfeed-lib.el --- Misc functions for Elfeed -*- lexical-binding: t; -*-
 
 ;; This is free and unencumbered software released into the public domain.
 

@@ -363,7 +363,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              (and filter ", ") filter))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
-  "Major mode for listing elfeed feed entries."
+  "Major mode for listing Elfeed feed entries."
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
               mode-line-modified nil
@@ -1192,7 +1192,7 @@ the browser defined by `browse-url-secondary-browser-function'."
                     (elfeed-browse-url it secondary)))
       ;; `browse-url' could have switched to another buffer if eww or another
       ;; internal browser is used, but the remainder of the functions needs to
-      ;; run in the elfeed buffer.
+      ;; run in the Elfeed buffer.
       (with-current-buffer (elfeed-search-buffer)
         (apply #'elfeed-search-update-entry entries)
         (elfeed-search--after-action 'browse)))))
