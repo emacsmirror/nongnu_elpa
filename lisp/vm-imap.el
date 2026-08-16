@@ -932,7 +932,7 @@ on all the relevant IMAP servers and then immediately expunges."
 		 (vm-warn 0 2 "Something signaled: %s"
 			  (prin1-to-string error-data))
 		 (vm-inform 0 "Skipping rest of mailbox %s..." folder)
-		 (sleep-for 2)
+		 (vm-pause 2)
 		 (while (equal (nth 2 (car mp)) source)
 		   (setq mp (cdr mp)))
 		 (throw 'replay t)))
@@ -1309,7 +1309,7 @@ Returns the process or nil if the session could not be created."
 		(vm-imap-forget-password source-nopwd-nombox host port user)
 		;; don't sleep unless we're running synchronously.
 		(if vm-imap-ok-to-ask	; (eq interactive t) ?
-		    (sleep-for 2))
+		    (vm-pause 2))
 		(throw 'end-of-session nil))
 	      (unless (assoc source-nopwd-nombox vm-imap-passwords)
 		(setq vm-imap-passwords (cons (list source-nopwd-nombox pass)
@@ -1354,7 +1354,7 @@ Returns the process or nil if the session could not be created."
 		  (vm-inform 0 "IMAP password for %s incorrect" folder)
 		  ;; don't sleep unless we're running synchronously.
 		  (if vm-imap-ok-to-ask	; (eq interactive t)?
-		      (sleep-for 2))
+		      (vm-pause 2))
 		  (throw 'end-of-session nil))
 		(setq success t)
 		(unless (assoc source-nopwd-nombox vm-imap-passwords)
@@ -1368,7 +1368,7 @@ Returns the process or nil if the session could not be created."
 		(vm-inform 0 "IMAP session was not pre-authenticated")
 		;; don't sleep unless we're running synchronously.
 		(if vm-imap-ok-to-ask	; (eq interactive t)?
-		    (sleep-for 2))
+		    (vm-pause 2))
 		(throw 'end-of-session nil))
 	      (setq success t)
 	      ;;-------------------------------

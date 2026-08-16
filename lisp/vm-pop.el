@@ -567,7 +567,7 @@ Returns the process or nil if the session could not be created."
 		     (vm-pop-forget-password source-nopwd host port user)
 		     ;; don't sleep unless we're running synchronously.
 		     (when vm-pop-ok-to-ask
-		       (sleep-for 2))
+		       (vm-pause 2))
 		     (throw 'end-of-session nil))
 		   (unless (assoc source-nopwd vm-pop-passwords)
 		     (setq vm-pop-passwords (cons (list source-nopwd pass)
@@ -589,7 +589,7 @@ Returns the process or nil if the session could not be created."
 		     (vm-warn 0 0 "Server of %s does not support APOP" popdrop)
 		     ;; don't sleep unless we're running synchronously
 		     (if vm-pop-ok-to-ask
-			 (sleep-for 2))
+			 (vm-pause 2))
 		     (throw 'end-of-session nil))
 		   (vm-pop-send-command
 		    process
@@ -599,7 +599,7 @@ Returns the process or nil if the session could not be created."
 		   (unless (vm-pop-read-response process)
 		     (vm-warn 0 0 "POP login failed for %s" popdrop)
 		     (when vm-pop-ok-to-ask
-		       (sleep-for 2))
+		       (vm-pause 2))
 		     (throw 'end-of-session nil))
 		   (unless (assoc source-nopwd vm-pop-passwords)
 		     (setq vm-pop-passwords (cons (list source-nopwd pass)
