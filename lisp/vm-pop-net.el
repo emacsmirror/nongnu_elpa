@@ -231,16 +231,22 @@ implementation."
 	 (port (nth 2 parts))
 	 (user (nth 4 parts))
 	 (password (nth 5 parts)))
-    (unless (equal protocol "pop")
+    (unless (member protocol '("pop" "pop-ssl"))
       (signal 'vm-pop-net-unsupported (list protocol source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")
       (signal 'vm-pop-net-unsupported (list "password not remembered" source)))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
+	   ;; :nowait, so the connect itself does not wait either.  The
+	   ;; process is not open when this returns; the session's sentinel
+	   ;; hears whether it ever will be, and its timeout covers a connect
+	   ;; that never completes.  TLS is negotiated the same way, Emacs
+	   ;; doing the handshake as the connection comes up.
 	   (process (make-network-process
 		     :name name :host host :service port :buffer buffer
-		     :noquery t :coding 'binary)))
+		     :noquery t :coding 'binary :nowait t
+		     :type (if (equal protocol "pop-ssl") 'tls nil))))
       (with-current-buffer buffer
 	(buffer-disable-undo)
 	(vm-pop-net-init))
@@ -278,13 +284,12 @@ has already seen, and saying \"no mail\" would be a guess."
 (defun vm-pop-net-checkable-p (source)
   "Whether SOURCE can be checked for mail without waiting.
 
-Plain POP with a password VM holds.  A pop-ssl or pop-ssh maildrop still
-negotiates or starts a tunnel inside the connect, and a maildrop whose
-password is `*\=' would ask for one -- neither of which a timer should do
-behind the reader."
+  POP or POP over TLS, with a password VM holds.  A pop-ssh maildrop starts a
+tunnel program inside the connect, and a maildrop whose password is `*\='
+would ask for one -- neither of which a timer should do behind the reader."
   (condition-case nil
       (let ((parts (vm-pop-parse-spec-to-list source)))
-	(and (equal (car parts) "pop")
+	(and (member (car parts) '("pop" "pop-ssl"))
 	     (nth 5 parts)
 	     (not (equal (nth 5 parts) "*"))
 	     t))
