@@ -4040,7 +4040,12 @@ previous message and the CPU seconds VM used in that interval:
 
 Raising `vm-verbosity' and turning this on says which step of a slow
 operation the time went to, and how much of it was VM's own work rather than
-waiting for a server."
+waiting for a server.
+
+This stamps the messages VM shows, which go to the echo area and to
+*Messages* as they always did.  To collect them somewhere of their own
+instead, and to collect the ones verbosity does not show, set `vm-log-level'
+as well."
   :group 'vm-misc
   :type 'boolean)
 
