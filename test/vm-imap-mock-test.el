@@ -848,6 +848,43 @@ of tagging commands separately."
         (should-not (vm-imap-response-matches (vm-imap-read-response process)
                                               'VM 'OK))))))
 
+;;; The buffer-type stack comes back the way it was (emacs-vm/vm#705)
+
+(ert-deftest vm-imap-mock-test-a-session-leaves-the-buffer-type-stack-alone ()
+  "REGRESSION: establishing a writable session pushes one buffer-type frame
+and pops one.
+
+`vm-establish-writable-imap-session' popped on its success path and popped
+again in its unwind-protect, which runs on that path too, so it came back
+having eaten the caller's frame.  The assertions that would have noticed are
+`vm-assert' and inert by default, and the stack is what tells VM whether it
+is in a folder buffer or a process buffer."
+  (vm-imap-mock-test--visiting (mock :messages (list vm-imap-mock-test--alice))
+    (let* ((spec (vm-imap-mock-spec mock))
+           (before (length vm-buffer-types))
+           (process (vm-establish-writable-imap-session spec)))
+      (should process)
+      (should (equal (length vm-buffer-types) before))
+      (vm-imap-end-session process))))
+
+(ert-deftest vm-imap-mock-test-expunging-leaves-the-buffer-type-stack-alone ()
+  "The same for the remote expunge, which used `vm-buffer-type:set' -- which
+replaces the top of the stack rather than pushing one -- and then popped in
+its unwind-protect, so it too came back a frame short."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (let ((before (length vm-buffer-types))
+          (uid (vm-imap-uid-of (car vm-message-list)))
+          (validity (vm-folder-imap-uid-validity)))
+      (should uid)
+      ;; what vm-quit leaves behind for the next session to act on
+      (setq vm-imap-messages-to-expunge (list (cons uid validity)))
+      (vm-imap-expunge-remote-messages)
+      (should (equal (length vm-buffer-types) before))
+      ;; and the message really went, so this is the expunge path and not an
+      ;; early return that never reached the stack at all
+      (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1)))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

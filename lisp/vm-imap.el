@@ -2721,13 +2721,15 @@ tracing purposes. Returns the IMAP process or nil if unsuccessful."
 		    )
 	      ;;---------------------------------
 	      (vm-imap-session-type:set 'active)
-	      (vm-buffer-type:exit)
 	      ;;---------------------------------
 	      (if read-write
 		  process
 		(vm-imap-end-session process)
 		nil))
-	  ;; unwind-protections
+	  ;; unwind-protections.  The exit is here and nowhere else: it used
+	  ;; to be done on the success path as well, and this runs on that
+	  ;; path too, so a session established this way came back having
+	  ;; taken its caller's buffer-type frame (emacs-vm/vm#705).
 	  ;;--------------------
 	  (vm-buffer-type:exit)
 	  ;;--------------------
@@ -3740,7 +3742,11 @@ headers-only form."
 	      (setq expunge-count 0)	; number of messages expunged
 	      (with-current-buffer (process-buffer process)
 		;;---------------------------
-		(vm-buffer-type:set 'process)
+		;; enter, not set: this pushes the frame the exit in the
+		;; unwind-protect below pops.  `vm-buffer-type:set' replaces
+		;; the top of the stack rather than pushing one, so the pop
+		;; took the caller's frame (emacs-vm/vm#705).
+		(vm-buffer-type:enter 'process)
 		;;---------------------------
 		(mapc (lambda (range)
 			(vm-imap-delete-messages
