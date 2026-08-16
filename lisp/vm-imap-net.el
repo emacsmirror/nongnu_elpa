@@ -803,6 +803,15 @@ blocking path does."
 		     (buffer-name folder) retrieved (length retrieve-list))))
       (with-current-buffer folder
 	(vm-imap-net-assimilate retrieve-list uid-validity))
+      ;; and what the folder has expunged locally goes on the server, in the
+      ;; same session: by UID, since a sequence number means something
+      ;; different after every expunge
+      (let ((uids (with-current-buffer folder
+		    (vm-imap-net-uids-to-expunge uid-validity))))
+        (when uids
+	  (iter-yield-from (vm-imap-net-expunge uids))
+	  (with-current-buffer folder
+	    (vm-imap-net-note-expunged uids))))
       retrieved)))
 
 ;;; Flags, and what the server would not take
@@ -1059,6 +1068,107 @@ than left empty."
 	    t)
 	(vm-imap-net-unsupported nil)))))
 
+;;; Saving a message to a mailbox
+
+(declare-function vm-imap-subst-CRLF-for-LF "vm-imap" (string))
+(declare-function vm-replied-flag "vm-message" (m))
+(declare-function vm-unread-flag "vm-message" (m))
+
+(defun vm-imap-net-message-text (message)
+  "MESSAGE as it goes on the wire: headers and body, CRLF for LF."
+  (with-current-buffer (vm-buffer-of message)
+    (save-restriction
+      (widen)
+      (vm-imap-subst-CRLF-for-LF
+       (buffer-substring (vm-headers-of message) (vm-text-end-of message))))))
+
+(defun vm-imap-net-message-flags (message)
+  "The flags to store MESSAGE under, as an IMAP flag list.
+Not \\Deleted: a message is not saved into a mailbox in order to be deleted
+from it."
+  (let ((flags nil))
+    (when (vm-replied-flag message) (push "\\Answered" flags))
+    (unless (vm-unread-flag message) (push "\\Seen" flags))
+    (format "(%s)" (mapconcat #'identity flags " "))))
+
+(iter-defun vm-imap-net-append (mailbox text flags)
+  "APPEND TEXT to MAILBOX with FLAGS, as a literal.
+The server answers the command line with a `+' before the octets are sent,
+which is the one place IMAP asks the client to wait for permission to
+speak."
+  (vm-imap-net-send (format "APPEND %s %s {%d}"
+			    (vm-imap-quote-mailbox-name mailbox)
+			    flags (string-bytes text)))
+  (let ((ready nil)
+	response)
+    (while (not ready)
+      (setq response (iter-yield-from
+		      (vm-imap-net-read-response-and-verify "APPEND")))
+      (when (vm-imap-response-matches response '+)
+	(setq ready t))))
+  (let ((process (get-buffer-process (current-buffer))))
+    (goto-char (point-max))
+    (insert-before-markers "<message omitted>\r\n")
+    (setq vm-imap-net-read-point (point))
+    (process-send-string process (concat text "\r\n")))
+  (let ((done nil)
+	response)
+    (while (not done)
+      (setq response (iter-yield-from
+		      (vm-imap-net-read-response-and-verify "APPEND data")))
+      (when (vm-imap-response-matches response 'VM 'OK)
+	(setq done t))))
+  t)
+
+(iter-defun vm-imap-net-save (user password mailbox messages)
+  "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
+The mailbox is created if the server does not have it, its refusal to create
+one it already has being no reason to stop."
+  (iter-yield-from (vm-imap-net-open-session user password))
+  (let ((error-data nil))
+    (condition-case caught
+	(iter-yield-from (vm-imap-net-command
+			  (format "CREATE %s"
+				  (vm-imap-quote-mailbox-name mailbox))
+			  "CREATE"))
+      (vm-imap-normal-error (setq error-data caught)))
+    (ignore error-data))
+  (let ((saved 0))
+    (dolist (message messages)
+      (iter-yield-from (vm-imap-net-append mailbox
+					   (car message) (cdr message)))
+      (setq saved (1+ saved)))
+    saved))
+
+(defun vm-imap-net-save-messages (source mailbox messages callback)
+  "Save MESSAGES into MAILBOX on SOURCE, and tell CALLBACK how many went.
+
+The text and flags of each message are taken now, in the folder they are in;
+what the session sends is that copy, so the folder is free to change while
+it goes.  Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot
+open."
+  (let* ((folder (current-buffer))
+	 (copies (mapcar (lambda (message)
+			   (cons (vm-imap-net-message-text message)
+				 (vm-imap-net-message-flags message)))
+			 messages))
+	 (opened (vm-imap-net-open source "IMAP save"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (when (buffer-live-p folder)
+	      (with-current-buffer folder
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))))
+    (vm-net-start session
+		  (vm-imap-net-save (nth 2 opened) (nth 3 opened)
+				    mailbox copies))
+    session))
+
 ;;; Expunging on the server
 
 
@@ -1076,6 +1186,29 @@ expunge, and a UID does not."
       "UID STORE"))
     (iter-yield-from (vm-imap-net-command "EXPUNGE" "EXPUNGE"))
     (length uids)))
+
+(defvar vm-imap-messages-to-expunge)
+
+(defun vm-imap-net-uids-to-expunge (uid-validity)
+  "The UIDs the folder has expunged locally and the server still has.
+The current buffer is the folder.  An entry whose UIDVALIDITY is not
+UID-VALIDITY names a message on a mailbox that no longer exists as it was,
+and is left alone."
+  (let ((uids nil))
+    (dolist (entry vm-imap-messages-to-expunge)
+      (when (equal (cdr entry) uid-validity)
+	(push (car entry) uids)))
+    (nreverse uids)))
+
+(defun vm-imap-net-note-expunged (uids)
+  "Forget the expunge requests for UIDS, the server having acted on them.
+The current buffer is the folder."
+  (setq vm-imap-messages-to-expunge
+	(seq-remove (lambda (entry) (member (car entry) uids))
+		    vm-imap-messages-to-expunge))
+  (vm-set-folder-imap-mailbox-count
+   (max 0 (- (or (vm-folder-imap-mailbox-count) 0) (length uids))))
+  (vm-mark-folder-modified-p))
 
 (defun vm-imap-net-get-mail (source callback)
   "Fetch into the current folder what SOURCE has that it has not, and

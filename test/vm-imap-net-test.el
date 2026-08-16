@@ -563,6 +563,50 @@ takes a minute to arrive does not stop Emacs for a minute."
       (should (string-match-p "The first body"
                               (vm-imap-net-test--body-of message))))))
 
+
+;;; Expunging on the server
+
+(ert-deftest vm-imap-net-test-a-local-expunge-reaches-the-server ()
+  "A message expunged from the folder is deleted and expunged on the server
+in the next session, by UID -- a sequence number means something different
+after every expunge."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (let ((message (car vm-message-list)))
+      (vm-set-deleted-flag message t)
+      (vm-expunge-folder))
+    (should (equal (length vm-message-list) 1))
+    (should vm-imap-messages-to-expunge)
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (vm-imap-mock-received-p mock "UID STORE"))
+    (should (vm-imap-mock-received-p mock "EXPUNGE"))
+    (should-not vm-imap-messages-to-expunge)
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))))
+
+
+;;; Saving into a mailbox
+
+(ert-deftest vm-imap-net-test-a-message-is-appended-to-a-mailbox ()
+  "Saving to an IMAP mailbox APPENDs the message, flags and all, and makes
+the mailbox if the server has not got one."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((answer 'not-called))
+      (vm-imap-net-save-messages (vm-imap-mock-spec mock) "Archive"
+                                 vm-message-list
+                                 (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (equal answer 1))
+      (should (vm-imap-mock-received-p mock "CREATE"))
+      (should (vm-imap-mock-received-p mock "APPEND"))
+      (let ((saved (vm-imap-mock-messages mock "Archive")))
+        (should (equal (length saved) 1))
+        (should (string-match-p
+                 "badgers"
+                 (vm-imap-mock-message-text (car saved))))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
