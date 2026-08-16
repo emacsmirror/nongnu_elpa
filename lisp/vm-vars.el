@@ -4031,34 +4031,27 @@ progress.  Nothing above 1 is a warning."
   :group 'vm-misc
   :type 'integer)
 
-(defcustom vm-verbose-timing nil
-  "*Non-nil means each message VM shows says when it was shown.
-The message is prefixed with the clock time, the real seconds since VM's
-previous message and the CPU seconds VM used in that interval:
-
-  14:03:12.481 +2.140s +0.310cpu  INBOX: Retrieving message 400 (of 100000)...
-
-Raising `vm-verbosity' and turning this on says which step of a slow
-operation the time went to, and how much of it was VM's own work rather than
-waiting for a server.
-
-This stamps the messages VM shows, which go to the echo area and to
-*Messages* as they always did.  To collect them somewhere of their own
-instead, and to collect the ones verbosity does not show, set `vm-log-level'
-as well."
-  :group 'vm-misc
-  :type 'boolean)
-
 (defcustom vm-log-level nil
-  "*Level up to which VM records its messages in the buffer *VM Log*.
-The scale is `vm-verbosity''s, and the two are independent: a level recorded
-here need not be one that is shown, which is how to keep the detail of a
-slow operation without the minibuffer churn -- and without
-`vm-verbal-time' pausing for each of them.  Every recorded line carries the
-timing `vm-verbose-timing' describes.
+  "*Level up to which VM records what it is doing in the buffer *VM Log*.
+A nil value records nothing.  `\\[vm-show-log]' shows the buffer.
 
-A nil value records nothing.  The buffer is never trimmed, so a long run at
-a high level makes a large one."
+The scale is `vm-verbosity''s, and the two are independent: what is recorded
+need not be shown.  Recording at 10 and leaving `vm-verbosity' alone is how
+to keep the detail of a slow operation without the echo area churn, and
+without `vm-verbal-time' pausing for each message.
+
+Each line says when VM said it, how long it is since the previous line and
+how much CPU VM used in between:
+
+  14:03:12.481 +2.140s +0.310cpu [6] INBOX: Retrieving message 400...
+
+An interval that is all real time and no CPU was spent waiting for a server,
+which is what says whether something slow is VM's own doing.  The interval
+is simply the time since the last recorded message, so it counts time VM sat
+idle as readily as time it worked.
+
+The buffer is never trimmed, so a long run at a high level makes a large
+one."
   :group 'vm-misc
   :type '(choice (const :tag "Record nothing" nil) integer))
 

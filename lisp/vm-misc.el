@@ -67,8 +67,8 @@
   "Where `vm-log-level' records what VM had to say.")
 
 (defvar vm-last-message-time nil
-  "Real and CPU time when VM last timed a message, or nil.
-What the intervals `vm-verbose-timing' reports are measured from.")
+  "Real and CPU time when VM last logged a message, or nil.
+What the intervals in the log are measured from.")
 
 (defun vm-message-timing ()
   "The clock time, and how long it is since VM last said anything.
@@ -96,17 +96,29 @@ call it once per message and only when the answer is going to be used."
   "Whether a message at LEVEL is one `vm-log-level' records."
   (and vm-log-level (<= level vm-log-level)))
 
+;;;###autoload
+(defun vm-show-log ()
+  "Show the log of what VM has been doing.
+It is empty, and stays empty, unless `vm-log-level' says what to record."
+  (interactive)
+  (let ((buffer (get-buffer vm-log-buffer-name)))
+    (if (and buffer (> (buffer-size buffer) 0))
+	(display-buffer buffer)
+      (vm-inform 0 "Nothing logged.  Set vm-log-level to record what VM does"))))
+
 (defun vm-emit-message (level text)
   "Show TEXT if LEVEL allows, record it if `vm-log-level' does.
-Answers TEXT when it was shown, as `message' does, and nil otherwise."
-  (let* ((logging (vm-log-level-p level))
-	 (showing (<= level vm-verbosity))
-	 (timing (and (or logging (and showing vm-verbose-timing))
-		      (vm-message-timing))))
+Answers TEXT when it was shown, as `message' does, and nil otherwise.
+
+The record is timed and the message shown is not: a time in the echo area
+is in the way of what the message says, and each message is gone as the next
+arrives anyway, so a run is read afterwards from the log."
+  (let ((logging (vm-log-level-p level))
+	(showing (<= level vm-verbosity)))
     (when logging
-      (vm-log-line (format "%s [%d] %s" timing level text)))
+      (vm-log-line (format "%s [%d] %s" (vm-message-timing) level text)))
     (when showing
-      (message "%s" (if vm-verbose-timing (concat timing "  " text) text))
+      (message "%s" text)
       text)))
 
 (defun vm-inform (level &rest args)
