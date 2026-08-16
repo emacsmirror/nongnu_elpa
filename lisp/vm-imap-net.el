@@ -919,10 +919,148 @@ tries it again, and the rest are still sent."
 	       (buffer-name folder) errors (if (= errors 1) "" "s")))
     saved))
 
+(defvar vm-imap-net-session nil
+  "The session this folder has running, if it has one.
+A folder runs one at a time: two writing into it would interleave what they
+put there.")
+(make-variable-buffer-local 'vm-imap-net-session)
+
+;;; Bodies kept on the server
+
+(declare-function vm-make-room-for-message-body "vm-folder" (mm))
+(declare-function vm-settle-message-body "vm-folder" (mm modified))
+(declare-function vm-headers-of "vm-message" (m))
+(declare-function vm-text-end-of "vm-message" (m))
+(declare-function vm-imap-uid-of "vm-message" (m))
+(declare-function vm-text-of "vm-message" (m))
+(declare-function vm-buffer-of "vm-message" (m))
+(declare-function vm-mark-folder-modified-p "vm-folder" (&optional buffer))
+(declare-function vm-preview-current-message "vm-page" ())
+
+(iter-defun vm-imap-net-fetch-bodies (folder uids body-peek)
+  "UID FETCH the bodies of UIDS, putting each where its own message is.
+Answers with the UIDs the server answered for.  One command for all of them,
+and the UID in each response says which message it is: a server may answer
+in any order (issue #185)."
+  (let ((source (current-buffer))
+	(fetched nil))
+    (vm-imap-net-send
+     (format "UID FETCH %s %s" (mapconcat #'identity uids ",")
+	     (if body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
+    (let ((done nil)
+	  response)
+      (while (not done)
+	(setq response (iter-yield-from
+			(vm-imap-net-read-response-and-verify "UID FETCH")))
+	(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+	       (let* ((message (vm-imap-net-fetch-message-text response))
+		      (uid (nth 0 message)))
+		 (vm-imap-net-store-body folder source uid
+					 (nth 1 message) (nth 2 message))
+		 (push uid fetched)))
+	      ((vm-imap-response-matches response 'VM 'OK)
+	       (setq done t)))))
+    (nreverse fetched)))
+
+(defun vm-imap-net-message-by-uid (folder uid)
+  "The message in FOLDER whose IMAP UID is UID, or nil."
+  (with-current-buffer folder
+    (seq-find (lambda (message) (equal (vm-imap-uid-of message) uid))
+	      vm-message-list)))
+
+(defun vm-imap-net-store-body (folder source uid start end)
+  "Put the body between START and END of SOURCE into its message in FOLDER."
+  (let ((message (vm-imap-net-message-by-uid folder uid)))
+    (unless message
+      (vm-imap-protocol-error "FETCH response for a UID that was not asked for"))
+    (with-current-buffer folder
+      (let ((inhibit-read-only t)
+	    (buffer-undo-list t)
+	    (modified (buffer-modified-p)))
+	(save-excursion
+	  (save-restriction
+	    (widen)
+	    (narrow-to-region (marker-position (vm-headers-of message))
+			      (marker-position (vm-text-end-of message)))
+	    (vm-make-room-for-message-body message)
+	    (insert-buffer-substring source start end)
+	    (vm-imap-cleanup-region (vm-text-of message) (point-max))
+	    (vm-settle-message-body message modified)))))))
+
+(iter-defun vm-imap-net-load (folder mailbox user password uids)
+  "Log in, select MAILBOX, and fetch the bodies of UIDS into FOLDER."
+  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
+	 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t)))
+    (iter-yield-from (vm-imap-net-select mailbox))
+    (iter-yield-from (vm-imap-net-fetch-bodies folder uids body-peek))))
+
+(defun vm-imap-net-load-bodies (messages callback)
+  "Fetch the bodies of MESSAGES, which are the current folder's, and tell
+CALLBACK how many arrived.  Nothing waits.
+
+Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
+is the caller\\='s cue to use the blocking implementation."
+  (let* ((folder (current-buffer))
+	 (validity (vm-folder-imap-uid-validity))
+	 (uids (mapcar (lambda (message)
+			 (unless (equal (vm-imap-uid-validity-of message)
+					validity)
+			   (error "Message has an invalid UID"))
+			 (vm-imap-uid-of message))
+		       messages))
+	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP fetch"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (when (buffer-live-p folder)
+	      (with-current-buffer folder
+		(funcall callback (or (vm-net-session-error finished)
+				      (length (vm-net-session-value finished))))))))
+    (vm-net-start session
+		  (vm-imap-net-load folder (nth 1 opened) (nth 2 opened)
+				    (nth 3 opened) uids))
+    ;; the folder's one session slot: what `vm-imap-net-busy-p' reports and
+    ;; what a caller that has to have the bodies waits on
+    (setq vm-imap-net-session session)
+    session))
+
+(defun vm-imap-net-load-message-bodies (messages)
+  "Start fetching the bodies of MESSAGES, and answer with whether it did.
+They must all be in one folder.  Nil means the maildrop is one that cannot
+be opened without waiting, and the caller is to fetch them the blocking way.
+
+Each message is marked as no longer needing its body only when the body is
+there, so a message the server did not answer for is asked for again rather
+than left empty."
+  (let ((folder (vm-buffer-of (car messages))))
+    (with-current-buffer folder
+      (condition-case nil
+	  (progn
+	    (vm-inform 6 "%s: fetching %d message bod%s" (buffer-name folder)
+		       (length messages) (if (cdr messages) "ies" "y"))
+	    (vm-imap-net-load-bodies
+	     messages
+	     (lambda (result)
+	       (cond ((and (consp result) (symbolp (car result))
+			   (get (car result) 'error-conditions))
+		      (vm-warn 0 2 "%s: %s" (buffer-name folder)
+			       (error-message-string result)))
+		     (t
+		      (vm-mark-folder-modified-p folder)
+		      (vm-update-summary-and-mode-line)
+		      (vm-preview-current-message)
+		      (vm-inform 5 "%s: %d message bod%s loaded"
+				 (buffer-name folder) result
+				 (if (= result 1) "y" "ies"))))))
+	    t)
+	(vm-imap-net-unsupported nil)))))
+
 ;;; Expunging on the server
 
-(declare-function vm-imap-uid-of "vm-message" (m))
-(declare-function vm-folder-imap-uid-msn "vm-imap" (uid))
 
 (iter-defun vm-imap-net-expunge (uids)
   "Delete the messages with UIDS on the server, and expunge them.
@@ -970,10 +1108,6 @@ is a caller\\='s cue to use the blocking implementation."
 
 (declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
 (declare-function vm-inform "vm-misc" (level &rest args))
-
-(defvar vm-imap-net-session nil
-  "The fetch this folder has running, if it has one.")
-(make-variable-buffer-local 'vm-imap-net-session)
 
 (defun vm-imap-net-busy-p (&optional folder)
   "Whether FOLDER, or the current buffer, has a fetch running."
