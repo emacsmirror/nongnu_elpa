@@ -63,22 +63,70 @@
 ;; 7 - normal level
 ;; 10 - heavy debugging info
 
+(defconst vm-log-buffer-name "*VM Log*"
+  "Where `vm-log-level' records what VM had to say.")
+
+(defvar vm-last-message-time nil
+  "Real and CPU time when VM last timed a message, or nil.
+What the intervals `vm-verbose-timing' reports are measured from.")
+
+(defun vm-message-timing ()
+  "The clock time, and how long it is since VM last said anything.
+Answers a string.  Advances the interval both parts are measured from, so
+call it once per message and only when the answer is going to be used."
+  (let ((real (current-time))
+	(cpu (get-internal-run-time))
+	(previous vm-last-message-time))
+    (setq vm-last-message-time (cons real cpu))
+    (if (null previous)
+	(format-time-string "%H:%M:%S.%3N" real)
+      (format "%s +%.3fs +%.3fcpu"
+	      (format-time-string "%H:%M:%S.%3N" real)
+	      (float-time (time-subtract real (car previous)))
+	      (float-time (time-subtract cpu (cdr previous)))))))
+
+(defun vm-log-line (line)
+  "Append LINE to the log buffer."
+  (with-current-buffer (get-buffer-create vm-log-buffer-name)
+    (goto-char (point-max))
+    (let ((inhibit-read-only t))
+      (insert line "\n"))))
+
+(defun vm-log-level-p (level)
+  "Whether a message at LEVEL is one `vm-log-level' records."
+  (and vm-log-level (<= level vm-log-level)))
+
+(defun vm-emit-message (level text)
+  "Show TEXT if LEVEL allows, record it if `vm-log-level' does.
+Answers TEXT when it was shown, as `message' does, and nil otherwise."
+  (let* ((logging (vm-log-level-p level))
+	 (showing (<= level vm-verbosity))
+	 (timing (and (or logging (and showing vm-verbose-timing))
+		      (vm-message-timing))))
+    (when logging
+      (vm-log-line (format "%s [%d] %s" timing level text)))
+    (when showing
+      (message "%s" (if vm-verbose-timing (concat timing "  " text) text))
+      text)))
+
 (defun vm-inform (level &rest args)
-  (when (<= level vm-verbosity)
-    (let ((message (apply 'message args)))
-      (vm-pause vm-verbal-time)
-      message)))
+  (let ((text (and (or (<= level vm-verbosity) (vm-log-level-p level))
+		   (apply #'format-message args))))
+    (when text
+      (prog1 (vm-emit-message level text)
+	(when (<= level vm-verbosity)
+	  (vm-pause vm-verbal-time))))))
 
 (defun vm-warn (l secs &rest args)
   "Give a warning at level L and display it for SECS seconds.  The
 remaining arguments are passed to `message' to generate the warning
-message." 
-  (when (<= l vm-verbosity)
+message."
+  (when (or (<= l vm-verbosity) (vm-log-level-p l))
     (let ((warning (apply 'format args)))
       (unless (equal vm-current-warning warning)
 	(setq vm-current-warning warning)
-	(message warning)
-	(vm-pause secs)))))
+	(when (vm-emit-message l warning)
+	  (vm-pause secs))))))
 
 (defun vm-pause (seconds)
   "Leave the last message on screen for SECONDS, or until the user types.

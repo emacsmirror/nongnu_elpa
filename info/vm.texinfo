@@ -7496,6 +7496,36 @@ along with progress; nothing above level 1 is a warning.  A related variable,
 @code{vm-verbal-time}, holds a number of seconds to leave each message on
 screen, and should normally be 0 --- anything else delays VM.
 
+@cindex timing
+@vindex vm-verbose-timing
+When an operation is slow, the question is usually which part of it is.
+Setting @code{vm-verbose-timing} to @code{t} prefixes every message with the
+clock time, the real seconds since VM's previous message, and the CPU
+seconds VM used in that interval:
+
+@example
+14:03:12.481 +2.140s +0.310cpu  INBOX: Retrieving message 400 (of 100000)...
+@end example
+
+@noindent
+The two numbers together separate VM's own work from waiting for a server:
+an interval that is all real time and no CPU went on the network.
+
+@vindex vm-log-level
+Raising @code{vm-verbosity} to see the detail also fills the echo area with
+it, and each message is gone as the next one arrives.  @code{vm-log-level}
+takes a level on the same scale and records every message up to it in the
+buffer @samp{*VM Log*}, whether or not it is shown, each line timed as
+above.  So
+
+@example
+(setq vm-log-level 10)
+@end example
+
+@noindent
+leaves the display as it was and keeps the whole of what VM did, which is
+what to send with a report of something slow.  The buffer is never trimmed.
+
 @section Being told about new mail
 
 @cindex biff
