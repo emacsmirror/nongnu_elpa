@@ -2573,7 +2573,6 @@ had -- and no soft line break was ever emitted."
   "The commands are defined here now, not in an add-on file."
   (dolist (cmd '(vm-attach-files-in-directory
                  vm-mime-auto-save-all-attachments
-                 vm-mime-set-8bit-composition-charset
                  vm-toggle-best-mime))
     (should (fboundp cmd))
     (should (string-match-p "vm-mime\\.el" (or (symbol-file cmd) "")))))
@@ -3813,21 +3812,14 @@ multipart/alternative you read."
         (should (eq vm-mime-alternative-show-method 'best-internal))
         (should (equal said "using best internal MIME decoding"))))))
 
-(ert-deftest vm-mime-test-setting-the-8bit-charset-is-refused ()
-  "`vm-mime-set-8bit-composition-charset' cannot do anything under any Emacs
-this runs on: `vm-mime-8bit-composition-charset' has no effect where MULE
-decides the charset, and the command says so instead of setting a variable
-nothing reads.
-
-The condition it says that under is `(or (featurep \\='xemacs) (not (featurep
-\\='xemacs)))', which is every Emacs there is.  Pinned as it stands: whether the
-command should go is emacs-vm/vm#697."
-  (let ((text-quoting-style 'grave)
-        (vm-mime-8bit-composition-charset "us-ascii"))
-    (let ((err (should-error (vm-mime-set-8bit-composition-charset "iso-8859-1")
-                             :type 'error)))
-      (should (string-match-p "no effect" (error-message-string err))))
-    (should (equal vm-mime-8bit-composition-charset "us-ascii"))))
+(ert-deftest vm-mime-test-the-8bit-composition-charset-is-gone ()
+  "`vm-mime-set-8bit-composition-charset' and the variable it set are
+removed.  The command could not do anything -- it began by signalling, under
+a condition true in every Emacs -- and the variable it would have set has
+had no effect since Emacs 20 decided a buffer's charset for itself
+(emacs-vm/vm#697)."
+  (should-not (fboundp 'vm-mime-set-8bit-composition-charset))
+  (should-not (boundp 'vm-mime-8bit-composition-charset)))
 
 (provide 'vm-mime-test)
 

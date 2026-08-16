@@ -2336,24 +2336,6 @@ character set that can display all the buffer's characters."
   :group 'vm-mime
   :type 'string)
 
-(defcustom vm-mime-8bit-composition-charset nil
-  "*Character set that VM should assume if it finds non-US-ASCII characters
-in a composition buffer.  Composition buffers are assumed to use
-US-ASCII unless the buffer contains a byte with the high bit set.
-This variable specifies what character set VM should assume if
-such a character is found.
-
-This variable is unused in XEmacs/MULE and FSF Emacs starting
-with version 20.  Since multiple character sets can be displayed
-in a single buffer under MULE, VM will map the file coding system
-of the buffer to a single MIME character set that can display all
-the buffer's characters."
-  :group 'vm-mime
-  :type '(choice (string :tag "iso-8859-1" "iso-8859-1")
-                 (string :tag "iso-2022-jp" "iso-2022-jp")
-                 (string :tag "User defined")
-                 (const  :tag "Auto select" nil)))
-
 (defcustom vm-mime-8bit-text-transfer-encoding 'quoted-printable
   "*Symbol specifying what kind of transfer encoding to use on 8bit
 text.  Characters with the high bit set cannot safely pass
