@@ -1492,6 +1492,31 @@ requires."
         (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
       (vm-imap-live-close conn))))
 
+(ert-deftest vm-imap-live-test-copying-makes-the-mailbox-if-it-is-missing ()
+  "REGRESSION: saving between two folders on one server makes the target if
+it is not there.  Issue #690.  Against a real server because the answer to
+CREATE on an existing mailbox, and to COPY into a missing one, is the server\='s
+to give: dovecot says NO [TRYCREATE], which is what the copy path used to fail
+on."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain"
+                                   (list vm-imap-live-test--message))
+    (let* ((account (car (plist-get server :accounts)))
+           (target (concat mailbox "-target"))
+           (vm-imap-server-timeout vm-imap-live-timeout)
+           (vm-delete-after-saving nil))
+      (unwind-protect
+          (progn
+            (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+            (vm-save-message-to-imap-folder
+             (vm-imap-live-spec server account target) 1)
+            (should (equal (vm-imap-live-test--select-count conn target) 1)))
+        (when (eq major-mode 'vm-mode)
+          (let ((vm-confirm-quit nil))
+            (ignore-errors (vm-quit-no-change))))
+        (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" target))))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here

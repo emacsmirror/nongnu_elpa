@@ -3255,9 +3255,19 @@ operation of the server to minimize I/O."
 	  (set-buffer (process-buffer process))
 	  ;;-----------------------------------------
 	  (vm-buffer-type:set 'process)
+	  ;;-----------------------------------------
+	  ;; Make the mailbox if it is not there, as `vm-imap-save-message'
+	  ;; does: saving to a folder that does not exist yet is how the
+	  ;; first one is made, and which of the two paths the save takes is
+	  ;; not something the user chose.  CREATE on a mailbox that exists
+	  ;; answers NO, which is not an error here (issue #690).
+	  (condition-case nil
+	      (vm-imap-create-mailbox process mailbox)
+	    (vm-imap-protocol-error (vm-buffer-type:set 'process)))
+	  ;;-----------------------------------------
 	  (vm-imap-session-type:assert-active)
 	  ;;-----------------------------------------
-	  (vm-imap-send-command 
+	  (vm-imap-send-command
 	   process
 	   (format "UID COPY %s %s"
 		   (vm-imap-uid-of m)
