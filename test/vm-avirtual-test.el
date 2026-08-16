@@ -1136,6 +1136,82 @@ That is what the command is for."
     (vm-vs-spam-word nil)
     (should (equal vm-spam-words '("lottery")))))
 
+;;; Commands that had no test
+
+(ert-deftest vm-avirtual-test-saving-uses-the-folder-the-rules-name ()
+  "`vm-virtual-save-message' is `vm-save-message' with the folder guessed:
+called from Lisp with a folder it saves there, and the guess is what the
+interactive form offers as the default."
+  (vm-avirtual-test--with-folder (file archive)
+    (let ((vm-virtual-folder-alist
+           (list (list "badger-mail" (list (list file) '(subject "badgers")))))
+          (vm-virtual-auto-folder-alist
+           (list (list "badger-mail" archive)))
+          (vm-confirm-new-folders nil)
+          (vm-visit-when-saving nil))
+      (should (equal (vm-virtual-auto-select-folder (car vm-message-list))
+                     archive))
+      (vm-virtual-save-message archive 1)
+      (should (file-exists-p archive))
+      (with-temp-buffer
+        (insert-file-contents archive)
+        (should (string-match-p "badgers" (buffer-string))))
+      (should (vm-filed-flag (car vm-message-list))))))
+
+(ert-deftest vm-avirtual-test-checking-a-selector-reports-what-it-found ()
+  "`vm-virtual-check-selector-interactive' says whether a virtual folder's
+selectors match the message you are looking at, naming the message and the
+answer.  It is how a rule that is not doing what its author meant gets
+looked at."
+  (vm-avirtual-test--with-folder (file archive)
+    (let ((vm-virtual-folder-alist
+           (list (list "badger-mail" (list (list file) '(subject "badgers")))))
+          (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (vm-virtual-check-selector-interactive "badger-mail")
+            (with-current-buffer "*VM virtual-folder-check*"
+              (let ((said (buffer-string)))
+                (should (string-match-p "badger-mail" said))
+                (should (string-match-p "is true" said))))
+            ;; and the message that does not match says so
+            (setq vm-message-pointer (cdr vm-message-list))
+            (vm-virtual-check-selector-interactive "badger-mail")
+            (with-current-buffer "*VM virtual-folder-check*"
+              (should (string-match-p "is false" (buffer-string)))))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest vm-avirtual-test-adding-a-selector-names-its-function ()
+  "`vm-avirtual-add-selectors' is how this file registers the selectors it
+defines: each name is paired with the `vm-vs-' function that answers it, and
+listed as one the interactive selector reader offers."
+  (let ((vm-virtual-selector-function-alist
+         (copy-sequence vm-virtual-selector-function-alist))
+        (vm-supported-interactive-virtual-selectors
+         (copy-sequence vm-supported-interactive-virtual-selectors)))
+    (vm-avirtual-add-selectors '(badgerish))
+    (should (equal (cdr (assq 'badgerish vm-virtual-selector-function-alist))
+                   'vm-vs-badgerish))
+    (should (member '("badgerish") vm-supported-interactive-virtual-selectors))
+    ;; and adding it twice leaves one of it
+    (vm-avirtual-add-selectors '(badgerish))
+    (should (equal (length (seq-filter
+                            (lambda (entry) (eq (car entry) 'badgerish))
+                            vm-virtual-selector-function-alist))
+                   1))))
+
+(ert-deftest vm-avirtual-test-finding-a-selector-in-a-specification ()
+  "`vm-virtual-find-selector' digs a selector of a given kind out of a
+folder definition, however deep it is: the definitions nest, and a caller
+that wants the `label' of a folder should not have to know its shape."
+  (let ((spec '((and (subject "badgers")
+                     (or (label "urgent") (author "alice"))))))
+    (should (equal (vm-virtual-find-selector spec 'label) '(label "urgent")))
+    (should (equal (vm-virtual-find-selector spec 'author) '(author "alice")))
+    (should-not (vm-virtual-find-selector spec 'recipient))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
