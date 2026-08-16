@@ -189,6 +189,96 @@ the user's deletes, silently."
         (when (process-live-p process) (delete-process process))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+;;; Checking for mail, over a maildrop specification
+
+(defun vm-pop-net-test--check (mock retrieved &optional seconds)
+  "Ask MOCK whether it has mail, with RETRIEVED as what VM has seen.
+Answers what the callback was given."
+  (let ((answer 'not-called)
+        (vm-pop-retrieved-messages retrieved)
+        (vm-pop-server-timeout 3))
+    (vm-pop-net-check-mail (vm-pop-mock-spec mock)
+                           (lambda (result) (setq answer result)))
+    (let ((deadline (+ (float-time) (or seconds 5))))
+      (while (and (eq answer 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    answer))
+
+(ert-deftest vm-pop-net-test-a-maildrop-with-new-mail-says-so ()
+  "`vm-pop-net-check-mail' takes a maildrop specification, opens it, asks
+UIDL and answers t through its callback -- and returns before any of that,
+which is the whole point: the mail check runs on a timer, and today it stops
+Emacs every time it fires."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (should (eq (vm-pop-net-test--check mock nil) t))))
+
+(ert-deftest vm-pop-net-test-a-maildrop-already-read-says-nothing-new ()
+  "A maildrop whose UIDs are all in `vm-pop-retrieved-messages' has no new
+mail: that list is how VM remembers what it has taken."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let* ((spec (vm-pop-mock-spec mock))
+           (popdrop (vm-popdrop-sans-password spec))
+           ;; the mock's UID for message 1, as the server gives it
+           (uid (cdr (car (vm-net-session-value
+                           (vm-pop-net-test--run
+                            mock (vm-pop-net-test--uidl
+                                  (vm-pop-mock-user mock)
+                                  (vm-pop-mock-password mock))))))))
+      (should uid)
+      (should-not (vm-pop-net-test--check mock (list (list uid popdrop 'uidl)))))))
+
+(ert-deftest vm-pop-net-test-an-empty-maildrop-says-nothing-new ()
+  "Nothing there is nothing new, which is not the same as a server that
+cannot say."
+  (vm-pop-net-test--with-mock (mock :messages nil)
+    (should-not (vm-pop-net-test--check mock nil))))
+
+(ert-deftest vm-pop-net-test-a-server-without-uidl-cannot-say ()
+  "Without UIDL VM cannot tell what it has already taken, so the answer is
+nil rather than a guess at t."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
+                                    :no-uidl t)
+    (should-not (vm-pop-net-test--check mock nil))))
+
+(ert-deftest vm-pop-net-test-a-failed-check-hands-back-the-error ()
+  "A check that cannot log in tells the callback what went wrong rather than
+answering \"no mail\", which would be indistinguishable from an empty
+maildrop."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((answer 'not-called)
+          (vm-pop-retrieved-messages nil)
+          (vm-pop-server-timeout 3)
+          (spec (replace-regexp-in-string ":[^:]*\\'" ":wrong"
+                                          (vm-pop-mock-spec mock))))
+      (vm-pop-net-check-mail spec (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (consp answer))
+      (should (eq (car answer) 'vm-pop-net-error)))))
+
+(ert-deftest vm-pop-net-test-a-check-cleans-up-after-itself ()
+  "The connection and its buffer go when the check ends, whichever way it
+ends.  A check runs on a timer, so anything it leaves behind it leaves once
+a minute."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((buffers (length (buffer-list)))
+          (processes (length (process-list))))
+      (should (eq (vm-pop-net-test--check mock nil) t))
+      (should (equal (length (buffer-list)) buffers))
+      (should (equal (length (process-list)) processes)))))
+
+(ert-deftest vm-pop-net-test-a-maildrop-it-cannot-open-says-so ()
+  "A maildrop whose connection would itself be a wait -- pop-ssl, pop-ssh,
+or one whose password VM does not hold -- signals rather than pretending.
+Those connect paths are converted with the connect, not here, and until
+then a caller that meets this uses the blocking implementation."
+  (should-error (vm-pop-net-open "pop-ssl:example.com:995:pass:user:secret" "x")
+                :type 'vm-pop-net-unsupported)
+  (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
+                :type 'vm-pop-net-unsupported))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here

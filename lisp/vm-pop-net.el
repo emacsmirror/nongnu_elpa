@@ -201,5 +201,107 @@ generator rather than dropping it."
       (when (process-live-p process)
 	(process-send-string process "QUIT\r\n")))))
 
+
+;;; Connecting
+
+(declare-function vm-pop-parse-spec-to-list "vm-pop" (spec))
+(declare-function vm-popdrop-sans-password "vm-misc" (source))
+(declare-function vm-binary-coding-system "vm-misc" ())
+
+(defvar vm-pop-server-timeout)
+(defvar vm-pop-retrieved-messages)
+
+(define-error 'vm-pop-net-unsupported "POP maildrop VM cannot open without waiting")
+
+(defun vm-pop-net-open (source name)
+  "Open a connection for the POP maildrop SOURCE and answer with a session.
+
+NAME goes in messages.  The session has a process and a buffer of its own
+and is ready for `vm-net-start\='; nothing has been read from it yet.
+
+Plain connections only for now.  A pop-ssl maildrop is opened through
+`open-network-stream\=' with :type tls, which negotiates before it returns,
+and a pop-ssh one runs a tunnel program: both are still waits, and both are
+converted with the connect path rather than here.  Such a maildrop signals
+`vm-pop-net-unsupported\=', which is a caller\='s cue to use the blocking
+implementation."
+  (let* ((parts (vm-pop-parse-spec-to-list source))
+	 (protocol (car parts))
+	 (host (nth 1 parts))
+	 (port (nth 2 parts))
+	 (user (nth 4 parts))
+	 (password (nth 5 parts)))
+    (unless (equal protocol "pop")
+      (signal 'vm-pop-net-unsupported (list protocol source)))
+    (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
+      (setq port (string-to-number port)))
+    (when (equal password "*")
+      (signal 'vm-pop-net-unsupported (list "password not remembered" source)))
+    (let* ((buffer (generate-new-buffer (format " *%s*" name)))
+	   (process (make-network-process
+		     :name name :host host :service port :buffer buffer
+		     :noquery t :coding 'binary)))
+      (with-current-buffer buffer
+	(buffer-disable-undo)
+	(vm-pop-net-init))
+      (list (vm-net-session :process process :name name
+			    :timeout vm-pop-server-timeout)
+	    user password))))
+
+;;; Checking for mail, which is the first thing a command wanted
+
+(iter-defun vm-pop-net-unretrieved (user password source retrieved)
+  "Answer with how many messages of the maildrop have not been retrieved.
+RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
+its password, which is how an entry there names the maildrop it came from.
+
+Answers nil when the server has no UIDL: without UIDs VM cannot tell what it
+has already seen, and saying \"no mail\" would be a guess."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-pop-net-greeting))
+	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((uids (iter-yield-from (vm-pop-net-uidl))))
+	  (when uids
+	    (let ((count 0))
+	      (dolist (pair uids)
+		(let ((seen (assoc (cdr pair) retrieved)))
+		  (unless (and seen
+			       (equal (nth 1 seen) source)
+			       (eq (nth 2 seen) 'uidl))
+		    (setq count (1+ count)))))
+	      count))))
+    (let ((process (get-buffer-process (current-buffer))))
+      (when (process-live-p process)
+	(process-send-string process "QUIT\r\n")))))
+
+(defun vm-pop-net-check-mail (source callback)
+  "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
+
+CALLBACK is called with t, nil, or the error that stopped the session.  It
+is called from the process filter, so the folder buffer it wants is the one
+it remembers, not the one that happens to be current.
+
+Nothing waits: this returns as soon as the connection is made."
+  (let* ((retrieved vm-pop-retrieved-messages)
+	 (popdrop (vm-popdrop-sans-password source))
+	 (opened (vm-pop-net-open source "POP check"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (funcall callback
+		     (if (vm-net-session-error finished)
+			 (vm-net-session-error finished)
+		       (let ((count (vm-net-session-value finished)))
+			 (and count (> count 0)))))))
+    (vm-net-start session
+		  (vm-pop-net-unretrieved (nth 1 opened) (nth 2 opened)
+					  popdrop retrieved))
+    session))
+
 (provide 'vm-pop-net)
 ;;; vm-pop-net.el ends here
