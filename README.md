@@ -140,5 +140,5 @@ This is an early, intentionally small implementation. Obvious next steps:
 - Integrate `sapling-status` with `project.el`.
 
 ## Thank you
-Thanks to feedback and comment by Philip Kaluđerčić.
-Thanks to my wife, Sophia Li for always supporting me, this package is also a shorthand for her name. 
+Thanks to feedback and comment by Russel Mok, Philip Kaluđerčić, Stéphane Marks.
+Thanks to my wife, Sophia Li for always supporting me. 
