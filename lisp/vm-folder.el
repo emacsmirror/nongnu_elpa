@@ -4960,6 +4960,55 @@ interactive queries to the user.  The possible values are t,
 					   :do-retrieves t))))
 	(t (vm-get-spooled-mail-normal interactive))))
 
+(defun vm-spooled-mail-arrived (crash safe-maildrop)
+  "Take what a session wrote into CRASH into this folder.
+The tail of the spool loop, run when the mail lands rather than when the
+command was typed: gobble the crash box, take the messages into the message
+list, and say where they came from."
+  (when (vm-gobble-crash-box crash)
+    (setq vm-spooled-mail-waiting nil)
+    (intern (buffer-name) vm-buffers-needing-display-update)
+    (condition-case errmsg
+	(run-hooks 'vm-retrieved-spooled-mail-hook)
+      (t (vm-warn 0 2 (concat "Ignoring error while running "
+			      "vm-retrieved-spooled-mail-hook. %S")
+		  errmsg)))
+    (vm-assimilate-new-messages :read-attributes nil)
+    (vm-update-summary-and-mode-line)
+    (vm-inform 5 "Got mail from %s." safe-maildrop)
+    t))
+
+(defun vm-start-spooled-mail (retrieval-function maildrop crash safe-maildrop)
+  "Start fetching MAILDROP into CRASH without waiting, if that can be done.
+Answers with whether it started.  Nil means this maildrop is one that has to
+be fetched the blocking way, and the caller does that.
+
+SAFE-MAILDROP is the name to show; RETRIEVAL-FUNCTION says which protocol it
+is, being what the blocking path would have called."
+  (let ((folder (current-buffer))
+	(starter (cond ((eq retrieval-function 'vm-imap-move-mail)
+			#'vm-imap-net-move-mail)
+		       ((eq retrieval-function 'vm-pop-move-mail)
+			#'vm-pop-net-get-mail))))
+    (and starter
+	 (condition-case nil
+	     (progn
+	       (funcall starter maildrop crash
+			(lambda (result)
+			  (cond
+			   ((and (consp result) (symbolp (car result))
+				 (get (car result) 'error-conditions))
+			    (vm-warn 0 2 "%s: %s" safe-maildrop
+				     (error-message-string result)))
+			   ((and (numberp result) (> result 0))
+			    (with-current-buffer folder
+			      (vm-spooled-mail-arrived crash safe-maildrop)))
+			   (t
+			    (vm-inform 5 "No mail from %s." safe-maildrop)))))
+	       t)
+	   (vm-imap-net-unsupported nil)
+	   (vm-pop-net-unsupported nil)))))
+
 (defun vm-get-spooled-mail-normal (&optional interactive)
   (if vm-global-block-new-mail
       nil
@@ -5021,7 +5070,11 @@ interactive queries to the user.  The possible values are t,
 		(setq maildrop 
 		      (expand-file-name maildrop 
 					vm-folder-directory)))
-	      (when (if got-mail
+	      (when (if (vm-start-spooled-mail retrieval-function maildrop
+					       crash safe-maildrop)
+			;; on its way; the crash box is gobbled when it lands
+			nil
+		      (if got-mail
 			;; don't allow errors to be signaled unless no
 			;; mail has been appended to the incore
 			;; copy of the folder.  otherwise the
@@ -5046,7 +5099,7 @@ interactive queries to the user.  The possible values are t,
 				;; not, so return t just to be
 				;; safe.
 				t ))
-		      (funcall retrieval-function maildrop crash))
+		      (funcall retrieval-function maildrop crash)))
 		(when (vm-gobble-crash-box crash)
 		  (setq got-mail t)
 		  (vm-inform 5 "Got mail from %s."

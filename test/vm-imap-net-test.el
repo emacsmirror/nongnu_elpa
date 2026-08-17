@@ -811,6 +811,92 @@ the rest are simply not there."
                      (cl-count-if (lambda (m) (vm-imap-uid-of m))
                                   vm-message-list))))))
 
+
+;;; A maildrop used as a spool source
+
+(defmacro vm-imap-net-test--spooling (spec &rest body)
+  "Visit a local folder fed from a mock IMAP maildrop, and run BODY in it."
+  (declare (indent 1) (debug t))
+  `(vm-imap-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((dir (file-name-as-directory (make-temp-file "vm-imap-net-spool" t)))
+            (cache (make-temp-file "vm-imap-net-cache" t))
+            (local (expand-file-name "inbox" dir))
+            (vm-imap-folder-cache-directory cache)
+            (vm-imap-server-timeout 10)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (vm-auto-get-new-mail nil)
+            (vm-spool-files (list (list local (vm-imap-mock-spec ,(car spec))
+                                        (concat local ".crash"))))
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (write-region "" nil local nil 'quiet)
+             (cl-letf (((symbol-function 'vm-display) #'ignore))
+               (vm-visit-folder local)
+               ,@body))
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory dir t)
+         (delete-directory cache t)))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-fills-the-folder-without-waiting ()
+  "A local folder fed from an IMAP maildrop gets its mail through the
+driver: `vm-get-new-mail' starts the session and returns, the crash box is
+written when the messages arrive, and the folder gobbles it then."
+  (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (null vm-message-list))
+    (vm-get-new-mail)
+    ;; not here yet: nothing waited for it
+    (should (null vm-message-list))
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))
+    ;; and the crash box was taken in, not left lying about
+    (should-not (file-exists-p (nth 2 (car vm-spool-files))))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-message-is-not-fetched-twice ()
+  "The UIDs fetched are remembered with the UIDVALIDITY they were valid
+under, so a second run brings only what arrived since -- and a UID means
+nothing without it, a recreated mailbox handing the same numbers to other
+messages."
+  (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice))
+    (vm-get-new-mail)
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 1))
+    (should (equal (length vm-imap-retrieved-messages) 1))
+    (should (nth 1 (car vm-imap-retrieved-messages)))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    (vm-get-new-mail)
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 2))
+    (should (equal (length vm-imap-retrieved-messages) 2))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-can-be-emptied-as-it-is-read ()
+  "With auto-expunge on, what has been fetched is deleted and expunged in
+the same session, so the server is not left holding a second copy."
+  (let ((vm-imap-expunge-after-retrieving t))
+    (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice
+                                                      vm-imap-net-test--bob))
+      (vm-get-new-mail)
+      (should (vm-imap-net-wait nil 10))
+      (should (equal (length vm-message-list) 2))
+      (should (vm-imap-mock-received-p mock "UID STORE"))
+      (should (vm-imap-mock-received-p mock "EXPUNGE"))
+      (should (null (vm-imap-mock-messages mock "INBOX"))))))
+
+(ert-deftest vm-imap-net-test-a-session-says-goodbye ()
+  "Every session says LOGOUT on its way out.  A server counts its
+connections, and a client that drops them without a word leaves it to time
+them out."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (vm-imap-mock-received-p mock "LOGOUT"))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
