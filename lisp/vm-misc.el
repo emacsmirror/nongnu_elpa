@@ -133,6 +133,24 @@ arrives anyway, so a run is read afterwards from the log."
       (message "%s" text)
       text)))
 
+(defmacro vm-with-timing (level name &rest body)
+  "Run BODY and record at LEVEL how long it took.
+NAME says what it was.  For the pieces of work that are neither a wait nor a
+single message: a reader looking at a gap in the log needs to know whose it
+is, and a phase that says only that it started leaves its own duration to be
+guessed at."
+  (declare (indent 2) (debug t))
+  (let ((started (make-symbol "started"))
+	(spent (make-symbol "spent"))
+	(answer (make-symbol "answer")))
+    `(let ((,started (float-time))
+	   (,spent (get-internal-run-time)))
+       (prog1 (progn ,@body)
+	 (let ((,answer (float-time (time-subtract (get-internal-run-time)
+						   ,spent))))
+	   (vm-inform ,level "%s took %.2fs (%.2f cpu)" ,name
+		      (- (float-time) ,started) ,answer))))))
+
 (defun vm-inform (level &rest args)
   (let ((text (and (or (<= level vm-verbosity) (vm-log-level-p level))
 		   (apply #'format-message args))))
