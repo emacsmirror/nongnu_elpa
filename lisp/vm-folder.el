@@ -4913,7 +4913,8 @@ anyway, which is what the check was going to ask."
       nil
     (if (and vm-folder-access-method this-buffer-only)
 	(cond ((eq vm-folder-access-method 'pop)
-	       (vm-pop-folder-check-mail interactive))
+	       (or (vm-pop-net-folder-check-mail)
+		   (vm-pop-folder-check-mail interactive)))
 	      ((eq vm-folder-access-method 'imap)
 	       (or (vm-imap-net-folder-check-mail)
 		   (vm-imap-folder-check-mail interactive))))

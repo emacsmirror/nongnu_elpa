@@ -557,6 +557,22 @@ afterwards, since the folder is a view of the server rather than a copy."
     (should (equal (vm-pop-mock-live-messages mock) '(1 2)))
     (should-not (vm-pop-mock-received-p mock "\\`DELE"))))
 
+
+(ert-deftest vm-pop-mock-test-a-folder-check-does-not-wait ()
+  "The check on a POP folder starts and returns, as the one on a maildrop
+does.  It was the last check still opening a session with Emacs stopped, and
+`vm-spooled-mail-waiting' -- what the mode line reads -- is set when the
+answer arrives rather than before the question is asked."
+  (vm-pop-mock-test--visiting
+      (mock :messages (list vm-pop-mock-test--message-1))
+    (setq vm-spooled-mail-waiting nil)
+    (let ((started (float-time)))
+      (should (vm-check-for-spooled-mail nil t))
+      (should (< (- (float-time) started) 0.5)))
+    (should (vm-pop-net-wait nil 20))
+    ;; nothing new: the folder holds what the maildrop holds
+    (should-not vm-spooled-mail-waiting)))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here

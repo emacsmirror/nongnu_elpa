@@ -361,15 +361,20 @@ would ask for one -- neither of which a timer should do behind the reader."
 	     t))
     (error nil)))
 
-(defun vm-pop-net-check-mail (source callback)
+(defun vm-pop-net-check-mail (source callback &optional retrieved)
   "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
+
+RETRIEVED is what counts as already had, `vm-pop-retrieved-messages\=' by
+default.  A POP folder passes its own messages instead: they are what it
+holds, and the list remembers only what was fetched into a folder somewhere
+else.
 
 CALLBACK is called with t, nil, or the error that stopped the session.  It
 is called from the process filter, so the folder buffer it wants is the one
 it remembers, not the one that happens to be current.
 
 Nothing waits: this returns as soon as the connection is made."
-  (let* ((retrieved vm-pop-retrieved-messages)
+  (let* ((retrieved (or retrieved vm-pop-retrieved-messages))
 	 (popdrop (vm-popdrop-sans-password source))
 	 (opened (vm-pop-net-open source "POP check"))
 	 (session (car opened))
@@ -754,6 +759,46 @@ session is already running, and the caller is to use the blocking path."
 			    folder
 			    (vm-pop-net-store-in-folder folder folder-type
 							result)))))))))
+	    t)
+	(vm-pop-net-unsupported nil))))))
+
+
+(defun vm-pop-net-folder-check-mail ()
+  "Start asking whether this POP folder has new mail, and answer with whether
+it did.  The answer itself arrives later, in `vm-spooled-mail-waiting\=',
+which is what the mode line reads.
+
+Nil means the maildrop cannot be opened without waiting, or a session is
+already running -- and one already running will say what arrived anyway."
+  (let ((folder (current-buffer))
+	(source (vm-folder-pop-maildrop-spec)))
+    (cond
+     ((vm-pop-net-busy-p) nil)
+     (t
+      (condition-case nil
+	  (progn
+	    (vm-inform 6 "%s: checking the server without waiting"
+		       (buffer-name folder))
+	    (setq vm-pop-net-session
+		  (vm-pop-net-check-mail
+		   source
+		   (lambda (answer)
+		     (when (buffer-live-p folder)
+		       (with-current-buffer folder
+			 (if (and (consp answer) (symbolp (car answer))
+				  (get (car answer) 'error-conditions))
+			     (vm-inform 6 "%s: could not check for new mail: %s"
+					(buffer-name folder)
+					(error-message-string answer))
+			   (setq vm-spooled-mail-waiting answer)
+			   (intern (buffer-name folder)
+				   vm-buffers-needing-display-update)
+			   (vm-update-summary-and-mode-line)
+			   (vm-inform 6 "%s: %s" (buffer-name folder)
+				      (if answer "new mail" "no new mail"))))))
+		   ;; what this folder holds, not what was fetched into some
+		   ;; other one
+		   (vm-pop-net-folder-retrieved)))
 	    t)
 	(vm-pop-net-unsupported nil))))))
 

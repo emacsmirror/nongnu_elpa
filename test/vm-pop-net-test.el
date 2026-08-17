@@ -790,6 +790,7 @@ summary was told there was nothing running."
               (should (eq (current-buffer) summary))))
         (kill-buffer summary)))))
 
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
