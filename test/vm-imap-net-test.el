@@ -1491,6 +1491,45 @@ showed, each one saying \"password not remembered\"."
           (let ((process (vm-net-session-process session)))
             (when (process-live-p process) (delete-process process))))))))
 
+
+;;; An empty mailbox
+
+(ert-deftest vm-imap-net-test-an-empty-mailbox-is-not-an-error ()
+  "A mailbox with nothing in it has nothing to fetch, and saying so is not
+the same as failing.
+
+The plan went through `vm-imap-get-synchronization-data', which asks the
+server for the UID list itself unless one is already there -- and an empty
+mailbox's list is empty, so it asked, through the process a blocking session
+would have had.  A session on the driver has no such process, and died of it:
+every visit to an empty IMAP folder failed with `processp nil'."
+  (vm-imap-net-test--visiting (mock)
+    (should (null vm-message-list))
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (null vm-message-list))
+    (should (eq (vm-net-session-state vm-imap-net-session) 'done))))
+
+(ert-deftest vm-imap-net-test-an-empty-mailbox-checks-clean ()
+  "The check on an empty mailbox answers no mail, rather than failing."
+  (vm-imap-net-test--visiting (mock)
+    (setq vm-spooled-mail-waiting t)
+    (should (vm-check-for-spooled-mail nil t))
+    (should (vm-imap-net-wait nil 10))
+    (should-not vm-spooled-mail-waiting)
+    (should (eq (vm-net-session-state vm-imap-net-session) 'done))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-emptied-behind-us-expunges-here ()
+  "Every message gone from the server is gone from the folder, which is the
+same answer the synchronisation data gives for a mailbox that still holds
+something."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (dolist (message (vm-imap-mock-messages mock "INBOX"))
+      (setf (vm-imap-mock-message-expunged message) t))
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (null vm-message-list))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
