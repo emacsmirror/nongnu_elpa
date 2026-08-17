@@ -532,6 +532,9 @@ read, which is what keeps a mailbox of any size out of memory."
 (declare-function vm-binary-coding-system "vm-misc" ())
 
 (defvar vm-imap-server-timeout)
+(defvar vm-imap-passwords)
+
+(declare-function vm-imapdrop-sans-password-and-mailbox "vm-misc" (source))
 
 (define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
 
@@ -563,6 +566,13 @@ handshake as the connection comes up."
       (signal 'vm-imap-net-unsupported (list "password not remembered" source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
+    ;; What the blocking path remembers when it logs in.  An operation that
+    ;; has not been converted opens its own session with `vm-imap-ok-to-ask'
+    ;; nil, and without this it has nowhere to get the password from and
+    ;; fails with "Need password".
+    (let ((spec (vm-imapdrop-sans-password-and-mailbox source)))
+      (unless (assoc spec vm-imap-passwords)
+	(setq vm-imap-passwords (cons (list spec password) vm-imap-passwords))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
 	   (process (make-network-process
 		     :name name :host host :service port :buffer buffer
@@ -1646,6 +1656,171 @@ saying it was saved."
 			 (or (vm-imap-folder-for-spec target)
 			     (vm-safe-imapdrop-string target)))))))
 	 t)))
+
+
+;;; A maildrop used as a spool source
+
+(declare-function vm-imapdrop-sans-password "vm-misc" (source))
+(declare-function vm-get-folder-type "vm-folder"
+		  (&optional file start end ignore-visited))
+
+(defvar vm-imap-retrieved-messages)
+
+(defun vm-imap-net-unretrieved (data source retrieved)
+  "The UIDs in DATA that RETRIEVED does not say were fetched from SOURCE.
+DATA is what `vm-imap-net-message-data\=' answers with; the answer is a list
+of (SEQUENCE-NUMBER . UID), oldest first."
+  (let ((maildrop (vm-imapdrop-sans-password source))
+	(wanted nil))
+    (dolist (tuple (reverse data))
+      (let ((number (car tuple))
+	    (uid (cadr tuple)))
+	(unless (seq-find (lambda (entry)
+			    (and (equal (nth 0 entry) uid)
+				 (equal (nth 2 entry) maildrop)))
+			  retrieved)
+	  (push (cons number uid) wanted))))
+    (nreverse wanted)))
+
+(defun vm-imap-net-write-message (source start end folder-type)
+  "Put the message between START and END of SOURCE into the current buffer.
+The same cleaning up the crash box wants: CRLF to LF, and the separators of
+FOLDER-TYPE where the server sent none of its own."
+  (let ((from (point)))
+    (insert-buffer-substring source start end)
+    (goto-char (point-max))
+    (unless (bolp) (insert "\n"))
+    (let ((to (point-marker)))
+      (vm-imap-cleanup-region from to)
+      (vm-munge-message-separators folder-type from to)
+      (goto-char from)
+      (insert (vm-leading-message-separator folder-type))
+      (save-restriction
+	(narrow-to-region (point) to)
+	(vm-convert-folder-type-headers 'baremessage folder-type))
+      (goto-char to)
+      (insert-before-markers (vm-trailing-message-separator folder-type))
+      (set-marker to nil))
+    (goto-char (point-max))))
+
+(iter-defun vm-imap-net-move (source mailbox user password crash-box
+				     folder-type retrieved delete)
+  "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
+Answers with (COUNT UID-VALIDITY . UIDS): how many were written, and which
+UIDs under which UIDVALIDITY, for the caller to remember.  DELETE says to
+delete them from the server afterwards, which is
+`vm-imap-auto-expunge-alist\=' for this maildrop."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let* ((select (iter-yield-from (vm-imap-net-select mailbox)))
+	       (count (nth 0 select))
+	       (body-peek t)
+	       (process-buffer (current-buffer))
+	       (data (if (zerop count)
+			 nil
+		       (iter-yield-from (vm-imap-net-message-data 1 count))))
+	       (wanted (vm-imap-net-unretrieved data source retrieved))
+	       (work (generate-new-buffer " *vm-imap-crash*"))
+	       (written 0)
+	       (uids nil))
+	  (unwind-protect
+	      (progn
+		(with-current-buffer work
+		  (set-buffer-multibyte nil)
+		  (setq-local vm-folder-type folder-type))
+		(dolist (bunch (vm-imap-bunch-messages (mapcar #'car wanted)))
+		  (iter-yield-from
+		   (vm-imap-net-fetch
+		    (car bunch) (cdr bunch) body-peek nil
+		    (lambda (uid start end)
+		      (with-current-buffer work
+			(vm-imap-net-write-message process-buffer start end
+						   folder-type))
+		      (push uid uids)
+		      (setq written (1+ written))))))
+		(when (> written 0)
+		  (with-current-buffer work
+		    (let ((coding-system-for-write 'binary)
+			  (selective-display nil))
+		      (write-region (point-min) (point-max) crash-box
+				    nil 'quiet))))
+		(when (and delete uids)
+		  (iter-yield-from (vm-imap-net-expunge (reverse uids)))))
+	    (when (buffer-live-p work) (kill-buffer work)))
+	  (cons written (cons (nth 2 select) (nreverse uids)))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-note-retrieved (uids uid-validity source)
+  "Remember UIDS, valid under UID-VALIDITY, as fetched from SOURCE.
+So they are not fetched again.  The current buffer is the folder; this is
+`vm-imap-retrieved-messages\=', which is buffer-local to it.  The
+UIDVALIDITY is part of the entry because a UID means nothing without it:
+a mailbox recreated on the server hands the same numbers to other messages."
+  (let ((maildrop (vm-imapdrop-sans-password source)))
+    (dolist (uid uids)
+      (setq vm-imap-retrieved-messages
+	    (cons (list uid uid-validity maildrop 'uid)
+		  vm-imap-retrieved-messages)))))
+
+(declare-function vm-imap-bunch-messages "vm-imap" (seq-nums))
+
+(defvar vm-imap-auto-expunge-alist)
+(defvar vm-imap-expunge-after-retrieving)
+(defvar vm-imap-auto-expunge-warned)
+
+(defun vm-imap-net-auto-expunge-p (source)
+  "Whether messages fetched from SOURCE are to be deleted from the server.
+`vm-imap-auto-expunge-alist\=' first, by the maildrop with its password and
+then without, and `vm-imap-expunge-after-retrieving\=' failing those.  A
+maildrop that neither names is left alone, with one warning per maildrop
+that mail is being left on the server."
+  (let ((entry (or (assoc source vm-imap-auto-expunge-alist)
+		   (assoc (vm-imapdrop-sans-password source)
+			  vm-imap-auto-expunge-alist))))
+    (cond (entry (cdr entry))
+	  (vm-imap-expunge-after-retrieving t)
+	  ((member source vm-imap-auto-expunge-warned) nil)
+	  (t
+	   (vm-warn 1 1 "Warning: IMAP folder is not set to auto-expunge")
+	   (setq vm-imap-auto-expunge-warned
+		 (cons source vm-imap-auto-expunge-warned))
+	   nil))))
+
+(defun vm-imap-net-move-mail (source crash-box callback)
+  "Fetch new mail from the maildrop SOURCE into CRASH-BOX, and tell CALLBACK.
+
+CALLBACK is called in the folder buffer with the number of messages written,
+or with the error that stopped the session.  It is for the caller to gobble
+the crash box: this writes it and remembers the UIDs.
+
+Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
+  (let* ((folder (current-buffer))
+	 (folder-type (or vm-folder-type vm-default-folder-type))
+	 (retrieved vm-imap-retrieved-messages)
+	 (delete (vm-imap-net-auto-expunge-p source))
+	 (opened (vm-imap-net-open source "IMAP movemail"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (when (buffer-live-p folder)
+	      (with-current-buffer folder
+		(let ((error-data (vm-net-session-error finished))
+		      (result (vm-net-session-value finished)))
+		  (if error-data
+		      (funcall callback error-data)
+		    (vm-imap-net-note-retrieved (cddr result) (cadr result) source)
+		    (funcall callback (car result))))))))
+    (vm-net-start session
+		  (vm-imap-net-move source (nth 1 opened) (nth 2 opened)
+				    (nth 3 opened) crash-box folder-type
+				    retrieved delete))
+    (setq vm-imap-net-session session)
+    session))
 
 (provide 'vm-imap-net)
 ;;; vm-imap-net.el ends here
