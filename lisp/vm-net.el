@@ -385,6 +385,15 @@ to the tunnel."
 	       (remhash port vm-net--probes)
 	       nil)))))))
 
+(defun vm-net-forget-probe (port)
+  "Close the probe waiting on PORT, if there is one.
+A probe outlives the poll that started it, so the wait has to take the last
+one away with it: a connection left open to a port keeps whatever is on the
+other end of it busy, and a port on this machine is handed out again."
+  (let ((probe (gethash port vm-net--probes)))
+    (when (processp probe) (delete-process probe))
+    (remhash port vm-net--probes)))
+
 (defun vm-net-tunnel (session program arguments port seconds ready)
   "Run PROGRAM with ARGUMENTS and call READY when PORT is listening.
 
@@ -404,11 +413,14 @@ second to see whether it is ready yet."
 	      (when (process-live-p tunnel) (delete-process tunnel))
 	      (let ((buffer (process-buffer tunnel)))
 		(when (buffer-live-p buffer) (kill-buffer buffer)))
+	      (vm-net-forget-probe port)
 	      (when finished (funcall finished ended)))))
     (vm-net-when-ready
      (lambda () (vm-net-listening-p port))
      seconds
      (lambda (up)
+       ;; whichever way it went, the wait is over and its probe goes with it
+       (vm-net-forget-probe port)
        (if up
 	   (funcall ready tunnel)
 	 (vm-net-fail session
