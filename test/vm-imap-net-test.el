@@ -1156,6 +1156,65 @@ ends."
           (should (equal (length (split-string text "\n" t)) 16000))
           (should (string-prefix-p "0123456789abcdef" text)))))))
 
+
+;;; The check that runs on a timer
+
+(ert-deftest vm-imap-net-test-a-check-does-not-wait-and-says-what-it-found ()
+  "`vm-check-for-spooled-mail' on an IMAP folder starts the check and
+returns.  It cannot know the answer yet, and that is the point: the check
+runs on a timer, and every round of it stopped Emacs for as long as the
+server took."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (setq vm-spooled-mail-waiting nil)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    (let ((started (float-time)))
+      (should (vm-check-for-spooled-mail nil t))
+      ;; it did not wait for the server to answer
+      (should (< (- (float-time) started) 0.5))
+      (should-not vm-spooled-mail-waiting))
+    (should (vm-imap-net-wait nil 10))
+    (should vm-spooled-mail-waiting)
+    ;; and it did not fetch anything: a check only looks
+    (should (equal (length vm-message-list) 1))))
+
+(ert-deftest vm-imap-net-test-a-check-with-nothing-new-says-so ()
+  "A mailbox holding only what the folder has already reports no mail, and
+the mode line stops saying there is some."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (setq vm-spooled-mail-waiting t)
+    (should (vm-check-for-spooled-mail nil t))
+    (should (vm-imap-net-wait nil 10))
+    (should-not vm-spooled-mail-waiting)))
+
+(ert-deftest vm-imap-net-test-a-password-vm-already-knows-is-enough ()
+  "A maildrop written with `*' for its password is one VM is to find the
+password for.  It may already know it -- from a session earlier in this
+Emacs, or from auth-source -- and only asking the user is out of the
+question inside a filter.  Refusing those sent every folder whose password
+is not written down back to the blocking path."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
+           (vm-imap-passwords nil))
+      ;; not known yet, so this is one for the blocking path
+      (should-error (vm-imap-net-open spec "x") :type 'vm-imap-net-unsupported)
+      ;; known now, as it would be after one login
+      (setq vm-imap-passwords
+            (list (list (vm-imapdrop-sans-password-and-mailbox spec) "secret")))
+      (let* ((opened (vm-imap-net-open spec "known"))
+             (session (car opened)))
+        (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+        (should (equal (nth 3 opened) "secret"))
+        (vm-net-start session (vm-imap-net-open-session (nth 2 opened)
+                                                        (nth 3 opened)))
+        (let ((deadline (+ (float-time) 10)))
+          (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+            (accept-process-output nil 0.05)))
+        (should (eq (vm-net-session-state session) 'done))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

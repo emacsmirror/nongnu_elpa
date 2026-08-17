@@ -4912,7 +4912,8 @@ anyway, which is what the check was going to ask."
 	(cond ((eq vm-folder-access-method 'pop)
 	       (vm-pop-folder-check-mail interactive))
 	      ((eq vm-folder-access-method 'imap)
-	       (vm-imap-folder-check-mail interactive)))
+	       (or (vm-imap-net-folder-check-mail)
+		   (vm-imap-folder-check-mail interactive))))
       (let ((triples (vm-compute-spool-files (not this-buffer-only)))
 	    ;; since we could accept-process-output here (POP code),
 	    ;; a timer process might try to start retrieving mail
