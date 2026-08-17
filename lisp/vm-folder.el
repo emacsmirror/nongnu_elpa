@@ -4984,7 +4984,7 @@ interactive queries to the user.  The possible values are t,
 	 (vm-pop-synchronize-folder :interactive interactive 
 				    :do-retrieves t))
 	((eq vm-folder-access-method 'imap)
-	 (or (vm-imap-net-get-spooled-mail)
+	 (or (vm-imap-net-get-spooled-mail interactive)
 	     (if vm-imap-sync-on-get
 		 (progn
 		   (vm-imap-synchronize-folder :interactive interactive

@@ -53,6 +53,7 @@
 
 (defvar vm-imap-tolerant-of-bad-imap)
 (defvar vm-imap-current-tag)
+(defvar vm-imap-ok-to-ask)
 
 (defvar vm-imap-net-read-point nil
   "Where in the process buffer the next response begins.
@@ -557,6 +558,8 @@ read, which is what keeps a mailbox of any size out of memory."
 (declare-function vm-imapdrop-sans-password-and-mailbox "vm-misc" (source))
 (declare-function vm-auth-source-password "vm-misc" (hosts port user))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
+(declare-function vm-imap-get-password "vm-imap"
+		  (folder source user host port ask-password purpose))
 
 (define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
 
@@ -630,8 +633,13 @@ backends, and the cache can hold a `*\=' that means nothing yet."
 	 (not (equal password "*"))
 	 password)))
 
-(defun vm-imap-net-open (source name)
+(defun vm-imap-net-open (source name &optional may-ask)
   "Open a connection for the IMAP maildrop SOURCE and answer with a session.
+
+MAY-ASK says the caller is a command and the reader is there to be asked for
+a password; `vm-imap-ok-to-ask\=' has to allow it as well, which is what says
+a question can be put at all.  A timer passes nil either way: a question from
+a timer arrives while somebody is typing something else.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; nothing has been read from it yet.  The answer is
@@ -660,10 +668,19 @@ ask from inside a filter."
       (setq port (string-to-number port)))
     (when (and (equal password "*") (not preauth))
       ;; "*" means VM is to find the password rather than read it out of the
-      ;; maildrop.  It may already know it, and asking the user is out of the
-      ;; question here: there is nobody to ask from inside a filter.
-      (setq password (vm-imap-net-known-password source user host port))
-      (unless password
+      ;; maildrop.  VM may already know it; failing that, a command may ask
+      ;; the reader, which is what the blocking path did and the only reason
+      ;; it was reached at all.
+      (setq password (or (vm-imap-net-known-password source user host port)
+			 (and may-ask vm-imap-ok-to-ask
+			      (condition-case nil
+				  (vm-imap-get-password
+				   (or (vm-imap-folder-for-spec source)
+				       (vm-safe-imapdrop-string source))
+				   (vm-imapdrop-sans-password-and-mailbox source)
+				   user host port t "reading mail")
+				(error nil)))))
+      (unless (and (stringp password) (not (equal password "")))
 	(signal 'vm-imap-net-unsupported
 		(list "password not remembered" source))))
     (let* ((buffer (vm-imap-net-session-buffer name))
@@ -1213,7 +1230,8 @@ is the caller\\='s cue to use the blocking implementation."
 			   (error "Message has an invalid UID"))
 			 (vm-imap-uid-of message))
 		       messages))
-	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP fetch"))
+	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP fetch"
+				   'may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)
@@ -1354,7 +1372,7 @@ open."
 			   (cons (vm-imap-net-message-text message)
 				 (vm-imap-net-message-flags message)))
 			 messages))
-	 (opened (vm-imap-net-open source "IMAP save"))
+	 (opened (vm-imap-net-open source "IMAP save" 'may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)
@@ -1433,7 +1451,7 @@ blocking way."
      (t
       (condition-case reason
 	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
-					   "IMAP flags"))
+					   "IMAP flags" 'may-ask))
 		 (session (car opened))
 		 (buffer (vm-net-session-buffer session)))
 	    (setf (vm-net-session-finished session)
@@ -1479,7 +1497,7 @@ opened without waiting, and the caller is to do it the blocking way."
      (t
       (condition-case reason
 	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
-					   "IMAP expunge"))
+					   "IMAP expunge" 'may-ask))
 		 (session (car opened))
 		 (buffer (vm-net-session-buffer session)))
 	    (setf (vm-net-session-finished session)
@@ -1506,7 +1524,7 @@ opened without waiting, and the caller is to do it the blocking way."
 	 (vm-imap-net-say-why-not folder reason)
 	 nil))))))
 
-(defun vm-imap-net-get-mail (source callback)
+(defun vm-imap-net-get-mail (source callback &optional may-ask)
   "Fetch into the current folder what SOURCE has that it has not, and
 tell CALLBACK.
 
@@ -1518,7 +1536,7 @@ while it does.
 Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
 is a caller\\='s cue to use the blocking implementation."
   (let* ((folder (current-buffer))
-	 (opened (vm-imap-net-open source "IMAP fetch"))
+	 (opened (vm-imap-net-open source "IMAP fetch" may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)
@@ -1564,12 +1582,15 @@ looks exactly like one it took until the blocking path announces itself."
 	     (if (bufferp folder) (buffer-name folder) folder)
 	     (or (car (cdr reason)) "not supported")))
 
-(defun vm-imap-net-get-spooled-mail ()
+(defun vm-imap-net-get-spooled-mail (&optional interactive)
   "Start fetching this IMAP folder's new mail, and answer with whether it did.
 
-Nil means this maildrop is one that cannot be opened without waiting -- over
-ssh, preauthenticated, or with a password VM has not been told -- and the
-caller is to use the blocking implementation.  Anything else means the fetch
+INTERACTIVE says a reader is there, and is what allows a password to be
+asked for; it is `vm-get-spooled-mail\='s own argument.
+
+Nil means this maildrop is one that cannot be opened without waiting -- one
+whose password nobody knows and nobody can be asked for -- and the caller is
+to use the blocking implementation.  Anything else means the fetch
 is under way: it has not happened yet, and this returns before it does, so
 the folder is usable while it runs and says what arrived when it lands.
 
@@ -1596,7 +1617,8 @@ messages."
 			    (vm-imap-net-show-arrival folder result))
 			   (t
 			    (vm-inform 5 "%s: no new mail"
-				       (buffer-name folder)))))))
+				       (buffer-name folder)))))
+		   (eq interactive t)))
 	    (vm-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)
@@ -1685,7 +1707,8 @@ CALLBACK how many were copied, or the error that stopped it."
 			   (error "Message does not have a valid UID"))
 			 (vm-imap-uid-of message))
 		       messages))
-	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP copy"))
+	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP copy"
+				   'may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)
@@ -1947,7 +1970,7 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 	 (folder-type (or vm-folder-type vm-default-folder-type))
 	 (retrieved vm-imap-retrieved-messages)
 	 (delete (vm-imap-net-auto-expunge-p source))
-	 (opened (vm-imap-net-open source "IMAP movemail"))
+	 (opened (vm-imap-net-open source "IMAP movemail" 'may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)

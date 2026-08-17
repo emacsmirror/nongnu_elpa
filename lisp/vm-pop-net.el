@@ -243,8 +243,11 @@ connection comes up."
 			:type (if tls 'tls nil)))
 
 (defvar vm-pop-passwords)
+(defvar vm-pop-ok-to-ask)
 
 (declare-function vm-auth-source-password "vm-misc" (hosts port user))
+(declare-function vm-pop-get-password "vm-pop"
+		  (popdrop source user host port ask-password))
 
 (defun vm-pop-net-known-password (source user host port)
   "The password VM already holds for SOURCE, or nil.
@@ -261,8 +264,13 @@ non-empty string counts: see `vm-imap-net-known-password\='."
 	 (not (equal password "*"))
 	 password)))
 
-(defun vm-pop-net-open (source name)
+(defun vm-pop-net-open (source name &optional may-ask)
   "Open a connection for the POP maildrop SOURCE and answer with a session.
+
+MAY-ASK says the caller is a command and the reader is there to be asked for
+a password; `vm-pop-ok-to-ask\=' has to allow it as well.  A timer passes nil
+either way: a question from a timer arrives while somebody is typing
+something else.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; the answer is (SESSION USER PASSWORD).
@@ -285,10 +293,18 @@ it is.  A maildrop whose password VM has not been told signals
       (setq port (string-to-number port)))
     (when (equal password "*")
       ;; "*" means VM is to find the password rather than read it out of the
-      ;; maildrop.  It may already know it, and asking the user is out of the
-      ;; question here: there is nobody to ask from inside a filter.
-      (setq password (vm-pop-net-known-password source user host port))
-      (unless password
+      ;; maildrop.  VM may already know it; failing that, a command may ask
+      ;; the reader, which is what the blocking path did.
+      (setq password (or (vm-pop-net-known-password source user host port)
+			 (and may-ask vm-pop-ok-to-ask
+			      (condition-case nil
+				  (vm-pop-get-password
+				   (or (vm-pop-find-name-for-spec source)
+				       (vm-safe-popdrop-string source))
+				   (vm-popdrop-sans-password source)
+				   user host port t)
+				(error nil)))))
+      (unless (and (stringp password) (not (equal password "")))
 	(signal 'vm-pop-net-unsupported
 		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
@@ -484,7 +500,7 @@ Nothing waits.  The caller does the folder work when the callback comes:
 appending to the folder and remembering the UIDs is done where a folder
 buffer is, not in a process filter."
   (let* ((popdrop (vm-popdrop-sans-password source))
-	 (opened (vm-pop-net-open source "POP fetch"))
+	 (opened (vm-pop-net-open source "POP fetch" 'may-ask))
 	 (session (car opened))
 	 (buffer (vm-net-session-buffer session)))
     (setf (vm-net-session-finished session)
