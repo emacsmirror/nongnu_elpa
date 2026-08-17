@@ -96,24 +96,21 @@ emacs-w3m is a different package and is unaffected.
 
 ## A log of what VM did, and how long it took
 
-`vm-log-level` takes a level on `vm-verbosity`'s scale and records every
-message up to it in the buffer `*VM Log*`, whether or not it is shown.
-`M-x vm-show-log` shows the buffer.
-
-```
-(setq vm-log-level 10)
-```
-
-leaves the display exactly as it was and keeps the whole of what VM did,
-which is what to send with a report of something slow.  Each line says when,
-and how long since the line before it:
+Everything VM says is kept in the buffer `*VM Log*`, timed.  `M-x vm-show-log`
+shows it; nothing has to be turned on.  Each line says when, and how long
+since the line before it:
 
 ```
 14:03:12.481 +2.140s +0.310cpu [6] INBOX: Retrieving message 400 (of 100000)...
 ```
 
-An interval that is all real time and no CPU went on the network.  Off by
-default; the buffer is never trimmed.
+An interval that is all real time and no CPU went on the network.
+
+`vm-log-level` is for the messages that are *not* shown: it takes a level on
+`vm-verbosity`'s scale and records everything up to it, so `(setq
+vm-log-level 10)` keeps the detail of a slow operation without changing what
+appears in the echo area.  `vm-log-max-lines` bounds the buffer, oldest lines
+first.
 
 ## VM 8.x.x released
 

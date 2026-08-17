@@ -7514,9 +7514,12 @@ screen, and should normally be 0 --- anything else delays VM.
 @findex vm-show-log
 When an operation is slow, the question is which part of it is, and the echo
 area is no place to answer it: each message is gone as the next one arrives.
-@code{vm-log-level} takes a level on the scale above and records every
-message up to it in the buffer @samp{*VM Log*}, whether or not it is shown.
-@kbd{M-x vm-show-log} shows the buffer.
+Everything VM says is therefore kept in the buffer @samp{*VM Log*}, timed,
+and @kbd{M-x vm-show-log} shows it.  Nothing has to be turned on for that.
+
+@vindex vm-verbosity
+@code{vm-log-level} is for the messages that are @emph{not} shown.  It takes
+a level on the scale above and records everything up to it, so
 
 @example
 (setq vm-log-level 10)
@@ -7524,8 +7527,8 @@ message up to it in the buffer @samp{*VM Log*}, whether or not it is shown.
 
 @noindent
 leaves the display exactly as it was --- what is recorded and what is shown
-are decided separately --- and keeps the whole of what VM did, which is what
-to send with a report of something slow.  Each line says when, and how long
+are decided separately --- and keeps the detail of a slow operation, which
+is what to send with a report of one.  Each line says when, and how long
 since the line before it:
 
 @example
@@ -7539,7 +7542,9 @@ time since the last recorded message, so it counts time VM sat idle as
 readily as time it worked --- a long interval at the start of an operation
 is usually the wait before it, not the operation.
 
-The buffer is never trimmed, so a long run at level 10 makes a large one.
+@vindex vm-log-max-lines
+The log runs for as long as Emacs does, so it is bounded: @code{vm-log-max-lines}
+lines are kept and the oldest go first.
 
 @section Being told about new mail
 
