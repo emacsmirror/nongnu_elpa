@@ -3676,6 +3676,31 @@ another folder can ask about this one."
               (should-not (vm-folder-cache-file))))
         (kill-buffer folder)))))
 
+(ert-deftest vm-folder-test-the-cache-file-answers-from-the-summary ()
+  "Asked in a summary or presentation buffer, the question is about the
+folder those belong to.  It answered \"Not a remote folder\" there, which is
+where a reader is when the question occurs to them -- and the buffer they
+would have to be in instead is the one they cannot see."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (spec "imap:mail.example.invalid:143:inbox:login:alice:*")
+        (folder (generate-new-buffer " *test folder*"))
+        (summary (generate-new-buffer " *test summary*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer folder
+            (setq major-mode 'vm-mode)
+            (setq vm-folder-access-method 'imap
+                  vm-folder-access-data (make-vector 20 nil))
+            (vm-set-folder-imap-maildrop-spec spec))
+          (with-current-buffer summary
+            (setq vm-mail-buffer folder)
+            (should (equal (vm-folder-cache-file)
+                           (vm-imap-make-filename-for-spec spec)))
+            ;; and the reader is left where they were
+            (should (eq (current-buffer) summary))))
+      (kill-buffer folder)
+      (kill-buffer summary))))
+
 ;;; Saving the folder buffer
 
 (ert-deftest vm-folder-test-saving-the-buffer-unblocks-new-mail ()

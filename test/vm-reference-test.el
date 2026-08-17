@@ -255,6 +255,15 @@ missing turn out to be commands."
                     (insert-file-contents ,manual)
                     (goto-char (point-min))
                     (while (re-search-forward "^@findex +\\([^ \t\n]+\\)" nil t)
+                      (push (intern (match-string 1)) indexed))
+                    ;; and anything the manual tells the reader to type.  An
+                    ;; @findex is how a command is indexed, not how it is
+                    ;; documented: `vm-imap-synchronize' was named as the
+                    ;; thing to run after working offline, in prose, with no
+                    ;; index entry and no autoload cookie.
+                    (goto-char (point-min))
+                    (while (re-search-forward
+                            "M-x[ \t\n]+@?[a-z]*{?\\(vm-[a-z0-9-]+\\)" nil t)
                       (push (intern (match-string 1)) indexed)))
                   (setq indexed (delete-dups indexed))
                   (require 'vm-autoloads)
