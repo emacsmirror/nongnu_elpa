@@ -151,6 +151,7 @@
 (defsubst vm-set-folder-imap-retrieved-count (val)
   (aset vm-folder-access-data 12 val))
 
+;;;###autoload
 (defun vm-folder-cache-file (&optional buffer)
   "Return the cache file path for BUFFER, or current buffer if nil.
 Returns nil if BUFFER is not a VM folder with a remote access method."
