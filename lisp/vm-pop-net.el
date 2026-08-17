@@ -268,9 +268,8 @@ non-empty string counts: see `vm-imap-net-known-password\='."
   "Open a connection for the POP maildrop SOURCE and answer with a session.
 
 MAY-ASK says the caller is a command and the reader is there to be asked for
-a password; `vm-pop-ok-to-ask\=' has to allow it as well.  A timer passes nil
-either way: a question from a timer arrives while somebody is typing
-something else.
+a password.  A timer passes nil: a question from a timer arrives while
+somebody is typing something else.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; the answer is (SESSION USER PASSWORD).
@@ -296,14 +295,18 @@ it is.  A maildrop whose password VM has not been told signals
       ;; maildrop.  VM may already know it; failing that, a command may ask
       ;; the reader, which is what the blocking path did.
       (setq password (or (vm-pop-net-known-password source user host port)
-			 (and may-ask vm-pop-ok-to-ask
-			      (condition-case nil
-				  (vm-pop-get-password
-				   (or (vm-pop-find-name-for-spec source)
-				       (vm-safe-popdrop-string source))
-				   (vm-popdrop-sans-password source)
-				   user host port t)
-				(error nil)))))
+			 (and may-ask
+			      ;; as for IMAP: nothing binds `vm-pop-ok-to-ask'
+			      ;; on the way here, so requiring it meant the
+			      ;; question was never put
+			      (let ((vm-pop-ok-to-ask t))
+				(condition-case nil
+				    (vm-pop-get-password
+				     (or (vm-pop-find-name-for-spec source)
+					 (vm-safe-popdrop-string source))
+				     (vm-popdrop-sans-password source)
+				     user host port t)
+				  (error nil))))))
       (unless (and (stringp password) (not (equal password "")))
 	(signal 'vm-pop-net-unsupported
 		(list "password not remembered" source))))
