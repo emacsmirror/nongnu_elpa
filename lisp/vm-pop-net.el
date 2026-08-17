@@ -748,7 +748,7 @@ session is already running, and the caller is to use the blocking path."
     (cond
      ((vm-pop-net-busy-p) nil)
      (t
-      (condition-case nil
+      (condition-case reason
 	  (progn
 	    (setq vm-pop-net-session
 		  (vm-pop-net-fetch
@@ -768,8 +768,13 @@ session is already running, and the caller is to use the blocking path."
 			    folder
 			    (vm-pop-net-store-in-folder folder folder-type
 							result)))))))))
+	    (vm-inform 6 "%s: fetching new mail without waiting"
+		       (buffer-name folder))
 	    t)
-	(vm-pop-net-unsupported nil))))))
+	(vm-pop-net-unsupported
+	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 nil))))))
 
 
 (defun vm-pop-net-folder-check-mail ()
@@ -784,10 +789,8 @@ already running -- and one already running will say what arrived anyway."
     (cond
      ((vm-pop-net-busy-p) nil)
      (t
-      (condition-case nil
+      (condition-case reason
 	  (progn
-	    (vm-inform 6 "%s: checking the server without waiting"
-		       (buffer-name folder))
 	    (setq vm-pop-net-session
 		  (vm-pop-net-check-mail
 		   source
@@ -808,8 +811,13 @@ already running -- and one already running will say what arrived anyway."
 		   ;; what this folder holds, not what was fetched into some
 		   ;; other one
 		   (vm-pop-net-folder-retrieved)))
+	    (vm-inform 6 "%s: checking the server without waiting"
+		       (buffer-name folder))
 	    t)
-	(vm-pop-net-unsupported nil))))))
+	(vm-pop-net-unsupported
+	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 nil))))))
 
 (provide 'vm-pop-net)
 ;;; vm-pop-net.el ends here
