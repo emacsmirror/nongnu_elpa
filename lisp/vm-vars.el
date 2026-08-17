@@ -4032,13 +4032,14 @@ progress.  Nothing above 1 is a warning."
   :type 'integer)
 
 (defcustom vm-log-level nil
-  "*Level up to which VM records what it is doing in the buffer *VM Log*.
-A nil value records nothing.  `\\[vm-show-log]' shows the buffer.
+  "*Level up to which VM records what it is doing, beyond what it shows.
+Everything VM says is recorded in the buffer *VM Log* whatever this is set
+to; a nil value means nothing more than that.  `\\[vm-show-log]' shows the
+buffer.
 
-The scale is `vm-verbosity''s, and the two are independent: what is recorded
-need not be shown.  Recording at 10 and leaving `vm-verbosity' alone is how
-to keep the detail of a slow operation without the echo area churn, and
-without `vm-verbal-time' pausing for each message.
+The scale is `vm-verbosity''s.  Recording at 10 and leaving `vm-verbosity'
+alone is how to keep the detail of a slow operation without the echo area
+churn, and without `vm-verbal-time' pausing for each message.
 
 Each line says when VM said it, how long it is since the previous line and
 how much CPU VM used in between:
@@ -4050,10 +4051,16 @@ which is what says whether something slow is VM's own doing.  The interval
 is simply the time since the last recorded message, so it counts time VM sat
 idle as readily as time it worked.
 
-The buffer is never trimmed, so a long run at a high level makes a large
-one."
+`vm-log-max-lines' bounds the buffer."
   :group 'vm-misc
-  :type '(choice (const :tag "Record nothing" nil) integer))
+  :type '(choice (const :tag "Only what is shown" nil) integer))
+
+(defcustom vm-log-max-lines 20000
+  "*How many lines of *VM Log* to keep, or nil to keep all of them.
+The log runs for as long as Emacs does, so something has to bound it, and
+what a reader wants is the end: the oldest lines go first."
+  :group 'vm-misc
+  :type '(choice (const :tag "Keep everything" nil) integer))
 
 (defcustom vm-verbal-time 0
   "*Number of seconds for which to display VM's minibuffer messages.

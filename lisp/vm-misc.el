@@ -86,28 +86,40 @@ call it once per message and only when the answer is going to be used."
 	      (float-time (time-subtract cpu (cdr previous)))))))
 
 (defun vm-log-line (line)
-  "Append LINE to the log buffer."
+  "Append LINE to the log buffer, trimming the front if it has grown.
+`vm-log-max-lines' is how many are kept: the log runs for as long as Emacs
+does, so something has to bound it, and what a reader wants is the end."
   (with-current-buffer (get-buffer-create vm-log-buffer-name)
     (goto-char (point-max))
     (let ((inhibit-read-only t))
-      (insert line "\n"))))
+      (insert line "\n")
+      (when (and vm-log-max-lines
+		 (> (line-number-at-pos (point-max)) (* 2 vm-log-max-lines)))
+	(goto-char (point-min))
+	(forward-line (- (line-number-at-pos (point-max)) vm-log-max-lines 1))
+	(delete-region (point-min) (point))))))
 
 (defun vm-log-level-p (level)
-  "Whether a message at LEVEL is one `vm-log-level' records."
-  (and vm-log-level (<= level vm-log-level)))
+  "Whether a message at LEVEL goes in the log.
+Everything VM says goes in it -- the log is where a run is read afterwards,
+and a message that was shown and not recorded is one nobody can go back to.
+`vm-log-level' adds the levels that are recorded without being shown."
+  (or (<= level vm-verbosity)
+      (and vm-log-level (<= level vm-log-level))))
 
 ;;;###autoload
 (defun vm-show-log ()
-  "Show the log of what VM has been doing.
-It is empty, and stays empty, unless `vm-log-level' says what to record."
+  "Show the log of what VM has been doing, and when.
+It holds everything VM has said this session, timed, and whatever more
+`vm-log-level' asks for."
   (interactive)
   (let ((buffer (get-buffer vm-log-buffer-name)))
     (if (and buffer (> (buffer-size buffer) 0))
 	(display-buffer buffer)
-      (vm-inform 0 "Nothing logged.  Set vm-log-level to record what VM does"))))
+      (vm-inform 0 "VM has not said anything yet"))))
 
 (defun vm-emit-message (level text)
-  "Show TEXT if LEVEL allows, record it if `vm-log-level' does.
+  "Show TEXT if LEVEL allows, and record it in the log.
 Answers TEXT when it was shown, as `message' does, and nil otherwise.
 
 The record is timed and the message shown is not: a time in the echo area

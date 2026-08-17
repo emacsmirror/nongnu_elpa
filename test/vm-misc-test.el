@@ -1246,7 +1246,7 @@ how a reader is given time to see it."
 (ert-deftest vm-misc-test-what-is-shown-carries-no-timing ()
   "The message in the echo area says what it always did.  The time goes to
 the log, where there is room for it and where it can be read afterwards."
-  (let ((vm-log-level 10)
+  (let ((vm-log-level nil)
         (said nil))
     (let ((log (vm-misc-test--with-log
                  (setq said (vm-misc-test--messages-at
@@ -1272,6 +1272,32 @@ to is the question the log answers."
                                 (nth 0 lines)))
         (should (string-match-p "\\`[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\\.[0-9]\\{3\\} \\+[0-9.]+s \\+[0-9.]+cpu \\[5\\] second\\'"
                                 (nth 1 lines)))))))
+
+(ert-deftest vm-misc-test-everything-shown-is-logged ()
+  "What VM says goes in the log whether `vm-log-level' asks for it or not.
+A message that was shown and not recorded is one nobody can go back to, and
+going back to it is what the log is for."
+  (let ((vm-verbosity 5)
+        (vm-log-level nil))
+    (let ((log (vm-misc-test--with-log
+                 (vm-misc-test--messages-at
+                  5 (lambda () (vm-inform 5 "something happened"))))))
+      (should (string-match-p "\\[5\\] something happened" log)))))
+
+(ert-deftest vm-misc-test-the-log-is-bounded ()
+  "The log runs for as long as Emacs does, so it is trimmed from the front:
+what a reader wants is the end."
+  (let ((vm-verbosity 5)
+        (vm-log-max-lines 10))
+    (let ((log (vm-misc-test--with-log
+                 (vm-misc-test--messages-at
+                  5 (lambda ()
+                      (dotimes (i 40) (vm-inform 5 "line %d" i)))))))
+      (let ((lines (split-string log "\n" t)))
+        (should (<= (length lines) 21))
+        ;; the end is what is kept
+        (should (string-match-p "line 39" (car (last lines))))
+        (should-not (string-match-p "line 0\\'" log))))))
 
 (ert-deftest vm-misc-test-the-log-keeps-what-verbosity-hides ()
   "`vm-log-level' records a message the minibuffer never sees, which is how
@@ -1310,9 +1336,9 @@ timed: the next interval is measured from the last message that was."
     (vm-misc-test--messages-at 5 (lambda () (vm-inform 9 "not shown")))
     (should-not vm-last-message-time)))
 
-(ert-deftest vm-misc-test-showing-an-empty-log-says-how-to-fill-it ()
-  "`vm-show-log' with nothing recorded names the variable that records,
-rather than showing an empty buffer that says nothing about why."
+(ert-deftest vm-misc-test-showing-an-empty-log-says-so ()
+  "`vm-show-log' before VM has said anything says that, rather than showing
+an empty buffer that says nothing about why."
   (let ((vm-log-level nil)
         (vm-verbosity 5)
         (said nil))
@@ -1323,7 +1349,7 @@ rather than showing an empty buffer that says nothing about why."
                  (lambda (&rest _) (error "there was nothing to show"))))
         (vm-show-log)))
     (should (equal (length said) 1))
-    (should (string-match-p "vm-log-level" (car said)))))
+    (should (string-match-p "not said anything" (car said)))))
 
 (provide 'vm-misc-test)
 
