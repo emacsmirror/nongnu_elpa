@@ -64,6 +64,7 @@
 (eval-when-compile (require 'vm-misc))
 
 (declare-function vm-inform "vm-misc" (level &rest args))
+(declare-function vm-warn "vm-misc" (level seconds &rest args))
 
 (cl-defstruct (vm-net-session (:constructor vm-net-session--make)
 			      (:copier nil))
@@ -79,11 +80,35 @@
   value					; what the generator returned
   error					; the error that stopped it, if any
   finished				; called with the session when it ends
+  cleanups				; what to undo when it ends, newest first
   buffer-types)				; the per-session buffer-type stack
 
 (defun vm-net-session-live-p (session)
   "Whether SESSION is still to finish."
   (memq (vm-net-session-state session) '(new running)))
+
+(defun vm-net-at-end (session function)
+  "Call FUNCTION with no arguments when SESSION ends, however it ends.
+
+For what the connection was made out of and the caller knows nothing about: a
+tunnel program to kill, a buffer of diagnostics to bury.  Kept apart from
+`finished\=', which is the caller\='s and is assigned rather than added to --
+chaining onto it here was undone by the next caller that set it, and the
+tunnel stayed running."
+  (push function (vm-net-session-cleanups session)))
+
+(defun vm-net--clean-up (session)
+  "Run SESSION's cleanups, newest first.
+One that signals is reported and the rest still run: they are independent, and
+a cleanup that fails must not cost the caller its `finished\=' call."
+  (let ((cleanups (vm-net-session-cleanups session)))
+    (setf (vm-net-session-cleanups session) nil)
+    (dolist (cleanup cleanups)
+      (condition-case err
+	  (funcall cleanup)
+	(error (vm-warn 0 2 "cleaning up after %s: %s"
+			(or (vm-net-session-name session) "session")
+			(error-message-string err)))))))
 
 (defun vm-net--sentinel (process event)
   "Fail PROCESS's session when the connection goes, saying what EVENT was.
@@ -265,6 +290,7 @@ putting a folder's flags back -- would silently not happen."
   (let ((process (vm-net-session-process session)))
     (when (processp process)
       (process-put process 'vm-net-session nil)))
+  (vm-net--clean-up session)
   (let ((finished (vm-net-session-finished session)))
     (when finished
       (funcall finished session))))
@@ -407,14 +433,13 @@ second to see whether it is ready yet."
 		       (generate-new-buffer (format " *vm-net tunnel %s*" port))
 		       program arguments)))
     (set-process-query-on-exit-flag tunnel nil)
-    (let ((finished (vm-net-session-finished session)))
-      (setf (vm-net-session-finished session)
-	    (lambda (ended)
-	      (when (process-live-p tunnel) (delete-process tunnel))
-	      (let ((buffer (process-buffer tunnel)))
-		(when (buffer-live-p buffer) (kill-buffer buffer)))
-	      (vm-net-forget-probe port)
-	      (when finished (funcall finished ended)))))
+    (vm-net-at-end
+     session
+     (lambda ()
+       (when (process-live-p tunnel) (delete-process tunnel))
+       (let ((buffer (process-buffer tunnel)))
+	 (when (buffer-live-p buffer) (kill-buffer buffer)))
+       (vm-net-forget-probe port)))
     (vm-net-when-ready
      (lambda () (vm-net-listening-p port))
      seconds
@@ -431,6 +456,34 @@ second to see whether it is ready yet."
     tunnel))
 
 (define-error 'vm-net-tunnel-failed "Tunnel program did not come up")
+
+
+;;; A connection that is a program's standard input and output
+
+(defun vm-net-pipe (session name buffer program arguments)
+  "Run PROGRAM with ARGUMENTS as SESSION's connection, and answer with it.
+
+What stunnel is used through, and what the blocking path has always done with
+it: given no port to listen on, stunnel relays its standard input and output,
+so the program is the connection.  There is nothing to wait for and nothing to
+connect to -- unlike ssh, which is asked for a local port and forwards it.
+
+The program's diagnostics go to a buffer of their own, killed when the session
+ends.  In BUFFER they would be read as protocol.
+
+Pipes rather than a pty: a pty echoes what is written to it and rewrites the
+line endings, and IMAP counts octets."
+  (let* ((errors (generate-new-buffer (format " *%s errors*" name)))
+	 (process (make-process :name name :buffer buffer
+			        :command (cons program arguments)
+			        :coding 'binary :connection-type 'pipe
+			        :noquery t :stderr errors)))
+    (let ((reader (get-buffer-process errors)))
+      (when (processp reader) (set-process-query-on-exit-flag reader nil)))
+    (vm-net-at-end session
+		   (lambda ()
+		     (when (buffer-live-p errors) (kill-buffer errors))))
+    process))
 
 (provide 'vm-net)
 ;;; vm-net.el ends here

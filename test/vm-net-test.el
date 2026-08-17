@@ -412,6 +412,79 @@ it timed out."
     (should-not (gethash port vm-net--probes))
     (kill-buffer (vm-net-session-buffer session))))
 
+;;; A connection that is a program's pipes
+
+(ert-deftest vm-net-test-a-pipe-feeds-a-session ()
+  "A program's standard output reaches the session's generator.
+How stunnel is talked to: it is given no port to listen on, so it relays its
+own standard input and output and the program is the connection."
+  (let* ((session (vm-net-session :name "test" :timeout 5))
+         (buffer (generate-new-buffer " *vm-net-test-pipe*"))
+         (process (vm-net-pipe session "vm-net-test-pipe" buffer
+                               "sh" (list "-c" "printf '* OK ready\\n'"))))
+    (setf (vm-net-session-buffer session) buffer)
+    (setf (vm-net-session-process session) process)
+    (vm-net-start session (vm-net-test--read-line))
+    (should (eq (vm-net-test--wait session) 'done))
+    (should (equal (vm-net-session-value session) "* OK ready"))
+    (kill-buffer buffer)))
+
+(ert-deftest vm-net-test-a-pipe-keeps-diagnostics-out-of-the-read-buffer ()
+  "What the program says on standard error is not read as protocol.
+stunnel writes its log there, and in the process buffer VM's parser would try
+to make IMAP of it.  The buffer it goes to is killed with the session."
+  (let* ((session (vm-net-session :name "test" :timeout 5))
+         (buffer (generate-new-buffer " *vm-net-test-pipe*"))
+         (process (vm-net-pipe
+                   session "vm-net-test-pipe" buffer
+                   "sh" (list "-c" "printf 'complaining\\n' >&2; printf '* OK ready\\n'")))
+         (errors (get-buffer " *vm-net-test-pipe errors*")))
+    (setf (vm-net-session-buffer session) buffer)
+    (setf (vm-net-session-process session) process)
+    (vm-net-start session (vm-net-test--read-line))
+    (should (eq (vm-net-test--wait session) 'done))
+    (should (equal (vm-net-session-value session) "* OK ready"))
+    (with-current-buffer buffer
+      (should-not (string-match-p "complaining" (buffer-string))))
+    (should-not (buffer-live-p errors))
+    (kill-buffer buffer)))
+
+(ert-deftest vm-net-test-cleanups-run-even-when-the-caller-sets-finished ()
+  "A cleanup added by the connection survives the caller assigning `finished'.
+
+Both used to be the same slot, so a caller that set `finished' after opening
+the session -- which is what every one of them does -- threw away the tunnel's
+kill and the pipe's buffer, and stunnel or ssh stayed running."
+  (let* ((session (vm-net-session :name "test"))
+         (cleaned nil)
+         (finished nil))
+    (setf (vm-net-session-buffer session) (generate-new-buffer " *vm-net-test*"))
+    (vm-net-at-end session (lambda () (push 'first cleaned)))
+    (vm-net-at-end session (lambda () (push 'second cleaned)))
+    (setf (vm-net-session-finished session) (lambda (_) (setq finished t)))
+    (vm-net-start session (vm-net-test--read-line))
+    (vm-net-abandon session)
+    ;; newest first, and the caller still hears about the end
+    (should (equal cleaned '(first second)))
+    (should finished)
+    (kill-buffer (vm-net-session-buffer session))))
+
+(ert-deftest vm-net-test-a-cleanup-that-fails-does-not-cost-the-others ()
+  "One cleanup signalling still leaves the rest run and `finished' called."
+  (let* ((session (vm-net-session :name "test"))
+         (cleaned nil)
+         (finished nil))
+    (setf (vm-net-session-buffer session) (generate-new-buffer " *vm-net-test*"))
+    (vm-net-at-end session (lambda () (push 'ran cleaned)))
+    (vm-net-at-end session (lambda () (error "Cleanup went wrong")))
+    (setf (vm-net-session-finished session) (lambda (_) (setq finished t)))
+    (vm-net-start session (vm-net-test--read-line))
+    (let ((vm-verbosity 0))
+      (vm-net-abandon session))
+    (should (equal cleaned '(ran)))
+    (should finished)
+    (kill-buffer (vm-net-session-buffer session))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here
