@@ -637,9 +637,9 @@ backends, and the cache can hold a `*\=' that means nothing yet."
   "Open a connection for the IMAP maildrop SOURCE and answer with a session.
 
 MAY-ASK says the caller is a command and the reader is there to be asked for
-a password; `vm-imap-ok-to-ask\=' has to allow it as well, which is what says
-a question can be put at all.  A timer passes nil either way: a question from
-a timer arrives while somebody is typing something else.
+a password.  A timer passes nil: a question from a timer arrives while
+somebody is typing something else, and the check has nothing to do with the
+answer anyway.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; nothing has been read from it yet.  The answer is
@@ -672,14 +672,19 @@ ask from inside a filter."
       ;; the reader, which is what the blocking path did and the only reason
       ;; it was reached at all.
       (setq password (or (vm-imap-net-known-password source user host port)
-			 (and may-ask vm-imap-ok-to-ask
-			      (condition-case nil
-				  (vm-imap-get-password
-				   (or (vm-imap-folder-for-spec source)
-				       (vm-safe-imapdrop-string source))
-				   (vm-imapdrop-sans-password-and-mailbox source)
-				   user host port t "reading mail")
-				(error nil)))))
+			 (and may-ask
+			      ;; `vm-imap-ok-to-ask' is nil unless something
+			      ;; has bound it, and nothing binds it on the way
+			      ;; here: requiring it meant the question was
+			      ;; never put and the blocking path asked instead
+			      (let ((vm-imap-ok-to-ask t))
+				(condition-case nil
+				    (vm-imap-get-password
+				     (or (vm-imap-folder-for-spec source)
+					 (vm-safe-imapdrop-string source))
+				     (vm-imapdrop-sans-password-and-mailbox source)
+				     user host port t "reading mail")
+				  (error nil))))))
       (unless (and (stringp password) (not (equal password "")))
 	(signal 'vm-imap-net-unsupported
 		(list "password not remembered" source))))

@@ -1468,18 +1468,28 @@ path -- which the reader started -- can ask."
                     :type 'vm-imap-net-unsupported)
       (should (equal asked 0)))))
 
-(ert-deftest vm-imap-net-test-no-asking-when-vm-says-not-to ()
-  "`vm-imap-ok-to-ask' nil means no question may be put, whoever is calling."
-  (let ((spec "imap:host:143:INBOX:login:someone:*")
-        (vm-imap-passwords nil)
-        (auth-sources nil)
-        (vm-imap-ok-to-ask nil)
-        (asked 0))
-    (cl-letf (((symbol-function 'read-passwd)
-               (lambda (&rest _) (setq asked (1+ asked)) "secret")))
-      (should-error (vm-imap-net-open spec "asking" 'may-ask)
-                    :type 'vm-imap-net-unsupported)
-      (should (equal asked 0)))))
+(ert-deftest vm-imap-net-test-asking-does-not-need-ok-to-ask-bound ()
+  "`vm-imap-ok-to-ask' is nil unless something has bound it, and nothing
+binds it on the way to a fetch.  Requiring it meant the question was never
+put: the driver declined, the blocking path asked, and the reader waited for
+the server with Emacs stopped -- which is what a log of three attempts
+showed, each one saying \"password not remembered\"."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
+           (vm-imap-passwords nil)
+           (auth-sources nil)
+           (vm-imap-ok-to-ask nil)   ; its default, and what a command sees
+           (asked 0))
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _) (setq asked (1+ asked)) "secret")))
+        (let* ((opened (vm-imap-net-open spec "asking" 'may-ask))
+               (session (car opened)))
+          (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+          (should (equal asked 1))
+          (should (equal (nth 3 opened) "secret"))
+          (let ((process (vm-net-session-process session)))
+            (when (process-live-p process) (delete-process process))))))))
 
 (provide 'vm-imap-net-test)
 
