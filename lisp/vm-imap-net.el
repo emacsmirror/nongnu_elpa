@@ -64,6 +64,12 @@ the blocking implementation.")
   "The number of the last tag this session sent.")
 (make-variable-buffer-local 'vm-imap-net-tag)
 
+(defvar vm-imap-net-password-key nil
+  "The maildrop this session's password belongs to, without its password.
+What `vm-imap-passwords\=' is keyed by, kept so that a password the server
+has accepted can be remembered under it.")
+(make-variable-buffer-local 'vm-imap-net-password-key)
+
 (defun vm-imap-net-init ()
   "Prepare the current buffer to be a session's process buffer."
   (setq vm-imap-net-read-point (point-min))
@@ -372,16 +378,30 @@ Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols, as
   "STRING as an IMAP quoted string."
   (concat "\"" (replace-regexp-in-string "[\\\"]" "\\\\\\&" string) "\""))
 
+(defun vm-imap-net-remember-password (password)
+  "Remember PASSWORD for this session's maildrop, the server having taken it.
+
+After the login and not before: an entry in `vm-imap-passwords\=' is what
+the operations that still block look the password up in, and a wrong one
+there is a login that fails without anybody being asked anything.  The
+blocking path writes it at the same point, and for the same reason."
+  (let ((key vm-imap-net-password-key))
+    (when (and key (stringp password) (not (equal password ""))
+	       (not (equal password "*"))
+	       (not (assoc key vm-imap-passwords)))
+      (setq vm-imap-passwords (cons (list key password) vm-imap-passwords)))))
+
 (iter-defun vm-imap-net-login (user password)
-	    "Log in as USER, and answer with what the server can do afterwards.
+  "Log in as USER, and answer with what the server can do afterwards.
 The capabilities are asked for again: a server may advertise more once the
 connection is authenticated, and several advertise fewer before it."
-	    (iter-yield-from (vm-imap-net-command
-			      (format "LOGIN %s %s"
-				      (vm-imap-net-quote user)
-				      (vm-imap-net-quote password))
-			      "LOGIN"))
-	    (iter-yield-from (vm-imap-net-capabilities)))
+  (iter-yield-from (vm-imap-net-command
+		    (format "LOGIN %s %s"
+			    (vm-imap-net-quote user)
+			    (vm-imap-net-quote password))
+		    "LOGIN"))
+  (vm-imap-net-remember-password password)
+  (iter-yield-from (vm-imap-net-capabilities)))
 
 ;;; A mailbox
 
@@ -535,8 +555,8 @@ read, which is what keeps a mailbox of any size out of memory."
 (defvar vm-imap-passwords)
 
 (declare-function vm-imapdrop-sans-password-and-mailbox "vm-misc" (source))
-(declare-function vm-imap-get-password "vm-imap"
-		  (folder source user host port ask-password purpose))
+(declare-function vm-auth-source-password "vm-misc" (hosts port user))
+(declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
 
 (define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
 
@@ -591,6 +611,25 @@ the driver runs."
   (run-hook-with-args-until-success 'vm-imap-session-preauth-hook
 				    host port mailbox user password))
 
+(defun vm-imap-net-known-password (source user host port)
+  "The password VM already holds for SOURCE, or nil.
+
+Its own cache first, then auth-source.  Nothing is written back: what the
+blocking path remembers is its own business, and a wrong or empty entry
+written there is a login that fails without asking anybody anything.  Only a
+non-empty string counts -- auth-source hands back a function for some
+backends, and the cache can hold a `*\=' that means nothing yet."
+  (let* ((spec (vm-imapdrop-sans-password-and-mailbox source))
+	 (known (car (cdr (assoc spec vm-imap-passwords))))
+	 (password (or known
+		       (vm-auth-source-password
+			(list (vm-imap-account-name-for-spec source) host)
+			port user))))
+    (and (stringp password)
+	 (not (equal password ""))
+	 (not (equal password "*"))
+	 password)))
+
 (defun vm-imap-net-open (source name)
   "Open a connection for the IMAP maildrop SOURCE and answer with a session.
 
@@ -617,37 +656,25 @@ ask from inside a filter."
       (signal 'vm-imap-net-unsupported (list protocol source)))
     (unless (or preauth (equal auth "login"))
       (signal 'vm-imap-net-unsupported (list (or auth "no authentication") source)))
+    (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
+      (setq port (string-to-number port)))
     (when (and (equal password "*") (not preauth))
       ;; "*" means VM is to find the password rather than read it out of the
-      ;; maildrop.  It may already know it -- from a session earlier in this
-      ;; Emacs, or from auth-source -- and only asking the user is out of the
-      ;; question here, there being nobody to ask from inside a filter.
-      (setq password
-	    (condition-case nil
-		(vm-imap-get-password
-		 (or (vm-imap-folder-for-spec source)
-		     (vm-safe-imapdrop-string source))
-		 (vm-imapdrop-sans-password-and-mailbox source)
-		 user host port nil "the driver")
-	      (error nil)))
+      ;; maildrop.  It may already know it, and asking the user is out of the
+      ;; question here: there is nobody to ask from inside a filter.
+      (setq password (vm-imap-net-known-password source user host port))
       (unless password
 	(signal 'vm-imap-net-unsupported
 		(list "password not remembered" source))))
-    (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
-      (setq port (string-to-number port)))
-    ;; What the blocking path remembers when it logs in.  An operation that
-    ;; has not been converted opens its own session with `vm-imap-ok-to-ask'
-    ;; nil, and without this it has nowhere to get the password from and
-    ;; fails with "Need password".
-    (let ((spec (vm-imapdrop-sans-password-and-mailbox source)))
-      (unless (or preauth (assoc spec vm-imap-passwords))
-	(setq vm-imap-passwords (cons (list spec password) vm-imap-passwords))))
     (let* ((buffer (vm-imap-net-session-buffer name))
 	   (session (vm-net-session :name name
 				    :timeout vm-imap-server-timeout))
 	   (local (and (member protocol '("imap-ssh"))
 		       (vm-net-free-port))))
       (setf (vm-net-session-buffer session) buffer)
+      (with-current-buffer buffer
+	(setq vm-imap-net-password-key
+	      (vm-imapdrop-sans-password-and-mailbox source)))
       (cond
        (preauth
 	(let ((process (vm-imap-net-preauth-process host port mailbox
@@ -2009,9 +2036,10 @@ reader, and both would want the blocking path to ask a question."
 	     (password (nth 6 parts)))
 	(and (member protocol '("imap" "imap-ssl"))
 	     (equal (nth 4 parts) "login")
-	     (or (and password (not (equal password "*")))
-		 (car (cdr (assoc (vm-imapdrop-sans-password-and-mailbox source)
-				  vm-imap-passwords))))
+	     (or (and (stringp password) (not (equal password "*"))
+		      (not (equal password "")))
+		 (vm-imap-net-known-password source (nth 5 parts) (nth 1 parts)
+					     (nth 2 parts)))
 	     t))
     (error nil)))
 
