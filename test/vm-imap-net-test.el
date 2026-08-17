@@ -1313,6 +1313,75 @@ a timer may check, and `vm-imap-net-checkable-p' says so."
   (let ((vm-imap-passwords (list (list "imap:host:143:*:login:me:*" "secret"))))
     (should (vm-imap-net-checkable-p "imap:host:143:INBOX:login:me:*"))))
 
+
+;;; Passwords: read, never written
+
+(ert-deftest vm-imap-net-test-a-password-is-remembered-after-the-server-took-it ()
+  "The driver writes `vm-imap-passwords' when the login succeeds, and not
+before.
+
+The operations that still block look the password up there, so something has
+to put it there -- but a wrong or unproven entry is worse than none: the
+blocking path finds one, sends it, is refused, and never asks anybody
+anything, which is a folder that cannot be logged into and a reader who is
+never prompted."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:secret" port))
+           (key (vm-imapdrop-sans-password-and-mailbox spec))
+           (vm-imap-passwords nil)
+           (opened (vm-imap-net-open spec "remembering"))
+           (session (car opened)))
+      (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+      ;; nothing yet: the server has not been asked
+      (should (null vm-imap-passwords))
+      (vm-net-start session (vm-imap-net-open-session (nth 2 opened)
+                                                      (nth 3 opened)))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (equal (car (cdr (assoc key vm-imap-passwords))) "secret"))
+      (let ((process (vm-net-session-process session)))
+        (when (process-live-p process) (delete-process process))))))
+
+(ert-deftest vm-imap-net-test-a-refused-password-is-not-remembered ()
+  "A login the server refuses leaves the cache alone: an entry there would
+be sent again by every operation that still blocks, and none of them would
+ask."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
+                           :refuse "LOGIN")
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:wrong" port))
+           (vm-imap-passwords nil)
+           (opened (vm-imap-net-open spec "refused"))
+           (session (car opened)))
+      (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+      (vm-net-start session (vm-imap-net-open-session (nth 2 opened)
+                                                      (nth 3 opened)))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (null vm-imap-passwords))
+      (let ((process (vm-net-session-process session)))
+        (when (process-live-p process) (delete-process process))))))
+
+(ert-deftest vm-imap-net-test-a-useless-cached-password-is-not-a-password ()
+  "A cache entry that is empty, a `*', or not a string at all is nothing to
+log in with, and the maildrop is left to the blocking path -- which can ask."
+  (let ((spec "imap:host:143:INBOX:login:someone:*")
+        (key "imap:host:143:*:login:someone:*")
+        (auth-sources nil))
+    (dolist (useless (list nil "" "*" 42))
+      (let ((vm-imap-passwords (list (list key useless))))
+        (should-error (vm-imap-net-open spec "x")
+                      :type 'vm-imap-net-unsupported)
+        (should-not (vm-imap-net-checkable-p spec))))
+    ;; and a real one is enough
+    (let ((vm-imap-passwords (list (list key "secret"))))
+      (should (vm-imap-net-checkable-p spec)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

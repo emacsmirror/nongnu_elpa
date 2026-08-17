@@ -214,8 +214,6 @@ generator rather than dropping it."
 ;;; Connecting
 
 (declare-function vm-pop-parse-spec-to-list "vm-pop" (spec))
-(declare-function vm-pop-get-password "vm-pop"
-		  (popdrop source user host port ask-password))
 (declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
 (declare-function vm-popdrop-sans-password "vm-misc" (source))
 (declare-function vm-binary-coding-system "vm-misc" ())
@@ -244,6 +242,25 @@ connection comes up."
 			:noquery t :coding 'binary :nowait t
 			:type (if tls 'tls nil)))
 
+(defvar vm-pop-passwords)
+
+(declare-function vm-auth-source-password "vm-misc" (hosts port user))
+
+(defun vm-pop-net-known-password (source user host port)
+  "The password VM already holds for SOURCE, or nil.
+Its own cache first, then auth-source.  Nothing is written back, and only a
+non-empty string counts: see `vm-imap-net-known-password\='."
+  (let* ((spec (vm-popdrop-sans-password source))
+	 (known (car (cdr (assoc spec vm-pop-passwords))))
+	 (password (or known
+		       (vm-auth-source-password
+			(list (vm-pop-find-name-for-spec source) host)
+			port user))))
+    (and (stringp password)
+	 (not (equal password ""))
+	 (not (equal password "*"))
+	 password)))
+
 (defun vm-pop-net-open (source name)
   "Open a connection for the POP maildrop SOURCE and answer with a session.
 
@@ -268,17 +285,9 @@ it is.  A maildrop whose password VM has not been told signals
       (setq port (string-to-number port)))
     (when (equal password "*")
       ;; "*" means VM is to find the password rather than read it out of the
-      ;; maildrop.  It may already know it -- from a session earlier in this
-      ;; Emacs, or from auth-source -- and only asking the user is out of the
-      ;; question here, there being nobody to ask from inside a filter.
-      (setq password
-	    (condition-case nil
-		(vm-pop-get-password
-		 (or (vm-pop-find-name-for-spec source)
-		     (vm-safe-popdrop-string source))
-		 (vm-popdrop-sans-password source)
-		 user host port nil)
-	      (error nil)))
+      ;; maildrop.  It may already know it, and asking the user is out of the
+      ;; question here: there is nobody to ask from inside a filter.
+      (setq password (vm-pop-net-known-password source user host port))
       (unless password
 	(signal 'vm-pop-net-unsupported
 		(list "password not remembered" source))))
