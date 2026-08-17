@@ -931,6 +931,61 @@ for."
         (let ((process (vm-net-session-process session)))
           (when (process-live-p process) (delete-process process)))))))
 
+(defvar vm-imap-net-test--stunnel-script
+  (concat "printf '* OK ready\\r\\n'\n"
+	  "while IFS= read -r line; do\n"
+	  "  tag=${line%% *}\n"
+	  "  case \"$line\" in\n"
+	  "    *CAPABILITY*) printf '* CAPABILITY IMAP4REV1 AUTH=LOGIN\\r\\n'\n"
+	  "                  printf '%s OK done\\r\\n' \"$tag\" ;;\n"
+	  "    *LOGIN*)      printf '%s OK logged in\\r\\n' \"$tag\" ;;\n"
+	  "    *LOGOUT*)     printf '%s OK bye\\r\\n' \"$tag\"; exit 0 ;;\n"
+	  "  esac\n"
+	  "done\n")
+  "A shell script that talks enough IMAP to be logged in to.
+Stands in for stunnel, which VM talks to over its standard input and output
+rather than over a socket: there is no port here to point a mock server at.")
+
+(ert-deftest vm-imap-net-test-an-stunnel-maildrop-talks-over-the-programs-pipes ()
+  "An imap-ssl maildrop with `vm-stunnel-program' set runs the program and
+talks to it, greeting and login and all.
+
+VM used to hand stunnel `-d 127.0.0.1:PORT' and wait for that port to answer,
+which stunnel has no such option for and never did: the session sat until the
+whole server timeout was up and then failed with \"did not start listening on
+port\".  Told nothing to listen on, stunnel relays its own standard input and
+output, which is what the blocking path has always used it for."
+  (let* ((vm-stunnel-program "sh")
+         (vm-stunnel-program-switches nil)
+         (vm-imap-server-timeout 10)
+         (spec "imap-ssl:far.example.com:993:INBOX:login:vmtest:secret")
+         (opened nil)
+         (session nil))
+    (cl-letf (((symbol-function 'vm-setup-stunnel-random-data-if-needed)
+               (lambda () nil))
+              ((symbol-function 'vm-stunnel-configuration-args)
+               (lambda (&rest _) (list "-c" vm-imap-net-test--stunnel-script))))
+      (setq opened (vm-imap-net-open spec "stunnel")
+            session (car opened)))
+    (unwind-protect
+        (let ((process (vm-net-session-process session)))
+          ;; a program, not a connection: nothing was asked to listen anywhere
+          (should (processp process))
+          (should (eq (process-type process) 'real))
+          (should-not (member "-d" (process-command process)))
+          (vm-net-start session (vm-imap-net-open-session (nth 2 opened)
+                                                          (nth 3 opened)))
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (vm-net-session-live-p session)
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should (eq (vm-net-session-state session) 'done))
+          (should (memq 'IMAP4REV1 (car (vm-net-session-value session)))))
+      (let ((process (vm-net-session-process session)))
+        (when (process-live-p process) (delete-process process)))
+      (let ((buffer (vm-net-session-buffer session)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest vm-imap-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
   "An imap-ssh maildrop starts the tunnel and has no connection until the
 tunnel is listening -- which is the wait the blocking path does inside
@@ -1628,8 +1683,11 @@ a server on this machine took 82 seconds of CPU because of it.  With the
 form gone it is a quarter of a millisecond a line.
 
 Timed rather than counted, since what went wrong was a constant factor and
-nothing else would have shown it.  The bound is loose: fifty times the
-blocking reader, where the pathology was four thousand."
+nothing else would have shown it.  Two bounds, both loose: 200 lines in under
+a second, where the old reader took twenty, and within 200 times the blocking
+reader, where the pathology was four thousand.  A ratio alone is too tight --
+the blocking reader takes a couple of milliseconds and a busy machine's noise
+is that big."
   (let* ((lines 200)
          (response (with-temp-buffer
                      (dotimes (i lines)
@@ -1659,7 +1717,8 @@ blocking reader, where the pathology was four thousand."
           (iter-end-of-sequence nil))
         (setq driven (- (float-time) start))))
     (should (> blocking 0))
-    (should (< driven (* 50 (max blocking 0.001))))))
+    (should (< driven 1.0))
+    (should (< driven (* 200 (max blocking 0.001))))))
 
 (iter-defun vm-imap-net-test--read-lines (n)
   "Read N response lines through the driver's reader."

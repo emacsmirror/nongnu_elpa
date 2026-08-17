@@ -686,6 +686,57 @@ between them being the blank line."
 
 ;;; The connections that go through something else
 
+(defvar vm-pop-net-test--stunnel-script
+  (concat "printf '+OK ready\\r\\n'\n"
+	  "while IFS= read -r line; do\n"
+	  "  case \"$line\" in\n"
+	  "    USER*) printf '+OK send the password\\r\\n' ;;\n"
+	  "    PASS*) printf '+OK logged in\\r\\n' ;;\n"
+	  "    STAT*) printf '+OK 2 640\\r\\n' ;;\n"
+	  "    QUIT*) printf '+OK bye\\r\\n'; exit 0 ;;\n"
+	  "  esac\n"
+	  "done\n")
+  "A shell script that talks enough POP to be logged in to.
+Stands in for stunnel, which VM talks to over its standard input and output
+rather than over a socket.")
+
+(ert-deftest vm-pop-net-test-an-stunnel-maildrop-talks-over-the-programs-pipes ()
+  "A pop-ssl maildrop with `vm-stunnel-program' set runs the program and talks
+to it over its pipes.
+
+As for IMAP: VM used to hand stunnel `-d 127.0.0.1:PORT' and wait for that
+port, which stunnel has no such option for, so the session failed after the
+whole server timeout with \"did not start listening on port\"."
+  (let* ((vm-stunnel-program "sh")
+         (vm-stunnel-program-switches nil)
+         (vm-pop-server-timeout 10)
+         (spec "pop-ssl:far.example.com:995:pass:vmtest:secret")
+         (opened nil)
+         (session nil))
+    (cl-letf (((symbol-function 'vm-setup-stunnel-random-data-if-needed)
+               (lambda () nil))
+              ((symbol-function 'vm-stunnel-configuration-args)
+               (lambda (&rest _) (list "-c" vm-pop-net-test--stunnel-script))))
+      (setq opened (vm-pop-net-open spec "stunnel")
+            session (car opened)))
+    (unwind-protect
+        (let ((process (vm-net-session-process session)))
+          (should (processp process))
+          (should (eq (process-type process) 'real))
+          (should-not (member "-d" (process-command process)))
+          (vm-net-start session (vm-pop-net-session (nth 1 opened)
+                                                    (nth 2 opened)))
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (vm-net-session-live-p session)
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should (eq (vm-net-session-state session) 'done))
+          (should (equal (vm-net-session-value session) '(2 . 640))))
+      (let ((process (vm-net-session-process session)))
+        (when (process-live-p process) (delete-process process)))
+      (let ((buffer (vm-net-session-buffer session)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest vm-pop-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
   "A pop-ssh maildrop starts the tunnel and has no connection until it is
 listening.  The blocking path waits inside `vm-setup-ssh-tunnel', with a loop

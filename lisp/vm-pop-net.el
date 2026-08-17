@@ -275,10 +275,11 @@ NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; the answer is (SESSION USER PASSWORD).
 
 Plain, TLS, over ssh, and through stunnel where the user has one and would
-rather use it than Emacs\='s own TLS.  A tunnelled session has no process yet
-when this returns: the program has to be listening before there is anything
-to connect to, and `vm-net-attach\=' gives the session its connection when
-it is.  A maildrop whose password VM has not been told signals
+rather use it than Emacs\='s own TLS.  An ssh session has no process yet when
+this returns: ssh has to be listening on its forwarded port before there is
+anything to connect to, and `vm-net-attach\=' gives the session its connection
+when it is.  stunnel is the connection itself, over its standard input and
+output.  A maildrop whose password VM has not been told signals
 `vm-pop-net-unsupported\=', there being nobody to ask from inside a filter."
   (let* ((parts (vm-pop-parse-spec-to-list source))
 	 (protocol (car parts))
@@ -331,17 +332,12 @@ it is.  A maildrop whose password VM has not been told signals
 							  local buffer)))))))
        ((and (equal protocol "pop-ssl") vm-stunnel-program)
 	(vm-setup-stunnel-random-data-if-needed)
-	(let ((local (vm-net-free-port)))
-	  (vm-net-tunnel
-	   session vm-stunnel-program
-	   (nconc (list "-d" (format "127.0.0.1:%d" local))
-		  (vm-stunnel-configuration-args host port)
-		  (copy-sequence vm-stunnel-program-switches))
-	   local (or vm-pop-server-timeout 30)
-	   (lambda (tunnel)
-	     (when tunnel
-	       (vm-net-attach session (vm-pop-net-connect name "127.0.0.1"
-							  local buffer)))))))
+	;; as for IMAP: stunnel relays its own standard input and output, and
+	;; is the connection rather than something to connect through
+	(setf (vm-net-session-process session)
+	      (vm-net-pipe session name buffer vm-stunnel-program
+			   (nconc (vm-stunnel-configuration-args host port)
+				  (copy-sequence vm-stunnel-program-switches)))))
        (t
 	(setf (vm-net-session-process session)
 	      (vm-pop-net-connect name host port buffer

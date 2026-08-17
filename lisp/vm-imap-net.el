@@ -600,11 +600,10 @@ connection comes up."
 
 (defun vm-imap-net-tunnelled (session name port buffer program arguments)
   "Run PROGRAM and attach SESSION to PORT once it is listening.
-For the two maildrops that go through a program of their own: over ssh, and
-over stunnel where the user has one and would rather use it than Emacs's own
-TLS.  The program is started, a timer looks until the port answers, and the
-session starts then -- so a tunnel that takes two seconds to come up costs
-those two seconds to the mail, not to Emacs."
+For a maildrop reached over ssh, which is told to forward a local port.  The
+program is started, a timer looks until the port answers, and the session
+starts then -- so a tunnel that takes two seconds to come up costs those two
+seconds to the mail, not to Emacs."
   (vm-net-tunnel
    session program arguments port
    (or vm-imap-server-timeout 30)
@@ -652,12 +651,13 @@ NAME goes in messages.  The session has a buffer of its own and is ready for
 `vm-net-start\='; nothing has been read from it yet.  The answer is
 (SESSION MAILBOX USER PASSWORD).
 
-Plain, TLS, over ssh, through stunnel, and preauthenticated.  A tunnelled
-session has no process yet when this returns: the program has to be
-listening before there is anything to connect to, and `vm-net-attach\='
-gives the session its connection when it is.  A maildrop whose password VM
-has not been told signals `vm-imap-net-unsupported\=', there being nobody to
-ask from inside a filter."
+Plain, TLS, over ssh, through stunnel, and preauthenticated.  An ssh session
+has no process yet when this returns: ssh has to be listening on its
+forwarded port before there is anything to connect to, and `vm-net-attach\='
+gives the session its connection when it is.  stunnel is the connection
+itself, over its standard input and output.  A maildrop whose password VM has
+not been told signals `vm-imap-net-unsupported\=', there being nobody to ask
+from inside a filter."
   (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
 	 (protocol (car parts))
 	 (host (nth 1 parts))
@@ -728,14 +728,15 @@ ask from inside a filter."
 		(list host vm-ssh-remote-command))))
        ((and (equal protocol "imap-ssl") vm-stunnel-program)
 	(vm-setup-stunnel-random-data-if-needed)
-	(let ((tunnel-port (vm-net-free-port)))
-	  ;; stunnel is told to listen here and connect there, so what VM
-	  ;; talks to is a plain connection to a port on this machine
-	  (vm-imap-net-tunnelled
-	   session name tunnel-port buffer vm-stunnel-program
-	   (nconc (list "-d" (format "127.0.0.1:%d" tunnel-port))
-		  (vm-stunnel-configuration-args host port)
-		  (copy-sequence vm-stunnel-program-switches)))))
+	;; stunnel is the connection, over its own standard input and output,
+	;; which is what the blocking path does with it.  Telling it to listen
+	;; on a local port instead asked for an option stunnel does not have,
+	;; so nothing ever came up on that port and the session failed after
+	;; the whole tunnel timeout.
+	(setf (vm-net-session-process session)
+	      (vm-net-pipe session name buffer vm-stunnel-program
+			   (nconc (vm-stunnel-configuration-args host port)
+				  (copy-sequence vm-stunnel-program-switches)))))
        (t
 	(setf (vm-net-session-process session)
 	      (vm-imap-net-connect name host port buffer
