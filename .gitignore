@@ -1,0 +1,8 @@
+*.dsg
+*.elc
+*.so
+*.wad
+*~
+doomgeneric.zip
+doomgeneric/
+doomgeneric_tmp/
