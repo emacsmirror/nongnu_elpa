@@ -81,67 +81,74 @@ has accepted can be remembered under it.")
 ;;; Reading
 
 (iter-defun vm-imap-net-read-object (&optional skip-eol)
-	    "Read one token and answer with it, yielding until it is all here.
+  "Read one token and answer with it, yielding until it is all here.
 
 SKIP-EOL means an end-of-line is a token like any other rather than the end
 of the read, which is what the bracketed and parenthesised lists want.
 
-The waits are where `vm-imap-read-object' calls `accept-process-output': too
-little in the buffer to tell what is coming, the octets of a literal, the
-closing quote of a quoted string, and the terminator of an atom."
-	    (let ((done nil)
-		  (token nil))
-	      (unwind-protect
-		  (while (not done)
-		    (skip-chars-forward " \t")
-		    (cond
-		     ((< (- (point-max) (point)) 2)
-		      (let ((opoint (point)))
-			(iter-yield (vm-net-request-growth))
-			(goto-char opoint)))
-		     ((looking-at "\r\n")
-		      (forward-char 2)
-		      (setq token '(end-of-line) done (not skip-eol)))
-		     ((looking-at "\n")
-		      (vm-warn 0 2
-			       "missing CR before LF - IMAP connection may have a problem")
-		      (forward-char 1)
-		      (setq token '(end-of-line) done (not skip-eol)))
-		     ((looking-at "\\[")
-		      (forward-char 1)
-		      (setq token (iter-yield-from (vm-imap-net-read-group 'vector))
-			    done t))
-		     ((looking-at "\\]")
-		      (forward-char 1)
-		      (setq token '(close-bracket) done t))
-		     ((looking-at "(")
-		      (forward-char 1)
-		      (setq token (iter-yield-from (vm-imap-net-read-group 'list))
-			    done t))
-		     ((looking-at ")")
-		      (forward-char 1)
-		      (setq token '(close-paren) done t))
-		     ((looking-at "{")
-		      (forward-char 1)
-		      (setq token (iter-yield-from (vm-imap-net-read-literal))
-			    done t))
-		     ((looking-at "}")
-		      (forward-char 1)
-		      (setq token '(close-brace) done t))
-		     ((looking-at "\042")
-		      (forward-char 1)
-		      (setq token (iter-yield-from (vm-imap-net-read-quoted))
-			    done t))
-		     ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
-		     ;; 8-bit characters despite the RFC 2060 prohibition
-		     ((and (looking-at "[\000-\040\177]")
-			   (= vm-imap-tolerant-of-bad-imap 0))
-		      (vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
-		     (t
-		      (setq token (iter-yield-from (vm-imap-net-read-atom))
-			    done t))))
-		(setq vm-imap-net-read-point (point)))
-	      token))
+The waits are where `vm-imap-read-object\=' calls `accept-process-output\=':
+too little in the buffer to tell what is coming, the octets of a literal, the
+closing quote of a quoted string, and the terminator of an atom.
+
+No `unwind-protect\=' here, deliberately.  A generator pays for one on every
+resume -- `generator.el\=' re-establishes it each time round -- and this is
+the hottest generator VM has: 100 milliseconds a response line, against 25
+microseconds for the blocking reader, and 82 seconds of CPU to fetch 400
+messages from a server on this machine.  The read point is set where the read
+ends instead.  It does not matter what it says after an error: the session is
+over, and the next one has a buffer of its own."
+  (let ((done nil)
+	(token nil))
+    (while (not done)
+      (skip-chars-forward " \t")
+      (cond
+       ((< (- (point-max) (point)) 2)
+	(let ((opoint (point)))
+	  (iter-yield (vm-net-request-growth))
+	  (goto-char opoint)))
+       ((looking-at "\r\n")
+	(forward-char 2)
+	(setq token '(end-of-line) done (not skip-eol)))
+       ((looking-at "\n")
+	(vm-warn 0 2
+		 "missing CR before LF - IMAP connection may have a problem")
+	(forward-char 1)
+	(setq token '(end-of-line) done (not skip-eol)))
+       ((looking-at "\\[")
+	(forward-char 1)
+	(setq token (iter-yield-from (vm-imap-net-read-group 'vector))
+	      done t))
+       ((looking-at "\\]")
+	(forward-char 1)
+	(setq token '(close-bracket) done t))
+       ((looking-at "(")
+	(forward-char 1)
+	(setq token (iter-yield-from (vm-imap-net-read-group 'list))
+	      done t))
+       ((looking-at ")")
+	(forward-char 1)
+	(setq token '(close-paren) done t))
+       ((looking-at "{")
+	(forward-char 1)
+	(setq token (iter-yield-from (vm-imap-net-read-literal))
+	      done t))
+       ((looking-at "}")
+	(forward-char 1)
+	(setq token '(close-brace) done t))
+       ((looking-at "\042")
+	(forward-char 1)
+	(setq token (iter-yield-from (vm-imap-net-read-quoted))
+	      done t))
+       ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
+       ;; 8-bit characters despite the RFC 2060 prohibition
+       ((and (looking-at "[\000-\040\177]")
+	     (= vm-imap-tolerant-of-bad-imap 0))
+	(vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
+       (t
+	(setq token (iter-yield-from (vm-imap-net-read-atom))
+	      done t))))
+    (setq vm-imap-net-read-point (point))
+    token))
 
 (iter-defun vm-imap-net-read-group (kind)
 	    "Read tokens until this group's closing bracket, and answer with the group.

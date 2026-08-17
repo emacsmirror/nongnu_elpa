@@ -1615,6 +1615,59 @@ password that was never remembered, the other one that was thrown away."
       ;; asked once, for two logins
       (should (equal asked 1)))))
 
+
+;;; What the reader costs
+
+(ert-deftest vm-imap-net-test-the-reader-is-not-a-hundred-times-slower ()
+  "Reading a response is within reach of the blocking reader's speed.
+
+A single `unwind-protect' inside `vm-imap-net-read-object' cost 100
+milliseconds a response line -- generator.el re-establishes one on every
+resume, and that is the hottest generator VM has.  Fetching 400 messages from
+a server on this machine took 82 seconds of CPU because of it.  With the
+form gone it is a quarter of a millisecond a line.
+
+Timed rather than counted, since what went wrong was a constant factor and
+nothing else would have shown it.  The bound is loose: fifty times the
+blocking reader, where the pathology was four thousand."
+  (let* ((lines 200)
+         (response (with-temp-buffer
+                     (dotimes (i lines)
+                       (insert (format "* %d FETCH (UID %d RFC822.SIZE %d FLAGS (\\Seen))\r\n"
+                                       (1+ i) (1+ i) (+ 500 i))))
+                     (insert "vm1 OK FETCH completed\r\n")
+                     (buffer-string)))
+         (blocking 0)
+         (driven 0))
+    (with-temp-buffer
+      (insert response)
+      (setq vm-imap-read-point (point-min))
+      (goto-char (point-min))
+      (let ((start (float-time)) (n 0))
+        (while (< n lines)
+          (vm-imap-read-response nil)
+          (setq vm-imap-read-point (point) n (1+ n)))
+        (setq blocking (- (float-time) start))))
+    (with-temp-buffer
+      (insert response)
+      (vm-imap-net-init)
+      (setq vm-imap-current-tag "vm1")
+      (let ((start (float-time))
+            (iterator (vm-imap-net-test--read-lines lines)))
+        (condition-case nil
+            (while t (iter-next iterator))
+          (iter-end-of-sequence nil))
+        (setq driven (- (float-time) start))))
+    (should (> blocking 0))
+    (should (< driven (* 50 (max blocking 0.001))))))
+
+(iter-defun vm-imap-net-test--read-lines (n)
+  "Read N response lines through the driver's reader."
+  (let ((i 0))
+    (while (< i n)
+      (iter-yield-from (vm-imap-net-read-response))
+      (setq i (1+ i)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
