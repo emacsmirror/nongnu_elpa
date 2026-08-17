@@ -997,6 +997,165 @@ any other does: the tunnel is only how the connection is made."
         (let ((process (vm-net-session-process session)))
           (when (process-live-p process) (delete-process process)))))))
 
+
+;;; More of what only happens because nothing waits
+
+(ert-deftest vm-imap-net-test-a-server-may-answer-a-fetch-backwards ()
+  "The UID in each response says which message it is, so a server that
+answers a range in any order is read correctly.  Order is not something a
+client may rely on, and issue #185 asked for the UID for this reason."
+  (vm-imap-net-test--visiting (mock :reorder-fetch t)
+    (dotimes (i 4)
+      (vm-imap-mock-add-message
+       mock "INBOX"
+       (format "From: s%d@example.com\nSubject: number %d\n\nBody %d.\n" i i i)))
+    (should (equal (vm-imap-net-test--get-mail mock) 4))
+    (should (equal (length vm-message-list) 4))
+    ;; each message has its own body, whatever order they arrived in
+    (save-restriction
+      (widen)
+      (dolist (message vm-message-list)
+        (let ((subject (vm-su-subject message))
+              (body (buffer-substring-no-properties (vm-text-of message)
+                                                    (vm-text-end-of message))))
+          (should (string-match "number \\([0-9]+\\)" subject))
+          (should (string-match-p (format "Body %s\\." (match-string 1 subject))
+                                  body)))))))
+
+(ert-deftest vm-imap-net-test-a-fetch-cut-off-leaves-whole-messages ()
+  "A connection lost part way through a bunch leaves the folder holding the
+messages that arrived, each of them whole, and not the beginning of the one
+that did not."
+  (vm-imap-net-test--visiting (mock :drop-after-fetch 2)
+    (dotimes (i 5)
+      (vm-imap-mock-add-message
+       mock "INBOX"
+       (format "From: s%d@example.com\nSubject: number %d\n\nBody %d.\n" i i i)))
+    (let ((result (vm-imap-net-test--get-mail mock)))
+      ;; the session failed, and said so
+      (should (consp result)))
+    ;; whatever is in the folder is whole: every message has a UID, and the
+    ;; text of each ends where a message ends
+    (save-restriction
+      (widen)
+      (dolist (message vm-message-list)
+        (should (vm-imap-uid-of message))
+        (should (string-match-p "Body [0-9]+\\.\n\\'"
+                                (buffer-substring-no-properties
+                                 (vm-text-of message)
+                                 (vm-text-end-of message))))))))
+
+(ert-deftest vm-imap-net-test-an-arrival-leaves-the-reader-where-they-were ()
+  "Mail landing while the reader is on a message does not move them off it.
+The fetch runs between their keystrokes, and a folder that jumped to the new
+mail would take the message they were reading out from under them."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (vm-goto-message 2)
+    (let ((here (car vm-message-pointer)))
+      (vm-imap-mock-add-message mock "INBOX"
+                                "From: c@example.com\nSubject: third\n\nNew.\n")
+      (should (equal (vm-imap-net-test--get-mail mock) 1))
+      (should (equal (length vm-message-list) 3))
+      (should (eq (car vm-message-pointer) here)))))
+
+(ert-deftest vm-imap-net-test-two-folders-fetch-side-by-side ()
+  "Two folders fetching at once do not cross: each session writes into the
+folder it belongs to, and neither waits for the other."
+  (let ((first (vm-imap-mock-start))
+        (second (vm-imap-mock-start :mailbox "Other"))
+        (cache (make-temp-file "vm-imap-net-cache" t))
+        (before (buffer-list)))
+    (unwind-protect
+        (let ((vm-imap-folder-cache-directory cache)
+              (vm-imap-server-timeout 10)
+              (vm-frame-per-folder nil)
+              (vm-mutable-frame-configuration nil)
+              (folder-one nil) (folder-two nil))
+          (vm-imap-mock-add-message first "INBOX"
+                                    "From: a@example.com\nSubject: one\n\nA.\n")
+          (vm-imap-mock-add-message second "Other"
+                                    "From: b@example.com\nSubject: two\n\nB.\n")
+          (vm-visit-imap-folder (vm-imap-mock-spec first))
+          (setq folder-one (current-buffer))
+          (vm-visit-imap-folder (vm-imap-mock-spec second "Other"))
+          (setq folder-two (current-buffer))
+          (should-not (eq folder-one folder-two))
+          ;; both sessions started, and both land
+          (should (vm-imap-net-wait folder-one 10))
+          (should (vm-imap-net-wait folder-two 10))
+          (with-current-buffer folder-one
+            (should (equal (mapcar #'vm-su-subject vm-message-list) '("one"))))
+          (with-current-buffer folder-two
+            (should (equal (mapcar #'vm-su-subject vm-message-list) '("two")))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory cache t)
+      (vm-imap-mock-stop first)
+      (vm-imap-mock-stop second))))
+
+(ert-deftest vm-imap-net-test-an-abandoned-session-says-goodbye ()
+  "LOGOUT is said on the way out of an abandoned session too: it is in an
+`unwind-protect', and the driver closes the generator rather than dropping
+it, which is what makes those forms run."
+  (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice))
+    (let* ((buffer (vm-imap-net-session-buffer "goodbye"))
+           (process (make-network-process
+                     :name "vm-imap-net-test" :host 'local
+                     :service (vm-imap-mock-port mock)
+                     :buffer buffer :noquery t :coding 'binary))
+           (session (vm-net-session :process process :name "imap" :timeout 10)))
+      (setq vm-imap-net-test--buffer buffer)
+      (vm-net-start session (vm-imap-net-get-new-mail (current-buffer) "INBOX"
+                                                      "vmtest" "secret"))
+      ;; let it get as far as being logged in
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (not (vm-imap-mock-received-p mock "SELECT"))
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (vm-net-abandon session)
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (not (vm-imap-mock-received-p mock "LOGOUT"))
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (vm-imap-mock-received-p mock "LOGOUT"))
+      (when (process-live-p process) (delete-process process)))))
+
+(ert-deftest vm-imap-net-test-waiting-answers-nil-when-it-runs-out ()
+  "`vm-imap-net-wait' says whether the session finished.  A caller that has
+to have the mail can tell the difference between having it and having waited
+long enough."
+  (vm-imap-net-test--visiting (mock :slow-greeting 2)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (vm-imap-net-get-spooled-mail))
+    (should-not (vm-imap-net-wait nil 0.2))
+    (should (vm-imap-net-busy-p))
+    (should (vm-imap-net-wait nil 20))))
+
+(ert-deftest vm-imap-net-test-a-megabyte-arrives-whole ()
+  "A message far larger than a TCP segment arrives whole, through the
+socket, in whatever chunks the operating system chooses to deliver it in.
+The literal is read by its octet count, and the count is what says where it
+ends."
+  (let* ((line "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde\n")
+         (big (concat "From: alice@example.com\nSubject: large\n\n"
+                      (mapconcat #'identity (make-list 16000 line) ""))))
+    (should (> (length big) 1000000))
+    (vm-imap-net-test--visiting (mock :messages (list big))
+      (should (equal (length vm-message-list) 1))
+      (save-restriction
+        (widen)
+        (let ((text (buffer-substring-no-properties
+                     (vm-text-of (car vm-message-list))
+                     (vm-text-end-of (car vm-message-list)))))
+          ;; every line of it, and nothing after the last one
+          (should (equal (length (split-string text "\n" t)) 16000))
+          (should (string-prefix-p "0123456789abcdef" text)))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

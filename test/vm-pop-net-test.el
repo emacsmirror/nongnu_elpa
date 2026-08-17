@@ -748,6 +748,48 @@ any other does."
           (when (process-live-p process) (delete-process process)))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+
+;;; More of what only happens because nothing waits
+
+(ert-deftest vm-pop-net-test-a-check-during-a-fetch-does-not-start-a-second ()
+  "The mail check runs on a timer, so it fires while a fetch is running.
+It answers from what it already knows rather than opening a session of its
+own into the same folder."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let ((crash (nth 2 (car vm-spool-files))))
+      (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash #'ignore)
+      (should (vm-pop-net-busy-p))
+      ;; a check while that runs
+      (vm-check-for-spooled-mail nil t)
+      (should (vm-pop-net-wait nil 25))
+      (vm-pop-net-test--settle)
+      ;; one login, so the check did not open a session of its own on top
+      (should (equal (cl-count-if (lambda (c) (string-match-p "\\`USER" c))
+                                  (vm-pop-mock-commands mock))
+                     1)))))
+
+(ert-deftest vm-pop-net-test-the-session-is-the-folders-own ()
+  "`vm-pop-net-busy-p' is asked of a folder, and a summary buffer counts as
+its folder: the session belongs to the folder, and a caller asking from the
+summary was told there was nothing running."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let ((folder (current-buffer))
+          (summary (generate-new-buffer " *pop test summary*")))
+      (unwind-protect
+          (progn
+            (setq vm-pop-net-session
+                  (vm-pop-net-fetch (vm-pop-mock-spec mock) nil #'ignore))
+            (should (vm-pop-net-busy-p))
+            (with-current-buffer summary
+              (setq vm-mail-buffer folder)
+              (should (vm-pop-net-busy-p))
+              (should (vm-pop-net-wait nil 20))
+              ;; and the caller is left where it was
+              (should (eq (current-buffer) summary))))
+        (kill-buffer summary)))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
