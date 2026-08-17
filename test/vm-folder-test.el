@@ -3701,6 +3701,37 @@ would have to be in instead is the one they cannot see."
       (kill-buffer folder)
       (kill-buffer summary))))
 
+(ert-deftest vm-folder-test-the-cache-file-of-a-virtual-folder ()
+  "A virtual folder has no maildrop of its own, and the question is about
+the folder the message being looked at really lives in."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (spec "imap:mail.example.invalid:143:inbox:login:alice:*")
+        (real (generate-new-buffer " *test folder*"))
+        (virtual (generate-new-buffer " *test virtual*")))
+    (unwind-protect
+        (let (message)
+          (with-current-buffer real
+            (setq major-mode 'vm-mode)
+            (setq vm-folder-access-method 'imap
+                  vm-folder-access-data (make-vector 20 nil))
+            (vm-set-folder-imap-maildrop-spec spec)
+            (setq message (vm-make-message))
+            (vm-set-buffer-of message real))
+          (with-current-buffer virtual
+            (setq major-mode 'vm-virtual-mode)
+            (let ((mirror (vm-make-message))
+                  (real-sym (make-symbol "real")))
+              ;; a virtual message points at its real one through a symbol
+              (set real-sym message)
+              (aset (aref mirror 1) 5 real-sym)
+              (vm-set-buffer-of mirror virtual)
+              (setq vm-message-list (list mirror)
+                    vm-message-pointer vm-message-list))
+            (should (equal (vm-folder-cache-file)
+                           (vm-imap-make-filename-for-spec spec)))))
+      (kill-buffer real)
+      (kill-buffer virtual))))
+
 ;;; Saving the folder buffer
 
 (ert-deftest vm-folder-test-saving-the-buffer-unblocks-new-mail ()

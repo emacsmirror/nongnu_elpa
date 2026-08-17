@@ -158,23 +158,34 @@
 Answers nil for a folder that is a file in the first place.  BUFFER is the
 folder to ask about, the current one by default -- and a summary or
 presentation buffer counts as its folder, since that is where the reader
-is when the question occurs to them.
+is when the question occurs to them.  In a virtual folder the answer is
+about the folder the message being looked at really lives in.
 
 A cache file is named after the MD5 of the maildrop, so it can be neither
 read nor typed by hand."
   (interactive)
-  (let ((file (save-current-buffer
-                (when buffer (set-buffer buffer))
-                (vm-select-folder-buffer-if-possible)
-                (cond ((eq vm-folder-access-method 'imap)
-                       (vm-imap-make-filename-for-spec (vm-folder-imap-maildrop-spec)))
-                      ((eq vm-folder-access-method 'pop)
-                       (vm-pop-make-filename-for-spec (vm-folder-pop-maildrop-spec)))
-                      (t nil)))))
+  (let* ((where nil)
+         (file (save-current-buffer
+                 (when buffer (set-buffer buffer))
+                 (vm-select-folder-buffer-if-possible)
+                 ;; a virtual folder has no maildrop of its own; the message
+                 ;; being looked at came from a folder that has one
+                 (when (and (eq major-mode 'vm-virtual-mode) vm-message-pointer)
+                   (set-buffer (vm-buffer-of
+                                (vm-real-message-of (car vm-message-pointer)))))
+                 (setq where (buffer-name))
+                 (cond ((eq vm-folder-access-method 'imap)
+                        (vm-imap-make-filename-for-spec
+                         (vm-folder-imap-maildrop-spec)))
+                       ((eq vm-folder-access-method 'pop)
+                        (vm-pop-make-filename-for-spec
+                         (vm-folder-pop-maildrop-spec)))
+                       (t nil)))))
     (when (called-interactively-p 'interactive)
       (if file
           (message "%s" file)
-        (message "Not a remote folder")))
+        (message "%s is not a POP or IMAP folder, so nothing caches it"
+                 where)))
     file))
 
 (defun vm-set-buffer-modified-p (flag &optional buffer)

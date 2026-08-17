@@ -1311,7 +1311,8 @@ Say which file holds the local cache of this POP or IMAP folder.
 Answers nil for a folder that is a file in the first place.  BUFFER is the
 folder to ask about, the current one by default -- and a summary or
 presentation buffer counts as its folder, since that is where the reader
-is when the question occurs to them.
+is when the question occurs to them.  In a virtual folder the answer is
+about the folder the message being looked at really lives in.
 
 A cache file is named after the MD5 of the maildrop, so it can be neither
 read nor typed by hand.
