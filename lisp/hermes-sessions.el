@@ -267,20 +267,26 @@ client just for the listing."
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
          (profile (hermes-sessions--non-empty-field session 'profile))
-         (origin (current-buffer)))
+         (origin (current-buffer))
+         (origin-mode (if (derived-mode-p 'hermes-session-detail-mode)
+                          'hermes-session-detail-mode
+                        'hermes-sessions-mode)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to update"))
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (hermes-sessions--rest
-        client "PATCH" (concat "/api/sessions/" (url-hexify-string id))
-        (append `((archived . ,(if archived t :false)))
-                (and profile `((profile . ,profile))))))
-     (lambda (_result)
-       (message "Hermes: %s session %s"
-                (if archived "archived" "unarchived") id)
-       (when (hermes-browser--buffer-mode-p origin 'hermes-sessions-mode)
-         (with-current-buffer origin (hermes-sessions--revert)))))))
+    (let ((generation (hermes-browser--next-request-generation)))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-sessions--rest
+          client "PATCH" (concat "/api/sessions/" (url-hexify-string id))
+          (append `((archived . ,(if archived t :false)))
+                  (and profile `((profile . ,profile))))))
+       (lambda (_result)
+         (when (hermes-browser--request-current-mode-p
+                origin generation origin-mode)
+           (message "Hermes: %s session %s"
+                    (if archived "archived" "unarchived") id)
+           (when (eq origin-mode 'hermes-sessions-mode)
+             (with-current-buffer origin (hermes-sessions--revert)))))))))
 
 (defun hermes-sessions-archive ()
   "Archive the selected Hermes session."

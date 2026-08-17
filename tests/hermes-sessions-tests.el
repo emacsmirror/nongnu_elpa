@@ -213,6 +213,40 @@
         (when (get-buffer "*Hermes Sessions*")
           (kill-buffer "*Hermes Sessions*"))))))
 
+(ert-deftest hermes-sessions-archive-stale-success-does-not-report-or-refresh ()
+  "A late archive cannot report success or refresh a superseded list."
+  (let ((patch (hermes--promise-make)) messages refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (_client method &rest _)
+                 (if (equal method "PATCH")
+                     patch
+                   (error "A stale archive must not start a new API read"))))
+              ((symbol-function 'hermes-sessions--revert)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render
+             '(((id . "s1") (profile . "work"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-archive)
+              (hermes-browser--next-request-generation)
+              (hermes--promise-resolve patch '((ok . t)))
+              (should-not refreshed)
+              (should-not (cl-find-if (lambda (text)
+                                        (string-match-p "archived" text))
+                                      messages))))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
 (ert-deftest hermes-sessions-open-preserves-profile ()
   "Opening a row resumes its durable id under its owning profile."
   (let ((instance '("remote" . "https://hermes.example.test")) resumed)
