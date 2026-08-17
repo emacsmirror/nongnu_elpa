@@ -1122,6 +1122,9 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 
   (if (and do-retrieves vm-block-new-mail)
       (error "Can't get new mail until you save this folder."))
+  (if (and do-retrieves (vm-pop-net-get-folder-mail))
+      ;; on its way, and this returns before it lands
+      t
   (if (or vm-global-block-new-mail
 	  (null (vm-establish-new-folder-pop-session interactive)))
       nil
@@ -1208,7 +1211,7 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 	    (setq vm-pop-messages-to-expunge
 		  (mapcar (function (lambda (x) (car x)))
 			  vm-pop-retrieved-messages))))
-      got-some)))
+      got-some))))
 
 ;;;###autoload
 (defun vm-pop-folder-check-mail (&optional interactive)
