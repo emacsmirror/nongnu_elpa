@@ -4872,8 +4872,16 @@ that is current belongs to whoever was typing."
 	    (vm-update-summary-and-mode-line)))))))
 
 (defun vm-start-mail-check (maildrop)
-  "Ask MAILDROP whether it has mail, and carry on without the answer."
-  (unless (member maildrop vm-mail-checks-outstanding)
+  "Ask MAILDROP whether it has mail, and carry on without the answer.
+
+Not while this folder is fetching: the check would open a second connection
+to a maildrop VM is in the middle of reading, and a POP server holds one
+session at a time -- the second is refused, or worse, taken and the first
+one's view of the maildrop is stale.  The fetch will say what arrived
+anyway, which is what the check was going to ask."
+  (unless (or (member maildrop vm-mail-checks-outstanding)
+	      (vm-pop-net-busy-p)
+	      (vm-imap-net-busy-p))
     (let ((buffer (current-buffer)))
       (setq vm-mail-checks-outstanding
 	    (cons maildrop vm-mail-checks-outstanding))

@@ -35,6 +35,11 @@
 ;;                    what a real interrupted download looks like
 ;;   :lie-about-size  report a wrong octet count in RFC822.SIZE
 ;;   :slow-greeting   wait before greeting, for timeout tests
+;;   :reorder-fetch   answer a FETCH of several messages backwards, which a
+;;                    server may do: the responses carry UIDs and the client
+;;                    is expected to tell them apart by those, not by order
+;;   :drop-after-fetch  N; close the connection after N FETCH responses, which
+;;                    is a download interrupted between messages
 ;;   :preauth         greet with PREAUTH: the connection arrives authenticated,
 ;;                    which is what a session over ssh or through a helper
 ;;                    program looks like
@@ -59,7 +64,7 @@
   (log nil)
   ;; faults
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
-  no-uidplus capabilities preauth
+  no-uidplus capabilities preauth reorder-fetch drop-after-fetch
   authenticated)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
@@ -310,13 +315,23 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 		       (vm-imap-mock--uid-range mock spec)
 		     (mapcar (lambda (n) (nth (1- n) messages))
 			     (vm-imap-mock--number-range spec (length messages))))))
-      (dolist (message wanted)
-	(when (process-live-p process)
-	  (vm-imap-mock--fetch-one mock process
-				   (1+ (cl-position message messages))
-				   message items)))
-      (when (process-live-p process)
-	(vm-imap-mock--send process (format "%s OK FETCH completed\r\n" tag))))))
+      (when (vm-imap-mock-reorder-fetch mock)
+	(setq wanted (reverse wanted)))
+      (let ((sent 0)
+	    (limit (vm-imap-mock-drop-after-fetch mock)))
+	(catch 'dropped
+	  (dolist (message wanted)
+	    (when (process-live-p process)
+	      (vm-imap-mock--fetch-one mock process
+				       (1+ (cl-position message messages))
+				       message items)
+	      (setq sent (1+ sent))
+	      (when (and limit (>= sent limit))
+		(delete-process process)
+		(throw 'dropped t))))
+	  (when (process-live-p process)
+	    (vm-imap-mock--send process
+				(format "%s OK FETCH completed\r\n" tag))))))))
 
 (defun vm-imap-mock--store (mock process tag spec sign flags by-uid silent)
   "Answer a STORE or UID STORE, setting FLAGS on the messages SPEC covers."
@@ -625,7 +640,8 @@ not ask about the live process."
 				   (mailbox "INBOX") messages
 				   refuse bad drop-on truncate-fetch
 				   lie-about-size slow-greeting no-uidplus
-				   capabilities preauth)
+				   capabilities preauth reorder-fetch
+				   drop-after-fetch)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -640,7 +656,9 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:slow-greeting slow-greeting
 		:no-uidplus no-uidplus
 		:capabilities capabilities
-		:preauth preauth))
+		:preauth preauth
+		:reorder-fetch reorder-fetch
+		:drop-after-fetch drop-after-fetch))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t

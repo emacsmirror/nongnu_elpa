@@ -489,6 +489,12 @@ buffer is, not in a process filter."
 (defvar vm-pop-auto-expunge-alist)
 (defvar vm-pop-expunge-after-retrieving)
 
+(defvar vm-pop-net-session nil
+  "The session this folder has running, if it has one.
+A folder runs one at a time: two writing into it would interleave what they
+put there.")
+(make-variable-buffer-local 'vm-pop-net-session)
+
 (defun vm-pop-net-auto-expunge-p (source)
   "Whether messages fetched from SOURCE are to be deleted from the server.
 `vm-pop-auto-expunge-alist\=' first, by the maildrop with its password and
@@ -567,7 +573,8 @@ Nothing waits.  Whether the messages are deleted from the server is
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back
 	(folder-type (or vm-folder-type vm-default-folder-type)))
-    (vm-pop-net-fetch
+    (setq vm-pop-net-session
+	  (vm-pop-net-fetch
      source vm-pop-retrieved-messages
      (lambda (result)
        (when (buffer-live-p folder)
@@ -580,7 +587,7 @@ Nothing waits.  Whether the messages are deleted from the server is
 				    result crash-box folder-type)))
 			(vm-pop-net-note-retrieved result source)
 			count))))))
-     (vm-pop-net-auto-expunge-p source))))
+     (vm-pop-net-auto-expunge-p source)))))
 
 
 ;;; A POP folder, which is a maildrop VM keeps a copy of
@@ -603,12 +610,6 @@ Nothing waits.  Whether the messages are deleted from the server is
 (defvar vm-spooled-mail-waiting)
 (defvar vm-buffers-needing-display-update)
 (defvar vm-modification-counter)
-
-(defvar vm-pop-net-session nil
-  "The session this folder has running, if it has one.
-A folder runs one at a time: two writing into it would interleave what they
-put there.")
-(make-variable-buffer-local 'vm-pop-net-session)
 
 (defvar vm-mail-buffer)
 
