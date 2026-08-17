@@ -1427,6 +1427,60 @@ saying so means the session exists."
       (should (vm-imap-net-busy-p))
       (should (vm-imap-net-wait nil 10)))))
 
+
+;;; Asking for a password, and not asking
+
+(ert-deftest vm-imap-net-test-a-command-may-ask-for-a-password ()
+  "A maildrop whose password VM does not hold is opened by a command asking
+for it.  That is where the blocking path was being reached from: a fresh
+Emacs holds no passwords, so the first fetch of every session went the old
+way and stopped Emacs for as long as it took."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
+           (vm-imap-passwords nil)
+           (auth-sources nil)
+           (vm-imap-ok-to-ask t)
+           (asked 0))
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _) (setq asked (1+ asked)) "secret")))
+        (let* ((opened (vm-imap-net-open spec "asking" 'may-ask))
+               (session (car opened)))
+          (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+          (should (equal asked 1))
+          (should (equal (nth 3 opened) "secret"))
+          (let ((process (vm-net-session-process session)))
+            (when (process-live-p process) (delete-process process))))))))
+
+(ert-deftest vm-imap-net-test-a-timer-never-asks-for-a-password ()
+  "The check runs on a timer, and a question from a timer arrives while
+somebody is typing something else.  It declines instead, and the blocking
+path -- which the reader started -- can ask."
+  (let ((spec "imap:host:143:INBOX:login:someone:*")
+        (vm-imap-passwords nil)
+        (auth-sources nil)
+        (vm-imap-ok-to-ask t)
+        (asked 0))
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _) (setq asked (1+ asked)) "secret")))
+      ;; no MAY-ASK: this is what the check passes
+      (should-error (vm-imap-net-open spec "checking")
+                    :type 'vm-imap-net-unsupported)
+      (should (equal asked 0)))))
+
+(ert-deftest vm-imap-net-test-no-asking-when-vm-says-not-to ()
+  "`vm-imap-ok-to-ask' nil means no question may be put, whoever is calling."
+  (let ((spec "imap:host:143:INBOX:login:someone:*")
+        (vm-imap-passwords nil)
+        (auth-sources nil)
+        (vm-imap-ok-to-ask nil)
+        (asked 0))
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _) (setq asked (1+ asked)) "secret")))
+      (should-error (vm-imap-net-open spec "asking" 'may-ask)
+                    :type 'vm-imap-net-unsupported)
+      (should (equal asked 0)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
