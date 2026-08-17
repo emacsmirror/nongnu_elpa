@@ -1990,5 +1990,69 @@ say what arrived anyway."
 	    t)
 	(vm-imap-net-unsupported nil))))))
 
+
+;;; The check on a maildrop, which is what the timer asks
+
+(defun vm-imap-net-checkable-p (source)
+  "Whether SOURCE can be checked for mail without waiting.
+An imap or imap-ssl maildrop whose password VM holds -- in the maildrop, in
+its own cache, or in auth-source.  Over ssh a tunnel program has to be
+started, and preauth runs a hook; neither belongs in a timer behind the
+reader, and both would want the blocking path to ask a question."
+  (condition-case nil
+      (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
+	     (protocol (car parts))
+	     (password (nth 6 parts)))
+	(and (member protocol '("imap" "imap-ssl"))
+	     (equal (nth 4 parts) "login")
+	     (or (and password (not (equal password "*")))
+		 (car (cdr (assoc (vm-imapdrop-sans-password-and-mailbox source)
+				  vm-imap-passwords))))
+	     t))
+    (error nil)))
+
+(iter-defun vm-imap-net-unretrieved-count (mailbox user password source retrieved)
+  "How many messages MAILBOX holds that RETRIEVED does not have.
+The maildrop is examined rather than selected: a check is not a reason to
+mark anything seen."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
+	       (count (nth 0 select))
+	       (data (if (zerop count)
+			 nil
+		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
+	  (length (vm-imap-net-unretrieved data source retrieved))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-check-mail (source callback)
+  "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
+
+CALLBACK is called with t, nil, or the error that stopped the session.  It is
+called from the process filter, so the folder buffer it wants is the one it
+remembers, not the one that happens to be current.
+
+Nothing waits: this returns as soon as the connection is started."
+  (let* ((retrieved vm-imap-retrieved-messages)
+	 (opened (vm-imap-net-open source "IMAP check"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (funcall callback
+		     (if (vm-net-session-error finished)
+			 (vm-net-session-error finished)
+		       (let ((count (vm-net-session-value finished)))
+			 (and count (> count 0)))))))
+    (vm-net-start session
+		  (vm-imap-net-unretrieved-count
+		   (nth 1 opened) (nth 2 opened) (nth 3 opened)
+		   source retrieved))
+    session))
+
 (provide 'vm-imap-net)
 ;;; vm-imap-net.el ends here

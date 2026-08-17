@@ -4897,9 +4897,12 @@ anyway, which is what the check was going to ask."
       (setq vm-mail-checks-outstanding
 	    (cons maildrop vm-mail-checks-outstanding))
       (condition-case err
-	  (vm-pop-net-check-mail
-	   maildrop
-	   (lambda (answer) (vm-note-mail-waiting buffer maildrop answer)))
+	  (funcall (if (vm-imap-folder-spec-p maildrop)
+		       #'vm-imap-net-check-mail
+		     #'vm-pop-net-check-mail)
+		   maildrop
+		   (lambda (answer)
+		     (vm-note-mail-waiting buffer maildrop answer)))
 	(error
 	 (setq vm-mail-checks-outstanding
 	       (delete maildrop vm-mail-checks-outstanding))
@@ -4943,13 +4946,15 @@ anyway, which is what the check was going to ask."
 			   (setq meth 'vm-pop-check-mail))
 			  (t (setq meth 'vm-spool-check-mail)))
 		    (cond
-		     ;; A POP maildrop VM can ask without waiting is asked
-		     ;; without waiting: the check is started here and its
-		     ;; answer arrives at `vm-note-mail-waiting'.  What this
-		     ;; round contributes is the answer the last one got
+		     ;; A maildrop VM can ask without waiting is asked without
+		     ;; waiting: the check is started here and its answer
+		     ;; arrives at `vm-note-mail-waiting'.  What this round
+		     ;; contributes is the answer the last one got
 		     ;; (emacs-vm/vm#473).
-		     ((and (eq meth 'vm-pop-check-mail)
-			   (vm-pop-net-checkable-p maildrop))
+		     ((or (and (eq meth 'vm-pop-check-mail)
+			       (vm-pop-net-checkable-p maildrop))
+			  (and (eq meth 'vm-imap-check-mail)
+			       (vm-imap-net-checkable-p maildrop)))
 		      (vm-start-mail-check maildrop)
 		      (setq mail-waiting
 			    (or mail-waiting (vm-mail-waiting-p maildrop))))

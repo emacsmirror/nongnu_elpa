@@ -1215,6 +1215,104 @@ is not written down back to the blocking path."
         (let ((process (vm-net-session-process session)))
           (when (process-live-p process) (delete-process process)))))))
 
+
+;;; The check on a maildrop, which is what the timer asks
+
+(defmacro vm-imap-net-test--in-a-folder-with-spool (spec &rest body)
+  "Visit a local folder whose spool file is MOCK's maildrop, and run BODY."
+  (declare (indent 1) (debug t))
+  `(vm-imap-mock-with (,(car spec) ,@(cdr spec))
+     (let* ((dir (file-name-as-directory (make-temp-file "vm-imap-check" t)))
+            (folder (expand-file-name "inbox" dir))
+            (crash (expand-file-name "crash" dir))
+            (vm-init-file nil)
+            (vm-preferences-file nil)
+            (vm-confirm-quit nil)
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (vm-folder-history vm-folder-history)
+            (vm-global-block-new-mail nil)
+            (vm-auto-get-new-mail nil)
+            (vm-imap-server-timeout 20)
+            (vm-imap-retrieved-messages nil)
+            (vm-crash-box crash)
+            (vm-spool-files (list (list folder (vm-imap-mock-spec ,(car spec))
+                                        crash)))
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (write-region "" nil folder nil 'quiet)
+             (cl-letf (((symbol-function 'vm-display) #'ignore))
+               (vm-visit-folder folder)
+               ,@body))
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory dir t)))))
+
+(defun vm-imap-net-test--settle (&optional seconds)
+  "Let the outstanding mail checks answer."
+  (let ((deadline (+ (float-time) (or seconds 20))))
+    (while (and vm-mail-checks-outstanding (< (float-time) deadline))
+      (accept-process-output nil 0.05))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-check-does-not-wait ()
+  "The check on an IMAP maildrop starts and returns.  It runs on a timer, and
+every round of it stopped Emacs for as long as the server took -- 41 seconds
+in one report, with half a second of that VM's own work."
+  (vm-imap-net-test--in-a-folder-with-spool (mock :messages
+                                                  (list vm-imap-net-test--alice))
+    (let ((started (float-time)))
+      (should-not (vm-check-for-spooled-mail nil t))
+      (should (< (- (float-time) started) 0.5))
+      (should vm-mail-checks-outstanding))
+    ;; and the answer arrives afterwards
+    (vm-imap-net-test--settle)
+    (should vm-spooled-mail-waiting)
+    (should-not vm-mail-checks-outstanding)))
+
+(ert-deftest vm-imap-net-test-the-next-round-reports-the-last-answer ()
+  "The round after the answer says there is mail: a check that cannot answer
+in the round that started it would otherwise never report anything."
+  (vm-imap-net-test--in-a-folder-with-spool (mock :messages
+                                                  (list vm-imap-net-test--alice))
+    (vm-check-for-spooled-mail nil t)
+    (vm-imap-net-test--settle)
+    (should (vm-check-for-spooled-mail nil t))))
+
+(ert-deftest vm-imap-net-test-an-empty-maildrop-reports-nothing ()
+  "A maildrop with nothing in it answers nil, and the folder says so."
+  (vm-imap-net-test--in-a-folder-with-spool (mock :messages nil)
+    (vm-check-for-spooled-mail nil t)
+    (vm-imap-net-test--settle)
+    (should-not vm-spooled-mail-waiting)))
+
+(ert-deftest vm-imap-net-test-a-checked-maildrop-is-not-marked-seen ()
+  "A check examines the mailbox rather than selecting it: looking for mail is
+not reading it, and a check that marked messages seen would be a check that
+changed the thing it was asked about."
+  (vm-imap-net-test--in-a-folder-with-spool (mock :messages
+                                                  (list vm-imap-net-test--alice))
+    (vm-check-for-spooled-mail nil t)
+    (vm-imap-net-test--settle)
+    (should (vm-imap-mock-received-p mock "EXAMINE"))
+    (should-not (vm-imap-mock-received-p mock "\\`vm[0-9]+ SELECT"))
+    (should-not (member "\\Seen" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-vm-cannot-ask-is-left-to-the-old-path ()
+  "A maildrop that would have to start a program or ask a question is not one
+a timer may check, and `vm-imap-net-checkable-p' says so."
+  (should (vm-imap-net-checkable-p "imap:host:143:INBOX:login:someone:secret"))
+  (should-not (vm-imap-net-checkable-p "imap-ssh:host:143:INBOX:login:me:x"))
+  (should-not (vm-imap-net-checkable-p "imap:host:143:INBOX:preauth:me:x"))
+  (let ((vm-imap-passwords nil))
+    (should-not (vm-imap-net-checkable-p "imap:host:143:INBOX:login:me:*")))
+  ;; and one whose password VM has learned is checkable after all
+  (let ((vm-imap-passwords (list (list "imap:host:143:*:login:me:*" "secret"))))
+    (should (vm-imap-net-checkable-p "imap:host:143:INBOX:login:me:*"))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
