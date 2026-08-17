@@ -185,8 +185,13 @@ IMAP and POP work (emacs-vm/vm#473). It is pushed so that others can test it.
 
 - Work on that conversion is cut from `central/develop-async` and its merge
   requests target `develop-async`.
-- Merge `develop` into `develop-async` regularly; never rebase it. The branch
-  is published and other people have it checked out.
+- **The branch stays separate from `develop` for a while.** It is not to be
+  merged the other way, and no schedule for that is assumed.
+- **Merge `develop` into `develop-async` whenever `develop` moves**, and never
+  rebase it. The branch is published and other people have it checked out. Do
+  the merge as part of whatever put the commit on `develop`, rather than
+  leaving the two to drift: the async branch is what people are testing, and
+  a fix they cannot see is a fix they will report again.
 - The decision on that branch is **non-blocking only**: no synchronous driver
   and no dual mode, so every converted path is asynchronous from the moment it
   lands. `dev/docs/design/async-imap.org` has the reasoning and the order of
