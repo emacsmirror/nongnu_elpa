@@ -1423,6 +1423,10 @@ case of errors."
   "Forget the cached password for the IMAP account corresponding to
 SOURCE, and also for USER at HOST on PORT.  The forgetting is done
 inside VM as well in auth-source (if it is being used)."
+  ;; Logged: being asked for a password that was typed a minute ago is either
+  ;; this or a password that was never remembered, and the two want different
+  ;; fixes.
+  (vm-inform 6 "forgetting the password for %s" source)
   (setq vm-imap-passwords
 	(vm-delete (lambda (pair)
 		     (equal (car pair) source))

@@ -671,20 +671,24 @@ ask from inside a filter."
       ;; maildrop.  VM may already know it; failing that, a command may ask
       ;; the reader, which is what the blocking path did and the only reason
       ;; it was reached at all.
-      (setq password (or (vm-imap-net-known-password source user host port)
-			 (and may-ask
-			      ;; `vm-imap-ok-to-ask' is nil unless something
-			      ;; has bound it, and nothing binds it on the way
-			      ;; here: requiring it meant the question was
-			      ;; never put and the blocking path asked instead
-			      (let ((vm-imap-ok-to-ask t))
-				(condition-case nil
-				    (vm-imap-get-password
-				     (or (vm-imap-folder-for-spec source)
-					 (vm-safe-imapdrop-string source))
-				     (vm-imapdrop-sans-password-and-mailbox source)
-				     user host port t "reading mail")
-				  (error nil))))))
+      (setq password
+	    (or (vm-imap-net-known-password source user host port)
+		(and may-ask
+		     ;; `vm-imap-ok-to-ask' is nil unless something has bound
+		     ;; it, and nothing binds it on the way here: requiring it
+		     ;; meant the question was never put and the blocking path
+		     ;; asked instead
+		     (let ((vm-imap-ok-to-ask t))
+		       (vm-inform 6 "%s: asking for a password, VM has none"
+				  (or (vm-imap-account-name-for-spec source)
+				      (vm-safe-imapdrop-string source)))
+		       (condition-case nil
+			   (vm-imap-get-password
+			    (or (vm-imap-folder-for-spec source)
+				(vm-safe-imapdrop-string source))
+			    (vm-imapdrop-sans-password-and-mailbox source)
+			    user host port t "reading mail")
+			 (error nil))))))
       (unless (and (stringp password) (not (equal password "")))
 	(signal 'vm-imap-net-unsupported
 		(list "password not remembered" source))))

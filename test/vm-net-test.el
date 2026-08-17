@@ -390,6 +390,28 @@ leaves no probe behind."
     (should-not (vm-net-listening-p port))
     (should-not (gethash port vm-net--probes))))
 
+
+(ert-deftest vm-net-test-a-tunnel-leaves-no-probe-behind ()
+  "The probe waiting on the port goes when the wait is over.
+
+A connection left open to a port keeps whatever is on the other end of it
+busy, and a port on this machine is handed out again: a probe left over from
+one wait was found holding a later server's only connection, and the fetch on
+it timed out."
+  (let* ((session (vm-net-session :name "test"))
+         (port (vm-net-free-port))
+         (ready 'not-called))
+    (setf (vm-net-session-buffer session) (generate-new-buffer " *vm-net-test*"))
+    (vm-net-start session (vm-net-test--read-line))
+    (vm-net-tunnel session "sleep" (list "30") port 0.3
+                   (lambda (tunnel) (setq ready tunnel)))
+    (let ((deadline (+ (float-time) 5)))
+      (while (and (eq ready 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    (should (null ready))
+    (should-not (gethash port vm-net--probes))
+    (kill-buffer (vm-net-session-buffer session))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

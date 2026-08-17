@@ -1582,6 +1582,39 @@ offset would give message N the UID of message N minus a bunch."
           (should (equal (vm-su-subject message)
                          (format "number %d" (1- n)))))))))
 
+
+(ert-deftest vm-imap-net-test-a-password-once-given-is-not-asked-for-again ()
+  "A password typed for one fetch serves the next.
+
+Reported as \"password is not saved between getting mail\".  What the log
+says when it happens is either \"asking for a password, VM has none\" or
+\"forgetting the password for ...\", and those want different fixes: one is a
+password that was never remembered, the other one that was thrown away."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
+           (vm-imap-passwords nil)
+           (auth-sources nil)
+           (asked 0))
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _) (setq asked (1+ asked)) "secret")))
+        (dolist (_round '(1 2))
+          (let* ((opened (vm-imap-net-open spec "twice" 'may-ask))
+                 (session (car opened))
+                 (buffer (vm-net-session-buffer session)))
+            (vm-net-start session (vm-imap-net-open-session (nth 2 opened)
+                                                           (nth 3 opened)))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (let ((process (vm-net-session-process session)))
+              (when (process-live-p process) (delete-process process)))
+            (when (buffer-live-p buffer) (kill-buffer buffer)))))
+      ;; asked once, for two logins
+      (should (equal asked 1)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
