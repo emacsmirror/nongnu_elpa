@@ -153,10 +153,19 @@
 
 ;;;###autoload
 (defun vm-folder-cache-file (&optional buffer)
-  "Return the cache file path for BUFFER, or current buffer if nil.
-Returns nil if BUFFER is not a VM folder with a remote access method."
+  "Say which file holds the local cache of this POP or IMAP folder.
+
+Answers nil for a folder that is a file in the first place.  BUFFER is the
+folder to ask about, the current one by default -- and a summary or
+presentation buffer counts as its folder, since that is where the reader
+is when the question occurs to them.
+
+A cache file is named after the MD5 of the maildrop, so it can be neither
+read nor typed by hand."
   (interactive)
-  (let ((file (with-current-buffer (or buffer (current-buffer))
+  (let ((file (save-current-buffer
+                (when buffer (set-buffer buffer))
+                (vm-select-folder-buffer-if-possible)
                 (cond ((eq vm-folder-access-method 'imap)
                        (vm-imap-make-filename-for-spec (vm-folder-imap-maildrop-spec)))
                       ((eq vm-folder-access-method 'pop)

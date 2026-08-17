@@ -1306,8 +1306,15 @@ they were last worked out.
 
 @deffn Command vm-folder-cache-file &optional buffer
 @findex vm-folder-cache-file
-Return the cache file path for BUFFER, or current buffer if nil.
-Returns nil if BUFFER is not a VM folder with a remote access method.
+Say which file holds the local cache of this POP or IMAP folder.
+
+Answers nil for a folder that is a file in the first place.  BUFFER is the
+folder to ask about, the current one by default -- and a summary or
+presentation buffer counts as its folder, since that is where the reader
+is when the question occurs to them.
+
+A cache file is named after the MD5 of the maildrop, so it can be neither
+read nor typed by hand.
 @end deffn
 
 @deffn Command vm-folder-name
