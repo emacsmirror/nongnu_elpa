@@ -1243,10 +1243,8 @@ there, so a message the server did not answer for is asked for again rather
 than left empty."
   (let ((folder (vm-buffer-of (car messages))))
     (with-current-buffer folder
-      (condition-case nil
+      (condition-case reason
 	  (progn
-	    (vm-inform 6 "%s: fetching %d message bod%s" (buffer-name folder)
-		       (length messages) (if (cdr messages) "ies" "y"))
 	    (vm-imap-net-load-bodies
 	     messages
 	     (lambda (result)
@@ -1261,8 +1259,13 @@ than left empty."
 		      (vm-inform 5 "%s: %d message bod%s loaded"
 				 (buffer-name folder) result
 				 (if (= result 1) "y" "ies"))))))
+	    (vm-inform 6 "%s: fetching %d message bod%s without waiting"
+		       (buffer-name folder)
+		       (length messages) (if (cdr messages) "ies" "y"))
 	    t)
-	(vm-imap-net-unsupported nil)))))
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil)))))
 
 ;;; Saving a message to a mailbox
 
@@ -1428,7 +1431,7 @@ blocking way."
     (cond
      ((vm-imap-net-busy-p) nil)
      (t
-      (condition-case nil
+      (condition-case reason
 	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
 					   "IMAP flags"))
 		 (session (car opened))
@@ -1451,7 +1454,9 @@ blocking way."
 			   folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
 	    (setq vm-imap-net-session session)
 	    t)
-	(vm-imap-net-unsupported nil))))))
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil))))))
 
 (iter-defun vm-imap-net-expunge-session (user password mailbox uids)
 	    "Log in, select MAILBOX, and expunge UIDS from it."
@@ -1472,7 +1477,7 @@ opened without waiting, and the caller is to do it the blocking way."
      ((null uids) nil)
      ((vm-imap-net-busy-p) nil)
      (t
-      (condition-case nil
+      (condition-case reason
 	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
 					   "IMAP expunge"))
 		 (session (car opened))
@@ -1497,7 +1502,9 @@ opened without waiting, and the caller is to do it the blocking way."
 			   (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
 	    (setq vm-imap-net-session session)
 	    t)
-	(vm-imap-net-unsupported nil))))))
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil))))))
 
 (defun vm-imap-net-get-mail (source callback)
   "Fetch into the current folder what SOURCE has that it has not, and
@@ -1548,6 +1555,15 @@ the folder's, and those buffers name it in `vm-mail-buffer\='."
     (and vm-imap-net-session
 	 (vm-net-session-live-p vm-imap-net-session))))
 
+(defun vm-imap-net-say-why-not (folder reason)
+  "Record that the driver left FOLDER's work to the blocking path, and why.
+REASON is the `vm-imap-net-unsupported\=' signal.  Without this the log said
+what VM was about to do and not what it did: a maildrop the driver declines
+looks exactly like one it took until the blocking path announces itself."
+  (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+	     (if (bufferp folder) (buffer-name folder) folder)
+	     (or (car (cdr reason)) "not supported")))
+
 (defun vm-imap-net-get-spooled-mail ()
   "Start fetching this IMAP folder's new mail, and answer with whether it did.
 
@@ -1566,10 +1582,8 @@ messages."
       (vm-inform 6 "%s: already fetching" (buffer-name folder))
       t)
      (t
-      (condition-case nil
+      (condition-case reason
 	  (progn
-	    (vm-inform 6 "%s: fetching new mail without waiting"
-		       (buffer-name folder))
 	    (setq vm-imap-net-session
 		  (vm-imap-net-get-mail
 		   (vm-folder-imap-maildrop-spec)
@@ -1583,8 +1597,12 @@ messages."
 			   (t
 			    (vm-inform 5 "%s: no new mail"
 				       (buffer-name folder)))))))
+	    (vm-inform 6 "%s: fetching new mail without waiting"
+		       (buffer-name folder))
 	    t)
-	(vm-imap-net-unsupported nil))))))
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil))))))
 
 (defun vm-imap-net-wait (&optional folder seconds)
   "Wait for FOLDER's fetch to finish, up to SECONDS.
@@ -1987,10 +2005,8 @@ say what arrived anyway."
     (cond
      ((vm-imap-net-busy-p) nil)
      (t
-      (condition-case nil
-	  (let* ((_ (vm-inform 6 "%s: checking the server without waiting"
-			       (buffer-name folder)))
-		 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
+      (condition-case reason
+	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
 					   "IMAP checkmail"))
 		 (session (car opened))
 		 (buffer (vm-net-session-buffer session)))
@@ -2018,8 +2034,12 @@ say what arrived anyway."
 			  (vm-imap-net-check folder (nth 1 opened) (nth 2 opened)
 					     (nth 3 opened)))
 	    (setq vm-imap-net-session session)
+	    (vm-inform 6 "%s: checking the server without waiting"
+		       (buffer-name folder))
 	    t)
-	(vm-imap-net-unsupported nil))))))
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil))))))
 
 
 ;;; The check on a maildrop, which is what the timer asks

@@ -1382,6 +1382,51 @@ log in with, and the maildrop is left to the blocking path -- which can ask."
     (let ((vm-imap-passwords (list (list key "secret"))))
       (should (vm-imap-net-checkable-p spec)))))
 
+
+;;; The log says which path took the work
+
+(ert-deftest vm-imap-net-test-declining-says-so-and-why ()
+  "A maildrop the driver will not open is announced as such, with the reason.
+
+Without it the log said what VM was about to do rather than what it did: the
+line said \"fetching new mail without waiting\" and the blocking path then
+did the fetching, which is how a locked-up Emacs came to look like a
+converted one."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((said nil)
+          (vm-imap-passwords nil)
+          (auth-sources nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said)))
+                ((symbol-function 'vm-folder-imap-maildrop-spec)
+                 ;; a password VM has not been told, and nobody to ask
+                 (lambda () "imap:host:143:INBOX:login:someone:*")))
+        (should-not (vm-imap-net-get-spooled-mail)))
+      (should (seq-find (lambda (line)
+                          (string-match-p "leaving it to the blocking path"
+                                          line))
+                        said))
+      ;; and it does not claim to be fetching
+      (should-not (seq-find (lambda (line)
+                              (string-match-p "without waiting" line))
+                            said)))))
+
+(ert-deftest vm-imap-net-test-taking-the-work-says-so-after-it-started ()
+  "The driver says it has the work once the session is running, so a line
+saying so means the session exists."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said))))
+        (should (vm-imap-net-get-spooled-mail)))
+      (should (seq-find (lambda (line)
+                          (string-match-p "fetching new mail without waiting"
+                                          line))
+                        said))
+      (should (vm-imap-net-busy-p))
+      (should (vm-imap-net-wait nil 10)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
