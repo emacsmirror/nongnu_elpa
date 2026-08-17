@@ -214,6 +214,9 @@ generator rather than dropping it."
 ;;; Connecting
 
 (declare-function vm-pop-parse-spec-to-list "vm-pop" (spec))
+(declare-function vm-pop-get-password "vm-pop"
+		  (popdrop source user host port ask-password))
+(declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
 (declare-function vm-popdrop-sans-password "vm-misc" (source))
 (declare-function vm-binary-coding-system "vm-misc" ())
 
@@ -264,7 +267,21 @@ it is.  A maildrop whose password VM has not been told signals
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")
-      (signal 'vm-pop-net-unsupported (list "password not remembered" source)))
+      ;; "*" means VM is to find the password rather than read it out of the
+      ;; maildrop.  It may already know it -- from a session earlier in this
+      ;; Emacs, or from auth-source -- and only asking the user is out of the
+      ;; question here, there being nobody to ask from inside a filter.
+      (setq password
+	    (condition-case nil
+		(vm-pop-get-password
+		 (or (vm-pop-find-name-for-spec source)
+		     (vm-safe-popdrop-string source))
+		 (vm-popdrop-sans-password source)
+		 user host port nil)
+	      (error nil)))
+      (unless password
+	(signal 'vm-pop-net-unsupported
+		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
 	   (session (vm-net-session :name name :timeout vm-pop-server-timeout)))
       (with-current-buffer buffer

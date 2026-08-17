@@ -535,6 +535,8 @@ read, which is what keeps a mailbox of any size out of memory."
 (defvar vm-imap-passwords)
 
 (declare-function vm-imapdrop-sans-password-and-mailbox "vm-misc" (source))
+(declare-function vm-imap-get-password "vm-imap"
+		  (folder source user host port ask-password purpose))
 
 (define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
 
@@ -616,7 +618,21 @@ ask from inside a filter."
     (unless (or preauth (equal auth "login"))
       (signal 'vm-imap-net-unsupported (list (or auth "no authentication") source)))
     (when (and (equal password "*") (not preauth))
-      (signal 'vm-imap-net-unsupported (list "password not remembered" source)))
+      ;; "*" means VM is to find the password rather than read it out of the
+      ;; maildrop.  It may already know it -- from a session earlier in this
+      ;; Emacs, or from auth-source -- and only asking the user is out of the
+      ;; question here, there being nobody to ask from inside a filter.
+      (setq password
+	    (condition-case nil
+		(vm-imap-get-password
+		 (or (vm-imap-folder-for-spec source)
+		     (vm-safe-imapdrop-string source))
+		 (vm-imapdrop-sans-password-and-mailbox source)
+		 user host port nil "the driver")
+	      (error nil)))
+      (unless password
+	(signal 'vm-imap-net-unsupported
+		(list "password not remembered" source))))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     ;; What the blocking path remembers when it logs in.  An operation that
@@ -1906,6 +1922,73 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 				    retrieved delete))
     (setq vm-imap-net-session session)
     session))
+
+
+;;; The check that runs on a timer
+
+(declare-function vm-folder-imap-recent-count "vm-folder" ())
+(defvar vm-spooled-mail-waiting)
+
+(iter-defun vm-imap-net-check (folder mailbox user password)
+  "Say whether MAILBOX holds mail FOLDER has not got.
+Answers the number of messages to be fetched.  The same comparison the fetch
+itself makes -- the UIDs the server has against the UIDs the folder has --
+since a count of what is there says nothing about what is new."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
+	       (count (nth 0 select))
+	       (data (if (zerop count)
+			 nil
+		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
+	  (with-current-buffer folder
+	    (length (nth 0 (vm-imap-net-plan data count))))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-folder-check-mail ()
+  "Start asking whether this IMAP folder has new mail, and answer with
+whether it did.  The answer to the question itself arrives later, in
+`vm-spooled-mail-waiting\=', which is what the mode line reads.
+
+Nil means the maildrop is one that cannot be opened without waiting, or a
+session is already running -- and a session already running is one that will
+say what arrived anyway."
+  (let ((folder (current-buffer)))
+    (cond
+     ((vm-imap-net-busy-p) nil)
+     (t
+      (condition-case nil
+	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
+					   "IMAP checkmail"))
+		 (session (car opened))
+		 (buffer (vm-net-session-buffer session)))
+	    (setf (vm-net-session-finished session)
+		  (lambda (finished)
+		    (let ((process (vm-net-session-process finished)))
+		      (when (process-live-p process) (delete-process process)))
+		    (when (buffer-live-p buffer) (kill-buffer buffer))
+		    (when (buffer-live-p folder)
+		      (with-current-buffer folder
+			(if (vm-net-session-error finished)
+			    (vm-inform 6 "%s: could not check for new mail: %s"
+				       (buffer-name folder)
+				       (error-message-string
+					(vm-net-session-error finished)))
+			  (let ((waiting (> (or (vm-net-session-value finished) 0)
+					    0)))
+			    (setq vm-spooled-mail-waiting waiting)
+			    (intern (buffer-name folder)
+				    vm-buffers-needing-display-update)
+			    (vm-update-summary-and-mode-line)
+			    (vm-inform 6 "%s: %s" (buffer-name folder)
+				       (if waiting "new mail" "no new mail"))))))))
+	    (vm-net-start session
+			  (vm-imap-net-check folder (nth 1 opened) (nth 2 opened)
+					     (nth 3 opened)))
+	    (setq vm-imap-net-session session)
+	    t)
+	(vm-imap-net-unsupported nil))))))
 
 (provide 'vm-imap-net)
 ;;; vm-imap-net.el ends here
