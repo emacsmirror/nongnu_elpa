@@ -755,6 +755,7 @@ with: the connection arrived authenticated."
 (declare-function vm-imap-bunch-retrieve-list "vm-imap" (retrieve-list))
 (declare-function vm-imap-get-synchronization-data "vm-imap" (&optional do-retrieves))
 (declare-function vm-imap-update-message-flags "vm-imap" (m flags &optional norecord))
+(declare-function vm-decoded-labels-of "vm-message" (m))
 (declare-function vm-folder-imap-uid-message-size "vm-imap" (uid))
 (declare-function vm-folder-imap-uid-message-flags "vm-imap" (uid))
 (declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
@@ -824,6 +825,39 @@ The current buffer is the folder.  RETRIEVE-LIST is (UID SEQUENCE-NUMBER
 HEADERS-ONLY) per message, in the order the messages will arrive; BUNCHES is
 what to ask the server for, `vm-imap-message-bunch-size\\=' at a time."
   (vm-imap-net-install-message-data data count)
+  (if (null data)
+      ;; Nothing on the server, so nothing to fetch -- and everything here
+      ;; that came from it is gone.  Not a case for
+      ;; `vm-imap-get-synchronization-data': that calls
+      ;; `vm-imap-retrieve-uid-and-flags-data', which asks the server itself
+      ;; unless the UID list is non-empty, and an empty mailbox's is empty.
+      ;; It asked through `vm-folder-imap-process', which a session on the
+      ;; driver does not set, and the session died of it.
+      (list nil nil (vm-imap-net-messages-not-on-the-server)
+	    (vm-imap-net-stale-messages))
+    (vm-imap-net-plan-1 data count)))
+
+(defun vm-imap-net-messages-not-on-the-server ()
+  "The folder's messages that came from this mailbox, none of them being there.
+The current buffer is the folder."
+  (seq-filter (lambda (message)
+		(and (vm-imap-uid-of message)
+		     (equal (vm-imap-uid-validity-of message)
+			    (vm-folder-imap-uid-validity))
+		     (not (member "stale" (vm-decoded-labels-of message)))))
+	      vm-message-list))
+
+(defun vm-imap-net-stale-messages ()
+  "The folder's messages whose UIDVALIDITY is not the mailbox's.
+The current buffer is the folder."
+  (seq-filter (lambda (message)
+		(not (equal (vm-imap-uid-validity-of message)
+			    (vm-folder-imap-uid-validity))))
+	      vm-message-list))
+
+(defun vm-imap-net-plan-1 (data count)
+  "The plan for a mailbox that holds something.  See `vm-imap-net-plan'."
+  (ignore data count)
   (let* ((sync (vm-imap-get-synchronization-data t))
 	 (headers-only (or (eq vm-enable-external-messages t)
 			   (memq 'imap vm-enable-external-messages)))
