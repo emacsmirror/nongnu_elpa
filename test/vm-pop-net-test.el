@@ -302,7 +302,9 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
             ;; visiting must not fetch the mail first: what is being tested
             ;; is the check that says whether there is any
             (vm-auto-get-new-mail nil)
-            (vm-pop-server-timeout 3)
+            ;; generous: this fixture runs late in a suite of a couple of
+            ;; thousand tests, and a check that times out is read as "no mail"
+            (vm-pop-server-timeout 15)
             (vm-pop-retrieved-messages nil)
             (vm-crash-box crash)
             (vm-spool-files (list (list folder (vm-pop-mock-spec ,(car spec))
@@ -323,7 +325,7 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
 
 (defun vm-pop-net-test--settle (&optional seconds)
   "Let the outstanding mail checks answer."
-  (let ((deadline (+ (float-time) (or seconds 5))))
+  (let ((deadline (+ (float-time) (or seconds 20))))
     (while (and vm-mail-checks-outstanding (< (float-time) deadline))
       (accept-process-output nil 0.05))))
 
@@ -636,6 +638,48 @@ but with the colon and star that stands in for it, which is what
   (let ((vm-pop-expunge-after-retrieving t)
         (vm-pop-auto-expunge-alist '(("pop:h:110:pass:user:*" . nil))))
     (should-not (vm-pop-net-auto-expunge-p "pop:h:110:pass:user:secret"))))
+
+
+;;; What the server actually sends
+
+(defconst vm-pop-net-test--blank-lines
+  (concat "From: alice@example.com\n"
+          "Subject: blank lines\n"
+          "\n"
+          "First paragraph.\n"
+          "\n"
+          "Second paragraph, after a blank line.\n")
+  "A message with the blank lines that matter: the one before the body, and
+the one between two paragraphs.  The server sends every line CRLF-terminated,
+which is where they were being lost.")
+
+(ert-deftest vm-pop-net-test-a-blank-line-is-part-of-the-message ()
+  "The blank line between the headers and the body survives the read.
+
+Dropping empty lines takes that one with them, and a message whose headers
+run straight into its text has no body at all: every line of it is read as
+another header.  The blank lines inside the body go the same way, which is
+every paragraph break in the message."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--blank-lines))
+    (let ((fetched (vm-pop-net-test--fetch mock nil)))
+      (should (equal (length fetched) 1))
+      (let ((text (cdr (car fetched))))
+        ;; headers, then a blank line, then the body
+        (should (string-match-p "Subject: blank lines\n\nFirst paragraph" text))
+        ;; and the paragraph break inside the body
+        (should (string-match-p "First paragraph\.\n\nSecond paragraph" text))))))
+
+(ert-deftest vm-pop-net-test-a-message-that-ends-in-a-blank-line-keeps-it ()
+  "Only the terminating CRLF of the last line is taken off, not every one:
+a body that ends in blank lines ends in them here too.  Trimming every
+trailing CRLF would run two messages together in the folder, the separator
+between them being the blank line."
+  (vm-pop-net-test--with-mock (mock :messages
+                                    (list (concat "Subject: trailing\n\n"
+                                                  "Text.\n\n\n")))
+    (let* ((fetched (vm-pop-net-test--fetch mock nil))
+           (text (cdr (car fetched))))
+      (should (string-match-p "Text\.\n\n\n" text)))))
 
 (provide 'vm-pop-net-test)
 

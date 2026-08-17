@@ -504,6 +504,9 @@ SPEC is (MOCK-VAR &rest ARGS), ARGS going to `vm-pop-mock-start'.  The name in
        (unwind-protect
            (cl-letf (((symbol-function 'vm-display) #'ignore))
              (vm-visit-pop-folder "mockdrop")
+             ;; visiting starts the fetch and returns without waiting for it,
+             ;; so what waits for the mail is whoever wants the mail
+             (vm-pop-net-wait nil 10)
              ,@body)
          (dolist (buffer (buffer-list))
            (unless (memq buffer before)

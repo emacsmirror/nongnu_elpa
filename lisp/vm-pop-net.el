@@ -101,14 +101,23 @@ The first line has been read already; this is the body after it."
     (let ((end (save-excursion (goto-char start)
 			       (re-search-forward "^\\.\r\n" nil t))))
       (set-marker vm-pop-net-read-point end)
-      (let ((text (buffer-substring-no-properties
-		   start (save-excursion (goto-char end) (forward-line -1)
-					 (point)))))
+      (let* ((text (buffer-substring-no-properties
+		    start (save-excursion (goto-char end) (forward-line -1)
+					  (point))))
+	     ;; the terminating CRLF of the last line, and only that one: a
+	     ;; body may end in blank lines and they are part of it
+	     (body (if (string-suffix-p "\r\n" text)
+		       (substring text 0 -2)
+		     text)))
 	;; RFC 1939 §3: a line of the body beginning with a dot was sent with
 	;; another in front of it, and the client takes it off again.
+	;;
+	;; Empty lines are kept.  Dropping them takes the blank line between
+	;; the headers and the body with them, and a message whose headers run
+	;; straight into its text has no body at all.
 	(mapcar (lambda (line)
 		  (if (string-prefix-p ".." line) (substring line 1) line))
-		(split-string (string-trim-right text "\r\n") "\r\n" t))))))
+		(split-string body "\r\n"))))))
 
 (defun vm-pop-net-send (command)
   "Send COMMAND to this session's server, and note where its answer starts."
@@ -532,6 +541,163 @@ Nothing waits.  Whether the messages are deleted from the server is
 			(vm-pop-net-note-retrieved result source)
 			count))))))
      (vm-pop-net-auto-expunge-p source))))
+
+
+;;; A POP folder, which is a maildrop VM keeps a copy of
+
+(declare-function vm-folder-pop-maildrop-spec "vm-folder" ())
+(declare-function vm-pop-uidl-of "vm-message" (m))
+(declare-function vm-set-pop-uidl-of "vm-message" (m uidl))
+(declare-function vm-set-stuff-flag-of "vm-message" (m flag))
+(declare-function vm-assimilate-new-messages "vm-folder" (&rest keys))
+(declare-function vm-update-summary-and-mode-line "vm-summary" ())
+(declare-function vm-thoughtfully-select-message "vm-folder" ())
+(declare-function vm-present-current-message "vm-page" ())
+(declare-function vm-emit-totals-blurb "vm-folder" ())
+(declare-function vm-inform "vm-misc" (level &rest args))
+(declare-function vm-warn "vm-misc" (l secs &rest args))
+(declare-function vm-get-folder-type "vm-folder"
+		  (&optional file start end ignore-visited))
+
+(defvar vm-message-list)
+(defvar vm-spooled-mail-waiting)
+(defvar vm-buffers-needing-display-update)
+(defvar vm-modification-counter)
+
+(defvar vm-pop-net-session nil
+  "The session this folder has running, if it has one.
+A folder runs one at a time: two writing into it would interleave what they
+put there.")
+(make-variable-buffer-local 'vm-pop-net-session)
+
+(defvar vm-mail-buffer)
+
+(defun vm-pop-net-folder-buffer (&optional folder)
+  "FOLDER, or the folder buffer the current buffer belongs to."
+  (or folder
+      (and (boundp 'vm-mail-buffer) vm-mail-buffer
+	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
+      (current-buffer)))
+
+(defun vm-pop-net-busy-p (&optional folder)
+  "Whether FOLDER, or the current buffer's folder, has a session running."
+  (with-current-buffer (vm-pop-net-folder-buffer folder)
+    (and vm-pop-net-session
+	 (vm-net-session-live-p vm-pop-net-session))))
+
+(defun vm-pop-net-wait (&optional folder seconds)
+  "Wait for FOLDER's session to finish, up to SECONDS.
+For a caller that has to have the mail before it goes on -- a test, or a
+command asked to do something with what arrives."
+  (let ((folder (vm-pop-net-folder-buffer folder))
+	(deadline (+ (float-time) (or seconds 30))))
+    (save-current-buffer
+      (while (and (vm-pop-net-busy-p folder) (< (float-time) deadline))
+	(accept-process-output nil 0.05)))
+    (not (vm-pop-net-busy-p folder))))
+
+(defun vm-pop-net-folder-retrieved ()
+  "What this POP folder already has, in `vm-pop-retrieved-messages\=' shape.
+Its own messages as well as the list, since a message in the folder is one
+that must not be fetched again whether the list remembers it or not."
+  (let ((popdrop (vm-popdrop-sans-password (vm-folder-pop-maildrop-spec)))
+	(retrieved (copy-sequence vm-pop-retrieved-messages)))
+    (dolist (message vm-message-list)
+      (let ((uidl (vm-pop-uidl-of message)))
+	(when uidl
+	  (push (list uidl popdrop 'uidl) retrieved))))
+    retrieved))
+
+(defun vm-pop-net-store-in-folder (folder folder-type messages)
+  "Put MESSAGES, as `vm-pop-net-fetch\=' answers with them, into FOLDER.
+Answers with the UIDLs stored, oldest first.  The same cleaning up the crash
+box gets: CRLF to LF, and the folder's own separators where the server sent
+none."
+  (with-current-buffer folder
+    (save-excursion
+      (save-restriction
+	(widen)
+	(goto-char (point-max))
+	(let ((buffer-read-only nil)	; a folder buffer is read-only
+	      (uidls nil))
+	  (dolist (message messages)
+	    (let ((start (point))
+		  (end nil))
+	      (insert (cdr message))
+	      (goto-char (point-max))
+	      (unless (bolp) (insert "\n"))
+	      (setq end (point-marker))
+	      (vm-pop-cleanup-region start end)
+	      (when (eq (vm-get-folder-type nil start end) 'unknown)
+		(vm-munge-message-separators folder-type start end)
+		(goto-char start)
+		(insert (vm-leading-message-separator folder-type))
+		(save-restriction
+		  (narrow-to-region (point) end)
+		  (vm-convert-folder-type-headers 'baremessage folder-type))
+		(goto-char end)
+		(insert-before-markers (vm-trailing-message-separator
+					folder-type)))
+	      (set-marker end nil)
+	      (goto-char (point-max))
+	      (push (car message) uidls)))
+	  (nreverse uidls))))))
+
+(defun vm-pop-net-folder-arrived (folder uidls)
+  "Take the messages just written into FOLDER into its message list.
+Each is given the UIDL it was fetched under, which is what stops it being
+fetched again."
+  (with-current-buffer folder
+    (setq vm-spooled-mail-waiting nil)
+    (intern (buffer-name) vm-buffers-needing-display-update)
+    (let ((new (vm-assimilate-new-messages :read-attributes nil))
+	  (rest uidls))
+      (when new
+	(setq vm-modification-counter (1+ vm-modification-counter)))
+      (dolist (message new)
+	(vm-set-pop-uidl-of message (car rest))
+	(vm-set-stuff-flag-of message t)
+	(setq rest (cdr rest)))
+      (if (vm-thoughtfully-select-message)
+	  (vm-present-current-message)
+	(vm-update-summary-and-mode-line))
+      (vm-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
+		 (length new) (if (= (length new) 1) "" "s")
+		 (vm-emit-totals-blurb))
+      (length new))))
+
+(defun vm-pop-net-get-folder-mail ()
+  "Start fetching this POP folder's new mail, and answer with whether it did.
+Nil means this maildrop is one that cannot be opened without waiting, or a
+session is already running, and the caller is to use the blocking path."
+  (let* ((folder (current-buffer))
+	 (source (vm-folder-pop-maildrop-spec))
+	 (folder-type (or vm-folder-type vm-default-folder-type)))
+    (cond
+     ((vm-pop-net-busy-p) nil)
+     (t
+      (condition-case nil
+	  (progn
+	    (setq vm-pop-net-session
+		  (vm-pop-net-fetch
+		   source (vm-pop-net-folder-retrieved)
+		   (lambda (result)
+		     (when (buffer-live-p folder)
+		       (with-current-buffer folder
+			 (cond
+			  ((and (consp result) (symbolp (car result))
+				(get (car result) 'error-conditions))
+			   (vm-warn 0 2 "%s: %s" (buffer-name folder)
+				    (error-message-string result)))
+			  ((null result)
+			   (vm-inform 5 "%s: no new mail" (buffer-name folder)))
+			  (t
+			   (vm-pop-net-folder-arrived
+			    folder
+			    (vm-pop-net-store-in-folder folder folder-type
+							result)))))))))
+	    t)
+	(vm-pop-net-unsupported nil))))))
 
 (provide 'vm-pop-net)
 ;;; vm-pop-net.el ends here
