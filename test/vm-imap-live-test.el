@@ -37,23 +37,16 @@ Body of the smoke test message.\r
 ;;; ------------------------------------------------------------------
 
 (ert-deftest vm-imap-live-test-an-unconfigured-checkout-stays-off-the-network ()
-  "With no config file, nothing here touches the network.
+  "With no config, nothing here touches the network.
 The config is the opt-in: an unconfigured checkout must run the whole suite
 without a server, so every live test has to skip rather than fail.
 
-This one is therefore skipped on a machine that *has* a config, and the skip
-message says so.  It used to be called
-`vm-imap-live-test-inert-without-a-config' and skipped with a bare
-`skip-unless', which printed nothing but the name -- reading
-\"SKIPPED vm-imap-live-test-inert-without-a-config\" on a configured machine
-looks exactly like a config that was not found."
-  (vm-test-skip-unless
-   (not vm-imap-test-servers)
-   (concat "A live IMAP config is present, so the no-config contract cannot be "
-           "checked here; nothing is wrong.  To exercise this one, run the "
-           "suite in a checkout with no test/vm-live-config.el, or with "
-           "vm-imap-test-servers bound to nil."))
-  (should-not (vm-imap-live-available-p)))
+Checked by taking the config away rather than by skipping where there is
+one.  It used to skip on a configured machine, which left every run of a
+configured checkout reporting a skip that nothing was wrong with -- and a
+skip nobody can explain is one nobody reads."
+  (let ((vm-imap-test-servers nil))
+    (should-not (vm-imap-live-available-p))))
 
 (ert-deftest vm-imap-live-test-a-configured-checkout-runs-them ()
   "With a config file, and not suppressed, the live tests are live.
@@ -338,7 +331,8 @@ IMAP system flag, a VM label is an IMAP keyword."
               (should (member "vmtestlabel" (vm-labels-of m)))
               (should (vm-attribute-modflag-of m))
               (vm-save-message-to-imap-folder
-               (vm-imap-live-spec server account dst) 1)))
+               (vm-imap-live-spec server account dst) 1)
+              (vm-imap-net-wait nil 30)))
         (when (eq major-mode 'vm-mode)
           (let ((vm-confirm-quit nil))
             (ignore-errors (vm-quit-no-change))))))
@@ -607,6 +601,7 @@ anyone.  Which is the report, fifteen years on."
               (let ((vm-current-warning nil))
                 (vm-save-message-to-imap-folder
                  (vm-imap-live-spec via account dst) 1)
+                (vm-imap-net-wait nil 30)
                 ;; The copy really does carry the server's flags ...
                 (should-not (member label (vm-imap-live-flags-of conn dst 1)))
                 ;; ... the change is still ours and still pending ...
@@ -1446,6 +1441,7 @@ Read back with the harness' own client rather than with vm-imap.el."
           (vm-set-replied-flag m t)
           (vm-save-message-to-imap-folder
            (vm-imap-live-spec server account mailbox) 1)
+          (vm-imap-net-wait nil 30)
           (should (vm-filed-flag m))))
       (should (equal (vm-imap-live-test--select-count conn mailbox) 1))
       (should (string-match-p (regexp-quote subject)
@@ -1467,6 +1463,7 @@ has it, and not before: the deletion is the last thing the save does."
               (m (car vm-message-list)))
           (vm-save-message-to-imap-folder
            (vm-imap-live-spec server account mailbox) 1)
+          (vm-imap-net-wait nil 30)
           (should (vm-deleted-flag m))))
       (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))))
 
@@ -1498,7 +1495,8 @@ tell the two apart."
             (vm-imap-live-cmd-ok conn "CREATE \"%s\"" mailbox)
             (vm-imap-live-test--with-a-file-folder ("saved across accounts")
               (vm-save-message-to-imap-folder
-               (vm-imap-live-spec server other mailbox) 1))
+               (vm-imap-live-spec server other mailbox) 1)
+              (vm-imap-net-wait nil 30))
             (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))
         (when mailbox
           (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
@@ -1529,7 +1527,8 @@ requires."
           (setq mailbox (concat (vm-imap-live-mailbox-name conn) "/inside"))
           (vm-imap-live-test--with-a-file-folder ("saved into a directory")
             (vm-save-message-to-imap-folder
-             (vm-imap-live-spec server account mailbox) 1))
+             (vm-imap-live-spec server account mailbox) 1)
+            (vm-imap-net-wait nil 30))
           (should (equal (vm-imap-live-test--select-count conn mailbox) 1)))
       (when mailbox
         (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
@@ -1555,6 +1554,7 @@ on."
             (vm-imap-net-wait nil 30)
             (vm-save-message-to-imap-folder
              (vm-imap-live-spec server account target) 1)
+            (vm-imap-net-wait nil 30)
             (should (equal (vm-imap-live-test--select-count conn target) 1)))
         (when (eq major-mode 'vm-mode)
           (let ((vm-confirm-quit nil))

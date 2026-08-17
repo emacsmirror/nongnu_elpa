@@ -74,7 +74,7 @@ the blocking implementation.")
 ;;; Reading
 
 (iter-defun vm-imap-net-read-object (&optional skip-eol)
-  "Read one token and answer with it, yielding until it is all here.
+	    "Read one token and answer with it, yielding until it is all here.
 
 SKIP-EOL means an end-of-line is a token like any other rather than the end
 of the read, which is what the bracketed and parenthesised lists want.
@@ -82,155 +82,155 @@ of the read, which is what the bracketed and parenthesised lists want.
 The waits are where `vm-imap-read-object' calls `accept-process-output': too
 little in the buffer to tell what is coming, the octets of a literal, the
 closing quote of a quoted string, and the terminator of an atom."
-  (let ((done nil)
-	(token nil))
-    (unwind-protect
-	(while (not done)
-	  (skip-chars-forward " \t")
-	  (cond
-	   ((< (- (point-max) (point)) 2)
-	    (let ((opoint (point)))
-	      (iter-yield (vm-net-request-growth))
-	      (goto-char opoint)))
-	   ((looking-at "\r\n")
-	    (forward-char 2)
-	    (setq token '(end-of-line) done (not skip-eol)))
-	   ((looking-at "\n")
-	    (vm-warn 0 2
-		     "missing CR before LF - IMAP connection may have a problem")
-	    (forward-char 1)
-	    (setq token '(end-of-line) done (not skip-eol)))
-	   ((looking-at "\\[")
-	    (forward-char 1)
-	    (setq token (iter-yield-from (vm-imap-net-read-group 'vector))
-		  done t))
-	   ((looking-at "\\]")
-	    (forward-char 1)
-	    (setq token '(close-bracket) done t))
-	   ((looking-at "(")
-	    (forward-char 1)
-	    (setq token (iter-yield-from (vm-imap-net-read-group 'list))
-		  done t))
-	   ((looking-at ")")
-	    (forward-char 1)
-	    (setq token '(close-paren) done t))
-	   ((looking-at "{")
-	    (forward-char 1)
-	    (setq token (iter-yield-from (vm-imap-net-read-literal))
-		  done t))
-	   ((looking-at "}")
-	    (forward-char 1)
-	    (setq token '(close-brace) done t))
-	   ((looking-at "\042")
-	    (forward-char 1)
-	    (setq token (iter-yield-from (vm-imap-net-read-quoted))
-		  done t))
-	   ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
-	   ;; 8-bit characters despite the RFC 2060 prohibition
-	   ((and (looking-at "[\000-\040\177]")
-		 (= vm-imap-tolerant-of-bad-imap 0))
-	    (vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
-	   (t
-	    (setq token (iter-yield-from (vm-imap-net-read-atom))
-		  done t))))
-      (setq vm-imap-net-read-point (point)))
-    token))
+	    (let ((done nil)
+		  (token nil))
+	      (unwind-protect
+		  (while (not done)
+		    (skip-chars-forward " \t")
+		    (cond
+		     ((< (- (point-max) (point)) 2)
+		      (let ((opoint (point)))
+			(iter-yield (vm-net-request-growth))
+			(goto-char opoint)))
+		     ((looking-at "\r\n")
+		      (forward-char 2)
+		      (setq token '(end-of-line) done (not skip-eol)))
+		     ((looking-at "\n")
+		      (vm-warn 0 2
+			       "missing CR before LF - IMAP connection may have a problem")
+		      (forward-char 1)
+		      (setq token '(end-of-line) done (not skip-eol)))
+		     ((looking-at "\\[")
+		      (forward-char 1)
+		      (setq token (iter-yield-from (vm-imap-net-read-group 'vector))
+			    done t))
+		     ((looking-at "\\]")
+		      (forward-char 1)
+		      (setq token '(close-bracket) done t))
+		     ((looking-at "(")
+		      (forward-char 1)
+		      (setq token (iter-yield-from (vm-imap-net-read-group 'list))
+			    done t))
+		     ((looking-at ")")
+		      (forward-char 1)
+		      (setq token '(close-paren) done t))
+		     ((looking-at "{")
+		      (forward-char 1)
+		      (setq token (iter-yield-from (vm-imap-net-read-literal))
+			    done t))
+		     ((looking-at "}")
+		      (forward-char 1)
+		      (setq token '(close-brace) done t))
+		     ((looking-at "\042")
+		      (forward-char 1)
+		      (setq token (iter-yield-from (vm-imap-net-read-quoted))
+			    done t))
+		     ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
+		     ;; 8-bit characters despite the RFC 2060 prohibition
+		     ((and (looking-at "[\000-\040\177]")
+			   (= vm-imap-tolerant-of-bad-imap 0))
+		      (vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
+		     (t
+		      (setq token (iter-yield-from (vm-imap-net-read-atom))
+			    done t))))
+		(setq vm-imap-net-read-point (point)))
+	      token))
 
 (iter-defun vm-imap-net-read-group (kind)
-  "Read tokens until this group's closing bracket, and answer with the group.
+	    "Read tokens until this group's closing bracket, and answer with the group.
 KIND is `vector' for one opened with [ and `list' for one opened with (."
-  (let* ((closer (if (eq kind 'vector) 'close-bracket 'close-paren))
-	 (wrong (if (eq kind 'vector) 'close-paren 'close-bracket))
-	 (group (list kind))
-	 (tail group)
-	 (object (iter-yield-from (vm-imap-net-read-object t))))
-    (while (not (eq (car object) closer))
-      (when (eq (car object) wrong)
-	(vm-imap-protocol-error "unexpected %s"
-				(if (eq wrong 'close-paren) ")" "]")))
-      (setcdr tail (list object))
-      (setq tail (cdr tail))
-      (setq object (iter-yield-from (vm-imap-net-read-object t))))
-    group))
+	    (let* ((closer (if (eq kind 'vector) 'close-bracket 'close-paren))
+		   (wrong (if (eq kind 'vector) 'close-paren 'close-bracket))
+		   (group (list kind))
+		   (tail group)
+		   (object (iter-yield-from (vm-imap-net-read-object t))))
+	      (while (not (eq (car object) closer))
+		(when (eq (car object) wrong)
+		  (vm-imap-protocol-error "unexpected %s"
+					  (if (eq wrong 'close-paren) ")" "]")))
+		(setcdr tail (list object))
+		(setq tail (cdr tail))
+		(setq object (iter-yield-from (vm-imap-net-read-object t))))
+	      group))
 
 (iter-defun vm-imap-net-read-literal ()
-  "Read a {n} literal, the { having been read, and answer with its string.
+	    "Read a {n} literal, the { having been read, and answer with its string.
 Waits for the whole of it in one go: the request is the position the octets
 end at, so a body arriving in a thousand chunks resumes this once."
-  (let ((object (iter-yield-from (vm-imap-net-read-object)))
-	(octets nil)
-	(start nil))
-    (unless (and (eq (car object) 'atom)
-		 (string-match "\\`[0-9]+\\'"
-			       (buffer-substring (nth 1 object) (nth 2 object))))
-      ;; gmail sometimes puts random strings in braces, which cannot be taken
-      ;; for a count
-      (vm-imap-protocol-error "number expected after {"))
-    (setq octets (string-to-number
-		  (buffer-substring (nth 1 object) (nth 2 object))))
-    (setq object (iter-yield-from (vm-imap-net-read-object)))
-    (unless (eq (car object) 'close-brace)
-      (vm-imap-protocol-error "} expected"))
-    (setq object (iter-yield-from (vm-imap-net-read-object)))
-    (unless (eq (car object) 'end-of-line)
-      (vm-imap-protocol-error "CRLF expected"))
-    (setq start (point))
-    (while (< (- (point-max) start) octets)
-      (iter-yield (vm-net-request-position (+ start octets))))
-    (goto-char (+ start octets))
-    (list 'string start (point))))
+	    (let ((object (iter-yield-from (vm-imap-net-read-object)))
+		  (octets nil)
+		  (start nil))
+	      (unless (and (eq (car object) 'atom)
+			   (string-match "\\`[0-9]+\\'"
+					 (buffer-substring (nth 1 object) (nth 2 object))))
+		;; gmail sometimes puts random strings in braces, which cannot be taken
+		;; for a count
+		(vm-imap-protocol-error "number expected after {"))
+	      (setq octets (string-to-number
+			    (buffer-substring (nth 1 object) (nth 2 object))))
+	      (setq object (iter-yield-from (vm-imap-net-read-object)))
+	      (unless (eq (car object) 'close-brace)
+		(vm-imap-protocol-error "} expected"))
+	      (setq object (iter-yield-from (vm-imap-net-read-object)))
+	      (unless (eq (car object) 'end-of-line)
+		(vm-imap-protocol-error "CRLF expected"))
+	      (setq start (point))
+	      (while (< (- (point-max) start) octets)
+		(iter-yield (vm-net-request-position (+ start octets))))
+	      (goto-char (+ start octets))
+	      (list 'string start (point))))
 
 (iter-defun vm-imap-net-read-quoted ()
-  "Read a quoted string, the opening quote having been read."
-  (let ((start (point))
-	(done nil)
-	(end nil))
-    (while (not done)
-      (skip-chars-forward "^\042")
-      (setq end (point))
-      (if (looking-at "\042")
-	  (progn (setq done t)
-		 (forward-char 1))
-	(iter-yield (vm-net-request-growth))
-	(goto-char end)))
-    (list 'string start end)))
+	    "Read a quoted string, the opening quote having been read."
+	    (let ((start (point))
+		  (done nil)
+		  (end nil))
+	      (while (not done)
+		(skip-chars-forward "^\042")
+		(setq end (point))
+		(if (looking-at "\042")
+		    (progn (setq done t)
+			   (forward-char 1))
+		  (iter-yield (vm-net-request-growth))
+		  (goto-char end)))
+	      (list 'string start end)))
 
 (iter-defun vm-imap-net-read-atom ()
-  "Read an atom, up to the first character that cannot be part of one."
-  ;; 8-bit characters should be non-word characters here, but Microsoft
-  ;; Exchange puts them in atoms
-  (let ((start (point))
-	(not-word-chars "^\000-\040\177()[]{}")
-	(not-word-regexp "[][\000-\040\177(){}]")
-	(done nil)
-	(end nil))
-    (while (not done)
-      (skip-chars-forward not-word-chars)
-      (setq end (point))
-      (if (looking-at not-word-regexp)
-	  (setq done t)
-	(iter-yield (vm-net-request-growth))
-	(goto-char end)))
-    (list 'atom start end)))
+	    "Read an atom, up to the first character that cannot be part of one."
+	    ;; 8-bit characters should be non-word characters here, but Microsoft
+	    ;; Exchange puts them in atoms
+	    (let ((start (point))
+		  (not-word-chars "^\000-\040\177()[]{}")
+		  (not-word-regexp "[][\000-\040\177(){}]")
+		  (done nil)
+		  (end nil))
+	      (while (not done)
+		(skip-chars-forward not-word-chars)
+		(setq end (point))
+		(if (looking-at not-word-regexp)
+		    (setq done t)
+		  (iter-yield (vm-net-request-growth))
+		  (goto-char end)))
+	      (list 'atom start end)))
 
 (iter-defun vm-imap-net-read-response ()
-  "Read one line of response and answer with its tokens.
+	    "Read one line of response and answer with its tokens.
 An ill-formed line answers with an empty list, as the blocking reader does."
-  (let ((tokens nil)
-	(tail nil)
-	(object nil)
-	(done nil))
-    (goto-char vm-imap-net-read-point)
-    (while (not done)
-      (setq object (iter-yield-from (vm-imap-net-read-object)))
-      (if (eq (car object) 'end-of-line)
-	  (setq done t)
-	(if (null tokens)
-	    (setq tokens (list object)
-		  tail tokens)
-	  (setcdr tail (list object))
-	  (setq tail (cdr tail)))))
-    tokens))
+	    (let ((tokens nil)
+		  (tail nil)
+		  (object nil)
+		  (done nil))
+	      (goto-char vm-imap-net-read-point)
+	      (while (not done)
+		(setq object (iter-yield-from (vm-imap-net-read-object)))
+		(if (eq (car object) 'end-of-line)
+		    (setq done t)
+		  (if (null tokens)
+		      (setq tokens (list object)
+			    tail tokens)
+		    (setcdr tail (list object))
+		    (setq tail (cdr tail)))))
+	      tokens))
 
 (defun vm-imap-net-error-message (position)
   "The server's error text in the process buffer, starting at POSITION."
@@ -242,41 +242,41 @@ An ill-formed line answers with an empty list, as the blocking reader does."
 			(point-max)))))
 
 (iter-defun vm-imap-net-read-response-and-verify (&optional description)
-  "Read one response and answer with it, signalling on NO, BAD or BYE.
+	    "Read one response and answer with it, signalling on NO, BAD or BYE.
 DESCRIPTION names the command, for the error message."
-  (let ((response (iter-yield-from (vm-imap-net-read-response))))
-    (when response
-      (when (or (vm-imap-response-matches response 'VM 'NO)
-		(vm-imap-response-matches response 'VM 'BAD))
-	(vm-imap-normal-error
-	 "server says - %s"
-	 (vm-imap-net-error-message (cadr (cadr response)))))
-      (when (vm-imap-response-matches response '* 'BYE)
-	(vm-imap-normal-error "server disconnected%s"
-			      (if description
-				  (format " during %s" description) ""))))
-    response))
+	    (let ((response (iter-yield-from (vm-imap-net-read-response))))
+	      (when response
+		(when (or (vm-imap-response-matches response 'VM 'NO)
+			  (vm-imap-response-matches response 'VM 'BAD))
+		  (vm-imap-normal-error
+		   "server says - %s"
+		   (vm-imap-net-error-message (cadr (cadr response)))))
+		(when (vm-imap-response-matches response '* 'BYE)
+		  (vm-imap-normal-error "server disconnected%s"
+					(if description
+					    (format " during %s" description) ""))))
+	      response))
 
 (iter-defun vm-imap-net-read-ok-response ()
-  "Read responses until the tagged one, and answer with whether it was OK."
-  (let ((done nil)
-	(answer nil)
-	response)
-    (while (not done)
-      (setq response (iter-yield-from (vm-imap-net-read-response)))
-      (cond ((vm-imap-response-matches response '*)
-	     nil)
-	    ((vm-imap-response-matches response 'VM 'OK)
-	     (setq answer t done t))
-	    ((vm-imap-response-matches response 'VM 'NO)
-	     (setq answer nil done t))
-	    ((vm-imap-response-matches response 'VM 'BAD)
-	     (vm-imap-normal-error
-	      "server says - %s"
-	      (vm-imap-net-error-message (cadr (cadr response)))))
-	    (t
-	     (vm-imap-protocol-error "Did not receive OK response"))))
-    answer))
+	    "Read responses until the tagged one, and answer with whether it was OK."
+	    (let ((done nil)
+		  (answer nil)
+		  response)
+	      (while (not done)
+		(setq response (iter-yield-from (vm-imap-net-read-response)))
+		(cond ((vm-imap-response-matches response '*)
+		       nil)
+		      ((vm-imap-response-matches response 'VM 'OK)
+		       (setq answer t done t))
+		      ((vm-imap-response-matches response 'VM 'NO)
+		       (setq answer nil done t))
+		      ((vm-imap-response-matches response 'VM 'BAD)
+		       (vm-imap-normal-error
+			"server says - %s"
+			(vm-imap-net-error-message (cadr (cadr response)))))
+		      (t
+		       (vm-imap-protocol-error "Did not receive OK response"))))
+	      answer))
 
 ;;; Sending
 
@@ -307,65 +307,81 @@ a transcript -- with a LOGIN's arguments left out of it."
     tag))
 
 (iter-defun vm-imap-net-command (command &optional description)
-  "Send COMMAND and answer with every response line up to its tagged one.
+	    "Send COMMAND and answer with every response line up to its tagged one.
 The tagged line is the last of them, so a caller that wants only whether it
 worked can look at that, and one that wants the untagged data has it in
 order."
-  (vm-imap-net-send command)
-  (let ((lines nil)
-	(done nil)
-	response)
-    (while (not done)
-      (setq response
-	    (iter-yield-from (vm-imap-net-read-response-and-verify
-			      (or description command))))
-      (push response lines)
-      (when (vm-imap-response-matches response 'VM 'OK)
-	(setq done t)))
-    (nreverse lines)))
+	    (vm-imap-net-send command)
+	    (let ((lines nil)
+		  (done nil)
+		  response)
+	      (while (not done)
+		(setq response
+		      (iter-yield-from (vm-imap-net-read-response-and-verify
+					(or description command))))
+		(push response lines)
+		(when (vm-imap-response-matches response 'VM 'OK)
+		  (setq done t)))
+	      (nreverse lines)))
+
+(defun vm-imap-net-logout ()
+  "Say LOGOUT, without waiting to be answered.
+A server counts its connections -- dovecot's `mail_max_userip_connections\='
+-- and a client that drops them without a word leaves it to time them out.
+Nothing waits for the answer: the session is over either way, and this runs
+where a session is being unwound.
+
+In an `unwind-protect\=', so it is said whether the session ran to the end
+or was abandoned, which is the reason the driver closes a generator rather
+than dropping it."
+  (let ((process (get-buffer-process (current-buffer))))
+    (when (process-live-p process)
+      (ignore-errors
+	(process-send-string process
+			     (format "%s LOGOUT\r\n" (vm-imap-net-next-tag)))))))
 
 ;;; The start of a session
 
 (iter-defun vm-imap-net-greeting ()
-  "Read the server's greeting.
+	    "Read the server's greeting.
 Answers t for OK, `preauth' for PREAUTH, and nil for anything else, which is
 what `vm-imap-read-greeting' answers."
-  (let ((response (iter-yield-from (vm-imap-net-read-response))))
-    (cond ((vm-imap-response-matches response '* 'OK) t)
-	  ((vm-imap-response-matches response '* 'PREAUTH) 'preauth)
-	  (t nil))))
+	    (let ((response (iter-yield-from (vm-imap-net-read-response))))
+	      (cond ((vm-imap-response-matches response '* 'OK) t)
+		    ((vm-imap-response-matches response '* 'PREAUTH) 'preauth)
+		    (t nil))))
 
 (iter-defun vm-imap-net-capabilities ()
-  "Ask what the server can do.
+	    "Ask what the server can do.
 Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols, as
 `vm-imap-read-capability-response' does."
-  (let ((lines (iter-yield-from (vm-imap-net-command "CAPABILITY")))
-	(capabilities nil)
-	(authentications nil))
-    (dolist (response lines)
-      (when (vm-imap-response-matches response '* 'CAPABILITY)
-	(dolist (token (cddr response))
-	  (when (eq (car token) 'atom)
-	    (let ((text (buffer-substring (nth 1 token) (nth 2 token))))
-	      (if (let ((case-fold-search t)) (string-match "\\`AUTH=." text))
-		  (push (intern (upcase (substring text 5))) authentications)
-		(push (intern (upcase text)) capabilities)))))))
-    (list (nreverse capabilities) (nreverse authentications))))
+	    (let ((lines (iter-yield-from (vm-imap-net-command "CAPABILITY")))
+		  (capabilities nil)
+		  (authentications nil))
+	      (dolist (response lines)
+		(when (vm-imap-response-matches response '* 'CAPABILITY)
+		  (dolist (token (cddr response))
+		    (when (eq (car token) 'atom)
+		      (let ((text (buffer-substring (nth 1 token) (nth 2 token))))
+			(if (let ((case-fold-search t)) (string-match "\\`AUTH=." text))
+			    (push (intern (upcase (substring text 5))) authentications)
+			  (push (intern (upcase text)) capabilities)))))))
+	      (list (nreverse capabilities) (nreverse authentications))))
 
 (defun vm-imap-net-quote (string)
   "STRING as an IMAP quoted string."
   (concat "\"" (replace-regexp-in-string "[\\\"]" "\\\\\\&" string) "\""))
 
 (iter-defun vm-imap-net-login (user password)
-  "Log in as USER, and answer with what the server can do afterwards.
+	    "Log in as USER, and answer with what the server can do afterwards.
 The capabilities are asked for again: a server may advertise more once the
 connection is authenticated, and several advertise fewer before it."
-  (iter-yield-from (vm-imap-net-command
-		    (format "LOGIN %s %s"
-			    (vm-imap-net-quote user)
-			    (vm-imap-net-quote password))
-		    "LOGIN"))
-  (iter-yield-from (vm-imap-net-capabilities)))
+	    (iter-yield-from (vm-imap-net-command
+			      (format "LOGIN %s %s"
+				      (vm-imap-net-quote user)
+				      (vm-imap-net-quote password))
+			      "LOGIN"))
+	    (iter-yield-from (vm-imap-net-capabilities)))
 
 ;;; A mailbox
 
@@ -378,84 +394,84 @@ connection is authenticated, and several advertise fewer before it."
   (string-to-number (buffer-substring (nth 1 token) (nth 2 token))))
 
 (iter-defun vm-imap-net-select (mailbox &optional examine)
-  "Select MAILBOX, or EXAMINE it, and answer with what the server said of it.
+	    "Select MAILBOX, or EXAMINE it, and answer with what the server said of it.
 The answer is (COUNT RECENT UID-VALIDITY READ-WRITE CAN-DELETE
 PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
-  (let* ((command (if examine "EXAMINE" "SELECT"))
-	 (lines (iter-yield-from
-		 (vm-imap-net-command
-		  (format "%s %s" command (vm-imap-quote-mailbox-name mailbox))
-		  command)))
-	 (count nil) (recent nil) (uid-validity nil)
-	 (read-write (not examine)) (flags nil) (permanent-flags nil))
-    (dolist (response lines)
-      (cond ((vm-imap-response-matches response '* 'OK 'vector)
-	     (let ((contents (cdr (nth 2 response))))
-	       (cond ((vm-imap-response-matches contents 'UIDVALIDITY 'atom)
-		      (let ((token (nth 1 contents)))
-			(setq uid-validity
-			      (buffer-substring (nth 1 token) (nth 2 token)))))
-		     ((vm-imap-response-matches contents 'PERMANENTFLAGS 'list)
-		      (setq permanent-flags (nth 1 contents))))))
-	    ((vm-imap-response-matches response '* 'FLAGS 'list)
-	     (setq flags (nth 2 response)))
-	    ((vm-imap-response-matches response '* 'atom 'EXISTS)
-	     (setq count (vm-imap-net-number (nth 1 response))))
-	    ((vm-imap-response-matches response '* 'atom 'RECENT)
-	     (setq recent (vm-imap-net-number (nth 1 response))))
-	    ((vm-imap-response-matches response 'VM 'OK '(vector READ-WRITE))
-	     (setq read-write t))
-	    ((vm-imap-response-matches response 'VM 'OK '(vector READ-ONLY))
-	     (setq read-write nil))))
-    (unless flags
-      (vm-imap-protocol-error "FLAGS missing from %s responses" command))
-    (unless count
-      (vm-imap-protocol-error "EXISTS missing from %s responses" command))
-    (unless uid-validity
-      (vm-imap-protocol-error "UIDVALIDITY missing from %s responses" command))
-    (list count recent uid-validity read-write
-	  (and (vm-imap-scan-list-for-flag flags "\\Deleted") t)
-	  permanent-flags)))
+	    (let* ((command (if examine "EXAMINE" "SELECT"))
+		   (lines (iter-yield-from
+			   (vm-imap-net-command
+			    (format "%s %s" command (vm-imap-quote-mailbox-name mailbox))
+			    command)))
+		   (count nil) (recent nil) (uid-validity nil)
+		   (read-write (not examine)) (flags nil) (permanent-flags nil))
+	      (dolist (response lines)
+		(cond ((vm-imap-response-matches response '* 'OK 'vector)
+		       (let ((contents (cdr (nth 2 response))))
+			 (cond ((vm-imap-response-matches contents 'UIDVALIDITY 'atom)
+				(let ((token (nth 1 contents)))
+				  (setq uid-validity
+					(buffer-substring (nth 1 token) (nth 2 token)))))
+			       ((vm-imap-response-matches contents 'PERMANENTFLAGS 'list)
+				(setq permanent-flags (nth 1 contents))))))
+		      ((vm-imap-response-matches response '* 'FLAGS 'list)
+		       (setq flags (nth 2 response)))
+		      ((vm-imap-response-matches response '* 'atom 'EXISTS)
+		       (setq count (vm-imap-net-number (nth 1 response))))
+		      ((vm-imap-response-matches response '* 'atom 'RECENT)
+		       (setq recent (vm-imap-net-number (nth 1 response))))
+		      ((vm-imap-response-matches response 'VM 'OK '(vector READ-WRITE))
+		       (setq read-write t))
+		      ((vm-imap-response-matches response 'VM 'OK '(vector READ-ONLY))
+		       (setq read-write nil))))
+	      (unless flags
+		(vm-imap-protocol-error "FLAGS missing from %s responses" command))
+	      (unless count
+		(vm-imap-protocol-error "EXISTS missing from %s responses" command))
+	      (unless uid-validity
+		(vm-imap-protocol-error "UIDVALIDITY missing from %s responses" command))
+	      (list count recent uid-validity read-write
+		    (and (vm-imap-scan-list-for-flag flags "\\Deleted") t)
+		    permanent-flags)))
 
 ;;; What is in it
 
 (iter-defun vm-imap-net-message-data (first last)
-  "Ask for the UID, size and flags of the messages FIRST to LAST.
+	    "Ask for the UID, size and flags of the messages FIRST to LAST.
 Answers an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
 `vm-imap-get-message-data-list\\=' answers, newest first."
-  (let ((lines (iter-yield-from
-		(vm-imap-net-command
-		 (format "FETCH %s:%s (UID RFC822.SIZE FLAGS)" first last)
-		 "FETCH")))
-	(data nil))
-    (dolist (response lines)
-      (when (vm-imap-response-matches response '* 'atom 'FETCH 'list)
-	(let ((number (vm-imap-net-number (nth 1 response)))
-	      (contents (cdr (nth 3 response)))
-	      (uid nil) (size nil) (flags nil))
-	  (while contents
-	    (cond
-	     ((vm-imap-response-matches contents 'UID 'atom)
-	      (let ((token (nth 1 contents)))
-		(setq uid (buffer-substring (nth 1 token) (nth 2 token))))
-	      (setq contents (nthcdr 2 contents)))
-	     ((vm-imap-response-matches contents 'RFC822\.SIZE 'atom)
-	      (let ((token (nth 1 contents)))
-		(setq size (buffer-substring (nth 1 token) (nth 2 token))))
-	      (setq contents (nthcdr 2 contents)))
-	     ((vm-imap-response-matches contents 'FLAGS 'list)
-	      (dolist (token (cdr (nth 1 contents)))
-		(unless (eq (car token) 'atom)
-		  (vm-imap-protocol-error
-		   "expected atom in FLAGS list in FETCH response"))
-		(push (downcase (buffer-substring (nth 1 token) (nth 2 token)))
-		      flags))
-	      (setq contents (nthcdr 2 contents)))
-	     (t
-	      (vm-imap-protocol-error
-	       "expected UID, RFC822.SIZE and (FLAGS list) in FETCH response"))))
-	  (push (cons number (cons uid (cons size (nreverse flags)))) data))))
-    data))
+	    (let ((lines (iter-yield-from
+			  (vm-imap-net-command
+			   (format "FETCH %s:%s (UID RFC822.SIZE FLAGS)" first last)
+			   "FETCH")))
+		  (data nil))
+	      (dolist (response lines)
+		(when (vm-imap-response-matches response '* 'atom 'FETCH 'list)
+		  (let ((number (vm-imap-net-number (nth 1 response)))
+			(contents (cdr (nth 3 response)))
+			(uid nil) (size nil) (flags nil))
+		    (while contents
+		      (cond
+		       ((vm-imap-response-matches contents 'UID 'atom)
+			(let ((token (nth 1 contents)))
+			  (setq uid (buffer-substring (nth 1 token) (nth 2 token))))
+			(setq contents (nthcdr 2 contents)))
+		       ((vm-imap-response-matches contents 'RFC822\.SIZE 'atom)
+			(let ((token (nth 1 contents)))
+			  (setq size (buffer-substring (nth 1 token) (nth 2 token))))
+			(setq contents (nthcdr 2 contents)))
+		       ((vm-imap-response-matches contents 'FLAGS 'list)
+			(dolist (token (cdr (nth 1 contents)))
+			  (unless (eq (car token) 'atom)
+			    (vm-imap-protocol-error
+			     "expected atom in FLAGS list in FETCH response"))
+			  (push (downcase (buffer-substring (nth 1 token) (nth 2 token)))
+				flags))
+			(setq contents (nthcdr 2 contents)))
+		       (t
+			(vm-imap-protocol-error
+			 "expected UID, RFC822.SIZE and (FLAGS list) in FETCH response"))))
+		    (push (cons number (cons uid (cons size (nreverse flags)))) data))))
+	      data))
 
 (defun vm-imap-net-fetch-items (body-peek headers-only)
   "What to ask a FETCH for, as `vm-imap-fetch-messages\\=' asks for it.
@@ -489,26 +505,26 @@ Signals unless RESPONSE is a FETCH carrying a UID and one string."
     (list uid (nth 1 text) (nth 2 text))))
 
 (iter-defun vm-imap-net-fetch (first last body-peek headers-only store)
-  "Fetch messages FIRST to LAST, handing each to STORE as it arrives.
+	    "Fetch messages FIRST to LAST, handing each to STORE as it arrives.
 STORE is called in the process buffer with the message's UID and the
 positions its text lies between, so it can copy the message out without
 another one being made of it first.  It is called before the next message is
 read, which is what keeps a mailbox of any size out of memory."
-  (vm-imap-net-send (format "FETCH %s:%s %s" first last
-			    (vm-imap-net-fetch-items body-peek headers-only)))
-  (let ((done nil)
-	(count 0)
-	response)
-    (while (not done)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "FETCH")))
-      (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
-	     (let ((message (vm-imap-net-fetch-message-text response)))
-	       (apply store message)
-	       (setq count (1+ count))))
-	    ((vm-imap-response-matches response 'VM 'OK)
-	     (setq done t))))
-    count))
+	    (vm-imap-net-send (format "FETCH %s:%s %s" first last
+				      (vm-imap-net-fetch-items body-peek headers-only)))
+	    (let ((done nil)
+		  (count 0)
+		  response)
+	      (while (not done)
+		(setq response (iter-yield-from
+				(vm-imap-net-read-response-and-verify "FETCH")))
+		(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+		       (let ((message (vm-imap-net-fetch-message-text response)))
+			 (apply store message)
+			 (setq count (1+ count))))
+		      ((vm-imap-response-matches response 'VM 'OK)
+		       (setq done t))))
+	      count))
 
 ;;; Connecting
 
@@ -560,18 +576,18 @@ handshake as the connection comes up."
 	    mailbox user password))))
 
 (iter-defun vm-imap-net-open-session (user password)
-  "Greet, log in, and answer with what the server says it can do.
+	    "Greet, log in, and answer with what the server says it can do.
 Answers (CAPABILITIES AUTHENTICATIONS).  A greeting that is neither OK nor
 PREAUTH signals: there is no session to be had, and the caller has nothing
 to decide."
-  (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
-    (cond ((null greeting)
-	   (vm-imap-normal-error "server did not greet the connection"))
-	  ((eq greeting 'preauth)
-	   (iter-yield-from (vm-imap-net-capabilities)))
-	  (t
-	   (iter-yield-from (vm-imap-net-capabilities))
-	   (iter-yield-from (vm-imap-net-login user password))))))
+	    (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
+	      (cond ((null greeting)
+		     (vm-imap-normal-error "server did not greet the connection"))
+		    ((eq greeting 'preauth)
+		     (iter-yield-from (vm-imap-net-capabilities)))
+		    (t
+		     (iter-yield-from (vm-imap-net-capabilities))
+		     (iter-yield-from (vm-imap-net-login user password))))))
 
 ;;; Getting new mail into a folder
 
@@ -755,73 +771,76 @@ the choice is taken and the label says which messages it was taken for."
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
 (iter-defun vm-imap-net-get-new-mail (folder mailbox user password)
-  "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
+	    "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
 The messages are written into FOLDER as they arrive, a bunch at a time; the
 folder takes them into its message list once they are all there, as the
 blocking path does."
-  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
-	 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t))
-	 (select (iter-yield-from (vm-imap-net-select mailbox)))
-	 (count (nth 0 select))
-	 (uid-validity (nth 2 select))
-	 (source (current-buffer))
-	 (folder-type nil)
-	 (data nil)
-	 (plan nil)
-	 (retrieved 0))
-    (with-current-buffer folder
-      (let ((known (vm-folder-imap-uid-validity)))
-	(when (and known uid-validity (not (equal known uid-validity)))
-	  ;; The blocking path asks whether to refresh the cache.  There is
-	  ;; nobody to ask from inside a filter, and going on regardless would
-	  ;; fetch every message again under UIDs that mean something else.
-	  (vm-imap-normal-error
-	   "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
-	   mailbox)))
-      (setq folder-type (or vm-folder-type vm-default-folder-type))
-      (vm-set-folder-imap-uid-validity uid-validity)
-      (vm-set-folder-imap-mailbox-count count)
-      (unless (vm-folder-imap-retrieved-count)
-	(vm-set-folder-imap-retrieved-count count))
-      (vm-set-folder-imap-recent-count (nth 1 select))
-      (vm-set-folder-imap-read-write (nth 3 select))
-      (vm-set-folder-imap-can-delete (nth 4 select))
-      (vm-set-folder-imap-body-peek body-peek)
-      (vm-set-folder-imap-permanent-flags (nth 5 select)))
-    ;; the folder's own changes go up before its picture of the server is
-    ;; taken, or the flags just fetched would be written back over them
-    (iter-yield-from (vm-imap-net-save-flags folder))
-    (setq data (if (zerop count)
-		   nil
-		 (iter-yield-from (vm-imap-net-message-data 1 count))))
-    (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
-    (let ((retrieve-list (nth 0 plan))
-	  (bunches (nth 1 plan)))
-      (with-current-buffer folder
-	(vm-imap-net-expunge-locally (nth 2 plan) (nth 3 plan)))
-      (dolist (bunch bunches)
-	(let* ((range (car bunch))
-	       (headers-only (cadr bunch))
-	       (store (lambda (_uid start end)
-			(vm-imap-net-store folder folder-type source start end))))
-	  (iter-yield-from
-	   (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
-			      store))
-	  (setq retrieved (+ retrieved (1+ (- (cdr range) (car range)))))
-	  (vm-inform 6 "%s: %d of %d messages"
-		     (buffer-name folder) retrieved (length retrieve-list))))
-      (with-current-buffer folder
-	(vm-imap-net-assimilate retrieve-list uid-validity))
-      ;; and what the folder has expunged locally goes on the server, in the
-      ;; same session: by UID, since a sequence number means something
-      ;; different after every expunge
-      (let ((uids (with-current-buffer folder
-		    (vm-imap-net-uids-to-expunge uid-validity))))
-        (when uids
-	  (iter-yield-from (vm-imap-net-expunge uids))
-	  (with-current-buffer folder
-	    (vm-imap-net-note-expunged uids))))
-      retrieved)))
+	    (unwind-protect
+		(progn
+		  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
+    			 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t))
+    			 (select (iter-yield-from (vm-imap-net-select mailbox)))
+    			 (count (nth 0 select))
+    			 (uid-validity (nth 2 select))
+    			 (source (current-buffer))
+    			 (folder-type nil)
+    			 (data nil)
+    			 (plan nil)
+    			 (retrieved 0))
+		    (with-current-buffer folder
+		      (let ((known (vm-folder-imap-uid-validity)))
+    			(when (and known uid-validity (not (equal known uid-validity)))
+    			  ;; The blocking path asks whether to refresh the cache.  There is
+    			  ;; nobody to ask from inside a filter, and going on regardless would
+    			  ;; fetch every message again under UIDs that mean something else.
+    			  (vm-imap-normal-error
+    			   "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
+    			   mailbox)))
+		      (setq folder-type (or vm-folder-type vm-default-folder-type))
+		      (vm-set-folder-imap-uid-validity uid-validity)
+		      (vm-set-folder-imap-mailbox-count count)
+		      (unless (vm-folder-imap-retrieved-count)
+    			(vm-set-folder-imap-retrieved-count count))
+		      (vm-set-folder-imap-recent-count (nth 1 select))
+		      (vm-set-folder-imap-read-write (nth 3 select))
+		      (vm-set-folder-imap-can-delete (nth 4 select))
+		      (vm-set-folder-imap-body-peek body-peek)
+		      (vm-set-folder-imap-permanent-flags (nth 5 select)))
+		    ;; the folder's own changes go up before its picture of the server is
+		    ;; taken, or the flags just fetched would be written back over them
+		    (iter-yield-from (vm-imap-net-save-flags folder))
+		    (setq data (if (zerop count)
+    				   nil
+    				 (iter-yield-from (vm-imap-net-message-data 1 count))))
+		    (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
+		    (let ((retrieve-list (nth 0 plan))
+    			  (bunches (nth 1 plan)))
+		      (with-current-buffer folder
+    			(vm-imap-net-expunge-locally (nth 2 plan) (nth 3 plan)))
+		      (dolist (bunch bunches)
+    			(let* ((range (car bunch))
+    			       (headers-only (cadr bunch))
+    			       (store (lambda (_uid start end)
+    					(vm-imap-net-store folder folder-type source start end))))
+    			  (iter-yield-from
+    			   (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
+    					      store))
+    			  (setq retrieved (+ retrieved (1+ (- (cdr range) (car range)))))
+    			  (vm-inform 6 "%s: %d of %d messages"
+    				     (buffer-name folder) retrieved (length retrieve-list))))
+		      (with-current-buffer folder
+    			(vm-imap-net-assimilate retrieve-list uid-validity))
+		      ;; and what the folder has expunged locally goes on the server, in the
+		      ;; same session: by UID, since a sequence number means something
+		      ;; different after every expunge
+		      (let ((uids (with-current-buffer folder
+    				    (vm-imap-net-uids-to-expunge uid-validity))))
+			(when uids
+    			  (iter-yield-from (vm-imap-net-expunge uids))
+    			  (with-current-buffer folder
+    			    (vm-imap-net-note-expunged uids))))
+		      retrieved)))
+	      (vm-imap-net-logout)))
 
 ;;; Flags, and what the server would not take
 
@@ -834,17 +853,17 @@ blocking path does."
 (defvar vm-imap-refused-flags)
 
 (iter-defun vm-imap-net-store-flags-1 (sign id flags)
-  "Send one STORE of FLAGS, and read its answer.
+	    "Send one STORE of FLAGS, and read its answer.
 SIGN is \"+\" or \"-\" and ID the message's sequence number.  Signals
 `vm-imap-normal-error\\=' if the server refuses the command."
-  (iter-yield-from
-   (vm-imap-net-command (format "STORE %s %sFLAGS.SILENT %s"
-				id sign (vm-imap-flag-list-string flags))
-			(format "STORE %sFLAGS.SILENT" sign)))
-  t)
+	    (iter-yield-from
+	     (vm-imap-net-command (format "STORE %s %sFLAGS.SILENT %s"
+					  id sign (vm-imap-flag-list-string flags))
+				  (format "STORE %sFLAGS.SILENT" sign)))
+	    t)
 
 (iter-defun vm-imap-net-store-flags (sign id flags)
-  "Store FLAGS, one command if the server will take them, singly if not.
+	    "Store FLAGS, one command if the server will take them, singly if not.
 Answers with the flags it accepted.
 
 A server need not accept every keyword, and Exchange refuses the whole STORE
@@ -854,96 +873,96 @@ stored (issue #391).  What is refused on its own is remembered in
 `vm-imap-refused-flags\\=' and not offered again this session; a refusal of
 every flag is re-signalled, which leaves the message pending for a later try
 (issue #270)."
-  (let ((wanted (seq-remove (lambda (flag) (member flag vm-imap-refused-flags))
-			    flags))
-	(accepted nil)
-	(refused nil)
-	(failure nil))
-    (when wanted
-      (let ((error-data nil))
-	(condition-case caught
-	    (progn (iter-yield-from (vm-imap-net-store-flags-1 sign id wanted))
-		   (setq accepted wanted))
-	  (vm-imap-normal-error (setq error-data caught)))
-	(when error-data
-	  ;; the server refused the lot; find out what it will take, unless
-	  ;; there was only one, which has just been refused on its own
-	  (dolist (flag (if (cdr wanted) wanted nil))
-	    (let ((one-failed nil))
-	      (condition-case caught
-		  (iter-yield-from (vm-imap-net-store-flags-1 sign id (list flag)))
-		(vm-imap-normal-error (setq one-failed caught)))
-	      (if one-failed
-		  (progn (push flag refused)
-			 (push flag vm-imap-refused-flags))
-		(push flag accepted))))
-	  (when (and refused (cdr wanted))
-	    (vm-warn 1 2 "IMAP server refuses the flag%s %s; not sending %s again"
-		     (if (cdr refused) "s" "")
-		     (mapconcat #'identity (reverse refused) ", ")
-		     (if (cdr refused) "them" "it")))
-	  (unless (cdr wanted)
-	    ;; the single flag that was refused, remembered without a second ask
-	    (setq refused wanted)
-	    (setq vm-imap-refused-flags (append wanted vm-imap-refused-flags))
-	    (vm-warn 1 2 "IMAP server refuses the flag %s; not sending it again"
-		     (car wanted)))
-	  (unless accepted
-	    (setq failure error-data)))))
-    (when failure
-      (signal (car failure) (cdr failure)))
-    accepted))
+	    (let ((wanted (seq-remove (lambda (flag) (member flag vm-imap-refused-flags))
+				      flags))
+		  (accepted nil)
+		  (refused nil)
+		  (failure nil))
+	      (when wanted
+		(let ((error-data nil))
+		  (condition-case caught
+		      (progn (iter-yield-from (vm-imap-net-store-flags-1 sign id wanted))
+			     (setq accepted wanted))
+		    (vm-imap-normal-error (setq error-data caught)))
+		  (when error-data
+		    ;; the server refused the lot; find out what it will take, unless
+		    ;; there was only one, which has just been refused on its own
+		    (dolist (flag (if (cdr wanted) wanted nil))
+		      (let ((one-failed nil))
+			(condition-case caught
+			    (iter-yield-from (vm-imap-net-store-flags-1 sign id (list flag)))
+			  (vm-imap-normal-error (setq one-failed caught)))
+			(if one-failed
+			    (progn (push flag refused)
+				   (push flag vm-imap-refused-flags))
+			  (push flag accepted))))
+		    (when (and refused (cdr wanted))
+		      (vm-warn 1 2 "IMAP server refuses the flag%s %s; not sending %s again"
+			       (if (cdr refused) "s" "")
+			       (mapconcat #'identity (reverse refused) ", ")
+			       (if (cdr refused) "them" "it")))
+		    (unless (cdr wanted)
+		      ;; the single flag that was refused, remembered without a second ask
+		      (setq refused wanted)
+		      (setq vm-imap-refused-flags (append wanted vm-imap-refused-flags))
+		      (vm-warn 1 2 "IMAP server refuses the flag %s; not sending it again"
+			       (car wanted)))
+		    (unless accepted
+		      (setq failure error-data)))))
+	      (when failure
+		(signal (car failure) (cdr failure)))
+	      accepted))
 
 (iter-defun vm-imap-net-save-message-flags (folder message)
-  "Send MESSAGE's flags to the server, and note what it took.
+	    "Send MESSAGE's flags to the server, and note what it took.
 Answers t when something was sent.  The change itself is worked out in the
 folder by `vm-imap-message-flag-changes\\=', the same function the blocking
 path uses; only the sending of it is here."
-  (let* ((changes (with-current-buffer folder
-		    (vm-imap-message-flag-changes message)))
-	 (number (nth 0 changes))
-	 (cached-flags (nth 1 changes))
-	 (flags+ (nth 2 changes))
-	 (flags- (nth 3 changes)))
-    (when number
-      (when flags+
-	;; only what the server took goes in the cache, or the next sync would
-	;; think a refused flag was already there
-	(nconc cached-flags
-	       (iter-yield-from (vm-imap-net-store-flags "+" number flags+))))
-      (when flags-
-	(dolist (flag (iter-yield-from
-		       (vm-imap-net-store-flags "-" number flags-)))
-	  (delete flag cached-flags)))
-      (with-current-buffer folder
-	(vm-set-attribute-modflag-of message nil))
-      t)))
+	    (let* ((changes (with-current-buffer folder
+			      (vm-imap-message-flag-changes message)))
+		   (number (nth 0 changes))
+		   (cached-flags (nth 1 changes))
+		   (flags+ (nth 2 changes))
+		   (flags- (nth 3 changes)))
+	      (when number
+		(when flags+
+		  ;; only what the server took goes in the cache, or the next sync would
+		  ;; think a refused flag was already there
+		  (nconc cached-flags
+			 (iter-yield-from (vm-imap-net-store-flags "+" number flags+))))
+		(when flags-
+		  (dolist (flag (iter-yield-from
+				 (vm-imap-net-store-flags "-" number flags-)))
+		    (delete flag cached-flags)))
+		(with-current-buffer folder
+		  (vm-set-attribute-modflag-of message nil))
+		t)))
 
 (iter-defun vm-imap-net-save-flags (folder)
-  "Send the flags of every message in FOLDER whose own have changed.
+	    "Send the flags of every message in FOLDER whose own have changed.
 Answers with how many were sent.  A message the server refuses is counted as
 an error and left with its modification flag set, so the next synchronisation
 tries it again, and the rest are still sent."
-  (let ((messages (with-current-buffer folder
-		    (seq-filter (lambda (message)
-				  (and (vm-attribute-modflag-of message)
-				       (equal (vm-imap-uid-validity-of message)
-					      (vm-folder-imap-uid-validity))))
-				vm-message-list)))
-	(saved 0)
-	(errors 0))
-    (dolist (message messages)
-      (let ((failed nil))
-	(condition-case caught
-	    (when (iter-yield-from (vm-imap-net-save-message-flags folder message))
-	      (setq saved (1+ saved)))
-	  (vm-imap-normal-error (setq failed caught)))
-	(when failed
-	  (setq errors (1+ errors)))))
-    (when (> errors 0)
-      (vm-warn 1 2 "%s: %d message%s whose flags the server would not take"
-	       (buffer-name folder) errors (if (= errors 1) "" "s")))
-    saved))
+	    (let ((messages (with-current-buffer folder
+			      (seq-filter (lambda (message)
+					    (and (vm-attribute-modflag-of message)
+						 (equal (vm-imap-uid-validity-of message)
+							(vm-folder-imap-uid-validity))))
+					  vm-message-list)))
+		  (saved 0)
+		  (errors 0))
+	      (dolist (message messages)
+		(let ((failed nil))
+		  (condition-case caught
+		      (when (iter-yield-from (vm-imap-net-save-message-flags folder message))
+			(setq saved (1+ saved)))
+		    (vm-imap-normal-error (setq failed caught)))
+		  (when failed
+		    (setq errors (1+ errors)))))
+	      (when (> errors 0)
+		(vm-warn 1 2 "%s: %d message%s whose flags the server would not take"
+			 (buffer-name folder) errors (if (= errors 1) "" "s")))
+	      saved))
 
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
 (declare-function vm-present-current-message "vm-page" ())
@@ -982,29 +1001,29 @@ put there.")
 (declare-function vm-preview-current-message "vm-page" ())
 
 (iter-defun vm-imap-net-fetch-bodies (folder uids body-peek)
-  "UID FETCH the bodies of UIDS, putting each where its own message is.
+	    "UID FETCH the bodies of UIDS, putting each where its own message is.
 Answers with the UIDs the server answered for.  One command for all of them,
 and the UID in each response says which message it is: a server may answer
 in any order (issue #185)."
-  (let ((source (current-buffer))
-	(fetched nil))
-    (vm-imap-net-send
-     (format "UID FETCH %s %s" (mapconcat #'identity uids ",")
-	     (if body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
-    (let ((done nil)
-	  response)
-      (while (not done)
-	(setq response (iter-yield-from
-			(vm-imap-net-read-response-and-verify "UID FETCH")))
-	(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
-	       (let* ((message (vm-imap-net-fetch-message-text response))
-		      (uid (nth 0 message)))
-		 (vm-imap-net-store-body folder source uid
-					 (nth 1 message) (nth 2 message))
-		 (push uid fetched)))
-	      ((vm-imap-response-matches response 'VM 'OK)
-	       (setq done t)))))
-    (nreverse fetched)))
+	    (let ((source (current-buffer))
+		  (fetched nil))
+	      (vm-imap-net-send
+	       (format "UID FETCH %s %s" (mapconcat #'identity uids ",")
+		       (if body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
+	      (let ((done nil)
+		    response)
+		(while (not done)
+		  (setq response (iter-yield-from
+				  (vm-imap-net-read-response-and-verify "UID FETCH")))
+		  (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+			 (let* ((message (vm-imap-net-fetch-message-text response))
+				(uid (nth 0 message)))
+			   (vm-imap-net-store-body folder source uid
+						   (nth 1 message) (nth 2 message))
+			   (push uid fetched)))
+			((vm-imap-response-matches response 'VM 'OK)
+			 (setq done t)))))
+	      (nreverse fetched)))
 
 (defun vm-imap-net-message-by-uid (folder uid)
   "The message in FOLDER whose IMAP UID is UID, or nil."
@@ -1033,11 +1052,14 @@ in any order (issue #185)."
 	    (vm-settle-message-body message modified)))))))
 
 (iter-defun vm-imap-net-load (folder mailbox user password uids)
-  "Log in, select MAILBOX, and fetch the bodies of UIDS into FOLDER."
-  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
-	 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t)))
-    (iter-yield-from (vm-imap-net-select mailbox))
-    (iter-yield-from (vm-imap-net-fetch-bodies folder uids body-peek))))
+	    "Log in, select MAILBOX, and fetch the bodies of UIDS into FOLDER."
+	    (unwind-protect
+		(progn
+		  (let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
+    			 (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t)))
+		    (iter-yield-from (vm-imap-net-select mailbox))
+		    (iter-yield-from (vm-imap-net-fetch-bodies folder uids body-peek))))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-load-bodies (messages callback)
   "Fetch the bodies of MESSAGES, which are the current folder's, and tell
@@ -1128,53 +1150,56 @@ from it."
     (format "(%s)" (mapconcat #'identity flags " "))))
 
 (iter-defun vm-imap-net-append (mailbox text flags)
-  "APPEND TEXT to MAILBOX with FLAGS, as a literal.
+	    "APPEND TEXT to MAILBOX with FLAGS, as a literal.
 The server answers the command line with a `+' before the octets are sent,
 which is the one place IMAP asks the client to wait for permission to
 speak."
-  (vm-imap-net-send (format "APPEND %s %s {%d}"
-			    (vm-imap-quote-mailbox-name mailbox)
-			    flags (string-bytes text)))
-  (let ((ready nil)
-	response)
-    (while (not ready)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "APPEND")))
-      (when (vm-imap-response-matches response '+)
-	(setq ready t))))
-  (let ((process (get-buffer-process (current-buffer))))
-    (goto-char (point-max))
-    (insert-before-markers "<message omitted>\r\n")
-    (setq vm-imap-net-read-point (point))
-    (process-send-string process (concat text "\r\n")))
-  (let ((done nil)
-	response)
-    (while (not done)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "APPEND data")))
-      (when (vm-imap-response-matches response 'VM 'OK)
-	(setq done t))))
-  t)
+	    (vm-imap-net-send (format "APPEND %s %s {%d}"
+				      (vm-imap-quote-mailbox-name mailbox)
+				      flags (string-bytes text)))
+	    (let ((ready nil)
+		  response)
+	      (while (not ready)
+		(setq response (iter-yield-from
+				(vm-imap-net-read-response-and-verify "APPEND")))
+		(when (vm-imap-response-matches response '+)
+		  (setq ready t))))
+	    (let ((process (get-buffer-process (current-buffer))))
+	      (goto-char (point-max))
+	      (insert-before-markers "<message omitted>\r\n")
+	      (setq vm-imap-net-read-point (point))
+	      (process-send-string process (concat text "\r\n")))
+	    (let ((done nil)
+		  response)
+	      (while (not done)
+		(setq response (iter-yield-from
+				(vm-imap-net-read-response-and-verify "APPEND data")))
+		(when (vm-imap-response-matches response 'VM 'OK)
+		  (setq done t))))
+	    t)
 
 (iter-defun vm-imap-net-save (user password mailbox messages)
-  "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
+	    "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
 The mailbox is created if the server does not have it, its refusal to create
 one it already has being no reason to stop."
-  (iter-yield-from (vm-imap-net-open-session user password))
-  (let ((error-data nil))
-    (condition-case caught
-	(iter-yield-from (vm-imap-net-command
-			  (format "CREATE %s"
-				  (vm-imap-quote-mailbox-name mailbox))
-			  "CREATE"))
-      (vm-imap-normal-error (setq error-data caught)))
-    (ignore error-data))
-  (let ((saved 0))
-    (dolist (message messages)
-      (iter-yield-from (vm-imap-net-append mailbox
-					   (car message) (cdr message)))
-      (setq saved (1+ saved)))
-    saved))
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (let ((error-data nil))
+		    (condition-case caught
+    			(iter-yield-from (vm-imap-net-command
+    					  (format "CREATE %s"
+    						  (vm-imap-quote-mailbox-name mailbox))
+    					  "CREATE"))
+		      (vm-imap-normal-error (setq error-data caught)))
+		    (ignore error-data))
+		  (let ((saved 0))
+		    (dolist (message messages)
+		      (iter-yield-from (vm-imap-net-append mailbox
+    							   (car message) (cdr message)))
+		      (setq saved (1+ saved)))
+		    saved))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-save-messages (source mailbox messages callback)
   "Save MESSAGES into MAILBOX on SOURCE, and tell CALLBACK how many went.
@@ -1203,25 +1228,26 @@ open."
     (vm-net-start session
 		  (vm-imap-net-save (nth 2 opened) (nth 3 opened)
 				    mailbox copies))
+    (setq vm-imap-net-session session)
     session))
 
 ;;; Expunging on the server
 
 
 (iter-defun vm-imap-net-expunge (uids)
-  "Delete the messages with UIDS on the server, and expunge them.
+	    "Delete the messages with UIDS on the server, and expunge them.
 Answers with how many were expunged.  Marked by UID and expunged in one
 command each: a sequence number means something different after every
 expunge, and a UID does not."
-  (if (null uids)
-      0
-    (iter-yield-from
-     (vm-imap-net-command
-      (format "UID STORE %s +FLAGS.SILENT (\\Deleted)"
-	      (mapconcat #'identity uids ","))
-      "UID STORE"))
-    (iter-yield-from (vm-imap-net-command "EXPUNGE" "EXPUNGE"))
-    (length uids)))
+	    (if (null uids)
+		0
+	      (iter-yield-from
+	       (vm-imap-net-command
+		(format "UID STORE %s +FLAGS.SILENT (\\Deleted)"
+			(mapconcat #'identity uids ","))
+		"UID STORE"))
+	      (iter-yield-from (vm-imap-net-command "EXPUNGE" "EXPUNGE"))
+	      (length uids)))
 
 (defvar vm-imap-messages-to-expunge)
 
@@ -1247,10 +1273,13 @@ The current buffer is the folder."
   (vm-mark-folder-modified-p))
 
 (iter-defun vm-imap-net-save-attributes-session (folder user password mailbox)
-  "Log in, select MAILBOX, and send FOLDER's changed flags."
-  (iter-yield-from (vm-imap-net-open-session user password))
-  (iter-yield-from (vm-imap-net-select mailbox))
-  (iter-yield-from (vm-imap-net-save-flags folder)))
+	    "Log in, select MAILBOX, and send FOLDER's changed flags."
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (iter-yield-from (vm-imap-net-select mailbox))
+		  (iter-yield-from (vm-imap-net-save-flags folder)))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-save-attributes ()
   "Start sending this folder's changed flags to the server.
@@ -1287,10 +1316,13 @@ blocking way."
 	(vm-imap-net-unsupported nil))))))
 
 (iter-defun vm-imap-net-expunge-session (user password mailbox uids)
-  "Log in, select MAILBOX, and expunge UIDS from it."
-  (iter-yield-from (vm-imap-net-open-session user password))
-  (iter-yield-from (vm-imap-net-select mailbox))
-  (iter-yield-from (vm-imap-net-expunge uids)))
+	    "Log in, select MAILBOX, and expunge UIDS from it."
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (iter-yield-from (vm-imap-net-select mailbox))
+		  (iter-yield-from (vm-imap-net-expunge uids)))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-expunge-remote-messages ()
   "Start expunging on the server what this folder has expunged locally.
@@ -1428,6 +1460,192 @@ own path calls this: waiting is what the conversion is for getting rid of."
       (while (and (vm-imap-net-busy-p folder) (< (float-time) deadline))
 	(accept-process-output nil 0.05)))
     (not (vm-imap-net-busy-p folder))))
+
+
+;;; Copying on the server
+
+(iter-defun vm-imap-net-copy (mailbox uids)
+	    "UID COPY UIDS into MAILBOX, making it if the server has not got it.
+The session's own mailbox is the one they are copied from, so this is the
+same server: what the server holds is copied where it stands, and nothing
+travels to Emacs and back."
+	    (let ((error-data nil))
+	      (condition-case caught
+		  (iter-yield-from (vm-imap-net-command
+				    (format "CREATE %s"
+					    (vm-imap-quote-mailbox-name mailbox))
+				    "CREATE"))
+		;; CREATE of a mailbox that exists answers NO, which is not an error
+		;; here (issue #690)
+		(vm-imap-normal-error (setq error-data caught)))
+	      (ignore error-data))
+	    (iter-yield-from (vm-imap-net-command
+			      (format "UID COPY %s %s" (mapconcat #'identity uids ",")
+				      (vm-imap-quote-mailbox-name mailbox))
+			      "UID COPY"))
+	    (length uids))
+
+(defun vm-imap-net-warn-about-stale-flags (folder messages)
+  "Warn if any of MESSAGES still has changes the server would not take.
+UID COPY copies what the server holds, so a change that did not go up is not
+in the copy, and a save that says nothing about that is issue #38."
+  (when (with-current-buffer folder
+	  (seq-find #'vm-attribute-modflag-of messages))
+    (vm-warn 0 2 (concat "Saved copy has the flags the server holds:"
+			 " attribute changes the server would not take"
+			 " are not in it.  Save again once"
+			 " `vm-imap-synchronize' stores them."))))
+
+(iter-defun vm-imap-net-copy-session (folder user password mailbox target
+					     uids messages)
+	    "Log in, select MAILBOX, send FOLDER's pending flags, and copy UIDS to TARGET.
+The flags go first because UID COPY copies what the server holds: a change
+made here and not yet stored would not be in the copy (issue #38), and
+MESSAGES is what to check that against afterwards."
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (iter-yield-from (vm-imap-net-select mailbox))
+		  (let ((error-data nil))
+		    (condition-case caught
+			(iter-yield-from (vm-imap-net-save-flags folder))
+		      (vm-imap-normal-error (setq error-data caught)))
+		    (ignore error-data))
+		  (vm-imap-net-warn-about-stale-flags folder messages)
+		  (iter-yield-from (vm-imap-net-copy target uids)))
+	      (vm-imap-net-logout)))
+
+(defun vm-imap-net-copy-messages (target messages callback)
+  "Copy MESSAGES, which are the current folder's, into the TARGET mailbox.
+On the folder's own server, so the messages themselves do not travel.  Tells
+CALLBACK how many were copied, or the error that stopped it."
+  (let* ((folder (current-buffer))
+	 (validity (vm-folder-imap-uid-validity))
+	 (uids (mapcar (lambda (message)
+			 (unless (equal (vm-imap-uid-validity-of message)
+					validity)
+			   (error "Message does not have a valid UID"))
+			 (vm-imap-uid-of message))
+		       messages))
+	 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec) "IMAP copy"))
+	 (session (car opened))
+	 (buffer (vm-net-session-buffer session)))
+    (setf (vm-net-session-finished session)
+	  (lambda (finished)
+	    (let ((process (vm-net-session-process finished)))
+	      (when (process-live-p process) (delete-process process)))
+	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (when (buffer-live-p folder)
+	      (with-current-buffer folder
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))))
+    (vm-net-start session
+		  (vm-imap-net-copy-session folder (nth 2 opened) (nth 3 opened)
+					    (nth 1 opened) target uids messages))
+    (setq vm-imap-net-session session)
+    session))
+
+;;; Saving to an IMAP folder, whichever way round
+
+(declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
+(declare-function vm-imap-folder-p "vm-folder" ())
+(declare-function vm-body-to-be-retrieved-of "vm-message" (m))
+(declare-function vm-real-message-of "vm-message" (m))
+
+(defun vm-imap-net-same-server-p (target)
+  "Whether TARGET is a mailbox on the server the current folder is on."
+  (and (vm-imap-folder-p)
+       (let ((here (vm-imap-parse-spec-to-list (vm-folder-imap-maildrop-spec)))
+	     (there (vm-imap-parse-spec-to-list target)))
+	 (and (equal (nth 1 here) (nth 1 there))
+	      (equal (nth 5 here) (nth 5 there))))))
+
+(defun vm-imap-net-save-to-folder (target messages callback)
+  "Save MESSAGES into the IMAP maildrop TARGET, and tell CALLBACK how many.
+
+Copied on the server where it is the same server, and appended where it is
+not -- and where it is not, a message whose body is still on the server is
+fetched first, since a message cannot be saved without its body.  Answers
+with whether it started; nil means the maildrop is one that cannot be opened
+without waiting."
+  (let ((folder (current-buffer))
+	(external (seq-filter (lambda (m)
+				(vm-body-to-be-retrieved-of
+				 (vm-real-message-of m)))
+			      messages)))
+    (condition-case nil
+	(cond
+	 ((vm-imap-net-same-server-p target)
+	  (vm-imap-net-copy-messages (nth 3 (vm-imap-parse-spec-to-list target))
+				     messages callback)
+	  t)
+	 (external
+	  ;; fetch what is not here, then save: two servers, so two sessions
+	  (vm-imap-net-load-bodies
+	   (mapcar #'vm-real-message-of external)
+	   (lambda (result)
+	     (if (and (consp result) (symbolp (car result))
+		      (get (car result) 'error-conditions))
+		 (funcall callback result)
+	       (with-current-buffer folder
+		 (vm-imap-net-save-messages
+		  target (nth 3 (vm-imap-parse-spec-to-list target))
+		  messages callback)))))
+	  t)
+	 (t
+	  (vm-imap-net-save-messages
+	   target (nth 3 (vm-imap-parse-spec-to-list target)) messages callback)
+	  t))
+      (vm-imap-net-unsupported nil))))
+
+(declare-function vm-set-filed-flag "vm-message" (m flag))
+(declare-function vm-set-deleted-flag "vm-message" (m flag))
+(declare-function vm-deleted-flag "vm-message" (m))
+(declare-function vm-run-hook-on-message-with-args "vm-misc" (hook message &rest args))
+(declare-function vm-imap-folder-for-spec "vm-imap" (spec))
+(declare-function vm-safe-imapdrop-string "vm-misc" (string))
+(declare-function vm-delete-message "vm-delete" (count &optional mlist))
+
+(defvar vm-delete-after-saving)
+(defvar vm-folder-read-only)
+(defvar vm-last-save-imap-folder)
+
+(defun vm-imap-net-save-messages-to-folder (target messages count)
+  "Save MESSAGES into the IMAP maildrop TARGET without waiting.
+Answers with whether it started; nil leaves the save to the blocking path.
+COUNT is what the command was given, for the deletion afterwards.
+
+The messages are flagged filed when the server has taken them, not when the
+command was typed: a save that the server refuses must not leave a folder
+saying it was saved."
+  (let ((folder (current-buffer)))
+    (and (vm-imap-net-save-to-folder
+	  target messages
+	  (lambda (result)
+	    (cond
+	     ((and (consp result) (symbolp (car result))
+		   (get (car result) 'error-conditions))
+	      (vm-warn 0 2 "%s: nothing was saved to %s: %s"
+		       (buffer-name folder)
+		       (or (vm-imap-folder-for-spec target)
+			   (vm-safe-imapdrop-string target))
+		       (error-message-string result)))
+	     (t
+	      (dolist (message messages)
+		(vm-run-hook-on-message-with-args 'vm-save-message-hook
+						  message target)
+		(vm-set-filed-flag message t)
+		(when (and vm-delete-after-saving (not (vm-deleted-flag message)))
+		  (vm-set-deleted-flag message t)))
+	      (when (and vm-delete-after-saving (not vm-folder-read-only))
+		(vm-delete-message count messages))
+	      (setq vm-last-save-imap-folder target)
+	      (vm-update-summary-and-mode-line)
+	      (vm-inform 5 "%d message%s saved to %s" result
+			 (if (= result 1) "" "s")
+			 (or (vm-imap-folder-for-spec target)
+			     (vm-safe-imapdrop-string target)))))))
+	 t)))
 
 (provide 'vm-imap-net)
 ;;; vm-imap-net.el ends here

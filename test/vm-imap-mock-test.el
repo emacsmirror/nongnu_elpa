@@ -470,6 +470,7 @@ the two halves its docstring promises, in that order."
     (vm-set-deleted-flag (car vm-message-list) t)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
     (vm-imap-synchronize)
+    (vm-imap-net-wait nil 10)
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))
     (should (vm-imap-mock-test--has-flag mock "INBOX" 1 "\\Deleted"))
@@ -669,6 +670,7 @@ not exist yet is how the first one is made."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                      '("badgers")))
       (should (vm-imap-mock-received-p mock "APPEND"))
@@ -687,6 +689,7 @@ folder that was saved to and not the one before it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should (equal vm-last-save-imap-folder target)))))
 
 (ert-deftest vm-imap-mock-test-saving-without-a-count-saves-one-message ()
@@ -695,6 +698,7 @@ from the prefix argument, and defaulting it to nothing would save the whole
 folder or none of it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (vm-imap-net-wait nil 10)
     (should (equal (length (vm-imap-mock-messages mock "Saved")) 1))))
 
 (ert-deftest vm-imap-mock-test-saving-a-count-of-two-saves-both ()
@@ -702,6 +706,7 @@ folder or none of it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Saved") 2)
+    (vm-imap-net-wait nil 10)
     (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                    '("badgers" "otters")))
     ;; one session for the lot, not one per message: a server counts
@@ -719,6 +724,7 @@ they also pass is not a second opinion about which."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Saved") 1 (cdr vm-message-list))
+    (vm-imap-net-wait nil 10)
     (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                    '("otters")))))
 
@@ -729,9 +735,11 @@ to empty is not a small mistake."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should-not (vm-deleted-flag (car vm-message-list)))
       (let ((vm-delete-after-saving t))
-        (vm-save-message-to-imap-folder target))
+        (vm-save-message-to-imap-folder target)
+        (vm-imap-net-wait nil 10))
       (should (vm-deleted-flag (car vm-message-list)))
       (should-not (vm-deleted-flag (nth 1 vm-message-list))))))
 
@@ -741,6 +749,7 @@ for a command that is over, and a server counts them (dovecot's
 `mail_max_userip_connections')."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (vm-imap-net-wait nil 10)
     (should (vm-imap-mock-test--wait-for mock "LOGOUT"))))
 
 (ert-deftest vm-imap-mock-test-saving-on-the-same-server-copies ()
@@ -754,6 +763,7 @@ down here at all."
       (vm-imap-mock-add-mailbox mock "Saved")
       (vm-save-message-to-imap-folder
        (vm-imap-mock-test--spec-for mock "Saved"))
+      (vm-imap-net-wait nil 10)
       (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                      '("badgers")))
       (should (vm-imap-mock-received-p mock "UID COPY"))
@@ -775,6 +785,7 @@ user did not ask for and cannot see."
           (vm-last-save-imap-folder nil))
       (vm-save-message-to-imap-folder
        (vm-imap-mock-test--spec-for mock "Nowhere"))
+      (vm-imap-net-wait nil 10)
       (should (member "Nowhere" (vm-imap-mock-mailbox-names mock)))
       (should (equal (vm-imap-mock-test--saved-subjects mock "Nowhere")
                      '("badgers")))
@@ -792,11 +803,13 @@ verbosity ordinary progress is reported at."
                    (when (string-match-p "saved to" fmt)
                      (push (cons level (apply #'format fmt args)) said)))))
         (vm-save-message-to-imap-folder target)
+        (vm-imap-net-wait nil 10)
         (should (equal (length said) 1))
         (should (equal (car (car said)) 5))
         (should (string-match-p "\\`1 message saved to " (cdr (car said))))
         (setq said nil)
         (vm-save-message-to-imap-folder target 2)
+        (vm-imap-net-wait nil 10)
         (should (string-match-p "\\`2 messages saved to " (cdr (car said))))))))
 
 (ert-deftest vm-imap-mock-test-creating-a-mailbox-leaves-the-parents-alone ()
@@ -809,6 +822,7 @@ the server make the parents."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Parent/Child"))
+    (vm-imap-net-wait nil 10)
     (should (member "Parent/Child" (vm-imap-mock-mailbox-names mock)))
     (should (equal (vm-imap-mock-test--saved-subjects mock "Parent/Child")
                    '("badgers")))
