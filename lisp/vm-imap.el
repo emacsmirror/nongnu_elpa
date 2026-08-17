@@ -4149,6 +4149,7 @@ be saved to the IMAP folder, not only those of changed messages."
 		   (buffer-name))))))
 
 
+;;;###autoload
 (defun vm-imap-synchronize (&optional full)
   "Synchronize the current folder with the IMAP mailbox.
 Changes made to the buffer are uploaded to the server first before

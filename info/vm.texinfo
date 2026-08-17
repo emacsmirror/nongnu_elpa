@@ -1439,6 +1439,15 @@ If you delete and expunge messages, these changes are made to both the
 cache folder and the folder on the @acronym{IMAP} server when saved
 with @code{vm-save-folder}.
 
+@findex vm-folder-cache-file
+A cache folder is named after the @acronym{MD5} of the maildrop it holds, so
+it can be neither read nor typed by hand.  @kbd{M-x vm-folder-cache-file} in
+the folder says which file it is; it works for @acronym{POP} folders too, and
+answers nothing for a folder that is a file in the first place.  Only the
+scheme, the host, the mailbox and the login name go into the name, so
+@code{imap} and @code{imap-ssl} for one mailbox share a cache and changing
+your password does not orphan it.
+
 Message attributes (new, replied, filed, etc.) are stored on the @acronym{IMAP}
 server and are also cached locally.  Message labels are also stored on
 the @acronym{IMAP} server as user-defined permanent flags.  (This assumes that
@@ -6502,6 +6511,7 @@ intermittent problems with the network.  In this mode, doing
 @code{vm-get-new-mail} attempts to connect to the network.  If it succeeds
 then @code{vm-imap-connection-mode} turns into @code{online}.
 
+@findex vm-imap-synchronize
 When the @acronym{IMAP} server is connected again, you should run @kbd{C-u
 M-x vm-imap-synchronize}, i.e., call it with a @emph{prefix argument}.  This
 causes @emph{all} the message attributes and labels to be written to the
