@@ -326,6 +326,7 @@ IMAP system flag, a VM label is an IMAP keyword."
       (unwind-protect
           (progn
             (vm-visit-imap-folder (vm-imap-live-spec server account src))
+            (vm-imap-net-wait nil 30)
             (let ((m (car vm-message-list)))
               (should m)
               ;; Change attributes the way a user would, and check VM agrees
@@ -402,6 +403,7 @@ session -- which is the situation #335 describes."
                      (progn
                        (vm-visit-imap-folder
                         (vm-imap-live-spec via account ,mailbox))
+                       (vm-imap-net-wait nil 30)
                        ,@body)
                    (when (eq major-mode 'vm-mode)
                      (let ((vm-confirm-quit nil))
@@ -505,9 +507,18 @@ rather than hanging batch ert."
         (should (= (length vm-message-list) 1))
         ;; Kill the next SELECT mid-flight.
         (setf (vm-imap-relay-drop-on relay) "SELECT")
-        (cl-letf (((symbol-function 'y-or-n-p)
-                   (lambda (prompt) (push prompt prompts) nil)))
-          (should-error (vm-get-new-mail) :type 'error))
+        (let ((warned nil))
+          (cl-letf (((symbol-function 'y-or-n-p)
+                     (lambda (prompt) (push prompt prompts) nil))
+                    ((symbol-function 'vm-warn)
+                     (lambda (_l _secs &rest args)
+                       (push (apply #'format args) warned))))
+            ;; the fetch happens after the command returns, so the lost
+            ;; connection is a warning when it happens rather than an error
+            ;; where the command was typed
+            (vm-get-new-mail)
+            (vm-imap-net-wait nil 30))
+          (should warned))
         (should (vm-imap-relay-dropped relay))
         ;; The destructive branch was never offered...
         (should-not (seq-find (lambda (p) (string-match-p "UID VALIDITY" p))
@@ -527,13 +538,18 @@ behind #335 and #286."
   (require 'vm)
   (vm-imap-live-with-relayed-folder (relay mailbox "plain")
     (setf (vm-imap-relay-drop-on relay) "SELECT")
-    (let ((message
-           (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
-             (condition-case err (progn (vm-get-new-mail) nil)
-               (error (error-message-string err))))))
-      (should message)
-      (should (string-match-p "closed the connection" message))
-      (should-not (string-match-p "Timed out" message)))))
+    (let ((warned nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-warn)
+                 (lambda (_l _secs &rest args) (push (apply #'format args) warned))))
+        ;; the fetch is not where the command was typed, so what says the
+        ;; connection went is a warning from the session that lost it
+        (vm-get-new-mail)
+        (vm-imap-net-wait nil 30))
+      (let ((message (car warned)))
+        (should message)
+        (should (string-match-p "connection" message))
+        (should-not (string-match-p "timed out" message))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Tier 3 -- a refused STORE must not cost the user their change (#270)
@@ -561,6 +577,7 @@ reached the server."
       ;; The server now refuses every STORE.
       (setf (vm-imap-relay-reject relay) "STORE")
       (vm-get-new-mail)
+      (vm-imap-net-wait nil 30)
       ;; The label survives, and is still pending, so a later sync can retry.
       (should (member "vmtest-refused" (vm-labels-of m)))
       (should (vm-attribute-modflag-of m)))))
@@ -625,6 +642,7 @@ server behaves towards a keyword it does not know."
         ;; From here the server takes any flag but that one.
         (setf (vm-imap-relay-reject relay) label)
         (vm-imap-save-attributes)
+        (vm-imap-net-wait nil 30)
         ;; The label is still ours ...
         (should (member label (vm-labels-of m)))
         ;; ... and the deletion reached the server, read back on the direct
@@ -662,12 +680,14 @@ label: the transcript must hold one STORE of it, not three."
       (vm-imap-live-append conn mailbox vm-imap-live-test--message)
       (vm-imap-live-append conn mailbox vm-imap-live-test--message)
       (vm-get-new-mail)
+      (vm-imap-net-wait nil 30)
       (should (= 3 (length vm-message-list)))
       (dolist (n '(1 2 3))
         (vm-goto-message n)
         (vm-add-message-labels label 1))
       (setf (vm-imap-relay-reject relay) label)
       (vm-imap-save-attributes)
+      (vm-imap-net-wait nil 30)
       (let* ((sent (vm-imap-relay-transcript relay 'client))
              (count 0)
              (start 0))
@@ -744,10 +764,12 @@ writes the attachment."
           (vm-imap-live-append conn mailbox
                                vm-imap-live-test--message-with-attachment)
           (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+          (vm-imap-net-wait nil 30)
           (should (= 1 (length vm-message-list)))
           (let ((folder (current-buffer)))
             (should (vm-body-to-be-retrieved-of (car vm-message-list)))
             (vm-show-current-message)
+            (vm-imap-net-wait nil 30)
             (set-buffer folder)
             ;; The button refuses rather than writing nothing.
             (with-current-buffer vm-presentation-buffer
@@ -758,6 +780,7 @@ writes the attachment."
             ;; Load it, as the message says, and the attachment comes out whole.
             (set-buffer folder)
             (vm-load-message)
+            (vm-imap-net-wait nil 30)
             (set-buffer folder)
             (let* ((m (car vm-message-list))
                    (parts (vm-mm-layout-parts (vm-mm-layout m)))
@@ -793,6 +816,7 @@ per command, where a UID set would do -- but the doubling is."
     (vm-imap-live-with-relayed-folder (relay mailbox "plain")
       (dotimes (_ 2) (vm-imap-live-append conn mailbox vm-imap-live-test--message))
       (vm-get-new-mail)
+      (vm-imap-net-wait nil 30)
       (should (= 3 (length vm-message-list)))
       (dolist (m vm-message-list)
         (should (vm-body-to-be-retrieved-of m))
@@ -801,6 +825,7 @@ per command, where a UID set would do -- but the doubling is."
       (setf (vm-imap-relay-log relay) nil)
       (vm-goto-message 2)
       (vm-load-message 2)
+      (vm-imap-net-wait nil 30)
       (let ((sent (vm-imap-relay-transcript relay 'client)))
         (should (string-match-p "FETCH[^\n]*BODY" sent))
         (should-not (string-match-p "FETCH[^\n]*RFC822.SIZE" sent)))
@@ -832,6 +857,7 @@ their text, and the attachment writes whole."
           (vm-imap-live-append conn mailbox
                                vm-imap-live-test--message-with-attachment)
           (vm-get-new-mail)
+          (vm-imap-net-wait nil 30)
           (let ((m (car (last vm-message-list)))
                 (folder (current-buffer)))
             (should (vm-body-to-be-retrieved-of m))
@@ -872,6 +898,7 @@ flags, which would break normal synchronisation instead."
         (vm-add-message-labels label 1)
         (should (vm-attribute-modflag-of m))
         (vm-get-new-mail)
+        (vm-imap-net-wait nil 30)
         (should (member label (vm-labels-of m)))
         ;; Uploaded, so no longer pending.
         (should-not (vm-attribute-modflag-of m))
@@ -922,6 +949,7 @@ the stale one is left for the invalid-UID path to deal with."
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (let* ((messages vm-message-list)
            (stale (nth 1 messages))
            (good (nth 2 messages)))
@@ -947,6 +975,7 @@ which would leave duplicates behind instead."
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (let* ((messages vm-message-list)
            (first (nth 1 messages))
            (second (nth 2 messages)))
@@ -1051,6 +1080,7 @@ external by the time the test can look at it."
       (unwind-protect
           (progn
             (vm-visit-imap-folder (vm-imap-live-spec server account src))
+            (vm-imap-net-wait nil 30)
             (should (= (length vm-message-list) 2))
             (let ((m (nth 1 vm-message-list)))
               ;; It arrived headers-only, or the rest proves nothing about
@@ -1129,6 +1159,7 @@ again, online, and save: the two deletions should go out."
           (progn
             ;; ---- session one, going offline before the expunge
             (vm-visit-imap-folder spec)
+            (vm-imap-net-wait nil 30)
             (should (= 3 (length vm-message-list)))
             (vm-delete-message 1)
             (vm-next-message 1)
@@ -1146,12 +1177,15 @@ again, online, and save: the two deletions should go out."
               (should (string-match-p "X-VM-IMAP-To-Expunge" (buffer-string))))
             ;; ... and the server still has everything.
             (should (= 3 (vm-imap-live-test--exists conn mailbox)))
-            ;; ---- session two, online
+            ;; ---- session two, online: the visit's own session sends what
+            ;; the folder owes, so by the time it has the mail the deletions
+            ;; have gone and nothing is pending
             (vm-visit-imap-folder spec)
-            (should (= 2 (length vm-imap-messages-to-expunge)))
+            (vm-imap-net-wait nil 30)
+            (should (= 0 (length vm-imap-messages-to-expunge)))
+            (should (= 1 (vm-imap-live-test--exists conn mailbox)))
             (vm-save-folder)
-            (vm-imap-live-test--quit-folder)
-            (should (= 1 (vm-imap-live-test--exists conn mailbox))))
+            (vm-imap-live-test--quit-folder))
         (when (file-exists-p cache) (delete-file cache))))))
 
 
@@ -1182,6 +1216,7 @@ folder of external messages cost a round trip apiece.  Issue #185."
           (unwind-protect
               (progn
                 (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+                (vm-imap-net-wait nil 30)
                 (should (= 4 (length vm-message-list)))
                 ;; the first was fetched to be shown; the rest are pending
                 (should (= 3 (length (seq-filter #'vm-body-to-be-retrieved-of
@@ -1192,12 +1227,14 @@ folder of external messages cost a round trip apiece.  Issue #185."
                 ;; the test.  Nothing restores advice between tests either --
                 ;; `vm-test-isolate-global-state' restores variables and kills
                 ;; buffers, and that is all.
-                (let ((real (symbol-function 'vm-imap-send-command)))
-                  (cl-letf (((symbol-function 'vm-imap-send-command)
-                             (lambda (process command &rest args)
+                (let ((real (symbol-function 'vm-imap-net-send)))
+                  (cl-letf (((symbol-function 'vm-imap-net-send)
+                             (lambda (command &rest args)
                                (push command commands)
-                               (apply real process command args))))
-                    (vm-load-message 4)))
+                               (apply real command args))))
+                    (vm-load-message 4)
+                    (vm-imap-net-wait nil 30)
+))
                 ;; one FETCH for the three of them
                 (let ((fetches (seq-filter (lambda (c)
                                              (string-match-p "FETCH" c))
@@ -1206,13 +1243,17 @@ folder of external messages cost a round trip apiece.  Issue #185."
                   (should (string-match-p "UID FETCH 2,3,4" (car fetches))))
                 (should (null (seq-filter #'vm-body-to-be-retrieved-of
                                           vm-message-list)))
-                ;; and each body went to its own message
-                (dolist (m vm-message-list)
+                ;; and each body went to its own message.  Widened: the
+                ;; folder is narrowed to whatever message is being shown, and
+                ;; the others lie outside it
+                (save-restriction
+                 (widen)
+                 (dolist (m vm-message-list)
                   (let ((body (buffer-substring (vm-text-of m) (vm-text-end-of m)))
                         (number (progn (string-match "number \\([0-9]+\\)"
                                                      (vm-su-subject m))
                                        (match-string 1 (vm-su-subject m)))))
-                    (should (string-match-p (format "body-of-%s " number) body)))))
+                    (should (string-match-p (format "body-of-%s " number) body))))))
             ;; Leave no folder, summary or presentation buffer behind.
             (let ((vm-confirm-quit nil))
               (ignore-errors (vm-quit-no-change)))))))))
@@ -1254,6 +1295,7 @@ are left external, which is what makes the fetch a bunched one."
         (unwind-protect
             (progn
               (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+              (vm-imap-net-wait nil 30)
               (should (= 3 (length vm-message-list)))
               ;; Two still external, so the load below is a bunched one and
               ;; this test is not passing on the single-message path.
@@ -1261,8 +1303,8 @@ are left external, which is what makes the fetch a bunched one."
                                                vm-message-list))))
               (let ((vm-assertion-checking-off nil)
                     (inhibit-debugger t)
-                    (real (symbol-function 'vm-fetch-imap-messages)))
-                (cl-letf (((symbol-function 'vm-fetch-imap-messages)
+                    (real (symbol-function 'vm-imap-net-load-message-bodies)))
+                (cl-letf (((symbol-function 'vm-imap-net-load-message-bodies)
                            (lambda (mlist)
                              (setq bunched (length mlist))
                              (funcall real mlist))))
@@ -1270,7 +1312,8 @@ are left external, which is what makes the fetch a bunched one."
                   ;; message previews it, and previewing an external message
                   ;; loads its body one at a time -- so moving to message 2
                   ;; first would leave only one to fetch and no bunch.
-                  (vm-load-message 3)))
+                  (vm-load-message 3)
+                  (vm-imap-net-wait nil 30)))
               (should (= 2 bunched))
               (should (null (seq-filter #'vm-body-to-be-retrieved-of
                                         vm-message-list)))
@@ -1509,6 +1552,7 @@ on."
       (unwind-protect
           (progn
             (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+            (vm-imap-net-wait nil 30)
             (vm-save-message-to-imap-folder
              (vm-imap-live-spec server account target) 1)
             (should (equal (vm-imap-live-test--select-count conn target) 1)))
