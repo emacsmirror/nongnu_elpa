@@ -220,6 +220,13 @@ mandatory."
   "Generate summary lines for all the messages in the optional
 argument START-POINT (a list of messages) or, if it is nil, all
 the messages in the current folder."
+  (vm-with-timing 8 (format "generating %d summary line%s"
+			    (length (or start-point vm-message-list))
+			    (if (cdr (or start-point vm-message-list)) "s" ""))
+    (vm-do-summary-1 start-point)))
+
+(defun vm-do-summary-1 (&optional start-point)
+  "Generate the summary lines.  See `vm-do-summary'."
   (let ((m-list (or start-point vm-message-list))
 	(n 0)
 	(modulus 100)

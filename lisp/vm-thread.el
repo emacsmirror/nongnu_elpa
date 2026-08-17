@@ -610,6 +610,13 @@ thread level gives it, with no offset."
   "For all messages in MESSAGE-LIST, build thread information in the
 `vm-thread-obarray' and `vm-thread-subject-obarray'.  If MESSAGE-LIST
 is nil, do it for all the messages in the folder.  USR, 2010-07-15"
+  (vm-with-timing 8 (format "threading %d message%s"
+			    (length (or message-list vm-message-list))
+			    (if (cdr (or message-list vm-message-list)) "s" ""))
+    (vm-build-threads-1 message-list)))
+
+(defun vm-build-threads-1 (message-list)
+  "Build the thread information.  See `vm-build-threads'."
   (let ((initializing (not (vectorp vm-thread-obarray)))
 	(mp (or message-list vm-message-list))
 	(n 0)
