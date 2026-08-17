@@ -4110,22 +4110,26 @@ This function is only used in background tasks.  USR 2012-12-22."
      (let ((buffer-read-only))
        (vm-discard-fetched-messages)
        (vm-inform 7 "%s: Stuffing cached data..." (buffer-name))
-       (vm-stuff-folder-data :interactive t :abort-if-input-pending nil)
+       (vm-with-timing 8 "stuffing the messages that changed"
+	 (vm-stuff-folder-data :interactive t :abort-if-input-pending nil))
        (vm-inform 7 "%s: Stuffing cached data... done" (buffer-name))
        (when vm-message-list
 	 ;; get summary cache up-to-date
 	 (vm-inform 8 "%s: Stuffing folder data..." (buffer-name))
-	 (vm-update-summary-and-mode-line)
+	 (vm-with-timing 8 "updating the summary"
+	   (vm-update-summary-and-mode-line))
 	 (vm-stuff-bookmark)
 	 (vm-stuff-pop-retrieved)
-	 (vm-stuff-imap-retrieved)
+	 (vm-with-timing 8 "stuffing the IMAP retrieved list"
+	   (vm-stuff-imap-retrieved))
 	 (vm-stuff-imap-to-expunge)
 	 (vm-stuff-last-modified)
 	 (vm-stuff-header-variables)
 	 (vm-stuff-labels)
 	 (vm-stuff-summary)
 	 (when vm-message-order-changed
-	   (vm-stuff-message-order))
+	   (vm-with-timing 8 "stuffing the message order"
+	     (vm-stuff-message-order)))
 	 (vm-inform 8 "%s: Stuffing folder data... done" (buffer-name)))
        nil ))))
 
@@ -4392,6 +4396,8 @@ be used as the name of the buffer."
 		    (setq vm-folder-history
 			  (cons hist-item vm-folder-history)))
 	      (vm-inform 5 "%s: Reading folder... done" (or folder-name file))
+	      (vm-inform 8 "%s: read %d characters" (or folder-name file)
+			 (- (point-max) (point-min)))
 	      buffer))))))
 
 ;;;###autoload
