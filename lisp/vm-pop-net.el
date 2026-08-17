@@ -222,46 +222,86 @@ generator rather than dropping it."
 
 (define-error 'vm-pop-net-unsupported "POP maildrop VM cannot open without waiting")
 
+(defvar vm-stunnel-program)
+(defvar vm-stunnel-program-switches)
+(defvar vm-ssh-program)
+(defvar vm-ssh-program-switches)
+(defvar vm-ssh-remote-command)
+
+(declare-function vm-setup-stunnel-random-data-if-needed "vm-crypto" ())
+(declare-function vm-stunnel-configuration-args "vm-crypto" (host port))
+
+(defun vm-pop-net-connect (name host port buffer &optional tls)
+  "A connection to HOST at PORT, made without waiting for it to come up.
+The process is not open when this returns; the session's sentinel hears
+whether it ever will be, and its timeout covers a connect that never
+completes.  TLS is negotiated the same way, Emacs doing the handshake as the
+connection comes up."
+  (make-network-process :name name :host host :service port :buffer buffer
+			:noquery t :coding 'binary :nowait t
+			:type (if tls 'tls nil)))
+
 (defun vm-pop-net-open (source name)
   "Open a connection for the POP maildrop SOURCE and answer with a session.
 
-NAME goes in messages.  The session has a process and a buffer of its own
-and is ready for `vm-net-start\='; nothing has been read from it yet.
+NAME goes in messages.  The session has a buffer of its own and is ready for
+`vm-net-start\='; the answer is (SESSION USER PASSWORD).
 
-Plain connections only for now.  A pop-ssl maildrop is opened through
-`open-network-stream\=' with :type tls, which negotiates before it returns,
-and a pop-ssh one runs a tunnel program: both are still waits, and both are
-converted with the connect path rather than here.  Such a maildrop signals
-`vm-pop-net-unsupported\=', which is a caller\='s cue to use the blocking
-implementation."
+Plain, TLS, over ssh, and through stunnel where the user has one and would
+rather use it than Emacs\='s own TLS.  A tunnelled session has no process yet
+when this returns: the program has to be listening before there is anything
+to connect to, and `vm-net-attach\=' gives the session its connection when
+it is.  A maildrop whose password VM has not been told signals
+`vm-pop-net-unsupported\=', there being nobody to ask from inside a filter."
   (let* ((parts (vm-pop-parse-spec-to-list source))
 	 (protocol (car parts))
 	 (host (nth 1 parts))
 	 (port (nth 2 parts))
 	 (user (nth 4 parts))
 	 (password (nth 5 parts)))
-    (unless (member protocol '("pop" "pop-ssl"))
+    (unless (member protocol '("pop" "pop-ssl" "pop-ssh"))
       (signal 'vm-pop-net-unsupported (list protocol source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")
       (signal 'vm-pop-net-unsupported (list "password not remembered" source)))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
-	   ;; :nowait, so the connect itself does not wait either.  The
-	   ;; process is not open when this returns; the session's sentinel
-	   ;; hears whether it ever will be, and its timeout covers a connect
-	   ;; that never completes.  TLS is negotiated the same way, Emacs
-	   ;; doing the handshake as the connection comes up.
-	   (process (make-network-process
-		     :name name :host host :service port :buffer buffer
-		     :noquery t :coding 'binary :nowait t
-		     :type (if (equal protocol "pop-ssl") 'tls nil))))
+	   (session (vm-net-session :name name :timeout vm-pop-server-timeout)))
       (with-current-buffer buffer
 	(buffer-disable-undo)
 	(vm-pop-net-init))
-      (list (vm-net-session :process process :name name
-			    :timeout vm-pop-server-timeout)
-	    user password))))
+      (setf (vm-net-session-buffer session) buffer)
+      (cond
+       ((equal protocol "pop-ssh")
+	(let ((local (vm-net-free-port)))
+	  (vm-net-tunnel
+	   session vm-ssh-program
+	   (nconc (list "-L" (format "%d:%s:%s" local host port))
+		  (copy-sequence vm-ssh-program-switches)
+		  (list host vm-ssh-remote-command))
+	   local (or vm-pop-server-timeout 30)
+	   (lambda (tunnel)
+	     (when tunnel
+	       (vm-net-attach session (vm-pop-net-connect name "127.0.0.1"
+							  local buffer)))))))
+       ((and (equal protocol "pop-ssl") vm-stunnel-program)
+	(vm-setup-stunnel-random-data-if-needed)
+	(let ((local (vm-net-free-port)))
+	  (vm-net-tunnel
+	   session vm-stunnel-program
+	   (nconc (list "-d" (format "127.0.0.1:%d" local))
+		  (vm-stunnel-configuration-args host port)
+		  (copy-sequence vm-stunnel-program-switches))
+	   local (or vm-pop-server-timeout 30)
+	   (lambda (tunnel)
+	     (when tunnel
+	       (vm-net-attach session (vm-pop-net-connect name "127.0.0.1"
+							  local buffer)))))))
+       (t
+	(setf (vm-net-session-process session)
+	      (vm-pop-net-connect name host port buffer
+				  (equal protocol "pop-ssl")))))
+      (list session user password))))
 
 ;;; Checking for mail, which is the first thing a command wanted
 

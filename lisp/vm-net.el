@@ -108,18 +108,66 @@ a generator waiting for input that cannot arrive."
   "Set ITERATOR going as SESSION's work, and let its process feed it.
 
 Returns SESSION.  Nothing waits: the answer arrives at the `finished'
-function, which is called with the session whether it returned or signalled."
+function, which is called with the session whether it returned or signalled.
+
+A session with no process yet is one whose connection is still being made --
+a tunnel program has to be running before there is anything to connect to.
+It waits here until `vm-net-attach' gives it one, and only then does its
+generator run."
   (setf (vm-net-session-iterator session) iterator)
   (setf (vm-net-session-state session) 'running)
   (let ((process (vm-net-session-process session)))
-    (when process
-      (unless (vm-net-session-buffer session)
-	(setf (vm-net-session-buffer session) (process-buffer process)))
-      (set-process-filter process #'vm-net--filter)
-      (set-process-sentinel process #'vm-net--sentinel)
-      (process-put process 'vm-net-session session)))
-  (vm-net--resume session nil)
+    (if (null process)
+	session
+      (vm-net--install session process)
+      (vm-net--resume session nil)
+      session)))
+
+(defun vm-net--install (session process)
+  "Make PROCESS SESSION's, and let it feed the session's generator."
+  (setf (vm-net-session-process session) process)
+  (unless (vm-net-session-buffer session)
+    (setf (vm-net-session-buffer session) (process-buffer process)))
+  (set-process-filter process #'vm-net--filter)
+  (set-process-sentinel process #'vm-net--sentinel)
+  (process-put process 'vm-net-session session))
+
+(defun vm-net-attach (session process)
+  "Give SESSION the PROCESS it was waiting for, and let it start.
+For a connection that could not be made when the session was: the tunnel it
+goes through had to be running first."
+  (when (vm-net-session-live-p session)
+    (vm-net--install session process)
+    (vm-net--resume session nil))
   session)
+
+(defun vm-net-fail (session error-data)
+  "End SESSION with ERROR-DATA, which is what its caller hears about.
+For a connection that was never made: there is no generator to signal in, so
+the error is put where one that came out of the generator would go."
+  (when (vm-net-session-live-p session)
+    (setf (vm-net-session-error session) error-data)
+    (vm-net--finish session 'failed))
+  session)
+
+(defun vm-net-when-ready (test seconds callback)
+  "Call CALLBACK with t once TEST answers non-nil, or with nil after SECONDS.
+Polled from a timer, so nothing waits.  What a tunnel program is waited for
+with: it has to be listening before there is a port to connect to, and the
+only way to know is to look."
+  (let ((deadline (+ (float-time) seconds))
+	(timer nil))
+    (setq timer
+	  (run-at-time
+	   0.05 0.05
+	   (lambda ()
+	     (cond ((funcall test)
+		    (cancel-timer timer)
+		    (funcall callback t))
+		   ((> (float-time) deadline)
+		    (cancel-timer timer)
+		    (funcall callback nil))))))
+    timer))
 
 (defun vm-net--filter (process string)
   "Put STRING in PROCESS's buffer and let its session carry on.
@@ -279,6 +327,69 @@ depend on when it was asked."
 	    (setq found (save-excursion
 			  (goto-char begin)
 			  (and (re-search-forward regexp nil t) t))))))))
+
+
+;;; A connection that has to be tunnelled
+
+(defun vm-net-free-port ()
+  "A local port nothing is listening on.
+Asked of the operating system by taking one and giving it back, rather than
+by trying to connect to one port after another until a connection fails --
+which is what the blocking path does, and every one of those attempts waits."
+  (let* ((server (make-network-process
+		  :name " *vm-net-port*" :server t :service t
+		  :host 'local :family 'ipv4 :noquery t))
+	 (port (process-contact server :service)))
+    (delete-process server)
+    port))
+
+(defun vm-net-listening-p (port)
+  "Whether something is listening on PORT here.
+The connection is made with :nowait and thrown away: what is being asked is
+whether the tunnel is up, and the answer is that a connection to it can be
+started at all."
+  (let ((process (ignore-errors
+		   (make-network-process :name " *vm-net-probe*"
+					 :host "127.0.0.1" :service port
+					 :noquery t :nowait nil))))
+    (when process
+      (delete-process process)
+      t)))
+
+(defun vm-net-tunnel (session program arguments port seconds ready)
+  "Run PROGRAM with ARGUMENTS and call READY when PORT is listening.
+
+READY is called with the tunnel process, or with nil if PORT is still not
+listening after SECONDS -- in which case SESSION is failed, since there is
+nothing for it to talk to.  The tunnel is killed when the session ends.
+
+Nothing waits: the program is started, and a timer looks every fiftieth of a
+second to see whether it is ready yet."
+  (let ((tunnel (apply #'start-process (format "vm-net tunnel %s" port)
+		       (generate-new-buffer (format " *vm-net tunnel %s*" port))
+		       program arguments)))
+    (set-process-query-on-exit-flag tunnel nil)
+    (let ((finished (vm-net-session-finished session)))
+      (setf (vm-net-session-finished session)
+	    (lambda (ended)
+	      (when (process-live-p tunnel) (delete-process tunnel))
+	      (let ((buffer (process-buffer tunnel)))
+		(when (buffer-live-p buffer) (kill-buffer buffer)))
+	      (when finished (funcall finished ended)))))
+    (vm-net-when-ready
+     (lambda () (vm-net-listening-p port))
+     seconds
+     (lambda (up)
+       (if up
+	   (funcall ready tunnel)
+	 (vm-net-fail session
+		      (list 'vm-net-tunnel-failed
+			    (format "%s did not start listening on port %s"
+				    program port)))
+	 (funcall ready nil))))
+    tunnel))
+
+(define-error 'vm-net-tunnel-failed "Tunnel program did not come up")
 
 (provide 'vm-net)
 ;;; vm-net.el ends here

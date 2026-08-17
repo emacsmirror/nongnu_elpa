@@ -278,6 +278,83 @@ end of its response, and searches from where the reader is."
       (insert ".\r\n")
       (should (funcall request)))))
 
+
+;;; A connection that has to be tunnelled
+
+(ert-deftest vm-net-test-a-free-port-is-one-nothing-answers-on ()
+  "`vm-net-free-port' asks the operating system for a port rather than
+trying one after another until a connection fails -- which is what the
+blocking path does, and every one of those attempts waits."
+  (let ((port (vm-net-free-port)))
+    (should (integerp port))
+    (should (> port 0))
+    (should-not (vm-net-listening-p port))))
+
+(ert-deftest vm-net-test-a-session-waits-for-its-tunnel ()
+  "A session with no process yet does not run until one is attached: the
+program it goes through has to be listening before there is anything to
+connect to."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((finished nil)
+           (session (vm-net-session :name "test"
+                                    :finished (lambda (s) (setq finished s)))))
+      (setf (vm-net-session-buffer session)
+            (generate-new-buffer " *vm-net-test*"))
+      (vm-net-start session (vm-net-test--read-line))
+      ;; started, but nothing has run: there is nothing to read from
+      (should (eq (vm-net-session-state session) 'running))
+      (should-not (vm-net-session-request session))
+      (should-not finished)
+      ;; now it has a connection
+      (let ((process (make-network-process
+                      :name "vm-net-test" :host 'local :service port
+                      :buffer (vm-net-session-buffer session) :noquery t)))
+        (vm-net-attach session process)
+        (should (vm-net-session-request session))
+        (process-send-string process "hello\n")
+        (should (eq (vm-net-test--wait session) 'done))
+        (should (equal (vm-net-session-value session) "you said hello"))))))
+
+(ert-deftest vm-net-test-a-tunnel-that-never-comes-up-fails-the-session ()
+  "The session is failed and its caller told, rather than left waiting for a
+port that will never answer."
+  (let* ((finished nil)
+         (session (vm-net-session :name "test"
+                                  :finished (lambda (s) (setq finished s))))
+         (port (vm-net-free-port))
+         (ready 'not-called))
+    (setf (vm-net-session-buffer session) (generate-new-buffer " *vm-net-test*"))
+    (vm-net-start session (vm-net-test--read-line))
+    ;; a program that does not listen on anything
+    (vm-net-tunnel session "sleep" (list "30") port 0.3
+                   (lambda (tunnel) (setq ready tunnel)))
+    (let ((deadline (+ (float-time) 5)))
+      (while (and (eq ready 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    (should (null ready))
+    (should (eq (vm-net-session-state session) 'failed))
+    (should (eq finished session))
+    (should (string-match-p "did not start listening"
+                            (error-message-string (vm-net-session-error session))))
+    (kill-buffer (vm-net-session-buffer session))))
+
+(ert-deftest vm-net-test-a-tunnel-is-killed-with-the-session ()
+  "The program is the session's, and goes when it goes: a tunnel left behind
+holds a port open and, for ssh, a connection to the far end."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((session (vm-net-session :name "test"))
+           (tunnel nil))
+      (setf (vm-net-session-buffer session)
+            (generate-new-buffer " *vm-net-test*"))
+      (vm-net-start session (vm-net-test--read-line))
+      ;; the port is already listening, so the tunnel is "ready" at once
+      (setq tunnel (vm-net-tunnel session "sleep" (list "30") port 5
+                                  (lambda (_) nil)))
+      (should (process-live-p tunnel))
+      (vm-net-abandon session)
+      (should-not (process-live-p tunnel))
+      (kill-buffer (vm-net-session-buffer session)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

@@ -35,6 +35,9 @@
 ;;                    what a real interrupted download looks like
 ;;   :lie-about-size  report a wrong octet count in RFC822.SIZE
 ;;   :slow-greeting   wait before greeting, for timeout tests
+;;   :preauth         greet with PREAUTH: the connection arrives authenticated,
+;;                    which is what a session over ssh or through a helper
+;;                    program looks like
 ;;   :no-uidplus      leave UIDPLUS out of CAPABILITY
 ;;   :capabilities    replace the advertised capability list outright
 ;;
@@ -56,7 +59,7 @@
   (log nil)
   ;; faults
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
-  no-uidplus capabilities
+  no-uidplus capabilities preauth
   authenticated)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
@@ -607,19 +610,22 @@ not ask about the live process."
   (let ((mock (process-get server 'vm-imap-mock)))
     (process-put client 'vm-imap-mock mock)
     (process-put client 'vm-imap-mock-pending "")
-    (setf (vm-imap-mock-authenticated mock) nil)
+    (setf (vm-imap-mock-authenticated mock) (and (vm-imap-mock-preauth mock) t))
     (set-process-coding-system client 'binary 'binary)
     (set-process-filter client #'vm-imap-mock--filter)
     (vm-imap-mock--connection-buffer-away client)
     (when (vm-imap-mock-slow-greeting mock)
       (sleep-for (vm-imap-mock-slow-greeting mock)))
-    (vm-imap-mock--send client "* OK vm-imap-mock ready\r\n")))
+    (vm-imap-mock--send client
+			(if (vm-imap-mock-preauth mock)
+			    "* PREAUTH vm-imap-mock ready\r\n"
+			  "* OK vm-imap-mock ready\r\n"))))
 
 (cl-defun vm-imap-mock-start (&key (user "vmtest") (password "secret")
 				   (mailbox "INBOX") messages
 				   refuse bad drop-on truncate-fetch
 				   lie-about-size slow-greeting no-uidplus
-				   capabilities)
+				   capabilities preauth)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -633,7 +639,8 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:lie-about-size lie-about-size
 		:slow-greeting slow-greeting
 		:no-uidplus no-uidplus
-		:capabilities capabilities))
+		:capabilities capabilities
+		:preauth preauth))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t

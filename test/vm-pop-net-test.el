@@ -272,13 +272,13 @@ a minute."
       (should (equal (length (process-list)) processes)))))
 
 (ert-deftest vm-pop-net-test-a-maildrop-it-cannot-open-says-so ()
-  "A maildrop whose connection would itself be a wait signals rather than
-pretending: a pop-ssh one runs a tunnel program, and one whose password VM
-does not hold would ask for it.  A caller that meets either uses the
-blocking implementation until those are converted too."
-  (should-error (vm-pop-net-open "pop-ssh:example.com:110:pass:user:secret" "x")
-                :type 'vm-pop-net-unsupported)
+  "A maildrop whose password VM does not hold signals rather than pretending:
+there is nobody to ask from inside a filter, and a caller that meets it uses
+the blocking implementation, which can ask.  So does a protocol this does not
+speak."
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
+                :type 'vm-pop-net-unsupported)
+  (should-error (vm-pop-net-open "imap:example.com:143:INBOX:login:user:x" "x")
                 :type 'vm-pop-net-unsupported))
 
 ;;; The mail check that runs on a timer
@@ -559,7 +559,9 @@ an empty list that reads as an empty maildrop."
         (vm-pop-messages-per-session nil))
     (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash
                          (lambda (result) (setq answer result)))
-    (let ((deadline (+ (float-time) (or seconds 5))))
+    ;; longer than the session's own timeout, or a slow run reads as a
+    ;; callback that never came
+    (let ((deadline (+ (float-time) (or seconds 25))))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
     answer))
@@ -680,6 +682,71 @@ between them being the blank line."
     (let* ((fetched (vm-pop-net-test--fetch mock nil))
            (text (cdr (car fetched))))
       (should (string-match-p "Text\.\n\n\n" text)))))
+
+
+;;; The connections that go through something else
+
+(ert-deftest vm-pop-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
+  "A pop-ssh maildrop starts the tunnel and has no connection until it is
+listening.  The blocking path waits inside `vm-setup-ssh-tunnel', with a loop
+of connect attempts to find a free port and an `accept-process-output' for
+the tunnel to come up."
+  (let* ((vm-ssh-program "sleep")
+         (vm-ssh-program-switches nil)
+         (vm-ssh-remote-command "")
+         (vm-pop-server-timeout 0.5)
+         (spec "pop-ssh:far.example.com:110:pass:vmtest:secret")
+         (opened (vm-pop-net-open spec "ssh"))
+         (session (car opened))
+         (finished nil))
+    (setf (vm-net-session-finished session) (lambda (s) (setq finished s)))
+    (unwind-protect
+        (progn
+          (should-not (vm-net-session-process session))
+          (vm-net-start session (vm-pop-net-greeting))
+          (should (eq (vm-net-session-state session) 'running))
+          (should-not (vm-net-session-request session))
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (vm-net-session-live-p session)
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should (eq (vm-net-session-state session) 'failed))
+          (should (eq finished session))
+          (should (string-match-p "did not start listening"
+                                  (error-message-string
+                                   (vm-net-session-error session)))))
+      (let ((buffer (vm-net-session-buffer session)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest vm-pop-net-test-a-tunnelled-session-reads-what-comes-back ()
+  "With something listening where the tunnel would be, the session runs as
+any other does."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let* ((port (vm-pop-mock-port mock))
+           (session (vm-net-session :name "tunnelled" :timeout 10))
+           (buffer (generate-new-buffer " *vm-pop-net-test*")))
+      (with-current-buffer buffer (vm-pop-net-init))
+      (setf (vm-net-session-buffer session) buffer)
+      (unwind-protect
+          (progn
+            (vm-net-start session (vm-pop-net-session "vmtest" "secret"))
+            (should-not (vm-net-session-request session))
+            (vm-net-tunnel session "sleep" (list "30") port 5
+                           (lambda (tunnel)
+                             (when tunnel
+                               (vm-net-attach
+                                session
+                                (vm-pop-net-connect "tunnelled" "127.0.0.1"
+                                                    port buffer)))))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (should (equal (car (vm-net-session-value session)) 1)))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (provide 'vm-pop-net-test)
 

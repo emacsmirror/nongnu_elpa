@@ -732,6 +732,30 @@ Cleanest source, at the cost of a dependency.
 Built on the same generators as option 3, so it buys syntax rather than
 capability. https://github.com/skeeto/emacs-aio
 
+** What has been converted
+
+As of the merge requests !412 to !426 on =develop-async=, every path a folder
+takes is on the driver, and the blocking implementation is what a maildrop
+falls back to when the driver cannot open it:
+
+| path                                   | where                        |
+|----------------------------------------+------------------------------|
+| the IMAP reader, all four waits        | lisp/vm-imap-net.el          |
+| session, SELECT, the bulk FETCH        | lisp/vm-imap-net.el          |
+| new mail into a folder                 | vm-imap-net-get-new-mail     |
+| bodies kept on the server              | vm-imap-net-load-bodies      |
+| flags up, expunges both ways           | vm-imap-net-save-flags etc.  |
+| save and copy to a mailbox             | vm-imap-net-save-to-folder   |
+| a maildrop used as a spool file        | vm-imap-net-move-mail        |
+| the POP mail check, fetch, crash box   | lisp/vm-pop-net.el           |
+| a POP folder                           | vm-pop-net-get-folder-mail   |
+| ssh tunnels, stunnel, preauth          | vm-net-tunnel, vm-net-attach |
+
+What is still blocking is what the driver signals =vm-*-net-unsupported= for,
+and the only case left is a maildrop whose password VM has not been told:
+there is nobody to ask from inside a filter, so the blocking path opens that
+one and asks.
+
 ** Migration path
 
 On =develop-async=, each step its own merge request into that branch.
