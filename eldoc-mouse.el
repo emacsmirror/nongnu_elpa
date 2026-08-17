@@ -68,6 +68,8 @@
 (require 'posframe)
 (require 'eglot)
 
+(declare-function tooltip-hide "tooltip")
+
 (defgroup eldoc-mouse nil
   "Dispay document for mouse hover."
   :prefix "eldoc-mouse-"
@@ -188,6 +190,7 @@ this list for specific mode.")
   (setq-local eldoc-display-functions
               (append
                eldoc-display-functions (list #'eldoc-mouse-display-in-posframe)))
+  (advice-add 'tooltip-hide :around #'eldoc-mouse--protect-tooltip)
   (define-key eldoc-mouse-mode-map [mouse-movement] 'eldoc-mouse-doc-on-mouse))
 
 (defun eldoc-mouse-disable ()
@@ -200,7 +203,13 @@ this list for specific mode.")
     (cancel-timer eldoc-mouse--mouse-timer)
     (setq eldoc-mouse--mouse-timer nil))
   (eldoc-mouse--hide-posframe)
+  (advice-remove 'tooltip-hide #'eldoc-mouse--protect-tooltip)
   (setq-local track-mouse eldoc-mouse--original-track-mouse))
+
+(defun eldoc-mouse--protect-tooltip (orig-fn &rest args)
+  "Prevent `tooltip-hide' from hiding tooltips during eldoc-mouse events."
+  (unless (eq this-command 'eldoc-mouse-doc-on-mouse)
+    (apply orig-fn args)))
 
 (defun eldoc-mouse--post-command-hook ()
   "The hook of post-command used by eldoc-mouse.
