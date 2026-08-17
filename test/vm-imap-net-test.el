@@ -897,6 +897,106 @@ them out."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (should (vm-imap-mock-received-p mock "LOGOUT"))))
 
+
+;;; The connections that go through something else
+
+(ert-deftest vm-imap-net-test-a-preauthenticated-session-does-not-log-in ()
+  "A connection the hook made arrives authenticated: VM asks what the server
+can do and gets on with it, rather than sending a LOGIN it has no password
+for."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
+                           :preauth t)
+    (let* ((port (vm-imap-mock-port mock))
+           (vm-imap-session-preauth-hook
+            (list (lambda (&rest _)
+                    (make-network-process :name "vm-imap-net-test-preauth"
+                                          :host 'local :service port
+                                          :noquery t :coding 'binary))))
+           (spec (format "imap:127.0.0.1:%d:INBOX:preauth:vmtest:*" port))
+           (opened (vm-imap-net-open spec "preauth"))
+           (session (car opened)))
+      (setq vm-imap-net-test--buffer (vm-net-session-buffer session))
+      (unwind-protect
+          (progn
+            (vm-net-start session
+                          (vm-imap-net-open-session (nth 2 opened)
+                                                    (nth 3 opened)))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
+            (should-not (vm-imap-mock-received-p mock "LOGIN")))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))))))
+
+(ert-deftest vm-imap-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
+  "An imap-ssh maildrop starts the tunnel and has no connection until the
+tunnel is listening -- which is the wait the blocking path does inside
+`vm-setup-ssh-tunnel', with `accept-process-output' and a loop of connect
+attempts to find a free port."
+  (let* ((vm-ssh-program "sleep")
+         (vm-ssh-program-switches nil)
+         (vm-ssh-remote-command "")
+         (vm-imap-server-timeout 0.5)
+         (spec "imap-ssh:far.example.com:143:INBOX:login:vmtest:secret")
+         (opened (vm-imap-net-open spec "ssh"))
+         (session (car opened))
+         (finished nil))
+    (setf (vm-net-session-finished session) (lambda (s) (setq finished s)))
+    (unwind-protect
+        (progn
+          ;; no connection yet, and the session has not read anything
+          (should-not (vm-net-session-process session))
+          (vm-net-start session (vm-imap-net-open-session "vmtest" "secret"))
+          (should (eq (vm-net-session-state session) 'running))
+          (should-not (vm-net-session-request session))
+          ;; sleep listens on nothing, so the session is failed and said so
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (vm-net-session-live-p session)
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should (eq (vm-net-session-state session) 'failed))
+          (should (eq finished session))
+          (should (string-match-p "did not start listening"
+                                  (error-message-string
+                                   (vm-net-session-error session)))))
+      (let ((buffer (vm-net-session-buffer session)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest vm-imap-net-test-a-tunnelled-session-reads-what-comes-back ()
+  "With something listening where the tunnel would be, the session runs as
+any other does: the tunnel is only how the connection is made."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((port (vm-imap-mock-port mock))
+           (session (vm-net-session :name "tunnelled" :timeout 10))
+           (buffer (vm-imap-net-session-buffer "tunnelled")))
+      (setf (vm-net-session-buffer session) buffer)
+      (setq vm-imap-net-test--buffer buffer)
+      (unwind-protect
+          (progn
+            (vm-net-start session (vm-imap-net-open-session "vmtest" "secret"))
+            (should-not (vm-net-session-request session))
+            ;; the tunnel comes up: sleep is the program, the mock is what is
+            ;; listening on the port it was told to wait for
+            (vm-net-tunnel session "sleep" (list "30") port 5
+                           (lambda (tunnel)
+                             (when tunnel
+                               (vm-net-attach
+                                session
+                                (vm-imap-net-connect "tunnelled" "127.0.0.1"
+                                                     port buffer)))))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
+            (should (vm-imap-mock-received-p mock "LOGIN")))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

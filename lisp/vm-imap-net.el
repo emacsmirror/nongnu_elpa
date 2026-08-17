@@ -538,18 +538,70 @@ read, which is what keeps a mailbox of any size out of memory."
 
 (define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
 
+(declare-function vm-setup-stunnel-random-data-if-needed "vm-crypto" ())
+(declare-function vm-stunnel-configuration-args "vm-crypto" (host port))
+
+(defvar vm-stunnel-program)
+(defvar vm-stunnel-program-switches)
+(defvar vm-ssh-program)
+(defvar vm-ssh-program-switches)
+(defvar vm-ssh-remote-command)
+(defvar vm-imap-session-preauth-hook)
+
+(defun vm-imap-net-session-buffer (name)
+  "A process buffer for a session called NAME, ready to be read from."
+  (let ((buffer (generate-new-buffer (format " *%s*" name))))
+    (with-current-buffer buffer
+      (buffer-disable-undo)
+      (vm-imap-net-init))
+    buffer))
+
+(defun vm-imap-net-connect (name host port buffer &optional tls)
+  "A connection to HOST at PORT, made without waiting for it to come up.
+The process is not open when this returns; the session's sentinel hears
+whether it ever will be, and its timeout covers a connect that never
+completes.  TLS is negotiated the same way, Emacs doing the handshake as the
+connection comes up."
+  (make-network-process :name name :host host :service port :buffer buffer
+			:noquery t :coding 'binary :nowait t
+			:type (if tls 'tls nil)))
+
+(defun vm-imap-net-tunnelled (session name port buffer program arguments)
+  "Run PROGRAM and attach SESSION to PORT once it is listening.
+For the two maildrops that go through a program of their own: over ssh, and
+over stunnel where the user has one and would rather use it than Emacs's own
+TLS.  The program is started, a timer looks until the port answers, and the
+session starts then -- so a tunnel that takes two seconds to come up costs
+those two seconds to the mail, not to Emacs."
+  (vm-net-tunnel
+   session program arguments port
+   (or vm-imap-server-timeout 30)
+   (lambda (tunnel)
+     (when tunnel
+       (vm-net-attach session
+		      (vm-imap-net-connect name "127.0.0.1" port buffer))))))
+
+(defun vm-imap-net-preauth-process (host port mailbox user password)
+  "What `vm-imap-session-preauth-hook\=' answers with, or nil.
+The hook is the user's own function and makes the connection itself; VM's
+half of a preauthenticated session is everything after that, which is what
+the driver runs."
+  (run-hook-with-args-until-success 'vm-imap-session-preauth-hook
+				    host port mailbox user password))
+
 (defun vm-imap-net-open (source name)
   "Open a connection for the IMAP maildrop SOURCE and answer with a session.
 
-NAME goes in messages.  The session has a process and a buffer of its own
-and is ready for `vm-net-start\\='; nothing has been read from it yet.  The
-answer is (SESSION MAILBOX USER PASSWORD).
+NAME goes in messages.  The session has a buffer of its own and is ready for
+`vm-net-start\='; nothing has been read from it yet.  The answer is
+(SESSION MAILBOX USER PASSWORD).
 
-An imap-ssh maildrop runs a tunnel program and a preauth one runs a hook,
-both of which wait; either signals `vm-imap-net-unsupported\\=', as does a
-maildrop whose password VM has not been told, since there is nobody to ask
-from inside a filter.  imap-ssl connects with :type tls, Emacs doing the
-handshake as the connection comes up."
+Plain, TLS, over ssh, through stunnel, and preauthenticated.  A tunnelled
+session has no process yet when this returns: the program has to be
+listening before there is anything to connect to, and `vm-net-attach\='
+gives the session its connection when it is.  A maildrop whose password VM
+has not been told signals `vm-imap-net-unsupported\=', there being nobody to
+ask from inside a filter."
   (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
 	 (protocol (car parts))
 	 (host (nth 1 parts))
@@ -557,12 +609,13 @@ handshake as the connection comes up."
 	 (mailbox (nth 3 parts))
 	 (auth (nth 4 parts))
 	 (user (nth 5 parts))
-	 (password (nth 6 parts)))
-    (unless (member protocol '("imap" "imap-ssl"))
+	 (password (nth 6 parts))
+	 (preauth (equal auth "preauth")))
+    (unless (member protocol '("imap" "imap-ssl" "imap-ssh"))
       (signal 'vm-imap-net-unsupported (list protocol source)))
-    (unless (equal auth "login")
+    (unless (or preauth (equal auth "login"))
       (signal 'vm-imap-net-unsupported (list (or auth "no authentication") source)))
-    (when (equal password "*")
+    (when (and (equal password "*") (not preauth))
       (signal 'vm-imap-net-unsupported (list "password not remembered" source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
@@ -571,33 +624,65 @@ handshake as the connection comes up."
     ;; nil, and without this it has nowhere to get the password from and
     ;; fails with "Need password".
     (let ((spec (vm-imapdrop-sans-password-and-mailbox source)))
-      (unless (assoc spec vm-imap-passwords)
+      (unless (or preauth (assoc spec vm-imap-passwords))
 	(setq vm-imap-passwords (cons (list spec password) vm-imap-passwords))))
-    (let* ((buffer (generate-new-buffer (format " *%s*" name)))
-	   (process (make-network-process
-		     :name name :host host :service port :buffer buffer
-		     :noquery t :coding 'binary :nowait t
-		     :type (if (equal protocol "imap-ssl") 'tls nil))))
-      (with-current-buffer buffer
-	(buffer-disable-undo)
-	(vm-imap-net-init))
-      (list (vm-net-session :process process :name name
-			    :timeout vm-imap-server-timeout)
-	    mailbox user password))))
+    (let* ((buffer (vm-imap-net-session-buffer name))
+	   (session (vm-net-session :name name
+				    :timeout vm-imap-server-timeout))
+	   (local (and (member protocol '("imap-ssh"))
+		       (vm-net-free-port))))
+      (setf (vm-net-session-buffer session) buffer)
+      (cond
+       (preauth
+	(let ((process (vm-imap-net-preauth-process host port mailbox
+						    user password)))
+	  (unless (processp process)
+	    (kill-buffer buffer)
+	    (signal 'vm-imap-net-unsupported (list "preauth hook gave no process"
+						   source)))
+	  (set-process-buffer process buffer)
+	  (setf (vm-net-session-process session) process)
+	  ;; nothing to log in with, and nothing to log in to: the hook did it
+	  (setq password nil)))
+       ((equal protocol "imap-ssh")
+	(vm-imap-net-tunnelled
+	 session name local buffer vm-ssh-program
+	 (nconc (list "-L" (format "%d:%s:%s" local host port))
+		(copy-sequence vm-ssh-program-switches)
+		(list host vm-ssh-remote-command))))
+       ((and (equal protocol "imap-ssl") vm-stunnel-program)
+	(vm-setup-stunnel-random-data-if-needed)
+	(let ((tunnel-port (vm-net-free-port)))
+	  ;; stunnel is told to listen here and connect there, so what VM
+	  ;; talks to is a plain connection to a port on this machine
+	  (vm-imap-net-tunnelled
+	   session name tunnel-port buffer vm-stunnel-program
+	   (nconc (list "-d" (format "127.0.0.1:%d" tunnel-port))
+		  (vm-stunnel-configuration-args host port)
+		  (copy-sequence vm-stunnel-program-switches)))))
+       (t
+	(setf (vm-net-session-process session)
+	      (vm-imap-net-connect name host port buffer
+				   (equal protocol "imap-ssl")))))
+      (list session mailbox user password))))
 
 (iter-defun vm-imap-net-open-session (user password)
-	    "Greet, log in, and answer with what the server says it can do.
+  "Greet, log in, and answer with what the server says it can do.
 Answers (CAPABILITIES AUTHENTICATIONS).  A greeting that is neither OK nor
 PREAUTH signals: there is no session to be had, and the caller has nothing
-to decide."
-	    (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
-	      (cond ((null greeting)
-		     (vm-imap-normal-error "server did not greet the connection"))
-		    ((eq greeting 'preauth)
-		     (iter-yield-from (vm-imap-net-capabilities)))
-		    (t
-		     (iter-yield-from (vm-imap-net-capabilities))
-		     (iter-yield-from (vm-imap-net-login user password))))))
+to decide.
+
+A nil PASSWORD is a preauthenticated session -- greeted with PREAUTH, or
+made by `vm-imap-session-preauth-hook\=' -- and there is nothing to log in
+with: the connection arrived authenticated."
+  (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
+    (cond ((null greeting)
+	   (vm-imap-normal-error "server did not greet the connection"))
+	  ((or (eq greeting 'preauth) (null password))
+	   (iter-yield-from (vm-imap-net-capabilities)))
+	  (t
+	   (iter-yield-from (vm-imap-net-capabilities))
+	   (iter-yield-from (vm-imap-net-login user password))))))
 
 ;;; Getting new mail into a folder
 
