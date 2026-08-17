@@ -1530,6 +1530,58 @@ something."
     (should (equal (vm-imap-net-test--get-mail mock) 0))
     (should (null vm-message-list))))
 
+
+;;; Taking the mail in as it arrives
+
+(ert-deftest vm-imap-net-test-messages-are-taken-in-as-they-arrive ()
+  "The folder shows what has arrived while the rest is still coming.
+
+Taking two thousand messages into the message list at once, threading them
+and rebuilding the summary, is several seconds in which Emacs answers
+nothing -- the freeze the conversion removes, arriving from the other side.
+So each bunch is taken in as it lands.
+
+Counted at the point where it happens rather than by watching from outside:
+against the mock the whole fetch finishes inside one `accept-process-output',
+which is exactly the answer a real server does not give."
+  (let ((vm-imap-message-bunch-size 2)
+        (sizes nil))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 6)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: s%d@example.com\nSubject: m%d\n\nBody %d.\n" i i i)))
+      (let ((real (symbol-function 'vm-imap-net-assimilate)))
+        (cl-letf (((symbol-function 'vm-imap-net-assimilate)
+                   (lambda (&rest args)
+                     (let ((answer (apply real args)))
+                       (push (length vm-message-list) sizes)
+                       answer))))
+          (should (equal (vm-imap-net-test--get-mail mock) 6))))
+      (should (equal (length vm-message-list) 6))
+      ;; three bunches, and the folder held two, then four, then six
+      (should (equal (nreverse sizes) '(2 4 6))))))
+
+(ert-deftest vm-imap-net-test-every-message-still-gets-its-own-uid ()
+  "Bunch by bunch, each message is still paired with the entry it was
+fetched for: the pairing is by position, and a slice taken at the wrong
+offset would give message N the UID of message N minus a bunch."
+  (let ((vm-imap-message-bunch-size 3))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 7)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: s%d@example.com\nSubject: number %d\n\nBody %d.\n" i i i)))
+      (should (equal (vm-imap-net-test--get-mail mock) 7))
+      (should (equal (length vm-message-list) 7))
+      ;; the mock hands out UIDs 1..7 in order, and the subjects are in order
+      (let ((n 0))
+        (dolist (message vm-message-list)
+          (setq n (1+ n))
+          (should (equal (vm-imap-uid-of message) (number-to-string n)))
+          (should (equal (vm-su-subject message)
+                         (format "number %d" (1- n)))))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

@@ -393,16 +393,16 @@ blocking path writes it at the same point, and for the same reason."
       (setq vm-imap-passwords (cons (list key password) vm-imap-passwords)))))
 
 (iter-defun vm-imap-net-login (user password)
-  "Log in as USER, and answer with what the server can do afterwards.
+	    "Log in as USER, and answer with what the server can do afterwards.
 The capabilities are asked for again: a server may advertise more once the
 connection is authenticated, and several advertise fewer before it."
-  (iter-yield-from (vm-imap-net-command
-		    (format "LOGIN %s %s"
-			    (vm-imap-net-quote user)
-			    (vm-imap-net-quote password))
-		    "LOGIN"))
-  (vm-imap-net-remember-password password)
-  (iter-yield-from (vm-imap-net-capabilities)))
+	    (iter-yield-from (vm-imap-net-command
+			      (format "LOGIN %s %s"
+				      (vm-imap-net-quote user)
+				      (vm-imap-net-quote password))
+			      "LOGIN"))
+	    (vm-imap-net-remember-password password)
+	    (iter-yield-from (vm-imap-net-capabilities)))
 
 ;;; A mailbox
 
@@ -732,7 +732,7 @@ ask from inside a filter."
       (list session mailbox user password))))
 
 (iter-defun vm-imap-net-open-session (user password)
-  "Greet, log in, and answer with what the server says it can do.
+	    "Greet, log in, and answer with what the server says it can do.
 Answers (CAPABILITIES AUTHENTICATIONS).  A greeting that is neither OK nor
 PREAUTH signals: there is no session to be had, and the caller has nothing
 to decide.
@@ -740,14 +740,14 @@ to decide.
 A nil PASSWORD is a preauthenticated session -- greeted with PREAUTH, or
 made by `vm-imap-session-preauth-hook\=' -- and there is nothing to log in
 with: the connection arrived authenticated."
-  (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
-    (cond ((null greeting)
-	   (vm-imap-normal-error "server did not greet the connection"))
-	  ((or (eq greeting 'preauth) (null password))
-	   (iter-yield-from (vm-imap-net-capabilities)))
-	  (t
-	   (iter-yield-from (vm-imap-net-capabilities))
-	   (iter-yield-from (vm-imap-net-login user password))))))
+	    (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
+	      (cond ((null greeting)
+		     (vm-imap-normal-error "server did not greet the connection"))
+		    ((or (eq greeting 'preauth) (null password))
+		     (iter-yield-from (vm-imap-net-capabilities)))
+		    (t
+		     (iter-yield-from (vm-imap-net-capabilities))
+		     (iter-yield-from (vm-imap-net-login user password))))))
 
 ;;; Getting new mail into a folder
 
@@ -915,10 +915,15 @@ them."
 
 (defun vm-imap-net-assimilate (retrieve-list uid-validity)
   "Take the messages just written into the folder into the message list.
-The current buffer is the folder.  Answers with the new messages.  Each is
-given the UID it was fetched under and the flags the server reported for it,
-which is what `vm-imap-retrieve-messages\\=' does at the end of its own
-loop."
+The current buffer is the folder.  RETRIEVE-LIST is the entries for the
+messages this call is taking in, in the order they were written.  Answers
+with the new messages.
+
+Called once per bunch as the fetch runs, not once at the end.  The work is
+the same either way but the pieces are small: taking two thousand messages in
+at once, threading them and rebuilding the summary, is several seconds in
+which Emacs answers nothing -- which is the freeze the conversion was
+supposed to remove, arriving from the other side."
   (setq vm-spooled-mail-waiting nil)
   (vm-set-folder-imap-retrieved-count (vm-folder-imap-mailbox-count))
   (intern (buffer-name) vm-buffers-needing-display-update)
@@ -947,8 +952,14 @@ loop."
     (when vm-arrived-message-hook
       (dolist (message new-messages)
 	(vm-run-hook-on-message 'vm-arrived-message-hook message)))
-    (run-hooks 'vm-arrived-messages-hook)
     new-messages))
+
+(defun vm-imap-net-arrived (folder)
+  "Say that a fetch into FOLDER has finished putting messages in it.
+`vm-arrived-messages-hook\=' is for the arrival and not for each bunch of
+it, so it runs here rather than in `vm-imap-net-assimilate\='."
+  (with-current-buffer folder
+    (run-hooks 'vm-arrived-messages-hook)))
 
 (declare-function vm-expunge-folder "vm-folder" (&rest keys))
 (declare-function vm-add-or-delete-message-labels "vm-undo" (string mlist action))
@@ -1014,16 +1025,22 @@ blocking path does."
 		      (dolist (bunch bunches)
     			(let* ((range (car bunch))
     			       (headers-only (cadr bunch))
+    			       (count (1+ (- (cdr range) (car range))))
+    			       (entries (seq-take (nthcdr retrieved retrieve-list) count))
     			       (store (lambda (_uid start end)
     					(vm-imap-net-store folder folder-type source start end))))
     			  (iter-yield-from
     			   (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
     					      store))
-    			  (setq retrieved (+ retrieved (1+ (- (cdr range) (car range)))))
+			  ;; taken in a bunch at a time: the folder shows what has
+			  ;; arrived while the rest is still coming, and no single
+			  ;; slice of the work is long enough to be felt
+    			  (with-current-buffer folder
+    			    (vm-imap-net-assimilate entries uid-validity))
+    			  (setq retrieved (+ retrieved count))
     			  (vm-inform 6 "%s: %d of %d messages"
     				     (buffer-name folder) retrieved (length retrieve-list))))
-		      (with-current-buffer folder
-    			(vm-imap-net-assimilate retrieve-list uid-validity))
+		      (vm-imap-net-arrived folder)
 		      ;; and what the folder has expunged locally goes on the server, in the
 		      ;; same session: by UID, since a sequence number means something
 		      ;; different after every expunge
@@ -1915,51 +1932,51 @@ FOLDER-TYPE where the server sent none of its own."
 
 (iter-defun vm-imap-net-move (source mailbox user password crash-box
 				     folder-type retrieved delete)
-  "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
+	    "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
 Answers with (COUNT UID-VALIDITY . UIDS): how many were written, and which
 UIDs under which UIDVALIDITY, for the caller to remember.  DELETE says to
 delete them from the server afterwards, which is
 `vm-imap-auto-expunge-alist\=' for this maildrop."
-  (unwind-protect
-      (progn
-	(iter-yield-from (vm-imap-net-open-session user password))
-	(let* ((select (iter-yield-from (vm-imap-net-select mailbox)))
-	       (count (nth 0 select))
-	       (body-peek t)
-	       (process-buffer (current-buffer))
-	       (data (if (zerop count)
-			 nil
-		       (iter-yield-from (vm-imap-net-message-data 1 count))))
-	       (wanted (vm-imap-net-unretrieved data source retrieved))
-	       (work (generate-new-buffer " *vm-imap-crash*"))
-	       (written 0)
-	       (uids nil))
-	  (unwind-protect
-	      (progn
-		(with-current-buffer work
-		  (set-buffer-multibyte nil)
-		  (setq-local vm-folder-type folder-type))
-		(dolist (bunch (vm-imap-bunch-messages (mapcar #'car wanted)))
-		  (iter-yield-from
-		   (vm-imap-net-fetch
-		    (car bunch) (cdr bunch) body-peek nil
-		    (lambda (uid start end)
-		      (with-current-buffer work
-			(vm-imap-net-write-message process-buffer start end
-						   folder-type))
-		      (push uid uids)
-		      (setq written (1+ written))))))
-		(when (> written 0)
-		  (with-current-buffer work
-		    (let ((coding-system-for-write 'binary)
-			  (selective-display nil))
-		      (write-region (point-min) (point-max) crash-box
-				    nil 'quiet))))
-		(when (and delete uids)
-		  (iter-yield-from (vm-imap-net-expunge (reverse uids)))))
-	    (when (buffer-live-p work) (kill-buffer work)))
-	  (cons written (cons (nth 2 select) (nreverse uids)))))
-    (vm-imap-net-logout)))
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (let* ((select (iter-yield-from (vm-imap-net-select mailbox)))
+			 (count (nth 0 select))
+			 (body-peek t)
+			 (process-buffer (current-buffer))
+			 (data (if (zerop count)
+				   nil
+				 (iter-yield-from (vm-imap-net-message-data 1 count))))
+			 (wanted (vm-imap-net-unretrieved data source retrieved))
+			 (work (generate-new-buffer " *vm-imap-crash*"))
+			 (written 0)
+			 (uids nil))
+		    (unwind-protect
+			(progn
+			  (with-current-buffer work
+			    (set-buffer-multibyte nil)
+			    (setq-local vm-folder-type folder-type))
+			  (dolist (bunch (vm-imap-bunch-messages (mapcar #'car wanted)))
+			    (iter-yield-from
+			     (vm-imap-net-fetch
+			      (car bunch) (cdr bunch) body-peek nil
+			      (lambda (uid start end)
+				(with-current-buffer work
+				  (vm-imap-net-write-message process-buffer start end
+							     folder-type))
+				(push uid uids)
+				(setq written (1+ written))))))
+			  (when (> written 0)
+			    (with-current-buffer work
+			      (let ((coding-system-for-write 'binary)
+				    (selective-display nil))
+				(write-region (point-min) (point-max) crash-box
+					      nil 'quiet))))
+			  (when (and delete uids)
+			    (iter-yield-from (vm-imap-net-expunge (reverse uids)))))
+		      (when (buffer-live-p work) (kill-buffer work)))
+		    (cons written (cons (nth 2 select) (nreverse uids)))))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-note-retrieved (uids uid-validity source)
   "Remember UIDS, valid under UID-VALIDITY, as fetched from SOURCE.
@@ -2039,21 +2056,21 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 (defvar vm-spooled-mail-waiting)
 
 (iter-defun vm-imap-net-check (folder mailbox user password)
-  "Say whether MAILBOX holds mail FOLDER has not got.
+	    "Say whether MAILBOX holds mail FOLDER has not got.
 Answers the number of messages to be fetched.  The same comparison the fetch
 itself makes -- the UIDs the server has against the UIDs the folder has --
 since a count of what is there says nothing about what is new."
-  (unwind-protect
-      (progn
-	(iter-yield-from (vm-imap-net-open-session user password))
-	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
-	       (count (nth 0 select))
-	       (data (if (zerop count)
-			 nil
-		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
-	  (with-current-buffer folder
-	    (length (nth 0 (vm-imap-net-plan data count))))))
-    (vm-imap-net-logout)))
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
+			 (count (nth 0 select))
+			 (data (if (zerop count)
+				   nil
+				 (iter-yield-from (vm-imap-net-message-data 1 count)))))
+		    (with-current-buffer folder
+		      (length (nth 0 (vm-imap-net-plan data count))))))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-folder-check-mail ()
   "Start asking whether this IMAP folder has new mail, and answer with
@@ -2126,19 +2143,19 @@ reader, and both would want the blocking path to ask a question."
     (error nil)))
 
 (iter-defun vm-imap-net-unretrieved-count (mailbox user password source retrieved)
-  "How many messages MAILBOX holds that RETRIEVED does not have.
+	    "How many messages MAILBOX holds that RETRIEVED does not have.
 The maildrop is examined rather than selected: a check is not a reason to
 mark anything seen."
-  (unwind-protect
-      (progn
-	(iter-yield-from (vm-imap-net-open-session user password))
-	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
-	       (count (nth 0 select))
-	       (data (if (zerop count)
-			 nil
-		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
-	  (length (vm-imap-net-unretrieved data source retrieved))))
-    (vm-imap-net-logout)))
+	    (unwind-protect
+		(progn
+		  (iter-yield-from (vm-imap-net-open-session user password))
+		  (let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
+			 (count (nth 0 select))
+			 (data (if (zerop count)
+				   nil
+				 (iter-yield-from (vm-imap-net-message-data 1 count)))))
+		    (length (vm-imap-net-unretrieved data source retrieved))))
+	      (vm-imap-net-logout)))
 
 (defun vm-imap-net-check-mail (source callback)
   "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
