@@ -355,6 +355,41 @@ holds a port open and, for ssh, a connection to the far end."
       (should-not (process-live-p tunnel))
       (kill-buffer (vm-net-session-buffer session)))))
 
+
+(ert-deftest vm-net-test-the-tunnel-probe-does-not-wait ()
+  "Asking whether a port is listening starts a connection and reads its
+answer on the next ask.  A blocking connect is fast to a port on this machine
+but it is still a wait, and this runs from a timer while somebody is typing.
+
+So the first ask is always nil, whatever is there, and nothing is left
+connected once it has answered."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (clrhash vm-net--probes)
+    ;; something is listening, and the first ask still does not know
+    (should-not (vm-net-listening-p port))
+    (let ((deadline (+ (float-time) 5))
+          (answer nil))
+      (while (and (not answer) (< (float-time) deadline))
+        (accept-process-output nil 0.02)
+        (setq answer (vm-net-listening-p port)))
+      (should answer))
+    ;; the probe that answered was closed, and this port has none outstanding
+    (should-not (gethash port vm-net--probes))))
+
+(ert-deftest vm-net-test-a-port-with-nothing-there-answers-no ()
+  "A port nothing is listening on answers nil however often it is asked, and
+leaves no probe behind."
+  (let ((port (vm-net-free-port)))
+    (clrhash vm-net--probes)
+    (dotimes (_ 5)
+      (should-not (vm-net-listening-p port))
+      (accept-process-output nil 0.05))
+    ;; one probe for this port at a time, whatever the answer: they do not
+    ;; pile up, and reading the last one closes it
+    (should (processp (gethash port vm-net--probes)))
+    (should-not (vm-net-listening-p port))
+    (should-not (gethash port vm-net--probes))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

@@ -343,18 +343,47 @@ which is what the blocking path does, and every one of those attempts waits."
     (delete-process server)
     port))
 
+(defvar vm-net--probes (make-hash-table :test 'eql)
+  "The connection each port is being probed with, by port.
+A probe outlives the poll that started it: a connection made with :nowait is
+not open when `make-network-process\=' returns, and the next poll is where the
+answer is.")
+
 (defun vm-net-listening-p (port)
   "Whether something is listening on PORT here.
-The connection is made with :nowait and thrown away: what is being asked is
-whether the tunnel is up, and the answer is that a connection to it can be
-started at all."
-  (let ((process (ignore-errors
-		   (make-network-process :name " *vm-net-probe*"
-					 :host "127.0.0.1" :service port
-					 :noquery t :nowait nil))))
-    (when process
-      (delete-process process)
-      t)))
+
+Asked without waiting.  A connection is started on the first ask and its
+status read on the next: a blocking connect is fast to a port on this machine
+but it is still a wait, and this runs from a timer while somebody is typing.
+
+The probe is closed as soon as it has answered, so nothing is left connected
+to the tunnel."
+  (let ((probe (gethash port vm-net--probes)))
+    (cond
+     ((null probe)
+      (setf (gethash port vm-net--probes)
+	    (ignore-errors
+	      (make-network-process :name " *vm-net-probe*"
+				    :host "127.0.0.1" :service port
+				    :noquery t :nowait t)))
+      nil)
+     ((not (processp probe))
+      ;; the connection could not even be started: nothing is listening, and
+      ;; asking again is the next poll's business
+      (remhash port vm-net--probes)
+      nil)
+     (t
+      (let ((status (process-status probe)))
+	(cond ((memq status '(open run))
+	       (delete-process probe)
+	       (remhash port vm-net--probes)
+	       t)
+	      ((eq status 'connect)		; still trying
+	       nil)
+	      (t				; refused, or gone
+	       (delete-process probe)
+	       (remhash port vm-net--probes)
+	       nil)))))))
 
 (defun vm-net-tunnel (session program arguments port seconds ready)
   "Run PROGRAM with ARGUMENTS and call READY when PORT is listening.
