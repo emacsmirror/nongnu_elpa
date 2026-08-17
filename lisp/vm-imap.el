@@ -4167,7 +4167,8 @@ This is useful for saving offline work on the cache folder."
   (vm-display nil nil '(vm-imap-synchronize) '(vm-imap-synchronize))
   (if (not (eq vm-folder-access-method 'imap))
       (vm-inform 0 "%s: This is not an IMAP folder" (buffer-name))
-    (when (vm-establish-new-folder-imap-session t "general operation" nil)
+    (unless (vm-imap-net-get-spooled-mail)
+     (when (vm-establish-new-folder-imap-session t "general operation" nil)
       (vm-imap-retrieve-uid-and-flags-data)
       (vm-imap-save-attributes :all-flags full)
       (vm-imap-synchronize-folder :interactive t 
@@ -4181,7 +4182,7 @@ This is useful for saving offline work on the cache folder."
 	(vm-inform 6 "Updating summary... ")
 	(vm-update-summary-and-mode-line)
 	(vm-inform 6 "Updating summary... done")
-	))))
+	)))))
   
 
 ;;;###autoload
