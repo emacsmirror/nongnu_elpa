@@ -1177,16 +1177,15 @@ again, online, and save: the two deletions should go out."
               (should (string-match-p "X-VM-IMAP-To-Expunge" (buffer-string))))
             ;; ... and the server still has everything.
             (should (= 3 (vm-imap-live-test--exists conn mailbox)))
-            ;; ---- session two, online
+            ;; ---- session two, online: the visit's own session sends what
+            ;; the folder owes, so by the time it has the mail the deletions
+            ;; have gone and nothing is pending
             (vm-visit-imap-folder spec)
             (vm-imap-net-wait nil 30)
-            (should (= 2 (length vm-imap-messages-to-expunge)))
+            (should (= 0 (length vm-imap-messages-to-expunge)))
+            (should (= 1 (vm-imap-live-test--exists conn mailbox)))
             (vm-save-folder)
-            ;; the expunge goes to the server in a session of its own, which
-            ;; the save starts and does not wait for
-            (vm-imap-net-wait nil 30)
-            (vm-imap-live-test--quit-folder)
-            (should (= 1 (vm-imap-live-test--exists conn mailbox))))
+            (vm-imap-live-test--quit-folder))
         (when (file-exists-p cache) (delete-file cache))))))
 
 
@@ -1234,7 +1233,8 @@ folder of external messages cost a round trip apiece.  Issue #185."
                                (push command commands)
                                (apply real command args))))
                     (vm-load-message 4)
-                    (vm-imap-net-wait nil 30)))
+                    (vm-imap-net-wait nil 30)
+))
                 ;; one FETCH for the three of them
                 (let ((fetches (seq-filter (lambda (c)
                                              (string-match-p "FETCH" c))
@@ -1243,13 +1243,17 @@ folder of external messages cost a round trip apiece.  Issue #185."
                   (should (string-match-p "UID FETCH 2,3,4" (car fetches))))
                 (should (null (seq-filter #'vm-body-to-be-retrieved-of
                                           vm-message-list)))
-                ;; and each body went to its own message
-                (dolist (m vm-message-list)
+                ;; and each body went to its own message.  Widened: the
+                ;; folder is narrowed to whatever message is being shown, and
+                ;; the others lie outside it
+                (save-restriction
+                 (widen)
+                 (dolist (m vm-message-list)
                   (let ((body (buffer-substring (vm-text-of m) (vm-text-end-of m)))
                         (number (progn (string-match "number \\([0-9]+\\)"
                                                      (vm-su-subject m))
                                        (match-string 1 (vm-su-subject m)))))
-                    (should (string-match-p (format "body-of-%s " number) body)))))
+                    (should (string-match-p (format "body-of-%s " number) body))))))
             ;; Leave no folder, summary or presentation buffer behind.
             (let ((vm-confirm-quit nil))
               (ignore-errors (vm-quit-no-change)))))))))

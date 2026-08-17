@@ -610,6 +610,207 @@ the mailbox if the server has not got one."
                  "badgers"
                  (vm-imap-mock-message-text (car saved))))))))
 
+
+;;; What only happens because nothing waits
+;;
+;; A session runs between whatever else Emacs is doing, so the things that go
+;; wrong are the things that cannot go wrong when a command holds the floor:
+;; a second command started while the first is still running, the folder
+;; going away underneath, a message list that changed since the plan was
+;; made, an answer arriving in pieces.
+
+(ert-deftest vm-imap-net-test-a-second-fetch-does-not-start-on-top-of-the-first ()
+  "Two fetches writing into one folder would interleave their messages.
+The mail check runs from a timer, so this is not hypothetical: it fires
+while the fetch a command started is still running."
+  (vm-imap-net-test--visiting (mock)
+    (dotimes (i 6)
+      (vm-imap-mock-add-message
+       mock "INBOX" (format "From: s%d@example.com\nSubject: m%d\n\nBody %d.\n" i i i)))
+    (should (vm-imap-net-get-spooled-mail))
+    (should (vm-imap-net-busy-p))
+    (let ((session vm-imap-net-session))
+      ;; the second one is turned away, and the first is still the folder's
+      (should (vm-imap-net-get-spooled-mail))
+      (should (eq session vm-imap-net-session)))
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 6))
+    ;; two logins: the visit's own fetch and this one.  Three would mean the
+    ;; second command opened a session of its own alongside the first.
+    (should (equal (cl-count-if (lambda (c) (string-match-p "LOGIN" c))
+                                (vm-imap-mock-commands mock))
+                   2))))
+
+(ert-deftest vm-imap-net-test-a-folder-closed-mid-session-stops-it ()
+  "A folder can be quit while its own session is running.  The session stops
+with something that says so, rather than writing into a dead buffer or
+erroring somewhere further in where the cause is no longer visible."
+  (let ((mock (vm-imap-mock-start))
+        (cache (make-temp-file "vm-imap-net-cache" t)))
+    (unwind-protect
+        (let* ((vm-imap-folder-cache-directory cache)
+               (vm-imap-server-timeout 10)
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (before (buffer-list))
+               (session nil))
+          (dotimes (i 4)
+            (vm-imap-mock-add-message
+             mock "INBOX" (format "From: s%d@example.com\nSubject: m%d\n\nBody.\n" i i)))
+          (vm-visit-imap-folder (vm-imap-mock-spec mock))
+          (setq session vm-imap-net-session)
+          (should (vm-net-session-live-p session))
+          (with-current-buffer (vm-net-session-buffer session)
+            (should (get-buffer-process (current-buffer))))
+          ;; the folder goes while its session is in flight
+          (let ((folder (current-buffer)))
+            (with-current-buffer folder (set-buffer-modified-p nil))
+            (kill-buffer folder))
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should-not (vm-net-session-live-p session))
+          ;; and it left nothing running
+          (should-not (process-live-p (vm-net-session-process session)))
+          (dolist (buffer (buffer-list))
+            (unless (memq buffer before)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))
+                (kill-buffer buffer)))))
+      (delete-directory cache t)
+      (vm-imap-mock-stop mock))))
+
+(ert-deftest vm-imap-net-test-a-response-in-pieces-is-read-the-same ()
+  "A body that arrives in many chunks reads as the one that arrives in one.
+On a real connection a literal spans TCP segments, and the reader is resumed
+once per segment; the mock answers in one write, so this makes the pieces by
+hand and feeds them through the driver."
+  (let* ((body (mapconcat (lambda (n) (format "line %d" n))
+                          (number-sequence 1 200) "\r\n"))
+         (message (concat "Subject: pieces\r\n\r\n" body "\r\n"))
+         (response (concat "* 1 FETCH (UID 7 BODY[] {" (number-to-string
+                                                        (string-bytes message))
+                           "}\r\n" message ")\r\n"
+                           "vm1 OK FETCH completed\r\n"))
+         (fetched nil))
+    (with-temp-buffer
+      (vm-imap-net-init)
+      (setq vm-imap-current-tag "vm1")
+      (let ((session (vm-net-session :name "imap"))
+            (iterator nil))
+        (setf (vm-net-session-buffer session) (current-buffer))
+        (setq iterator
+              (vm-imap-net-fetch-bodies-test-collector
+               (lambda (uid start end)
+                 (push (cons uid (buffer-substring-no-properties start end))
+                       fetched))))
+        (vm-net-start session iterator)
+        ;; deliver it a hundred octets at a time, polling as the filter does
+        (let ((sent 0))
+          (while (< sent (length response))
+            (let ((end (min (length response) (+ sent 100))))
+              (goto-char (point-max))
+              (insert (substring response sent end))
+              (setq sent end))
+            (vm-net-poll session)))
+        (should (eq (vm-net-session-state session) 'done))
+        (should (equal (length fetched) 1))
+        (should (equal (car (car fetched)) "7"))
+        (should (equal (cdr (car fetched)) message))))))
+
+(iter-defun vm-imap-net-test--collect-fetch (store)
+  "Read FETCH responses out of the buffer and hand each to STORE."
+  (let ((done nil)
+        response)
+    (while (not done)
+      (setq response (iter-yield-from
+                      (vm-imap-net-read-response-and-verify "FETCH")))
+      (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+             (apply store (vm-imap-net-fetch-message-text response)))
+            ((vm-imap-response-matches response 'VM 'OK)
+             (setq done t))))
+    t))
+
+(defalias 'vm-imap-net-fetch-bodies-test-collector
+  'vm-imap-net-test--collect-fetch)
+
+(ert-deftest vm-imap-net-test-a-message-deleted-while-the-fetch-ran ()
+  "The folder is live while its fetch runs, so what the plan was made from
+can change under it.  A message expunged locally mid-fetch does not stop the
+messages that are arriving from arriving."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (dotimes (i 5)
+      (vm-imap-mock-add-message
+       mock "INBOX" (format "From: s%d@example.com\nSubject: m%d\n\nBody.\n" i i)))
+    (should (vm-imap-net-get-spooled-mail))
+    ;; delete and expunge the message that was already here, mid-flight
+    (vm-set-deleted-flag (car vm-message-list) t)
+    (vm-expunge-folder)
+    (should (vm-imap-net-wait nil 10))
+    ;; the five arrived, and the one that went is gone
+    (should (equal (length vm-message-list) 5))
+    (should (equal (length (seq-filter (lambda (m) (vm-imap-uid-of m))
+                                       vm-message-list))
+                   5))))
+
+(ert-deftest vm-imap-net-test-an-abandoned-session-runs-its-cleanup ()
+  "`vm-net-abandon' closes the generator, so an `unwind-protect' in the
+protocol runs -- which is what puts the folder and the server back in step
+when a session is stopped part way."
+  (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice))
+    (let* ((cleaned nil)
+           (buffer (generate-new-buffer " *vm-imap-net-test*"))
+           (process (make-network-process
+                     :name "vm-imap-net-test" :host 'local
+                     :service (vm-imap-mock-port mock)
+                     :buffer buffer :noquery t :coding 'binary))
+           (session (vm-net-session :process process :name "imap" :timeout 10)))
+      (setq vm-imap-net-test--buffer buffer)
+      (with-current-buffer buffer (vm-imap-net-init))
+      (vm-net-start session (vm-imap-net-test--with-cleanup
+                             (lambda () (setq cleaned t))))
+      ;; let it get as far as waiting for what never comes
+      (let ((deadline (+ (float-time) 2)))
+        (while (and (not (vm-net-session-request session))
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (vm-net-session-live-p session))
+      (should-not cleaned)
+      (vm-net-abandon session)
+      (should cleaned)
+      (should-not (vm-net-session-live-p session))
+      (when (process-live-p process) (delete-process process)))))
+
+(iter-defun vm-imap-net-test--with-cleanup (note)
+  "Wait for something that never comes, and call NOTE on the way out."
+  (unwind-protect
+      (progn (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+             (iter-yield-from (vm-imap-net-command "NOOP"))
+             (iter-yield (vm-net-request-match "^this never arrives\r\n"))
+             'finished)
+    (funcall note)))
+
+(ert-deftest vm-imap-net-test-a-timeout-mid-fetch-leaves-the-folder-sound ()
+  "A server that stops talking half way through leaves the folder with what
+arrived and nothing half-written: the messages already stored are whole, and
+the rest are simply not there."
+  (vm-imap-net-test--visiting (mock)
+    (dotimes (i 4)
+      (vm-imap-mock-add-message
+       mock "INBOX" (format "From: s%d@example.com\nSubject: m%d\n\nBody %d.\n" i i i)))
+    (should (vm-imap-net-get-spooled-mail))
+    ;; the server goes silent and the session times out
+    (setf (vm-net-session-timeout vm-imap-net-session) 0.3)
+    (vm-imap-mock-stop mock)
+    (should (vm-imap-net-wait nil 10))
+    (save-restriction
+      (widen)
+      ;; whatever is in the folder parses as whole messages
+      (should (equal (length vm-message-list)
+                     (cl-count-if (lambda (m) (vm-imap-uid-of m))
+                                  vm-message-list))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

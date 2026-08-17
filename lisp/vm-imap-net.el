@@ -1421,8 +1421,12 @@ command that was asked to do something with what arrives.  Nothing in VM's
 own path calls this: waiting is what the conversion is for getting rid of."
   (let ((folder (vm-imap-net-folder-buffer folder))
 	(deadline (+ (float-time) (or seconds 30))))
-    (while (and (vm-imap-net-busy-p folder) (< (float-time) deadline))
-      (accept-process-output nil 0.05))
+    ;; the session's own callback selects a message and shows it, which
+    ;; changes what buffer is current; a caller that waited here did not ask
+    ;; to be moved somewhere else
+    (save-current-buffer
+      (while (and (vm-imap-net-busy-p folder) (< (float-time) deadline))
+	(accept-process-output nil 0.05)))
     (not (vm-imap-net-busy-p folder))))
 
 (provide 'vm-imap-net)
