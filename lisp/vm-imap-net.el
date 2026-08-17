@@ -1541,6 +1541,8 @@ messages."
      (t
       (condition-case nil
 	  (progn
+	    (vm-inform 6 "%s: fetching new mail without waiting"
+		       (buffer-name folder))
 	    (setq vm-imap-net-session
 		  (vm-imap-net-get-mail
 		   (vm-folder-imap-maildrop-spec)
@@ -1959,7 +1961,9 @@ say what arrived anyway."
      ((vm-imap-net-busy-p) nil)
      (t
       (condition-case nil
-	  (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
+	  (let* ((_ (vm-inform 6 "%s: checking the server without waiting"
+			       (buffer-name folder)))
+		 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
 					   "IMAP checkmail"))
 		 (session (car opened))
 		 (buffer (vm-net-session-buffer session)))
