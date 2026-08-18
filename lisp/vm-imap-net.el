@@ -1689,6 +1689,98 @@ sent by then, and the copy is what did not arrive."
 	t)
     (vm-imap-net-unsupported nil)))
 
+(declare-function vm-imap-decode-mailbox-name "vm-imap" (name))
+(declare-function vm-imap-scan-list-for-flag "vm-imap" (list flag))
+
+(iter-defun vm-imap-net-mailbox-list (&optional selectable-only)
+  "Ask what mailboxes the account has, and answer with their names.
+SELECTABLE-ONLY leaves out the ones the server marks \\Noselect, which are
+the directories of a hierarchy and not mailboxes to be read."
+  (let ((lines (iter-yield-from (vm-imap-net-command "LIST \"\" \"*\"" "LIST")))
+	(names nil))
+    (dolist (response lines)
+      (when (vm-imap-response-matches response '* 'LIST 'list)
+	(let ((flags (nth 2 response))
+	      (name (nth 4 response)))
+	  (when (and (memq (car name) '(atom string))
+		     (not (and selectable-only
+			       (vm-imap-scan-list-for-flag flags "\\Noselect"))))
+	    (push (vm-imap-decode-mailbox-name
+		   (buffer-substring (nth 1 name) (nth 2 name)))
+		  names)))))
+    (nreverse names)))
+
+(iter-defun vm-imap-net-mailbox-status (mailbox)
+  "Answer with (MESSAGES RECENT) for MAILBOX, or nil if the server will not say.
+A mailbox that cannot be asked about is not an error worth stopping a listing
+for: a server refuses STATUS on a name it has just listed often enough."
+  (let ((lines nil)
+	(counts nil)
+	(refused nil))
+    (condition-case caught
+	(setq lines (iter-yield-from
+		     (vm-imap-net-command
+		      (format "STATUS %s (MESSAGES RECENT)"
+			      (vm-imap-quote-mailbox-name mailbox))
+		      "STATUS")))
+      (vm-imap-normal-error (setq refused caught)))
+    (unless refused
+      (dolist (response lines)
+	(when (or (vm-imap-response-matches response '* 'STATUS 'string 'list)
+		  (vm-imap-response-matches response '* 'STATUS 'atom 'list))
+	  (let ((items (cdr (nth 3 response)))
+		(messages nil)
+		(recent nil))
+	    (while items
+	      (cond ((vm-imap-response-matches items 'MESSAGES 'atom)
+		     (setq messages (vm-imap-net-number (nth 1 items))
+			   items (nthcdr 2 items)))
+		    ((vm-imap-response-matches items 'RECENT 'atom)
+		     (setq recent (vm-imap-net-number (nth 1 items))
+			   items (nthcdr 2 items)))
+		    (t (setq items (nthcdr 2 items)))))
+	    (setq counts (list (or messages 0) (or recent 0)))))))
+    counts))
+
+(iter-defun vm-imap-net-list-session (user password)
+  "Log in and answer with (MAILBOX MESSAGES RECENT) for every mailbox."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let ((names (iter-yield-from (vm-imap-net-mailbox-list)))
+	      (listed nil)
+	      (done 0))
+	  (dolist (name names)
+	    (let ((counts (iter-yield-from (vm-imap-net-mailbox-status name))))
+	      (push (cons name (or counts (list 0 0))) listed)
+	      (setq done (1+ done))
+	      (vm-inform 6 "%d of %d mailboxes asked about" done (length names))))
+	  (nreverse listed)))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-list-folders (spec callback)
+  "Ask SPEC's server what mailboxes it has, and tell CALLBACK.
+
+CALLBACK is called with a list of (MAILBOX MESSAGES RECENT), or with the
+error.  Answers whether the asking started; nil means the maildrop cannot be
+opened without waiting.  A listing is a command per mailbox, so it is the
+slowest thing VM asks a server for and the one worst spent frozen."
+  (condition-case nil
+      (let* ((opened (vm-imap-net-open spec "IMAP folders" t))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))
+	(vm-net-start session
+		      (vm-imap-net-list-session (nth 2 opened) (nth 3 opened)))
+	t)
+    (vm-imap-net-unsupported nil)))
+
 (iter-defun vm-imap-net-one-command-session (user password command purpose)
   "Log in, send COMMAND, and answer with what the server said.
 PURPOSE names the command in an error message, as elsewhere here."

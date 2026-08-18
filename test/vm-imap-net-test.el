@@ -879,6 +879,64 @@ the blocking way rather than silently not being sent."
                    "imap:host:143:INBOX:login:someone:*" "CREATE \"x\""
                    "CREATE" "made it")))))
 
+(ert-deftest vm-imap-net-test-listing-folders-does-not-wait ()
+  "The account's mailboxes and their counts arrive without Emacs waiting.
+A listing is a command per mailbox, so it is the slowest thing VM asks a
+server for and the one worst spent frozen."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--bob)
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (answer 'not-called)
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-list-folders
+                     spec (lambda (result) (setq answer result))))
+            ;; asked, not answered
+            (should (eq answer 'not-called))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (eq answer 'not-called) (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (listp answer))
+            (should (equal (sort (mapcar #'car answer) #'string-lessp)
+                           '("Archive" "INBOX")))
+            ;; the counts came from STATUS, one mailbox at a time
+            (should (equal (nth 1 (assoc "INBOX" answer)) 1))
+            (should (equal (nth 1 (assoc "Archive" answer)) 1))
+            (should (numberp (nth 2 (assoc "INBOX" answer)))))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-that-will-not-say-does-not-stop-a-listing ()
+  "A STATUS the server refuses leaves that mailbox at zero, and the rest of
+the listing still arrives.  Servers refuse STATUS on names they have just
+listed often enough for this to matter."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
+                           :refuse "STATUS")
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (answer 'not-called)
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-list-folders
+                     spec (lambda (result) (setq answer result))))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (eq answer 'not-called) (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (listp answer))
+            (should (equal (mapcar #'car answer) '("INBOX")))
+            (should (equal (cdr (assoc "INBOX" answer)) '(0 0))))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()

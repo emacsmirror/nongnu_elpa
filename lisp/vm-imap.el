@@ -4792,8 +4792,23 @@ them."
   (require 'ehelp)
   (setq vm-last-visit-imap-account account)
   (let ((vm-imap-ok-to-ask t)
-	spec process mailbox-list mailbox-status-list buffer) ;; folder
+	spec process mailbox-list mailbox-status-list) ;; folder
     (setq spec (vm-imap-spec-for-account account))
+    ;; A listing is a command per mailbox, so it is the slowest thing VM asks
+    ;; a server for and the one worst spent frozen.  Through the driver where
+    ;; the maildrop allows it: the list is shown when it arrives.
+    (when (and spec
+	       (vm-imap-net-list-folders
+		spec
+		(lambda (result)
+		  (if (and (consp result) (symbolp (car result))
+			   (get (car result) 'error-conditions))
+		      (vm-warn 0 2 "Could not list %s: %s" account
+			       (error-message-string result))
+		    (vm-imap-show-folder-list account result filter-new)))))
+      (vm-inform 5 "Asking %s what folders it has..." account)
+      (setq spec nil))
+    (when spec
     (setq process (and spec (vm-imap-make-session spec t :purpose "folders")))
 					; new session required for STATUS
     (if (null process)
@@ -4823,16 +4838,26 @@ them."
 		(lambda (mbstat1 mbstat2)
 		  (string-lessp (car mbstat1) (car mbstat2)))))
 
-    ;; Display the results
-    (setq buffer (get-buffer-create (format "*%s folders*" account)))
+    (vm-imap-show-folder-list account mailbox-status-list filter-new))
+    ))
+
+(defun vm-imap-show-folder-list (account mailbox-status-list filter-new)
+  "Show what ACCOUNT holds: MAILBOX-STATUS-LIST is (MAILBOX MESSAGES RECENT).
+FILTER-NEW leaves out the mailboxes with nothing new in them.  Split out of
+`vm-list-imap-folders\=' so that the listing can be shown when it arrives
+rather than only when it was waited for."
+  (require 'ehelp)
+  (let ((sorted (sort (copy-sequence mailbox-status-list)
+		      (lambda (one other)
+			(string-lessp (car one) (car other)))))
+	(buffer (get-buffer-create (format "*%s folders*" account))))
     (with-electric-help
      (lambda ()
-       (dolist (mbstat mailbox-status-list)
+       (dolist (mbstat sorted)
 	 (if (or (null filter-new) (> (nth 2 mbstat) 0))
-	     (princ (format "%s: %s messages, %s new \n" 
+	     (princ (format "%s: %s messages, %s new \n"
 			    (car mbstat) (nth 1 mbstat) (nth 2 mbstat))))))
-     buffer)
-    ))
+     buffer)))
 
 (defalias 'vm-imap-list-folders 'vm-list-imap-folders)
 
