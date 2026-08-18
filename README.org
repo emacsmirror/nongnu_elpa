@@ -19,21 +19,27 @@ which is part of the Emacs 32 source tree, and also available for download as
 In order to run DOOM, you need an Emacs 32 with Canvas support. On Emacs 31
 first apply the [[https://github.com/minad/emacs-canvas-patch][Canvas patch]] to the Emacs source and recompile Emacs.
 
+Furthermore DOOM data files are needed. These files have the extension =*.wad=. On
+Debian you can for example install the packages [[https://packages.debian.org/stable/doom-wad-shareware][doom-wad-shareware]] (original
+=doom1.wad=) or [[https://packages.debian.org/stable/freedoom][freedoom]] (=freedoom1.wad=). On other distributions install the
+equivalent packages or download the files from the Debian website and extract
+the respective WAD files.
+
+The WAD files need to be placed in the current directory where Emacs is started
+or in the directory =/usr/share/games/doom/=. Furthermore a custom path to the wad
+file can be specified via the customization option =doom-args=.
+
 ** Installing as package
 
 Install via =M-x package-install RET doom-game RET= from [[https://elpa.nongnu.org/nongnu/doom-game.html][ELPA]]. After the
-installation, invoke =M-x doom=. You will need a WAD file which contains the game
-data, for instance the file =doom1.wad=. You may want customize the variable
-=doom-args= which provides command line arguments to DOOM, for example to
-configure the path to the WAD file with the option =-iwad=. Error messages will
-appear in the =*doom-log*= buffer.
+installation, invoke =M-x doom=. Compilation output and error messages will appear
+in the =*doom-log*= buffer.
 
 ** Running from source
 
 Clone this repository and execute the command =make=. This will download the DOOM
-source, compile the native Emacs module, and then start DOOM in =emacs -Q=. You
-will need a WAD file which contains the game data, for instance the file
-=doom1.wad=. Error messages will appear in the =*doom-log*= buffer.
+source, compile the native Emacs module, and then start DOOM in =emacs -Q=. Error
+messages will appear in the =*doom-log*= buffer.
 
 * Canvas links
 

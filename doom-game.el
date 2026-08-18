@@ -52,9 +52,14 @@
 Note that smoothing is only fast if hardware accelerated."
   :type 'boolean)
 
-(defcustom doom-args nil
+(defcustom doom-args
+  (if-let* ((wad (car (or (file-expand-wildcards "*.wad")
+                          (file-expand-wildcards "/usr/share/games/doom/doom1.wad")
+                          (file-expand-wildcards "/usr/share/games/doom/*.wad")))))
+      (list "-iwad" wad)
+    (message "DOOM: No WAD file found"))
   "String arguments passed to the DOOM main function.
-Can be set for instance to (\"-iwad\" \"/home/user/path/to/doom1.iwad\")."
+Can be set for instance to (\"-iwad\" \"/home/user/path/to/freedoom1.wad\")."
   :type '(repeat string))
 
 (defvar doom--refresh-timer nil
