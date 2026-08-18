@@ -4393,18 +4393,27 @@ See Info node `(elisp)Programmed Completion'."
       (setq mailbox-list (cdr (assoc account vm-imap-account-folder-cache)))
       (setq spec (vm-imap-spec-for-account account))
       (when (and (null mailbox-list) spec)
-	(unwind-protect
-	    (progn
-	      (setq process (vm-imap-make-session spec t 
-						  :purpose "folders"))
-	      (when process
-		(setq mailbox-list 
-		      (vm-imap-mailbox-list process selectable-only))
-		(when mailbox-list
-		  (add-to-list 'vm-imap-account-folder-cache 
-			       (cons account mailbox-list)))))
-	  ;; unwind-protection
-	  (when process (vm-imap-end-session process))))
+	;; Completion has to answer with the names it has, so this is the one
+	;; place that waits on purpose.  It waits on the driver rather than the
+	;; blocking implementation: one connection, made and read the way every
+	;; other path here now does it, and `accept-process-output' leaves C-g
+	;; working.  What is asked for once is cached, so the next TAB is
+	;; instant.
+	(vm-inform 6 "Asking %s what folders it has..." account)
+	(setq mailbox-list (vm-imap-net-mailbox-names spec selectable-only))
+	(unless mailbox-list
+	  (unwind-protect
+	      (progn
+		(setq process (vm-imap-make-session spec t
+						    :purpose "folders"))
+		(when process
+		  (setq mailbox-list
+			(vm-imap-mailbox-list process selectable-only))))
+	    ;; unwind-protection
+	    (when process (vm-imap-end-session process))))
+	(when mailbox-list
+	  (add-to-list 'vm-imap-account-folder-cache
+		       (cons account mailbox-list))))
       (setq completion-list 
 	    (mapcar (lambda (m) (list (format "%s:%s" account m)))
 		    mailbox-list))
