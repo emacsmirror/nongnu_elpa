@@ -1,6 +1,6 @@
 run: doomgeneric_emacs.so
 	@[ -n "$(wildcard *.wad)" ] || { echo "No *.wad file found. For example copy doom1.wad into this directory."; exit 1; }
-	emacs -batch -f batch-byte-compile doom.el && emacs -Q -l doom.elc -e doom
+	emacs -batch -f batch-byte-compile doom-game.el && emacs -Q -l doom-game.elc -e doom
 
 doomgeneric_emacs.so: doomgeneric.zip
 	echo "741be927b33eb650dcb20ff6a45251ab3e5cadfbb548e8207525441229f16c44 doomgeneric.zip" | sha256sum -c -
@@ -17,4 +17,4 @@ doomgeneric.zip:
 	curl -L -o doomgeneric.zip https://github.com/minad/doom-on-emacs/archive/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284.zip
 
 clean:
-	rm doom.elc doomgeneric_emacs.so doomgeneric.zip
+	rm doom-game.elc doomgeneric_emacs.so doomgeneric.zip

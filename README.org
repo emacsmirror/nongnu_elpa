@@ -2,7 +2,7 @@
 
 This is [[https://github.com/id-Software/DOOM][DOOM]] running inside Emacs via a native module. The port is based on
 [[https://github.com/ozkl/doomgeneric][doomgeneric]] such that only a handful of functions like ~DG_DrawFrame~ need to be
-[[file:doomgeneric_emacs.c][implemented in C]] with some [[file:doom.el][Elisp code as glue]]. It uses the native Canvas API
+[[file:doomgeneric_emacs.c][implemented in C]] with some [[file:doom-game.el][Elisp code as glue]]. It uses the native Canvas API
 which is part of the Emacs 32 source tree, and also available for download as
 [[https://github.com/minad/emacs-canvas-patch][patch]] for Emacs 31. See further Canvas links below.
 

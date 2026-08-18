@@ -1,4 +1,4 @@
-;;; doom.el --- DOOM on Emacs -*- lexical-binding: t -*-
+;;; doom-game.el --- DOOM on Emacs -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2012-2026 doomgeneric contributors, Akhsarbek Gozoev, bcoles,
 ;;   Daniel Bomar, Daniel Mendler, Fabian Ruhland, Georgi Gerganov,
@@ -38,7 +38,7 @@
 (defgroup doom nil
   "DOOM."
   :link '(url-link :tag "Website" "https://github.com/minad/doom-on-emacs")
-  :link '(emacs-library-link :tag "Library Source" "doom.el")
+  :link '(emacs-library-link :tag "Library Source" "doom-game.el")
   :group 'games
   :prefix "doom-")
 
@@ -288,7 +288,7 @@ NAME is an optional readable name."
   (unless (fboundp #'doom--tick)
     (let* ((src
             (or (locate-file "doomgeneric_emacs.c" (cons nil load-path))
-                (error "doomgeneric_emacs.c not found")))
+                (error "Source file doomgeneric_emacs.c not found")))
            (default-directory (file-name-parent-directory src))
            (mod (file-name-with-extension (file-name-sans-extension src)
                                           module-file-suffix)))
@@ -305,5 +305,5 @@ NAME is an optional readable name."
   (message "%s" (substitute-command-keys
                  "DOOM: Press \\[describe-mode] to see the key bindings")))
 
-(provide 'doom)
-;;; doom.el ends here
+(provide 'doom-game)
+;;; doom-game.el ends here
