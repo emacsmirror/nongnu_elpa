@@ -6,7 +6,7 @@ This is [[https://github.com/id-Software/DOOM][DOOM]] running inside Emacs via a
 which is part of the Emacs 32 source tree, and also available for download as
 [[https://github.com/minad/emacs-canvas-patch][patch]] for Emacs 31. See further Canvas links below.
 
-#+html: <img src="https://github.com/minad/doom-on-emacs/blob/main/screenshot.jpg?raw=true"/>
+#+html: <img src="https://github.com/minad/doom-on-emacs/blob/screenshots/screenshot.jpg?raw=true"/>
 
 * Running DOOM
 
