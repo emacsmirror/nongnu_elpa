@@ -17,4 +17,4 @@ doomgeneric.zip:
 	curl -L -o doomgeneric.zip https://github.com/minad/doom-on-emacs/archive/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284.zip
 
 clean:
-	rm doom-game.elc doomgeneric_emacs.so doomgeneric.zip
+	rm -f doom-game.elc doomgeneric_emacs.so doomgeneric.zip
