@@ -18,7 +18,13 @@ datarootdir = @datarootdir@
 etcdir = @etcdir@
 docdir = @docdir@
 
-SUBDIRS = lisp info pixmaps
+# What to build and install: the info directory is left out when configure
+# found no makeinfo (emacs-vm/vm#718).
+SUBDIRS = lisp @INFO_SUBDIR@ pixmaps
+
+# What to clean: everything configure wrote a Makefile for, whether or not it
+# is built here, or `distclean' would leave info/Makefile behind.
+ALL_SUBDIRS = lisp info pixmaps
 
 # the list of source (documentation) files
 SOURCES = NEWS.md
@@ -71,10 +77,10 @@ uninstall-pkg:
 	done ;
 
 clean:
-	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i clean) || exit 1; done
+	@for i in $(ALL_SUBDIRS) ; do ($(MAKE) -C $$i clean) || exit 1; done
 
 distclean:
-	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i distclean) || exit 1; done
+	@for i in $(ALL_SUBDIRS) ; do ($(MAKE) -C $$i distclean) || exit 1; done
 	-$(RM) -f Makefile vm-load.el config.status config.log
 	-$(RM) -rf autom4te.cache
 

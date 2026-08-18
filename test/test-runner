@@ -46,6 +46,7 @@ With no options: build, then every pass this machine can run.
   --assert         the suite with VM's own assertions checked
   --leaks          report tests that leave global state behind
   --coverage       write test/coverage-results.txt
+  --build          what configure hands to make, in a copy of the tree
 
   --skip-live      no live servers in any pass
   --skip-send      leave the sending pass out
@@ -73,6 +74,7 @@ add_choice () {
 while [ $# -gt 0 ]; do
     case $1 in
         --probe)       probe_only=yes ;;
+        --build)       chosen="$chosen build" ;;
         --one)         shift
                        [ $# -gt 0 ] || { echo "$progname: --one wants a file" >&2; exit 2; }
                        one_file=$1; add_choice one ;;
@@ -300,6 +302,10 @@ pass_assert () {
         -l "$root/test/run-tests.el"
 }
 
+pass_build () {
+    run_pass "the build system" "$root/test/build-check"
+}
+
 pass_leaks () {
     run_pass "leak report" emacs_run "$live" 1 -l "$root/test/leak-report.el"
 }
@@ -324,6 +330,7 @@ if [ -n "$chosen" ]; then
     wanted assert      && pass_assert
     wanted leaks       && pass_leaks
     wanted coverage    && pass_coverage
+    wanted build       && pass_build
     if wanted send; then
         if [ "$send_configured" = yes ]; then
             pass_send
@@ -332,6 +339,7 @@ if [ -n "$chosen" ]; then
         fi
     fi
 else
+    pass_build
     pass_suite
 
     if [ "$config_present" = yes ] && [ "$skip_live" = no ]; then

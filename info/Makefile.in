@@ -141,7 +141,15 @@ install-pkg: info
 	for f in $(INFO_SPLIT_GLOB); do \
 		test -f "$$f" && $(INSTALL) "$$f" $(infodestdir) || true; \
 	done
-	$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
+	@# Only with an install-info to run.  Without one the recipe was the
+	@# bare arguments, which make ran as a command and the install died on
+	@# -- the same shape as the missing makeinfo of emacs-vm/vm#718.
+	@if test -n "$(INSTALL_INFO)"; then \
+		echo "$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)"; \
+		$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED); \
+	else \
+		echo "No install-info program: $(infodestdir)/dir not updated"; \
+	fi
 	@$(MAKE) remove-stale-info
 	@echo VM INFO files successfully installed
 
@@ -149,7 +157,7 @@ uninstall-pkg:
 	@# Only if it is there.  `install-info --delete' fails when the file is
 	@# already gone, so a second `make uninstall' died here instead of
 	@# finishing, and an uninstall has to be safe to repeat.
-	@if test -f "$(INFO_INSTALLED)"; then \
+	@if test -f "$(INFO_INSTALLED)" && test -n "$(INSTALL_INFO)"; then \
 		echo "$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)"; \
 		$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED); \
 	fi
@@ -166,6 +174,7 @@ remove-stale-info:
 	@for f in $(STALE_INFO_GLOB); do \
 		if test -f "$(infodestdir)/$$f"; then \
 			echo "removing outdated $(infodestdir)/$$f"; \
+			test -n "$(INSTALL_INFO)" && \
 			$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir \
 				"$(infodestdir)/$$f" 2> /dev/null || true; \
 			$(RM) -f "$(infodestdir)/$$f"; \
