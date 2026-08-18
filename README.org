@@ -1,11 +1,11 @@
-#+title: DOOM on Emacs
+#+title: doom-game.el - DOOM on Emacs
 
 #+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://github.com/minad/corfu/blob/screenshots/emacs.svg?raw=true"/></a>
 #+html: <a href="https://elpa.nongnu.org/nongnu/doom-game.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/doom-game.svg"/></a>
 #+html: <a href="https://elpa.nongnu.org/nongnu-devel/doom-game.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/nongnu-devel/doom-game.svg"/></a>
 
 This is [[https://github.com/id-Software/DOOM][DOOM]] running inside Emacs via a native module. The port is based on
-[[https://github.com/ozkl/doomgeneric][doomgeneric]] such that only a handful of functions like ~DG_DrawFrame~ need to be
+[[https://github.com/ozkl/doomgeneric][doomgeneric]] such that only a handful of functions like =DG_DrawFrame= need to be
 [[file:doomgeneric_emacs.c][implemented in C]] with some [[file:doom-game.el][Elisp code as glue]]. It uses the native Canvas API
 which is part of the Emacs 32 source tree, and also available for download as
 [[https://github.com/minad/emacs-canvas-patch][patch]] for Emacs 31. See further Canvas links below.
@@ -14,12 +14,28 @@ which is part of the Emacs 32 source tree, and also available for download as
 
 * Running DOOM
 
+** Prerequisites
+
 In order to run DOOM, you need an Emacs 32 with Canvas support. On Emacs 31
-first apply the Canvas patch to the Emacs source and recompile Emacs. Then
-execute ~make~ to download the DOOM source, compile the native Emacs module and
-start DOOM in Emacs. You will need a WAD file which contains the game data. The
-file ~doom1.wad~ is freely available. Error messages will appear in the ~*doom-log*~
-buffer.
+first apply the Canvas patch to the Emacs source and recompile Emacs.
+
+** Installing as package
+
+The package =doom-game= is available on ELPA
+
+Install via =M-x package-install RET doom-game RET= from [[https://elpa.nongnu.org/nongnu/doom-game.html][ELPA]]. After the
+installation, invoke =M-x doom=. You will need a WAD file which contains the game
+data, for instance the file =doom1.wad=. You may want customize the variable
+=doom-args= which provides command line arguments to DOOM, for example to
+configure the path to the WAD file with the option =-iwad=. Error messages will
+appear in the =*doom-log*= buffer.
+
+** Running from source
+
+Clone this repository and execute the command =make=. This will download the DOOM
+source, compile the native Emacs module, and then start DOOM in =emacs -Q=. You
+will need a WAD file which contains the game data, for instance the file
+=doom1.wad=. Error messages will appear in the =*doom-log*= buffer.
 
 * Canvas links
 

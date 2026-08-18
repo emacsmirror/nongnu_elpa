@@ -30,8 +30,9 @@
 ;;; Commentary:
 
 ;; This is DOOM running inside Emacs using the Canvas API.  Run M-x doom to
-;; start.  You may want set the variable `doom-args' which provides command line
-;; arguments to DOOM.  DOOM logs to the `*doom-log*' buffer.
+;; start.  You may want to customize the variable `doom-args' which provides
+;; command line arguments to DOOM, for example to configure the path to a WAD
+;; file with the option `-iwad'.  DOOM logs to the `*doom-log*' buffer.
 
 ;;; Code:
 
