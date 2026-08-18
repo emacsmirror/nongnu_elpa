@@ -443,6 +443,20 @@
       (hermes-dashboard--warm-profile-cache)
       (should-not fetched))))
 
+(ert-deftest hermes-dashboard-header-line-uses-semantic-faces ()
+  "Dashboard header title, count, and hints use dashboard faces."
+  (hermes-test-with-dashboard-buffer
+   (let ((header (hermes-dashboard--header-line)))
+     (should (equal (substring-no-properties header)
+                    " Hermes Dashboard  |  0 live chats  |  g refresh  ? help "))
+     (dolist (case '(("Hermes Dashboard" . hermes-dashboard-heading)
+                     ("0 live chats" . hermes-dashboard-title)
+                     ("g refresh  ? help" . hermes-dashboard-muted)))
+       (let ((position (string-match-p (regexp-quote (car case)) header)))
+         (should position)
+         (should (eq (get-text-property position 'face header)
+                     (cdr case))))))))
+
 (ert-deftest hermes-dashboard-provider-connect-invalidates-auth-check ()
   "Saving credentials forces a newest-owned credential check."
   (let ((first (hermes--promise-make))

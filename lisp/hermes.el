@@ -172,14 +172,23 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 
 (defun hermes-dashboard--header-line ()
   "Return the dashboard header line."
-  (let ((chat-count 0))
+  (let ((chat-count 0)
+        (separator (propertize "  |  " 'face 'hermes-dashboard-muted)))
     (when (hash-table-p hermes-dashboard--nodes)
       (maphash (lambda (_id node)
                  (when (eq (plist-get (ewoc-data node) :kind) 'chat)
                    (setq chat-count (1+ chat-count))))
                hermes-dashboard--nodes))
-    (format " Hermes Dashboard  |  %d live chat%s  |  g refresh  ? help "
-            chat-count (if (= chat-count 1) "" "s"))))
+    (concat
+     " "
+     (propertize "Hermes Dashboard" 'face 'hermes-dashboard-heading)
+     separator
+     (propertize (format "%d live chat%s" chat-count
+                         (if (= chat-count 1) "" "s"))
+                 'face 'hermes-dashboard-title)
+     separator
+     (propertize "g refresh  ? help" 'face 'hermes-dashboard-muted)
+     " ")))
 
 (defun hermes-dashboard--node-id (node)
   "Return dashboard NODE's stable id."
