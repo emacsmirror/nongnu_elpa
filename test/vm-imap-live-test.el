@@ -239,6 +239,17 @@ the whole exercise: everything above only proves the harness works."
         (string-to-number (match-string 1 text))
       (error "No EXISTS in SELECT response"))))
 
+(defun vm-imap-live-test--wait-for-exists (conn mailbox count &optional seconds)
+  "Wait until MAILBOX holds COUNT messages, up to SECONDS, and answer with it.
+Filing a composition goes through the driver and lands after the send returns,
+so a test that reads the mailbox has to let it arrive."
+  (let ((deadline (+ (float-time) (or seconds 20)))
+        (held (vm-imap-live-test--exists conn mailbox)))
+    (while (and (< held count) (< (float-time) deadline))
+      (accept-process-output nil 0.2)
+      (setq held (vm-imap-live-test--exists conn mailbox)))
+    held))
+
 (defun vm-imap-live-test--quit-folder ()
   "Quit the current folder buffer and kill it, as ending a session does."
   (let ((buffer (current-buffer))
@@ -428,7 +439,9 @@ server and reads the mailbox back with the harness\' own client."
                 "Fcc: " spec "\n"
                 mail-header-separator "\nfiled by Fcc\n")
         (vm-do-fcc-in-composition))
-      ;; the copy is in the mailbox, headers and body intact
+      ;; the copy is in the mailbox, headers and body intact.  Waited for: the
+      ;; filing goes through the driver, so sending returns before it lands.
+      (should (equal 1 (vm-imap-live-test--wait-for-exists conn mailbox 1)))
       (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
       (let ((text (vm-imap-live-cmd-ok conn "FETCH 1 (BODY.PEEK[])")))
         (should (string-match-p (regexp-quote subject) text))
@@ -458,6 +471,9 @@ sends, one by the hook."
         (vm-do-fcc-in-composition)
         ;; what the hook would have done, on top of what VM just did
         (vm-imap-save-composition))
+      ;; one copy has to arrive before the count means anything, and a second
+      ;; would have arrived by then too: both filings were started together
+      (should (equal 1 (vm-imap-live-test--wait-for-exists conn mailbox 1)))
       (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
       (let ((text (vm-imap-live-cmd-ok conn "STATUS \"%s\" (MESSAGES)" mailbox)))
         (should (string-match "MESSAGES \\([0-9]+\\)" text))
@@ -860,6 +876,9 @@ their text, and the attachment writes whole."
             ;; `vm-number-of' is a string, as the summary needs it
             (vm-goto-message (string-to-number (vm-number-of m)))
             (set-buffer folder)
+            ;; presenting fetches the body through the driver, which returns
+            ;; before the server has answered
+            (should (vm-imap-net-wait nil 30))
             (let ((sent (vm-imap-relay-transcript relay 'client))
                   (start 0))
               (while (string-match "FETCH[^\n]*BODY.PEEK\\[\\]" sent start)
@@ -1099,7 +1118,10 @@ external by the time the test can look at it."
               (let ((vm-assertion-checking-off nil)
                     (inhibit-debugger t))
                 (vm-goto-message 2)
-                (vm-load-message 1))
+                (vm-load-message 1)
+                ;; the load goes through the driver and returns before the
+                ;; body does
+                (should (vm-imap-net-wait nil 30)))
               (should-not (vm-body-to-be-retrieved-of m))
               (let ((headers (vm-imap-live-test--headers-of m))
                     (body (vm-imap-live-test--body-of m)))

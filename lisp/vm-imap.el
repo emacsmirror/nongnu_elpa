@@ -2608,9 +2608,22 @@ unsuccessful."
 Optional argument PURPOSE is inserted into the process buffer for
 tracing purposes. Optional argument JUST-RETRIEVE says whether
 the session will only be used for retrieval of mail. Returns the
-IMAP process or nil if unsuccessful."
+IMAP process or nil if unsuccessful.
+
+Waits first for whatever the folder is running without waiting.  This is a
+blocking session, and a blocking session writing the folder while an
+asynchronous one is writing it too would interleave two sets of messages,
+flags and expunges in one buffer and one cache file.  The wait is the price
+of a path that has not been converted yet; it is bounded, and it is the only
+thing between the two of them."
   ;; This is necessary because we might get unexpected EXPUNGE responses
   ;; which we don't know how to deal with.
+  (when (vm-imap-net-busy-p)
+    (vm-inform 6 "%s: waiting for the session already running" (buffer-name))
+    (unless (vm-imap-net-wait nil (or vm-imap-server-timeout 60))
+      (vm-imap-server-error
+       "%s: a session is still running; try again when it has finished"
+       (buffer-name))))
 
   (let (process 
 	(vm-imap-ok-to-ask (eq interactive t))
@@ -4958,10 +4971,10 @@ May throw exceptions."
 	(when (null maildrop)
 	  (error "No IMAP account named \"%s\" in `vm-imap-account-alist'"
 		 vm-imap-default-account)))
-      (setq process (vm-imap-make-session maildrop t :purpose "IMAP-FCC"))
-      (if (null process)
-	  (error "Could not connect to the IMAP server for IMAP-FCC"))
-      (setq mailboxes (list (cons mailbox process)))
+      ;; the maildrop, not a session: the copy goes through the driver where
+      ;; the maildrop allows it, and only what is left opens a connection and
+      ;; waits for it
+      (setq mailboxes (list (cons mailbox maildrop)))
       (vm-mail-mode-remove-header "IMAP-FCC:"))
 
     (goto-char (point-min))
@@ -4973,13 +4986,18 @@ May throw exceptions."
     
     (while mailboxes
       (setq mailbox (car (car mailboxes)))
-      (setq process (cdr (car mailboxes)))
-      (unwind-protect
-	  (vm-imap-append-message process mailbox string flags)
-	;; unwind-protections
-	(when (and (processp process)
-		   (memq (process-status process) '(open run)))
-	  (vm-imap-end-session process)))
+      (setq maildrop (cdr (car mailboxes)))
+      (unless (vm-imap-net-append-text maildrop mailbox string
+				       (vm-imap-flag-list-string flags) t)
+	(setq process (vm-imap-make-session maildrop t :purpose "IMAP-FCC"))
+	(if (null process)
+	    (error "Could not connect to the IMAP server for IMAP-FCC"))
+	(unwind-protect
+	    (vm-imap-append-message process mailbox string flags)
+	  ;; unwind-protections
+	  (when (and (processp process)
+		     (memq (process-status process) '(open run)))
+	    (vm-imap-end-session process))))
       (setq mailboxes (cdr mailboxes)))
     ))
 

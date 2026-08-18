@@ -623,6 +623,106 @@ messages waited out a second login and a second download of every flag."
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))))
 
+(ert-deftest vm-imap-net-test-a-second-operation-waits-for-the-first ()
+  "Work asked for while a session is running is done when it ends.
+
+Two sessions writing one folder would interleave their messages, flags and
+expunges in one buffer and one cache file.  So the second waits, and it waits
+in the folder rather than being turned away to the blocking path, which would
+open the connection this is avoiding."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    (setq vm-imap-net-session
+          (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+    (should (vm-imap-net-busy-p))
+    (let ((fetch vm-imap-net-session))
+      ;; queued, not refused and not started
+      (should (eq (vm-imap-net-send-changes) 'later))
+      (should (eq vm-imap-net-session fetch))
+      (should (equal (length vm-imap-net-waiting) 1))
+      ;; and it runs when the fetch is done
+      (should (vm-imap-net-wait nil 10))
+      (should-not vm-imap-net-waiting)
+      (should (vm-imap-net-wait nil 10))
+      (should (member "\\seen" (mapcar #'downcase
+                                       (vm-imap-mock-flags mock "INBOX" 1)))))))
+
+(ert-deftest vm-imap-net-test-bodies-asked-for-during-a-fetch-wait-too ()
+  "Loading a body while new mail is arriving does not open a second session.
+
+`vm-imap-net-load-bodies' had no such check and overwrote the folder's
+session slot, so two sessions wrote into one folder and only the second was
+tracked."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      (should (vm-body-to-be-retrieved-of message))
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+      (setq vm-imap-net-session
+            (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+      (let ((fetch vm-imap-net-session))
+        (should (eq (vm-imap-net-load-message-bodies (list message)) 'later))
+        (should (eq vm-imap-net-session fetch)))
+      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 10))
+      ;; the body came, in a session of its own, after the fetch
+      (should-not (vm-body-to-be-retrieved-of message))
+      (should (string-match-p "The first body"
+                              (vm-imap-net-test--body-of message))))))
+
+(iter-defun vm-imap-net-test--never-finishes ()
+  "A session that waits for something that never arrives."
+  (iter-yield (lambda () nil))
+  'never)
+
+(ert-deftest vm-imap-net-test-a-blocking-session-waits-for-the-running-one ()
+  "The paths that still block wait for the folder's own session first.
+
+Whatever has not been converted must not open a second connection into a
+folder that an asynchronous session is writing: two sets of messages, flags
+and expunges going into one buffer and one cache file is how a folder gets
+corrupted.  A session that never finishes is refused rather than joined."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((session (vm-net-session :name "stuck"))
+          (vm-imap-server-timeout 0.5))
+      (setf (vm-net-session-buffer session)
+            (generate-new-buffer " *vm-imap-net-test-stuck*"))
+      (vm-net-start session (vm-imap-net-test--never-finishes))
+      (setq vm-imap-net-session session)
+      (should (vm-imap-net-busy-p))
+      (unwind-protect
+          ;; it waits, and says so rather than opening a second connection
+          (should-error (vm-establish-new-folder-imap-session t "test" nil))
+        (vm-net-abandon session)
+        (let ((buffer (vm-net-session-buffer session)))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest vm-imap-net-test-a-queued-body-for-a-gone-message-is-dropped ()
+  "A body queued for a message the folder no longer has is not asked for.
+
+What waits behind a session can wait behind one that expunges: the message it
+was to fill is gone by the time it runs, and the answer would have nowhere to
+be put."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      (setq vm-imap-net-session
+            (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+      (should (eq (vm-imap-net-load-message-bodies (list message)) 'later))
+      ;; expunged while the fetch it is waiting behind runs
+      (vm-set-deleted-flag message t)
+      (vm-expunge-folder :quiet t :just-these-messages (list message))
+      (should (vm-imap-net-wait nil 10))
+      ;; it ran, asked for nothing, and did not fail the session
+      (vm-imap-net-wait nil 10)
+      (should-not vm-imap-net-waiting))))
+
 (ert-deftest vm-imap-net-test-a-quit-during-the-save-loses-nothing ()
   "The folder buffer being killed while the session runs is not an error.
 
@@ -729,6 +829,40 @@ takes a minute to arrive does not stop Emacs for a minute."
       (should (string-match-p "The first body"
                               (vm-imap-net-test--body-of message))))))
 
+
+(ert-deftest vm-imap-net-test-a-composition-is-filed-without-waiting ()
+  "An Fcc to an IMAP mailbox goes through the driver.
+
+Sending a message used to stop Emacs while a copy of it was appended to a
+server.  There is no folder here to borrow a session from, so the append has
+one of its own and nobody waits for it."
+  (vm-imap-mock-with (mock)
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (text "From: me@example.com\r\nSubject: filed\r\n\r\nA copy.\r\n")
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-append-text spec "INBOX" text))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (not (vm-imap-mock-received-p mock "LOGOUT"))
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (vm-imap-mock-received-p mock "APPEND"))
+            (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1)))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-a-composition-vm-cannot-file-is-left-to-the-old-path ()
+  "A maildrop the driver cannot open answers nil, so the caller still files it.
+Nothing is silently not filed: the message has been sent by then."
+  (let ((vm-imap-passwords nil)
+        (auth-sources nil))
+    (should-not (vm-imap-net-append-text
+                 "imap:host:143:INBOX:login:someone:*" "INBOX" "text"))))
 
 ;;; Expunging on the server
 

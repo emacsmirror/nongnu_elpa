@@ -56,6 +56,7 @@
 		  (process &optional imap-buffer keep-buffer))
 (declare-function vm-imap-synchronize-folder "vm-imap" t)
 (declare-function vm-imap-net-send-changes "vm-imap-net" ())
+(declare-function vm-pop-net-send-changes "vm-pop-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
 (declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
@@ -4243,10 +4244,13 @@ folder."
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
 	  (cond ((eq vm-folder-access-method 'pop)
-		 (vm-pop-synchronize-folder :interactive t
-					    :do-remote-expunges t
-					    :do-local-expunges t
-					    :do-retrieves nil))
+		 ;; as for IMAP below: the deletions go without waiting, and
+		 ;; what the server no longer has is the next fetch's business
+		 (unless (vm-pop-net-send-changes)
+		   (vm-pop-synchronize-folder :interactive t
+					      :do-remote-expunges t
+					      :do-local-expunges t
+					      :do-retrieves nil)))
 		((eq vm-folder-access-method 'imap)
 		 ;; What the save owes the server goes without waiting: the
 		 ;; flags that changed and the deletions asked for.  The
@@ -6252,8 +6256,8 @@ thread are retrieved."
       )))
 
 (cl-defun vm-retrieve-real-message-body (mm &key
-					  (fetch nil) (register nil) 
-					  (fail nil))
+					  (fetch nil) (register nil)
+					  (fail nil) (may-arrive-later nil))
   "Retrieve the body of a real message MM from its external
 source and insert it into the Folder buffer.  
 
@@ -6277,12 +6281,25 @@ Gives an error if unable to retrieve message."
 	     (modified (buffer-modified-p))
 	     (fetch-result nil))
 	 (vm-make-room-for-message-body mm)
-	 ;; Remember that this does I/O and accept-process-output,
-	 ;; allowing concurrent threads to run!!!  USR, 2010-07-11
+	 ;; MAY-ARRIVE-LATER goes through the driver, where the maildrop allows
+	 ;; it: nothing waits, and a body wanted while a fetch is running is
+	 ;; fetched when that one ends rather than by a second session writing
+	 ;; this same folder.  The message is shown without its body for now and
+	 ;; the fetch's own callback shows it again when it lands.
+	 ;;
+	 ;; Without it the body has to be here when this returns -- the caller
+	 ;; is saving the message, or copying it -- and a message whose body
+	 ;; has not arrived would be written without one.  That path blocks, and
+	 ;; waits for the folder's own session first rather than opening a
+	 ;; second one.
 	 (condition-case err
 	     (setq fetch-result
-		   (apply (intern (format "vm-fetch-%s-message" fetch-method))
-			  mm nil))
+		   (if (and may-arrive-later
+			    (eq fetch-method 'imap)
+			    (vm-imap-net-load-message-bodies (list mm)))
+		       nil
+		     (apply (intern (format "vm-fetch-%s-message" fetch-method))
+			    mm nil)))
 	   (error 
 	    (if fail
 		(error "Unable to load message; %s"
