@@ -1,5 +1,9 @@
 #+title: DOOM on Emacs
 
+#+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://github.com/minad/corfu/blob/screenshots/emacs.svg?raw=true"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu/doom-game.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/doom-game.svg"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu-devel/doom-game.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/nongnu-devel/doom-game.svg"/></a>
+
 This is [[https://github.com/id-Software/DOOM][DOOM]] running inside Emacs via a native module. The port is based on
 [[https://github.com/ozkl/doomgeneric][doomgeneric]] such that only a handful of functions like ~DG_DrawFrame~ need to be
 [[file:doomgeneric_emacs.c][implemented in C]] with some [[file:doom-game.el][Elisp code as glue]]. It uses the native Canvas API
