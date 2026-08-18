@@ -143,6 +143,16 @@ For a test that has already done something over the wire -- a visit, a fetch
   (cl-some (lambda (line) (string-match-p regexp line))
 	   (vm-imap-mock-log mock)))
 
+(defun vm-imap-mock-set-flags (mock mailbox uid flags)
+  "Give the message with UID in MAILBOX the FLAGS, as another client would.
+For the synchronisation tests: what VM is to notice is a change the server
+knows about and VM does not."
+  (let ((message (cl-find uid (vm-imap-mock-messages mock mailbox)
+			  :key #'vm-imap-mock-message-uid)))
+    (unless message
+      (error "No message with UID %s in %s" uid mailbox))
+    (setf (vm-imap-mock-message-flags message) flags)))
+
 (defun vm-imap-mock-flags (mock mailbox uid)
   "The flags of the message with UID in MAILBOX on MOCK."
   (let ((message (cl-find uid (vm-imap-mock-messages mock mailbox)

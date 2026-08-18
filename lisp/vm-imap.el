@@ -4185,7 +4185,11 @@ This is useful for saving offline work on the cache folder."
   (vm-display nil nil '(vm-imap-synchronize) '(vm-imap-synchronize))
   (if (not (eq vm-folder-access-method 'imap))
       (vm-inform 0 "%s: This is not an IMAP folder" (buffer-name))
-    (unless (vm-imap-net-get-spooled-mail t)
+    ;; Through the driver where the maildrop allows it: this is the command
+    ;; whose work is the expensive half -- the flags of every message in the
+    ;; mailbox come down it -- and on a folder of six thousand that was half a
+    ;; minute of frozen Emacs.
+    (unless (vm-imap-net-synchronize full t)
      (when (vm-establish-new-folder-imap-session t "general operation" nil)
       (vm-imap-retrieve-uid-and-flags-data)
       (vm-imap-save-attributes :all-flags full)

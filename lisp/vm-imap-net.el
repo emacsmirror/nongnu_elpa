@@ -835,6 +835,7 @@ with: the connection arrived authenticated."
 (declare-function vm-assimilate-new-messages "vm-folder" (&rest keys))
 (declare-function vm-update-summary-and-mode-line "vm-summary" ())
 (declare-function vm-mark-for-summary-update "vm-summary" (m &optional dont-kill-cache))
+(declare-function vm-folder-imap-uid-msn "vm-folder" (uid))
 (declare-function vm-set-imap-uid-of "vm-message" (m uid))
 (declare-function vm-set-imap-uid-validity-of "vm-message" (m validity))
 (declare-function vm-set-byte-count-of "vm-message" (m count))
@@ -889,7 +890,7 @@ what to ask the server for, `vm-imap-message-bunch-size\\=' at a time."
       ;; It asked through `vm-folder-imap-process', which a session on the
       ;; driver does not set, and the session died of it.
       (list nil nil (vm-imap-net-messages-not-on-the-server)
-	    (vm-imap-net-stale-messages))
+	    (vm-imap-net-stale-messages) nil)
     (vm-imap-net-plan-1 data count)))
 
 (defun vm-imap-net-messages-not-on-the-server ()
@@ -928,7 +929,8 @@ The current buffer is the folder."
     (list retrieve-list
 	  (vm-imap-bunch-retrieve-list (mapcar #'cdr retrieve-list))
 	  (nth 2 sync)
-	  (nth 3 sync))))
+	  (nth 3 sync)
+	  (nth 1 sync))))
 
 (defun vm-imap-net-require-folder (folder)
   "Signal unless FOLDER is still there to be written into.
@@ -1020,6 +1022,32 @@ supposed to remove, arriving from the other side."
 	(vm-run-hook-on-message 'vm-arrived-message-hook message)))
     new-messages))
 
+(defun vm-imap-net-take-server-flags (uid-validity)
+  "Give the folder's messages the flags the server says they have.
+
+The current buffer is the folder, and its UID tables have been installed by
+`vm-imap-net-install-message-data\=' -- the same tables the blocking
+`retrieve-attributes\=' step reads.  Answers with how many messages were
+touched.
+
+A message whose own changes have not reached the server is left alone: its
+modification flag is still set, so the server's flags are the stale copy, and
+applying them would overwrite the reader's own attributes and leave nothing
+for the next synchronisation to retry."
+  (let ((touched 0))
+    (dolist (message vm-message-list)
+      (let ((uid (vm-imap-uid-of message)))
+	(when (and uid
+		   (equal (vm-imap-uid-validity-of message) uid-validity)
+		   (vm-folder-imap-uid-msn uid)
+		   (not (vm-attribute-modflag-of message)))
+	  (vm-imap-update-message-flags
+	   message (vm-folder-imap-uid-message-flags uid) t)
+	  (vm-mark-for-summary-update message)
+	  (setq touched (1+ touched)))))
+    (vm-update-summary-and-mode-line)
+    touched))
+
 (defun vm-imap-net-arrived (folder)
   "Say that a fetch into FOLDER has finished putting messages in it.
 `vm-arrived-messages-hook\=' is for the arrival and not for each bunch of
@@ -1041,11 +1069,19 @@ the choice is taken and the label says which messages it was taken for."
   (dolist (message stale-list)
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
-(iter-defun vm-imap-net-get-new-mail (folder mailbox user password)
+(iter-defun vm-imap-net-get-new-mail (folder mailbox user password
+					     &optional attributes all-flags full)
   "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
 The messages are written into FOLDER as they arrive, a bunch at a time; the
 folder takes them into its message list once they are all there, as the
-blocking path does."
+blocking path does.
+
+The three options are what a synchronisation asks for on top of a fetch:
+ATTRIBUTES gives the folder's own messages the flags the server has for them,
+ALL-FLAGS sends every message's flags rather than only those that changed, and
+FULL deletes on the server what the folder no longer holds.  Without them this
+is `vm-get-new-mail\=': what has arrived, and what the folder has asked to be
+expunged."
   (unwind-protect
       (progn
 	(let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
@@ -1079,7 +1115,7 @@ blocking path does."
 	    (vm-set-folder-imap-permanent-flags (nth 5 select)))
 	  ;; the folder's own changes go up before its picture of the server is
 	  ;; taken, or the flags just fetched would be written back over them
-	  (iter-yield-from (vm-imap-net-save-flags folder))
+	  (iter-yield-from (vm-imap-net-save-flags folder all-flags))
 	  ;; level 5, unlike the blocking path's 6: there Emacs is frozen and
 	  ;; the freeze is the progress report.  Here nothing looks as if it is
 	  ;; happening unless VM says so, which is what the reader who waited
@@ -1099,6 +1135,20 @@ blocking path does."
     			 (if (= (length retrieve-list) 1) "" "s")))
 	    (with-current-buffer folder
     	      (vm-imap-net-expunge-locally (nth 2 plan) (nth 3 plan)))
+	    (when attributes
+	      ;; after the folder's own flags went up, and after the local
+	      ;; expunges: a message that is gone has no flags to be given
+	      (let ((touched (with-current-buffer folder
+			       (vm-imap-net-take-server-flags uid-validity))))
+		(vm-inform 6 "%s: %d message%s took the server's flags"
+			   (buffer-name folder) touched
+			   (if (= touched 1) "" "s"))))
+	    (when full
+	      ;; a full synchronisation makes the mailbox match the folder, so
+	      ;; what the folder no longer holds is deleted there too
+	      (with-current-buffer folder
+		(setq vm-imap-messages-to-expunge
+		      (append vm-imap-messages-to-expunge (nth 4 plan)))))
 	    (dolist (bunch bunches)
     	      (let* ((range (car bunch))
     		     (headers-only (cadr bunch))
@@ -1231,16 +1281,19 @@ path uses; only the sending of it is here."
 	  (vm-set-attribute-modflag-of message nil)))
       t)))
 
-(iter-defun vm-imap-net-save-flags (folder)
+(iter-defun vm-imap-net-save-flags (folder &optional all)
   "Send the flags of every message in FOLDER whose own have changed.
 Answers with how many were sent.  A message the server refuses is counted as
 an error and left with its modification flag set, so the next synchronisation
-tries it again, and the rest are still sent."
+tries it again, and the rest are still sent.
+
+ALL sends every message's flags, changed or not, which is what a full
+synchronisation asks for: `vm-imap-save-attributes\=' with `:all-flags\='."
   (let ((messages (and (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (seq-filter
 			  (lambda (message)
-			    (and (vm-attribute-modflag-of message)
+			    (and (or all (vm-attribute-modflag-of message))
 				 (equal (vm-imap-uid-validity-of message)
 					(vm-folder-imap-uid-validity))))
 			  vm-message-list))))
@@ -1912,6 +1965,57 @@ looks exactly like one it took until the blocking path announces itself."
   (vm-inform 6 "%s: leaving it to the blocking path (%s)"
 	     (if (bufferp folder) (buffer-name folder) folder)
 	     (or (car (cdr reason)) "not supported")))
+
+(defun vm-imap-net-synchronize (&optional full interactive)
+  "Start synchronising this folder with its mailbox, and answer whether it did.
+
+Everything `vm-imap-synchronize\=' does, on the driver: the folder's flags go
+up, the mailbox's come down, what has arrived is fetched, what the server no
+longer has is expunged here, and what the folder has expunged is expunged
+there.  FULL also sends every message's flags rather than only those that
+changed, and deletes on the server what the folder no longer holds.
+
+Nil means the maildrop cannot be opened without waiting and the caller is to
+do it the blocking way; `later\=' that a session is running and this one goes
+when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
+  (let ((folder (current-buffer)))
+    (vm-imap-net-when-free
+     (if full "synchronising fully" "synchronising")
+     (lambda ()
+       (condition-case reason
+	   (let* ((opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
+					    "IMAP synchronize"
+					    (eq interactive t)))
+		  (session (car opened))
+		  (buffer (vm-net-session-buffer session))
+		  (name (buffer-name folder)))
+	     (setf (vm-net-session-finished session)
+		   (lambda (finished)
+		     (let ((process (vm-net-session-process finished)))
+		       (when (process-live-p process) (delete-process process)))
+		     (when (buffer-live-p buffer) (kill-buffer buffer))
+		     (cond
+		      ((vm-net-session-error finished)
+		       (vm-warn 0 2 "%s: %s" name
+				(error-message-string
+				 (vm-net-session-error finished))))
+		      ((buffer-live-p folder)
+		       (with-current-buffer folder
+			 (let ((arrived (or (vm-net-session-value finished) 0)))
+			   (if (> arrived 0)
+			       (vm-imap-net-show-arrival folder arrived)
+			     (vm-update-summary-and-mode-line)
+			     (vm-inform 5 "%s: synchronised" name))))))))
+	     (vm-net-start session
+			   (vm-imap-net-get-new-mail
+			    folder (nth 1 opened) (nth 2 opened) (nth 3 opened)
+			    'attributes full full))
+	     (vm-imap-net-take-session session)
+	     (vm-inform 6 "%s: synchronising without waiting" name)
+	     t)
+	 (vm-imap-net-unsupported
+	  (vm-imap-net-say-why-not folder reason)
+	  nil))))))
 
 (defun vm-imap-net-get-spooled-mail (&optional interactive)
   "Start fetching this IMAP folder's new mail, and answer with whether it did.
