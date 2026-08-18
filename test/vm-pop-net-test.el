@@ -474,6 +474,28 @@ which is what the folder needs to remember so it does not fetch it twice."
       (should (string-match-p "otters" (cdr (nth 1 fetched))))
       (should (cl-every #'stringp (mapcar #'car fetched))))))
 
+(ert-deftest vm-pop-net-test-the-fetch-says-how-far-it-has-got ()
+  "The fetch reports its progress at a level the default verbosity shows.
+As for IMAP: nothing else tells the reader it is running, since VM is not
+holding Emacs while it does."
+  (let ((vm-verbosity 5)                ; the default
+        (said nil))
+    (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                      vm-pop-net-test--bob))
+      (let ((inform (symbol-function 'vm-inform)))
+        (cl-letf (((symbol-function 'vm-inform)
+                   (lambda (level &rest args)
+                     (push (cons level (apply #'format-message args)) said)
+                     (apply inform level args))))
+          (should (equal (length (vm-pop-net-test--fetch mock nil)) 2))))
+      (let ((shown (mapcar #'cdr
+                           (seq-filter (lambda (line) (<= (car line) vm-verbosity))
+                                       said))))
+        (should (seq-find (lambda (text) (string-match-p "1 of 2 messages" text))
+                          shown))
+        (should (seq-find (lambda (text) (string-match-p "2 of 2 messages" text))
+                          shown))))))
+
 (ert-deftest vm-pop-net-test-fetching-passes-over-what-it-has ()
   "A message whose UID is in `vm-pop-retrieved-messages' is not fetched
 again: that list is how VM remembers, and fetching twice is how a folder

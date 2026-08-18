@@ -697,6 +697,15 @@ from inside a filter."
 			    user host port t "reading mail")
 			 (error nil))))))
       (unless (and (stringp password) (not (equal password "")))
+	;; the keys and not the passwords: a maildrop that VM will not check
+	;; because it has no password is either one that was never remembered
+	;; or one remembered under a key the check does not look under, and
+	;; the log is the only place that difference shows
+	(vm-inform 10 "%s: no password held under %s; VM holds %s" name
+		   (vm-imapdrop-sans-password-and-mailbox source)
+		   (if vm-imap-passwords
+		       (mapconcat #'car vm-imap-passwords ", ")
+		     "none"))
 	(signal 'vm-imap-net-unsupported
 		(list "password not remembered" source))))
     (let* ((buffer (vm-imap-net-session-buffer name))
@@ -960,6 +969,17 @@ supposed to remove, arriving from the other side."
 	(vm-set-stuff-flag-of message t))
       (setq messages (cdr messages)
 	    entries (cdr entries)))
+    ;; A folder that was empty has no current message, and until one is chosen
+    ;; every command that works on it takes `(car vm-message-pointer)' and gets
+    ;; nil: typing a space during the first fetch into an empty folder was
+    ;; "vm-scroll-forward: Wrong type argument: arrayp, nil".  The folder is
+    ;; usable while the rest of the fetch runs, so this cannot wait for the end
+    ;; of the fetch.  Shown as well as selected, which is what the arrival
+    ;; would have done; it happens once, since after this the folder has a
+    ;; current message and a reader reading it is not to be moved.
+    (when (and new-messages (null vm-message-pointer)
+	       (vm-thoughtfully-select-message))
+      (vm-present-current-message))
     (vm-update-summary-and-mode-line)
     (when vm-arrived-message-hook
       (dolist (message new-messages)
@@ -1026,12 +1046,23 @@ blocking path does."
 	  ;; the folder's own changes go up before its picture of the server is
 	  ;; taken, or the flags just fetched would be written back over them
 	  (iter-yield-from (vm-imap-net-save-flags folder))
+	  ;; level 5, unlike the blocking path's 6: there Emacs is frozen and
+	  ;; the freeze is the progress report.  Here nothing looks as if it is
+	  ;; happening unless VM says so, which is what the reader who waited
+	  ;; through a first fetch of a large mailbox was left doing.
+	  (unless (zerop count)
+	    (vm-inform 5 "%s: reading the list of %d message%s on the server..."
+    		       (buffer-name folder) count (if (= count 1) "" "s")))
 	  (setq data (if (zerop count)
     			 nil
     		       (iter-yield-from (vm-imap-net-message-data 1 count))))
 	  (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
 	  (let ((retrieve-list (nth 0 plan))
     		(bunches (nth 1 plan)))
+	    (when retrieve-list
+	      (vm-inform 5 "%s: retrieving %d message%s..." (buffer-name folder)
+    			 (length retrieve-list)
+    			 (if (= (length retrieve-list) 1) "" "s")))
 	    (with-current-buffer folder
     	      (vm-imap-net-expunge-locally (nth 2 plan) (nth 3 plan)))
 	    (dolist (bunch bunches)
@@ -1050,7 +1081,7 @@ blocking path does."
     		(with-current-buffer folder
     		  (vm-imap-net-assimilate entries uid-validity))
     		(setq retrieved (+ retrieved count))
-    		(vm-inform 6 "%s: %d of %d messages"
+    		(vm-inform 5 "%s: %d of %d messages retrieved"
     			   (buffer-name folder) retrieved (length retrieve-list))))
 	    (vm-imap-net-arrived folder)
 	    ;; and what the folder has expunged locally goes on the server, in the

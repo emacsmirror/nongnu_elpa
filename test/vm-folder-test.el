@@ -1455,6 +1455,28 @@ mail."
       (should (string-match-p "#538" text))               ; and the caveat
       (should (string-match-p (regexp-quote exec-directory) text)))))
 
+(ert-deftest vm-folder-test-arriving-spooled-mail-makes-a-message-current ()
+  "Mail arriving into an empty folder leaves it with a current message.
+
+`vm-get-new-mail' selects one after the blocking fetch; the asynchronous path
+does not go through it, so the folder was left with messages in its list and
+nothing in `vm-message-pointer', and the next command that worked on the
+current message failed with \"Wrong type argument: arrayp, nil\"."
+  (vm-test-with-real-folder (0)
+    (should (null vm-message-list))
+    (should (null vm-message-pointer))
+    (let ((crash (expand-file-name "crash" dir)))
+      (with-temp-file crash
+        (insert "From alice@example.com  Mon Jan  1 00:00:00 2024\n"
+                "From: Alice <alice@example.com>\n"
+                "Subject: hello\n"
+                "\n"
+                "Body.\n\n"))
+      (should (vm-spooled-mail-arrived crash "spool"))
+      (should (equal (length vm-message-list) 1))
+      (should vm-message-pointer)
+      (should (equal (vm-su-subject (car vm-message-pointer)) "hello")))))
+
 (ert-deftest vm-folder-test-movemail-copies-the-spool-unaltered ()
   "The movemail VM defaults to copies a spool file byte for byte.
 The property the default is chosen for, checked against the mbox from #538: a

@@ -442,6 +442,72 @@ a time, and every one of them arrives."
                                   (vm-imap-mock-commands mock))
                      3)))))
 
+(ert-deftest vm-imap-net-test-the-folder-has-a-current-message-during-the-fetch ()
+  "As soon as the first bunch is in, the folder has a current message.
+
+The folder is usable while the rest of the fetch runs, and a folder with
+messages in its list and nothing in `vm-message-pointer' is not: every command
+that works on the current message takes `(car vm-message-pointer)' and gets
+nil.  Typing a space during the first fetch into an empty folder was
+\"vm-scroll-forward: Wrong type argument: arrayp, nil\"."
+  (let ((vm-imap-message-bunch-size 2)
+        (seen nil))
+    (vm-imap-net-test--visiting (mock)
+      (should (null vm-message-list))
+      (dotimes (i 8)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: sender%d@example.com\nSubject: number %d\n\nBody %d.\n"
+                 i i i)))
+      (let ((answer 'not-called)
+            (folder (current-buffer)))
+        (vm-imap-net-get-mail (vm-imap-mock-spec mock)
+                              (lambda (result) (setq answer result)))
+        (let ((deadline (+ (float-time) 10)))
+          (while (and (eq answer 'not-called) (< (float-time) deadline))
+            (accept-process-output nil 0.02)
+            ;; what the reader would find if they typed now
+            (with-current-buffer folder
+              (when vm-message-list
+                (push (and vm-message-pointer t) seen)))))
+        (should (equal answer 8)))
+      ;; looked at least once with messages in the folder, and never found it
+      ;; without a current message
+      (should seen)
+      (should-not (memq nil seen)))))
+
+(ert-deftest vm-imap-net-test-the-fetch-says-how-far-it-has-got ()
+  "The fetch reports its progress at a level the default verbosity shows.
+
+The blocking path reports at level 6, which `vm-verbosity' of 5 does not
+display -- there Emacs is frozen and the freeze is the report.  Here nothing
+looks as if it is happening unless VM says so, and a reader watching a first
+fetch of a large mailbox was left with no sign of it at all."
+  (let ((vm-imap-message-bunch-size 2)
+        (vm-verbosity 5)                ; the default
+        (said nil))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 6)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: sender%d@example.com\nSubject: number %d\n\nBody %d.\n"
+                 i i i)))
+      (let ((inform (symbol-function 'vm-inform)))
+        (cl-letf (((symbol-function 'vm-inform)
+                   (lambda (level &rest args)
+                     (push (cons level (apply #'format-message args)) said)
+                     (apply inform level args))))
+          (should (equal (vm-imap-net-test--get-mail mock) 6))))
+      (let ((shown (mapcar #'cdr
+                           (seq-filter (lambda (line) (<= (car line) vm-verbosity))
+                                       said))))
+        ;; the long silent phase before any message arrives, and the count as
+        ;; the bunches land
+        (should (seq-find (lambda (text) (string-match-p "reading the list" text))
+                          shown))
+        (should (seq-find (lambda (text) (string-match-p "6 of 6 messages" text))
+                          shown))))))
+
 (ert-deftest vm-imap-net-test-a-failed-fetch-tells-the-caller ()
   "A server that refuses the fetch ends the session and the folder hears
 about it, rather than the callback never coming."
