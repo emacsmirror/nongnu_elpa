@@ -212,6 +212,88 @@ buffer. Returns list of tokens."
    '("foo" "=" "\"zonk"
      "Cons")))
 
+(ert-deftest haskell-lexeme-multiline-string-literal-1 ()
+  "One-line multiline string is a single token"
+  (check-lexemes
+   '("x = \"\"\"a\"\"\" ++ y")
+   '("x" "=" "\"\"\"a\"\"\"" "++" "y")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-2 ()
+  "Multiline string spanning lines is a single token"
+  (check-lexemes
+   '("a = \"\"\"one"
+     "two\"\"\" ; b")
+   '("a" "=" "\"\"\"one\ntwo\"\"\"" ";" "b")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-3 ()
+  "Embedded quote runs of one or two quotes are content"
+  (check-lexemes
+   '("\"\"\"He said \"\"hi\"\" ok\"\"\"")
+   '("\"\"\"He said \"\"hi\"\" ok\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-4 ()
+  "Escaped quote right before the closer is content"
+  (check-lexemes
+   '("\"\"\"a\\\"\"\"\"")
+   '("\"\"\"a\\\"\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-5 ()
+  "String gap spanning a newline is consumed inside the token"
+  (check-lexemes
+   '("\"\"\"a\\"
+     "  \\b\"\"\"")
+   '("\"\"\"a\\\n  \\b\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-6 ()
+  "Empty multiline string"
+  (check-lexemes
+   '("\"\"\"\"\"\"")
+   '("\"\"\"\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-7 ()
+  "Unterminated multiline string at end of buffer"
+  (check-lexemes
+   "\"\"\"\""
+   '("\"\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-8 ()
+  "Closes at the earliest triple quote, extra quote is a new token"
+  (check-lexemes
+   "\"\"\"a\"\"\"\""
+   '("\"\"\"a\"\"\"" "\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-9 ()
+  "Closes at the earliest triple quote, extra triple quote is a new token"
+  (check-lexemes
+   "\"\"\"x\"\"\"\"\"\""
+   '("\"\"\"x\"\"\"" "\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-10 ()
+  "Unterminated multiline string runs to the end of the buffer"
+  (check-lexemes
+   '("a = \"\"\"one"
+     "two"
+     "three")
+   '("a" "=" "\"\"\"one\ntwo\nthree\n")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-11 ()
+  "Bare opener at end of buffer is an unterminated multiline string"
+  (check-lexemes
+   "\"\"\""
+   '("\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-12 ()
+  "Five quotes are an unterminated multiline string with two-quote content"
+  (check-lexemes
+   "\"\"\"\"\""
+   '("\"\"\"\"\"")))
+
+(ert-deftest haskell-lexeme-multiline-string-literal-13 ()
+  "Backslash as the last character of the buffer stays inside the token"
+  (check-lexemes
+   "\"\"\"a\\"
+   '("\"\"\"a\\")))
+
 (ert-deftest haskell-lexeme-line-comment-1 ()
   (check-lexemes
    '("   -- x  "

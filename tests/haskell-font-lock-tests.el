@@ -695,6 +695,43 @@
       ("zonk" t font-lock-string-face)
       ("\\" t font-lock-warning-face))))
 
+(ert-deftest haskell-multiline-string-1 ()
+  "Terminated multiline string across lines is fontified as a string."
+  (check-properties
+   '"x = \"\"\"abc\ndef\"\"\" ; y = Cons"
+   '(("\"\"\"" "\"." font-lock-string-face)
+     ("abc\ndef" t font-lock-string-face)
+     ("\"\"\"" "\"." font-lock-string-face)
+     ("Cons" "w" haskell-constructor-face))))
+
+(ert-deftest haskell-multiline-string-2 ()
+  "Embedded double-quote runs stay string face with punctuation syntax."
+  (check-properties
+   '"\"\"\"He said \"\"hi\"\" ok\"\"\""
+   '(("\"\"\"" "\"." font-lock-string-face)
+     ("He said " t font-lock-string-face)
+     ("\"\"" "." font-lock-string-face)
+     ("hi" t font-lock-string-face)
+     ("\"\"" "." font-lock-string-face)
+     (" ok" t font-lock-string-face)
+     ("\"\"\"" "\"." font-lock-string-face))))
+
+(ert-deftest haskell-multiline-string-3 ()
+  "Unterminated multiline string warns on the opening quote only."
+  (check-properties
+   '"x = \"\"\"abc"
+   '(("\"" "\"" font-lock-warning-face)
+     ("\"\"" "." font-lock-string-face)
+     ("abc" t font-lock-string-face))))
+
+(ert-deftest haskell-multiline-string-4 ()
+  "Invalid escape inside a multiline string warns on the backslash."
+  (check-properties
+   '"x = \"\"\"ab\\qcd\"\"\""
+   '(("\\" t font-lock-warning-face)
+     ("qcd" t font-lock-string-face)
+     ("\"\"\"" "\"." font-lock-string-face))))
+
 (ert-deftest haskell-type-colors-01 ()
   (check-properties
    "x :: Int -> String"
