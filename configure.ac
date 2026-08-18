@@ -228,7 +228,17 @@ VM_PROG_GNU_TAR
 VM_PROG_OPTIONAL([MAKEINFO], [makeinfo], [Info files will not be built.])
 VM_PROG_OPTIONAL([INSTALL_INFO], [install-info],
                  [Info dir file will not be updated on install.])
-VM_PROG_OPTIONAL([TEXI2DVI], [texi2dvi], [DVI and PDF files will not be built.])
+
+# Which subdirectories `make' is to enter.  Without makeinfo the info
+# directory is left out rather than entered and failed in: an empty MAKEINFO
+# made the recipe read `-o vm.info vm.texinfo', whose leading dash told make to
+# ignore the error, so the build printed "make: o: No such file or directory"
+# and succeeded with no manual (emacs-vm/vm#718).
+AS_IF([test "x${MAKEINFO}" = x],
+      [ INFO_SUBDIR=
+        AC_MSG_NOTICE([*** Not building the info directory.]) ],
+      [ INFO_SUBDIR=info ])
+AC_SUBST([INFO_SUBDIR])
 
 VM_PROG_EMACS
 VM_BUILD_FLAGS
