@@ -749,6 +749,74 @@ flag in the file, so the next visit sends them again."
         ;; it finished rather than erroring, and said what it had to say
         (should (eq (vm-net-session-state session) 'done))))))
 
+(ert-deftest vm-imap-net-test-synchronizing-goes-both-ways-without-waiting ()
+  "`vm-imap-synchronize' on the driver: flags up, flags down, mail in.
+
+The blocking version fetched the flags of every message in the mailbox with
+Emacs held still, which on a folder of six thousand was half a minute."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (let ((message (car vm-message-list)))
+      ;; the folder marked one read, and the server has marked another flag on
+      ;; the same message behind VM's back
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob '("\\Answered"))
+    (vm-imap-mock-forget-commands mock)
+    (should (eq (vm-imap-net-synchronize nil t) t))
+    ;; started, not finished
+    (should (vm-imap-net-busy-p))
+    (should (vm-imap-net-wait nil 10))
+    ;; the folder's own flag went up
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))
+    ;; what arrived came in
+    (should (equal (length vm-message-list) 2))
+    ;; and the server's flags came down: the new one is answered here too
+    (should (vm-replied-flag (nth 1 vm-message-list)))))
+
+(ert-deftest vm-imap-net-test-synchronizing-takes-the-servers-flags ()
+  "A flag set on the server reaches a message the folder already had.
+This is the `retrieve-attributes' half, which a plain fetch does not do."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list)))
+      (should-not (vm-replied-flag message))
+      ;; somebody else answered it, in another client
+      (vm-imap-mock-set-flags mock "INBOX" 1 '("\\Answered"))
+      (should (eq (vm-imap-net-synchronize nil t) t))
+      (should (vm-imap-net-wait nil 10))
+      (should (vm-replied-flag message)))))
+
+(ert-deftest vm-imap-net-test-a-full-synchronize-sends-every-flag ()
+  "A full synchronisation looks at every message's flags, not only at those
+marked as changed, and deletes on the server what the folder no longer holds.
+
+The case it is for: a flag that differs from the server's and whose
+modification flag has been lost, which nothing else would ever send."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      ;; read here, and nothing says so: a plain synchronisation would pass
+      ;; over this message
+      (vm-set-attribute-modflag-of message nil))
+    ;; and the second is expunged here and not there
+    (let ((message (nth 1 vm-message-list)))
+      (vm-set-deleted-flag message t)
+      (vm-expunge-folder :quiet t :just-these-messages (list message)))
+    (setq vm-imap-messages-to-expunge nil)   ; as if it had never been recorded
+    (vm-imap-mock-forget-commands mock)
+    (should (eq (vm-imap-net-synchronize t t) t))
+    (should (vm-imap-net-wait nil 10))
+    ;; the unmarked change went up
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))
+    ;; and the message the folder dropped is gone from the mailbox
+    (should (vm-imap-mock-received-p mock "UID STORE"))
+    (should (vm-imap-mock-received-p mock "EXPUNGE"))
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
