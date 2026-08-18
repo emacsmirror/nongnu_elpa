@@ -1413,5 +1413,68 @@ ROTATED-VAR is bound to non-nil when a rotation was performed."
       (should rotated)
       (should (> (jabber-omemo-store-spk-rotated-at "me@example.com") stale)))))
 
+;;; Group 15: Heartbeat persist-before-send
+
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-persists-heartbeat ()
+  "decrypt-stanza persists the post-heartbeat session before sending it.
+After nr reaches 53, reloading the stored blob and calling
+`jabber-omemo-heartbeat' again must return nil.  The in-memory
+session and the database blob must serialize identically."
+  (jabber-test-omemo-message-with-db
+    (let* ((alice-store (jabber-omemo-deserialize-store
+                         (jabber-omemo-setup-store)))
+           (bob-store (jabber-omemo-deserialize-store
+                       (jabber-omemo-setup-store)))
+           (account "bob@example.com")
+           (peer "alice@example.com")
+           (our-did 42)
+           (peer-did 99)
+           (sent 0)
+           (bundle (jabber-omemo-get-bundle bob-store))
+           (pk (car (plist-get bundle :pre-keys)))
+           (alice-session
+            (jabber-omemo-initiate-session
+             alice-store
+             (plist-get bundle :signature)
+             (plist-get bundle :signed-pre-key)
+             (plist-get bundle :identity-key)
+             (cdr pk)
+             (plist-get bundle :signed-pre-key-id)
+             (car pk))))
+      (puthash account bob-store jabber-omemo--stores)
+      (puthash account our-did jabber-omemo--device-ids)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) account))
+                ((symbol-function 'jabber-omemo--note-consumed-prekey)
+                 #'ignore)
+                ((symbol-function 'jabber-omemo--send-heartbeat)
+                 (lambda (&rest _) (cl-incf sent))))
+        (dotimes (i 53)
+          (let* ((enc (jabber-omemo-encrypt-message
+                       (encode-coding-string (format "m%d" i) 'utf-8)))
+                 (encrypted-key (jabber-omemo-encrypt-key
+                                 alice-session (plist-get enc :key)))
+                 (xml-data `(message ((from . ,(concat peer "/phone"))
+                                      (type . "chat"))))
+                 (parsed (list :sid peer-did
+                               :iv (plist-get enc :iv)
+                               :payload (plist-get enc :ciphertext)
+                               :keys (list (cons our-did
+                                                 (list :data (plist-get
+                                                              encrypted-key
+                                                              :data)
+                                                       :pre-key-p
+                                                       (plist-get
+                                                        encrypted-key
+                                                        :pre-key-p)))))))
+            (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed))))
+      (should (= 1 sent))
+      (let* ((live (gethash (jabber-omemo--session-key account peer peer-did)
+                            jabber-omemo--sessions))
+             (blob (jabber-omemo-store-load-session account peer peer-did))
+             (reloaded (jabber-omemo-deserialize-session blob)))
+        (should (equal (jabber-omemo-serialize-session live) blob))
+        (should-not (jabber-omemo-heartbeat reloaded bob-store))))))
+
 (provide 'jabber-test-omemo-message)
 ;;; jabber-test-omemo-message.el ends here

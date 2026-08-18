@@ -1194,7 +1194,6 @@ Signals structured errors that callers can dispatch on:
                        jc sender-jid sender-did store-ptr
                        pre-key-p key-data)))
           (setq jabber-chat--decrypt-consumed-p t)
-          (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
           (jabber-omemo--persist-store jc)
           (when fresh-p
             (jabber-omemo--note-consumed-prekey jc session-ptr))
@@ -1206,8 +1205,12 @@ Signals structured errors that callers can dispatch on:
               (message "%s auto-trusted device %d for %s (TOFU)"
                        (propertize "OMEMO:" 'face 'warning)
                        sender-did sender-jid)))
-          (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
-            (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
+          (let ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
+            (jabber-omemo--save-session jc sender-jid sender-did
+                                        session-ptr)
+            (when hb
+              (jabber-omemo--send-heartbeat
+               jc sender-jid sender-did hb)))
           (if payload
               (let* ((plaintext (jabber-omemo-decrypt-message
 				 decrypted-key iv payload))
