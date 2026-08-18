@@ -817,6 +817,68 @@ modification flag has been lost, which nothing else would ever send."
     (should (vm-imap-mock-received-p mock "EXPUNGE"))
     (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))))
 
+(ert-deftest vm-imap-net-test-a-mailbox-is-created-without-waiting ()
+  "`vm-create-imap-folder' sends CREATE through the driver and returns.
+One command to a server has no more business freezing Emacs than a fetch has."
+  (vm-imap-mock-with (mock)
+    (let* ((spec (vm-imap-mock-spec mock "Archive"))
+           (vm-imap-server-timeout 10)
+           (vm-imap-account-folder-cache nil)
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-mailbox-command
+                     spec "CREATE \"Archive\"" "CREATE" "made it"))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (not (vm-imap-mock-received-p mock "LOGOUT"))
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (vm-imap-mock-received-p mock "CREATE \"Archive\"")))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-command-forgets-the-folder-cache ()
+  "The account's folder list is forgotten when the server has done it, and not
+before: it is the answer that makes the cache wrong."
+  (vm-imap-mock-with (mock)
+    (let* ((spec (vm-imap-mock-spec mock "Archive"))
+           (account (vm-imap-account-name-for-spec spec))
+           (vm-imap-server-timeout 10)
+           (vm-imap-account-folder-cache (list (cons account '("INBOX"))))
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-mailbox-command
+                     spec "CREATE \"Archive\"" "CREATE" "made it"))
+            ;; still there while the command is in flight
+            (should (assoc account vm-imap-account-folder-cache))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (assoc account vm-imap-account-folder-cache)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should-not (assoc account vm-imap-account-folder-cache)))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-command-vm-cannot-send-says-so ()
+  "A maildrop the driver cannot open answers nil, so the command still goes
+the blocking way rather than silently not being sent."
+  (let ((vm-imap-passwords nil)
+        (auth-sources nil))
+    ;; nobody to ask: the reader is not there, and a test that let VM ask
+    ;; would sit in `read-passwd' until the runner gave up on it
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _) (error "no reader here"))))
+      (should-not (vm-imap-net-mailbox-command
+                   "imap:host:143:INBOX:login:someone:*" "CREATE \"x\""
+                   "CREATE" "made it")))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()

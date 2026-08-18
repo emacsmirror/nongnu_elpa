@@ -554,6 +554,32 @@ a spec naming INBOX gives the name back in capitals."
           (vm-imap-mock-port mock) mailbox
           (vm-imap-mock-user mock) (vm-imap-mock-password mock)))
 
+(defun vm-imap-mock-test--wait-until (predicate &optional seconds)
+  "Wait until PREDICATE answers non-nil, up to SECONDS, and answer with it.
+The mailbox commands go through the driver: they return before the server has
+done what they asked, so a test that reads the mailbox back waits for it."
+  (let ((deadline (+ (float-time) (or seconds 10))))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (funcall predicate)))
+
+(defmacro vm-imap-mock-test--warnings (&rest body)
+  "Run BODY and answer with the warnings VM gave, newest last.
+A command that goes through the driver reports a refusal when the answer
+arrives, so what a failure leaves behind is a warning and not a signal."
+  (declare (indent 0) (debug t))
+  `(let ((vm-imap-mock-test--said nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _seconds &rest args)
+                  (setq vm-imap-mock-test--said
+                        (append vm-imap-mock-test--said
+                                (list (apply #'format args)))))))
+       ,@body)
+     vm-imap-mock-test--said))
+
+(defvar vm-imap-mock-test--said nil
+  "Where `vm-imap-mock-test--warnings' collects what VM warned about.")
+
 (ert-deftest vm-imap-mock-test-creating-a-mailbox ()
   "`vm-create-imap-folder' makes the mailbox its spec names, and the server
 has it afterwards."
@@ -561,16 +587,22 @@ has it afterwards."
     (let ((vm-imap-server-timeout 10))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX")))
       (vm-create-imap-folder (vm-imap-mock-test--spec-for mock "Later"))
-      (should (member "Later" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda () (member "Later" (vm-imap-mock-mailbox-names mock)))))
       (should (vm-imap-mock-received-p mock "CREATE")))))
 
 (ert-deftest vm-imap-mock-test-creating-a-mailbox-that-exists ()
   "Making a mailbox that is already there is refused by the server, and VM
 says so rather than reporting success."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
-    (let ((vm-imap-server-timeout 10))
-      (should-error (vm-create-imap-folder
-                     (vm-imap-mock-test--spec-for mock "INBOX"))))))
+    (let* ((vm-imap-server-timeout 10)
+           (said (vm-imap-mock-test--warnings
+                   (vm-create-imap-folder
+                    (vm-imap-mock-test--spec-for mock "INBOX"))
+                   (vm-imap-mock-test--wait-until
+                    (lambda () vm-imap-mock-test--said)))))
+      (should said)
+      (should (string-match-p "CREATE failed" (car said))))))
 
 (ert-deftest vm-imap-mock-test-renaming-a-mailbox ()
   "`vm-rename-imap-folder' renames it on the server, and what was in it is
@@ -580,7 +612,8 @@ still in it under the new name."
       (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
       (vm-rename-imap-folder (vm-imap-mock-test--spec-for mock "Archive")
                              (vm-imap-mock-test--spec-for mock "Old"))
-      (should (member "Old" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda () (member "Old" (vm-imap-mock-mailbox-names mock)))))
       (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
       (should (equal (length (vm-imap-mock-messages mock "Old")) 1))
       (should (vm-imap-mock-received-p mock "RENAME")))))
@@ -592,7 +625,9 @@ still in it under the new name."
       (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
         (vm-delete-imap-folder (vm-imap-mock-test--spec-for mock "Archive")))
-      (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda ()
+                 (not (member "Archive" (vm-imap-mock-mailbox-names mock))))))
       (should (member "INBOX" (vm-imap-mock-mailbox-names mock)))
       (should (vm-imap-mock-received-p mock "DELETE")))))
 
@@ -603,8 +638,13 @@ The mock answers NO, which is what a server does, and VM has to notice."
                            :refuse "DELETE")
     (let ((vm-imap-server-timeout 10))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
-        (should-error (vm-delete-imap-folder
-                       (vm-imap-mock-test--spec-for mock "Nowhere"))))
+        (let ((said (vm-imap-mock-test--warnings
+                      (vm-delete-imap-folder
+                       (vm-imap-mock-test--spec-for mock "Nowhere"))
+                      (vm-imap-mock-test--wait-until
+                       (lambda () vm-imap-mock-test--said)))))
+          (should said)
+          (should (string-match-p "DELETE failed" (car said)))))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX"))))))
 
 ;;; Saving a message to an IMAP folder
