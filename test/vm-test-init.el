@@ -796,7 +796,13 @@ cost more than the tests do."
 A folder buffer outlives its test just as readily as a variable does, and it
 carries a whole folder's worth of buffer-local state plus a name that the next
 test's `get-buffer' will find.  Session buffers are the common case, since VM
-keeps them for reuse and the variable holding them has just been wound back."
+keeps them for reuse and the variable holding them has just been wound back.
+
+Liveness is asked again after the process goes: deleting one runs its
+sentinel, and a sentinel may kill buffers -- an asynchronous session tidies up
+its own when its connection dies, and that buffer is usually further down this
+very list.  Asking once left `set-buffer' with a killed buffer, which took
+down the whole run rather than the one test."
   (dolist (buffer (buffer-list))
     (unless (memq buffer buffers)
       (when (buffer-live-p buffer)
@@ -805,7 +811,8 @@ keeps them for reuse and the variable holding them has just been wound back."
             ;; Killing a buffer whose process is still live asks for
             ;; confirmation, and a question in batch reads stdin.
             (set-process-query-on-exit-flag process nil)
-            (ignore-errors (delete-process process))))
+            (ignore-errors (delete-process process)))))
+      (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (set-buffer-modified-p nil)
           ;; `vm-postpone' offers to save a composition as a draft from

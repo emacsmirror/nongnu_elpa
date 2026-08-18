@@ -236,11 +236,19 @@ generator rather than dropping it."
   "A connection to HOST at PORT, made without waiting for it to come up.
 The process is not open when this returns; the session's sentinel hears
 whether it ever will be, and its timeout covers a connect that never
-completes.  TLS is negotiated the same way, Emacs doing the handshake as the
-connection comes up."
-  (make-network-process :name name :host host :service port :buffer buffer
-			:noquery t :coding 'binary :nowait t
-			:type (if tls 'tls nil)))
+completes.
+
+TLS goes through `open-network-stream\=', as for IMAP: `make-network-process\='
+has no TLS and answers `:type \\='tls\=' with \"Unsupported connection type\"."
+  (let ((process
+	 (if tls
+	     (open-network-stream name buffer host port
+				  :type 'tls :nowait t :coding 'binary)
+	   (make-network-process :name name :host host :service port
+				 :buffer buffer :noquery t :coding 'binary
+				 :nowait t))))
+    (set-process-query-on-exit-flag process nil)
+    process))
 
 (defvar vm-pop-passwords)
 (defvar vm-pop-ok-to-ask)

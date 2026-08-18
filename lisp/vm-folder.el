@@ -55,6 +55,7 @@
 (declare-function vm-imap-end-session "vm-imap"
 		  (process &optional imap-buffer keep-buffer))
 (declare-function vm-imap-synchronize-folder "vm-imap" t)
+(declare-function vm-imap-net-send-changes "vm-imap-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
 (declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
@@ -4242,16 +4243,25 @@ folder."
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
 	  (cond ((eq vm-folder-access-method 'pop)
-		 (vm-pop-synchronize-folder :interactive t 
-					    :do-remote-expunges t 
-					    :do-local-expunges t 
+		 (vm-pop-synchronize-folder :interactive t
+					    :do-remote-expunges t
+					    :do-local-expunges t
 					    :do-retrieves nil))
 		((eq vm-folder-access-method 'imap)
-		 (vm-imap-synchronize-folder :interactive t 
-					     :do-remote-expunges t 
-					     :do-local-expunges t 
-					     :do-retrieves nil
-					     :save-attributes t)))
+		 ;; What the save owes the server goes without waiting: the
+		 ;; flags that changed and the deletions asked for.  The
+		 ;; blocking synchronisation also worked out what the server
+		 ;; had expunged, which means downloading the flags of every
+		 ;; message in the mailbox -- nineteen seconds on a folder of
+		 ;; six thousand, with Emacs held still, on every quit.  The
+		 ;; next fetch and `vm-imap-synchronize' both work that out
+		 ;; anyway.
+		 (unless (vm-imap-net-send-changes)
+		   (vm-imap-synchronize-folder :interactive t
+					       :do-remote-expunges t
+					       :do-local-expunges t
+					       :do-retrieves nil
+					       :save-attributes t))))
 	  (vm-discard-fetched-messages)
           ;; remove the message summary file of Thunderbird and force
 	  ;; it to rebuild it.  Expect error if Thunderbird is active.
