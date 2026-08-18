@@ -9,7 +9,7 @@
 ;; Author: Daniel Mendler <mail@daniel-mendler.de>
 ;; Maintainer: Daniel Mendler <mail@daniel-mendler.de>
 ;; Created: 2026
-;; Version: 0.1
+;; Version: 0.2
 ;; Package-Requires: ((emacs "31.0"))
 ;; URL: https://github.com/minad/doom-on-emacs
 ;; Keywords: games
