@@ -919,6 +919,97 @@ next fetch's business."
 		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
 	 nil))))))
 
+(defun vm-pop-net-expunge-maildrop (source uidls callback)
+  "Delete the messages with UIDLS from the maildrop SOURCE, without waiting.
+CALLBACK is called with the UIDLs deleted, or with the error.  Answers
+whether it started."
+  (condition-case nil
+      (let* ((opened (vm-pop-net-open source "POP maildrop expunge" 'may-ask))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))
+	(vm-net-start session
+		      (vm-pop-net-expunge-session (nth 1 opened) (nth 2 opened)
+						  uidls))
+	t)
+    (vm-pop-net-unsupported nil)))
+
+(defun vm-pop-net-expunge-retrieved ()
+  "Delete on their servers the messages this folder has retrieved by POP.
+
+Answers whether it started; nil means the first maildrop cannot be opened
+without waiting and the caller is to do the lot the blocking way.  One
+maildrop at a time: a POP server serves one session anyway, and they all
+write the same folder.
+
+The folder forgets each maildrop's messages as that maildrop answers for
+them, so an expunge that fails half way leaves the rest to be offered again."
+  (let ((folder (current-buffer))
+	(groups nil)
+	step)
+    (dolist (entry vm-pop-retrieved-messages)
+      (let* ((source (nth 1 entry))
+	     (group (assoc source groups)))
+	(if group
+	    (setcdr group (cons (car entry) (cdr group)))
+	  (push (list source (car entry)) groups))))
+    (setq groups (nreverse groups))
+    (setq step
+	  (lambda (rest trouble first)
+	    (cond
+	     ((null rest)
+	      (when (buffer-live-p folder)
+		(with-current-buffer folder
+		  (if trouble
+		      (vm-warn 1 2 "Expunged what could be; trouble with %s"
+			       (mapconcat #'identity (reverse trouble) ", "))
+		    (vm-inform 5 "Retrieved messages deleted on the server"))))
+	      t)
+	     (t
+	      (let* ((group (car rest))
+		     (source (car group))
+		     (name (or (vm-pop-find-name-for-spec source)
+			       (vm-safe-popdrop-string source))))
+		(vm-inform 6 "Deleting messages in %s..." name)
+		(cond
+		 ((vm-pop-net-expunge-maildrop
+		   source (cdr group)
+		   (lambda (result)
+		     (cond
+		      ((and (consp result) (symbolp (car result))
+			    (get (car result) 'error-conditions))
+		       (vm-warn 0 2 "%s: %s" name (error-message-string result))
+		       (funcall step (cdr rest) (cons name trouble) nil))
+		      (t
+		       (when (buffer-live-p folder)
+			 (with-current-buffer folder
+			   (setq vm-pop-retrieved-messages
+				 (seq-remove
+				  (lambda (entry)
+				    (and (equal (nth 1 entry) source)
+					 (member (car entry) result)))
+				  vm-pop-retrieved-messages))
+			   (when result (vm-mark-folder-modified-p folder))
+			   (vm-inform 6 "%s: %d message%s deleted" name
+				      (length result)
+				      (if (= (length result) 1) "" "s"))))
+		       (funcall step (cdr rest) trouble nil)))))
+		  t)
+		 (first nil)
+		 (t
+		  (vm-warn 0 2 "%s: cannot be deleted from without waiting" name)
+		  (funcall step (cdr rest) (cons name trouble) nil))))))))
+    (and groups (funcall step groups nil t))))
+
+(defvar vm-pop-retrieved-messages)
+(declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
+
 (defun vm-pop-net-folder-check-mail ()
   "Start asking whether this POP folder has new mail, and answer with whether
 it did.  The answer itself arrives later, in `vm-spooled-mail-waiting\=',
