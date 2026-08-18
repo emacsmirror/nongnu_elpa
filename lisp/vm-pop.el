@@ -1018,6 +1018,15 @@ popdrop
   (set-marker end nil))
 
 (defun vm-establish-new-folder-pop-session (&optional interactive)
+  "Kill and restart the blocking POP session for the current folder.
+Waits first for whatever this folder is running without waiting: two sessions
+writing one folder would interleave their messages, and a POP server serves
+one session at a time anyway."
+  (when (vm-pop-net-busy-p)
+    (vm-inform 6 "%s: waiting for the session already running" (buffer-name))
+    (unless (vm-pop-net-wait nil (or vm-pop-server-timeout 60))
+      (error "%s: a session is still running; try again when it has finished"
+	     (buffer-name))))
   (let ((process (vm-folder-pop-process))
 	)
     (if (processp process)

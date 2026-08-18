@@ -432,6 +432,8 @@ back is the UID FETCH the server sees."
       (should (vm-body-to-be-retrieved-of message))
       (should (equal (vm-imap-mock-test--body-of message) ""))
       (vm-load-message 1)
+      ;; the load goes through the driver, so the body lands after it returns
+      (should (vm-imap-net-wait nil 10))
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
                               (vm-imap-mock-test--body-of message)))
@@ -445,6 +447,7 @@ which is what to do with a message whose copy here has gone wrong."
     (let ((vm-enable-external-messages '(imap))
           (message (car vm-message-list)))
       (vm-refresh-message)
+      (should (vm-imap-net-wait nil 10))
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
                               (vm-imap-mock-test--body-of message)))

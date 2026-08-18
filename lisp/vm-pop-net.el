@@ -672,6 +672,9 @@ Nothing waits.  Whether the messages are deleted from the server is
 ;;; A POP folder, which is a maildrop VM keeps a copy of
 
 (declare-function vm-folder-pop-maildrop-spec "vm-folder" ())
+(declare-function vm-mark-folder-modified-p "vm-folder" (&optional buffer))
+
+(defvar vm-pop-messages-to-expunge)
 (declare-function vm-pop-uidl-of "vm-message" (m))
 (declare-function vm-set-pop-uidl-of "vm-message" (m uidl))
 (declare-function vm-set-stuff-flag-of "vm-message" (m flag))
@@ -824,6 +827,97 @@ session is already running, and the caller is to use the blocking path."
 		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
 	 nil))))))
 
+
+(iter-defun vm-pop-net-expunge-session (user password uidls)
+  "Log in and delete the messages whose UIDs are UIDLS, and answer with how
+many were deleted.
+
+By UID: a POP message number means something different after every session,
+and the folder remembers what it deleted by UID.  The deletions take effect
+when the server is told QUIT, which `vm-pop-net-session\=' style unwinding
+does whether this runs to the end or is abandoned."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-pop-net-greeting))
+	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((numbers (iter-yield-from (vm-pop-net-uidl)))
+	      (deleted nil))
+	  (unless numbers
+	    ;; without UIDL there is no telling which message is which, and
+	    ;; deleting the wrong one is worse than deleting none
+	    (signal 'vm-pop-net-error
+		    (list "server has no UIDL; nothing deleted")))
+	  (dolist (pair numbers)
+	    (when (member (cdr pair) uidls)
+	      (iter-yield-from (vm-pop-net-delete (car pair)))
+	      (push (cdr pair) deleted)))
+	  (nreverse deleted)))
+    (let ((process (get-buffer-process (current-buffer))))
+      (when (process-live-p process)
+	(process-send-string process "QUIT\r\n")))))
+
+(defun vm-pop-net-send-changes ()
+  "Start deleting on the server what this POP folder has expunged locally.
+
+Answers with whether it did: nil means the maildrop cannot be opened without
+waiting and the caller is to do it the blocking way, `later\=' that a session
+is already running and these deletions go up next time -- they are in
+`vm-pop-messages-to-expunge\=', which is written into the folder file, so
+nothing is lost by waiting.
+
+A save owes the server the deletions and nothing else.  Working out what the
+server no longer has means downloading the maildrop's UIDs, which is the
+next fetch's business."
+  (let* ((folder (current-buffer))
+	 (uidls (copy-sequence vm-pop-messages-to-expunge)))
+    (cond
+     ((null uidls) nil)
+     ((vm-pop-net-busy-p)
+      (vm-inform 6 "%s: a session is running; these deletions go up next time"
+		 (buffer-name folder))
+      'later)
+     (t
+      (condition-case reason
+	  (let* ((source (vm-folder-pop-maildrop-spec))
+		 (opened (vm-pop-net-open source "POP expunge" 'may-ask))
+		 (session (car opened))
+		 (buffer (vm-net-session-buffer session))
+		 (name (buffer-name folder)))
+	    (setf (vm-net-session-finished session)
+		  (lambda (finished)
+		    (let ((process (vm-net-session-process finished)))
+		      (when (process-live-p process) (delete-process process)))
+		    (when (buffer-live-p buffer) (kill-buffer buffer))
+		    (cond
+		     ((vm-net-session-error finished)
+		      (vm-warn 0 2 "%s: %s" name
+			       (error-message-string
+				(vm-net-session-error finished))))
+		     (t
+		      (let ((deleted (vm-net-session-value finished)))
+			;; what the server did not delete stays on the list,
+			;; so the next save offers it again
+			(when (buffer-live-p folder)
+			  (with-current-buffer folder
+			    (setq vm-pop-messages-to-expunge
+				  (seq-remove (lambda (uidl)
+						(member uidl deleted))
+					      vm-pop-messages-to-expunge))
+			    (vm-mark-folder-modified-p)))
+			(vm-inform 5 "%s: %d message%s deleted on the server"
+				   name (length deleted)
+				   (if (= (length deleted) 1) "" "s")))))))
+	    (vm-net-start session
+			  (vm-pop-net-expunge-session (nth 1 opened)
+						      (nth 2 opened) uidls))
+	    (setq vm-pop-net-session session)
+	    (vm-inform 6 "%s: deleting %d message%s on the server without waiting"
+		       name (length uidls) (if (= (length uidls) 1) "" "s"))
+	    t)
+	(vm-pop-net-unsupported
+	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 nil))))))
 
 (defun vm-pop-net-folder-check-mail ()
   "Start asking whether this POP folder has new mail, and answer with whether

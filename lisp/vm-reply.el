@@ -80,6 +80,8 @@
 ;; A cl-defun taking &key arguments: spelling the arglist out here makes the
 ;; compiler count a keyword call wrongly, so it is left unsaid.
 (declare-function vm-imap-make-session "vm-imap" t)
+(declare-function vm-imap-net-append-text "vm-imap-net"
+		  (spec mailbox text &optional flags may-ask))
 (declare-function vm-imap-append-message "vm-imap"
 		  (process mailbox string &optional flags))
 (declare-function vm-imap-end-session "vm-imap"
@@ -1091,14 +1093,17 @@ composition has no folder whose session it could borrow."
 	process)
     (when (or (null mailbox) (equal mailbox ""))
       (error "Not filing in %s: no mailbox in the maildrop specification" spec))
-    (setq process (vm-imap-make-session spec nil :purpose "FCC"))
-    (unless process
-      (error "Not filing in %s: could not open an IMAP session" spec))
-    (unwind-protect
-	(vm-imap-append-message process mailbox string)
-      (when (and (processp process)
-		 (memq (process-status process) '(open run)))
-	(vm-imap-end-session process)))))
+    ;; Through the driver where the maildrop allows it: sending a message
+    ;; should not stop Emacs while a copy of it goes to a server.
+    (unless (vm-imap-net-append-text spec mailbox string)
+      (setq process (vm-imap-make-session spec nil :purpose "FCC"))
+      (unless process
+	(error "Not filing in %s: could not open an IMAP session" spec))
+      (unwind-protect
+	  (vm-imap-append-message process mailbox string)
+	(when (and (processp process)
+		   (memq (process-status process) '(open run)))
+	  (vm-imap-end-session process))))))
 
 (defun vm-do-fcc (header-end)
   "File a copy of this composition in each folder its Fcc headers name.

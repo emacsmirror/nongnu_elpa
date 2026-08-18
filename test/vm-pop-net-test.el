@@ -323,6 +323,68 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
                (kill-buffer buffer))))
          (delete-directory dir t)))))
 
+(ert-deftest vm-pop-net-test-a-pop-save-sends-the-deletions-without-waiting ()
+  "Saving a POP folder deletes on the server without waiting for it.
+
+The blocking save also worked out what the server no longer has, which means
+downloading the maildrop's UIDs; that is the next fetch's business.  Deletions
+that do not get through stay in `vm-pop-messages-to-expunge', which is in the
+folder file, so the next save offers them again."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 10))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            (should (eq (vm-pop-net-send-changes) t))
+            (should (vm-pop-net-wait nil 10))
+            ;; gone on the server, and off the folder's list
+            (should (equal (vm-pop-mock-deleted mock) '(1)))
+            (should-not vm-pop-messages-to-expunge))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
+(ert-deftest vm-pop-net-test-a-pop-save-during-a-session-waits ()
+  "Deletions asked for while a session is running go up next time.
+Two POP sessions to one maildrop is what the server refuses anyway, and two
+writing one folder is what corrupts it."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock)))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            (let ((session (vm-net-session :name "stuck")))
+              (setf (vm-net-session-buffer session)
+                    (generate-new-buffer " *vm-pop-net-test-stuck*"))
+              (vm-net-start session (vm-pop-net-test--never-finishes))
+              (setq vm-pop-net-session session)
+              (should (vm-pop-net-busy-p))
+              (should (eq (vm-pop-net-send-changes) 'later))
+              ;; nothing sent, nothing lost
+              (should-not (vm-pop-mock-deleted mock))
+              (should (equal vm-pop-messages-to-expunge (list "uid1")))
+              (vm-net-abandon session)
+              (let ((buffer (vm-net-session-buffer session)))
+                (when (buffer-live-p buffer) (kill-buffer buffer)))))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
+(iter-defun vm-pop-net-test--never-finishes ()
+  "A session that waits for something that never arrives."
+  (iter-yield (lambda () nil))
+  'never)
+
 (defun vm-pop-net-test--settle (&optional seconds)
   "Let the outstanding mail checks answer."
   (let ((deadline (+ (float-time) (or seconds 20))))
