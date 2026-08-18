@@ -385,6 +385,69 @@ writing one folder is what corrupts it."
   (iter-yield (lambda () nil))
   'never)
 
+(ert-deftest vm-pop-net-test-expunging-a-maildrop-does-not-wait ()
+  "`vm-expunge-pop-messages' deletes on the server what the folder retrieved,
+one maildrop at a time and without waiting for any of it.
+
+What the server took is forgotten and what it did not is kept, so an expunge
+that fails half way leaves the rest to be offered again."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-popdrop-sans-password (vm-pop-mock-spec mock)))
+          (vm-pop-server-timeout 10)
+          ;; what the folder holds is the maildrop without its password, as
+          ;; `vm-pop-retrieved-messages' does; the password is the one VM
+          ;; learned when it fetched
+          (vm-pop-passwords (list (list (vm-popdrop-sans-password
+                                         (vm-pop-mock-spec mock))
+                                        (vm-pop-mock-password mock)))))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-pop-retrieved-messages
+                  (list (list "uid1" spec 'uidl) (list "uid2" spec 'uidl)))
+            (should (eq (vm-pop-net-expunge-retrieved) t))
+            ;; asked, not answered: nothing is deleted yet
+            (should-not (vm-pop-mock-deleted mock))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and vm-pop-retrieved-messages (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (equal (sort (copy-sequence (vm-pop-mock-deleted mock)) #'<)
+                           '(1 2)))
+            (should-not vm-pop-retrieved-messages))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
+(ert-deftest vm-pop-net-test-a-maildrop-that-refuses-keeps-its-messages ()
+  "A maildrop that will not delete keeps its entries, so the next expunge
+offers them again rather than forgetting messages that are still there."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
+                                    :refuse "DELE")
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-popdrop-sans-password (vm-pop-mock-spec mock)))
+          (vm-pop-server-timeout 10)
+          (vm-pop-passwords (list (list (vm-popdrop-sans-password
+                                         (vm-pop-mock-spec mock))
+                                        (vm-pop-mock-password mock))))
+          (warned nil))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-pop-retrieved-messages (list (list "uid1" spec 'uidl)))
+            (cl-letf (((symbol-function 'vm-warn)
+                       (lambda (_level _seconds &rest args)
+                         (setq warned (apply #'format args)))))
+              (should (eq (vm-pop-net-expunge-retrieved) t))
+              (let ((deadline (+ (float-time) 10)))
+                (while (and (not warned) (< (float-time) deadline))
+                  (accept-process-output nil 0.05))))
+            (should warned)
+            (should-not (vm-pop-mock-deleted mock))
+            (should (equal (length vm-pop-retrieved-messages) 1)))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
 (defun vm-pop-net-test--settle (&optional seconds)
   "Let the outstanding mail checks answer."
   (let ((deadline (+ (float-time) (or seconds 20))))

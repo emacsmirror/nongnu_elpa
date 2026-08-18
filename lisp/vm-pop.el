@@ -334,6 +334,9 @@ relevant POP servers to remove the messages."
 	(vm-global-block-new-mail t)
 	(vm-pop-ok-to-ask t)
 	popdrop uidl-alist data mp match)
+    ;; Through the driver where the maildrops allow it, as the IMAP one is: a
+    ;; session per maildrop, and Emacs held for all of them.
+    (unless (vm-pop-net-expunge-retrieved)
     (unwind-protect
 	(save-excursion
 	  (setq vm-pop-retrieved-messages
@@ -431,7 +434,7 @@ relevant POP servers to remove the messages."
 		     (if (= delete-count 1) "" "s"))))
       (and process (vm-pop-end-session process)))
     (setq vm-pop-retrieved-messages
-	  (delq nil vm-pop-retrieved-messages))))
+	  (delq nil vm-pop-retrieved-messages)))))
 
 (defun vm-pop-make-session (source interactive &optional retry)
   "Create a new POP session for the POP mail box SOURCE.
