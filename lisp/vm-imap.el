@@ -4588,9 +4588,18 @@ documentation for `vm-spool-files'."
        ;;-------------------
        (list folder))
      ))
-  (let ((vm-imap-ok-to-ask t)
-	(account (vm-imap-account-name-for-spec folder))
-	process mailbox folder-display)
+  (let* ((vm-imap-ok-to-ask t)
+	 (account (vm-imap-account-name-for-spec folder))
+	 (mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
+	 (folder-display (or (vm-imap-folder-for-spec folder)
+			     (vm-safe-imapdrop-string folder)))
+	 ;; Through the driver where the maildrop allows it: one command to a
+	 ;; server has no more business freezing Emacs than a fetch has.
+	 (sent (vm-imap-net-mailbox-command
+		folder (format "CREATE %s" (vm-imap-quote-mailbox-name mailbox))
+		"CREATE" (format "Folder %s created" folder-display)))
+	 process)
+    (unless sent
     (setq process (vm-imap-make-session folder t :purpose "create"))
     (if (null process)
 	(error "Couldn't open IMAP session for %s"
@@ -4617,7 +4626,7 @@ documentation for `vm-spool-files'."
       ;;-------------------
       (vm-buffer-type:exit)
       ;;-------------------
-      )))
+      ))))
 (defalias 'vm-imap-create-folder 'vm-create-imap-folder)
 
 ;;;###autoload
@@ -4637,9 +4646,16 @@ documentation for `vm-spool-files'."
      (let ((this-command this-command)
 	   (last-command last-command))
        (list (vm-read-imap-folder-name "Delete IMAP folder: " nil nil)))))
-  (let ((vm-imap-ok-to-ask t)
-	(account (vm-imap-account-name-for-spec folder))
-	process mailbox folder-display)
+  (let* ((vm-imap-ok-to-ask t)
+	 (account (vm-imap-account-name-for-spec folder))
+	 (mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
+	 (folder-display (or (vm-imap-folder-for-spec folder)
+			     (vm-safe-imapdrop-string folder)))
+	 (sent (vm-imap-net-mailbox-command
+		folder (format "DELETE %s" (vm-imap-quote-mailbox-name mailbox))
+		"DELETE" (format "Folder %s deleted" folder-display)))
+	 process)
+    (unless sent
     (setq process (vm-imap-make-session folder t :purpose "delete folder"))
     (if (null process)
 	(error "Couldn't open IMAP session for %s"
@@ -4667,7 +4683,7 @@ documentation for `vm-spool-files'."
       ;;-------------------
       (vm-buffer-type:exit)
       ;;-------------------
-      )))
+      ))))
 (defalias 'vm-imap-delete-folder 'vm-delete-imap-folder)
 
 ;;;###autoload
@@ -4694,9 +4710,22 @@ documentation for `vm-spool-files'."
 			       (vm-safe-imapdrop-string source)))
 		   nil t))
        (list source dest))))
-  (let ((vm-imap-ok-to-ask t)
-	(account (vm-imap-account-name-for-spec source))
-	process mailbox-source mailbox-dest)
+  (let* ((vm-imap-ok-to-ask t)
+	 (account (vm-imap-account-name-for-spec source))
+	 (mailbox-source (nth 3 (vm-imap-parse-spec-to-list source)))
+	 (mailbox-dest (nth 3 (vm-imap-parse-spec-to-list dest)))
+	 (sent (vm-imap-net-mailbox-command
+		source (format "RENAME %s %s"
+			       (vm-imap-quote-mailbox-name mailbox-source)
+			       (vm-imap-quote-mailbox-name mailbox-dest))
+		"RENAME"
+		(format "Folder %s renamed to %s"
+			(or (vm-imap-folder-for-spec source)
+			    (vm-safe-imapdrop-string source))
+			(or (vm-imap-folder-for-spec dest)
+			    (vm-safe-imapdrop-string dest)))))
+	 process)
+    (unless sent
     (setq process (vm-imap-make-session source t :purpose "rename folder"))
     (if (null process)
 	(error "Couldn't open IMAP session for %s"
@@ -4726,7 +4755,7 @@ documentation for `vm-spool-files'."
       (when (and (processp process)
 		 (memq (process-status process) '(open run)))
 	(vm-imap-end-session process))
-      )))
+      ))))
 (defalias 'vm-imap-rename-folder 'vm-rename-imap-folder)
 
 ;;;###autoload

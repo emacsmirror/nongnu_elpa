@@ -1689,6 +1689,64 @@ sent by then, and the copy is what did not arrive."
 	t)
     (vm-imap-net-unsupported nil)))
 
+(iter-defun vm-imap-net-one-command-session (user password command purpose)
+  "Log in, send COMMAND, and answer with what the server said.
+PURPOSE names the command in an error message, as elsewhere here."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(iter-yield-from (vm-imap-net-command command purpose))
+	t)
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-run-command (spec command purpose &optional may-ask done)
+  "Send COMMAND to SPEC's server without waiting, and answer whether it did.
+
+For the mailbox commands -- CREATE, DELETE, RENAME -- which are one command
+each and belong to no folder: nothing is written into a buffer here, so there
+is no folder session to queue behind.  DONE is called with t, or with the
+error, when the server has answered.
+
+Nil means the maildrop cannot be opened without waiting, and the caller is to
+send it the blocking way."
+  (condition-case nil
+      (let* ((opened (vm-imap-net-open spec (format "IMAP %s" purpose) may-ask))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(when done
+		  (funcall done (or (vm-net-session-error finished) t)))))
+	(vm-net-start session
+		      (vm-imap-net-one-command-session
+		       (nth 2 opened) (nth 3 opened) command purpose))
+	t)
+    (vm-imap-net-unsupported nil)))
+
+(defun vm-imap-net-mailbox-command (spec command purpose said)
+  "Send COMMAND to SPEC without waiting, and say SAID when it lands.
+
+What the mailbox commands share: the account's folder cache is forgotten when
+the server has done it, since it is that answer and not the asking that makes
+the cache wrong.  Answers whether the command is on its way."
+  (let ((account (vm-imap-account-name-for-spec spec)))
+    (vm-imap-net-run-command
+     spec command purpose t
+     (lambda (result)
+       (if (and (consp result) (symbolp (car result))
+		(get (car result) 'error-conditions))
+	   (vm-warn 0 2 "%s failed: %s" purpose (error-message-string result))
+	 (setq vm-imap-account-folder-cache
+	       (vm-delete (lambda (entry) (equal (car entry) account))
+			  vm-imap-account-folder-cache))
+	 (vm-inform 5 "%s" said))))))
+
+(defvar vm-imap-account-folder-cache)
+(declare-function vm-delete "vm-misc" (predicate list &optional reverse))
+
 ;;; Expunging on the server
 
 
