@@ -552,6 +552,103 @@ on regardless."
       (should (vm-attribute-modflag-of message))
       (should (equal (length vm-message-list) 2)))))
 
+(ert-deftest vm-imap-net-test-saving-sends-the-changes-without-waiting ()
+  "Saving an IMAP folder sends the flags and the expunges and returns.
+
+The blocking save also worked out what the server had expunged, which means a
+FETCH of the flags of every message in the mailbox: nineteen seconds and a
+still Emacs on a folder of six thousand, on every quit.  What it sends is what
+the reader changed; what the server did is the next fetch's business."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (vm-imap-mock-forget-commands mock)
+    (set-buffer-modified-p t)
+    (vm-save-folder)
+    ;; started, and not finished: the save did not wait for the server
+    (should (vm-imap-net-busy-p))
+    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-mock-received-p mock "STORE 1 \\+FLAGS"))
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))
+    ;; and nothing asked what the mailbox holds
+    (should-not (vm-imap-mock-received-p mock "FETCH 1:2"))))
+
+(ert-deftest vm-imap-net-test-saving-expunges-on-the-server ()
+  "The deletions a folder is holding go up in the same session as the flags."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((message (car vm-message-list)))
+      (vm-set-deleted-flag message t)
+      (vm-expunge-folder))
+    (should (equal (length vm-message-list) 1))
+    (vm-imap-mock-forget-commands mock)
+    (vm-save-folder)
+    ;; sent by a session the save did not wait for
+    (should (vm-imap-net-busy-p))
+    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-mock-received-p mock "UID STORE"))
+    (should (vm-imap-mock-received-p mock "EXPUNGE"))
+    ;; and nothing downloaded the flags of the mailbox to get there
+    (should-not (vm-imap-mock-received-p mock "FETCH 1:"))
+    ;; and the folder has stopped holding them
+    (should-not vm-imap-messages-to-expunge)))
+
+(ert-deftest vm-imap-net-test-a-save-during-a-fetch-starts-no-second-session ()
+  "Saving while a fetch is running leaves the changes for next time.
+
+Two sessions writing into one mailbox would interleave, and the blocking path
+is not the answer either: a reader who quit during a fetch of six thousand
+messages waited out a second login and a second download of every flag."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    ;; a fetch under way, not waited for, recorded as the folder's session the
+    ;; way `vm-imap-net-get-spooled-mail' records it
+    (setq vm-imap-net-session
+          (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+    (should (vm-imap-net-busy-p))
+    (let ((session vm-imap-net-session))
+      (should (eq (vm-imap-net-send-changes) 'later))
+      ;; the same session, and no other
+      (should (eq vm-imap-net-session session))
+      (should (vm-imap-net-wait nil 10)))
+    ;; and nothing was lost: the running fetch sends the folder's flags at its
+    ;; start, so this one went up in that session rather than a second
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))))
+
+(ert-deftest vm-imap-net-test-a-quit-during-the-save-loses-nothing ()
+  "The folder buffer being killed while the session runs is not an error.
+
+Quitting writes the file and kills the buffer at once; the session outlives
+it.  A message whose flags did not reach the server still has its modification
+flag in the file, so the next visit sends them again."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((folder (current-buffer))
+          (message (car vm-message-list)))
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t)
+      (vm-imap-mock-forget-commands mock)
+      (set-buffer-modified-p t)
+      (vm-save-folder)
+      (let ((session vm-imap-net-session))
+        ;; the session is still running when the buffer goes, which is what
+        ;; this is about
+        (should (vm-net-session-live-p session))
+        (set-buffer-modified-p nil)
+        (kill-buffer folder)
+        (let ((deadline (+ (float-time) 10)))
+          (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+            (accept-process-output nil 0.05)))
+        ;; it finished rather than erroring, and said what it had to say
+        (should (eq (vm-net-session-state session) 'done))))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
@@ -1011,6 +1108,44 @@ for."
   "A shell script that talks enough IMAP to be logged in to.
 Stands in for stunnel, which VM talks to over its standard input and output
 rather than over a socket: there is no port here to point a mock server at.")
+
+(ert-deftest vm-imap-net-test-a-tls-maildrop-does-not-ask-make-network-process ()
+  "An imap-ssl maildrop is connected with `open-network-stream'.
+
+`make-network-process' has no TLS: given `:type \\='tls' it answers
+\"Unsupported connection type\" and nothing is connected at all.  Every
+imap-ssl maildrop without an stunnel failed there, before a byte was sent.
+Checked by watching which of the two is called, since a test cannot make a TLS
+server to talk to."
+  (let ((asked nil)
+        (vm-stunnel-program nil)
+        (vm-imap-passwords nil))
+    (cl-letf (((symbol-function 'open-network-stream)
+               (lambda (name buffer host service &rest parameters)
+                 (setq asked (list 'open-network-stream host service
+                                   (plist-get parameters :type)
+                                   (plist-get parameters :nowait)))
+                 ;; something process-shaped to hand back, made without the
+                 ;; function this test has taken away
+                 (start-process name buffer "cat")))
+              ((symbol-function 'make-network-process)
+               (lambda (&rest _)
+                 (error "make-network-process cannot do TLS"))))
+      (let* ((spec "imap-ssl:far.example.com:993:INBOX:login:vmtest:secret")
+             (opened (vm-imap-net-open spec "tls"))
+             (session (car opened)))
+        (unwind-protect
+            (progn
+              (should (equal (nth 0 asked) 'open-network-stream))
+              (should (equal (nth 1 asked) "far.example.com"))
+              (should (equal (nth 2 asked) 993))
+              (should (eq (nth 3 asked) 'tls))
+              ;; and still without waiting for the connection
+              (should (nth 4 asked)))
+          (let ((process (vm-net-session-process session)))
+            (when (process-live-p process) (delete-process process)))
+          (let ((buffer (vm-net-session-buffer session)))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-an-stunnel-maildrop-talks-over-the-programs-pipes ()
   "An imap-ssl maildrop with `vm-stunnel-program' set runs the program and

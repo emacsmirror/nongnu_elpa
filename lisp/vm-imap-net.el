@@ -592,11 +592,22 @@ read, which is what keeps a mailbox of any size out of memory."
   "A connection to HOST at PORT, made without waiting for it to come up.
 The process is not open when this returns; the session's sentinel hears
 whether it ever will be, and its timeout covers a connect that never
-completes.  TLS is negotiated the same way, Emacs doing the handshake as the
-connection comes up."
-  (make-network-process :name name :host host :service port :buffer buffer
-			:noquery t :coding 'binary :nowait t
-			:type (if tls 'tls nil)))
+completes.
+
+TLS goes through `open-network-stream\=', which is the only thing that does
+it: `make-network-process\=' has no TLS of its own and answers `:type
+\\='tls\=' with \"Unsupported connection type\", so every imap-ssl maildrop
+without an stunnel failed there before it had sent a byte.  It takes
+`:nowait\=' too, and negotiates as the connection comes up."
+  (let ((process
+	 (if tls
+	     (open-network-stream name buffer host port
+				  :type 'tls :nowait t :coding 'binary)
+	   (make-network-process :name name :host host :service port
+				 :buffer buffer :noquery t :coding 'binary
+				 :nowait t))))
+    (set-process-query-on-exit-flag process nil)
+    process))
 
 (defun vm-imap-net-tunnelled (session name port buffer program arguments)
   "Run PROGRAM and attach SESSION to PORT once it is listening.
@@ -1172,8 +1183,9 @@ every flag is re-signalled, which leaves the message pending for a later try
 Answers t when something was sent.  The change itself is worked out in the
 folder by `vm-imap-message-flag-changes\\=', the same function the blocking
 path uses; only the sending of it is here."
-  (let* ((changes (with-current-buffer folder
-		    (vm-imap-message-flag-changes message)))
+  (let* ((changes (and (buffer-live-p folder)
+		       (with-current-buffer folder
+			 (vm-imap-message-flag-changes message))))
 	 (number (nth 0 changes))
 	 (cached-flags (nth 1 changes))
 	 (flags+ (nth 2 changes))
@@ -1188,8 +1200,12 @@ path uses; only the sending of it is here."
 	(dolist (flag (iter-yield-from
 		       (vm-imap-net-store-flags "-" number flags-)))
 	  (delete flag cached-flags)))
-      (with-current-buffer folder
-	(vm-set-attribute-modflag-of message nil))
+      ;; the folder may have been quit while this session ran: the file is
+      ;; written by then and still says the flags are unsent, which costs one
+      ;; STORE of flags the server already has the next time it is visited
+      (when (buffer-live-p folder)
+	(with-current-buffer folder
+	  (vm-set-attribute-modflag-of message nil)))
       t)))
 
 (iter-defun vm-imap-net-save-flags (folder)
@@ -1197,12 +1213,14 @@ path uses; only the sending of it is here."
 Answers with how many were sent.  A message the server refuses is counted as
 an error and left with its modification flag set, so the next synchronisation
 tries it again, and the rest are still sent."
-  (let ((messages (with-current-buffer folder
-		    (seq-filter (lambda (message)
-				  (and (vm-attribute-modflag-of message)
-				       (equal (vm-imap-uid-validity-of message)
-					      (vm-folder-imap-uid-validity))))
-				vm-message-list)))
+  (let ((messages (and (buffer-live-p folder)
+		       (with-current-buffer folder
+			 (seq-filter
+			  (lambda (message)
+			    (and (vm-attribute-modflag-of message)
+				 (equal (vm-imap-uid-validity-of message)
+					(vm-folder-imap-uid-validity))))
+			  vm-message-list))))
 	(saved 0)
 	(errors 0))
     (dolist (message messages)
@@ -1215,7 +1233,8 @@ tries it again, and the rest are still sent."
 	  (setq errors (1+ errors)))))
     (when (> errors 0)
       (vm-warn 1 2 "%s: %d message%s whose flags the server would not take"
-	       (buffer-name folder) errors (if (= errors 1) "" "s")))
+	       (if (buffer-live-p folder) (buffer-name folder) "folder")
+	       errors (if (= errors 1) "" "s")))
     saved))
 
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
@@ -1570,6 +1589,80 @@ blocking way."
 			  (vm-imap-net-save-attributes-session
 			   folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
 	    (setq vm-imap-net-session session)
+	    t)
+	(vm-imap-net-unsupported
+	 (vm-imap-net-say-why-not folder reason)
+	 nil))))))
+
+(iter-defun vm-imap-net-send-changes-session (folder user password mailbox uids)
+  "Log in, select MAILBOX, send FOLDER's changed flags and expunge UIDS.
+The two in one session, and in that order: a message whose flags have changed
+and which is also being deleted should go up with the flags it had."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(iter-yield-from (vm-imap-net-select mailbox))
+	(iter-yield-from (vm-imap-net-save-flags folder))
+	(when uids
+	  (iter-yield-from (vm-imap-net-expunge uids))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-send-changes ()
+  "Start sending what this folder owes its server, and answer with whether it
+did.  Nil means the caller is to do it the blocking way.
+
+What a save owes the server is what the reader changed: the flags of the
+messages whose attributes moved, and the deletions the folder has been asked
+to make.  Not the other direction -- what the server has expunged is worked
+out by downloading the flags of every message in the mailbox, which on a
+folder of six thousand took nineteen seconds with Emacs held still, and the
+next fetch or `vm-imap-synchronize\=' works it out anyway.
+
+The session outlives the folder buffer, which a quit kills as soon as the file
+is written.  Nothing is lost by that: a message whose flags did not reach the
+server still has its modification flag in the file, so the next session sends
+them again.
+
+Answers `later\=' when a session is already running.  That is not a nil: two
+sessions writing to one mailbox would interleave, and the blocking path the
+caller would fall back to is the wait this is here to remove.  The changes
+keep their modification flags and go up next time."
+  (let ((folder (current-buffer)))
+    (cond
+     ((vm-imap-net-busy-p)
+      (vm-inform 6 "%s: a session is running; these changes go up next time"
+		 (buffer-name folder))
+      'later)
+     (t
+      (condition-case reason
+	  (let* ((uids (vm-imap-net-uids-to-expunge
+			(vm-folder-imap-uid-validity)))
+		 (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
+					   "IMAP save" 'may-ask))
+		 (session (car opened))
+		 (buffer (vm-net-session-buffer session))
+		 (name (buffer-name folder)))
+	    (setf (vm-net-session-finished session)
+		  (lambda (finished)
+		    (let ((process (vm-net-session-process finished)))
+		      (when (process-live-p process) (delete-process process)))
+		    (when (buffer-live-p buffer) (kill-buffer buffer))
+		    (cond ((vm-net-session-error finished)
+			   (vm-warn 0 2 "%s: %s" name
+				    (error-message-string
+				     (vm-net-session-error finished))))
+			  (t
+			   (when (and uids (buffer-live-p folder))
+			     (with-current-buffer folder
+			       (vm-imap-net-note-expunged uids)))
+			   (vm-inform 6 "%s: changes sent to the server" name)))))
+	    (vm-net-start session
+			  (vm-imap-net-send-changes-session
+			   folder (nth 2 opened) (nth 3 opened) (nth 1 opened)
+			   uids))
+	    (setq vm-imap-net-session session)
+	    (vm-inform 6 "%s: sending this folder's changes without waiting"
+		       (buffer-name folder))
 	    t)
 	(vm-imap-net-unsupported
 	 (vm-imap-net-say-why-not folder reason)

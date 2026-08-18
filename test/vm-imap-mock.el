@@ -132,6 +132,12 @@ would be indistinguishable from the copy having gone somewhere it should not."
   "Every command line MOCK received, tags and all, in order."
   (vm-imap-mock-log mock))
 
+(defun vm-imap-mock-forget-commands (mock)
+  "Forget what MOCK has received, so what follows is asked about on its own.
+For a test that has already done something over the wire -- a visit, a fetch
+-- and asks what the next operation sent."
+  (setf (vm-imap-mock-log mock) nil))
+
 (defun vm-imap-mock-received-p (mock regexp)
   "Whether MOCK received a command matching REGEXP."
   (cl-some (lambda (line) (string-match-p regexp line))

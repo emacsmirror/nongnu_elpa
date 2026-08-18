@@ -227,23 +227,39 @@ Called by the filter for every chunk, and by the timeout."
   "Give INPUT to SESSION's generator and record what it asks for next.
 The generator returning ends the session; so does an error out of it, which
 is kept rather than signalled -- there is no caller left to signal to, the
-stack that started the session having gone."
-  (vm-net--cancel-timeout session)
-  (let ((iterator (vm-net-session-iterator session))
-	(buffer (vm-net-session-buffer session)))
-    (condition-case err
-	(let ((request (if (buffer-live-p buffer)
-			   (with-current-buffer buffer
-			     (iter-next iterator input))
-			 (iter-next iterator input))))
-	  (setf (vm-net-session-request session) request)
-	  (vm-net--arm-timeout session))
-      (iter-end-of-sequence
-       (setf (vm-net-session-value session) (cdr err))
-       (vm-net--finish session 'done))
-      (error
-       (setf (vm-net-session-error session) err)
-       (vm-net--finish session 'failed)))))
+stack that started the session having gone.
+
+Carries on for as long as what the generator asks for is already there.  The
+filter polls with the request the generator had when the chunk arrived, so
+anything that turned up while the generator was running is unasked about, and
+a session whose whole answer arrived in that window waited for a chunk that
+was never coming: three responses complete in the buffer and a POP fetch
+stopped dead, until something else happened to poll it."
+  (let ((buffer (vm-net-session-buffer session))
+	(again t))
+    (while again
+      (setq again nil)
+      (vm-net--cancel-timeout session)
+      (let ((iterator (vm-net-session-iterator session)))
+	(condition-case err
+	    (let ((request (if (buffer-live-p buffer)
+			       (with-current-buffer buffer
+				 (iter-next iterator input))
+			     (iter-next iterator input))))
+	      (setf (vm-net-session-request session) request)
+	      (vm-net--arm-timeout session)
+	      (setq input nil)
+	      (setq again (and request
+			       (vm-net-session-live-p session)
+			       (buffer-live-p buffer)
+			       (with-current-buffer buffer
+				 (and (funcall request) t)))))
+	  (iter-end-of-sequence
+	   (setf (vm-net-session-value session) (cdr err))
+	   (vm-net--finish session 'done))
+	  (error
+	   (setf (vm-net-session-error session) err)
+	   (vm-net--finish session 'failed)))))))
 
 (defun vm-net--arm-timeout (session)
   "Start SESSION's timeout, if it has one, for the read it is now waiting on."

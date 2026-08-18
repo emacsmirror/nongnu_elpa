@@ -485,6 +485,34 @@ kill and the pipe's buffer, and stunnel or ssh stayed running."
     (should finished)
     (kill-buffer (vm-net-session-buffer session))))
 
+(iter-defun vm-net-test--answer-arrives-while-running ()
+  "Read a line, then read what turned up while this was running.
+
+The second line is put in the buffer by the generator itself, which is what a
+chunk arriving mid-resume amounts to: the filter has already polled, and it
+polled with the request this one is about to replace."
+  (while (not (save-excursion (goto-char (point-min))
+                              (re-search-forward "\n" nil t)))
+    (iter-yield (vm-net-request-growth)))
+  (save-excursion (goto-char (point-max)) (insert "second\n"))
+  (iter-yield (vm-net-request-match "second" (point-min)))
+  'both)
+
+(ert-deftest vm-net-test-what-arrived-while-running-is-not-waited-for ()
+  "A request that is already satisfied when the generator yields it resumes
+at once, rather than waiting for a chunk that has been and gone.
+
+Found as a POP fetch that stopped with its whole answer in the buffer -- the
+UIDL and LIST responses complete, the session waiting -- and finished the
+moment anything polled it."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test" :timeout 5)))
+      (vm-net-start session (vm-net-test--answer-arrives-while-running))
+      (process-send-string process "hello\n")
+      (should (eq (vm-net-test--wait session 2) 'done))
+      (should (eq (vm-net-session-value session) 'both)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here
