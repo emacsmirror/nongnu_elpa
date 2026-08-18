@@ -242,9 +242,10 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--external-help (id _module)
   "Load chicken doc for ID into a buffer."
   (let* ((version (geiser-chicken--version (geiser-chicken--binary)))
-	 (major-version (car (split-string version "\\\."))))
-    (browse-url (format "http://api.call-cc.org/%s/cdoc?q=%s&query-name=Look+up"
-                        major-version id))))
+         ;; C4 documentation is no longer available online.
+         (cdoc (if (version< version "6.0.0") "cdoc5" "cdoc")))
+    (browse-url (format "http://api.call-cc.org/%s?q=%s&query-name=Look+up"
+                        cdoc (url-hexify-string (symbol-name id))))))
 
 
 ;;; Keywords and syntax
@@ -333,16 +334,17 @@ This function uses `geiser-chicken-init-file' if it exists."
                      suppression-prefix source target suppression-postfix)))))
       (geiser-eval--send/wait load-sequence))))
 
-(defun geiser-chicken5-load ()
-  "Load Geiser support code in Chicken 5."
-  (let* ((source (expand-file-name "geiser/chicken5.scm"
+(defun geiser-chicken-load (ver)
+  "Load Geiser support code in Chicken VER."
+  (let* ((source (expand-file-name (format "geiser/chicken%d.scm" ver)
                                    geiser-chicken-scheme-dir))
+         (buffer (format " *geiser-chicken%d-load*" ver))
          (contents (with-current-buffer
-                       (get-buffer-create " *geiser-chicken5-load*" t)
+                       (get-buffer-create buffer t)
                      (insert-file-contents-literally source)
                      (prog1
                          (buffer-string)
-                       (kill-buffer " *geiser-chicken5-load*")))))
+                       (kill-buffer buffer)))))
     (geiser-eval--send/wait
      (format
       "(display '((result . t) (output . f))) %s"
@@ -351,10 +353,13 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--startup (_remote)
   "Startup function."
   (compilation-setup t)
-  (cond
-   ((version< (geiser-chicken--version geiser-chicken-binary) "5.0.0")
-    (geiser-chicken4--compile-or-load t))
-   (t (geiser-chicken5-load))))
+  (let ((version (geiser-chicken--version geiser-chicken-binary)))
+    (cond
+     ((version< version "5.0.0")
+      (geiser-chicken4--compile-or-load t))
+     ((version< version "6.0.0")
+      (geiser-chicken-load 5))
+     (t (geiser-chicken-load 6)))))
 
 
 ;;; Implementation definition:
