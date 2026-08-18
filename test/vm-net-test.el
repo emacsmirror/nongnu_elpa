@@ -513,6 +513,52 @@ moment anything polled it."
       (should (eq (vm-net-test--wait session 2) 'done))
       (should (eq (vm-net-session-value session) 'both)))))
 
+(ert-deftest vm-net-test-one-watchdog-watches-every-deadline ()
+  "A session waiting on a read is failed by the watchdog, not by a timer of
+its own.
+
+emacs-vm/vm#717: a session was seen 8.8 seconds into a three-second timeout,
+still running, with its own timer sitting unrun in `timer-list'.  A lost timer
+took away the only thing that would ever have reported the stall.  One timer
+serves every waiting session and is armed only while one is waiting, so what a
+lost tick costs is a quarter of a second."
+  (vm-net-test--with-server (port (lambda (&rest _) nil))
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test"
+                                    :timeout 0.3)))
+      (vm-net-start session (vm-net-test--read-line))
+      ;; waiting, watched, and one timer for it
+      (should (memq session vm-net--waiting))
+      (should vm-net--watchdog)
+      (should (eq (vm-net-test--wait session 5) 'failed))
+      (should (string-match-p "timed out"
+                              (error-message-string
+                               (vm-net-session-error session))))
+      ;; and nothing left running once nothing is waiting
+      (should-not vm-net--waiting)
+      (should-not vm-net--watchdog))))
+
+(ert-deftest vm-net-test-a-session-times-out-with-its-timer-taken-away ()
+  "Even with no timer to fire, a stalled read is reported.
+The failure in emacs-vm/vm#717 was exactly this: whatever was to fire did not."
+  (vm-net-test--with-server (port (lambda (&rest _) nil))
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test"
+                                    :timeout 0.2)))
+      (vm-net-start session (vm-net-test--read-line))
+      ;; the watchdog is taken away as a lost timer would take it, and the
+      ;; deadline is still there to be noticed the next time anything looks
+      (cancel-timer vm-net--watchdog)
+      (setq vm-net--watchdog nil)
+      (let ((deadline (+ (float-time) 2)))
+        (while (and (vm-net-session-live-p session) (< (float-time) deadline))
+          (accept-process-output nil 0.05)
+          (vm-net--watch)))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (string-match-p "timed out"
+                              (error-message-string
+                               (vm-net-session-error session)))))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

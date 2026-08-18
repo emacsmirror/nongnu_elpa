@@ -73,7 +73,7 @@
   buffer				; its process buffer
   name					; for messages: "imap", "pop"
   timeout				; seconds to wait for input, or nil
-  timeout-timer				; the timer enforcing that
+  deadline				; when the read it is waiting on runs out
   iterator				; the generator doing the work
   request				; what it last asked to wait for
   (state 'new)				; new, running, done or failed
@@ -261,18 +261,58 @@ stopped dead, until something else happened to poll it."
 	   (setf (vm-net-session-error session) err)
 	   (vm-net--finish session 'failed)))))))
 
+(defvar vm-net--waiting nil
+  "The sessions that have a read outstanding, and so a deadline to enforce.")
+
+(defvar vm-net--watchdog nil
+  "The one timer that fails a session whose read has run out of time.
+
+One for all of them, rather than a timer armed and cancelled per session per
+read.  A session was seen waiting 8.8 seconds on a three-second timeout with
+its own timer sitting in `timer-list\=' unrun (emacs-vm/vm#717): a lost timer
+took away the only thing that would ever have reported the stall, and a
+generator waiting for input that cannot arrive waits for ever.  This one is
+armed while any session is waiting and cancelled when none is, so a lost tick
+costs a quarter of a second rather than a session.")
+
+(defconst vm-net--watchdog-interval 0.25
+  "How often the watchdog looks at the deadlines.")
+
 (defun vm-net--arm-timeout (session)
-  "Start SESSION's timeout, if it has one, for the read it is now waiting on."
+  "Note when SESSION's outstanding read runs out of time, and watch for it."
   (let ((seconds (vm-net-session-timeout session)))
     (when (and seconds (> seconds 0) (vm-net-session-live-p session))
-      (setf (vm-net-session-timeout-timer session)
-	    (run-at-time seconds nil #'vm-net--timed-out session)))))
+      (setf (vm-net-session-deadline session) (+ (float-time) seconds))
+      (unless (memq session vm-net--waiting)
+	(push session vm-net--waiting))
+      ;; `timer-list' and not merely the variable: a cancelled or forgotten
+      ;; timer still sitting in the variable would leave every waiting session
+      ;; unwatched, which is the fault this watchdog is here for.  The test
+      ;; harness restores VM's variables between tests and put a dead timer
+      ;; back this way, and the session that then stalled waited out its whole
+      ;; test rather than timing out.
+      (unless (and vm-net--watchdog (memq vm-net--watchdog timer-list))
+	(setq vm-net--watchdog
+	      (run-at-time vm-net--watchdog-interval vm-net--watchdog-interval
+			   #'vm-net--watch))))))
 
 (defun vm-net--cancel-timeout (session)
-  (let ((timer (vm-net-session-timeout-timer session)))
-    (when timer
-      (cancel-timer timer)
-      (setf (vm-net-session-timeout-timer session) nil))))
+  "Stop watching SESSION's deadline."
+  (setf (vm-net-session-deadline session) nil)
+  (setq vm-net--waiting (delq session vm-net--waiting))
+  (when (and vm-net--watchdog (null vm-net--waiting))
+    (cancel-timer vm-net--watchdog)
+    (setq vm-net--watchdog nil)))
+
+(defun vm-net--watch ()
+  "Fail every session whose outstanding read has run out of time."
+  (let ((now (float-time)))
+    (dolist (session (copy-sequence vm-net--waiting))
+      (cond ((not (vm-net-session-live-p session))
+	     (vm-net--cancel-timeout session))
+	    ((and (vm-net-session-deadline session)
+		  (> now (vm-net-session-deadline session)))
+	     (vm-net--timed-out session))))))
 
 (defun vm-net--timed-out (session)
   "End SESSION: the server said nothing for long enough."
