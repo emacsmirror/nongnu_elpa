@@ -241,6 +241,7 @@ extract_exact_unibyte(emacs_env *env, emacs_value arg, uint8_t *buf,
 static void
 free_store(void *ptr)
 {
+    skipped_clear(ptr, sizeof(struct omemoStore));
     free(ptr);
 }
 
@@ -322,12 +323,15 @@ F_setup_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     size_t sz = omemoGetSerializedStoreSize(&store);
     uint8_t *buf = malloc(sz);
     if (!buf) {
+        skipped_clear(&store, sizeof store);
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
     omemoSerializeStore(buf, &store);
 
     emacs_value result = make_unibyte(env, buf, sz);
+    skipped_clear(buf, sz);
+    skipped_clear(&store, sizeof store);
     free(buf);
     return result;
 }
@@ -353,6 +357,7 @@ F_deserialize_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     }
     env->copy_string_contents(env, args[0], (char *)blob, &bloblen);
     if (env->non_local_exit_check(env)) {
+        skipped_clear(blob, (size_t)bloblen);
         free(blob);
         return Qnil_v;
     }
@@ -361,14 +366,17 @@ F_deserialize_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     struct omemoStore *store = calloc(1, sizeof(*store));
     if (!store) {
+        skipped_clear(blob, datalen);
         free(blob);
         signal_error(env, -1, "calloc failed");
         return Qnil_v;
     }
 
     int rc = omemoDeserializeStore(blob, datalen, store);
+    skipped_clear(blob, datalen);
     free(blob);
     if (rc) {
+        skipped_clear(store, sizeof *store);
         free(store);
         signal_error(env, rc, "omemoDeserializeStore failed");
         return Qnil_v;
@@ -398,6 +406,7 @@ F_serialize_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     omemoSerializeStore(buf, store);
 
     emacs_value result = make_unibyte(env, buf, sz);
+    skipped_clear(buf, sz);
     free(buf);
     return result;
 }

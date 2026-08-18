@@ -33,16 +33,24 @@ int omemoDriverHmac(const omemoKey k, const uint8_t *in, size_t ilen, uint8_t ou
 
 
 int omemoDriverAesEncrypt(omemoKey k, size_t n, uint8_t iv[static 16], const uint8_t *s, uint8_t *d) {
+  int r;
   mbedtls_aes_context aes;
-  TRY(mbedtls_aes_setkey_enc(&aes, k, 256));
-  TRY(mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, n, iv, s, d));
+  mbedtls_aes_init(&aes);
+  if (!(r = mbedtls_aes_setkey_enc(&aes, k, 256)))
+    r = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, n, iv, s, d);
+  mbedtls_aes_free(&aes);
+  TRY(r);
   return 0;
 }
 
 int omemoDriverAesDecrypt(omemoKey k, size_t n, uint8_t iv[static 16], const uint8_t *s, uint8_t *d) {
+  int r;
   mbedtls_aes_context aes;
-  TRY(mbedtls_aes_setkey_dec(&aes, k, 256));
-  TRY(mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, n, iv, s, d));
+  mbedtls_aes_init(&aes);
+  if (!(r = mbedtls_aes_setkey_dec(&aes, k, 256)))
+    r = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, n, iv, s, d);
+  mbedtls_aes_free(&aes);
+  TRY(r);
   return 0;
 }
 
