@@ -1922,6 +1922,59 @@ to be rewritten while another is being answered for."
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
+(iter-defun vm-imap-net-names-session (user password selectable-only)
+  "Log in and answer with the account's mailbox names."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(iter-yield-from (vm-imap-net-mailbox-list selectable-only)))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-mailbox-names (spec &optional selectable-only seconds)
+  "The mailbox names of SPEC's account, or nil if the driver cannot ask.
+
+This one waits, up to SECONDS, and says so: it is what completion is built
+on, and completion has to answer with the names it has.  What it does not do
+is open a second connection or run the blocking implementation -- the session
+is the driver's, and the wait is `accept-process-output\=', so C-g still
+works.
+
+SELECTABLE-ONLY leaves out the names the server marks \\Noselect."
+  (let ((names nil)
+	(answered nil))
+    (when (vm-imap-net-list-names spec selectable-only
+				  (lambda (result)
+				    (setq answered t)
+				    (unless (and (consp result)
+						 (symbolp (car result))
+						 (get (car result)
+						      'error-conditions))
+				      (setq names result))))
+      (let ((deadline (+ (float-time) (or seconds 30))))
+	(while (and (not answered) (< (float-time) deadline))
+	  (accept-process-output nil 0.05))))
+    names))
+
+(defun vm-imap-net-list-names (spec selectable-only callback)
+  "Ask SPEC's server for its mailbox names and tell CALLBACK, without waiting.
+Answers whether the asking started."
+  (condition-case nil
+      (let* ((opened (vm-imap-net-open spec "IMAP names" t))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))
+	(vm-net-start session
+		      (vm-imap-net-names-session (nth 2 opened) (nth 3 opened)
+						 selectable-only))
+	t)
+    (vm-imap-net-unsupported nil)))
+
 (iter-defun vm-imap-net-one-command-session (user password command purpose)
   "Log in, send COMMAND, and answer with what the server said.
 PURPOSE names the command in an error message, as elsewhere here."

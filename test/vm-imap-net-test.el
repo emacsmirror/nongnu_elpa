@@ -967,6 +967,38 @@ mailbox is examined rather than selected: asking is not reading."
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (kill-buffer buffer))))))))
 
+(ert-deftest vm-imap-net-test-completion-gets-its-names-from-the-driver ()
+  "The names completion needs come back on a session of the driver's.
+
+Completion has to answer with the names it has, so this is the one path that
+waits on purpose.  What it must not do is open a connection of its own through
+the blocking implementation."
+  (vm-imap-mock-with (mock)
+    (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--alice)
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (blocking nil)
+           (before (buffer-list)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-imap-make-session)
+                     (lambda (&rest _) (setq blocking t) nil)))
+            (let ((names (vm-imap-net-mailbox-names spec nil 10)))
+              (should (equal (sort names #'string-lessp) '("Archive" "INBOX")))
+              (should-not blocking)))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-completion-answers-nothing-when-it-cannot-ask ()
+  "A maildrop the driver cannot open answers with no names, so completion
+still has the blocking path to fall back on."
+  (let ((vm-imap-passwords nil)
+        (auth-sources nil))
+    (should-not (vm-imap-net-mailbox-names
+                 "imap:host:143:INBOX:login:someone:*" nil 1))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
