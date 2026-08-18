@@ -650,6 +650,28 @@ backends, and the cache can hold a `*\=' that means nothing yet."
 	 (not (equal password "*"))
 	 password)))
 
+(defvar vm-imap-net-said-it-is-uncompiled nil
+  "Whether the notice about running from source has been given.")
+
+(defun vm-imap-net-check-compiled ()
+  "Say once that this file is not compiled, if it is not.
+
+Generators are expensive to run interpreted: every call rebuilds its closure
+through `cconv-make-interpreted-closure\=', and the reader is called once per
+token.  Measured on a mock server, fetching a thousand messages takes 0.8
+seconds compiled and three minutes from source, with Emacs held for tens of
+seconds at a time -- which looks exactly like the blocking implementation this
+replaces.  A reader testing an uncompiled tree would draw the wrong
+conclusion, so VM says so rather than being slow silently."
+  (unless (or vm-imap-net-said-it-is-uncompiled
+	      (let ((reader (symbol-function 'vm-imap-net-read-object)))
+		(or (byte-code-function-p reader)
+		    (and (fboundp 'subr-native-elisp-p)
+			 (subr-native-elisp-p reader)))))
+    (setq vm-imap-net-said-it-is-uncompiled t)
+    (vm-warn 1 2 (concat "VM is running from source: asynchronous mail will be"
+			 " very slow until lisp/ is byte-compiled"))))
+
 (defun vm-imap-net-open (source name &optional may-ask)
   "Open a connection for the IMAP maildrop SOURCE and answer with a session.
 
@@ -678,6 +700,7 @@ from inside a filter."
 	 (user (nth 5 parts))
 	 (password (nth 6 parts))
 	 (preauth (equal auth "preauth")))
+    (vm-imap-net-check-compiled)
     (unless (member protocol '("imap" "imap-ssl" "imap-ssh"))
       (signal 'vm-imap-net-unsupported (list protocol source)))
     (unless (or preauth (equal auth "login"))

@@ -2062,6 +2062,37 @@ is that big."
       (iter-yield-from (vm-imap-net-read-response))
       (setq i (1+ i)))))
 
+(ert-deftest vm-imap-net-test-running-from-source-is-said-once ()
+  "An uncompiled VM says so, once, rather than being slow silently.
+
+Interpreted generators rebuild their closures on every call: a thousand
+messages that take 0.8 seconds compiled take three minutes from source, in
+pauses of tens of seconds.  A reader testing that would conclude the
+asynchronous path blocks."
+  (let ((vm-imap-net-said-it-is-uncompiled nil)
+        (vm-verbosity 5)
+        (vm-verbal-time 0)
+        (said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _seconds &rest args)
+                 (push (apply #'format args) said)))
+              ((symbol-function 'vm-imap-net-read-object)
+               ;; an interpreted closure, which is what loading from source
+               ;; leaves behind
+               (eval '(lambda () nil) t)))
+      (vm-imap-net-check-compiled)
+      (vm-imap-net-check-compiled)
+      (should (equal (length said) 1))
+      (should (string-match-p "byte-compiled" (car said))))
+    ;; and nothing to say when it is compiled
+    (let ((vm-imap-net-said-it-is-uncompiled nil)
+          (quiet nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (&rest _) (setq quiet 'spoke))))
+        (vm-imap-net-check-compiled)
+        (when (byte-code-function-p (symbol-function 'vm-imap-net-read-object))
+          (should-not quiet))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
