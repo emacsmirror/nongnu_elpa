@@ -830,6 +830,9 @@ on all the relevant IMAP servers and then immediately expunges."
 	(did-delete nil)
 	msg-count can-delete read-write uid-validity
 	select-response source-list folder uid-alist mailbox data mp match)
+    ;; Through the driver where the maildrops allow it: this is a session and
+    ;; an expunge per maildrop, and it held Emacs for all of them.
+    (unless (vm-imap-net-expunge-retrieved)
     (unwind-protect
 	(save-excursion			; save-current-buffer?
 	  ;;------------------------
@@ -974,7 +977,45 @@ on all the relevant IMAP servers and then immediately expunges."
     (unless trouble 
       (setq vm-imap-retrieved-messages nil)
       (when (> delete-count 0)
-	(vm-mark-folder-modified-p (current-buffer))))))
+	(vm-mark-folder-modified-p (current-buffer)))))))
+
+(defun vm-imap-net-expunge-retrieved ()
+  "Delete on their servers the messages this folder has retrieved, without
+waiting for any of it.  Answers whether it started.
+
+The folder forgets each maildrop's messages as that maildrop answers for
+them, so an expunge that fails half way through leaves the rest to be offered
+again rather than forgetting what was never deleted."
+  (let ((folder (current-buffer))
+	(groups nil))
+    (dolist (entry vm-imap-retrieved-messages)
+      (let* ((source (nth 2 entry))
+	     (group (assoc source groups)))
+	(if group
+	    (setcdr group (cons (car entry) (cdr group)))
+	  (push (list source (car entry)) groups))))
+    (setq groups (nreverse groups))
+    (and groups
+	 (vm-imap-net-expunge-maildrops
+	  groups folder
+	  (lambda (source validity deleted)
+	    (setq vm-imap-retrieved-messages
+		  (seq-remove (lambda (entry)
+				(and (equal (nth 2 entry) source)
+				     (equal (nth 1 entry) validity)
+				     (member (car entry) deleted)))
+			      vm-imap-retrieved-messages))
+	    (when deleted
+	      (vm-mark-folder-modified-p folder))
+	    (vm-inform 6 "%s: %d message%s expunged"
+		       (or (vm-imap-folder-for-spec source)
+			   (vm-safe-imapdrop-string source))
+		       (length deleted) (if (= (length deleted) 1) "" "s")))
+	  (lambda (trouble)
+	    (if trouble
+		(vm-warn 1 2 "Expunged what could be; trouble with %s"
+			 (mapconcat #'identity (reverse trouble) ", "))
+	      (vm-inform 5 "Retrieved messages expunged on the server")))))))
 
 ;;;###autoload
 (defun vm-prune-imap-retrieved-list (source)
@@ -999,12 +1040,34 @@ should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
   (vm-buffer-type:set 'folder)
   ;;--------------------------
   (let* ((imapdrop (vm-imapdrop-sans-password source))
-	 (process (vm-imap-make-session 
-		   imapdrop nil :folder-buffer (current-buffer)
-		   :purpose "list"))
+	 (folder (current-buffer))
 	 (uid-obarray (make-vector 67 0))
+	 (process nil)
 	 mailbox select mailbox-count uid-validity
 	 list retrieved-count pruned-count)
+    ;; Through the driver where the maildrop allows it: what this asks for is
+    ;; the UID of every message in the mailbox, which is the same round trip a
+    ;; synchronisation makes and was just as frozen.
+    ;;
+    ;; The name is taken now: what the callback closes over is the variable
+    ;; and not its value, and a callback that read `source' after this
+    ;; function had finished with it was handed a nil to print.
+    (let* ((name (vm-safe-imapdrop-string source))
+	   (asked (vm-imap-net-mailbox-uids
+		   source
+		   (lambda (result)
+		     (if (and (consp result) (symbolp (car result))
+			      (get (car result) 'error-conditions))
+			 (vm-warn 0 2 "Could not prune %s: %s" name
+				  (error-message-string result))
+		       (when (buffer-live-p folder)
+			 (with-current-buffer folder
+			   (vm-imap-prune-retrieved-with
+			    (car result) (cadr result) imapdrop))))))))
+      (when asked
+	(vm-inform 5 "Asking %s which messages it still has..." name)
+	(setq source nil)))
+    (when source
     (unwind-protect
 	(with-current-buffer (process-buffer process)
 	  ;;-----------------------------
@@ -1037,9 +1100,35 @@ should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
       (vm-mark-folder-modified-p)
       (vm-update-summary-and-mode-line)
       (vm-inform 5 "%d message%s pruned" 
-	       pruned-count (if (= pruned-count 1) "" "s")))
+	       pruned-count (if (= pruned-count 1) "" "s"))))
     ))
-    
+
+(defun vm-imap-prune-retrieved-with (uid-validity uids imapdrop)
+  "Prune this folder's retrieval list to the UIDS the mailbox still has.
+
+UID-VALIDITY is the mailbox's, IMAPDROP names it without its password.  Split
+out of `vm-prune-imap-retrieved-list\=' so that the pruning can be done when
+the answer arrives rather than only when it was waited for."
+  (let ((there (make-vector 67 0))
+	(retrieved-count (length vm-imap-retrieved-messages))
+	pruned-count)
+    (dolist (uid uids)
+      (set (intern uid there) t))
+    (setq vm-imap-retrieved-messages
+	  (vm-imap-prune-retrieval-entries
+	   imapdrop vm-imap-retrieved-messages
+	   (lambda (tuple)
+	     (and (equal (nth 1 tuple) uid-validity)
+		  (intern-soft (car tuple) there)))))
+    (setq pruned-count (- retrieved-count (length vm-imap-retrieved-messages)))
+    (if (= pruned-count 0)
+	(vm-inform 5 "No messages to be pruned")
+      (vm-mark-folder-modified-p)
+      (vm-update-summary-and-mode-line)
+      (vm-inform 5 "%d message%s pruned"
+		 pruned-count (if (= pruned-count 1) "" "s")))
+    pruned-count))
+
 (defun vm-imap-prune-retrieval-entries (source retrieved pred)
   "Prune RETRIEVED (a copy of `vm-imap-retrieved-messages') by
 keeping only those messages from SOURCE that satisfy PRED.
