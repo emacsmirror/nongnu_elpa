@@ -1781,6 +1781,147 @@ slowest thing VM asks a server for and the one worst spent frozen."
 	t)
     (vm-imap-net-unsupported nil)))
 
+(iter-defun vm-imap-net-uids-session (user password mailbox)
+  "Log in, EXAMINE MAILBOX, and answer with (UID-VALIDITY UIDS).
+Examined and not selected: asking what a mailbox holds is not a reason to
+mark anything seen."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
+	       (count (nth 0 select))
+	       (validity (nth 2 select))
+	       (data (if (zerop count)
+			 nil
+		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
+	  (list validity (mapcar #'cadr data))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-mailbox-uids (source callback)
+  "Ask SOURCE which messages it holds, and tell CALLBACK (UID-VALIDITY UIDS).
+
+Answers whether the asking started; nil means the maildrop cannot be opened
+without waiting.  CALLBACK is called with the error instead when the session
+failed.  For the commands that compare what a folder remembers against what
+the mailbox still has."
+  (condition-case nil
+      (let* ((opened (vm-imap-net-open source "IMAP uids" t))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))
+	(vm-net-start session
+		      (vm-imap-net-uids-session (nth 2 opened) (nth 3 opened)
+						(nth 1 opened)))
+	t)
+    (vm-imap-net-unsupported nil)))
+
+(iter-defun vm-imap-net-maildrop-expunge-session (user password mailbox uids)
+  "Log in, select MAILBOX and delete the messages with UIDS.
+Answers (UID-VALIDITY DELETED).  A mailbox that cannot be deleted from
+signals rather than reporting that nothing was there to delete."
+  (unwind-protect
+      (progn
+	(iter-yield-from (vm-imap-net-open-session user password))
+	(let* ((select (iter-yield-from (vm-imap-net-select mailbox)))
+	       (count (nth 0 select))
+	       (validity (nth 2 select))
+	       (writable (nth 3 select))
+	       (can-delete (nth 4 select)))
+	  (unless writable
+	    (vm-imap-normal-error "mailbox %s is read-only" mailbox))
+	  (unless can-delete
+	    (vm-imap-normal-error "messages cannot be deleted in %s" mailbox))
+	  (if (zerop count)
+	      (list validity nil)
+	    (let* ((data (iter-yield-from (vm-imap-net-message-data 1 count)))
+		   (there (mapcar #'cadr data))
+		   (wanted (seq-filter (lambda (uid) (member uid there)) uids)))
+	      (when wanted
+		(iter-yield-from (vm-imap-net-expunge wanted)))
+	      (list validity wanted)))))
+    (vm-imap-net-logout)))
+
+(defun vm-imap-net-expunge-maildrop (source uids callback)
+  "Delete the messages with UIDS from the maildrop SOURCE, without waiting.
+CALLBACK is called with (UID-VALIDITY DELETED), or with the error.  Answers
+whether it started."
+  (condition-case nil
+      (let* ((opened (vm-imap-net-open source "IMAP maildrop expunge" t))
+	     (session (car opened))
+	     (buffer (vm-net-session-buffer session)))
+	(setf (vm-net-session-finished session)
+	      (lambda (finished)
+		(let ((process (vm-net-session-process finished)))
+		  (when (process-live-p process) (delete-process process)))
+		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(funcall callback (or (vm-net-session-error finished)
+				      (vm-net-session-value finished)))))
+	(vm-net-start session
+		      (vm-imap-net-maildrop-expunge-session
+		       (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
+	(vm-imap-net-take-session session)
+	t)
+    (vm-imap-net-unsupported nil)))
+
+(defun vm-imap-net-expunge-maildrops (groups folder each done)
+  "Work through GROUPS, one maildrop at a time, deleting what each names.
+
+GROUPS is (SOURCE . UIDS) per maildrop.  EACH is called in FOLDER with the
+source, the UID validity and the UIDs deleted, as each maildrop answers, so
+that the folder forgets them then rather than at the end; DONE is called with
+the maildrops that gave trouble, newest first, when there are no more.
+
+Answers whether the first maildrop started.  Nil means the driver cannot open
+that one, and the caller is to do the lot the blocking way -- half an expunge
+on the driver and half on the blocking path is worse than either.
+
+One maildrop at a time and not all at once: they are separate servers as often
+as not, but they all write the same folder, and what it remembers of one is not
+to be rewritten while another is being answered for."
+  (let (step)
+    (setq step
+	  (lambda (rest trouble first)
+	    (cond
+	     ((null rest)
+	      (when (buffer-live-p folder)
+		(with-current-buffer folder (funcall done trouble)))
+	      t)
+	     (t
+	      (let* ((group (car rest))
+		     (source (car group))
+		     (name (or (vm-imap-folder-for-spec source)
+			       (vm-safe-imapdrop-string source))))
+		(vm-inform 6 "Expunging messages in %s..." name)
+		(cond
+		 ((vm-imap-net-expunge-maildrop
+		   source (cdr group)
+		   (lambda (result)
+		     (cond
+		      ((and (consp result) (symbolp (car result))
+			    (get (car result) 'error-conditions))
+		       (vm-warn 0 2 "%s: %s" name (error-message-string result))
+		       (funcall step (cdr rest) (cons name trouble) nil))
+		      (t
+		       (when (buffer-live-p folder)
+			 (with-current-buffer folder
+			   (funcall each source (car result) (cadr result))))
+		       (funcall step (cdr rest) trouble nil)))))
+		  t)
+		 (first
+		  ;; the caller has not started anything yet and can still do
+		  ;; the whole thing the blocking way
+		  nil)
+		 (t
+		  (vm-warn 0 2 "%s: cannot be expunged without waiting" name)
+		  (funcall step (cdr rest) (cons name trouble) nil))))))))
+    (and groups (funcall step groups nil t))))
+
 (iter-defun vm-imap-net-one-command-session (user password command purpose)
   "Log in, send COMMAND, and answer with what the server said.
 PURPOSE names the command in an error message, as elsewhere here."

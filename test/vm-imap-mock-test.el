@@ -395,11 +395,46 @@ and closes the mailbox, which is what expunges them."
     (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       (vm-expunge-imap-messages))
-    (should (equal (vm-imap-mock-messages mock "INBOX") nil))
+    ;; the expunge goes through the driver, so it lands after the command
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null (vm-imap-mock-messages mock "INBOX")))))
     (should (vm-imap-mock-received-p mock "STORE .*\\\\Deleted"))
     ;; the local folder still has them: this deletes from the server only
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
+
+(ert-deftest vm-imap-mock-test-expunging-forgets-only-what-was-deleted ()
+  "What the server deleted is forgotten and what it did not is kept.
+
+An expunge that fails half way through must leave the rest to be offered
+again rather than forgetting messages that are still on the server."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    ;; the server refuses the STORE, so nothing is deleted and nothing is
+    ;; forgotten
+    (setf (vm-imap-mock-refuse mock) "STORE")
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (let ((said (vm-imap-mock-test--warnings
+                    (vm-expunge-imap-messages)
+                    (vm-imap-mock-test--wait-until
+                     (lambda () vm-imap-mock-test--said)))))
+        (should said)))
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    ;; and with the server willing, both go and both are forgotten
+    (setf (vm-imap-mock-refuse mock) nil)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    ;; not yet: the command returned before the server was even asked, which
+    ;; is what it no longer waits for
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null (vm-imap-mock-messages mock "INBOX")))))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null vm-imap-retrieved-messages))))))
 
 (ert-deftest vm-imap-mock-test-expunging-nothing-retrieved-touches-nothing ()
   "With nothing retrieved there is nothing to delete, and the server keeps
@@ -529,7 +564,10 @@ is taken off the server behind VM's back, and the list comes back to one."
            (car (vm-imap-mock-messages mock "INBOX")))
           t)
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
-    (should (equal (length vm-imap-retrieved-messages) 1))
+    ;; the asking goes through the driver, so the pruning happens when the
+    ;; server has answered rather than before this returns
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (equal (length vm-imap-retrieved-messages) 1))))
     ;; the local messages are untouched: this prunes a memo, not the mail
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
@@ -541,6 +579,10 @@ is taken off the server behind VM's back, and the list comes back to one."
     (vm-get-new-mail)
     (vm-imap-net-wait nil 30)
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
+    ;; nothing is forgotten, before or after the answer
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (vm-imap-mock-test--wait-until
+     (lambda () (vm-imap-mock-received-p mock "LOGOUT")))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
 ;;; Making, renaming and deleting mailboxes on the server

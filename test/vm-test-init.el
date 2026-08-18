@@ -833,6 +833,16 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
     (cancel-timer vm-update-composition-buffer-name-timer)
     (setq vm-update-composition-buffer-name-timer nil)))
 
+(defun vm-test-no-reader-here (&rest _)
+  "Refuse to ask for a password, which is what batch has to do.
+
+`read-passwd' in a batch Emacs waits on standard input for ever: a test that
+reached a password prompt did not fail, it hung, and took the whole run with
+it -- an hour of a suite for one test asking a question nobody was there to
+answer.  A test that means to be asked binds this away with `cl-letf' and
+answers for itself."
+  (error "No reader here to give a password to"))
+
 (defun vm-test-run-test-isolated (run-test test)
   "Run TEST through RUN-TEST, then undo its effect on global state."
   (if (not vm-test-isolate-global-state)
@@ -840,7 +850,8 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
     (let ((state (vm-test-snapshot-global-state))
           (buffers (buffer-list)))
       (unwind-protect
-          (funcall run-test test)
+          (cl-letf (((symbol-function 'read-passwd) #'vm-test-no-reader-here))
+            (funcall run-test test))
         (vm-test-cancel-composition-timer)
         (vm-test-restore-global-state state)
         (vm-test-kill-new-buffers buffers)))))

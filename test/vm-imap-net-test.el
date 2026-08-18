@@ -937,6 +937,36 @@ listed often enough for this to matter."
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (kill-buffer buffer))))))))
 
+(ert-deftest vm-imap-net-test-asking-what-a-mailbox-holds-does-not-wait ()
+  "The UIDs a mailbox still holds arrive without Emacs waiting, and the
+mailbox is examined rather than selected: asking is not reading."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice
+                                           vm-imap-net-test--bob))
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (answer 'not-called)
+           (before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should (vm-imap-net-mailbox-uids
+                     spec (lambda (result) (setq answer result))))
+            (should (eq answer 'not-called))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (eq answer 'not-called) (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (stringp (car answer)))          ; the UIDVALIDITY
+            ;; order is the message data's, newest first; what the callers
+            ;; want is the set
+            (should (equal (sort (copy-sequence (cadr answer)) #'string-lessp)
+                           '("1" "2")))
+            (should (vm-imap-mock-received-p mock "EXAMINE"))
+            (should-not (vm-imap-mock-received-p mock "\\`vm[0-9]+ SELECT")))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
