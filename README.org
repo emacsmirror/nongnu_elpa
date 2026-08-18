@@ -8,7 +8,7 @@ This is [[https://github.com/id-Software/DOOM][DOOM]] running inside Emacs via a
 [[https://github.com/ozkl/doomgeneric][doomgeneric]] such that only a handful of functions like =DG_DrawFrame= need to be
 [[file:doomgeneric_emacs.c][implemented in C]] with some [[file:doom-game.el][Elisp code as glue]]. It uses the native Canvas API
 which is part of the Emacs 32 source tree, and also available for download as
-[[https://github.com/minad/emacs-canvas-patch][patch]] for Emacs 31. See further Canvas links below.
+[[https://github.com/minad/emacs-canvas-patch][patch]] for Emacs 31. See further links and resources related to Canvas below.
 
 #+html: <img src="https://github.com/minad/doom-on-emacs/blob/screenshots/screenshot.jpg?raw=true"/>
 
@@ -17,11 +17,9 @@ which is part of the Emacs 32 source tree, and also available for download as
 ** Prerequisites
 
 In order to run DOOM, you need an Emacs 32 with Canvas support. On Emacs 31
-first apply the Canvas patch to the Emacs source and recompile Emacs.
+first apply the [[https://github.com/minad/emacs-canvas-patch][Canvas patch]] to the Emacs source and recompile Emacs.
 
 ** Installing as package
-
-The package =doom-game= is available on ELPA
 
 Install via =M-x package-install RET doom-game RET= from [[https://elpa.nongnu.org/nongnu/doom-game.html][ELPA]]. After the
 installation, invoke =M-x doom=. You will need a WAD file which contains the game
