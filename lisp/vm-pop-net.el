@@ -309,6 +309,14 @@ output.  A maildrop whose password VM has not been told signals
 				     user host port t)
 				  (error nil))))))
       (unless (and (stringp password) (not (equal password "")))
+	;; the keys and not the passwords, as for IMAP: what this distinguishes
+	;; is a password never remembered from one remembered under a key the
+	;; check does not look under
+	(vm-inform 10 "%s: no password held under %s; VM holds %s" name
+		   (vm-popdrop-sans-password source)
+		   (if vm-pop-passwords
+		       (mapconcat #'car vm-pop-passwords ", ")
+		     "none"))
 	(signal 'vm-pop-net-unsupported
 		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
@@ -424,6 +432,30 @@ Nothing waits: this returns as soon as the connection is made."
 (defvar vm-pop-max-message-size)
 (defvar vm-pop-messages-per-session)
 
+(defun vm-pop-net-messages-to-fetch (uids sizes retrieved source)
+  "Which of UIDS are to be fetched, as (NUMBER . UID) in server order.
+
+Left out: what RETRIEVED already has from SOURCE, and what is larger than
+`vm-pop-max-message-size\='.  Cut at `vm-pop-messages-per-session\=' if that
+is set, so a maildrop with a thousand messages in it is not one session."
+  (let ((wanted nil))
+    (dolist (pair uids)
+      (let* ((number (car pair))
+	     (uid (cdr pair))
+	     (seen (assoc uid retrieved))
+	     (size (cdr (assq number sizes))))
+	(when (and (not (and seen
+			     (equal (nth 1 seen) source)
+			     (eq (nth 2 seen) 'uidl)))
+		   (or (null vm-pop-max-message-size)
+		       (null size)
+		       (<= size vm-pop-max-message-size)))
+	  (push pair wanted))))
+    (setq wanted (nreverse wanted))
+    (if vm-pop-messages-per-session
+	(seq-take wanted vm-pop-messages-per-session)
+      wanted)))
+
 (iter-defun vm-pop-net-fetch-new (user password source retrieved
 				       &optional delete)
   "Fetch the messages of this maildrop that are not in RETRIEVED.
@@ -443,31 +475,24 @@ thousand messages in it should not be one command."
       (progn
 	(iter-yield-from (vm-pop-net-greeting))
 	(iter-yield-from (vm-pop-net-authenticate user password))
-	(let ((uids (iter-yield-from (vm-pop-net-uidl)))
-	      (sizes nil)
-	      (fetched nil)
-	      (count 0))
-	  (when uids
-	    (setq sizes (iter-yield-from (vm-pop-net-sizes)))
-	    (dolist (pair uids)
-	      (let* ((number (car pair))
-		     (uid (cdr pair))
-		     (seen (assoc uid retrieved))
-		     (size (cdr (assq number sizes))))
-		(when (and (not (and seen
-				     (equal (nth 1 seen) source)
-				     (eq (nth 2 seen) 'uidl)))
-			   (or (null vm-pop-messages-per-session)
-			       (< count vm-pop-messages-per-session))
-			   (or (null vm-pop-max-message-size)
-			       (null size)
-			       (<= size vm-pop-max-message-size)))
-		  (push (cons uid (iter-yield-from
-				   (vm-pop-net-retrieve number)))
-			fetched)
-		  (setq count (1+ count))
-		  (when delete
-		    (iter-yield-from (vm-pop-net-delete number)))))))
+	(let* ((uids (iter-yield-from (vm-pop-net-uidl)))
+	       (sizes (and uids (iter-yield-from (vm-pop-net-sizes))))
+	       (wanted (vm-pop-net-messages-to-fetch uids sizes retrieved source))
+	       (total (length wanted))
+	       (fetched nil)
+	       (count 0))
+	  (dolist (pair wanted)
+	    (push (cons (cdr pair)
+			(iter-yield-from (vm-pop-net-retrieve (car pair))))
+		  fetched)
+	    (setq count (1+ count))
+	    (when delete
+	      (iter-yield-from (vm-pop-net-delete (car pair))))
+	    ;; level 5, so a fetch that takes a while looks like one that is
+	    ;; getting somewhere: nothing else says so, the reader not being
+	    ;; frozen out of Emacs while it runs
+	    (vm-inform 5 "%s: %d of %d messages retrieved"
+		       (vm-safe-popdrop-string source) count total))
 	  (nreverse fetched)))
     (let ((process (get-buffer-process (current-buffer))))
       (when (process-live-p process)

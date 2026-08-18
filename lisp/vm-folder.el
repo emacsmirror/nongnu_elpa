@@ -5016,7 +5016,13 @@ list, and say where they came from."
 			      "vm-retrieved-spooled-mail-hook. %S")
 		  errmsg)))
     (vm-assimilate-new-messages :read-attributes nil)
-    (vm-update-summary-and-mode-line)
+    ;; and one of them is made current, as `vm-get-new-mail' does after the
+    ;; blocking fetch: a folder that was empty has no current message until
+    ;; this runs, and every command that works on the current message takes
+    ;; `(car vm-message-pointer)' and gets nil
+    (if (vm-thoughtfully-select-message)
+	(vm-present-current-message)
+      (vm-update-summary-and-mode-line))
     (vm-inform 5 "Got mail from %s." safe-maildrop)
     t))
 
