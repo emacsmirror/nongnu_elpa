@@ -11,9 +11,9 @@ listing mailboxes: all of it happens while you carry on reading.  Emacs is not
 held while VM talks to a server.
 
 The mode line of the folder, its summary and its presentation says what the
-folder is doing and how much is waiting for it:
+folder is doing, how far it has got and how much is waiting for it:
 
-    VM: inbox   3 (of 412)   fetching +1 
+    VM: inbox   3 (of 412)   fetching 24/340 +1 
 
 It says what is happening rather than which protocol is doing it, in the face
 `vm-net-session-face` -- give that face a background if you want it louder.

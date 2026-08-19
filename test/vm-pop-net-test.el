@@ -875,6 +875,26 @@ nothing: that list is what stops a folder filling with duplicates."
       (accept-process-output nil 0.05))
     answer))
 
+(ert-deftest vm-pop-net-test-the-mode-line-counts-what-has-arrived ()
+  "The POP mode line says how far the fetch has got, message by message."
+  (let ((seen nil))
+    (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                   (list vm-pop-net-test--alice
+                                                         vm-pop-net-test--bob))
+      (let ((crash (nth 2 (car vm-spool-files)))
+            (folder (current-buffer))
+            (real (symbol-function 'vm-pop-net-note-progress)))
+        (cl-letf (((symbol-function 'vm-pop-net-note-progress)
+                   (lambda (&rest args)
+                     (apply real args)
+                     (with-current-buffer folder
+                       (push (substring-no-properties (or vm-ml-session "")) seen)))))
+          (should (equal (vm-pop-net-test--get-mail mock crash) 2)))
+        (setq seen (nreverse seen))
+        (should (equal (car seen) " fetching 0/2 "))
+        (should (equal (car (last seen)) " fetching 2/2 "))
+        (should-not vm-ml-session)))))
+
 (ert-deftest vm-pop-net-test-a-fetch-that-times-out-says-so ()
   "A fetch whose server goes quiet reports the timeout, and does not hang.
 

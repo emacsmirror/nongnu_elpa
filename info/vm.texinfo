@@ -1461,12 +1461,15 @@ mode line of the folder, its summary and its presentation buffer, which say
 what the folder is doing:
 
 @example
-VM: inbox   3 (of 412)   fetching +1 
+VM: inbox   3 (of 412)   fetching 24/340 +1 
 @end example
 
 @noindent
-@samp{fetching} is what it is doing; @samp{+1} is one more piece of work
-waiting for it.  It is shown in the face @code{vm-net-session-face}, which
+@samp{fetching} is what it is doing; @samp{24/340} is how far it has got, which
+moves as each bunch of messages arrives; @samp{+1} is one more piece of work
+waiting for it.  The count appears once VM knows how many messages it is
+fetching, and a piece of work with nothing to count -- sending your flag
+changes, say -- shows none.  It is shown in the face @code{vm-net-session-face}, which
 inherits @code{mode-line-emphasis}; give that face a background if you want it
 louder.  When the mode line says nothing there, VM is not talking to that
 folder's server.

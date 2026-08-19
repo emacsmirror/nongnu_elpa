@@ -471,7 +471,7 @@ is set, so a maildrop with a thousand messages in it is not one session."
 	(seq-take wanted vm-pop-messages-per-session)
       wanted)))
 
-(iter-defun vm-pop-net-fetch-new (user password source retrieved)
+(iter-defun vm-pop-net-fetch-new (folder user password source retrieved)
   "Fetch the messages of this maildrop that are not in RETRIEVED.
 
 RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
@@ -513,6 +513,7 @@ thousand messages in it should not be one command."
 					  " cannot tell what it has already"
 					  " fetched; no mail was retrieved")
 				  (vm-safe-popdrop-string source)))))
+	  (vm-pop-net-note-progress folder 0 total)
 	  (dolist (pair wanted)
 	    (push (cons (cdr pair)
 			(iter-yield-from (vm-pop-net-retrieve (car pair))))
@@ -520,7 +521,9 @@ thousand messages in it should not be one command."
 	    (setq count (1+ count))
 	    ;; level 5, so a fetch that takes a while looks like one that is
 	    ;; getting somewhere: nothing else says so, the reader not being
-	    ;; frozen out of Emacs while it runs
+	    ;; frozen out of Emacs while it runs.  The mode line keeps the count
+	    ;; after the echo area has moved on.
+	    (vm-pop-net-note-progress folder count total)
 	    (vm-net-inform 5 "%s: %d of %d messages retrieved"
 		       (vm-safe-popdrop-string source) count total))
 	  (nreverse fetched)))
@@ -543,7 +546,7 @@ whether a message is fetched at all."
 		      lines)))
     (vm-pop-net-error nil)))
 
-(defun vm-pop-net-fetch (source retrieved callback)
+(defun vm-pop-net-fetch (source retrieved callback &optional folder)
   "Fetch what SOURCE holds that RETRIEVED does not, and tell CALLBACK.
 
 CALLBACK is given a list of (UID . TEXT), oldest first, or the error that
@@ -566,7 +569,8 @@ buffer is, not in a process filter."
 	    (funcall callback (or (vm-net-session-error finished)
 				  (vm-net-session-value finished)))))
     (vm-net-start session
-		  (vm-pop-net-fetch-new (nth 1 opened) (nth 2 opened)
+		  (vm-pop-net-fetch-new (or folder (current-buffer))
+					(nth 1 opened) (nth 2 opened)
 					popdrop retrieved))
     session))
 
@@ -693,7 +697,8 @@ the server still has is what VM has not saved yet."
 			(when (and result (vm-pop-net-auto-expunge-p source))
 			  (vm-pop-net-delete-fetched folder source
 						     (mapcar #'car result)))
-			count))))))))))
+			count))))))
+     folder))))
 
 (defun vm-pop-net-delete-fetched (folder source uidls)
   "Delete UIDLS from SOURCE, now that they are written, and say how it went.
@@ -763,15 +768,37 @@ again."
 			 (vm-pop-net-show-session)))))
     session))
 
+(defvar vm-pop-net-progress nil
+  "How far the session running in this folder has got, as (DONE . TOTAL).
+A folder runs one session at a time, so one pair says it.  What the fetch says
+in the echo area is gone by the next message; this stays in the mode line until
+the next message moves it on.")
+(make-variable-buffer-local 'vm-pop-net-progress)
+
+(defun vm-pop-net-note-progress (folder done total)
+  "Say that FOLDER's session has done DONE of TOTAL, and show it."
+  (when (buffer-live-p folder)
+    (with-current-buffer folder
+      (setq vm-pop-net-progress (and total (> total 0) (cons done total)))
+      (vm-pop-net-show-session))))
+
 (defun vm-pop-net-show-session ()
   "Say in the mode line what this folder is doing with its server.
 The folder buffer, its summary and its presentation all show it: a reader
-looking at the summary is looking at a folder that is being written into."
+looking at the summary is looking at a folder that is being written into.
+How far it has got is there once it knows: \" fetching 24/340\"."
   (let* ((session vm-pop-net-session)
 	 (running (and session (vm-net-session-live-p session)
-		       (vm-net-session-doing (vm-net-session-name session)))))
+		       (vm-net-session-doing (vm-net-session-name session))))
+	 (progress (and running vm-pop-net-progress)))
+    (unless running (setq vm-pop-net-progress nil))
     (setq vm-ml-session
-	  (and running (propertize (format " %s " running)
+	  (and running (propertize (concat " " running
+					   (if progress
+					       (format " %d/%d" (car progress)
+						       (cdr progress))
+					     "")
+					   " ")
 				   'face 'vm-net-session-face)))
     (vm-update-summary-and-mode-line)))
 
@@ -902,7 +929,8 @@ session is already running, and the caller is to use the blocking path."
 			   (vm-pop-net-folder-arrived
 			    folder
 			    (vm-pop-net-store-in-folder folder folder-type
-							result)))))))))
+							result)))))))
+	     folder))
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)

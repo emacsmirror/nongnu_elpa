@@ -1027,6 +1027,39 @@ counted with it."
     (should (vm-imap-net-wait nil 10))
     (should-not vm-ml-session)))
 
+(ert-deftest vm-imap-net-test-the-mode-line-counts-what-has-arrived ()
+  "The mode line says how far a fetch has got, not only that one is running.
+
+\"fetching\" on a mailbox of six thousand says nothing about whether it is
+getting anywhere.  The count each bunch reports goes to the echo area too, but
+the next message wipes that; this stays until the next bunch moves it on."
+  (let ((vm-imap-message-bunch-size 2)
+        (seen nil))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 7)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: s%d@example.com\nSubject: m%d\n\nBody.\n" i i)))
+      (let ((real (symbol-function 'vm-imap-net-assimilate)))
+        (cl-letf (((symbol-function 'vm-imap-net-assimilate)
+                   (lambda (&rest args)
+                     (let ((answer (apply real args)))
+                       (push (substring-no-properties (or vm-ml-session "")) seen)
+                       answer))))
+          (should (equal (vm-imap-net-test--get-mail mock) 7))))
+      ;; a count that moves, and the total it is working towards
+      (setq seen (nreverse seen))
+      (should (equal (car seen) " fetching 0/7 "))
+      (should (member " fetching 4/7 " seen))
+      (should (equal (car (last seen)) " fetching 6/7 "))
+      ;; and nothing left in the mode line once it is done
+      (should-not vm-ml-session)
+      ;; the summary was told the same thing, rather than keeping an older one
+      (when (and vm-summary-buffer (buffer-live-p vm-summary-buffer))
+        (with-current-buffer vm-summary-buffer
+          (should (equal vm-ml-session
+                         (with-current-buffer vm-mail-buffer vm-ml-session))))))))
+
 (ert-deftest vm-imap-net-test-quitting-stops-what-the-folder-was-doing ()
   "Quitting a folder stops its session rather than leaving it writing.
 

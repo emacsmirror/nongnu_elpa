@@ -1243,6 +1243,7 @@ expunged."
 	  (let ((retrieve-list (nth 0 plan))
     		(bunches (nth 1 plan)))
 	    (when retrieve-list
+	      (vm-imap-net-note-progress folder 0 (length retrieve-list))
 	      (vm-net-inform 5 "%s: retrieving %d message%s..." (buffer-name folder)
     			 (length retrieve-list)
     			 (if (= (length retrieve-list) 1) "" "s")))
@@ -1300,6 +1301,7 @@ expunged."
 		   (vm-imap-net-entries-written (nreverse written) entries)
 		   uid-validity))
     		(setq retrieved (+ retrieved count))
+		(vm-imap-net-note-progress folder retrieved (length retrieve-list))
 		(vm-net-inform 5 "%s: %d of %d messages retrieved"
 			       (buffer-name folder) retrieved (length retrieve-list))))
 	    (vm-imap-net-arrived folder)
@@ -1521,23 +1523,54 @@ buffer showing this folder says what it is doing."
 
 (defvar vm-ml-session)
 
+(defvar vm-imap-net-progress nil
+  "How far the session running in this folder has got, as (DONE . TOTAL).
+
+A folder runs one session at a time, so one pair says it.  What the fetch says
+in the echo area is gone by the next message; this is in the mode line beside
+what the folder is doing, where it stays until the next bunch moves it on:
+the word alone, on a mailbox of six thousand, says nothing about whether it
+is getting anywhere.")
+(make-variable-buffer-local 'vm-imap-net-progress)
+
+(defun vm-imap-net-note-progress (folder done total)
+  "Say that FOLDER's session has done DONE of TOTAL, and show it."
+  (when (buffer-live-p folder)
+    (with-current-buffer folder
+      (setq vm-imap-net-progress (and total (> total 0) (cons done total)))
+      (vm-imap-net-show-session))))
+
 (defun vm-imap-net-show-session ()
   "Say in the mode line what this folder is doing with its server.
 
 The folder buffer, its summary and its presentation all show it: a reader
 looking at the summary is looking at a folder that is being written into, and
 the folder buffer may not be on screen at all.  What is queued is counted, so
-\" IMAP fetch +2\" is a fetch running with two things waiting for it."
+\" IMAP fetch +2\" is a fetch running with two things waiting for it, and how
+far it has got is there once it knows: \" fetching 24/340\"."
   (let* ((session vm-imap-net-session)
 	 (running (and session (vm-net-session-live-p session)
 		       (vm-net-session-doing (vm-net-session-name session))))
+	 (progress (and running vm-imap-net-progress))
 	 (waiting (length vm-imap-net-waiting)))
+    (unless running (setq vm-imap-net-progress nil))
     (setq vm-ml-session
 	  (and running
-	       (propertize (if (> waiting 0)
-			       (format " %s +%d " running waiting)
-			     (format " %s " running))
+	       (propertize (concat " " running
+				   (if progress
+				       (format " %d/%d" (car progress)
+					       (cdr progress))
+				     "")
+				   (if (> waiting 0)
+				       (format " +%d" waiting)
+				     "")
+				   " ")
 			   'face 'vm-net-session-face)))
+    ;; registered before the update, because the update copies the mode line
+    ;; into the summary and presentation only for a folder that asked for one:
+    ;; without this the summary kept whatever it was told last, so a folder
+    ;; said " fetching " while its summary still said " fetching 0/1 "
+    (intern (buffer-name) vm-buffers-needing-display-update)
     (vm-update-summary-and-mode-line)))
 
 (defun vm-imap-net-stop ()
@@ -2227,6 +2260,9 @@ send it the blocking way."
 	t)
     (vm-imap-net-unsupported nil)))
 
+(defvar vm-imap-account-folder-cache)
+(declare-function vm-delete "vm-misc" (predicate list &optional reverse))
+
 (defun vm-imap-net-mailbox-command (spec command purpose said)
   "Send COMMAND to SPEC without waiting, and say SAID when it lands.
 
@@ -2243,9 +2279,6 @@ the cache wrong.  Answers whether the command is on its way."
 	       (vm-delete (lambda (entry) (equal (car entry) account))
 			  vm-imap-account-folder-cache))
 	 (vm-net-inform 5 "%s" said))))))
-
-(defvar vm-imap-account-folder-cache)
-(declare-function vm-delete "vm-misc" (predicate list &optional reverse))
 
 ;;; Expunging on the server
 
