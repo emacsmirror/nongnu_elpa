@@ -1579,6 +1579,34 @@ the same session, so the server is not left holding a second copy."
       (should (vm-imap-mock-received-p mock "EXPUNGE"))
       (should (null (vm-imap-mock-messages mock "INBOX"))))))
 
+(ert-deftest vm-imap-net-test-mail-on-disk-is-not-fetched-a-second-time ()
+  "A session that fails after writing the crash box leaves nothing to refetch.
+
+The maildrop is set to delete what is fetched and the server refuses the
+EXPUNGE, so the session fails with the mail already in the crash box.  The
+folder gobbles that crash box when it next looks; unless it also knows it has
+those UIDs, it fetches them again and both copies land -- three goes at a
+two-message maildrop put four messages in the folder."
+  (let ((vm-imap-expunge-after-retrieving t))
+    (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice
+                                                      vm-imap-net-test--bob)
+                                      :refuse "EXPUNGE")
+      (let ((crash (nth 2 (car vm-spool-files))))
+        (vm-get-new-mail)
+        (should (vm-imap-net-wait nil 10))
+        ;; the mail is on disk and the folder knows it has it, though the
+        ;; session it came in on failed
+        (should (file-exists-p crash))
+        (should (equal (length vm-imap-retrieved-messages) 2))
+        (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+        ;; so asking again brings in what is on disk, once
+        (vm-get-new-mail)
+        (should (vm-imap-net-wait nil 10))
+        (vm-get-new-mail)
+        (should (vm-imap-net-wait nil 10))
+        (should (equal (mapcar #'vm-su-subject vm-message-list)
+                       '("badgers" "otters")))))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time

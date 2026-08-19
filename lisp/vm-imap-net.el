@@ -2862,18 +2862,40 @@ FOLDER-TYPE where the server sent none of its own."
       (set-marker to nil))
     (goto-char (point-max))))
 
-(iter-defun vm-imap-net-move (source mailbox user password crash-box
+(defun vm-imap-net-append-crash-box (work crash-box)
+  "Append what is in WORK to CRASH-BOX, and empty WORK."
+  (with-current-buffer work
+    (let ((coding-system-for-write 'binary)
+	  (selective-display nil))
+      (write-region (point-min) (point-max) crash-box t 'quiet))
+    (erase-buffer)))
+
+(iter-defun vm-imap-net-move (folder source mailbox user password crash-box
 				     folder-type retrieved delete)
   "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
-Answers with (COUNT UID-VALIDITY . UIDS): how many were written, and which
-UIDs under which UIDVALIDITY, for the caller to remember.  DELETE says to
-delete them from the server afterwards, which is
-`vm-imap-auto-expunge-alist\=' for this maildrop."
+Answers with how many messages were written.  DELETE says to delete them from
+the server afterwards, which is `vm-imap-auto-expunge-alist\=' for this
+maildrop.
+
+A bunch at a time: appended to the crash box, and then remembered in FOLDER as
+fetched, before the next bunch is asked for.  The order is what keeps a
+message from arriving twice.  A session that fails after some of the mail is
+on disk leaves that mail in the crash box, which the folder gobbles when it
+next looks; if the folder did not know it had those UIDs it would fetch them
+again, and both copies would land -- refusing the EXPUNGE of a two-message
+maildrop put four messages in the folder.  Remembering them before the fetch
+goes on is also what the blocking path does, in the `unwind-protect\=' of
+`vm-imap-move-mail\='.
+
+`vm-imap-net-note-retrieved\=' only writes the folder\='s own variable, so this
+is not the folder work the session leaves to the callback: nothing is parsed
+and nothing is displayed."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(let* ((select (iter-yield-from (vm-imap-net-select mailbox)))
 	       (count (nth 0 select))
+	       (uid-validity (nth 2 select))
 	       (body-peek t)
 	       (process-buffer (current-buffer))
 	       (data (if (zerop count)
@@ -2889,25 +2911,28 @@ delete them from the server afterwards, which is
 		  (set-buffer-multibyte nil)
 		  (setq-local vm-folder-type folder-type))
 		(dolist (bunch (vm-imap-bunch-messages (mapcar #'car wanted)))
-		  (iter-yield-from
-		   (vm-imap-net-fetch
-		    (car bunch) (cdr bunch) body-peek nil
-		    (lambda (uid start end)
-		      (with-current-buffer work
-			(vm-imap-net-write-message process-buffer start end
-						   folder-type))
-		      (push uid uids)
-		      (setq written (1+ written))))))
-		(when (> written 0)
-		  (with-current-buffer work
-		    (let ((coding-system-for-write 'binary)
-			  (selective-display nil))
-		      (write-region (point-min) (point-max) crash-box
-				    nil 'quiet))))
+		  (let ((arrived nil))
+		    (iter-yield-from
+		     (vm-imap-net-fetch
+		      (car bunch) (cdr bunch) body-peek nil
+		      (lambda (uid start end)
+			(with-current-buffer work
+			  (vm-imap-net-write-message process-buffer start end
+						     folder-type))
+			(push uid arrived)
+			(setq written (1+ written)))))
+		    (when arrived
+		      (setq arrived (nreverse arrived))
+		      (vm-imap-net-append-crash-box work crash-box)
+		      (vm-imap-net-require-folder folder)
+		      (with-current-buffer folder
+			(vm-imap-net-note-retrieved arrived uid-validity source)
+			(vm-mark-folder-modified-p folder))
+		      (setq uids (append uids arrived)))))
 		(when (and delete uids)
-		  (iter-yield-from (vm-imap-net-expunge (reverse uids)))))
+		  (iter-yield-from (vm-imap-net-expunge uids))))
 	    (when (buffer-live-p work) (kill-buffer work)))
-	  (cons written (cons (nth 2 select) (nreverse uids)))))
+	  written))
     (vm-imap-net-logout)))
 
 (defun vm-imap-net-note-retrieved (uids uid-validity source)
@@ -2968,14 +2993,14 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 	    (when (buffer-live-p buffer) (kill-buffer buffer))
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
-		(let ((error-data (vm-net-session-error finished))
-		      (result (vm-net-session-value finished)))
-		  (if error-data
-		      (funcall callback error-data)
-		    (vm-imap-net-note-retrieved (cddr result) (cadr result) source)
-		    (funcall callback (car result))))))))
+		(let ((error-data (vm-net-session-error finished)))
+		  ;; the UIDs were remembered as each bunch reached the crash
+		  ;; box, so there is nothing to record here: what is on disk
+		  ;; the folder already knows it has
+		  (funcall callback (or error-data
+					(vm-net-session-value finished))))))))
     (vm-net-start session
-		  (vm-imap-net-move source (nth 1 opened) (nth 2 opened)
+		  (vm-imap-net-move folder source (nth 1 opened) (nth 2 opened)
 				    (nth 3 opened) crash-box folder-type
 				    retrieved delete))
     (vm-imap-net-take-session session)
