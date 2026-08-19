@@ -193,6 +193,30 @@ the user's deletes, silently."
 
 ;;; Checking for mail, over a maildrop specification
 
+(defun vm-pop-net-test--wait-until (done seconds what)
+  "Pump until DONE answers non-nil, and fail with WHAT if SECONDS pass first.
+
+A wait that runs out says what the session was doing when it did.  Without
+that a starved run reads as a session that never answered, and
+`vm-pop-net-test-a-fetch-that-fails-says-so\=' failed a full-suite run this
+way, in a test that passes on its own in a twentieth of a second."
+  (let ((deadline (+ (float-time) seconds)))
+    (while (and (not (funcall done)) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (unless (funcall done)
+      (let* ((session (and (boundp 'vm-pop-net-session) vm-pop-net-session))
+             (process (and session (vm-net-session-process session))))
+        (ert-fail (format (concat "%s: nothing after %s seconds."
+                                  "  Session %s, process %s, %d timer%s")
+                          what seconds
+                          (if session
+                              (format "%s (live %s)" (vm-net-session-name session)
+                                      (and (vm-net-session-live-p session) t))
+                            "none")
+                          (if process (process-status process) "none")
+                          (length timer-list)
+                          (if (= (length timer-list) 1) "" "s")))))))
+
 (defun vm-pop-net-test--check (mock retrieved &optional seconds)
   "Ask MOCK whether it has mail, with RETRIEVED as what VM has seen.
 Answers what the callback was given."
@@ -201,9 +225,8 @@ Answers what the callback was given."
         (vm-pop-server-timeout 3))
     (vm-pop-net-check-mail (vm-pop-mock-spec mock)
                            (lambda (result) (setq answer result)))
-    (let ((deadline (+ (float-time) (or seconds 20))))
-      (while (and (eq answer 'not-called) (< (float-time) deadline))
-        (accept-process-output nil 0.05)))
+    (vm-pop-net-test--wait-until (lambda () (not (eq answer 'not-called)))
+                                 (or seconds 20) "the mail check")
     answer))
 
 (ert-deftest vm-pop-net-test-a-maildrop-with-new-mail-says-so ()
@@ -582,13 +605,8 @@ waits for the connect, which is what `:nowait' is for."
         (vm-pop-messages-per-session nil))
     (vm-pop-net-fetch (vm-pop-mock-spec mock) retrieved
                       (lambda (result) (setq answer result)))
-    ;; generous: these run late in a suite of a couple of thousand tests, and a
-    ;; deadline that a loaded machine misses reads as a session that never
-    ;; answered.  vm-pop-net-test-a-fetch-that-fails-says-so failed a full-suite
-    ;; run this way, and passed on its own in a twentieth of a second.
-    (let ((deadline (+ (float-time) (or seconds 20))))
-      (while (and (eq answer 'not-called) (< (float-time) deadline))
-        (accept-process-output nil 0.05)))
+    (vm-pop-net-test--wait-until (lambda () (not (eq answer 'not-called)))
+                                 (or seconds 20) "the fetch")
     answer))
 
 (ert-deftest vm-pop-net-test-fetching-brings-back-every-new-message ()
@@ -712,11 +730,8 @@ an empty list that reads as an empty maildrop."
         (vm-pop-messages-per-session nil))
     (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash
                          (lambda (result) (setq answer result)))
-    ;; longer than the session's own timeout, or a slow run reads as a
-    ;; callback that never came
-    (let ((deadline (+ (float-time) (or seconds 25))))
-      (while (and (eq answer 'not-called) (< (float-time) deadline))
-        (accept-process-output nil 0.05)))
+    (vm-pop-net-test--wait-until (lambda () (not (eq answer 'not-called)))
+                                 (or seconds 25) "the fetch into the folder")
     answer))
 
 (ert-deftest vm-pop-net-test-mail-arrives-in-a-crash-box-vm-can-read ()

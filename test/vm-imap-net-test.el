@@ -1607,6 +1607,76 @@ two-message maildrop put four messages in the folder."
         (should (equal (mapcar #'vm-su-subject vm-message-list)
                        '("badgers" "otters")))))))
 
+(ert-deftest vm-imap-net-test-an-extra-fetch-item-is-stepped-over ()
+  "A server that answers with more than VM asked for still delivers the mail.
+
+RFC 3501 7.4.2 lets a server send data items the client did not ask about, and
+a server with CONDSTORE on sends MODSEQ with everything.  Refusing to read
+past one failed the session on its first command: \"expected UID, RFC822.SIZE
+and (FLAGS list) in FETCH response\", and no mailbox arrived at all."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob)
+                                    :extra-fetch-items t)
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-imap-uid-of vm-message-list) '("1" "2")))
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))))
+
+(ert-deftest vm-imap-net-test-an-unsolicited-flag-report-is-not-message-data ()
+  "A FETCH the server sent of its own accord is not taken for an answer.
+
+Somebody else changing a message's flags has the server report them whenever
+it next can (RFC 3501 7.4.1).  That response carries no UID, and taking it for
+message data put an entry with no UID in the folder's tables: \"Wrong type
+argument: stringp, nil\", and no mail."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob)
+                                    :unsolicited-flags t)
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-imap-uid-of vm-message-list) '("1" "2")))))
+
+(ert-deftest vm-imap-net-test-the-blocking-path-steps-over-them-too ()
+  "The blocking fetch reads past an item it did not ask for as well.
+
+Its parser matched fixed shapes -- (BODY[] string), or UID before it -- so a
+server that added INTERNALDATE failed the retrieval with \"expected (BODY[]
+string) in FETCH response\".  Both paths walk the items by name now."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice)
+                                    :extra-fetch-items t)
+    (should (equal (length vm-message-list) 1))
+    ;; and the blocking synchronisation, which reads the flag data and the
+    ;; message bodies through the other parser
+    (let ((vm-enable-external-messages nil))
+      (cl-letf (((symbol-function 'vm-imap-net-synchronize) (lambda (&rest _) nil))
+                ((symbol-function 'vm-imap-net-get-spooled-mail)
+                 (lambda (&rest _) nil)))
+        (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+        (vm-imap-synchronize t)))
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))))
+
+(ert-deftest vm-imap-net-test-the-item-skip-steps-over-one-item ()
+  "`vm-imap-skip-fetch-item' takes one item off, whatever shape it is.
+The parsers walk the items of a FETCH response by name; this is what they do
+with a name they do not know, and it has to leave the walk on the next name
+rather than in the middle of a value."
+  (with-temp-buffer
+    (insert "MODSEQ (23) UID 7")
+    ;; the token shapes the reader produces: (TYPE START END) or (list TOKEN...)
+    (let* ((modseq '(atom 1 7))
+           (value '(list (atom 9 11)))
+           (uid '(atom 13 16))
+           (number '(atom 17 18))
+           (contents (list modseq value uid number)))
+      (should (equal (vm-imap-skip-fetch-item contents) (list uid number)))
+      ;; a section in brackets, as BODY[]/BODY[HEADER] have
+      (should (equal (vm-imap-skip-fetch-item
+                      (list '(atom 1 5) '(vector) '(string 6 9) uid))
+                     (list uid)))
+      ;; and a name with nothing after it leaves nothing behind
+      (should-not (vm-imap-skip-fetch-item (list modseq))))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time
