@@ -167,6 +167,37 @@ in no test that a machine without a server could run."
     (should (string-match-p "The second body"
                             (vm-imap-mock-test--body-of (cadr vm-message-list))))))
 
+(ert-deftest vm-imap-mock-test-an-extra-fetch-item-is-stepped-over ()
+  "A server that answers with more than VM asked for still delivers the mail.
+
+RFC 3501 7.4.2 lets a server send data items the client did not ask about, and
+a server with CONDSTORE on sends MODSEQ with everything.  VM called that a
+broken response and failed on its first command -- \"expected UID, RFC822.SIZE
+and (FLAGS list) in FETCH response\" -- and the retrieval was stricter still,
+matching (BODY[] string) or a UID before it and nothing else."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob)
+            :extra-fetch-items t)
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-su-subject vm-message-list)
+                   '("badgers" "otters")))
+    ;; the bodies too, which come through the other parser
+    (should (string-match-p "The first body"
+                            (vm-imap-mock-test--body-of (car vm-message-list))))))
+
+(ert-deftest vm-imap-mock-test-an-unsolicited-flag-report-is-not-message-data ()
+  "A FETCH the server sent of its own accord is not taken for an answer.
+
+Somebody else changing a message's flags has the server report them whenever it
+next can (RFC 3501 7.4.1).  That response carries no UID, and taking it for
+message data put an entry with no UID in the folder's tables: \"Wrong type
+argument: stringp, nil\", and no mail."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob)
+            :unsolicited-flags t)
+    (should (equal (length vm-message-list) 2))
+    (should (equal (mapcar #'vm-imap-uid-of vm-message-list) '("1" "2")))))
+
 (defun vm-imap-mock-test--body-of (message)
   "The text of MESSAGE as it sits in the folder buffer."
   (with-current-buffer (vm-buffer-of message)
