@@ -1720,8 +1720,7 @@ than left empty."
 	     (vm-imap-net-load-bodies
 	      messages
 	      (lambda (result)
-		(cond ((and (consp result) (symbolp (car result))
-			    (get (car result) 'error-conditions))
+		(cond ((vm-net-error-p result)
 		       (vm-warn 0 2 "%s: %s" (buffer-name folder)
 				(error-message-string result)))
 		      (t
@@ -2012,8 +2011,17 @@ the mailbox still has."
 
 (iter-defun vm-imap-net-maildrop-expunge-session (user password mailbox uids)
   "Log in, select MAILBOX and delete the messages with UIDS.
-Answers (UID-VALIDITY DELETED).  A mailbox that cannot be deleted from
-signals rather than reporting that nothing was there to delete."
+
+Answers (UID-VALIDITY DELETED GONE): the UIDs this session expunged, and the
+ones the mailbox does not have at all.  Both are settled, and the caller can
+forget them: a UID the mailbox no longer holds is a deletion that has already
+happened, and asking for it again is a session per expunge for ever.  This is
+what `vm-imap-net-note-expunged\=' says of the folder\='s own list -- a UID that
+no longer exists on the server is not a message anything need be told not to
+fetch again.
+
+A mailbox that cannot be deleted from signals rather than reporting that
+nothing was there to delete."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
@@ -2027,13 +2035,15 @@ signals rather than reporting that nothing was there to delete."
 	  (unless can-delete
 	    (vm-imap-normal-error "messages cannot be deleted in %s" mailbox))
 	  (if (zerop count)
-	      (list validity nil)
+	      ;; an empty mailbox has none of them, so all of them are done
+	      (list validity nil uids)
 	    (let* ((data (iter-yield-from (vm-imap-net-message-data 1 count)))
 		   (there (mapcar #'cadr data))
-		   (wanted (seq-filter (lambda (uid) (member uid there)) uids)))
+		   (wanted (seq-filter (lambda (uid) (member uid there)) uids))
+		   (gone (seq-remove (lambda (uid) (member uid there)) uids)))
 	      (when wanted
 		(iter-yield-from (vm-imap-net-expunge wanted)))
-	      (list validity wanted)))))
+	      (list validity wanted gone)))))
     (vm-imap-net-logout)))
 
 (defun vm-imap-net-expunge-maildrop (source uids callback)
@@ -2062,9 +2072,10 @@ whether it started."
   "Work through GROUPS, one maildrop at a time, deleting what each names.
 
 GROUPS is (SOURCE . UIDS) per maildrop.  EACH is called in FOLDER with the
-source, the UID validity and the UIDs deleted, as each maildrop answers, so
-that the folder forgets them then rather than at the end; DONE is called with
-the maildrops that gave trouble, newest first, when there are no more.
+source, the UID validity, the UIDs deleted and the UIDs the mailbox did not
+have, as each maildrop answers, so that the folder forgets them then rather
+than at the end; DONE is called with the maildrops that gave trouble, newest
+first, when there are no more.
 
 Answers whether the first maildrop started.  Nil means the driver cannot open
 that one, and the caller is to do the lot the blocking way -- half an expunge
@@ -2092,14 +2103,14 @@ to be rewritten while another is being answered for."
 		   source (cdr group)
 		   (lambda (result)
 		     (cond
-		      ((and (consp result) (symbolp (car result))
-			    (get (car result) 'error-conditions))
+		      ((vm-net-error-p result)
 		       (vm-warn 0 2 "%s: %s" name (error-message-string result))
 		       (funcall step (cdr rest) (cons name trouble) nil))
 		      (t
 		       (when (buffer-live-p folder)
 			 (with-current-buffer folder
-			   (funcall each source (car result) (cadr result))))
+			   (funcall each source (car result) (cadr result)
+				    (nth 2 result))))
 		       (funcall step (cdr rest) trouble nil)))))
 		  t)
 		 (first
@@ -2134,10 +2145,7 @@ SELECTABLE-ONLY leaves out the names the server marks \\Noselect."
     (when (vm-imap-net-list-names spec selectable-only
 				  (lambda (result)
 				    (setq answered t)
-				    (unless (and (consp result)
-						 (symbolp (car result))
-						 (get (car result)
-						      'error-conditions))
+				    (unless (vm-net-error-p result)
 				      (setq names result))))
       (let ((deadline (+ (float-time) (or seconds 30))))
 	(while (and (not answered) (< (float-time) deadline))
@@ -2211,8 +2219,7 @@ the cache wrong.  Answers whether the command is on its way."
     (vm-imap-net-run-command
      spec command purpose t
      (lambda (result)
-       (if (and (consp result) (symbolp (car result))
-		(get (car result) 'error-conditions))
+       (if (vm-net-error-p result)
 	   (vm-warn 0 2 "%s failed: %s" purpose (error-message-string result))
 	 (setq vm-imap-account-folder-cache
 	       (vm-delete (lambda (entry) (equal (car entry) account))
@@ -2589,8 +2596,7 @@ messages."
 		  (vm-imap-net-get-mail
 		   (vm-folder-imap-maildrop-spec)
 		   (lambda (result)
-		     (cond ((and (consp result) (symbolp (car result))
-				 (get (car result) 'error-conditions))
+		     (cond ((vm-net-error-p result)
 			    (vm-warn 0 2 "%s: %s" (buffer-name folder)
 				     (error-message-string result)))
 			   ((and (numberp result) (> result 0))
@@ -2757,8 +2763,7 @@ without waiting."
 	  (vm-imap-net-load-bodies
 	   (mapcar #'vm-real-message-of external)
 	   (lambda (result)
-	     (if (and (consp result) (symbolp (car result))
-		      (get (car result) 'error-conditions))
+	     (if (vm-net-error-p result)
 		 (funcall callback result)
 	       (with-current-buffer folder
 		 (vm-imap-net-save-messages
@@ -2796,8 +2801,7 @@ saying it was saved."
 	  target messages
 	  (lambda (result)
 	    (cond
-	     ((and (consp result) (symbolp (car result))
-		   (get (car result) 'error-conditions))
+	     ((vm-net-error-p result)
 	      (vm-warn 0 2 "%s: nothing was saved to %s: %s"
 		       (buffer-name folder)
 		       (or (vm-imap-folder-for-spec target)

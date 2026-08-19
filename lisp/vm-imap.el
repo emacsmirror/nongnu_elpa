@@ -30,6 +30,7 @@
 (require 'vm-reply)                     ;vm-mail-mode-remove-header
 (require 'sendmail)
 (require 'utf7)
+(declare-function vm-net-error-p "vm-net" (value))
 (eval-when-compile (require 'cl-lib))
 
 (declare-function vm-session-initialization 
@@ -1004,15 +1005,19 @@ again rather than forgetting what was never deleted."
     (and groups
 	 (vm-imap-net-expunge-maildrops
 	  groups folder
-	  (lambda (source validity deleted)
-	    (setq vm-imap-retrieved-messages
-		  (seq-remove (lambda (entry)
-				(and (equal (nth 2 entry) source)
-				     (equal (nth 1 entry) validity)
-				     (member (car entry) deleted)))
-			      vm-imap-retrieved-messages))
-	    (when deleted
-	      (vm-mark-folder-modified-p folder))
+	  (lambda (source validity deleted gone)
+	    ;; and the ones the mailbox no longer has: those are deletions that
+	    ;; have already happened, and an entry kept for one is a maildrop
+	    ;; asked again at every expunge for ever
+	    (let ((settled (append deleted gone)))
+	      (setq vm-imap-retrieved-messages
+		    (seq-remove (lambda (entry)
+				  (and (equal (nth 2 entry) source)
+				       (equal (nth 1 entry) validity)
+				       (member (car entry) settled)))
+				vm-imap-retrieved-messages))
+	      (when settled
+		(vm-mark-folder-modified-p folder)))
 	    (vm-inform 6 "%s: %d message%s expunged"
 		       (or (vm-imap-folder-for-spec source)
 			   (vm-safe-imapdrop-string source))
@@ -1062,8 +1067,7 @@ should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
 	   (asked (vm-imap-net-mailbox-uids
 		   source
 		   (lambda (result)
-		     (if (and (consp result) (symbolp (car result))
-			      (get (car result) 'error-conditions))
+		     (if (vm-net-error-p result)
 			 (vm-warn 0 2 "Could not prune %s: %s" name
 				  (error-message-string result))
 		       (when (buffer-live-p folder)
@@ -4970,8 +4974,7 @@ them."
 	       (vm-imap-net-list-folders
 		spec
 		(lambda (result)
-		  (if (and (consp result) (symbolp (car result))
-			   (get (car result) 'error-conditions))
+		  (if (vm-net-error-p result)
 		      (vm-warn 0 2 "Could not list %s: %s" account
 			       (error-message-string result))
 		    (vm-imap-show-folder-list account result filter-new)))))

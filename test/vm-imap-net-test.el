@@ -1677,6 +1677,29 @@ rather than in the middle of a value."
       ;; and a name with nothing after it leaves nothing behind
       (should-not (vm-imap-skip-fetch-item (list modseq))))))
 
+(ert-deftest vm-imap-net-test-expunging-what-is-gone-settles ()
+  "An expunge request for a UID the mailbox no longer has is done with.
+
+`vm-expunge-imap-messages\=' works from `vm-imap-retrieved-messages\=', and only
+what the server expunged was struck off it.  A UID the mailbox no longer had
+stayed, so the command opened a session for it again every time it was run --
+for ever.  A UID that is not there is a deletion that has already happened,
+which is what `vm-imap-net-note-expunged\=' says of the folder\='s own list."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((spec (vm-imapdrop-sans-password (vm-imap-mock-spec mock)))
+          (validity (vm-folder-imap-uid-validity)))
+      (setq vm-imap-retrieved-messages
+            (list (list "1" validity spec 'uid)
+                  (list "99" validity spec 'uid)))
+      (should (eq (vm-imap-net-expunge-retrieved) t))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and vm-imap-retrieved-messages (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      ;; the one that was there is gone from the server, and neither is left
+      ;; on the folder's list
+      (should (null (vm-imap-mock-messages mock "INBOX")))
+      (should-not vm-imap-retrieved-messages))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time

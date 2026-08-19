@@ -373,6 +373,66 @@ folder file, so the next save offers them again."
           (with-current-buffer folder (set-buffer-modified-p nil))
           (kill-buffer folder))))))
 
+(ert-deftest vm-pop-net-test-a-deletion-of-what-is-gone-settles ()
+  "A request to delete a message the maildrop no longer lists is done with.
+
+Someone else deleted it, or an earlier session did and its answer was lost.
+The request stayed on `vm-pop-messages-to-expunge\=' either way, so every save
+opened a session to ask for a message that was not there -- for ever.  What
+the maildrop does not list is settled; what it lists and would not delete
+stays, so the next save offers that again."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 10))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1" "went-away"))
+            (should (eq (vm-pop-net-send-changes) t))
+            (should (vm-pop-net-wait nil 10))
+            (should (equal (vm-pop-mock-deleted mock) '(1)))
+            (should-not vm-pop-messages-to-expunge)
+            ;; and a second save has nothing to ask for
+            (should-not (vm-pop-net-send-changes)))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
+(ert-deftest vm-pop-net-test-a-deletion-can-be-asked-for-again ()
+  "A deletion the server did not do is still on the list to be asked again.
+
+Which is what makes a crash safe: the list is in the folder file, so a
+deletion that did not get through -- Emacs gone before the QUIT, the server
+refusing -- is offered by the next save."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
+                                    :refuse "DELE")
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 10))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            (should (eq (vm-pop-net-send-changes) t))
+            (should (vm-pop-net-wait nil 10))
+            ;; nothing deleted, and the request kept
+            (should-not (vm-pop-mock-deleted mock))
+            (should (equal vm-pop-messages-to-expunge (list "uid1")))
+            ;; the next save asks again, and this time the server takes it
+            (setf (vm-pop-mock-refuse mock) nil)
+            (should (eq (vm-pop-net-send-changes) t))
+            (should (vm-pop-net-wait nil 10))
+            (should (equal (vm-pop-mock-deleted mock) '(1)))
+            (should-not vm-pop-messages-to-expunge))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
 (ert-deftest vm-pop-net-test-a-pop-save-during-a-session-waits ()
   "Deletions asked for while a session is running go up next time.
 Two POP sessions to one maildrop is what the server refuses anyway, and two
@@ -771,6 +831,23 @@ nothing: that list is what stops a folder filling with duplicates."
                 (< (float-time) deadline))
       (accept-process-output nil 0.05))
     answer))
+
+(ert-deftest vm-pop-net-test-a-fetch-that-times-out-says-so ()
+  "A fetch whose server goes quiet reports the timeout, and does not hang.
+
+The timeout error was not a defined condition, so the callback took it for a
+list of messages and died writing the crash box; the caller was left waiting
+for an answer that had come and gone.  The session was over and nothing had
+been said -- which is the one thing an asynchronous fetch must not do."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice)
+                                                 :silent-on "UIDL")
+    (let* ((crash (nth 2 (car vm-spool-files)))
+           (vm-pop-server-timeout 2)
+           (result (vm-pop-net-test--get-mail mock crash 20)))
+      (should (vm-net-error-p result))
+      (should (eq (car result) 'vm-net-timeout))
+      (should-not (file-exists-p crash)))))
 
 (ert-deftest vm-pop-net-test-a-fetch-that-fails-deletes-nothing ()
   "A fetch that fails part way leaves every message on the server.

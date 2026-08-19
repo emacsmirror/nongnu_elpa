@@ -166,6 +166,23 @@ a generator waiting for input that cannot arrive."
       (vm-net-abandon session))))
 
 (define-error 'vm-net-connection-lost "Network connection lost")
+(define-error 'vm-net-timeout "Network server timed out")
+
+(defun vm-net-error-p (value)
+  "Whether VALUE is an error object rather than an answer a session gave.
+
+A session hands its caller either what its generator returned or the error
+that stopped it, and this is how the caller tells them apart: an error object
+is (SYMBOL . DATA) whose symbol has been through `define-error\='.
+
+Every condition the driver puts in `vm-net-session-error\=' has to be defined
+for that to work.  `vm-net-timeout\=' was not, so a timed-out fetch was taken
+for a list of messages, and the callback that would have reported it died in
+the attempt: a POP fetch whose server went quiet left its caller waiting for
+an answer that had already come and been thrown away."
+  (and (consp value) (symbolp (car value))
+       (get (car value) 'error-conditions)
+       t))
 
 (defun vm-net-start (session iterator)
   "Set ITERATOR going as SESSION's work, and let its process feed it.

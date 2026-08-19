@@ -913,8 +913,14 @@ session is already running, and the caller is to use the blocking path."
 
 
 (iter-defun vm-pop-net-expunge-session (user password uidls)
-  "Log in and delete the messages whose UIDs are UIDLS, and answer with how
-many were deleted.
+  "Log in and delete the messages whose UIDs are UIDLS.
+
+Answers (:deleted UIDLS :gone UIDLS): the ones this session deleted, and the
+ones the maildrop does not list at all.  Both are settled and the caller can
+forget them.  A UID the maildrop no longer has is a deletion that has already
+happened, by an earlier session whose answer was lost or by another client,
+and asking for it again is a session per save for ever: a request for a
+message that had gone was still on the list after two goes at it.
 
 By UID: a POP message number means something different after every session,
 and the folder remembers what it deleted by UID.  The deletions take effect
@@ -935,7 +941,9 @@ does whether this runs to the end or is abandoned."
 	    (when (member (cdr pair) uidls)
 	      (iter-yield-from (vm-pop-net-delete (car pair)))
 	      (push (cdr pair) deleted)))
-	  (nreverse deleted)))
+	  (list :deleted (nreverse deleted)
+		:gone (seq-remove (lambda (uidl) (rassoc uidl numbers))
+				  uidls))))
     (let ((process (get-buffer-process (current-buffer))))
       (when (process-live-p process)
 	(process-send-string process "QUIT\r\n")))))
@@ -978,19 +986,25 @@ next fetch's business."
 			       (error-message-string
 				(vm-net-session-error finished))))
 		     (t
-		      (let ((deleted (vm-net-session-value finished)))
-			;; what the server did not delete stays on the list,
-			;; so the next save offers it again
+		      (let* ((answer (vm-net-session-value finished))
+			     (deleted (plist-get answer :deleted))
+			     (gone (plist-get answer :gone))
+			     (settled (append deleted gone)))
+			;; what the server still has and did not delete stays on
+			;; the list, so the next save offers it again
 			(when (buffer-live-p folder)
 			  (with-current-buffer folder
 			    (setq vm-pop-messages-to-expunge
 				  (seq-remove (lambda (uidl)
-						(member uidl deleted))
+						(member uidl settled))
 					      vm-pop-messages-to-expunge))
 			    (vm-mark-folder-modified-p)))
-			(vm-inform 5 "%s: %d message%s deleted on the server"
+			(vm-inform 5 "%s: %d message%s deleted on the server%s"
 				   name (length deleted)
-				   (if (= (length deleted) 1) "" "s")))))))
+				   (if (= (length deleted) 1) "" "s")
+				   (if gone
+				       (format ", %d already gone" (length gone))
+				     "")))))))
 	    (vm-net-start session
 			  (vm-pop-net-expunge-session (nth 1 opened)
 						      (nth 2 opened) uidls))
@@ -1066,23 +1080,24 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 		   source (cdr group)
 		   (lambda (result)
 		     (cond
-		      ((and (consp result) (symbolp (car result))
-			    (get (car result) 'error-conditions))
+		      ((vm-net-error-p result)
 		       (vm-warn 0 2 "%s: %s" name (error-message-string result))
 		       (funcall step (cdr rest) (cons name trouble) nil))
 		      (t
-		       (when (buffer-live-p folder)
-			 (with-current-buffer folder
-			   (setq vm-pop-retrieved-messages
-				 (seq-remove
-				  (lambda (entry)
-				    (and (equal (nth 1 entry) source)
-					 (member (car entry) result)))
-				  vm-pop-retrieved-messages))
-			   (when result (vm-mark-folder-modified-p folder))
-			   (vm-inform 6 "%s: %d message%s deleted" name
-				      (length result)
-				      (if (= (length result) 1) "" "s"))))
+		       (let* ((deleted (plist-get result :deleted))
+			      (settled (append deleted (plist-get result :gone))))
+			 (when (buffer-live-p folder)
+			   (with-current-buffer folder
+			     (setq vm-pop-retrieved-messages
+				   (seq-remove
+				    (lambda (entry)
+				      (and (equal (nth 1 entry) source)
+					   (member (car entry) settled)))
+				    vm-pop-retrieved-messages))
+			     (when settled (vm-mark-folder-modified-p folder))
+			     (vm-inform 6 "%s: %d message%s deleted" name
+					(length deleted)
+					(if (= (length deleted) 1) "" "s")))))
 		       (funcall step (cdr rest) trouble nil)))))
 		  t)
 		 (first nil)

@@ -584,6 +584,29 @@ The failure in emacs-vm/vm#717 was exactly this: whatever was to fire did not."
                               (error-message-string
                                (vm-net-session-error session)))))))
 
+(ert-deftest vm-net-test-a-timeout-is-an-error-the-caller-can-tell ()
+  "The condition a timed-out session reports is a defined error.
+
+A caller tells an answer from an error by asking whether the first element of
+what it was given has been through `define-error'.  `vm-net-timeout' had not,
+so a timed-out session's error read as an answer: a POP fetch that timed out
+was handed to the crash-box writer as a list of messages, which died in the
+attempt -- and the callback that would have reported the timeout died with it,
+leaving the caller waiting for an answer it had already been given.
+
+\"Session POP fetch (live nil), process closed\" is what that looks like from
+outside: over, and never reported."
+  (should (get 'vm-net-timeout 'error-conditions))
+  (should (memq 'error (get 'vm-net-timeout 'error-conditions)))
+  (should (vm-net-error-p (list 'vm-net-timeout "POP server timed out")))
+  (should (vm-net-error-p (list 'vm-net-connection-lost "gone")))
+  (should (vm-net-error-p (list 'vm-net-tunnel-failed "no")))
+  ;; and an answer is not mistaken for one
+  (should-not (vm-net-error-p (list (cons "uid1" "From: a\n\nbody\n"))))
+  (should-not (vm-net-error-p nil))
+  (should-not (vm-net-error-p 3))
+  (should-not (vm-net-error-p (list 'not-an-error-symbol "text"))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here
