@@ -1700,6 +1700,27 @@ which is what `vm-imap-net-note-expunged\=' says of the folder\='s own list."
       (should (null (vm-imap-mock-messages mock "INBOX")))
       (should-not vm-imap-retrieved-messages))))
 
+(ert-deftest vm-imap-net-test-a-warning-does-not-stop-the-fetch ()
+  "A session that has something to warn about does not hold Emacs to say it.
+
+The server refuses every STORE, so saving the flags of two messages warns
+twice.  Each warning was `sit-for\=' 2 in a process filter: four seconds of
+Emacs stopped, for work that takes a tenth of one.  Timed rather than counted
+-- what is wrong with a pause is the wall clock."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
+    (setf (vm-imap-mock-refuse mock) "STORE")
+    (dolist (message vm-message-list)
+      (vm-set-unread-flag message nil)
+      (vm-set-attribute-modflag-of message t))
+    (let ((vm-verbosity 5)
+          (vm-verbal-time 2)
+          (start (float-time)))
+      (vm-imap-net-save-attributes)
+      (should (vm-imap-net-wait nil 20))
+      (should (< (- (float-time) start) 2)))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time

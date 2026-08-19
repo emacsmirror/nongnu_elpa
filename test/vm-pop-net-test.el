@@ -193,29 +193,71 @@ the user's deletes, silently."
 
 ;;; Checking for mail, over a maildrop specification
 
+(defun vm-pop-net-test--say-and-fail (text)
+  "Log TEXT in full and fail with it.
+ert elides a long message where the backtrace prints it, and what a stall says
+about itself is the whole point of saying it."
+  (message "%s" text)
+  (ert-fail text))
+
+(defun vm-pop-net-test--timer-report ()
+  "Every timer there is, and whether it will fire again.
+A repeating timer whose function signalled is left triggered and never
+rescheduled, and stays in `timer-list' firing nothing.  One of those sitting
+where the watchdog should be is how a session waits out its whole read with
+the answer already in its buffer."
+  (mapconcat (lambda (timer)
+               (format "%s(%s)" (timer--function timer)
+                       (if (timer--triggered timer) "dead" "waiting")))
+             timer-list ", "))
+
 (defun vm-pop-net-test--wait-until (done seconds what)
   "Pump until DONE answers non-nil, and fail with WHAT if SECONDS pass first.
 
-A wait that runs out says what the session was doing when it did.  Without
-that a starved run reads as a session that never answered, and
-`vm-pop-net-test-a-fetch-that-fails-says-so\=' failed a full-suite run this
-way, in a test that passes on its own in a twentieth of a second."
+A wait that runs out says what the session was doing, what its buffer holds
+and what the timers are, because a wait that only says \"nothing came\" is a
+wait that has to be debugged from scratch: this is what found the watchdog
+that had stopped firing."
   (let ((deadline (+ (float-time) seconds)))
     (while (and (not (funcall done)) (< (float-time) deadline))
       (accept-process-output nil 0.05))
     (unless (funcall done)
       (let* ((session (and (boundp 'vm-pop-net-session) vm-pop-net-session))
-             (process (and session (vm-net-session-process session))))
-        (ert-fail (format (concat "%s: nothing after %s seconds."
-                                  "  Session %s, process %s, %d timer%s")
-                          what seconds
-                          (if session
-                              (format "%s (live %s)" (vm-net-session-name session)
-                                      (and (vm-net-session-live-p session) t))
-                            "none")
-                          (if process (process-status process) "none")
-                          (length timer-list)
-                          (if (= (length timer-list) 1) "" "s")))))))
+             (process (and session (vm-net-session-process session)))
+             (buffer (and session (vm-net-session-buffer session))))
+        (vm-pop-net-test--say-and-fail
+         (format (concat "%s: nothing after %s seconds.  Session %s, process %s,"
+                         " request %s, resuming %s, buffer %s.  Timers: %s")
+                 what seconds
+                 (if session
+                     (format "%s (live %s, error %S)"
+                             (vm-net-session-name session)
+                             (and (vm-net-session-live-p session) t)
+                             (vm-net-session-error session))
+                   "none")
+                 (if process
+                     (format "%s, %s" (process-status process)
+                             (if (eq (process-get process 'vm-net-session)
+                                     session)
+                                 "carrying this session"
+                               "not carrying it: nothing will poll"))
+                   "none")
+                 (if (and session (vm-net-session-request session))
+                     (format "outstanding, says %s"
+                             (if (buffer-live-p buffer)
+                                 (with-current-buffer buffer
+                                   (funcall (vm-net-session-request session)))
+                               "no buffer"))
+                   "none")
+                 (and session (vm-net-session-resuming session) t)
+                 (if (buffer-live-p buffer)
+                     (with-current-buffer buffer
+                       (format "%d bytes ending %S" (buffer-size)
+                               (buffer-substring
+                                (max (point-min) (- (point-max) 40))
+                                (point-max))))
+                   "gone")
+                 (vm-pop-net-test--timer-report)))))))
 
 (defun vm-pop-net-test--check (mock retrieved &optional seconds)
   "Ask MOCK whether it has mail, with RETRIEVED as what VM has seen.
@@ -365,7 +407,8 @@ folder file, so the next save offers them again."
             (vm-set-folder-pop-maildrop-spec spec)
             (setq vm-pop-messages-to-expunge (list "uid1"))
             (should (eq (vm-pop-net-send-changes) t))
-            (should (vm-pop-net-wait nil 10))
+            (vm-pop-net-test--wait-until (lambda () (not (vm-pop-net-busy-p)))
+                                         10 "the deletions")
             ;; gone on the server, and off the folder's list
             (should (equal (vm-pop-mock-deleted mock) '(1)))
             (should-not vm-pop-messages-to-expunge))
