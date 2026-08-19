@@ -1859,26 +1859,31 @@ this returns `vm-imagemagick-program' (magick); callers should prepend
        (string-match-p "magick\\'" program)))
 
 (defun vm-imagemagick-convert-shell-command ()
-  "Return the shell command string for ImageMagick convert.
-For ImageMagick 7, returns \"magick convert\".
-For older versions, returns the convert program path."
-  (let ((program (vm-imagemagick-convert-command)))
-    (when program
-      (if (vm-imagemagick-program-is-magick-p program)
-	  (concat program " convert")
-	program))))
+  "Return the shell command string for converting an image with ImageMagick.
+
+For ImageMagick 7 that is `magick\=' on its own.  Version 7 deprecated the
+`convert\=' command, and it says so on every run:
+
+    WARNING: The convert command is deprecated in IMv7, use \"magick\"
+    instead of \"convert\" or \"magick convert\"
+
+so `magick convert\=' printed that warning for every image VM displayed.  For
+version 6 there is no `magick\=', and the program is `convert\=' itself."
+  (vm-imagemagick-convert-command))
 
 (defun vm-imagemagick-call-convert (infile buffer args)
-  "Call ImageMagick convert with ARGS, handling v6 vs v7 differences.
-INFILE and BUFFER are passed to `vm-call-process'.
-ARGS is a list of arguments for the convert command.
-Returns the exit status."
+  "Convert an image with ImageMagick and ARGS, and answer with the exit status.
+INFILE and BUFFER are passed to `vm-call-process\='.
+
+ARGS go to `magick\=' as they are: version 7 deprecated the `convert\='
+command and warns about it on every run, so VM does not ask for it.  Version 6
+has no `magick\=' and the program is `convert\=' itself, which takes the same
+arguments.  `identify\=' is a different matter -- version 7 has it as a
+subcommand of `magick\=' and does not deprecate it -- so
+`vm-imagemagick-call-identify\=' still names it."
   (let ((program (vm-imagemagick-convert-command)))
     (when program
-      (vm-call-process program infile buffer
-		       (if (vm-imagemagick-program-is-magick-p program)
-			   (cons "convert" args)
-			 args)))))
+      (vm-call-process program infile buffer args))))
 
 (defun vm-imagemagick-call-identify (infile buffer args)
   "Call ImageMagick identify with ARGS, handling v6 vs v7 differences.
