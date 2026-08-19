@@ -1448,6 +1448,52 @@ scheme, the host, the mailbox and the login name go into the name, so
 @code{imap} and @code{imap-ssl} for one mailbox share a cache and changing
 your password does not orphan it.
 
+@anchor{talking to the server}
+@unnumberedsubsec While VM is talking to the server
+
+@cindex asynchronous operation
+@cindex mode line, server activity
+VM does not stop while it talks to a server.  Fetching mail, loading a
+message body, sending your flag changes, expunging, saving, quitting,
+synchronising, filing a copy of a message you send: all of them go on in the
+background, and Emacs answers you throughout.  What you see of it is in the
+mode line of the folder, its summary and its presentation buffer, which say
+what the folder is doing:
+
+@example
+VM: inbox   3 (of 412)  IMAP fetch +1
+@end example
+
+@noindent
+@samp{IMAP fetch} is the session running.  @samp{+1} is one more piece of work
+waiting for it.  When the mode line says nothing, VM is not talking to that
+folder's server.
+
+A folder is not locked while this goes on.  You can read it, move about it,
+delete, undelete, mark, label and expunge as usual.  What VM does with the
+work you ask for depends on whether it needs the server:
+
+@itemize @bullet
+@item
+Anything local happens at once, as it always did.
+
+@item
+Anything that needs the server, and that can wait --- a body to be shown, the
+flags you have changed, an expunge, a save --- is done when the session
+running now has finished.  A folder runs one session at a time: two writing
+into it would interleave two sets of messages, flags and expunges in one
+buffer and one cache file.
+
+@item
+Anything that must have an answer before it can go on --- saving or copying a
+message whose body is still on the server, and completing a folder name ---
+waits for it.  Those are the two places VM still waits on purpose, and
+@kbd{C-g} works throughout.
+@end itemize
+
+New mail arrives into the folder as it is fetched, a bunch at a time, rather
+than all at the end, so a large mailbox fills in while you read it.
+
 Message attributes (new, replied, filed, etc.) are stored on the @acronym{IMAP}
 server and are also cached locally.  Message labels are also stored on
 the @acronym{IMAP} server as user-defined permanent flags.  (This assumes that

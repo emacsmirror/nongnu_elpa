@@ -999,6 +999,30 @@ still has the blocking path to fall back on."
     (should-not (vm-imap-net-mailbox-names
                  "imap:host:143:INBOX:login:someone:*" nil 1))))
 
+(ert-deftest vm-imap-net-test-the-mode-line-says-what-the-folder-is-doing ()
+  "Every buffer showing the folder says when it is talking to a server.
+
+A reader looking at the summary is looking at a folder that is being written
+into, and the folder buffer may not be on screen at all.  What is queued is
+counted with it."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should-not vm-ml-session)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    (setq vm-imap-net-session
+          (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+    (should (stringp vm-ml-session))
+    (should (string-match-p "IMAP fetch" vm-ml-session))
+    ;; the summary says the same, without being the folder
+    (when (and vm-summary-buffer (buffer-live-p vm-summary-buffer))
+      (with-current-buffer vm-summary-buffer
+        (should (equal vm-ml-session
+                       (with-current-buffer vm-mail-buffer vm-ml-session)))))
+    ;; and what waits behind it is counted
+    (should (eq (vm-imap-net-send-changes) 'later))
+    (should (string-match-p "\\+1" vm-ml-session))
+    (should (vm-imap-net-wait nil 10))
+    (should-not vm-ml-session)))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()

@@ -652,8 +652,8 @@ Nothing waits.  Whether the messages are deleted from the server is
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back
 	(folder-type (or vm-folder-type vm-default-folder-type)))
-    (setq vm-pop-net-session
-	  (vm-pop-net-fetch
+    (vm-pop-net-take-session
+     (vm-pop-net-fetch
      source vm-pop-retrieved-messages
      (lambda (result)
        (when (buffer-live-p folder)
@@ -701,6 +701,31 @@ Nothing waits.  Whether the messages are deleted from the server is
       (and (boundp 'vm-mail-buffer) vm-mail-buffer
 	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
       (current-buffer)))
+
+(defvar vm-ml-session)
+(declare-function vm-update-summary-and-mode-line "vm-folder" ())
+
+(defun vm-pop-net-take-session (session)
+  "Record SESSION as this folder's, and say so in its mode line."
+  (let ((folder (current-buffer)))
+    (setq vm-pop-net-session session)
+    (vm-pop-net-show-session)
+    (vm-net-at-end session
+		   (lambda ()
+		     (when (buffer-live-p folder)
+		       (with-current-buffer folder
+			 (vm-pop-net-show-session)))))
+    session))
+
+(defun vm-pop-net-show-session ()
+  "Say in the mode line what this folder is doing with its server.
+The folder buffer, its summary and its presentation all show it: a reader
+looking at the summary is looking at a folder that is being written into."
+  (let* ((session vm-pop-net-session)
+	 (running (and session (vm-net-session-live-p session)
+		       (or (vm-net-session-name session) "POP"))))
+    (setq vm-ml-session (and running (format " %s" running)))
+    (vm-update-summary-and-mode-line)))
 
 (defun vm-pop-net-busy-p (&optional folder)
   "Whether FOLDER, or the current buffer's folder, has a session running."
@@ -801,8 +826,8 @@ session is already running, and the caller is to use the blocking path."
      (t
       (condition-case reason
 	  (progn
-	    (setq vm-pop-net-session
-		  (vm-pop-net-fetch
+	    (vm-pop-net-take-session
+	     (vm-pop-net-fetch
 		   source (vm-pop-net-folder-retrieved)
 		   (lambda (result)
 		     (when (buffer-live-p folder)
@@ -910,7 +935,7 @@ next fetch's business."
 	    (vm-net-start session
 			  (vm-pop-net-expunge-session (nth 1 opened)
 						      (nth 2 opened) uidls))
-	    (setq vm-pop-net-session session)
+	    (vm-pop-net-take-session session)
 	    (vm-inform 6 "%s: deleting %d message%s on the server without waiting"
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)
@@ -1024,8 +1049,8 @@ already running -- and one already running will say what arrived anyway."
      (t
       (condition-case reason
 	  (progn
-	    (setq vm-pop-net-session
-		  (vm-pop-net-check-mail
+	    (vm-pop-net-take-session
+	     (vm-pop-net-check-mail
 		   source
 		   (lambda (answer)
 		     (when (buffer-live-p folder)

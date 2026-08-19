@@ -1350,15 +1350,39 @@ that connection anyway.")
 (defun vm-imap-net-take-session (session)
   "Record SESSION as this folder's, and run what is waiting when it ends.
 Every start goes through here: the slot is what `vm-imap-net-busy-p\=' reads,
-and what is queued behind it would otherwise never run."
+what is queued behind it would otherwise never run, and the mode line of every
+buffer showing this folder says what it is doing."
   (let ((folder (current-buffer)))
     (setq vm-imap-net-session session)
+    (vm-imap-net-show-session)
     (vm-net-at-end session
 		   (lambda ()
 		     (when (buffer-live-p folder)
 		       (with-current-buffer folder
-			 (vm-imap-net-run-next)))))
+			 (vm-imap-net-run-next)
+			 (vm-imap-net-show-session)))))
     session))
+
+(defvar vm-ml-session)
+
+(defun vm-imap-net-show-session ()
+  "Say in the mode line what this folder is doing with its server.
+
+The folder buffer, its summary and its presentation all show it: a reader
+looking at the summary is looking at a folder that is being written into, and
+the folder buffer may not be on screen at all.  What is queued is counted, so
+\" IMAP fetch +2\" is a fetch running with two things waiting for it."
+  (let* ((session vm-imap-net-session)
+	 (running (and session (vm-net-session-live-p session)
+		       (or (vm-net-session-name session) "IMAP")))
+	 (waiting (length vm-imap-net-waiting)))
+    (setq vm-ml-session
+	  (cond ((and running (> waiting 0))
+		 (format " %s +%d" running waiting))
+		(running (format " %s" running))
+		((> waiting 0) (format " %d waiting" waiting))
+		(t nil)))
+    (vm-update-summary-and-mode-line)))
 
 (defun vm-imap-net-run-next ()
   "Start the next thing this folder was waiting to do, if any.
@@ -1367,6 +1391,7 @@ folder's session and the rest keep waiting behind it."
   (let ((next (car vm-imap-net-waiting)))
     (when next
       (setq vm-imap-net-waiting (cdr vm-imap-net-waiting))
+      (vm-imap-net-show-session)
       (vm-inform 6 "%s: %s now that the folder is free"
 		 (buffer-name) (car next))
       (condition-case reason
@@ -1386,6 +1411,7 @@ which would open the second connection this is avoiding."
    ((vm-imap-net-busy-p)
     (setq vm-imap-net-waiting
 	  (append vm-imap-net-waiting (list (cons name function))))
+    (vm-imap-net-show-session)
     (vm-inform 6 "%s: %s when the session running now has finished"
 	       (buffer-name) name)
     'later)

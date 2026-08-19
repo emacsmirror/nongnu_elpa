@@ -549,6 +549,7 @@ on its presentation buffer, if any."
 				   'vm-ml-sort-keys
 				   'vm-ml-labels
 				   'vm-spooled-mail-waiting
+				   'vm-ml-session
 				   'vm-message-list)
 	  (vm-reset-buffer-modified-p modified vm-summary-buffer)))
   (if (and vm-presentation-buffer (buffer-name vm-presentation-buffer))
@@ -574,6 +575,7 @@ on its presentation buffer, if any."
 				 'vm-virtual-mirror
 				 'vm-ml-labels
 				 'vm-spooled-mail-waiting
+				 'vm-ml-session
 				 'vm-message-list)
 	(vm-reset-buffer-modified-p modified vm-presentation-buffer)))
   (vm-force-mode-line-update))

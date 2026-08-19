@@ -6910,6 +6910,13 @@ append a space to words that complete unambiguously.")
     "VM comes with ABSOLUTELY NO WARRANTY; type \\[vm-show-no-warranty] for full details"))
 (defconst vm-startup-message-displayed nil)
 ;; for the mode line
+(defvar vm-ml-session nil
+  "What this folder is doing with its server, for the mode line.
+A string such as \" IMAP fetch\", or nil when the folder is not talking to
+anything.  Set by the driver in lisp/vm-net.el and copied into the folder's
+summary and presentation buffers, so that all three say the same thing.")
+(make-variable-buffer-local 'vm-ml-session)
+
 (defconst vm-mode-line-format-robf
   '("- " 
     (vm-compositions-exist ("" vm-ml-composition-buffer-count " / "))
@@ -6926,6 +6933,7 @@ append a space to words that complete unambiguously.")
       (vm-folder-type
        " (unrecognized folder type)"
        " (no messages)")))
+    (vm-ml-session ("" vm-ml-session))
     (vm-message-list
      (" %[ " vm-ml-message-attributes-alist
       (vm-ml-labels ("; " vm-ml-labels)) " %] ")
@@ -6948,6 +6956,7 @@ append a space to words that complete unambiguously.")
        "   (unrecognized folder type)"
        "   (no messages)")))
     (vm-spooled-mail-waiting " Mail")
+    (vm-ml-session ("" vm-ml-session))
     (vm-message-list
      ("  %[ " vm-ml-message-attributes-alist
       (vm-ml-labels ("; " vm-ml-labels)) " %]    ")

@@ -3,6 +3,34 @@
 If you are upgrading from a previous version of VM, look through the entries
 since that version to see how you might be affected.
 
+## IMAP and POP no longer stop Emacs
+
+Fetching mail, loading a message body, sending flag changes, expunging,
+saving, quitting, synchronising, filing a copy of what you send, making and
+listing mailboxes: all of it happens while you carry on reading.  Emacs is not
+held while VM talks to a server.
+
+The mode line of the folder, its summary and its presentation says what the
+folder is doing and how much is waiting for it:
+
+    VM: inbox   3 (of 412)  IMAP fetch +1
+
+The folder is not locked while this goes on: read it, move about it, delete,
+mark, label and expunge as usual.  Work that needs the server is done when the
+session running now has finished -- a folder runs one session at a time, since
+two writing into it would interleave two sets of messages, flags and expunges
+in one buffer and one cache file.
+
+Two things still wait, and say so: saving or copying a message whose body is
+still on the server, which cannot be written without it, and completing a
+folder name, which has to answer with the names it has.  `C-g` works in both.
+
+New mail arrives a bunch at a time rather than all at the end, so a large
+mailbox fills in while you read it.
+
+`vm-imap-synchronize` is the exception worth knowing: it is the command whose
+job is the expensive half, and it too now runs in the background.
+
 ## Two features must now be switched on
 
 Loading a file no longer switches it on.  If your init file loads either of
