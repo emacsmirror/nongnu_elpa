@@ -250,12 +250,21 @@ literal \"Thinking\" label."
          (append (hermes-chat--turn-header-props event)
                  (list :updated now))))
 
+(defun hermes-chat--compress-bar-clear-event-p (event)
+  "Return non-nil when EVENT is the gateway's post-compress ready bar clear."
+  (and (eq (plist-get event :type) 'status)
+       (equal (hermes-chat--status-name (plist-get event :status)) "status")
+       (equal (hermes-chat--event-string event '(:content :text)) "ready")))
+
 (defun hermes-chat--transcript-event-p (event)
   "Return non-nil when EVENT should render a compact transcript entry.
 `session.info' feeds the header only, and `notification.clear' retracts a
-keyed notice without carrying text, so neither becomes an entry."
+keyed notice without carrying text, so neither becomes an entry.  The
+gateway's post-`session.compress' ready bar-clear is also not a transcript
+line."
   (pcase (plist-get event :type)
     ('status (not (or (hermes-chat--session-info-event-p event)
+                      (hermes-chat--compress-bar-clear-event-p event)
                       (equal (hermes-chat--event-string event '(:event))
                              "notification.clear"))))
     ((or 'progress 'tool 'commentary 'diff 'unknown) t)))
@@ -343,8 +352,18 @@ ordered list the boundary replays: a header change leads with `refresh-header',
 and `upsert-entry'.  Other types return (STATE)."
   (pcase (plist-get event :type)
     ('status
-     (if (equal (hermes-chat--status-name (plist-get event :status)) "goal")
-         (cons state (delq nil (list (hermes-chat--turn-entry-effect event))))
+     (cond
+      ((hermes-chat--compress-bar-clear-event-p event)
+       (let ((status (hermes-chat--entry-with
+                      (hermes-chat--turn-state-get state :status-state)
+                      :status 'ready
+                      :activity "Ready"
+                      :updated now)))
+         (cons (hermes-chat--turn-state-put state :status-state status)
+               (list (cons 'refresh-header status)))))
+      ((equal (hermes-chat--status-name (plist-get event :status)) "goal")
+       (cons state (delq nil (list (hermes-chat--turn-entry-effect event)))))
+      (t
        (let* ((next-state
                (if (plist-member event :goal)
                    (hermes-chat--turn-state-put state :goal
@@ -355,7 +374,7 @@ and `upsert-entry'.  Other types return (STATE)."
                (append
                 (delq nil (list (cons 'refresh-header status)
                                 (hermes-chat--turn-entry-effect event)))
-                (hermes-chat--turn-session-info-effects event))))))
+                (hermes-chat--turn-session-info-effects event)))))))
     ('goal
      (cons (hermes-chat--turn-state-put state :goal (plist-get event :goal))
            '((refresh-header))))
@@ -1809,6 +1828,10 @@ session is titled, after that title -- so chats stay filterable with
                  (if (string-empty-p arg)
                      (call-interactively #'hermes-chat-handoff)
                    (hermes-chat-handoff arg))))
+         (cons '("compact")
+               (lambda (arg) (hermes-chat--dashboard-compress "compact" arg)))
+         (cons '("compress")
+               (lambda (arg) (hermes-chat--dashboard-compress "compress" arg)))
          (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))))
 
 (hermes-chat--install-registries)

@@ -50,6 +50,21 @@
             '("session.cwd.set" (session_id . "sid")
               (cwd . "/tmp/project"))))))
 
+(ert-deftest hermes-dashboard-rpc-session-compress-sends-session-and-focus ()
+  "`session.compress' sends the live session id and optional focus topic."
+  (let (requests)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (push (cons method params) requests))))
+      (hermes-dashboard-transport-session-compress 'client :session-id "sid")
+      (hermes-dashboard-transport-session-compress
+       'client :session-id "sid" :focus-topic "keep blobs"))
+    (should
+     (equal (nreverse requests)
+            '(("session.compress" (session_id . "sid"))
+              ("session.compress" (session_id . "sid")
+               (focus_topic . "keep blobs")))))))
+
 (ert-deftest hermes-dashboard-rpc-config-set-scopes-live-session ()
   "Config writes preserve the Dashboard session."
   (let (request)
@@ -1382,7 +1397,8 @@
                  'fake-timer)))
       (hermes-dashboard-transport-request client "session.create")
       (hermes-dashboard-transport-request client "prompt.submit")
-      (should (equal (nreverse timeouts) '(30 1800))))))
+      (hermes-dashboard-transport-request client "session.compress")
+      (should (equal (nreverse timeouts) '(30 1800 1800))))))
 
 (ert-deftest hermes-transport-dashboard-model-save-key-sends-key-never-logs-it ()
   "`model.save_key' sends slug/api_key/session_id; a rejection never echoes the key."

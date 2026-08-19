@@ -205,11 +205,12 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 
 (defun hermes-chat--session-scoped-status-id (event)
   "Return a buffer-global id for operational status EVENT, or nil.
-`warn' and `compacting' are session-scoped notices: the gateway may re-emit
-them on every blocked compression attempt, and assistant ids rotate mid-turn.
-Key them by kind so later frames replace one line instead of appending."
+`warn', `compacting', and `compressing' are session-scoped notices: the
+gateway may re-emit them on every blocked or in-flight compression, and
+assistant ids rotate mid-turn.  Key them by kind so later frames replace
+one line instead of appending."
   (let ((status (hermes-chat--status-name (plist-get event :status))))
-    (and (member status '("warn" "compacting"))
+    (and (member status '("warn" "compacting" "compressing"))
          (concat "status:" status))))
 
 (defun hermes-chat--transport-entry-id (event)

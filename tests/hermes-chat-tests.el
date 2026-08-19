@@ -840,6 +840,34 @@
      (should-not (string-match-p "477,446" text))
      (should (string-match-p "Loop set" text)))))
 
+(ert-deftest hermes-chat-compressing-status-reuses-one-line ()
+  "Manual compress progress upserts one line; the ready bar-clear is header-only."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--status-state '(:status ready :activity "Ready"))
+   (hermes-chat--run-turn-reducer
+    "a1" '(:type status :event "status.update" :status "compressing"
+                 :session-id "sid" :content "compressing 40 messages…"))
+   (hermes-chat--run-turn-reducer
+    "a1" '(:type status :event "status.update" :status "compressing"
+                 :session-id "sid"
+                 :content "compressing 40 messages (~9,000 tok)…"))
+   (hermes-chat--run-turn-reducer
+    "a1" '(:type status :event "status.update" :status "status"
+                 :session-id "sid" :content "ready"))
+   (let ((lines (ewoc-collect
+                 hermes-chat--ewoc
+                 (lambda (entry)
+                   (eq (plist-get entry :role) 'status)))))
+     (should (= 1 (length lines)))
+     (should (string-match-p "9,000" (plist-get (car lines) :content)))
+     (should-not (string-match-p "ready"
+                                 (buffer-substring-no-properties
+                                  (point-min) (hermes-chat--input-position))))
+     (should (eq (plist-get hermes-chat--status-state :status) 'ready))
+     (should (equal (plist-get hermes-chat--status-state :activity) "Ready"))
+     (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
+     (should-not (string-match-p "Idle" (hermes-test--header-line-string))))))
+
 (ert-deftest hermes-chat-control-session-renders-server-originated-turn ()
   "A slash-created idle session renders a later backend-owned turn."
   (let ((client (hermes-test--dashboard-client)))
@@ -2991,6 +3019,8 @@
   (should (functionp (hermes-chat--native-slash-handler "int")))
   (should (functionp (hermes-chat--native-slash-handler "clear")))
   (should (functionp (hermes-chat--native-slash-handler "reset")))
+  (should (functionp (hermes-chat--native-slash-handler "compact")))
+  (should (functionp (hermes-chat--native-slash-handler "compress")))
   (should-not (hermes-chat--native-slash-handler "definitely-not-a-command"))
   (should-not (hermes-chat--native-slash-handler nil)))
 
@@ -3703,6 +3733,97 @@
        (hermes-chat-send)
        (should (equal status-queries '(("goal" . "status"))))
        (should-not (plist-get hermes-chat--goal :running))))))
+
+(ert-deftest hermes-chat-compact-uses-session-compress ()
+  "/compact uses session.compress and settles one progress line."
+  (let ((client (hermes-test--dashboard-client))
+        compress-args resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (&rest _)
+                 (ert-fail "compact must not use slash.exec")))
+              ((symbol-function 'hermes-dashboard-transport-session-compress)
+               (lambda (_client &rest args)
+                 (setq compress-args args
+                       resolve (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (hermes-chat--insert-entry (hermes-chat--make-entry 'user "hi"))
+       (hermes-chat--insert-entry
+        (hermes-chat--make-entry 'assistant "settled reply" 'done))
+       (insert "/compact keep blobs")
+       (hermes-chat-send)
+       (should (equal (plist-get compress-args :session-id) "sid-active"))
+       (should (equal (plist-get compress-args :focus-topic) "keep blobs"))
+       (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                             (hermes-chat--entries))
+                      '(user assistant status)))
+       (should (string-match-p "Compressing" (buffer-string)))
+       (hermes-chat--run-turn-reducer
+        "a1" '(:type status :event "status.update" :status "compressing"
+                     :session-id "sid-active"
+                     :content "compressing 12 messages (~4,000 tok)…"))
+       (let ((lines (ewoc-collect
+                     hermes-chat--ewoc
+                     (lambda (entry)
+                       (eq (plist-get entry :role) 'status)))))
+         (should (= 1 (length lines)))
+         (should (string-match-p "4,000" (plist-get (car lines) :content))))
+       (funcall resolve
+                '((status . "compressed")
+                  (summary . ((headline . "Compressed: 40 → 12 messages")
+                              (token_line . "Approx request size: ~120,000 → ~40,000 tokens")))))
+       (should (string-match-p "Compressed: 40 → 12" (buffer-string)))
+       (should (string-match-p "120,000" (buffer-string)))
+       (should-not (string-match-p "Compressing" (buffer-string)))
+       (should (= 1 (length
+                     (ewoc-collect
+                      hermes-chat--ewoc
+                      (lambda (entry)
+                        (eq (plist-get entry :role) 'status))))))))))
+
+(ert-deftest hermes-chat-compact-reject-settles-progress-line ()
+  "A rejected session.compress replaces the pending compress line."
+  (let ((client (hermes-test--dashboard-client)) reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (&rest _)
+                 (ert-fail "compact must not use slash.exec")))
+              ((symbol-function 'hermes-dashboard-transport-session-compress)
+               (lambda (_client &rest args)
+                 (setq reject (plist-get args :reject)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/compress")
+       (hermes-chat-send)
+       (should (string-match-p "Compressing" (buffer-string)))
+       (funcall reject "session busy — /interrupt the current turn before /compress")
+       (should (string-match-p "session busy" (buffer-string)))
+       (should-not (string-match-p "Compressing" (buffer-string)))))))
+
+(ert-deftest hermes-chat-compact-ignores-stale-session-result ()
+  "A late session.compress result does not settle a successor chat."
+  (let ((client (hermes-test--dashboard-client)) resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (&rest _)
+                 (ert-fail "compact must not use slash.exec")))
+              ((symbol-function 'hermes-dashboard-transport-session-compress)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/compact")
+       (hermes-chat-send)
+       (setq hermes-chat--lifecycle-generation
+             (1+ hermes-chat--lifecycle-generation))
+       (funcall resolve
+                '((summary . ((headline . "Compressed: 40 → 12 messages")))))
+       (should (string-match-p "Compressing" (buffer-string)))
+       (should-not (string-match-p "Compressed: 40" (buffer-string)))))))
 
 (ert-deftest hermes-chat-reasoning-command-mutates-live-session ()
   "`/reasoning' sets and reads back the owned dashboard session."

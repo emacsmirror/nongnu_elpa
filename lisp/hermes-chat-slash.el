@@ -540,6 +540,65 @@ via `hermes-chat--dashboard-slash-exec'."
     (if-let* ((handler (hermes-chat--native-slash-handler name)))
         (funcall handler (or arg ""))
       (hermes-chat--dashboard-slash-exec name arg (substring content 1)))))
+
+(defconst hermes-chat--compress-entry-id "status:compressing"
+  "Session-scoped EWOC id for a live `session.compress' progress line.")
+
+(defun hermes-chat--compress-summary (result)
+  "Return display text for a `session.compress' RESULT."
+  (let* ((summary (hermes-transport--get result 'summary))
+         (headline (hermes-chat--result-string summary 'headline))
+         (token-line (hermes-chat--result-string summary 'token_line))
+         (note (hermes-chat--result-string summary 'note)))
+    (or (hermes-transport--non-empty-string
+         (string-join (delq nil (list headline token-line note)) "\n"))
+        "Compressed.")))
+
+(defun hermes-chat--compress-show (text status)
+  "Show TEXT as the session-scoped compression line with STATUS."
+  (if (and hermes-chat--nodes
+           (gethash hermes-chat--compress-entry-id hermes-chat--nodes))
+      (hermes-chat--update-entry
+       hermes-chat--compress-entry-id
+       (lambda (entry)
+         (hermes-chat--entry-with entry :content text :status status)))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry
+      'status text status hermes-chat--compress-entry-id)
+     (hermes-chat--pending-assistant-node))))
+
+(defun hermes-chat--dashboard-compress (name arg)
+  "Compress the live session as slash NAME, optionally focused on ARG."
+  (let* ((focus (hermes-transport--non-empty-string arg))
+         (raw (string-join
+               (delq nil (list (concat "/" (or name "compact")) focus))
+               " ")))
+    (hermes-chat--command-run-owned
+     raw
+     (lambda (client owner)
+       (let ((buffer (current-buffer))
+             (context (hermes-chat--command-context client owner)))
+         (hermes-chat--compress-show "Compressing…" 'running)
+         (hermes-dashboard-transport-session-compress
+          client
+          :session-id (plist-get context :session-id)
+          :focus-topic focus
+          :resolve
+          (lambda (result)
+            (hermes-chat--in-buffer buffer
+              (hermes-chat--command-finish
+               context
+               (lambda ()
+                 (hermes-chat--compress-show
+                  (hermes-chat--compress-summary result) 'done)))))
+          :reject
+          (lambda (message)
+            (hermes-chat--in-buffer buffer
+              (hermes-chat--command-finish
+               context
+               (lambda ()
+                 (hermes-chat--compress-show message 'error)))))))))))
+
 ;;; Command results
 
 ;; Dispatch/alias/skill/prefill result handling lives with the slash

@@ -3,6 +3,7 @@
 * Unreleased
 
 - Aligned pipe tables in settled chat markdown so columns line up.
+- Routed =/compact= through =session.compress= with a live progress line.
 
 * Version 0.3.2 (2026-08-16)
 

@@ -313,6 +313,13 @@ result or error."
   :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-compress "session.compress"
+  "Compress CLIENT's SESSION-ID transcript via `session.compress'.
+FOCUS-TOPIC optionally focuses the summary.  RESOLVE and REJECT receive the
+asynchronous result or error."
+  :keys (focus-topic) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-handoff-request "handoff.request"
   "Queue a handoff of CLIENT's SESSION-ID to PLATFORM via `handoff.request'.
 The gateway validates the platform and its home channel, marks the session

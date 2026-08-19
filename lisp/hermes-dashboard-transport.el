@@ -849,7 +849,7 @@ without reporting teardown as a request failure."
 (defun hermes-dashboard-transport--request-timeout (method)
   "Return the request timeout for METHOD, or nil when disabled."
   (and hermes-dashboard-transport-request-timeout
-       (if (equal method "prompt.submit")
+       (if (member method '("prompt.submit" "session.compress"))
            (max 1800 hermes-dashboard-transport-request-timeout)
          hermes-dashboard-transport-request-timeout)))
 
