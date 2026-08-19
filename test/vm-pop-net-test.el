@@ -923,6 +923,57 @@ nothing: that list is what stops a folder filling with duplicates."
         (should (equal (car (last seen)) " fetching 2/2 "))
         (should-not vm-ml-session)))))
 
+(ert-deftest vm-pop-net-test-two-maildrops-into-one-folder-take-turns ()
+  "Two POP maildrops among a folder's spool files are fetched in turn.
+
+`vm-get-new-mail\=' starts each without waiting, so both ran at once against
+one folder: two crash boxes written and gobbled into one buffer, and the
+folder's session slot pointing at the second while the first went on
+unowned -- invisible to `vm-pop-net-busy-p\=', to the mode line and to
+`vm-pop-net-stop\='.  There was no refusal on this side at all."
+  (vm-pop-mock-with (one :messages (list "From: a@example.com\nSubject: from-one\n\nA.\n"))
+    (vm-pop-mock-with (two :messages (list "From: b@example.com\nSubject: from-two\n\nB.\n"))
+      (let* ((dir (file-name-as-directory (make-temp-file "vm-pop-two" t)))
+             (local (expand-file-name "inbox" dir))
+             (vm-pop-server-timeout 10)
+             (vm-frame-per-folder nil)
+             (vm-mutable-frame-configuration nil)
+             (vm-auto-get-new-mail nil)
+             (vm-spool-files (list (list local (vm-pop-mock-spec one)
+                                         (concat local ".crash1"))
+                                   (list local (vm-pop-mock-spec two)
+                                         (concat local ".crash2"))))
+             (before (buffer-list))
+             (overlapped nil)
+             (real (symbol-function 'vm-pop-net-take-session)))
+        (unwind-protect
+            (progn
+              (write-region "" nil local nil 'quiet)
+              (cl-letf (((symbol-function 'vm-display) #'ignore)
+                        ((symbol-function 'vm-pop-net-take-session)
+                         (lambda (session &rest more)
+                           (when (and vm-pop-net-session
+                                      (not (eq vm-pop-net-session session))
+                                      (vm-net-session-live-p vm-pop-net-session))
+                             (setq overlapped t))
+                           (apply real session more))))
+                (vm-visit-folder local)
+                (vm-get-new-mail)
+                (let ((deadline (+ (float-time) 20)))
+                  (while (and (or (vm-pop-net-busy-p) vm-pop-net-waiting)
+                              (< (float-time) deadline))
+                    (accept-process-output nil 0.05))))
+              (should-not overlapped)
+              (should (equal (sort (mapcar #'vm-su-subject vm-message-list)
+                                   #'string-lessp)
+                             '("from-one" "from-two"))))
+          (dolist (buffer (buffer-list))
+            (unless (memq buffer before)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))
+                (kill-buffer buffer))))
+          (delete-directory dir t))))))
+
 (ert-deftest vm-pop-net-test-a-fetch-that-times-out-says-so ()
   "A fetch whose server goes quiet reports the timeout, and does not hang.
 

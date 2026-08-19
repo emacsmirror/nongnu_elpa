@@ -1823,6 +1823,67 @@ Here the flush is made to fire in exactly that gap, after every message."
                          (count-matches "^From " (point-min) (point-max)))
                        6))))))
 
+(ert-deftest vm-imap-net-test-two-maildrops-into-one-folder-take-turns ()
+  "Two maildrops among a folder's spool files are fetched one after the other.
+
+`vm-get-new-mail\=' walks the spool files and starts each fetch without waiting,
+so the second was started while the first was still running: two sessions
+writing one folder, one buffer and one cache file.  The folder's own refusal
+came too late -- the second session was already talking to a server, and
+unowned, so nothing could see it or stop it -- and the whole command failed
+with \"a second session was started while IMAP movemail was running\".
+
+The second waits its turn now, and both lots of mail arrive."
+  (vm-imap-mock-with (one :messages (list "From: a@example.com\nSubject: from-one\n\nA.\n"))
+    (vm-imap-mock-with (two :messages (list "From: b@example.com\nSubject: from-two\n\nB.\n"))
+      (let* ((dir (file-name-as-directory (make-temp-file "vm-imap-two" t)))
+             (cache (make-temp-file "vm-imap-two-cache" t))
+             (local (expand-file-name "inbox" dir))
+             (vm-imap-folder-cache-directory cache)
+             (vm-imap-server-timeout 10)
+             (vm-frame-per-folder nil)
+             (vm-mutable-frame-configuration nil)
+             (vm-auto-get-new-mail nil)
+             (vm-spool-files (list (list local (vm-imap-mock-spec one)
+                                         (concat local ".crash1"))
+                                   (list local (vm-imap-mock-spec two)
+                                         (concat local ".crash2"))))
+             (before (buffer-list))
+             (overlapped nil)
+             (real (symbol-function 'vm-imap-net-take-session)))
+        (unwind-protect
+            (progn
+              (write-region "" nil local nil 'quiet)
+              (cl-letf (((symbol-function 'vm-display) #'ignore)
+                        ((symbol-function 'vm-imap-net-take-session)
+                         (lambda (session &rest more)
+                           (when (and vm-imap-net-session
+                                      (not (eq vm-imap-net-session session))
+                                      (vm-net-session-live-p vm-imap-net-session))
+                             (setq overlapped t))
+                           (apply real session more))))
+                (vm-visit-folder local)
+                (vm-get-new-mail)
+                (let ((deadline (+ (float-time) 20)))
+                  (while (and (or (vm-imap-net-busy-p) vm-imap-net-waiting)
+                              (< (float-time) deadline))
+                    (accept-process-output nil 0.05))))
+              ;; both maildrops arrived, and never at the same time
+              (should-not overlapped)
+              (should (equal (sort (mapcar #'vm-su-subject vm-message-list)
+                                   #'string-lessp)
+                             '("from-one" "from-two")))
+              ;; nothing left lying about
+              (should-not (file-exists-p (concat local ".crash1")))
+              (should-not (file-exists-p (concat local ".crash2"))))
+          (dolist (buffer (buffer-list))
+            (unless (memq buffer before)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))
+                (kill-buffer buffer))))
+          (delete-directory dir t)
+          (delete-directory cache t))))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time
