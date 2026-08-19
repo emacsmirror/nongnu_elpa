@@ -49,6 +49,8 @@
 (declare-function vm-imap-protocol-error "vm-imap" (&rest args))
 (declare-function vm-imap-normal-error "vm-imap" (&rest args))
 (declare-function vm-imap-response-matches "vm-imap" (response &rest expr))
+(declare-function vm-imap-skip-fetch-item "vm-imap" (contents))
+(declare-function vm-imap-fetch-response-parts "vm-imap" (contents))
 (declare-function vm-warn "vm-misc" (l secs &rest args))
 
 (defvar vm-imap-tolerant-of-bad-imap)
@@ -466,7 +468,13 @@ PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
 (iter-defun vm-imap-net-message-data (first last)
   "Ask for the UID, size and flags of the messages FIRST to LAST.
 Answers an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
-`vm-imap-get-message-data-list\\=' answers, newest first."
+`vm-imap-get-message-data-list\\=' answers, newest first.
+
+A response with no UID is not an answer to this: a server sends a message\\='s
+flags on its own account when somebody else changes them (RFC 3501 7.4.1), and
+taking that for message data put an entry with no UID in the folder\\='s tables
+-- \"Wrong type argument: stringp, nil\", and no mail.  VM reads the flags it
+acts on from the server at the next synchronisation anyway."
   (let ((lines (iter-yield-from
 		(vm-imap-net-command
 		 (format "FETCH %s:%s (UID RFC822.SIZE FLAGS)" first last)
@@ -495,10 +503,11 @@ Answers an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
 		(push (downcase (buffer-substring (nth 1 token) (nth 2 token)))
 		      flags))
 	      (setq contents (nthcdr 2 contents)))
-	     (t
-	      (vm-imap-protocol-error
-	       "expected UID, RFC822.SIZE and (FLAGS list) in FETCH response"))))
-	  (push (cons number (cons uid (cons size (nreverse flags)))) data))))
+	     ;; an item VM did not ask for: stepped over, not called a broken
+	     ;; response
+	     (t (setq contents (vm-imap-skip-fetch-item contents)))))
+	  (when uid
+	    (push (cons number (cons uid (cons size (nreverse flags)))) data)))))
     data))
 
 (defun vm-imap-net-fetch-items (body-peek headers-only)
@@ -512,25 +521,17 @@ any order, and the responses have to be told apart (issue #185)."
 
 (defun vm-imap-net-fetch-message-text (response)
   "Where in the process buffer RESPONSE's message is: (UID START END).
-Signals unless RESPONSE is a FETCH carrying a UID and one string."
-  (let ((contents (cdr (nth 3 response)))
-	(uid nil) (text nil))
-    (while contents
-      (cond ((vm-imap-response-matches contents 'UID 'atom)
-	     (let ((token (nth 1 contents)))
-	       (setq uid (buffer-substring (nth 1 token) (nth 2 token))))
-	     (setq contents (nthcdr 2 contents)))
-	    ((vm-imap-response-matches contents 'atom 'string)
-	     (setq text (nth 1 contents))
-	     (setq contents (nthcdr 2 contents)))
-	    ((vm-imap-response-matches contents 'atom '(vector) 'string)
-	     (setq text (nth 2 contents))
-	     (setq contents (nthcdr 3 contents)))
-	    (t
-	     (vm-imap-protocol-error "unexpected FETCH response contents"))))
-    (unless (and uid text)
-      (vm-imap-protocol-error "expected a UID and a message in FETCH response"))
-    (list uid (nth 1 text) (nth 2 text))))
+Answers nil for a FETCH that carries no message: a server sends one of its own
+accord to report a message\='s flags, and that is not an answer to a fetch of
+message text.  Signals for one that carries a message but no UID, there being
+no saying which message it would be."
+  (let* ((parts (vm-imap-fetch-response-parts (cdr (nth 3 response))))
+	 (uid (car parts))
+	 (text (cdr parts)))
+    (cond ((null text) nil)
+	  ((null uid)
+	   (vm-imap-protocol-error "expected a UID in FETCH response"))
+	  (t (list uid (nth 1 text) (nth 2 text))))))
 
 (iter-defun vm-imap-net-fetch (first last body-peek headers-only store)
   "Fetch messages FIRST to LAST, handing each to STORE as it arrives.
@@ -548,8 +549,11 @@ read, which is what keeps a mailbox of any size out of memory."
 		      (vm-imap-net-read-response-and-verify "FETCH")))
       (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
 	     (let ((message (vm-imap-net-fetch-message-text response)))
-	       (apply store message)
-	       (setq count (1+ count))))
+	       ;; nil for a FETCH the server sent to report a message's flags
+	       ;; rather than to answer this one
+	       (when message
+		 (apply store message)
+		 (setq count (1+ count)))))
 	    ((vm-imap-response-matches response 'VM 'OK)
 	     (setq done t))))
     count))
