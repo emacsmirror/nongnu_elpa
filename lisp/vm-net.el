@@ -84,6 +84,43 @@
   cleanups				; what to undo when it ends, newest first
   buffer-types)				; the per-session buffer-type stack
 
+(defface vm-net-session-face
+  '((t :inherit mode-line-emphasis))
+  "Face for what a folder is doing with its server, in the mode line.
+
+Inherits `mode-line-emphasis\=', which every theme renders differently from
+the rest of the mode line.  For something louder, give it a background:
+
+    (set-face-attribute \='vm-net-session-face nil :background \"yellow2\")"
+  :group 'vm-faces)
+
+(defconst vm-net-session-words
+  '(("fetch" . "fetching")
+    ("save" . "saving")
+    ("flags" . "sending changes")
+    ("checkmail" . "checking")
+    ("check" . "checking")
+    ("uids" . "checking")
+    ("synchronize" . "syncing")
+    ("expunge" . "deleting")
+    ("maildrop expunge" . "deleting")
+    ("folders" . "listing folders")
+    ("names" . "listing folders")
+    ("FCC" . "filing")
+    ("CREATE" . "making a folder")
+    ("DELETE" . "deleting a folder")
+    ("RENAME" . "renaming a folder"))
+  "What to call each kind of session in the mode line.
+Keyed by the tail of the session name, so that a reader sees what is
+happening rather than which protocol is doing it: \"fetching\", not \"IMAP
+fetch\".")
+
+(defun vm-net-session-doing (name)
+  "What to call the session called NAME, for a reader watching the mode line."
+  (let ((tail (and name (replace-regexp-in-string "\\`\\(IMAP\\|POP\\) +" ""
+						 name))))
+    (or (cdr (assoc tail vm-net-session-words)) "busy")))
+
 (defun vm-net-session-live-p (session)
   "Whether SESSION is still to finish."
   (memq (vm-net-session-state session) '(new running)))
@@ -243,6 +280,13 @@ anything that turned up while the generator was running is unasked about, and
 a session whose whole answer arrived in that window waited for a chunk that
 was never coming: three responses complete in the buffer and a POP fetch
 stopped dead, until something else happened to poll it."
+  (when (vm-net-session-resuming session)
+    ;; A generator resumed while it is running is `iter-next' on a running
+    ;; generator, which signals; and if it did not signal, it would be two
+    ;; halves of one session writing one folder.  The poll refuses this case
+    ;; rather than reaching it, so getting here is a fault in the driver.
+    (error "%s session resumed while it was running"
+	   (or (vm-net-session-name session) "network")))
   (let ((buffer (vm-net-session-buffer session))
 	(again t))
     (setf (vm-net-session-resuming session) t)

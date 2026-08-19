@@ -723,9 +723,22 @@ The folder buffer, its summary and its presentation all show it: a reader
 looking at the summary is looking at a folder that is being written into."
   (let* ((session vm-pop-net-session)
 	 (running (and session (vm-net-session-live-p session)
-		       (or (vm-net-session-name session) "POP"))))
-    (setq vm-ml-session (and running (format " %s" running)))
+		       (vm-net-session-doing (vm-net-session-name session)))))
+    (setq vm-ml-session
+	  (and running (propertize (format " %s " running)
+				   'face 'vm-net-session-face)))
     (vm-update-summary-and-mode-line)))
+
+(defun vm-pop-net-stop ()
+  "Stop what this folder is doing with its server.
+For a folder that is going away; see `vm-imap-net-stop\='."
+  (let ((session vm-pop-net-session))
+    (when (and session (vm-net-session-live-p session))
+      (vm-inform 5 "%s: stopping %s" (buffer-name)
+		 (or (vm-net-session-name session) "the session"))
+      (vm-net-abandon session))
+    (setq vm-pop-net-session nil)
+    (setq vm-ml-session nil)))
 
 (defun vm-pop-net-busy-p (&optional folder)
   "Whether FOLDER, or the current buffer's folder, has a session running."

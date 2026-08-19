@@ -1011,7 +1011,11 @@ counted with it."
     (setq vm-imap-net-session
           (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
     (should (stringp vm-ml-session))
-    (should (string-match-p "IMAP fetch" vm-ml-session))
+    ;; what is happening, not which protocol is doing it, and faced so that it
+    ;; is not read as part of the folder's name
+    (should (string-match-p "fetching" vm-ml-session))
+    (should-not (string-match-p "IMAP" vm-ml-session))
+    (should (eq (get-text-property 1 'face vm-ml-session) 'vm-net-session-face))
     ;; the summary says the same, without being the folder
     (when (and vm-summary-buffer (buffer-live-p vm-summary-buffer))
       (with-current-buffer vm-summary-buffer
@@ -1022,6 +1026,74 @@ counted with it."
     (should (string-match-p "\\+1" vm-ml-session))
     (should (vm-imap-net-wait nil 10))
     (should-not vm-ml-session)))
+
+(ert-deftest vm-imap-net-test-quitting-stops-what-the-folder-was-doing ()
+  "Quitting a folder stops its session rather than leaving it writing.
+
+The buffer is about to go, and a session that went on writing into it would be
+writing into nothing.  Nothing is lost that is not still on the server: what
+was fetched and not saved is fetched again next time."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    (setq vm-imap-net-session
+          (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+    (let ((session vm-imap-net-session))
+      (should (vm-net-session-live-p session))
+      ;; queue something behind it, which goes with it
+      (should (eq (vm-imap-net-send-changes) 'later))
+      (vm-imap-net-stop)
+      (should-not (vm-net-session-live-p session))
+      (should-not vm-imap-net-session)
+      (should-not vm-imap-net-waiting)
+      (should-not vm-ml-session)
+      ;; and it said goodbye rather than being dropped: the generator's
+      ;; unwind forms ran, which is where the LOGOUT is
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (not (vm-imap-mock-received-p mock "LOGOUT"))
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (vm-imap-mock-received-p mock "LOGOUT")))))
+
+(ert-deftest vm-imap-net-test-a-second-session-is-refused-not-tolerated ()
+  "Starting a second session on a folder is an error, not a race.
+
+The queue is what keeps it from happening; this is what says so if a path is
+ever added that does not go through the queue.  Two sessions writing one
+folder is how a folder gets two sets of messages, flags and expunges in one
+buffer and one cache file, and that is not something to find out about from a
+corrupted cache."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (setq vm-imap-net-session
+          (vm-imap-net-get-mail (vm-imap-mock-spec mock) #'ignore))
+    (should (vm-imap-net-busy-p))
+    (should-error (vm-imap-net-take-session (vm-net-session :name "second"))
+                  :type 'error)
+    (should (vm-imap-net-wait nil 10))))
+
+(ert-deftest vm-imap-net-test-messages-from-elsewhere-stop-the-pairing ()
+  "A folder that gains a message from somewhere else mid-fetch is not paired
+up wrongly.
+
+Each message taken in is given the UID of the entry beside it.  A message that
+arrived from anywhere but this fetch would shift that pairing and give every
+message after it the UID of another -- the folder would look right and be
+wrong.  It signals instead."
+  (vm-imap-net-test--visiting (mock)
+    (let ((validity (vm-folder-imap-uid-validity)))
+      ;; two written, one entry to pair them with
+      (should-error (vm-imap-net-assimilate (list (list "1" 1 nil)) validity)
+                    :type 'vm-imap-protocol-error))))
+
+(ert-deftest vm-imap-net-test-a-uid-nobody-asked-for-stops-the-fetch ()
+  "A UID the plan does not know is refused rather than written into a message."
+  (should-error (vm-imap-net-entries-written '("7") '(("1" 1 nil)))
+                :type 'vm-imap-protocol-error))
+
+(ert-deftest vm-imap-net-test-a-changed-uid-validity-stops-the-write ()
+  "The mailbox a message came from must still be the mailbox the folder holds."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should-error (vm-imap-net-assimilate nil "not-the-validity")
+                  :type 'vm-imap-protocol-error)))
 
 ;;; What the server no longer has
 

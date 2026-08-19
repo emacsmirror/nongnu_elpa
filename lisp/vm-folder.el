@@ -56,6 +56,8 @@
 		  (process &optional imap-buffer keep-buffer))
 (declare-function vm-imap-synchronize-folder "vm-imap" t)
 (declare-function vm-imap-net-send-changes "vm-imap-net" ())
+(declare-function vm-imap-net-stop "vm-imap-net" ())
+(declare-function vm-pop-net-stop "vm-pop-net" ())
 (declare-function vm-pop-net-send-changes "vm-pop-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
 (declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
@@ -3859,7 +3861,12 @@ changes should be discarded."
     ;;    their virtual copies.
     (vm-virtual-quit no-expunge no-change)
 
-    ;; 6. Kill the folder along with its buffers and processes
+    ;; 6. Kill the folder along with its buffers and processes.
+    ;;    What it is doing without waiting stops first: the buffer is about to
+    ;;    go, and a session that went on writing into it would be writing into
+    ;;    nothing.  Nothing is lost that is not still on the server.
+    (vm-imap-net-stop)
+    (vm-pop-net-stop)
     (cond ((and (eq vm-folder-access-method 'pop)
 		(setq process (vm-folder-pop-process)))
 	   (vm-pop-end-session process))

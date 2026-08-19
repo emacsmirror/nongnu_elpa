@@ -13,7 +13,12 @@ held while VM talks to a server.
 The mode line of the folder, its summary and its presentation says what the
 folder is doing and how much is waiting for it:
 
-    VM: inbox   3 (of 412)  IMAP fetch +1
+    VM: inbox   3 (of 412)   fetching +1 
+
+It says what is happening rather than which protocol is doing it, in the face
+`vm-net-session-face` -- give that face a background if you want it louder.
+Quitting a folder stops what it was doing rather than leaving a session writing
+into a buffer that is going away.
 
 The folder is not locked while this goes on: read it, move about it, delete,
 mark, label and expunge as usual.  Work that needs the server is done when the
