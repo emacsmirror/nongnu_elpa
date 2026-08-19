@@ -935,11 +935,63 @@ The current buffer is the folder."
 		      (list (car pair) (cdr pair)
 			    (and (> size limit) headers-only))))
 		  (nth 0 sync))))
+    (setq retrieve-list (vm-imap-net-only-new-uids retrieve-list))
     (list retrieve-list
 	  (vm-imap-bunch-retrieve-list (mapcar #'cdr retrieve-list))
 	  (nth 2 sync)
 	  (nth 3 sync)
 	  (nth 1 sync))))
+
+(defun vm-imap-net-uids-held ()
+  "The UIDs this folder holds for the mailbox it is looking at.
+The current buffer is the folder."
+  (let ((validity (vm-folder-imap-uid-validity))
+	(held (make-hash-table :test 'equal)))
+    (dolist (message vm-message-list)
+      (let ((uid (vm-imap-uid-of message)))
+	(when (and uid (equal (vm-imap-uid-validity-of message) validity))
+	  (puthash uid t held))))
+    held))
+
+(defun vm-imap-net-uid-held-p (uid)
+  "Whether this folder already holds UID, for the mailbox it is looking at.
+The current buffer is the folder."
+  (and (gethash uid (vm-imap-net-uids-held)) t))
+
+(defun vm-imap-net-only-new-uids (retrieve-list)
+  "RETRIEVE-LIST without the entries this folder already holds, warning of them.
+The current buffer is the folder.
+
+A UID names one message for as long as the UIDVALIDITY holds, so a folder
+holding two of them holds the same message twice: two summary lines, two
+copies in the file, one server message for both, and every later operation
+that looks one up by UID reaching whichever comes first.
+
+Dropped and reported rather than fetched, and rather than the whole fetch
+failing over it: the rest of the mailbox is new mail the reader wants, and a
+message that is here already is one there is nothing left to do about."
+  (let ((held (vm-imap-net-uids-held))
+	(asked (make-hash-table :test 'equal))
+	(wanted nil)
+	(again nil)
+	(twice nil))
+    (dolist (entry retrieve-list)
+      (let ((uid (car entry)))
+	(cond ((gethash uid held) (push uid again))
+	      ((gethash uid asked) (push uid twice))
+	      (t (puthash uid t asked)
+		 (push entry wanted)))))
+    (when again
+      (vm-warn 0 2 "%s: not fetching %d message%s the folder has already: UID%s %s"
+	       (buffer-name) (length again) (if (= (length again) 1) "" "s")
+	       (if (= (length again) 1) "" "s")
+	       (string-join (nreverse again) ", ")))
+    (when twice
+      (vm-warn 0 2 "%s: the server listed UID%s %s twice; fetching %s once"
+	       (buffer-name) (if (= (length twice) 1) "" "s")
+	       (string-join (nreverse twice) ", ")
+	       (if (= (length twice) 1) "it" "each")))
+    (nreverse wanted)))
 
 (defun vm-imap-net-require-folder (folder)
   "Signal unless FOLDER is still there to be written into.
@@ -1195,8 +1247,20 @@ expunged."
     		     (entries (seq-take (nthcdr retrieved retrieve-list) count))
     		     (written nil)
     		     (store (lambda (uid start end)
-    			      (push uid written)
-    			      (vm-imap-net-store folder folder-type source start end))))
+			      ;; asked for as new, and here by the time it
+			      ;; arrived: written twice, the folder would hold
+			      ;; the one message twice over.  Said out loud and
+			      ;; left out, the rest of the fetch going on -- the
+			      ;; other messages are new mail the reader wants
+			      (if (with-current-buffer folder
+				    (vm-imap-net-uid-held-p uid))
+				  (vm-warn 0 2 (concat "%s: UID %s arrived while"
+						       " the folder was gaining"
+						       " it; not written twice")
+					   (buffer-name folder) uid)
+				(push uid written)
+				(vm-imap-net-store folder folder-type source
+						 start end)))))
     		(iter-yield-from
     		 (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
     				    store))
