@@ -189,9 +189,23 @@ decision to make."
   (iter-yield-from (vm-pop-net-command (format "DELE %d" n)))
   t)
 
+(defvar vm-pop-net-said-goodbye nil
+  "Whether this session has said QUIT and heard the answer.
+
+Bound per session by the generators that delete, so the `unwind-protect\=' that
+covers an abandoned session does not say it twice.")
+
 (iter-defun vm-pop-net-quit ()
-  "Say QUIT, which is what makes the server act on the deletions."
+  "Say QUIT and read what the server says to it.
+
+QUIT is what makes a POP server act on the session's deletions, and RFC 1939
+3.5 lets it answer -ERR -- \"some deleted messages not removed\" -- when it
+could not.  Written blind, as the unwinding does for a session that was
+abandoned, that answer is never seen and VM records deletions the maildrop
+still has.  Read here, an -ERR signals, and what the folder owes the server
+stays on its list."
   (iter-yield-from (vm-pop-net-command "QUIT"))
+  (setq vm-pop-net-said-goodbye t)
   t)
 
 (iter-defun vm-pop-net-session (user password)
@@ -954,27 +968,32 @@ By UID: a POP message number means something different after every session,
 and the folder remembers what it deleted by UID.  The deletions take effect
 when the server is told QUIT, which `vm-pop-net-session\=' style unwinding
 does whether this runs to the end or is abandoned."
-  (unwind-protect
-      (progn
-	(iter-yield-from (vm-pop-net-greeting))
-	(iter-yield-from (vm-pop-net-authenticate user password))
-	(let ((numbers (iter-yield-from (vm-pop-net-uidl)))
-	      (deleted nil))
-	  (unless numbers
-	    ;; without UIDL there is no telling which message is which, and
-	    ;; deleting the wrong one is worse than deleting none
-	    (signal 'vm-pop-net-error
-		    (list "server has no UIDL; nothing deleted")))
-	  (dolist (pair numbers)
-	    (when (member (cdr pair) uidls)
-	      (iter-yield-from (vm-pop-net-delete (car pair)))
-	      (push (cdr pair) deleted)))
-	  (list :deleted (nreverse deleted)
-		:gone (seq-remove (lambda (uidl) (rassoc uidl numbers))
-				  uidls))))
-    (let ((process (get-buffer-process (current-buffer))))
-      (when (process-live-p process)
-	(process-send-string process "QUIT\r\n")))))
+  (let ((vm-pop-net-said-goodbye nil))
+    (unwind-protect
+	(progn
+	  (iter-yield-from (vm-pop-net-greeting))
+	  (iter-yield-from (vm-pop-net-authenticate user password))
+	  (let ((numbers (iter-yield-from (vm-pop-net-uidl)))
+		(deleted nil))
+	    (unless numbers
+	      ;; without UIDL there is no telling which message is which, and
+	      ;; deleting the wrong one is worse than deleting none
+	      (signal 'vm-pop-net-error
+		      (list "server has no UIDL; nothing deleted")))
+	    (dolist (pair numbers)
+	      (when (member (cdr pair) uidls)
+		(iter-yield-from (vm-pop-net-delete (car pair)))
+		(push (cdr pair) deleted)))
+	    ;; and QUIT here rather than on the way out, so that the answer to
+	    ;; it is read: that is where a server says it could not remove them
+	    (iter-yield-from (vm-pop-net-quit))
+	    (list :deleted (nreverse deleted)
+		  :gone (seq-remove (lambda (uidl) (rassoc uidl numbers))
+				    uidls))))
+      (unless vm-pop-net-said-goodbye
+	(let ((process (get-buffer-process (current-buffer))))
+	  (when (process-live-p process)
+	    (process-send-string process "QUIT\r\n")))))))
 
 (defun vm-pop-net-send-changes ()
   "Start deleting on the server what this POP folder has expunged locally.

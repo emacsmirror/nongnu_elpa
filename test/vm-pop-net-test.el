@@ -416,6 +416,34 @@ folder file, so the next save offers them again."
           (with-current-buffer folder (set-buffer-modified-p nil))
           (kill-buffer folder))))))
 
+(ert-deftest vm-pop-net-test-a-quit-that-fails-keeps-the-deletions ()
+  "A server that will not commit the deletions leaves them to be asked again.
+
+QUIT is what makes a POP server act on a session's DELEs, and RFC 1939 3.5
+lets it answer -ERR when it could not remove them.  VM wrote QUIT blind and
+never read that answer, so it struck the messages off
+`vm-pop-messages-to-expunge\=' while the maildrop still had them."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
+                                    :refuse "\\`QUIT")
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 10))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            (should (eq (vm-pop-net-send-changes) t))
+            (should (vm-pop-net-wait nil 10))
+            ;; the DELE went out, the server would not commit it, and the
+            ;; request is still there for the next save
+            (should (vm-pop-mock-received-p mock "\\`DELE"))
+            (should (equal vm-pop-messages-to-expunge (list "uid1"))))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
 (ert-deftest vm-pop-net-test-a-deletion-of-what-is-gone-settles ()
   "A request to delete a message the maildrop no longer lists is done with.
 
