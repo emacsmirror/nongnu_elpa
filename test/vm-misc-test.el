@@ -1351,6 +1351,50 @@ an empty buffer that says nothing about why."
     (should (equal (length said) 1))
     (should (string-match-p "not said anything" (car said)))))
 
+(ert-deftest vm-misc-test-imagemagick-7-is-not-asked-for-convert ()
+  "REGRESSION: VM does not ask ImageMagick 7 for its deprecated command.
+
+Version 7 warns on every run of `magick convert':
+
+    WARNING: The convert command is deprecated in IMv7, use \"magick\"
+    instead of \"convert\" or \"magick convert\"
+
+VM prepended `convert' to the arguments whenever the program was `magick', so
+every image it displayed printed that.  `magick' takes the same arguments on
+its own.  `identify' is a different matter: version 7 has it as a subcommand
+and does not deprecate it."
+  (let ((vm-imagemagick-program "/usr/bin/magick")
+        (vm-imagemagick-convert-program nil)
+        (vm-imagemagick-identify-program nil)
+        (called nil))
+    (cl-letf (((symbol-function 'vm-call-process)
+               (lambda (program _infile _buffer args)
+                 (setq called (cons program args))
+                 0)))
+      (vm-imagemagick-call-convert nil nil '("-resize" "50%"))
+      (should (equal called '("/usr/bin/magick" "-resize" "50%")))
+      (should-not (member "convert" called))
+      ;; and the shell form, which the asynchronous path writes into a script
+      (should (equal (vm-imagemagick-convert-shell-command) "/usr/bin/magick"))
+      ;; identify still names itself
+      (vm-imagemagick-call-identify nil nil '("file.png"))
+      (should (equal called '("/usr/bin/magick" "identify" "file.png"))))))
+
+(ert-deftest vm-misc-test-imagemagick-6-still-runs-convert ()
+  "Version 6 has no `magick': the program is `convert' and takes the same
+arguments, so nothing is prepended to those either."
+  (let ((vm-imagemagick-program nil)
+        (vm-imagemagick-convert-program "/usr/bin/convert")
+        (vm-imagemagick-identify-program "/usr/bin/identify")
+        (called nil))
+    (cl-letf (((symbol-function 'vm-call-process)
+               (lambda (program _infile _buffer args)
+                 (setq called (cons program args))
+                 0)))
+      (vm-imagemagick-call-convert nil nil '("-resize" "50%"))
+      (should (equal called '("/usr/bin/convert" "-resize" "50%")))
+      (should (equal (vm-imagemagick-convert-shell-command) "/usr/bin/convert")))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
