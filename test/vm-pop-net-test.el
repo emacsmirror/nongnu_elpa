@@ -201,7 +201,7 @@ Answers what the callback was given."
         (vm-pop-server-timeout 3))
     (vm-pop-net-check-mail (vm-pop-mock-spec mock)
                            (lambda (result) (setq answer result)))
-    (let ((deadline (+ (float-time) (or seconds 5))))
+    (let ((deadline (+ (float-time) (or seconds 20))))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
     answer))
@@ -254,7 +254,7 @@ maildrop."
           (spec (replace-regexp-in-string ":[^:]*\\'" ":wrong"
                                           (vm-pop-mock-spec mock))))
       (vm-pop-net-check-mail spec (lambda (result) (setq answer result)))
-      (let ((deadline (+ (float-time) 5)))
+      (let ((deadline (+ (float-time) 20)))
         (while (and (eq answer 'not-called) (< (float-time) deadline))
           (accept-process-output nil 0.05)))
       (should (consp answer))
@@ -542,7 +542,7 @@ the caller is told rather than left waiting.  `make-network-process' with
                 number)))
     (vm-pop-net-check-mail (format "pop:127.0.0.1:%d:pass:user:secret" port)
                            (lambda (result) (setq answer result)))
-    (let ((deadline (+ (float-time) 5)))
+    (let ((deadline (+ (float-time) 20)))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
     (should (consp answer))
@@ -562,7 +562,7 @@ waits for the connect, which is what `:nowait' is for."
             (should (memq (process-status process) '(connect open run)))
             (vm-net-start session (vm-pop-net-session (nth 1 opened)
                                                       (nth 2 opened)))
-            (let ((deadline (+ (float-time) 5)))
+            (let ((deadline (+ (float-time) 20)))
               (while (and (vm-net-session-live-p session)
                           (< (float-time) deadline))
                 (accept-process-output nil 0.05)))
@@ -582,7 +582,11 @@ waits for the connect, which is what `:nowait' is for."
         (vm-pop-messages-per-session nil))
     (vm-pop-net-fetch (vm-pop-mock-spec mock) retrieved
                       (lambda (result) (setq answer result)))
-    (let ((deadline (+ (float-time) (or seconds 5))))
+    ;; generous: these run late in a suite of a couple of thousand tests, and a
+    ;; deadline that a loaded machine misses reads as a session that never
+    ;; answered.  vm-pop-net-test-a-fetch-that-fails-says-so failed a full-suite
+    ;; run this way, and passed on its own in a twentieth of a second.
+    (let ((deadline (+ (float-time) (or seconds 20))))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
     answer))
@@ -662,7 +666,7 @@ a great many messages in it should not be one command that runs for ever."
           (vm-pop-messages-per-session 1))
       (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
                         (lambda (result) (setq answer result)))
-      (let ((deadline (+ (float-time) 5)))
+      (let ((deadline (+ (float-time) 20)))
         (while (and (eq answer 'not-called) (< (float-time) deadline))
           (accept-process-output nil 0.05)))
       (should (equal (length answer) 1)))))
@@ -677,7 +681,7 @@ from LIST, so an enormous message is never pulled down to be measured."
           (vm-pop-messages-per-session nil))
       (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
                         (lambda (result) (setq answer result)))
-      (let ((deadline (+ (float-time) 5)))
+      (let ((deadline (+ (float-time) 20)))
         (while (and (eq answer 'not-called) (< (float-time) deadline))
           (accept-process-output nil 0.05)))
       (should-not answer)
@@ -692,7 +696,7 @@ an empty list that reads as an empty maildrop."
           (spec (replace-regexp-in-string ":[^:]*\\'" ":wrong"
                                           (vm-pop-mock-spec mock))))
       (vm-pop-net-fetch spec nil (lambda (result) (setq answer result)))
-      (let ((deadline (+ (float-time) 5)))
+      (let ((deadline (+ (float-time) 20)))
         (while (and (eq answer 'not-called) (< (float-time) deadline))
           (accept-process-output nil 0.05)))
       (should (consp answer))
@@ -746,7 +750,7 @@ nothing: that list is what stops a folder filling with duplicates."
 
 (defun vm-pop-net-test--wait-for (predicate &optional seconds)
   "Pump until PREDICATE answers non-nil, or SECONDS pass.  Answers what it saw."
-  (let ((deadline (+ (float-time) (or seconds 5)))
+  (let ((deadline (+ (float-time) (or seconds 20)))
         (answer nil))
     (while (and (not (setq answer (funcall predicate)))
                 (< (float-time) deadline))
@@ -821,7 +825,7 @@ buffer the reader happened to be in when the answer arrived."
                            (lambda (result)
                              (setq seen (current-buffer) answer result)))
       (with-temp-buffer
-        (let ((deadline (+ (float-time) 5)))
+        (let ((deadline (+ (float-time) 20)))
           (while (and (eq answer 'not-called) (< (float-time) deadline))
             (accept-process-output nil 0.05))))
       (should (eq seen folder)))))
