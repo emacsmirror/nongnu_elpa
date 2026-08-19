@@ -2485,6 +2485,78 @@ asynchronous path blocks."
         (when (byte-code-function-p (symbol-function 'vm-imap-net-read-object))
           (should-not quiet))))))
 
+(ert-deftest vm-imap-net-test-a-uid-the-folder-has-is-not-fetched-again ()
+  "A UID the folder holds is left out of the plan, loudly, and the rest fetched.
+
+Two of a UID in one folder is the same message twice: two summary lines, two
+copies in the file, and every lookup by UID reaching whichever comes first.
+The fetch is not abandoned over it -- the other messages are new mail."
+  (let ((said nil))
+    (vm-imap-net-test--visiting (mock)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+      (should (equal (vm-imap-net-test--get-mail mock) 2))
+      ;; the folder forgets it has the first, as a folder whose plan was made
+      ;; before something else took the message in would have it
+      (let ((uid (vm-imap-uid-of (car vm-message-list))))
+        (cl-letf (((symbol-function 'vm-imap-get-synchronization-data)
+                   (lambda (&rest _)
+                     (list (list (cons uid 1)) nil nil nil))))
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_level _seconds &rest args)
+                       (push (apply #'format args) said))))
+            (should (equal (vm-imap-net-test--get-mail mock) 0)))))
+      ;; nothing arrived, nothing was said twice over, and the folder is as it
+      ;; was: two messages, two UIDs
+      (should (equal (length vm-message-list) 2))
+      (should (equal (length (delete-dups
+                              (mapcar #'vm-imap-uid-of vm-message-list)))
+                     2))
+      (should (equal (length said) 1))
+      (should (string-match-p "has already" (car said)))
+      (should-not (vm-imap-mock-received-p mock "UID FETCH")))))
+
+(ert-deftest vm-imap-net-test-a-uid-listed-twice-is-fetched-once ()
+  "A server that lists a UID twice gets one fetch of it, and says so."
+  (let ((said nil))
+    (vm-imap-net-test--visiting (mock)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+      (cl-letf (((symbol-function 'vm-imap-get-synchronization-data)
+                 (lambda (&rest _)
+                   (list (list (cons "1" 1) (cons "1" 1)) nil nil nil)))
+                ((symbol-function 'vm-warn)
+                 (lambda (_level _seconds &rest args)
+                   (push (apply #'format args) said))))
+        (should (equal (vm-imap-net-test--get-mail mock) 1)))
+      (should (equal (length vm-message-list) 1))
+      (should (equal (length said) 1))
+      (should (string-match-p "twice" (car said))))))
+
+(ert-deftest vm-imap-net-test-a-uid-that-arrives-late-is-not-written-twice ()
+  "A message that reaches the folder while its own fetch runs is not written.
+
+The plan said the UID was new; by the time the text arrived the folder had
+it.  Writing it would put the message in twice, so it is left out and said
+out loud -- which is `vm-imap-net-uid-held-p\=' at the point of writing, the
+plan's own check having been made before any of this was asked for."
+  (let ((said nil))
+    (vm-imap-net-test--visiting (mock)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+      (cl-letf (((symbol-function 'vm-imap-net-uid-held-p)
+                 ;; UID 1 turns up in the folder mid-fetch
+                 (lambda (uid) (equal uid "1")))
+                ((symbol-function 'vm-warn)
+                 (lambda (_level _seconds &rest args)
+                   (push (apply #'format args) said))))
+        ;; the answer counts what was asked for, which is the offset the
+        ;; bunches are taken at; what arrived is what the folder holds
+        (should (equal (vm-imap-net-test--get-mail mock) 2)))
+      (should (equal (length vm-message-list) 1))
+      (should (equal (vm-imap-uid-of (car vm-message-list)) "2"))
+      (should (equal (length said) 1))
+      (should (string-match-p "not written twice" (car said))))))
+
 (defun vm-imap-net-test--flags-on-the-server (mock)
   "What flags each message in MOCK's INBOX carries, as (UID . FLAGS)."
   (mapcar (lambda (m)
