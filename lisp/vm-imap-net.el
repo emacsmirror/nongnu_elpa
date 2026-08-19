@@ -2175,8 +2175,20 @@ and is left alone."
     (nreverse uids)))
 
 (defun vm-imap-net-note-expunged (uids)
-  "Forget the expunge requests for UIDS, the server having acted on them.
-The current buffer is the folder."
+  "Forget UIDS, the server having expunged them.
+The current buffer is the folder.
+
+Both lists the folder keeps them in: the requests, which are done, and what
+the folder remembers having retrieved, which the blocking path clears here too
+-- a UID that no longer exists on the server is not a message anything should
+be told not to fetch again.  Leaving one of the two behind is how the same
+folder ends up in a different state depending on which path did the work."
+  (let ((validity (vm-folder-imap-uid-validity)))
+    (setq vm-imap-retrieved-messages
+	  (seq-remove (lambda (entry)
+			(and (member (car entry) uids)
+			     (equal (cadr entry) validity)))
+		      vm-imap-retrieved-messages)))
   (setq vm-imap-messages-to-expunge
 	(seq-remove (lambda (entry) (member (car entry) uids))
 		    vm-imap-messages-to-expunge))

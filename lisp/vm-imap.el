@@ -3924,7 +3924,17 @@ before the server has done it and says so when it has."
 				      (lambda (ret)
 					(and (equal (car ret) (car m-pair))
 					     (equal (cadr ret) uid-validity)))
-				      vm-imap-retrieved-messages)))
+				      vm-imap-retrieved-messages))
+			       ;; and the request itself, which is done: it
+			       ;; was left behind, so every later save asked
+			       ;; the server again to expunge a message it no
+			       ;; longer had
+			       (setq vm-imap-messages-to-expunge
+				     (vm-delete
+				      (lambda (entry)
+					(and (equal (car entry) (car m-pair))
+					     (equal (cdr entry) uid-validity)))
+				      vm-imap-messages-to-expunge)))
 			     (throw 'done t))
 			   (setq m-cons (cdr m-cons))))))
 		   e-list)
