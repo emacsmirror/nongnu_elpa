@@ -6877,6 +6877,14 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
 	o-list ))))
 
 (defun vm-mime-default-type-from-filename (file)
+  "The MIME type FILE's name suggests, or nil.
+
+`vm-mime-attachment-auto-type-alist\=' first, so what the user has set there
+decides.  Failing that, `mailcap-extension-to-mime\=', which knows the
+system's /etc/mime.types and Emacs's own table: an .org file is text/x-org
+there and a .patch text/x-patch, and either is better than the
+application/octet-stream the callers fall back to -- octet-stream carries no
+charset, so text sent as one arrives as a download rather than as text."
   (let ((alist vm-mime-attachment-auto-type-alist)
 	(case-fold-search t)
 	(done nil))
@@ -6884,7 +6892,19 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
       (if (string-match (car (car alist)) file)
 	  (setq done t)
 	(setq alist (cdr alist))))
-    (and alist (cdr (car alist)))))
+    (or (and alist (cdr (car alist)))
+	(vm-mime-type-from-mailcap file))))
+
+(declare-function mailcap-parse-mimetypes "mailcap" (&optional path force))
+(declare-function mailcap-extension-to-mime "mailcap" (extn))
+
+(defun vm-mime-type-from-mailcap (file)
+  "The MIME type Emacs's mailcap tables give FILE's suffix, or nil."
+  (let ((extension (file-name-extension file)))
+    (when extension
+      (require 'mailcap)
+      (mailcap-parse-mimetypes)
+      (mailcap-extension-to-mime extension))))
 
 (defun vm-remove-mail-mode-header-separator ()
   (save-excursion
