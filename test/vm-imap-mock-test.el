@@ -38,12 +38,19 @@
 SPEC is (MOCK-VAR PROCESS-VAR &rest ARGS), ARGS going to `vm-imap-mock-start'.
 BODY runs with the process buffer current, which is where VM's own IMAP
 functions read their responses from -- called anywhere else they read an
-empty buffer and time out."
+empty buffer and time out.
+
+`vm-buffer-types\=' says `process\=' while BODY runs, because that is what a real
+caller has done by the time it gets here: VM pushes the type on its way into a
+connection, and the functions BODY calls assert it.  Without it these tests
+fail with VM's assertions checked -- `test-runner --assert\=' -- which is a test
+setting up a state no caller is in rather than anything wrong with VM."
   (declare (indent 1) (debug t))
   `(vm-imap-mock-with (,(car spec) ,@(cddr spec))
      (let* ((vm-imap-server-timeout 10)
             (,(cadr spec) (vm-imap-make-session (vm-imap-mock-spec ,(car spec))
-                                                nil :purpose "test")))
+                                                nil :purpose "test"))
+            (vm-buffer-types (cons 'process vm-buffer-types)))
        (unwind-protect
            (with-current-buffer (process-buffer ,(cadr spec))
              ,@body)

@@ -1721,6 +1721,34 @@ Emacs stopped, for work that takes a tenth of one.  Timed rather than counted
       (should (vm-imap-net-wait nil 20))
       (should (< (- (float-time) start) 2)))))
 
+(ert-deftest vm-imap-net-test-a-fetch-keeps-vms-buffer-type-discipline ()
+  "A fetch works with VM's own assertions checked.
+
+`vm-buffer-types' is the stack VM keeps of what kind of buffer it is working
+in, and `vm-buffer-type:assert' is how the folder code catches being run
+somewhere else.  The driver never said what it was in, so
+`vm-imap-get-synchronization-data' asserted a folder against a stack that said
+nothing: with `vm-assertion-checking-off' nil -- `test-runner --assert', and
+anyone debugging VM -- visiting an IMAP folder brought in no messages at all.
+
+The assertion is a macro over `vm-assert', so this turns the checking on
+rather than stubbing anything, and `inhibit-debugger' because `vm-assert'
+binds `debug-on-error' and batch has nobody to debug for."
+  (let ((vm-assertion-checking-off nil)
+        (inhibit-debugger t)
+        (said nil))
+    (cl-letf* ((real (symbol-function 'vm-warn))
+               ((symbol-function 'vm-warn)
+                (lambda (level seconds &rest args)
+                  (push (apply #'format args) said)
+                  (apply real level seconds args))))
+      (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                       vm-imap-net-test--bob))
+        (should (equal (length vm-message-list) 2))
+        (should-not (seq-filter (lambda (line)
+                                  (string-match-p "assertion failed" line))
+                                said))))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time

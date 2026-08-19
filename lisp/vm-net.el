@@ -82,7 +82,6 @@
   error					; the error that stopped it, if any
   finished				; called with the session when it ends
   cleanups				; what to undo when it ends, newest first
-  buffer-types				; the per-session buffer-type stack
   said-stuck)				; whether the watchdog has complained
 
 (defface vm-net-session-face
