@@ -1782,6 +1782,47 @@ binds `debug-on-error' and batch has nobody to debug for."
                                   (string-match-p "assertion failed" line))
                                 said))))))
 
+(ert-deftest vm-imap-net-test-the-flush-timer-may-fire-mid-fetch ()
+  "VM's own flush timer writing the folder does not spoil a fetch.
+
+`vm-flush-interval\=' is 90 seconds by default, so `vm-flush-cached-data-all-folders\='
+runs in every VM session and writes X-VM headers into folder buffers.  A fetch
+writes messages into the same buffer, one at a time, and each waits for the
+next: in that gap the folder holds text the message list does not know about.
+Here the flush is made to fire in exactly that gap, after every message."
+  (let ((vm-imap-message-bunch-size 2)
+        (flushes 0))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 6)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: s%d@example.com\nSubject: m%d\n\nBody %d.\n" i i i)))
+      (let ((real (symbol-function 'vm-imap-net-store)))
+        (cl-letf (((symbol-function 'vm-imap-net-store)
+                   (lambda (&rest args)
+                     (let ((answer (apply real args)))
+                       (setq flushes (1+ flushes))
+                       (vm-flush-cached-data-all-folders)
+                       answer))))
+          (should (equal (vm-imap-net-test--get-mail mock) 6))))
+      (should (> flushes 0))
+      (should (equal (length vm-message-list) 6))
+      (should (equal (mapcar #'vm-imap-uid-of vm-message-list)
+                     '("1" "2" "3" "4" "5" "6")))
+      ;; the list and the buffer agree, which is what a stray write breaks
+      (should (equal (length vm-message-list)
+                     (save-restriction
+                       (widen)
+                       (count-matches "^From " (point-min) (point-max)))))
+      ;; and it still saves and reads back as six messages
+      (let ((file (buffer-file-name)))
+        (set-buffer-modified-p t)
+        (vm-save-folder)
+        (should (equal (with-temp-buffer
+                         (insert-file-contents file)
+                         (count-matches "^From " (point-min) (point-max)))
+                       6))))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time
