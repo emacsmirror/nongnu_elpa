@@ -143,15 +143,21 @@ checks what is actually committed."
   (dolist (file vm-custom-test--generated-texinfo)
     (should (file-readable-p file))
     (let ((text (with-temp-buffer (insert-file-contents file) (buffer-string))))
+      ;; a path or an address is looked for as it stands
       (dolist (private (list (expand-file-name "~")
                              (directory-file-name temporary-file-directory)
-                             (user-login-name)
-                             (and (stringp user-mail-address) user-mail-address)
-                             (and (stringp user-full-name)
-                                  (> (length user-full-name) 3)
-                                  user-full-name)))
+                             (and (stringp user-mail-address) user-mail-address)))
         (when (and (stringp private) (> (length private) 3))
-          (should-not (string-search private text)))))))
+          (should-not (string-search private text))))
+      ;; a name only as a whole word: a login name is a few letters and turns
+      ;; up inside ordinary words, "markd" inside "text/markdown" being the
+      ;; one that failed here
+      (dolist (private (list (user-login-name)
+                             (and (stringp user-full-name) user-full-name)))
+        (when (and (stringp private) (> (length private) 3))
+          (should-not (string-match-p (concat "\\_<" (regexp-quote private)
+                                              "\\_>")
+                                      text)))))))
 
 (provide 'vm-custom-test)
 
