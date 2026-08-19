@@ -30,12 +30,17 @@
      geiser-chicken-use-debug-log
      geiser-chicken-load-paths)
 
+  (cond-expand
+    (chicken-6
+     (import (scheme base)
+             (scheme read)
+             (scheme write)
+             (scheme eval)
+             (scheme load)))
+    (else
+     (import scheme)))
+
   (import
-    (scheme base)
-    (scheme read)
-    (scheme write)
-    (scheme eval)
-    (scheme load)
     apropos
     srfi-1
     srfi-18
@@ -401,7 +406,11 @@
     (let ((all (and (not (null? all)) (car all))))
       (with-output-to-string
         (lambda ()
-          (write (if all (expand form) (expand1 form)))))))
+          (write (if all
+                     (expand form)
+                     (cond-expand
+                       (chicken-6 (expand1 form))
+                       (else (expand form)))))))))
 
   ;; End module
   )

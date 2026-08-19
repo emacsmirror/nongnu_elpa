@@ -334,11 +334,11 @@ This function uses `geiser-chicken-init-file' if it exists."
                      suppression-prefix source target suppression-postfix)))))
       (geiser-eval--send/wait load-sequence))))
 
-(defun geiser-chicken-load (ver)
-  "Load Geiser support code in Chicken VER."
-  (let* ((source (expand-file-name (format "geiser/chicken%d.scm" ver)
+(defun geiser-chicken-load ()
+  "Load Geiser support code in modern Chicken versions."
+  (let* ((source (expand-file-name "geiser/chicken.scm"
                                    geiser-chicken-scheme-dir))
-         (buffer (format " *geiser-chicken%d-load*" ver))
+         (buffer " *geiser-chicken-load*")
          (contents (with-current-buffer
                        (get-buffer-create buffer t)
                      (insert-file-contents-literally source)
@@ -353,13 +353,10 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--startup (_remote)
   "Startup function."
   (compilation-setup t)
-  (let ((version (geiser-chicken--version geiser-chicken-binary)))
-    (cond
-     ((version< version "5.0.0")
-      (geiser-chicken4--compile-or-load t))
-     ((version< version "6.0.0")
-      (geiser-chicken-load 5))
-     (t (geiser-chicken-load 6)))))
+  (cond
+   ((version< (geiser-chicken--version geiser-chicken-binary) "5.0.0")
+    (geiser-chicken4--compile-or-load t))
+   (t (geiser-chicken-load))))
 
 
 ;;; Implementation definition:
