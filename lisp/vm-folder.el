@@ -55,6 +55,7 @@
 (declare-function vm-imap-end-session "vm-imap"
 		  (process &optional imap-buffer keep-buffer))
 (declare-function vm-imap-synchronize-folder "vm-imap" t)
+(declare-function vm-net-error-p "vm-net" (value))
 (declare-function vm-imap-net-send-changes "vm-imap-net" ())
 (declare-function vm-imap-net-stop "vm-imap-net" ())
 (declare-function vm-pop-net-stop "vm-pop-net" ())
@@ -5067,8 +5068,7 @@ is, being what the blocking path would have called."
 	       (funcall starter maildrop crash
 			(lambda (result)
 			  (cond
-			   ((and (consp result) (symbolp (car result))
-				 (get (car result) 'error-conditions))
+			   ((vm-net-error-p result)
 			    (vm-warn 0 2 "%s: %s" safe-maildrop
 				     (error-message-string result)))
 			   ((and (numberp result) (> result 0))
