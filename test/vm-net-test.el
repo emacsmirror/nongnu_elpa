@@ -528,15 +528,40 @@ lost tick costs is a quarter of a second."
                                     :timeout 0.3)))
       (vm-net-start session (vm-net-test--read-line))
       ;; waiting, watched, and one timer for it
-      (should (memq session vm-net--waiting))
+      (should (memq session (vm-net--sessions)))
       (should vm-net--watchdog)
       (should (eq (vm-net-test--wait session 5) 'failed))
       (should (string-match-p "timed out"
                               (error-message-string
                                (vm-net-session-error session))))
       ;; and nothing left running once nothing is waiting
-      (should-not vm-net--waiting)
+      (should-not (memq session (vm-net--sessions)))
+      (vm-net--watch)
       (should-not vm-net--watchdog))))
+
+(ert-deftest vm-net-test-a-poll-nobody-made-is-made-by-the-watchdog ()
+  "A session whose answer arrived without the filter asking about it is not
+left waiting for ever.
+
+The filter is the only other thing that polls, and an answer it does not ask
+about afterwards is an answer nobody looks at.  Seen in the suite: a POP
+session with its login answered sat until the test gave up on it, and one poll
+by hand finished it.  The watchdog polls as well as timing out, so lateness
+costs a quarter of a second rather than the session."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test" :timeout 30)))
+      (vm-net-start session (vm-net-test--read-line))
+      ;; the answer arrives with nobody watching: the filter is taken away, so
+      ;; nothing polls when it lands
+      (set-process-filter process
+                          (lambda (proc string)
+                            (with-current-buffer (process-buffer proc)
+                              (goto-char (point-max))
+                              (insert string))))
+      (process-send-string process "hello\n")
+      (should (eq (vm-net-test--wait session 5) 'done))
+      (should (equal (vm-net-session-value session) "you said hello")))))
 
 (ert-deftest vm-net-test-a-session-times-out-with-its-timer-taken-away ()
   "Even with no timer to fire, a stalled read is reported.
