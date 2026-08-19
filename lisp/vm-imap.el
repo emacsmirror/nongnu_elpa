@@ -105,41 +105,48 @@ IMAP server, using cached data."
   (let ((cell (assq n (vm-folder-imap-uid-list))))
     (nthcdr 2 cell)))
 
+(defun vm-folder-imap-cached (uid table)
+  "The value UID has in TABLE, one of the folder's obarrays.
+Answers nil when the folder has no table: the server data is dropped at the
+end of a session (`vm-imap-dump-uid-seq-num-data\='), and `intern\=' with a nil
+obarray reads the global one, so a folder with no data of its own would be
+answered out of Emacs's own symbols and out of whatever another folder had
+interned there."
+  (and table
+       (let ((key (intern-soft uid table)))
+	 (and key (boundp key) (symbol-value key)))))
+
 (defun vm-folder-imap-message-msn (m)
   "Returns the message sequence number of message M on the IMAP
 server, using cached data."
-  (let ((uid-key (intern (vm-imap-uid-of m) (vm-folder-imap-uid-obarray))))
-    (and (boundp uid-key) (symbol-value uid-key))))
+  (vm-folder-imap-cached (vm-imap-uid-of m) (vm-folder-imap-uid-obarray)))
 
 (defun vm-folder-imap-message-size (m)
   "Returns the size of the message M on the IMAP server (as a string),
 using cached data."
-  (let ((uid-key (intern (vm-imap-uid-of m) (vm-folder-imap-flags-obarray))))
-    (and (boundp uid-key) (car (symbol-value uid-key)))))
+  (car (vm-folder-imap-cached (vm-imap-uid-of m)
+			      (vm-folder-imap-flags-obarray))))
 
 (defun vm-folder-imap-message-flags (m)
   "Returns the flags of the message M on the IMAP server,
 using cached data."
-  (let ((uid-key (intern (vm-imap-uid-of m) (vm-folder-imap-flags-obarray))))
-    (and (boundp uid-key) (cdr (symbol-value uid-key)))))
+  (cdr (vm-folder-imap-cached (vm-imap-uid-of m)
+			      (vm-folder-imap-flags-obarray))))
 
 (defun vm-folder-imap-uid-msn (uid)
   "Returns the message sequence number of message with UID on the IMAP
 server, using cached data."
-  (let ((uid-key (intern uid (vm-folder-imap-uid-obarray))))
-    (and (boundp uid-key) (symbol-value uid-key))))
+  (vm-folder-imap-cached uid (vm-folder-imap-uid-obarray)))
 
 (defun vm-folder-imap-uid-message-size (uid)
   "Returns the size of the message with UID on the IMAP server (as a
 string), using cached data."
-  (let ((uid-key (intern uid (vm-folder-imap-flags-obarray))))
-    (and (boundp uid-key) (car (symbol-value uid-key)))))
+  (car (vm-folder-imap-cached uid (vm-folder-imap-flags-obarray))))
 
 (defun vm-folder-imap-uid-message-flags (uid)
   "Returns the flags of the message with UID on the IMAP server,
 using cached data."
-  (let ((uid-key (intern uid (vm-folder-imap-flags-obarray))))
-    (and (boundp uid-key) (cdr (symbol-value uid-key)))))
+  (cdr (vm-folder-imap-cached uid (vm-folder-imap-flags-obarray))))
 
 ;; Status indicator vector
 ;; timer
@@ -3488,7 +3495,11 @@ messages previously retrieved are ignored."
 	    (if (or (eq save-attributes 'all)
 		    (vm-attribute-modflag-of (car mp)))
 		(condition-case nil
-		    (vm-imap-save-message-flags process (car mp))
+		    ;; by UID: the sequence numbers VM holds are the ones the
+		    ;; mailbox had when it last read it, and an expunge by
+		    ;; anybody else shifts them down, so a STORE by number
+		    ;; reaches a message VM did not mean
+		    (vm-imap-save-message-flags process (car mp) 'by-uid)
 		  (vm-imap-protocol-error ; handler
 		   (setq errors (1+ errors))
 		   (vm-buffer-type:set 'folder))))
@@ -4113,7 +4124,9 @@ be saved to the IMAP folder, not only those of changed messages."
       (while mp
 	(if (or all-flags (vm-attribute-modflag-of (car mp)))
 	    (condition-case nil
-		(vm-imap-save-message-flags process (car mp))
+		;; by UID, as above: a number VM cached is a number the
+		;; mailbox may have moved on from
+		(vm-imap-save-message-flags process (car mp) 'by-uid)
 	      (vm-imap-protocol-error 	; handler
 	       (setq errors (1+ errors))
 	       (vm-buffer-type:set 'folder))))
