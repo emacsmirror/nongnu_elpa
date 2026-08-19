@@ -32,7 +32,8 @@
 ;; This is DOOM running inside Emacs using the Canvas API.  Run M-x doom to
 ;; start.  You may want to customize the variable `doom-args' which provides
 ;; command line arguments to DOOM, for example to configure the path to a WAD
-;; file with the option `-iwad'.  DOOM logs to the `*doom-log*' buffer.
+;; file with the option `-iwad'.  Compilation messages and errors are logged to
+;; the ephemeral `_*doom-log*' buffer.
 
 ;;; Code:
 
@@ -83,7 +84,7 @@ Can be set for instance to (\"-iwad\" \"/home/user/path/to/freedoom1.wad\")."
 (defvar doom--buffer "*doom*"
   "Buffer name.")
 
-(defvar doom--log "*doom-log*"
+(defvar doom--log " *doom-log*"
   "Log buffer name.")
 
 (defvar doom--frame-count 0
@@ -101,11 +102,17 @@ Can be set for instance to (\"-iwad\" \"/home/user/path/to/freedoom1.wad\")."
 (declare-function doom--create "ext:doomgeneric_emacs.c")
 (declare-function doom--tick "ext:doomgeneric_emacs.c")
 
+(defmacro doom--with-log (&rest body)
+  "Run BODY inside log buffer."
+  `(with-current-buffer (get-buffer-create doom--log)
+     (setq buffer-read-only t)
+     (with-silent-modifications
+       (goto-char (point-max))
+       ,@body)))
+
 (defun doom--log (msg)
   "Log MSG from DOOM."
-  (with-current-buffer (get-buffer-create doom--log)
-    (goto-char (point-max))
-    (insert msg)))
+  (doom--with-log (insert msg)))
 
 (defun doom--ms ()
   "Milliseconds since start."
@@ -299,7 +306,7 @@ NAME is an optional readable name."
            (mod (file-name-with-extension (file-name-sans-extension src)
                                           module-file-suffix)))
       (unless (file-exists-p mod)
-        (with-current-buffer (get-buffer-create doom--log)
+        (doom--with-log
           (switch-to-buffer (current-buffer))
           (call-process "make" nil t t (file-name-nondirectory mod))))
       (module-load mod)

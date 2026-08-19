@@ -33,13 +33,13 @@ file can be specified via the customization option =doom-args=.
 
 Install via =M-x package-install RET doom-game RET= from [[https://elpa.nongnu.org/nongnu/doom-game.html][ELPA]]. After the
 installation, invoke =M-x doom=. Compilation output and error messages will appear
-in the =*doom-log*= buffer.
+in the ephemeral =_*doom-log*= buffer.
 
 ** Running from source
 
 Clone this repository and execute the command =make=. This will download the DOOM
 source, compile the native Emacs module, and then start DOOM in =emacs -Q=. Error
-messages will appear in the =*doom-log*= buffer.
+messages will appear in the ephemeral =_*doom-log*= buffer.
 
 * Canvas links
 
