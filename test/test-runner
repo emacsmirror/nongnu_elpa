@@ -221,6 +221,35 @@ if [ "$no_build" = no ]; then
         echo "$progname: the lisp did not build; nothing was run" >&2
         exit 2
     }
+else
+    # The tests set load-prefer-newer, so a .el newer than its .elc is loaded
+    # from source -- and VM's generators are 400 times slower interpreted, in
+    # pauses of seconds.  Every timing test then fails, and it reads as a
+    # driver that stalls: a git checkout that touched lisp/ produced 2-second
+    # timeouts in fifteen tests and a POP session that "never answered".
+    # Each .el against its own .elc, and only the ones that have one:
+    # vm-cus-load.el and vm-version-conf.el are written by the build and never
+    # compiled, so they are newer than everything by the time it finishes.
+    stale=
+    for el in "$root"/lisp/*.el; do
+        [ -f "${el}c" ] || continue
+        if [ -n "$(find "$el" -newer "${el}c" -print 2>/dev/null)" ]; then
+            stale="$stale
+  newer than its .elc: $el"
+        fi
+    done
+    if [ ! -f "$root/lisp/vm-net.elc" ] || [ -n "$stale" ]; then
+        echo "$progname: lisp/ is not built as new as its source:" >&2
+        if [ -n "$stale" ]; then
+            echo "$stale" | head -4 >&2
+        else
+            echo "  no lisp/*.elc at all" >&2
+        fi
+        echo "$progname: run without --no-build, or make -C lisp first;" >&2
+        echo "  from source the generators are 400 times slower and the" >&2
+        echo "  timing tests fail for that and nothing else" >&2
+        exit 2
+    fi
 fi
 
 status=0
