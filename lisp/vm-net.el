@@ -412,7 +412,15 @@ putting a folder's flags back -- would silently not happen."
   (setf (vm-net-session-request session) nil)
   (let ((iterator (vm-net-session-iterator session)))
     (when iterator
-      (ignore-errors (iter-close iterator))
+      ;; Closing runs the generator's `unwind-protect' forms -- the LOGOUT, the
+      ;; QUIT, the folder's bookkeeping.  One that signals used to be dropped
+      ;; on the floor by `ignore-errors', which is where a folder update that
+      ;; failed would have gone.
+      (condition-case err
+	  (iter-close iterator)
+	(error (vm-warn 0 2 "%s: while stopping: %s"
+			(or (vm-net-session-name session) "session")
+			(error-message-string err))))
       (setf (vm-net-session-iterator session) nil)))
   (let ((process (vm-net-session-process session)))
     (when (processp process)
@@ -420,7 +428,14 @@ putting a folder's flags back -- would silently not happen."
   (vm-net--clean-up session)
   (let ((finished (vm-net-session-finished session)))
     (when finished
-      (funcall finished session))))
+      ;; The caller's own code, run from wherever the session ended -- which is
+      ;; usually a process filter, where an error is printed as "error in
+      ;; process filter" and the reader is left to guess whose.  Said plainly
+      ;; instead; the session is over either way.
+      (condition-case err
+	  (funcall finished session)
+	(error (vm-warn 0 2 "%s: %s" (or (vm-net-session-name session) "session")
+			(error-message-string err)))))))
 
 (cl-defun vm-net-session (&key process name timeout finished)
   "A session over PROCESS, to be started with `vm-net-start'.
@@ -567,20 +582,32 @@ second to see whether it is ready yet."
        (let ((buffer (process-buffer tunnel)))
 	 (when (buffer-live-p buffer) (kill-buffer buffer)))
        (vm-net-forget-probe port)))
-    (vm-net-when-ready
-     (lambda () (vm-net-listening-p port))
-     seconds
-     (lambda (up)
-       ;; whichever way it went, the wait is over and its probe goes with it
-       (vm-net-forget-probe port)
-       (if up
-	   (funcall ready tunnel)
-	 (vm-net-fail session
-		      (list 'vm-net-tunnel-failed
-			    (format "%s did not start listening on port %s"
-				    program port)))
-	 (funcall ready nil))))
+    (vm-net--watch-for-tunnel session port seconds ready tunnel)
     tunnel))
+
+(defun vm-net--watch-for-tunnel (session port seconds ready tunnel)
+  "Wait for PORT to answer, and call READY with TUNNEL or nil.
+The timer goes when the session does: a session abandoned while its tunnel was
+still coming up left this polling, and each poll opens a probe connection."
+  (let ((timer nil))
+    (setq timer
+	  (vm-net-when-ready
+	   (lambda () (vm-net-listening-p port))
+	   seconds
+	   (lambda (up)
+	     ;; whichever way it went, the wait is over and its probe goes with it
+	     (vm-net-forget-probe port)
+	     (if up
+		 (funcall ready tunnel)
+	       (vm-net-fail session
+			    (list 'vm-net-tunnel-failed
+				  (format "%s did not start listening on port %s"
+					  (car (process-command tunnel)) port)))
+	       (funcall ready nil)))))
+    (vm-net-at-end session
+		   (lambda ()
+		     (when (memq timer timer-list) (cancel-timer timer))))
+    timer))
 
 (define-error 'vm-net-tunnel-failed "Tunnel program did not come up")
 
@@ -601,10 +628,15 @@ ends.  In BUFFER they would be read as protocol.
 Pipes rather than a pty: a pty echoes what is written to it and rewrites the
 line endings, and IMAP counts octets."
   (let* ((errors (generate-new-buffer (format " *%s errors*" name)))
-	 (process (make-process :name name :buffer buffer
-			        :command (cons program arguments)
-			        :coding 'binary :connection-type 'pipe
-			        :noquery t :stderr errors)))
+	 (process (condition-case err
+		      (make-process :name name :buffer buffer
+				    :command (cons program arguments)
+				    :coding 'binary :connection-type 'pipe
+				    :noquery t :stderr errors)
+		    ;; a program that is not installed is the usual one, and
+		    ;; the buffer for its diagnostics would outlive the attempt
+		    (error (kill-buffer errors)
+			   (signal (car err) (cdr err))))))
     (let ((reader (get-buffer-process errors)))
       (when (processp reader) (set-process-query-on-exit-flag reader nil)))
     (vm-net-at-end session

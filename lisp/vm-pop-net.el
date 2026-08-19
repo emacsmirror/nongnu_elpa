@@ -328,13 +328,17 @@ output.  A maildrop whose password VM has not been told signals
 	(signal 'vm-pop-net-unsupported
 		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
-	   (session (vm-net-session :name name :timeout vm-pop-server-timeout)))
+	   (session (vm-net-session :name name :timeout vm-pop-server-timeout))
+	   (opened nil))
       (with-current-buffer buffer
 	(buffer-disable-undo)
 	(vm-pop-net-init))
       (setf (vm-net-session-buffer session) buffer)
-      (cond
-       ((equal protocol "pop-ssh")
+      ;; as for IMAP: the buffer goes with a connection that was never made
+      (unwind-protect
+	  (progn
+	    (cond
+	     ((equal protocol "pop-ssh")
 	(let ((local (vm-net-free-port)))
 	  (vm-net-tunnel
 	   session vm-ssh-program
@@ -354,10 +358,13 @@ output.  A maildrop whose password VM has not been told signals
 	      (vm-net-pipe session name buffer vm-stunnel-program
 			   (nconc (vm-stunnel-configuration-args host port)
 				  (copy-sequence vm-stunnel-program-switches)))))
-       (t
-	(setf (vm-net-session-process session)
-	      (vm-pop-net-connect name host port buffer
-				  (equal protocol "pop-ssl")))))
+	     (t
+	      (setf (vm-net-session-process session)
+		    (vm-pop-net-connect name host port buffer
+					(equal protocol "pop-ssl")))))
+	    (setq opened t))
+	(unless opened
+	  (when (buffer-live-p buffer) (kill-buffer buffer))))
       (list session user password))))
 
 ;;; Checking for mail, which is the first thing a command wanted
