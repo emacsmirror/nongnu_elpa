@@ -273,27 +273,6 @@ DESCRIPTION names the command, for the error message."
 				  (format " during %s" description) ""))))
     response))
 
-(iter-defun vm-imap-net-read-ok-response ()
-  "Read responses until the tagged one, and answer with whether it was OK."
-  (let ((done nil)
-	(answer nil)
-	response)
-    (while (not done)
-      (setq response (iter-yield-from (vm-imap-net-read-response)))
-      (cond ((vm-imap-response-matches response '*)
-	     nil)
-	    ((vm-imap-response-matches response 'VM 'OK)
-	     (setq answer t done t))
-	    ((vm-imap-response-matches response 'VM 'NO)
-	     (setq answer nil done t))
-	    ((vm-imap-response-matches response 'VM 'BAD)
-	     (vm-imap-normal-error
-	      "server says - %s"
-	      (vm-imap-net-error-message (cadr (cadr response)))))
-	    (t
-	     (vm-imap-protocol-error "Did not receive OK response"))))
-    answer))
-
 ;;; Sending
 
 (defun vm-imap-net-next-tag ()
