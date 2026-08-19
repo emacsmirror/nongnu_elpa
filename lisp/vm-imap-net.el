@@ -746,44 +746,53 @@ from inside a filter."
 	   (session (vm-net-session :name name
 				    :timeout vm-imap-server-timeout))
 	   (local (and (member protocol '("imap-ssh"))
-		       (vm-net-free-port))))
+		       (vm-net-free-port)))
+	   (opened nil))
       (setf (vm-net-session-buffer session) buffer)
       (with-current-buffer buffer
 	(setq vm-imap-net-password-key
 	      (vm-imapdrop-sans-password-and-mailbox source)))
-      (cond
-       (preauth
-	(let ((process (vm-imap-net-preauth-process host port mailbox
-						    user password)))
-	  (unless (processp process)
-	    (kill-buffer buffer)
-	    (signal 'vm-imap-net-unsupported (list "preauth hook gave no process"
-						   source)))
-	  (set-process-buffer process buffer)
-	  (setf (vm-net-session-process session) process)
-	  ;; nothing to log in with, and nothing to log in to: the hook did it
-	  (setq password nil)))
-       ((equal protocol "imap-ssh")
-	(vm-imap-net-tunnelled
-	 session name local buffer vm-ssh-program
-	 (nconc (list "-L" (format "%d:%s:%s" local host port))
-		(copy-sequence vm-ssh-program-switches)
-		(list host vm-ssh-remote-command))))
-       ((and (equal protocol "imap-ssl") vm-stunnel-program)
-	(vm-setup-stunnel-random-data-if-needed)
-	;; stunnel is the connection, over its own standard input and output,
-	;; which is what the blocking path does with it.  Telling it to listen
-	;; on a local port instead asked for an option stunnel does not have,
-	;; so nothing ever came up on that port and the session failed after
-	;; the whole tunnel timeout.
-	(setf (vm-net-session-process session)
-	      (vm-net-pipe session name buffer vm-stunnel-program
-			   (nconc (vm-stunnel-configuration-args host port)
-				  (copy-sequence vm-stunnel-program-switches)))))
-       (t
-	(setf (vm-net-session-process session)
-	      (vm-imap-net-connect name host port buffer
-				   (equal protocol "imap-ssl")))))
+      ;; The buffer goes with a connection that was never made: a host that
+      ;; does not resolve, an stunnel that is not installed, a preauth hook
+      ;; that answers with nothing.  Left behind, one accumulated per attempt.
+      (unwind-protect
+	  (progn
+	    (cond
+	     (preauth
+	      (let ((process (vm-imap-net-preauth-process host port mailbox
+							  user password)))
+		(unless (processp process)
+		  (kill-buffer buffer)
+		  (signal 'vm-imap-net-unsupported (list "preauth hook gave no process"
+							 source)))
+		(set-process-buffer process buffer)
+		(setf (vm-net-session-process session) process)
+		;; nothing to log in with, and nothing to log in to: the hook did it
+		(setq password nil)))
+	     ((equal protocol "imap-ssh")
+	      (vm-imap-net-tunnelled
+	       session name local buffer vm-ssh-program
+	       (nconc (list "-L" (format "%d:%s:%s" local host port))
+		      (copy-sequence vm-ssh-program-switches)
+		      (list host vm-ssh-remote-command))))
+	     ((and (equal protocol "imap-ssl") vm-stunnel-program)
+	      (vm-setup-stunnel-random-data-if-needed)
+	      ;; stunnel is the connection, over its own standard input and output,
+	      ;; which is what the blocking path does with it.  Telling it to listen
+	      ;; on a local port instead asked for an option stunnel does not have,
+	      ;; so nothing ever came up on that port and the session failed after
+	      ;; the whole tunnel timeout.
+	      (setf (vm-net-session-process session)
+		    (vm-net-pipe session name buffer vm-stunnel-program
+				 (nconc (vm-stunnel-configuration-args host port)
+					(copy-sequence vm-stunnel-program-switches)))))
+	     (t
+	      (setf (vm-net-session-process session)
+		    (vm-imap-net-connect name host port buffer
+					 (equal protocol "imap-ssl")))))
+	    (setq opened t))
+	(unless opened
+	  (when (buffer-live-p buffer) (kill-buffer buffer))))
       (list session mailbox user password))))
 
 (iter-defun vm-imap-net-open-session (user password)

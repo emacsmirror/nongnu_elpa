@@ -1095,6 +1095,52 @@ wrong.  It signals instead."
     (should-error (vm-imap-net-assimilate nil "not-the-validity")
                   :type 'vm-imap-protocol-error)))
 
+(ert-deftest vm-imap-net-test-a-connection-never-made-leaves-no-buffer ()
+  "A session buffer goes with a connection that was never made.
+
+A host that does not resolve, an stunnel that is not installed, a preauth hook
+that answers with nothing: the buffer was made before the connection was
+tried, and one was left behind for every attempt."
+  (let ((vm-imap-passwords (list (list "imap-ssl:nowhere.invalid:993:*:login:me:*"
+                                       "secret")))
+        (vm-stunnel-program "no-such-stunnel-program")
+        (before (buffer-list)))
+    (should-error (vm-imap-net-open
+                   "imap-ssl:nowhere.invalid:993:INBOX:login:me:*" "leak test"))
+    (should-not (seq-filter (lambda (buffer)
+                              (and (not (memq buffer before))
+                                   (string-match-p "leak test"
+                                                   (buffer-name buffer))))
+                            (buffer-list)))))
+
+(ert-deftest vm-imap-net-test-a-callback-that-fails-does-not-vanish ()
+  "An error out of the caller's own callback is reported, not lost.
+
+The session ends in a process filter, where Emacs prints \"error in process
+filter\" and leaves the reader to guess whose it was."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (warned nil)
+           (before (buffer-list)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_level _seconds &rest args)
+                       (setq warned (apply #'format args)))))
+            (should (vm-imap-net-run-command
+                     spec "NOOP" "NOOP" nil
+                     (lambda (_result) (error "the callback went wrong"))))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and (not warned) (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should warned)
+            (should (string-match-p "the callback went wrong" warned)))
+        (dolist (buffer (buffer-list))
+          (unless (memq buffer before)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
 ;;; What the server no longer has
 
 (ert-deftest vm-imap-net-test-a-message-gone-from-the-server-goes-locally ()
