@@ -2485,6 +2485,66 @@ asynchronous path blocks."
         (when (byte-code-function-p (symbol-function 'vm-imap-net-read-object))
           (should-not quiet))))))
 
+(defun vm-imap-net-test--flags-on-the-server (mock)
+  "What flags each message in MOCK's INBOX carries, as (UID . FLAGS)."
+  (mapcar (lambda (m)
+            (cons (vm-imap-mock-message-uid m)
+                  (sort (mapcar #'downcase (vm-imap-mock-message-flags m))
+                        #'string-lessp)))
+          (vm-imap-mock-messages mock "INBOX")))
+
+(defun vm-imap-net-test--mark-read-after-a-shift (driven)
+  "Mark the folder's second message read after the mailbox has shifted.
+Another client expunges the first message, so every sequence number VM holds
+is one too high.  DRIVEN nil sends the flags the blocking way instead.
+Answers with the server's flags afterwards."
+  (let ((answer nil)
+        (off (lambda (&rest _) nil)))
+    (vm-imap-net-test--visiting (mock :messages
+                                      (list "From: a@example.com\nSubject: one\n\nOne.\n"
+                                            "From: b@example.com\nSubject: two\n\nTwo.\n"
+                                            "From: c@example.com\nSubject: three\n\nThree.\n"))
+      (should (equal (length vm-message-list) 3))
+      (unless driven
+        ;; the blocking path sends the flags down a session of its own, and
+        ;; reads the server's numbers into the folder as its callers do
+        (vm-establish-new-folder-imap-session t "flag test" nil)
+        (vm-imap-retrieve-uid-and-flags-data))
+      ;; another client deletes the first message, after VM has read the
+      ;; mailbox and before it sends anything
+      (setf (vm-imap-mock-message-expunged
+             (car (vm-imap-mock-messages mock "INBOX")))
+            t)
+      (let ((second (nth 1 vm-message-list)))
+        (should (equal (vm-imap-uid-of second) "2"))
+        ;; VM still has UID 2 as the mailbox's second message, which it is
+        ;; no longer
+        (should (equal (vm-folder-imap-uid-msn "2") 2))
+        (vm-set-unread-flag second nil)
+        (vm-set-attribute-modflag-of second t))
+      (cl-letf (((symbol-function 'vm-imap-net-save-attributes)
+                 (if driven (symbol-function 'vm-imap-net-save-attributes) off)))
+        (vm-imap-save-attributes))
+      (vm-imap-net-wait nil 10)
+      (setq answer (vm-imap-net-test--flags-on-the-server mock)))
+    answer))
+
+(ert-deftest vm-imap-net-test-a-flag-lands-on-the-message-it-was-meant-for ()
+  "Marking a message read marks that message, after the mailbox has shifted.
+
+The sequence numbers VM holds are the ones the mailbox had when it last read
+it.  Another client expunging a message shifts every number after it down, and
+the server is told nothing until the next command; a STORE by number then
+reaches whatever is at that position now.  Marking VM's second message read
+set \\Seen on the third.
+
+Both paths send it as UID STORE, so the number the folder cached cannot
+target a stranger; a UID the mailbox no longer has matches nothing."
+  (dolist (driven '(t nil))
+    (let ((flags (vm-imap-net-test--mark-read-after-a-shift driven)))
+      ;; UID 1 is gone; UID 2 is the one that was marked, UID 3 untouched
+      (should (equal flags '((2 "\\seen") (3)))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
