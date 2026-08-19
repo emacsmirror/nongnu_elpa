@@ -924,10 +924,28 @@ The current buffer is the folder."
 			    (vm-folder-imap-uid-validity))))
 	      vm-message-list))
 
+(defmacro vm-imap-net-as-folder (&rest body)
+  "Run BODY saying that the current buffer is a folder.
+
+`vm-buffer-types\=' is VM's stack of what kind of buffer it is working in, and
+the blocking code pushes and pops it around every change of buffer so that
+`vm-buffer-type:assert\=' can catch a folder being written where a connection
+was meant.  The driver does not push and pop -- a generator that suspended
+between an enter and its exit would leave the stack pushed for whatever ran
+next -- so it binds it instead, which cannot be left unbalanced.
+
+Without this, code the driver calls into asserted that it was in a folder
+while the stack said nothing at all: with `vm-assertion-checking-off\=' set to
+nil, which is what `test-runner --assert\=' and anyone debugging VM does,
+visiting an IMAP folder brought in no messages."
+  (declare (indent 0) (debug t))
+  `(let ((vm-buffer-types (cons 'folder vm-buffer-types)))
+     ,@body))
+
 (defun vm-imap-net-plan-1 (data count)
   "The plan for a mailbox that holds something.  See `vm-imap-net-plan'."
   (ignore data count)
-  (let* ((sync (vm-imap-get-synchronization-data t))
+  (let* ((sync (vm-imap-net-as-folder (vm-imap-get-synchronization-data t)))
 	 (headers-only (or (eq vm-enable-external-messages t)
 			   (memq 'imap vm-enable-external-messages)))
 	 (limit (or vm-imap-max-message-size most-positive-fixnum))
