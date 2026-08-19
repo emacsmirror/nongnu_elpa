@@ -734,51 +734,109 @@ capability. https://github.com/skeeto/emacs-aio
 
 ** What has been converted
 
-As of the merge requests !412 to !426 on =develop-async=, every path a folder
-takes is on the driver, and the blocking implementation is what a maildrop
-falls back to when the driver cannot open it:
+As of !412 to !457 on =develop-async=, no path that reads or writes mail opens
+a session that waits.  The blocking implementation is still there, and what it
+serves is a maildrop the driver declines: one whose password VM has not been
+told and nobody may be asked for, since there is nobody to ask from inside a
+filter.
 
-| path                                   | where                        |
-|----------------------------------------+------------------------------|
-| the IMAP reader, all four waits        | lisp/vm-imap-net.el          |
-| session, SELECT, the bulk FETCH        | lisp/vm-imap-net.el          |
-| new mail into a folder                 | vm-imap-net-get-new-mail     |
-| bodies kept on the server              | vm-imap-net-load-bodies      |
-| flags up, expunges both ways           | vm-imap-net-save-flags etc.  |
-| save and copy to a mailbox             | vm-imap-net-save-to-folder   |
-| a maildrop used as a spool file        | vm-imap-net-move-mail        |
-| the POP mail check, fetch, crash box   | lisp/vm-pop-net.el           |
-| a POP folder                           | vm-pop-net-get-folder-mail   |
-| ssh tunnels, stunnel, preauth          | vm-net-tunnel, vm-net-attach |
+| path                                   | where                            |
+|----------------------------------------+----------------------------------|
+| the IMAP reader, all four waits        | lisp/vm-imap-net.el              |
+| session, SELECT, the bulk FETCH        | lisp/vm-imap-net.el              |
+| new mail into a folder                 | vm-imap-net-get-new-mail         |
+| synchronising a folder                 | vm-imap-net-synchronize          |
+| bodies kept on the server              | vm-imap-net-load-bodies          |
+| flags up, expunges both ways           | vm-imap-net-save-flags etc.      |
+| saving and quitting a folder           | vm-imap-net-send-changes         |
+| save and copy to a mailbox             | vm-imap-net-save-to-folder       |
+| filing a composition (Fcc, IMAP-FCC)   | vm-imap-net-append-text          |
+| CREATE, DELETE, RENAME                 | vm-imap-net-mailbox-command      |
+| listing an account's folders           | vm-imap-net-list-folders         |
+| the names completion needs             | vm-imap-net-mailbox-names        |
+| expunging a maildrop, pruning its list | vm-imap-net-expunge-maildrops    |
+| a maildrop used as a spool file        | vm-imap-net-move-mail            |
+| the POP mail check, fetch, crash box   | lisp/vm-pop-net.el               |
+| a POP folder, and saving it            | vm-pop-net-get-folder-mail       |
+| expunging a POP maildrop               | vm-pop-net-expunge-retrieved     |
+| ssh tunnels, stunnel, preauth, TLS     | vm-net-tunnel, vm-net-pipe       |
 
-What is still blocking is what the driver signals =vm-*-net-unsupported= for,
-and the only case left is a maildrop whose password VM has not been told:
-there is nobody to ask from inside a filter, so the blocking path opens that
-one and asks.
+Two places still wait on purpose, and both are the caller's own doing:
+
+- Completion.  TAB has to answer with the names it has, so
+  =vm-imap-net-mailbox-names= runs a session on the driver and waits for it.
+  One connection, read by the asynchronous code, and =accept-process-output=
+  leaves C-g working.  What is asked for once is cached.
+- A body a caller must have in hand -- saving a message, copying it -- is
+  fetched the blocking way rather than left to arrive later.  A message
+  written without its body is worse than a wait.  Presentation, which can
+  wait for it, takes the driver: =:may-arrive-later=.
+
+*** What the folder does about two sessions
+
+A folder writes what a session tells it to, so two sessions writing one folder
+would interleave their messages, flags and expunges in one buffer and one
+cache file.  The rule is one session per folder:
+
+- every start goes through =vm-imap-net-take-session=, which is what
+  =vm-imap-net-busy-p= reads;
+- work asked for while a session runs is queued on the folder
+  (=vm-imap-net-when-free=) and run when that one ends, and answers =later= so
+  that no caller falls back to the blocking path, which would open the second
+  connection this is avoiding;
+- queued work reads the folder again when it runs rather than using what was
+  true when it was asked for: a body queued for a message since expunged is
+  dropped, an expunge list is re-read;
+- the paths that still block -- =vm-establish-new-folder-imap-session= and its
+  POP counterpart -- wait for the folder's own session first, and refuse
+  rather than proceed if it is still running.
+
+*** What the driver does about a session that stops
+
+One timer watches every waiting session's deadline
+(=vm-net--watchdog=, four times a second while anything is waiting) rather
+than one timer per session per read.  Losing a timer took away the only thing
+that would ever report a stall; see emacs-vm/vm#717, where a session sat 8.8
+seconds into a three-second timeout with its own timer unrun.  Arming checks
+=timer-list= rather than the variable holding the timer.
+
+A session is also resumed for as long as what it asks for is already in the
+buffer: the filter polls with the request the generator is about to replace,
+so an answer that arrives while the generator runs would otherwise be waited
+for after it had come.
 
 ** Migration path
 
-On =develop-async=, each step its own merge request into that branch.
+Steps 1 to 5 are done; each was its own merge request into =develop-async=.
 
-1. The staged items, each on its own, and each mergeable to =develop= because
-   none of them is asynchronous: the duplicated POP UIDL loop, distinct IMAP
-   tags, per-session vm-buffer-types, the sleep-for pauses.  POP read timeouts
-   are done (issue #639).
+1. Done: the staged items, none of them asynchronous and each mergeable to
+   =develop= on its own -- the duplicated POP UIDL loop, distinct IMAP tags,
+   the sleep-for pauses, POP read timeouts (issue #639).
 2. Done: the generator spike, and with it the decision to write the parser
    with iter-defun.  See "Decisions taken" and "The generator spike".
-3. Build the state object and the filter driver, covered by the mock servers,
-   using the fault injections for the abandoned-continuation cases.
-4. Convert POP first: 23 call sites, 6 frames, no recursion.  It lands
-   asynchronous.
-5. Convert IMAP session setup, then vm-imap-select-mailbox, then the fetch
-   path.
-6. Run the whole suite against the mock servers and against a live dovecot,
-   including the relay's fault injections, before =develop-async= goes near
-   =develop=.
+3. Done: the session object and the filter driver (lisp/vm-net.el), covered by
+   the mock servers and their fault injections.
+4. Done: POP.
+5. Done: IMAP, session setup through to the commands listed above.
+6. To do: a soak by somebody reading their own mail on it.  The suite is green
+   against the mock servers and against the live dovecot here; what that does
+   not cover is a mailbox of six thousand messages on gmail for a week.
 
 What is no longer in this path: shipping each converted piece behind a
 synchronous default.  There is no such default now, so a converted piece is
 tested by running it, not by leaving it switched off.
+
+*** Build it before judging it
+
+A generator run interpreted rebuilds its closure on every call, and the IMAP
+reader is called once per token.  Against a mock server, a fresh fetch of a
+thousand messages:
+
+: byte-compiled   0.8s wall, worst pause 0.19s
+: from source     173s wall, worst pause 58s
+
+Uncompiled it looks exactly like the blocking implementation this replaces, so
+VM says so once a session (=vm-imap-net-check-compiled=).
 
 ** Existing examples elsewhere
 
