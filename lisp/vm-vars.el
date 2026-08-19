@@ -2388,6 +2388,10 @@ line can be protected."
     ("\\.html?$"  .  "text/html")
     ("\\.css$"    .  "text/css")
     ("\\.csv$"    .  "text/csv")
+    ("\\.md$"     .  "text/markdown")
+    ("\\.markdown$" . "text/markdown")
+    ("\\.json$"   .  "application/json")
+    ("\\.ya?ml$"  .  "application/yaml")
     ("\\.xml$"    .  "text/xml")
     ("\\.vcf$"    .  "text/x-vcard")
     ("\\.vcard$"  .  "text/x-vcard")
@@ -2455,7 +2459,12 @@ type.
 
 The value of this variable is also used to guess the MIME type of
 application/octet-stream objects for display purposes if the
-value of `vm-infer-mime-types' is non-nil."
+value of `vm-infer-mime-types' is non-nil.
+
+A suffix that is not listed here is looked up in Emacs's mailcap tables,
+which read the system's /etc/mime.types: .org is text/x-org there and
+.patch text/x-patch.  This list comes first, so an entry here overrides
+what the system says."
   :group 'vm-mime
   :type '(repeat (cons regexp 
 		       (string :tag "MIME Type"))))

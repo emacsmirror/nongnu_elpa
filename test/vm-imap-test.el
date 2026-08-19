@@ -680,6 +680,33 @@ none, and no response at all is no match."
     (let ((response `((atom 1 3) (atom 4 6) (atom 7 11) (vector) (atom 13 16))))
       (should (vm-imap-response-matches response 'VM 'OK 'BODY '(vector))))))
 
+(ert-deftest vm-imap-test-cached-server-data-is-not-read-from-the-global-obarray ()
+  "A folder with no server data of its own answers nothing, not Emacs.
+
+The obarrays are dropped at the end of a session, and `intern' with a nil
+obarray reads the global one: the accessors then answered a UID out of
+Emacs's own symbols, and interned every UID they were asked about into it.
+Two folders reading each other's numbers that way is a flag stored against
+the wrong message."
+  (let ((vm-folder-access-data (make-vector 20 nil)))
+    (should-not (vm-folder-imap-uid-msn "vm-test-uid"))
+    (should-not (vm-folder-imap-uid-message-flags "vm-test-uid"))
+    (should-not (vm-folder-imap-uid-message-size "vm-test-uid"))
+    (should-not (intern-soft "vm-test-uid" obarray))
+    ;; a name that is bound globally is answered no differently
+    (should-not (vm-folder-imap-uid-msn "most-positive-fixnum"))
+    ;; and with a table, what is in the table
+    (let ((uids (obarray-make 17))
+          (flags (obarray-make 17)))
+      (set (intern "17" uids) 3)
+      (set (intern "17" flags) (cons "42" (list "\\Seen")))
+      (aset vm-folder-access-data 9 uids)
+      (aset vm-folder-access-data 10 flags)
+      (should (equal (vm-folder-imap-uid-msn "17") 3))
+      (should (equal (vm-folder-imap-uid-message-size "17") "42"))
+      (should (equal (vm-folder-imap-uid-message-flags "17") '("\\Seen")))
+      (should-not (vm-folder-imap-uid-msn "18")))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here

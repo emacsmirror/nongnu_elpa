@@ -3841,6 +3841,38 @@ choosing it left every HTML part failing on a void `w3-region'."
                              (car (last branch))))
                       (cdr type)))))
 
+(ert-deftest vm-mime-test-a-suffix-the-alist-misses-is-asked-of-mailcap ()
+  "A file whose suffix VM does not list still gets a type.
+
+`vm-mime-attachment-auto-type-alist' cannot list every suffix, and what it
+misses was attached as application/octet-stream: no charset, and a text file
+arrives as something to download.  Emacs's mailcap tables know the rest, .org
+among them, and this list comes first so an entry here still wins."
+  ;; the alist, which is what a user sets
+  (should (equal (vm-mime-default-type-from-filename "notes.txt") "text/plain"))
+  (should (equal (vm-mime-default-type-from-filename "sheet.csv") "text/csv"))
+  ;; mailcap, for what the alist has no entry for
+  (should (equal (vm-mime-default-type-from-filename "notes.org") "text/x-org"))
+  (should (equal (vm-mime-default-type-from-filename "fix.patch") "text/x-patch"))
+  ;; a suffix nothing knows is still nil, and the callers say octet-stream
+  (should-not (vm-mime-default-type-from-filename "opaque.zzqq"))
+  (should-not (vm-mime-default-type-from-filename "no-suffix"))
+  ;; and the alist wins where the two disagree
+  (let ((vm-mime-attachment-auto-type-alist '(("\\.org$" . "text/plain"))))
+    (should (equal (vm-mime-default-type-from-filename "notes.org")
+                   "text/plain"))))
+
+(ert-deftest vm-mime-test-an-unknown-text-subtype-is-displayed-as-text ()
+  "A part of a text subtype VM has no handler for is shown as text.
+
+RFC 2046 4.1.4: an unrecognised subtype of text is to be treated as
+text/plain.  VM does it by falling back on the primary type's handler, which
+is what makes an attached text/x-org readable rather than a button, and
+`vm-mime-auto-displayed-content-types' lists text so it is shown at once."
+  (should-not (fboundp (vm-mime-handler "display-internal" "text/x-org")))
+  (should (fboundp (vm-mime-handler "display-internal" "text")))
+  (should (member "text" vm-mime-auto-displayed-content-types)))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
