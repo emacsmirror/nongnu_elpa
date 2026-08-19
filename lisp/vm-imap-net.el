@@ -1474,8 +1474,16 @@ own, and rather than being turned away to the blocking path, which would open
 that connection anyway.")
 (make-variable-buffer-local 'vm-imap-net-waiting)
 
-(defun vm-imap-net-take-session (session)
-  "Record SESSION as this folder's, and run what is waiting when it ends.
+(defun vm-imap-net-take-session (session &optional iterator)
+  "Record SESSION as this folder's, start ITERATOR as its work, and answer it.
+
+ITERATOR is started after the folder has refused a second session rather than
+before, so a second one is prevented instead of reported: the sites here called
+`vm-net-start\=' first, and the error then arrived with a session already
+talking to a server and the folder holding no record of it -- unowned, so
+`vm-imap-net-busy-p\=' could not see it, the mode line did not show it and
+`vm-imap-net-stop\=' could not stop it.  Two IMAP maildrops as spool sources for
+one folder did exactly that.
 Every start goes through here: the slot is what `vm-imap-net-busy-p\=' reads,
 what is queued behind it would otherwise never run, and the mode line of every
 buffer showing this folder says what it is doing."
@@ -1498,6 +1506,8 @@ buffer showing this folder says what it is doing."
 		       (with-current-buffer folder
 			 (vm-imap-net-run-next)
 			 (vm-imap-net-show-session)))))
+    (when iterator
+      (vm-net-start session iterator))
     session))
 
 (defvar vm-ml-session)
@@ -1719,12 +1729,11 @@ is the caller\\='s cue to use the blocking implementation."
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
 				      (length (vm-net-session-value finished))))))))
-    (vm-net-start session
-		  (vm-imap-net-load folder (nth 1 opened) (nth 2 opened)
-				    (nth 3 opened) uids))
     ;; the folder's one session slot: what `vm-imap-net-busy-p' reports and
     ;; what a caller that has to have the bodies waits on
-    (vm-imap-net-take-session session)
+    (vm-imap-net-take-session session
+		  (vm-imap-net-load folder (nth 1 opened) (nth 2 opened)
+				    (nth 3 opened) uids))
     session))
 
 (defun vm-imap-net-load-message-bodies (messages)
@@ -1867,10 +1876,9 @@ open."
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))))
-    (vm-net-start session
+    (vm-imap-net-take-session session
 		  (vm-imap-net-save (nth 2 opened) (nth 3 opened)
 				    mailbox copies))
-    (vm-imap-net-take-session session)
     session))
 
 (defun vm-imap-net-append-text (spec mailbox text &optional flags may-ask)
@@ -2091,10 +2099,9 @@ whether it started."
 		(when (buffer-live-p buffer) (kill-buffer buffer))
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
-	(vm-net-start session
+	(vm-imap-net-take-session session
 		      (vm-imap-net-maildrop-expunge-session
 		       (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
-	(vm-imap-net-take-session session)
 	t)
     (vm-imap-net-unsupported nil)))
 
@@ -2350,10 +2357,9 @@ messages is what the queue exists to prevent."
 				       (vm-net-session-error finished)))
 			   (vm-net-inform 6 "%s: attributes updated on the server"
 				      (buffer-name folder)))))))
-	     (vm-net-start session
+	     (vm-imap-net-take-session session
 			   (vm-imap-net-save-attributes-session
 			    folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
-	     (vm-imap-net-take-session session)
 	     t)
 	 (vm-imap-net-unsupported
 	  (vm-imap-net-say-why-not folder reason)
@@ -2418,11 +2424,10 @@ keep their modification flags and go up next time."
 			      (with-current-buffer folder
 				(vm-imap-net-note-expunged uids)))
 			    (vm-net-inform 6 "%s: changes sent to the server" name)))))
-	     (vm-net-start session
+	     (vm-imap-net-take-session session
 			   (vm-imap-net-send-changes-session
 			    folder (nth 2 opened) (nth 3 opened) (nth 1 opened)
 			    uids))
-	     (vm-imap-net-take-session session)
 	     (vm-net-inform 6 "%s: sending this folder's changes without waiting"
 			(buffer-name folder))
 	     t)
@@ -2479,10 +2484,9 @@ is `later\='."
 			     (vm-net-inform 5 "%s: %d message%s expunged on the server"
 					(buffer-name folder) (length uids)
 					(if (= (length uids) 1) "" "s")))))))
-	       (vm-net-start session
+	       (vm-imap-net-take-session session
 			     (vm-imap-net-expunge-session
 			      (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
-	       (vm-imap-net-take-session session)
 	       t)
 	   (vm-imap-net-unsupported
 	    (vm-imap-net-say-why-not folder reason)
@@ -2588,11 +2592,10 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
 			       (vm-imap-net-show-arrival folder arrived)
 			     (vm-update-summary-and-mode-line)
 			     (vm-net-inform 5 "%s: synchronised" name))))))))
-	     (vm-net-start session
+	     (vm-imap-net-take-session session
 			   (vm-imap-net-get-new-mail
 			    folder (nth 1 opened) (nth 2 opened) (nth 3 opened)
 			    'attributes full full))
-	     (vm-imap-net-take-session session)
 	     (vm-net-inform 6 "%s: synchronising without waiting" name)
 	     t)
 	 (vm-imap-net-unsupported
@@ -2748,10 +2751,9 @@ CALLBACK how many were copied, or the error that stopped it."
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))))
-    (vm-net-start session
+    (vm-imap-net-take-session session
 		  (vm-imap-net-copy-session folder (nth 2 opened) (nth 3 opened)
 					    (nth 1 opened) target uids messages))
-    (vm-imap-net-take-session session)
     session))
 
 ;;; Saving to an IMAP folder, whichever way round
@@ -3016,7 +3018,22 @@ CALLBACK is called in the folder buffer with the number of messages written,
 or with the error that stopped the session.  It is for the caller to gobble
 the crash box: this writes it and remembers the UIDs.
 
+Queued when the folder is already busy, and the answer is then `later\=': a
+folder with two maildrops among its spool files is asked for both, one after
+the other, and the second must not open a second session writing the same
+folder and the same cache file.  It happened -- \"a second session was started
+while IMAP movemail was running\" -- and the caller is not to fall back to the
+blocking path either, which would be the same two writers.
+
 Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
+  (if (vm-imap-net-busy-p)
+      (vm-imap-net-when-free
+       (format "fetching from %s" (vm-safe-imapdrop-string source))
+       (lambda () (vm-imap-net-move-mail source crash-box callback)))
+    (vm-imap-net-move-mail-1 source crash-box callback)))
+
+(defun vm-imap-net-move-mail-1 (source crash-box callback)
+  "Fetch from SOURCE into CRASH-BOX now.  See `vm-imap-net-move-mail\='."
   (let* ((folder (current-buffer))
 	 (folder-type (or vm-folder-type vm-default-folder-type))
 	 (retrieved vm-imap-retrieved-messages)
@@ -3037,11 +3054,10 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 		  ;; the folder already knows it has
 		  (funcall callback (or error-data
 					(vm-net-session-value finished))))))))
-    (vm-net-start session
+    (vm-imap-net-take-session session
 		  (vm-imap-net-move folder source (nth 1 opened) (nth 2 opened)
 				    (nth 3 opened) crash-box folder-type
 				    retrieved delete))
-    (vm-imap-net-take-session session)
     session))
 
 
@@ -3104,10 +3120,9 @@ say what arrived anyway."
 			    (vm-update-summary-and-mode-line)
 			    (vm-net-inform 6 "%s: %s" (buffer-name folder)
 				       (if waiting "new mail" "no new mail"))))))))
-	    (vm-net-start session
+	    (vm-imap-net-take-session session
 			  (vm-imap-net-check folder (nth 1 opened) (nth 2 opened)
 					     (nth 3 opened)))
-	    (vm-imap-net-take-session session)
 	    (vm-net-inform 6 "%s: checking the server without waiting"
 		       (buffer-name folder))
 	    t)

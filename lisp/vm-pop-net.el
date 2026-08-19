@@ -582,10 +582,14 @@ buffer is, not in a process filter."
 	    (when (buffer-live-p buffer) (kill-buffer buffer))
 	    (funcall callback (or (vm-net-session-error finished)
 				  (vm-net-session-value finished)))))
-    (vm-net-start session
-		  (vm-pop-net-fetch-new (or folder (current-buffer))
-					(nth 1 opened) (nth 2 opened)
-					popdrop retrieved))
+    ;; taken by the folder before it is started, so that a second fetch of the
+    ;; same folder is refused rather than found out about afterwards
+    (with-current-buffer (or folder (current-buffer))
+      (vm-pop-net-take-session
+       session
+       (vm-pop-net-fetch-new (or folder (current-buffer))
+			     (nth 1 opened) (nth 2 opened)
+			     popdrop retrieved)))
     session))
 
 
@@ -695,7 +699,9 @@ the server still has is what VM has not saved yet."
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back
 	(folder-type (or vm-folder-type vm-default-folder-type)))
-    (vm-pop-net-take-session
+    (vm-pop-net-when-free
+     (format "fetching from %s" (vm-safe-popdrop-string source))
+     (lambda ()
      (vm-pop-net-fetch
      source vm-pop-retrieved-messages
      (lambda (result)
@@ -712,7 +718,7 @@ the server still has is what VM has not saved yet."
 			  (vm-pop-net-delete-fetched folder source
 						     (mapcar #'car result)))
 			count))))))
-     folder))))
+     folder)))))
 
 (defun vm-pop-net-delete-fetched (folder source uidls)
   "Delete UIDLS from SOURCE, now that they are written, and say how it went.
@@ -770,16 +776,66 @@ again."
 (defvar vm-ml-session)
 (declare-function vm-update-summary-and-mode-line "vm-folder" ())
 
-(defun vm-pop-net-take-session (session)
-  "Record SESSION as this folder's, and say so in its mode line."
+(defvar vm-pop-net-waiting nil
+  "What this folder is to do when the session running now has finished.
+A list of (NAME . FUNCTION), oldest first.  A folder runs one session at a
+time, so work asked for while one runs waits here rather than opening a second
+connection that would write the same folder.")
+(make-variable-buffer-local 'vm-pop-net-waiting)
+
+(defun vm-pop-net-when-free (name function)
+  "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
+NAME says what it is, for the log.  Answers `later\=' when it was queued: the
+work has not happened yet, and the caller is not to do it the blocking way
+either, which would be the second writer this is avoiding."
+  (cond
+   ((vm-pop-net-busy-p)
+    (setq vm-pop-net-waiting
+	  (append vm-pop-net-waiting (list (cons name function))))
+    (vm-pop-net-show-session)
+    (vm-net-inform 6 "%s: %s when the session running now has finished"
+		   (buffer-name) name)
+    'later)
+   (t
+    (funcall function))))
+
+(defun vm-pop-net-run-next ()
+  "Start the next thing this folder was waiting to do, if any.
+One at a time: what it starts becomes the folder's session, and whatever is
+still queued waits for that."
+  (let ((next (car vm-pop-net-waiting)))
+    (setq vm-pop-net-waiting (cdr vm-pop-net-waiting))
+    (when next
+      (condition-case reason
+	  (funcall (cdr next))
+	(error (vm-net-warn 0 "%s: %s: %s" (buffer-name) (car next)
+			    (error-message-string reason)))))))
+
+(defun vm-pop-net-take-session (session &optional iterator)
+  "Record SESSION as this folder's, start ITERATOR as its work, and answer it.
+
+Where the folder refuses a second session, as the IMAP side does: two of them
+writing one folder is two sets of messages in one buffer and one cache file.
+ITERATOR is started after the refusal rather than before, so a second session
+is prevented instead of reported -- started first, the error arrived with a
+session already talking to a server and the folder holding no record of it."
   (let ((folder (current-buffer)))
+    (when (and vm-pop-net-session
+	       (not (eq vm-pop-net-session session))
+	       (vm-net-session-live-p vm-pop-net-session))
+      (error "%s: a second session was started while %s was running"
+	     (buffer-name folder)
+	     (or (vm-net-session-name vm-pop-net-session) "one")))
     (setq vm-pop-net-session session)
     (vm-pop-net-show-session)
     (vm-net-at-end session
 		   (lambda ()
 		     (when (buffer-live-p folder)
 		       (with-current-buffer folder
+			 (vm-pop-net-run-next)
 			 (vm-pop-net-show-session)))))
+    (when iterator
+      (vm-net-start session iterator))
     session))
 
 (defvar vm-pop-net-progress nil
