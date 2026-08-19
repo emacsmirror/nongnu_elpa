@@ -574,15 +574,14 @@ waits for the connect, which is what `:nowait' is for."
 
 ;;; Fetching
 
-(defun vm-pop-net-test--fetch (mock retrieved &optional delete seconds)
+(defun vm-pop-net-test--fetch (mock retrieved &optional seconds)
   "Fetch from MOCK what RETRIEVED does not have, and answer with the result."
   (let ((answer 'not-called)
         (vm-pop-server-timeout 3)
         (vm-pop-max-message-size nil)
         (vm-pop-messages-per-session nil))
     (vm-pop-net-fetch (vm-pop-mock-spec mock) retrieved
-                      (lambda (result) (setq answer result))
-                      delete)
+                      (lambda (result) (setq answer result)))
     (let ((deadline (+ (float-time) (or seconds 5))))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
@@ -637,17 +636,20 @@ gets duplicates."
         (should (equal (length rest) 1))
         (should (string-match-p "otters" (cdr (car rest))))))))
 
-(ert-deftest vm-pop-net-test-fetching-can-delete-as-it-goes ()
-  "With DELETE the messages are marked deleted, and the QUIT at the end is
-what makes the server act on that.  Without it they are left where they
-are."
+(ert-deftest vm-pop-net-test-the-fetch-deletes-nothing ()
+  "The fetch marks nothing deleted, whatever the maildrop is set to.
+
+A DELE takes effect at the QUIT that ends the session, and that QUIT is sent
+whether the session finished or failed.  Deleting as the messages come down
+would therefore commit the deletion of messages whose text went with the
+session that failed: fetched, deleted on the server, written nowhere.  What
+deletes them is `vm-pop-net-delete-fetched\=', once the crash box is on disk."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
-    (should (equal (length (vm-pop-net-test--fetch mock nil t)) 1))
-    (should (vm-pop-mock-received-p mock "\\`DELE 1"))
-    (should (vm-pop-mock-received-p mock "\\`QUIT")))
-  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
-    (should (equal (length (vm-pop-net-test--fetch mock nil nil)) 1))
-    (should-not (vm-pop-mock-received-p mock "\\`DELE"))))
+    (let ((vm-pop-expunge-after-retrieving t)
+          (vm-pop-auto-expunge-alist nil))
+      (should (equal (length (vm-pop-net-test--fetch mock nil)) 1))
+      (should-not (vm-pop-mock-received-p mock "\\`DELE"))
+      (should (vm-pop-mock-received-p mock "\\`QUIT")))))
 
 (ert-deftest vm-pop-net-test-fetching-stops-at-the-session-limit ()
   "`vm-pop-messages-per-session' bounds one session's work: a maildrop with
@@ -741,6 +743,58 @@ nothing: that list is what stops a folder filling with duplicates."
       (should (equal (vm-pop-net-test--get-mail mock crash) 1))
       (should (equal (length vm-pop-retrieved-messages) 1))
       (should (equal (vm-pop-net-test--get-mail mock crash) 0)))))
+
+(defun vm-pop-net-test--wait-for (predicate &optional seconds)
+  "Pump until PREDICATE answers non-nil, or SECONDS pass.  Answers what it saw."
+  (let ((deadline (+ (float-time) (or seconds 5)))
+        (answer nil))
+    (while (and (not (setq answer (funcall predicate)))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    answer))
+
+(ert-deftest vm-pop-net-test-a-fetch-that-fails-deletes-nothing ()
+  "A fetch that fails part way leaves every message on the server.
+
+The maildrop is set to delete what is fetched, and the second RETR is
+refused.  Deleting as the fetch went would have sent DELE for the first
+message; the QUIT that ends a failed session is sent all the same, so the
+server would have acted on it -- and the text of that message went with the
+session, having never reached the crash box."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice
+                                                       vm-pop-net-test--bob)
+                                                 :refuse "\\`RETR 2")
+    (let ((crash (nth 2 (car vm-spool-files)))
+          (vm-pop-expunge-after-retrieving t)
+          (vm-pop-auto-expunge-alist nil))
+      (let ((result (vm-pop-net-test--get-mail mock crash)))
+        (should (consp result))
+        (should (eq (car result) 'vm-pop-net-error)))
+      (should-not (file-exists-p crash))
+      (should (vm-pop-mock-received-p mock "\\`QUIT"))
+      (should-not (vm-pop-mock-deleted mock)))))
+
+(ert-deftest vm-pop-net-test-what-was-written-is-deleted-afterwards ()
+  "A maildrop set to delete has its messages deleted once they are written.
+
+In a session of its own and by UID, after the crash box is on disk: what the
+server still holds is what VM has not saved yet."
+  (vm-pop-net-test--in-a-folder-with-spool (mock :messages
+                                                 (list vm-pop-net-test--alice))
+    (let ((crash (nth 2 (car vm-spool-files)))
+          (vm-pop-expunge-after-retrieving t)
+          (vm-pop-auto-expunge-alist nil))
+      (should (equal (vm-pop-net-test--get-mail mock crash) 1))
+      (should (file-exists-p crash))
+      (should (vm-pop-net-test--wait-for
+               (lambda () (vm-pop-mock-deleted mock)) 10))
+      (should (equal (vm-pop-mock-deleted mock) '(1)))
+      ;; the deletion is a second session: it logs in again
+      (should (>= (length (seq-filter (lambda (line)
+                                        (string-prefix-p "USER" line))
+                                      (vm-pop-mock-commands mock)))
+                  2)))))
 
 (ert-deftest vm-pop-net-test-a-failed-fetch-writes-no-crash-box ()
   "A fetch that fails hands the error on and leaves no crash box behind: a

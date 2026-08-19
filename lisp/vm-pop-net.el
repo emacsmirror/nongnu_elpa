@@ -471,16 +471,21 @@ is set, so a maildrop with a thousand messages in it is not one session."
 	(seq-take wanted vm-pop-messages-per-session)
       wanted)))
 
-(iter-defun vm-pop-net-fetch-new (user password source retrieved
-				       &optional delete)
+(iter-defun vm-pop-net-fetch-new (user password source retrieved)
   "Fetch the messages of this maildrop that are not in RETRIEVED.
 
 RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
-its password, which is how an entry there names where it came from.  DELETE
-non-nil says to mark each fetched message deleted on the server.
+its password, which is how an entry there names where it came from.
 
 Answers a list of (UID . TEXT), oldest first: the caller puts them in the
 folder, which is folder work and does not belong in a process filter.
+
+Nothing is deleted here, whatever the maildrop's auto-expunge setting says.
+A DELE sent in this session takes effect at the QUIT that ends it, and the
+QUIT is in an `unwind-protect\=', so an error part way through would commit the
+deletion of messages whose text was thrown away with the session: fetched,
+deleted on the server, never written anywhere.  The caller deletes them once
+the crash box is on disk, in a session of its own and by UID.
 
 Stops at `vm-pop-messages-per-session\=' if that is set, and passes over a
 message bigger than `vm-pop-max-message-size\=' -- the same two limits the
@@ -496,13 +501,23 @@ thousand messages in it should not be one command."
 	       (total (length wanted))
 	       (fetched nil)
 	       (count 0))
+	  (unless uids
+	    ;; UIDL is what tells one message from another between sessions.
+	    ;; Without it nothing here can say which of these has been fetched
+	    ;; before, so nothing is fetched -- and a maildrop that quietly
+	    ;; never arrives is worse than one that says why.  The blocking
+	    ;; path deletes each message as it takes it instead, which is the
+	    ;; other way to keep count and not one to start from a filter.
+	    (signal 'vm-pop-net-error
+		    (list (format (concat "%s: the server has no UIDL, so VM"
+					  " cannot tell what it has already"
+					  " fetched; no mail was retrieved")
+				  (vm-safe-popdrop-string source)))))
 	  (dolist (pair wanted)
 	    (push (cons (cdr pair)
 			(iter-yield-from (vm-pop-net-retrieve (car pair))))
 		  fetched)
 	    (setq count (1+ count))
-	    (when delete
-	      (iter-yield-from (vm-pop-net-delete (car pair))))
 	    ;; level 5, so a fetch that takes a while looks like one that is
 	    ;; getting somewhere: nothing else says so, the reader not being
 	    ;; frozen out of Emacs while it runs
@@ -528,12 +543,13 @@ whether a message is fetched at all."
 		      lines)))
     (vm-pop-net-error nil)))
 
-(defun vm-pop-net-fetch (source retrieved callback &optional delete)
+(defun vm-pop-net-fetch (source retrieved callback)
   "Fetch what SOURCE holds that RETRIEVED does not, and tell CALLBACK.
 
 CALLBACK is given a list of (UID . TEXT), oldest first, or the error that
-stopped the session.  DELETE non-nil marks each fetched message deleted on
-the server, which takes effect when the session says QUIT.
+stopped the session.  Nothing is deleted from the server here; see
+`vm-pop-net-fetch-new\=' for why, and `vm-pop-net-expunge-maildrop\=' for what
+does it afterwards.
 
 Nothing waits.  The caller does the folder work when the callback comes:
 appending to the folder and remembering the UIDs is done where a folder
@@ -551,7 +567,7 @@ buffer is, not in a process filter."
 				  (vm-net-session-value finished)))))
     (vm-net-start session
 		  (vm-pop-net-fetch-new (nth 1 opened) (nth 2 opened)
-					popdrop retrieved delete))
+					popdrop retrieved))
     session))
 
 
@@ -654,7 +670,9 @@ is for the caller to gobble the crash box: this writes it and remembers the
 UIDs, and what to do with a folder is the folder's business.
 
 Nothing waits.  Whether the messages are deleted from the server is
-`vm-pop-net-auto-expunge-p\=', as it is for the blocking path."
+`vm-pop-net-auto-expunge-p\=', as it is for the blocking path -- and the
+deletion is a session of its own, run once the crash box is written: what
+the server still has is what VM has not saved yet."
   (let ((folder (current-buffer))
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back
@@ -672,8 +690,29 @@ Nothing waits.  Whether the messages are deleted from the server is
 		      (let ((count (vm-pop-net-write-crash-box
 				    result crash-box folder-type)))
 			(vm-pop-net-note-retrieved result source)
-			count))))))
-     (vm-pop-net-auto-expunge-p source)))))
+			(when (and result (vm-pop-net-auto-expunge-p source))
+			  (vm-pop-net-delete-fetched folder source
+						     (mapcar #'car result)))
+			count))))))))))
+
+(defun vm-pop-net-delete-fetched (folder source uidls)
+  "Delete UIDLS from SOURCE, now that they are written, and say how it went.
+FOLDER is where to report to.  A failure loses nothing: the messages are on
+the server still, and `vm-pop-retrieved-messages\=' stops them being fetched
+again."
+  (let ((name (buffer-name folder)))
+    (unless (vm-pop-net-expunge-maildrop
+	     source uidls
+	     (lambda (result)
+	       (if (and (consp result) (symbolp (car result))
+			(get (car result) 'error-conditions))
+		   (vm-warn 0 2 "%s: deleting on the server failed: %s" name
+			    (error-message-string result))
+		 (vm-inform 5 "%s: %d message%s deleted on the server"
+			    name (length result)
+			    (if (= (length result) 1) "" "s")))))
+      (vm-warn 0 2 "%s: fetched mail is still on the server: %s" name
+	       "the maildrop cannot be opened again without waiting"))))
 
 
 ;;; A POP folder, which is a maildrop VM keeps a copy of

@@ -1239,17 +1239,25 @@ expunged."
 
 (defvar vm-imap-refused-flags)
 
-(iter-defun vm-imap-net-store-flags-1 (sign id flags)
-  "Send one STORE of FLAGS, and read its answer.
-SIGN is \"+\" or \"-\" and ID the message's sequence number.  Signals
-`vm-imap-normal-error\\=' if the server refuses the command."
+(iter-defun vm-imap-net-store-flags-1 (sign uid flags)
+  "Send one UID STORE of FLAGS, and read its answer.
+SIGN is \"+\" or \"-\" and UID the message's UID.  Signals
+`vm-imap-normal-error\\=' if the server refuses the command.
+
+By UID and not by sequence number.  The numbers VM holds are the ones the
+mailbox had when it last read it, and every expunge by anybody else shifts
+them down: a folder that marked its own second message read after another
+client had deleted the first sent `STORE 2\\=', which by then was the third
+message, and the server marked that one read instead.  A UID means one
+message for as long as the UIDVALIDITY holds, and a UID the mailbox no longer
+has matches nothing rather than matching a stranger."
   (iter-yield-from
-   (vm-imap-net-command (format "STORE %s %sFLAGS.SILENT %s"
-				id sign (vm-imap-flag-list-string flags))
-			(format "STORE %sFLAGS.SILENT" sign)))
+   (vm-imap-net-command (format "UID STORE %s %sFLAGS.SILENT %s"
+				uid sign (vm-imap-flag-list-string flags))
+			(format "UID STORE %sFLAGS.SILENT" sign)))
   t)
 
-(iter-defun vm-imap-net-store-flags (sign id flags)
+(iter-defun vm-imap-net-store-flags (sign uid flags)
   "Store FLAGS, one command if the server will take them, singly if not.
 Answers with the flags it accepted.
 
@@ -1268,7 +1276,7 @@ every flag is re-signalled, which leaves the message pending for a later try
     (when wanted
       (let ((error-data nil))
 	(condition-case caught
-	    (progn (iter-yield-from (vm-imap-net-store-flags-1 sign id wanted))
+	    (progn (iter-yield-from (vm-imap-net-store-flags-1 sign uid wanted))
 		   (setq accepted wanted))
 	  (vm-imap-normal-error (setq error-data caught)))
 	(when error-data
@@ -1277,7 +1285,7 @@ every flag is re-signalled, which leaves the message pending for a later try
 	  (dolist (flag (if (cdr wanted) wanted nil))
 	    (let ((one-failed nil))
 	      (condition-case caught
-		  (iter-yield-from (vm-imap-net-store-flags-1 sign id (list flag)))
+		  (iter-yield-from (vm-imap-net-store-flags-1 sign uid (list flag)))
 		(vm-imap-normal-error (setq one-failed caught)))
 	      (if one-failed
 		  (progn (push flag refused)
@@ -1308,6 +1316,9 @@ path uses; only the sending of it is here."
   (let* ((changes (and (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (vm-imap-message-flag-changes message))))
+	 (uid (with-current-buffer (or (and (buffer-live-p folder) folder)
+				       (current-buffer))
+		(vm-imap-uid-of message)))
 	 (number (nth 0 changes))
 	 (cached-flags (nth 1 changes))
 	 (flags+ (nth 2 changes))
@@ -1317,10 +1328,10 @@ path uses; only the sending of it is here."
 	;; only what the server took goes in the cache, or the next sync would
 	;; think a refused flag was already there
 	(nconc cached-flags
-	       (iter-yield-from (vm-imap-net-store-flags "+" number flags+))))
+	       (iter-yield-from (vm-imap-net-store-flags "+" uid flags+))))
       (when flags-
 	(dolist (flag (iter-yield-from
-		       (vm-imap-net-store-flags "-" number flags-)))
+		       (vm-imap-net-store-flags "-" uid flags-)))
 	  (delete flag cached-flags)))
       ;; the folder may have been quit while this session ran: the file is
       ;; written by then and still says the flags are unsent, which costs one
