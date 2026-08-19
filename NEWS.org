@@ -1,5 +1,9 @@
 #+title: emacs-hermes Changelog
 
+* Unreleased
+
+- Aligned pipe tables in settled chat markdown so columns line up.
+
 * Version 0.3.2 (2026-08-16)
 
 - Added =hermes-project-chat= to reuse or create a chat at the current

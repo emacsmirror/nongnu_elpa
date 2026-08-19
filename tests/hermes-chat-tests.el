@@ -1230,6 +1230,43 @@
     (dotimes (i (length s))
       (should-not (get-text-property i 'invisible s)))))
 
+(defun hermes-chat-tests--pipe-columns (line)
+  "Return character positions of | in LINE."
+  (let ((columns nil)
+        (start 0))
+    (while (string-match "|" line start)
+      (push (match-beginning 0) columns)
+      (setq start (1+ (match-beginning 0))))
+    (nreverse columns)))
+
+(ert-deftest hermes-chat-markdown-aligns-tables ()
+  "Pipe tables are padded so columns line up across rows."
+  (let* ((raw (concat "| Skill | Verdict | Why |\n"
+                      "|---|---|---|\n"
+                      "| `tdd` | skip | overlap |\n"))
+         (s (substring-no-properties
+             (hermes-chat--fontify-markdown-string raw)))
+         (lines (split-string s "\n" t))
+         (header (hermes-chat-tests--pipe-columns (nth 0 lines)))
+         (rule (hermes-chat-tests--pipe-columns (nth 1 lines)))
+         (row (hermes-chat-tests--pipe-columns (nth 2 lines))))
+    (should (equal header rule))
+    (should (equal header row))
+    (should (string-match-p "`tdd`" s))
+    (should (string-match-p "overlap" s))))
+
+(ert-deftest hermes-chat-markdown-leaves-fenced-tables-alone ()
+  "A table inside a fenced code block is not padded."
+  (let* ((raw (concat "```\n"
+                      "| short | x |\n"
+                      "|---|---|\n"
+                      "| much longer cell | y |\n"
+                      "```\n"))
+         (s (substring-no-properties
+             (hermes-chat--fontify-markdown-string raw))))
+    (should (string-match-p (regexp-quote "| short | x |") s))
+    (should (string-match-p (regexp-quote "| much longer cell | y |") s))))
+
 (ert-deftest hermes-chat-shows-inline-diff-as-view-diff-link ()
   "An inline unified diff is replaced by a View Diff link that opens the diff."
   (hermes-test-with-chat-buffer

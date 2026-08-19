@@ -491,14 +491,31 @@ block spanning the whole region to replace with a link."
 
 ;;; Markdown fontification
 
+(defun hermes-chat--align-markdown-tables ()
+  "Align every markdown table in the current buffer.
+Uses `markdown-table-align', the same padding TAB/`markdown-cycle'
+applies inside a table.  Fenced code blocks stay compact."
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (if (markdown-table-at-point-p)
+          (progn
+            (condition-case nil
+                (markdown-table-align)
+              (error nil))
+            (goto-char (markdown-table-end)))
+        (forward-line 1)))))
+
 (defun hermes-chat--fontify-markdown-string (text)
   "Return TEXT fontified with `markdown-mode', or TEXT on failure.
 Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
-markdown stays visible and easy to copy."
+markdown stays visible and easy to copy.  Pipe tables are aligned so columns
+line up."
   (condition-case nil
       (with-temp-buffer
         (insert text)
         (delay-mode-hooks (markdown-mode))
+        (hermes-chat--align-markdown-tables)
         ;; `font-lock-mode' refuses temp buffers; `font-lock-ensure' suffices.
         (font-lock-ensure (point-min) (point-max))
         (remove-text-properties (point-min) (point-max) '(invisible nil))
