@@ -970,11 +970,32 @@ them."
 	  (insert-before-markers (vm-trailing-message-separator folder-type))
 	  (set-marker end-of-message nil))))))
 
+(defun vm-imap-net-entries-written (uids entries)
+  "The ENTRIES for UIDS, in the order the messages were written.
+
+ENTRIES is (UID SEQUENCE-NUMBER HEADERS-ONLY) per message, as the plan made
+them; UIDS is what the server actually answered for.  Signals for a UID that
+was not asked for: a message in the folder is about to be given that UID, and
+one that came from nowhere the plan knows about is not a message this folder
+can account for."
+  (mapcar (lambda (uid)
+	    (or (assoc uid entries)
+		(vm-imap-protocol-error
+		 "server answered with UID %s, which was not asked for" uid)))
+	  uids))
+
 (defun vm-imap-net-assimilate (retrieve-list uid-validity)
   "Take the messages just written into the folder into the message list.
 The current buffer is the folder.  RETRIEVE-LIST is the entries for the
 messages this call is taking in, in the order they were written.  Answers
 with the new messages.
+
+Signals rather than pairing them up wrongly if the folder holds a different
+number of new messages from the number written: each message here is about to
+be given the UID of the entry beside it, and a folder that gained a message
+from somewhere else in between would give every message after it the UID of
+another.  That is the corruption this pairing can cause, so it is checked and
+not assumed.
 
 Called once per bunch as the fetch runs, not once at the end.  The work is
 the same either way but the pieces are small: taking two thousand messages in
@@ -984,9 +1005,18 @@ supposed to remove, arriving from the other side."
   (setq vm-spooled-mail-waiting nil)
   (vm-set-folder-imap-retrieved-count (vm-folder-imap-mailbox-count))
   (intern (buffer-name) vm-buffers-needing-display-update)
+  (unless (equal uid-validity (vm-folder-imap-uid-validity))
+    ;; the mailbox this folder holds is not the one these messages came from
+    (vm-imap-protocol-error
+     "UID VALIDITY changed while the folder was being written"))
   (let* ((new-messages (vm-assimilate-new-messages :read-attributes nil))
 	 (messages new-messages)
 	 (entries retrieve-list))
+    (unless (= (length new-messages) (length retrieve-list))
+      (vm-imap-protocol-error
+       "%d message%s arrived for %d written: the folder changed underneath"
+       (length new-messages) (if (= (length new-messages) 1) "" "s")
+       (length retrieve-list)))
     (when new-messages
       (setq vm-modification-counter (1+ vm-modification-counter)))
     (while messages
@@ -1154,16 +1184,26 @@ expunged."
     		     (headers-only (cadr bunch))
     		     (count (1+ (- (cdr range) (car range))))
     		     (entries (seq-take (nthcdr retrieved retrieve-list) count))
-    		     (store (lambda (_uid start end)
+    		     (written nil)
+    		     (store (lambda (uid start end)
+    			      (push uid written)
     			      (vm-imap-net-store folder folder-type source start end))))
     		(iter-yield-from
     		 (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
     				    store))
 		;; taken in a bunch at a time: the folder shows what has
 		;; arrived while the rest is still coming, and no single
-		;; slice of the work is long enough to be felt
+		;; slice of the work is long enough to be felt.
+		;;
+		;; What was written, in the order it was written, and not what
+		;; was asked for: a server may answer for fewer messages than
+		;; the range names, and pairing the messages in the buffer with
+		;; the entries of the ones that were asked for would then give
+		;; each message the UID of another.
     		(with-current-buffer folder
-    		  (vm-imap-net-assimilate entries uid-validity))
+    		  (vm-imap-net-assimilate
+		   (vm-imap-net-entries-written (nreverse written) entries)
+		   uid-validity))
     		(setq retrieved (+ retrieved count))
     		(vm-inform 5 "%s: %d of %d messages retrieved"
     			   (buffer-name folder) retrieved (length retrieve-list))))
@@ -1353,6 +1393,16 @@ Every start goes through here: the slot is what `vm-imap-net-busy-p\=' reads,
 what is queued behind it would otherwise never run, and the mode line of every
 buffer showing this folder says what it is doing."
   (let ((folder (current-buffer)))
+    (when (and vm-imap-net-session
+	       (not (eq vm-imap-net-session session))
+	       (vm-net-session-live-p vm-imap-net-session))
+      ;; The queue is what keeps this from happening; this is what says so if
+      ;; a path is ever added that does not go through it.  Two sessions
+      ;; writing one folder is how a folder gets two sets of messages, flags
+      ;; and expunges in one buffer and one cache file.
+      (error "%s: a second session was started while %s was running"
+	     (buffer-name folder)
+	     (or (vm-net-session-name vm-imap-net-session) "one")))
     (setq vm-imap-net-session session)
     (vm-imap-net-show-session)
     (vm-net-at-end session
@@ -1374,15 +1424,40 @@ the folder buffer may not be on screen at all.  What is queued is counted, so
 \" IMAP fetch +2\" is a fetch running with two things waiting for it."
   (let* ((session vm-imap-net-session)
 	 (running (and session (vm-net-session-live-p session)
-		       (or (vm-net-session-name session) "IMAP")))
+		       (vm-net-session-doing (vm-net-session-name session))))
 	 (waiting (length vm-imap-net-waiting)))
     (setq vm-ml-session
-	  (cond ((and running (> waiting 0))
-		 (format " %s +%d" running waiting))
-		(running (format " %s" running))
-		((> waiting 0) (format " %d waiting" waiting))
-		(t nil)))
+	  (and running
+	       (propertize (if (> waiting 0)
+			       (format " %s +%d " running waiting)
+			     (format " %s " running))
+			   'face 'vm-net-session-face)))
     (vm-update-summary-and-mode-line)))
+
+(defun vm-imap-net-stop ()
+  "Stop what this folder is doing with its server, and forget what is queued.
+
+For a folder that is going away: quitting writes the file and kills the
+buffer, and a session that went on writing into it would be writing into
+nothing.  Nothing is lost that is not still on the server -- messages fetched
+but not saved are fetched again next time, and flags that did not go up keep
+their modification flag in the file.
+
+The session is abandoned rather than dropped, so its `unwind-protect\=' forms
+run: the LOGOUT is said, and a server told nothing is a server that keeps the
+connection until it times out."
+  (let ((session vm-imap-net-session)
+	(waiting (length vm-imap-net-waiting)))
+    (setq vm-imap-net-waiting nil)
+    (when (and session (vm-net-session-live-p session))
+      (vm-inform 5 "%s: stopping %s%s" (buffer-name)
+		 (or (vm-net-session-name session) "the session")
+		 (if (> waiting 0)
+		     (format " and %d more" waiting)
+		   ""))
+      (vm-net-abandon session))
+    (setq vm-imap-net-session nil)
+    (setq vm-ml-session nil)))
 
 (defun vm-imap-net-run-next ()
   "Start the next thing this folder was waiting to do, if any.
