@@ -82,7 +82,8 @@
   error					; the error that stopped it, if any
   finished				; called with the session when it ends
   cleanups				; what to undo when it ends, newest first
-  buffer-types)				; the per-session buffer-type stack
+  buffer-types				; the per-session buffer-type stack
+  said-stuck)				; whether the watchdog has complained
 
 (defface vm-net-session-face
   '((t :inherit mode-line-emphasis))
@@ -144,7 +145,7 @@ a cleanup that fails must not cost the caller its `finished\=' call."
     (dolist (cleanup cleanups)
       (condition-case err
 	  (funcall cleanup)
-	(error (vm-warn 0 2 "cleaning up after %s: %s"
+	(error (vm-net-warn 0 "cleaning up after %s: %s"
 			(or (vm-net-session-name session) "session")
 			(error-message-string err)))))))
 
@@ -164,6 +165,26 @@ a generator waiting for input that cannot arrive."
 			  (or (vm-net-session-name session) "network")
 			  (string-trim event))))
       (vm-net-abandon session))))
+
+(defvar vm-verbal-time)
+
+(defun vm-net-warn (level &rest args)
+  "Warn as `vm-warn\=' does, without stopping to be read.
+
+The driver speaks from process filters, sentinels and timers.  `vm-warn\=' holds
+its message on screen with `sit-for\=', which there is Emacs stopped for those
+seconds: a folder whose server refused a flag per message stopped for two
+seconds each time, four seconds to save two messages\=' flags where the work
+itself takes a tenth of one.  `sit-for\=' in a filter also runs timers and other
+filters, which is the re-entry the driver\='s own guards are there to refuse."
+  (apply #'vm-warn level 0 args))
+
+(defun vm-net-inform (level &rest args)
+  "Say as `vm-inform\=' does, without stopping to be read.
+`vm-verbal-time\=' is a pause per message, which a reader may want and a process
+filter must not have: a fetch says how far it has got once per bunch."
+  (let ((vm-verbal-time 0))
+    (apply #'vm-inform level args)))
 
 (define-error 'vm-net-connection-lost "Network connection lost")
 (define-error 'vm-net-timeout "Network server timed out")
@@ -334,16 +355,21 @@ stopped dead, until something else happened to poll it."
       (setf (vm-net-session-resuming session) nil))))
 
 
-(defvar vm-net--watchdog nil
-  "The one timer that fails a session whose read has run out of time.
-
-One for all of them, rather than a timer armed and cancelled per session per
-read.  A session was seen waiting 8.8 seconds on a three-second timeout with
-its own timer sitting in `timer-list\=' unrun (emacs-vm/vm#717): a lost timer
-took away the only thing that would ever have reported the stall, and a
-generator waiting for input that cannot arrive waits for ever.  This one is
-armed while any session is waiting and cancelled when none is, so a lost tick
-costs a quarter of a second rather than a session.")
+;; The watchdog: one timer, found in `timer-list\=' rather than remembered.
+;;
+;; One for all the sessions, rather than a timer armed and cancelled per
+;; session per read.  A session was seen waiting 8.8 seconds on a three-second
+;; timeout with its own timer sitting in `timer-list\=' unrun (emacs-vm/vm#717):
+;; a lost timer took away the only thing that would ever have reported the
+;; stall, and a generator waiting for input that cannot arrive waits for ever.
+;; This one is armed while any session is waiting and cancelled when none is,
+;; so a lost tick costs a quarter of a second rather than a session.
+;;
+;; Not kept in a variable, for the reason `vm-net--sessions\=' is not either: a
+;; variable is state, and something that resets it -- the test harness restores
+;; VM\='s variables between tests -- leaves the timer running with nothing
+;; pointing at it, so the next session arms another.  Thirty of them were found
+;; in `timer-list\=' at once that way, and the cancel could reach none of them.
 
 (defconst vm-net--watchdog-interval 0.25
   "How often the watchdog looks at the deadlines.")
@@ -353,13 +379,31 @@ costs a quarter of a second rather than a session.")
   (let ((seconds (vm-net-session-timeout session)))
     (when (and seconds (> seconds 0) (vm-net-session-live-p session))
       (setf (vm-net-session-deadline session) (+ (float-time) seconds))
-      ;; `timer-list' and not merely the variable: a cancelled or forgotten
-      ;; timer still sitting in the variable would leave every waiting session
-      ;; unwatched, which is the fault this watchdog is here for.
-      (unless (and vm-net--watchdog (memq vm-net--watchdog timer-list))
-	(setq vm-net--watchdog
-	      (run-at-time vm-net--watchdog-interval vm-net--watchdog-interval
-			   #'vm-net--watch))))))
+      (unless (vm-net--watchdog-timers)
+	(run-at-time vm-net--watchdog-interval vm-net--watchdog-interval
+		     #'vm-net--watch)))))
+
+(defun vm-net--watchdog-timers ()
+  "Every watchdog timer that will still fire.
+
+A timer whose function signalled is left marked as having been triggered and
+is never rescheduled, and Emacs leaves it in `timer-list\=' all the same: it
+sits there for ever, firing nothing.  One of those would satisfy a check for
+\"is there a watchdog?\" while no watchdog was running, and every session after
+it would wait on an answer nobody was going to look for -- which is a folder
+hung for good.  A session was seen waiting 8.8 seconds on a three-second
+timeout with its timer in `timer-list\=' unrun (emacs-vm/vm#717), and a POP
+session in a long test run waited out its whole read with the answer sitting in
+its buffer.
+
+The dead ones are taken out as they are found, so the next arm makes a live
+one."
+  (let ((live nil))
+    (dolist (timer timer-list live)
+      (when (eq (timer--function timer) #'vm-net--watch)
+	(if (timer--triggered timer)
+	    (cancel-timer timer)
+	  (push timer live))))))
 
 (defun vm-net--cancel-timeout (session)
   "Stop watching SESSION's deadline."
@@ -391,16 +435,40 @@ having it."
 	(watching nil))
     (dolist (session (vm-net--sessions))
       (setq watching t)
-      (unless (vm-net-session-resuming session)
-	(vm-net-poll session))
-      (when (and (vm-net-session-live-p session)
-		 (vm-net-session-deadline session)
-		 (> now (vm-net-session-deadline session)))
-	(vm-net--timed-out session)))
+      ;; One session's fault must not take the watchdog down with it: an error
+      ;; out of a timer leaves Emacs marking the timer as triggered and never
+      ;; rescheduling it, so the sessions after this one -- and every session
+      ;; afterwards, for the life of the Emacs -- would have nothing watching
+      ;; them.  Said out loud and carried on with instead.
+      (condition-case err
+	  (vm-net--watch-session session now)
+	(error (vm-net-warn 0 "%s: watching it failed: %s"
+			    (or (vm-net-session-name session) "session")
+			    (error-message-string err)))))
     (unless watching
-      (when vm-net--watchdog
-	(cancel-timer vm-net--watchdog)
-	(setq vm-net--watchdog nil)))))
+      (mapc #'cancel-timer (vm-net--watchdog-timers)))))
+
+(defun vm-net--watch-session (session now)
+  "Poll SESSION, and fail it if its read ran out of time before NOW."
+  (if (vm-net-session-resuming session)
+      ;; Mid-generator: polling it would be `iter-next\=' on a running
+      ;; generator, and timing it out would be `iter-close\=' on one -- which
+      ;; errors, after the session has been marked failed and its caller told,
+      ;; leaving the resume to finish it a second time.  A session still
+      ;; running when its read has run out of time is a fault in the driver
+      ;; rather than a slow server, so it is said once and left for the next
+      ;; tick, when the generator will have stopped.
+      (when (and (vm-net-session-deadline session)
+		 (> now (vm-net-session-deadline session))
+		 (not (vm-net-session-said-stuck session)))
+	(setf (vm-net-session-said-stuck session) t)
+	(vm-net-warn 0 "%s: still working after its read timed out"
+		     (or (vm-net-session-name session) "session")))
+    (vm-net-poll session)
+    (when (and (vm-net-session-live-p session)
+	       (vm-net-session-deadline session)
+	       (> now (vm-net-session-deadline session)))
+      (vm-net--timed-out session))))
 
 (defun vm-net--timed-out (session)
   "End SESSION: the server said nothing for long enough."
@@ -435,7 +503,7 @@ putting a folder's flags back -- would silently not happen."
       ;; failed would have gone.
       (condition-case err
 	  (iter-close iterator)
-	(error (vm-warn 0 2 "%s: while stopping: %s"
+	(error (vm-net-warn 0 "%s: while stopping: %s"
 			(or (vm-net-session-name session) "session")
 			(error-message-string err))))
       (setf (vm-net-session-iterator session) nil)))
@@ -451,7 +519,7 @@ putting a folder's flags back -- would silently not happen."
       ;; instead; the session is over either way.
       (condition-case err
 	  (funcall finished session)
-	(error (vm-warn 0 2 "%s: %s" (or (vm-net-session-name session) "session")
+	(error (vm-net-warn 0 "%s: %s" (or (vm-net-session-name session) "session")
 			(error-message-string err)))))))
 
 (cl-defun vm-net-session (&key process name timeout finished)

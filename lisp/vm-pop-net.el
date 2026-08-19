@@ -521,7 +521,7 @@ thousand messages in it should not be one command."
 	    ;; level 5, so a fetch that takes a while looks like one that is
 	    ;; getting somewhere: nothing else says so, the reader not being
 	    ;; frozen out of Emacs while it runs
-	    (vm-inform 5 "%s: %d of %d messages retrieved"
+	    (vm-net-inform 5 "%s: %d of %d messages retrieved"
 		       (vm-safe-popdrop-string source) count total))
 	  (nreverse fetched)))
     (let ((process (get-buffer-process (current-buffer))))
@@ -706,12 +706,12 @@ again."
 	     (lambda (result)
 	       (if (and (consp result) (symbolp (car result))
 			(get (car result) 'error-conditions))
-		   (vm-warn 0 2 "%s: deleting on the server failed: %s" name
+		   (vm-net-warn 0 "%s: deleting on the server failed: %s" name
 			    (error-message-string result))
-		 (vm-inform 5 "%s: %d message%s deleted on the server"
+		 (vm-net-inform 5 "%s: %d message%s deleted on the server"
 			    name (length result)
 			    (if (= (length result) 1) "" "s")))))
-      (vm-warn 0 2 "%s: fetched mail is still on the server: %s" name
+      (vm-net-warn 0 "%s: fetched mail is still on the server: %s" name
 	       "the maildrop cannot be opened again without waiting"))))
 
 
@@ -780,7 +780,7 @@ looking at the summary is looking at a folder that is being written into."
 For a folder that is going away; see `vm-imap-net-stop\='."
   (let ((session vm-pop-net-session))
     (when (and session (vm-net-session-live-p session))
-      (vm-inform 5 "%s: stopping %s" (buffer-name)
+      (vm-net-inform 5 "%s: stopping %s" (buffer-name)
 		 (or (vm-net-session-name session) "the session"))
       (vm-net-abandon session))
     (setq vm-pop-net-session nil)
@@ -868,7 +868,7 @@ fetched again."
       (if (vm-thoughtfully-select-message)
 	  (vm-present-current-message)
 	(vm-update-summary-and-mode-line))
-      (vm-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
+      (vm-net-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
 		 (length new) (if (= (length new) 1) "" "s")
 		 (vm-emit-totals-blurb))
       (length new))))
@@ -894,20 +894,20 @@ session is already running, and the caller is to use the blocking path."
 			 (cond
 			  ((and (consp result) (symbolp (car result))
 				(get (car result) 'error-conditions))
-			   (vm-warn 0 2 "%s: %s" (buffer-name folder)
+			   (vm-net-warn 0 "%s: %s" (buffer-name folder)
 				    (error-message-string result)))
 			  ((null result)
-			   (vm-inform 5 "%s: no new mail" (buffer-name folder)))
+			   (vm-net-inform 5 "%s: no new mail" (buffer-name folder)))
 			  (t
 			   (vm-pop-net-folder-arrived
 			    folder
 			    (vm-pop-net-store-in-folder folder folder-type
 							result)))))))))
-	    (vm-inform 6 "%s: fetching new mail without waiting"
+	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)
 	(vm-pop-net-unsupported
-	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
 		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
 	 nil))))))
 
@@ -965,7 +965,7 @@ next fetch's business."
     (cond
      ((null uidls) nil)
      ((vm-pop-net-busy-p)
-      (vm-inform 6 "%s: a session is running; these deletions go up next time"
+      (vm-net-inform 6 "%s: a session is running; these deletions go up next time"
 		 (buffer-name folder))
       'later)
      (t
@@ -982,7 +982,7 @@ next fetch's business."
 		    (when (buffer-live-p buffer) (kill-buffer buffer))
 		    (cond
 		     ((vm-net-session-error finished)
-		      (vm-warn 0 2 "%s: %s" name
+		      (vm-net-warn 0 "%s: %s" name
 			       (error-message-string
 				(vm-net-session-error finished))))
 		     (t
@@ -999,7 +999,7 @@ next fetch's business."
 						(member uidl settled))
 					      vm-pop-messages-to-expunge))
 			    (vm-mark-folder-modified-p)))
-			(vm-inform 5 "%s: %d message%s deleted on the server%s"
+			(vm-net-inform 5 "%s: %d message%s deleted on the server%s"
 				   name (length deleted)
 				   (if (= (length deleted) 1) "" "s")
 				   (if gone
@@ -1009,11 +1009,11 @@ next fetch's business."
 			  (vm-pop-net-expunge-session (nth 1 opened)
 						      (nth 2 opened) uidls))
 	    (vm-pop-net-take-session session)
-	    (vm-inform 6 "%s: deleting %d message%s on the server without waiting"
+	    (vm-net-inform 6 "%s: deleting %d message%s on the server without waiting"
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)
 	(vm-pop-net-unsupported
-	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
 		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
 	 nil))))))
 
@@ -1065,23 +1065,23 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 	      (when (buffer-live-p folder)
 		(with-current-buffer folder
 		  (if trouble
-		      (vm-warn 1 2 "Expunged what could be; trouble with %s"
+		      (vm-net-warn 1 "Expunged what could be; trouble with %s"
 			       (mapconcat #'identity (reverse trouble) ", "))
-		    (vm-inform 5 "Retrieved messages deleted on the server"))))
+		    (vm-net-inform 5 "Retrieved messages deleted on the server"))))
 	      t)
 	     (t
 	      (let* ((group (car rest))
 		     (source (car group))
 		     (name (or (vm-pop-find-name-for-spec source)
 			       (vm-safe-popdrop-string source))))
-		(vm-inform 6 "Deleting messages in %s..." name)
+		(vm-net-inform 6 "Deleting messages in %s..." name)
 		(cond
 		 ((vm-pop-net-expunge-maildrop
 		   source (cdr group)
 		   (lambda (result)
 		     (cond
 		      ((vm-net-error-p result)
-		       (vm-warn 0 2 "%s: %s" name (error-message-string result))
+		       (vm-net-warn 0 "%s: %s" name (error-message-string result))
 		       (funcall step (cdr rest) (cons name trouble) nil))
 		      (t
 		       (let* ((deleted (plist-get result :deleted))
@@ -1095,14 +1095,14 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 					   (member (car entry) settled)))
 				    vm-pop-retrieved-messages))
 			     (when settled (vm-mark-folder-modified-p folder))
-			     (vm-inform 6 "%s: %d message%s deleted" name
+			     (vm-net-inform 6 "%s: %d message%s deleted" name
 					(length deleted)
 					(if (= (length deleted) 1) "" "s")))))
 		       (funcall step (cdr rest) trouble nil)))))
 		  t)
 		 (first nil)
 		 (t
-		  (vm-warn 0 2 "%s: cannot be deleted from without waiting" name)
+		  (vm-net-warn 0 "%s: cannot be deleted from without waiting" name)
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
@@ -1131,23 +1131,23 @@ already running -- and one already running will say what arrived anyway."
 		       (with-current-buffer folder
 			 (if (and (consp answer) (symbolp (car answer))
 				  (get (car answer) 'error-conditions))
-			     (vm-inform 6 "%s: could not check for new mail: %s"
+			     (vm-net-inform 6 "%s: could not check for new mail: %s"
 					(buffer-name folder)
 					(error-message-string answer))
 			   (setq vm-spooled-mail-waiting answer)
 			   (intern (buffer-name folder)
 				   vm-buffers-needing-display-update)
 			   (vm-update-summary-and-mode-line)
-			   (vm-inform 6 "%s: %s" (buffer-name folder)
+			   (vm-net-inform 6 "%s: %s" (buffer-name folder)
 				      (if answer "new mail" "no new mail"))))))
 		   ;; what this folder holds, not what was fetched into some
 		   ;; other one
 		   (vm-pop-net-folder-retrieved)))
-	    (vm-inform 6 "%s: checking the server without waiting"
+	    (vm-net-inform 6 "%s: checking the server without waiting"
 		       (buffer-name folder))
 	    t)
 	(vm-pop-net-unsupported
-	 (vm-inform 6 "%s: leaving it to the blocking path (%s)"
+	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
 		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
 	 nil))))))
 

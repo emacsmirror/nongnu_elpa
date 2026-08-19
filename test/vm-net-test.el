@@ -529,7 +529,7 @@ lost tick costs is a quarter of a second."
       (vm-net-start session (vm-net-test--read-line))
       ;; waiting, watched, and one timer for it
       (should (memq session (vm-net--sessions)))
-      (should vm-net--watchdog)
+      (should (vm-net--watchdog-timers))
       (should (eq (vm-net-test--wait session 5) 'failed))
       (should (string-match-p "timed out"
                               (error-message-string
@@ -537,7 +537,7 @@ lost tick costs is a quarter of a second."
       ;; and nothing left running once nothing is waiting
       (should-not (memq session (vm-net--sessions)))
       (vm-net--watch)
-      (should-not vm-net--watchdog))))
+      (should-not (vm-net--watchdog-timers)))))
 
 (ert-deftest vm-net-test-a-poll-nobody-made-is-made-by-the-watchdog ()
   "A session whose answer arrived without the filter asking about it is not
@@ -573,8 +573,7 @@ The failure in emacs-vm/vm#717 was exactly this: whatever was to fire did not."
       (vm-net-start session (vm-net-test--read-line))
       ;; the watchdog is taken away as a lost timer would take it, and the
       ;; deadline is still there to be noticed the next time anything looks
-      (cancel-timer vm-net--watchdog)
-      (setq vm-net--watchdog nil)
+      (mapc #'cancel-timer (vm-net--watchdog-timers))
       (let ((deadline (+ (float-time) 2)))
         (while (and (vm-net-session-live-p session) (< (float-time) deadline))
           (accept-process-output nil 0.05)
@@ -606,6 +605,135 @@ outside: over, and never reported."
   (should-not (vm-net-error-p nil))
   (should-not (vm-net-error-p 3))
   (should-not (vm-net-error-p (list 'not-an-error-symbol "text"))))
+
+(ert-deftest vm-net-test-the-driver-says-things-without-stopping ()
+  "Nothing the driver says holds Emacs still.
+
+`vm-warn\=' keeps its message on screen with `sit-for\=', and `vm-inform\=' does
+the same for `vm-verbal-time\='.  The driver speaks from process filters,
+sentinels and timers, where a pause is Emacs stopped -- two seconds per
+warning, and a folder whose server refused a flag per message stopped for two
+seconds each time: four seconds to save two messages' flags, where the work
+itself takes a tenth of one.  A `sit-for\=' there also runs timers and other
+filters, which is the re-entry the driver's own guards refuse."
+  (let ((paused nil))
+    (cl-letf (((symbol-function 'vm-pause)
+               (lambda (seconds) (push seconds paused))))
+      (let ((vm-verbosity 5) (vm-verbal-time 2) (vm-current-warning nil))
+        (vm-net-warn 0 "something went wrong")
+        (vm-net-inform 5 "getting on with it")
+        (should-not (delq 0 (delq nil (copy-sequence paused))))
+        ;; and the blocking path still pauses, which is what it is for
+        (setq paused nil)
+        (setq vm-current-warning nil)
+        (vm-warn 0 2 "something else went wrong")
+        (should (member 2 paused))))))
+
+(ert-deftest vm-net-test-there-is-never-more-than-one-watchdog ()
+  "Arming the watchdog again while one is running adds nothing.
+
+The timer used to be remembered in a variable, and whatever reset that
+variable -- the test harness restores VM's variables between tests -- left the
+timer running with nothing pointing at it, so the next session armed another.
+Thirty were found in `timer-list' at once, and the cancel could reach none of
+them.  It is looked up by its function now, so there is one or none."
+  (mapc #'cancel-timer (vm-net--watchdog-timers))
+  (unwind-protect
+      (let ((session (vm-net-session :name "test" :timeout 5)))
+        (setf (vm-net-session-state session) 'running)
+        (vm-net--arm-timeout session)
+        (should (equal (length (vm-net--watchdog-timers)) 1))
+        ;; again, as the next read of the next session would
+        (vm-net--arm-timeout session)
+        (vm-net--arm-timeout session)
+        (should (equal (length (vm-net--watchdog-timers)) 1))
+        ;; and with no session left to watch, the watch stops
+        (setf (vm-net-session-state session) 'done)
+        (vm-net--watch)
+        (should-not (vm-net--watchdog-timers)))
+    (mapc #'cancel-timer (vm-net--watchdog-timers))))
+
+(ert-deftest vm-net-test-the-watchdog-leaves-a-running-generator-alone ()
+  "A session whose generator is running is not closed under it.
+
+`iter-close' on a running generator signals, and by then the session has been
+marked failed and its caller told; the resume it interrupted then finishes the
+session a second time.  So a tick that lands mid-generator says so and waits
+for the next one."
+  (let ((session (vm-net-session :name "test" :timeout 1))
+        (said nil))
+    (setf (vm-net-session-state session) 'running)
+    (setf (vm-net-session-resuming session) t)
+    (setf (vm-net-session-deadline session) (- (float-time) 10))
+    (cl-letf (((symbol-function 'vm-net--sessions) (lambda () (list session)))
+              ((symbol-function 'vm-net-warn)
+               (lambda (_level &rest args) (push (apply #'format args) said)))
+              ((symbol-function 'vm-net-poll)
+               (lambda (&rest _) (error "polled a running generator"))))
+      (vm-net--watch)
+      (should (vm-net-session-live-p session))
+      (should (equal (length said) 1))
+      (should (string-match-p "still working" (car said)))
+      ;; and it is said once, not every quarter second
+      (vm-net--watch)
+      (should (equal (length said) 1))
+      ;; once the generator has stopped, the tick times it out as before
+      (setf (vm-net-session-resuming session) nil)
+      (cl-letf (((symbol-function 'vm-net-poll) #'ignore))
+        (vm-net--watch))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (eq (car (vm-net-session-error session)) 'vm-net-timeout)))))
+
+(ert-deftest vm-net-test-a-timer-that-signalled-is-not-a-watchdog ()
+  "A watchdog timer that has signalled is replaced, not counted.
+
+Emacs marks a timer as triggered before running it and clears that only if the
+function returns; one that signals is left triggered, never rescheduled, and
+left in `timer-list' all the same.  It fires nothing from then on.  Counting it
+as the watchdog left every session afterwards with nothing to poll it -- an
+answer in the buffer that nobody would look at, which is a folder hung for
+good, and what emacs-vm/vm#717 saw as a timer in `timer-list' unrun."
+  (mapc #'cancel-timer (vm-net--watchdog-timers))
+  (unwind-protect
+      (let ((session (vm-net-session :name "test" :timeout 5)))
+        (setf (vm-net-session-state session) 'running)
+        (vm-net--arm-timeout session)
+        (let ((timer (car (vm-net--watchdog-timers))))
+          (should timer)
+          ;; as Emacs leaves one whose function signalled
+          (setf (timer--triggered timer) t)
+          (should-not (vm-net--watchdog-timers))
+          ;; it is gone from the list rather than sitting there for ever
+          (should-not (memq timer timer-list))
+          ;; and the next arm makes a live one
+          (vm-net--arm-timeout session)
+          (should (equal (length (vm-net--watchdog-timers)) 1))))
+    (mapc #'cancel-timer (vm-net--watchdog-timers))))
+
+(ert-deftest vm-net-test-one-bad-session-does-not-stop-the-watch ()
+  "An error watching one session does not take the watchdog or the rest down.
+
+An error out of a timer is what leaves it triggered and unrescheduled, so a
+fault in one session would have cost every session afterwards its safety net."
+  (let* ((bad (vm-net-session :name "bad" :timeout 5))
+         (good (vm-net-session :name "good" :timeout 5))
+         (watched nil)
+         (said nil))
+    (setf (vm-net-session-state bad) 'running)
+    (setf (vm-net-session-state good) 'running)
+    (cl-letf (((symbol-function 'vm-net--sessions) (lambda () (list bad good)))
+              ((symbol-function 'vm-net-warn)
+               (lambda (_level &rest args) (push (apply #'format args) said)))
+              ((symbol-function 'vm-net-poll)
+               (lambda (session)
+                 (if (eq session bad)
+                     (error "this session is broken")
+                   (push session watched)))))
+      (vm-net--watch)
+      ;; the good one was still looked at, and the fault was reported
+      (should (equal watched (list good)))
+      (should (equal (length said) 1))
+      (should (string-match-p "watching it failed" (car said))))))
 
 (provide 'vm-net-test)
 
