@@ -703,8 +703,7 @@ from which mail is to be moved and DESTINATION is the VM folder."
 			 n mailbox-count folder)
                 (vm-imap-fetch-message process n
 				       use-body-peek nil) ; no headers-only
-                (vm-imap-retrieve-to-target process destination
-					    statblob use-body-peek) 
+                (vm-imap-retrieve-to-target process destination statblob)
 		(vm-imap-read-ok-response process)
                 (vm-inform 7 "Retrieving message %d (of %d) from %s...done"
                          n mailbox-count folder)
@@ -1230,7 +1229,7 @@ of the current folder, or nil if none has been recorded."
 ;; vm-imap-delete-message: (process & int) -> void
 ;;
 ;; vm-imap-ask-about-large-message: (process int int) -> ?
-;; vm-imap-retrieve-to-target: (process target statblob bodypeek) -> bool
+;; vm-imap-retrieve-to-target: (process target statblob) -> bool
 ;; 
 ;; -- to be phased out
 ;; vm-imap-get-message-flags: 
@@ -1909,12 +1908,18 @@ messages.  `vm-imap-get-uid-list' is an older version of this function."
 		    pl (cdr pl)))
 	    (setq p (nthcdr 2 p)))
 	   (t
-	    (vm-imap-protocol-error
-	     "expected UID, RFC822.SIZE and (FLAGS list) in FETCH response"))
+	    ;; an item VM did not ask for.  RFC 3501 7.4.2 lets a server send
+	    ;; them, and a CONDSTORE server sends MODSEQ with everything;
+	    ;; refusing to read past one cost the session and the mail with it
+	    (setq p (vm-imap-skip-fetch-item p)))
 	   ))
-	(setq list 
-	      (cons (cons msg-num (cons uid (cons size flags)))
-		    list)))
+	;; no UID means this is not an answer to the FETCH: a server reports a
+	;; message's flags on its own account when somebody else changes them
+	;; (RFC 3501 7.4.1), and an entry with no UID breaks the folder's tables
+	(when uid
+	  (setq list
+		(cons (cons msg-num (cons uid (cons size flags)))
+		      list))))
        ((vm-imap-response-matches response 'VM 'OK)
 	(setq need-ok nil))))
     list))
@@ -1987,11 +1992,12 @@ messages.  `vm-imap-get-uid-list' is an older version of this function."
       ;;-------------------
       (when work-buffer (kill-buffer work-buffer)))))
 
-(defun vm-imap-retrieve-to-target (process target statblob bodypeek)
+(defun vm-imap-retrieve-to-target (process target statblob)
   "Read a mail message from PROCESS and store it in TARGET, which
-is either a file or a buffer.  Report status using STATBLOB.  The
-boolean BODYPEEK indicates whether the bodypeek function is
-available for the IMAP server.
+is either a file or a buffer.  Report status using STATBLOB.
+
+Whether the message came back under BODY[] or RFC822 is read from the
+response, so what the fetch asked for does not have to be passed in.
 
 TARGET may also be a function, for reading one of several messages asked
 for in a single FETCH: it is called with the UID the response carries, once
@@ -2034,25 +2040,16 @@ message goes.  Issue #185."
     ;; relative to the text when we modify things below.
     (setq vm-imap-read-point (point-marker))
     (setq list (cdr (nth 3 fetch-response)))
-    (cond
-     (bodypeek
-      (cond ((vm-imap-response-matches list 'BODY '(vector) 'string)
-	     (setq p (nth 2 list) 
-		   ***start (nth 1 p)))
-	    ((vm-imap-response-matches list 'UID 'atom 'BODY '(vector) 'string)
-	     (let ((tok (nth 1 list)))
-	       (setq uid (buffer-substring (nth 1 tok) (nth 2 tok))))
-	     (setq p (nth 4 list)
-		   ***start (nth 1 p)))
-	    (t
-	     (vm-imap-protocol-error
-	      "expected (BODY[] string) in FETCH response"))))
-     (t
-      (if (not (vm-imap-response-matches list 'RFC822 'string))
-	  (vm-imap-protocol-error
-	   "expected (RFC822 string) in FETCH response"))
-      (setq p (nth 1 list)
-	    ***start (nth 1 p))))
+    ;; by name, and past anything else the server put in: it may answer the
+    ;; items in any order and may add items of its own (RFC 3501 7.4.2), and
+    ;; the fixed shapes this matched before failed the retrieval outright
+    (let ((parts (vm-imap-fetch-response-parts list)))
+      (setq uid (or (car parts) uid)
+	    p (cdr parts))
+      (unless p
+	(vm-imap-protocol-error
+	 "expected a message in the FETCH response"))
+      (setq ***start (nth 1 p)))
     (goto-char (nth 2 p))
     (setq end (point-marker))
     (when (functionp target)
@@ -2538,6 +2535,59 @@ May throw exceptions."
       (vm-imap-log-token vm-imap-read-point)
       (vm-imap-log-token token))
     token ))
+
+(defun vm-imap-skip-fetch-item (contents)
+  "CONTENTS past the FETCH data item it starts with.
+
+A server may answer with items the client did not ask about (RFC 3501 7.4.2),
+and one with CONDSTORE on sends MODSEQ with everything.  Refusing to read past
+them cost the whole session and the mail with it: against a server that adds
+INTERNALDATE, no mailbox arrived at all.
+
+An item is a name, then a section in brackets if it has one, then one value:
+an atom, a string, or a parenthesised list.  That is enough to step over
+anything the grammar allows without knowing what it means."
+  (let ((rest (cdr contents)))
+    (while (and rest (eq (car (car rest)) 'vector))
+      (setq rest (cdr rest)))
+    (if (and rest (memq (car (car rest)) '(atom string list)))
+	(cdr rest)
+      rest)))
+
+(defun vm-imap-message-item-p (token)
+  "Whether TOKEN names the item that carries a message\='s text.
+The names a fetch of message text asks under, as the server answers them:
+BODY.PEEK comes back as BODY, and the section follows it in brackets."
+  (and (eq (car token) 'atom)
+       (member (upcase (buffer-substring (nth 1 token) (nth 2 token)))
+	       '("RFC822" "RFC822.HEADER" "RFC822.TEXT" "BODY"))))
+
+(defun vm-imap-fetch-response-parts (contents)
+  "The UID and the message of a FETCH response\='s CONTENTS, as (UID . TOKEN).
+Either may be nil: a response the server sent to report flags carries neither.
+
+The items are walked by name rather than matched in a fixed order, because a
+server may answer them in any order and may add items the client did not ask
+about (RFC 3501 7.4.2).  The message is taken by name too: an INTERNALDATE the
+server added is a string as well, and taking the first string for the message
+left every subject empty."
+  (let ((uid nil) (text nil))
+    (while contents
+      (cond ((vm-imap-response-matches contents 'UID 'atom)
+	     (let ((token (nth 1 contents)))
+	       (setq uid (buffer-substring (nth 1 token) (nth 2 token))))
+	     (setq contents (nthcdr 2 contents)))
+	    ((vm-imap-message-item-p (car contents))
+	     (let ((rest (cdr contents)))
+	       (while (and rest (eq (car (car rest)) 'vector))
+		 (setq rest (cdr rest)))
+	       (unless (eq (car (car rest)) 'string)
+		 (vm-imap-protocol-error
+		  "expected a message in the FETCH response"))
+	       (setq text (car rest)
+		     contents (cdr rest))))
+	    (t (setq contents (vm-imap-skip-fetch-item contents)))))
+    (cons uid text)))
 
 (defun vm-imap-response-matches (response &rest expr)
   "Checks if a REPSONSE from the IMAP server matches the pattern
@@ -3765,8 +3815,7 @@ headers-only form."
 		   (setq k (1+ (- (cdr range) (car range))))
 		   (setq pos (with-current-buffer folder-buffer (point)))
 		   (while (> k 0)
-		     (vm-imap-retrieve-to-target process folder-buffer
-						 statblob use-body-peek)
+		     (vm-imap-retrieve-to-target process folder-buffer statblob)
 		     (with-current-buffer folder-buffer
 		       (if (= (point) pos)
 			   (debug "IMAP internal error #2012: the point hasn't moved")))
@@ -4101,8 +4150,7 @@ otherwise.
 			(vm-set-imap-status-need statblob message-size)
 			(vm-imap-fetch-uid-message 
 			 process uid use-body-peek nil)
-			(vm-imap-retrieve-to-target 
-			 process body-buffer statblob use-body-peek)
+			(vm-imap-retrieve-to-target process body-buffer statblob)
 			(vm-imap-read-ok-response process)
 			t)
 		    (vm-imap-normal-error ; handler
@@ -4207,7 +4255,7 @@ rather than being quietly left empty."
 			      (marker-position (vm-text-end-of current)))
 			     (vm-make-room-for-message-body current)))
 			 folder-buffer)
-		       statblob use-body-peek)
+		       statblob)
 		      (with-current-buffer folder-buffer
 			(let ((inhibit-read-only t)
 			      (buffer-undo-list t))

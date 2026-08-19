@@ -43,6 +43,12 @@
 ;;   :preauth         greet with PREAUTH: the connection arrives authenticated,
 ;;                    which is what a session over ssh or through a helper
 ;;                    program looks like
+;;   :extra-fetch-items  add items to every FETCH response that VM did not ask
+;;                    for -- MODSEQ and INTERNALDATE, which RFC 3501 7.4.2
+;;                    allows a server to send unasked
+;;   :unsolicited-flags  send a FETCH of one message's flags before the OK of
+;;                    another command, which a server does when somebody else
+;;                    changes them
 ;;   :no-uidplus      leave UIDPLUS out of CAPABILITY
 ;;   :capabilities    replace the advertised capability list outright
 ;;
@@ -65,6 +71,7 @@
   ;; faults
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
   no-uidplus capabilities preauth reorder-fetch drop-after-fetch
+  extra-fetch-items unsolicited-flags
   authenticated)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
@@ -248,6 +255,13 @@ the caller drops."
   (let* ((items (delq nil (mapcar (lambda (item)
 				    (vm-imap-mock--fetch-item mock message item))
 				  (vm-imap-mock--fetch-items spec))))
+	 (items (if (vm-imap-mock-extra-fetch-items mock)
+		    ;; unasked for, and allowed: RFC 3501 7.4.2 says a server
+		    ;; may send items the client did not ask about, and a
+		    ;; CONDSTORE server sends MODSEQ with everything
+		    (append items (list "MODSEQ (23)"
+					"INTERNALDATE \"01-Jan-2026 00:00:00 +0000\""))
+		  items))
 	 (line (format "* %d FETCH (%s)\r\n" n (mapconcat #'identity items " "))))
     (if (vm-imap-mock-truncate-fetch mock)
 	(progn (vm-imap-mock--send process (substring line 0 (/ (length line) 2)))
@@ -346,6 +360,10 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 		(delete-process process)
 		(throw 'dropped t))))
 	  (when (process-live-p process)
+	    ;; somebody else changed a message's flags while this ran, which a
+	    ;; server reports whenever it next has the chance: RFC 3501 7.4.1
+	    (when (and (vm-imap-mock-unsolicited-flags mock) messages)
+	      (vm-imap-mock--send process "* 1 FETCH (FLAGS (\\Seen))\r\n"))
 	    (vm-imap-mock--send process
 				(format "%s OK FETCH completed\r\n" tag))))))))
 
@@ -657,7 +675,8 @@ not ask about the live process."
 				   refuse bad drop-on truncate-fetch
 				   lie-about-size slow-greeting no-uidplus
 				   capabilities preauth reorder-fetch
-				   drop-after-fetch)
+				   drop-after-fetch extra-fetch-items
+				   unsolicited-flags)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -674,7 +693,9 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:capabilities capabilities
 		:preauth preauth
 		:reorder-fetch reorder-fetch
-		:drop-after-fetch drop-after-fetch))
+		:drop-after-fetch drop-after-fetch
+		:extra-fetch-items extra-fetch-items
+		:unsolicited-flags unsolicited-flags))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t
