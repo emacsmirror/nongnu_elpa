@@ -476,13 +476,13 @@ nil.  Typing a space during the first fetch into an empty folder was
       (should seen)
       (should-not (memq nil seen)))))
 
-(ert-deftest vm-imap-net-test-the-fetch-says-how-far-it-has-got ()
-  "The fetch reports its progress at a level the default verbosity shows.
+(ert-deftest vm-imap-net-test-the-fetch-says-it-began-and-not-each-bunch ()
+  "The fetch says it began, and keeps the per-bunch count out of the way.
 
-The blocking path reports at level 6, which `vm-verbosity' of 5 does not
-display -- there Emacs is frozen and the freeze is the report.  Here nothing
-looks as if it is happening unless VM says so, and a reader watching a first
-fetch of a large mailbox was left with no sign of it at all."
+The reader is using Emacs while it runs -- that is the point of it running in
+the background -- so a line per bunch in the echo area is in the way of them.
+The count goes to the mode line, live, and to the log at level 6.  What is
+shown is that the fetch began, and afterwards what arrived."
   (let ((vm-imap-message-bunch-size 2)
         (vm-verbosity 5)                ; the default
         (said nil))
@@ -501,12 +501,19 @@ fetch of a large mailbox was left with no sign of it at all."
       (let ((shown (mapcar #'cdr
                            (seq-filter (lambda (line) (<= (car line) vm-verbosity))
                                        said))))
-        ;; the long silent phase before any message arrives, and the count as
-        ;; the bunches land
+        ;; the long silent phase before any message arrives is worth saying
         (should (seq-find (lambda (text) (string-match-p "reading the list" text))
                           shown))
-        (should (seq-find (lambda (text) (string-match-p "6 of 6 messages" text))
-                          shown))))))
+        ;; the bunches are not
+        (should-not (seq-find (lambda (text)
+                                (string-match-p "of 6 messages retrieved" text))
+                              shown))
+        ;; and they are still recorded, for a fetch that has to be explained
+        (should (seq-find (lambda (line)
+                            (and (= (car line) 6)
+                                 (string-match-p "6 of 6 messages retrieved"
+                                                 (cdr line))))
+                          said))))))
 
 (ert-deftest vm-imap-net-test-a-failed-fetch-tells-the-caller ()
   "A server that refuses the fetch ends the session and the folder hears

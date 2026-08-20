@@ -1088,6 +1088,45 @@ strictly."
       ;; two lengths in a row, each landing on the next message
       (should (vm-folder-looks-like-mboxcl2-p)))))
 
+
+;;; what a background fetch says while it runs (issue #473)
+
+(defmacro vm-imap-mock-test--shown (&rest body)
+  "Run BODY and answer with the messages VM showed, oldest first.
+What `vm-inform' put in the echo area, so a message above `vm-verbosity' --
+logged and not shown -- does not appear here, which is the difference being
+tested."
+  (declare (indent 0) (debug t))
+  `(let ((shown nil))
+     (cl-letf (((symbol-function 'vm-emit-message)
+                (lambda (level text)
+                  (when (<= level vm-verbosity)
+                    (setq shown (append shown (list text)))
+                    text))))
+       ,@body)
+     shown))
+
+(ert-deftest vm-imap-mock-test-a-fetch-says-the-start-and-the-end-only ()
+  "A fetch running in the background does not talk over the echo area.
+Whoever is using Emacs while it runs is the reason it runs in the background,
+and a line per bunch of messages is in the way of them.  The count is in the
+mode line, live, and every line is in the log.
+
+So: the list is being read, the messages are being retrieved, and what
+arrived.  Nothing per bunch, and the totals once rather than twice -- they
+were printed on their own and again inside the line that followed."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (let* ((said (vm-imap-mock-test--shown
+                   (vm-imap-net-synchronize t)
+                   (vm-imap-net-wait nil 10)))
+           (progress (seq-filter (lambda (s) (string-match-p "of [0-9]+ messages retrieved" s))
+                                 said))
+           (totals (seq-filter (lambda (s) (string-match-p "new, [0-9]+ unread" s))
+                               said)))
+      (should-not progress)
+      (should (>= 1 (length totals))))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

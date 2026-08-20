@@ -2208,26 +2208,35 @@ Supports version 4 format of attribute storage, for backward compatibility."
 			    vm-unread-count
 			    vm-deleted-count)))))
 
-(defun vm-emit-totals-blurb ()
-  "Say how many messages the folder holds, and how many are in each state.
-New, unread and deleted are counted separately, and a folder with nothing
-in it says so.  This is the line the mode line summarises, printed on
-demand.  The totals are recomputed only when the folder has changed since
-they were last worked out."
-  (interactive)
+(defun vm-totals-blurb ()
+  "How many messages the folder holds, and how many are in each state.
+New, unread and deleted are counted separately, and a folder with nothing in
+it says so.  This is the line the mode line summarises.  The totals are
+recomputed only when the folder has changed since they were last worked out.
+
+Answers the line without showing it, for a caller that puts it in a message
+of its own: showing it here as well printed the same counts twice, once on
+its own and once inside the line that followed it."
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
     (let ((folder (buffer-name)))
       (if (not (equal (nth 0 vm-totals) vm-modification-counter))
 	  (vm-compute-totals))
       (if (equal (nth 1 vm-totals) 0)
-	  (vm-inform 5 "%s: No messages." folder)
-	(vm-inform 5 "%s: %d message%s, %d new, %d unread, %d deleted"
-		   folder
-		   (nth 1 vm-totals) (if (= (nth 1 vm-totals) 1) "" "s")
-		   (nth 2 vm-totals)
-		   (nth 3 vm-totals)
-		   (nth 4 vm-totals))))))
+	  (format "%s: No messages." folder)
+	(format "%s: %d message%s, %d new, %d unread, %d deleted"
+		folder
+		(nth 1 vm-totals) (if (= (nth 1 vm-totals) 1) "" "s")
+		(nth 2 vm-totals)
+		(nth 3 vm-totals)
+		(nth 4 vm-totals))))))
+
+(defun vm-emit-totals-blurb ()
+  "Show `vm-totals-blurb\=', and answer with it."
+  (interactive)
+  (let ((blurb (vm-totals-blurb)))
+    (vm-inform 5 "%s" blurb)
+    blurb))
 
 (defun vm-convert-v4-attributes (data)
   (list (apply 'vector
