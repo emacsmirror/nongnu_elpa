@@ -764,6 +764,77 @@ See `vm-folder-type-by-name-alist'."
 	(setq alist (cdr alist)))
       type)))
 
+(defconst vm-folder-type-examine-limit (* 8 1024 1024)
+  "How far into a folder `vm-get-folder-type\=' will read to decide its type.
+It reads as far as the second message when the first says how long it is; a
+first message longer than this leaves the folder read as From_, which is what
+VM did with every folder before the length was looked at.")
+
+(defun vm-folder-second-message-position ()
+  "Where the second message begins, going by the first one's length, or nil.
+Point is at the start of a folder that looks like From_.  Answers a position
+even when it is past what the buffer holds, which is what says how much of a
+file has to be read to see it."
+  (save-excursion
+    (let ((case-fold-search t))
+      (and (re-search-forward vm-content-length-search-regexp nil t)
+	   (null (match-beginning 1))
+	   (progn (goto-char (match-beginning 0))
+		  (vm-match-header vm-content-length-header))
+	   (let ((length (string-to-number (vm-matched-header-contents))))
+	     (goto-char (match-beginning 0))
+	     (and (search-forward "\n\n" nil t)
+		  (+ (point) length)))))))
+
+(defun vm-folder-looks-like-mboxcl2-p ()
+  "Whether the folder at point is written with a length on every message.
+
+Point is at the start of a folder that looks like From_.  From_ and mboxcl2 are
+the same folder but for the `Content-Length\=' header, so the headers are the
+only evidence -- and one message\='s is not evidence.  Mail arrives carrying a
+`Content-Length\=' of its own, and VM gives one to each message it rewrites, so
+a From_ folder ends up with a few.  Read as mboxcl2, such a folder stops at the
+first message that has none: 6433 of the 6498 messages in a maintainer\='s IMAP
+cache had none, and the folder would not open at all.
+
+So the first message\='s length has to say where the message ends, and then:
+
+  - it ends the folder, and there is nothing else to ask.  A folder holding one
+    message is all the evidence there is, which is how an FCC file starts.
+  - the next message begins there, and it must carry a length too.  Two in a
+    row is what tells a folder written this way from a message that came with
+    the header.
+  - it lands in the middle of something, and the folder is not this type.
+
+Answering from match data is what this replaces: the search for a length could
+fail and leave the match of the `From \=' at the top of the folder standing, and
+that was read as a length having been found."
+  (save-excursion
+    (let ((case-fold-search t)
+	  (length nil))
+      (and (re-search-forward vm-content-length-search-regexp nil t)
+	   (null (match-beginning 1))
+	   (progn (goto-char (match-beginning 0))
+		  (and (vm-match-header vm-content-length-header)
+		       (setq length (string-to-number
+				     (vm-matched-header-contents)))))
+	   (progn (goto-char (match-beginning 0))
+		  (search-forward "\n\n" nil t))
+	   (<= (+ (point) length) (point-max))
+	   (progn (forward-char length)
+		  ;; a trailing newline the count does not include, which the
+		  ;; reader allows for as well
+		  (skip-chars-forward "\n")
+		  (cond
+		   ((eobp) t)
+		   ((looking-at "From ")
+		    (and (re-search-forward vm-content-length-search-regexp
+					    nil t)
+			 (null (match-beginning 1))
+			 (progn (goto-char (match-beginning 0))
+				(vm-match-header vm-content-length-header))))
+		   (t nil)))))))
+
 (defun vm-get-folder-type (&optional file start end ignore-visited)
   "Return a symbol indicating the folder type of the current buffer.
 This function works by examining the beginning of a folder.
@@ -811,7 +882,22 @@ the value of vm-default-From_folder-type will be returned."
 		  (if (file-readable-p file)
 		      (let ((coding-system-for-read
 				(vm-binary-coding-system)))
-			(insert-file-contents file nil 0 4096))))))
+			(insert-file-contents file nil 0 4096)
+			;; Enough to see the second message, when the first says
+			;; how long it is.  4096 bytes need not reach even the
+			;; end of the first message's headers: in a maintainer's
+			;; cache the first message is VM's own bookkeeping and
+			;; its header block is 237 kilobytes, so the search for a
+			;; length found nothing and the answer came from match
+			;; data the previous search had left behind.  A second
+			;; read of a bounded region, not of the file: a folder
+			;; can be a gigabyte.
+			(let ((wanted (vm-folder-second-message-position)))
+			  (when (and wanted (> wanted (buffer-size))
+				     (<= wanted vm-folder-type-examine-limit))
+			    (erase-buffer)
+			    (insert-file-contents file nil 0
+						  (+ wanted 4096)))))))))
 	  (save-excursion
 	    (save-restriction
 	      (or start (setq start 1))
@@ -834,14 +920,9 @@ the value of vm-default-From_folder-type will be returned."
 			((not vm-trust-content-length)
 			 vm-default-From_-folder-type)
 			(t
-			 (let ((case-fold-search t))
-			   (re-search-forward vm-content-length-search-regexp
-					      nil t))
-			 (cond ((match-beginning 1)
-				vm-default-From_-folder-type)
-			       ((match-beginning 0)
-				'mboxcl2)
-			       (t vm-default-From_-folder-type))))))
+			 (if (vm-folder-looks-like-mboxcl2-p)
+			     'mboxcl2
+			   vm-default-From_-folder-type)))))
 		    ((looking-at "\001\001\001\001\n") 'mmdf)
 		    ((looking-at "BABYL OPTIONS:") 'babyl)
 		    (t 'unknown)))))
@@ -1254,19 +1335,32 @@ match and point can never end up before HEADERS-START."
       (goto-char found)
       t)))
 
-(defun vm-mboxcl2-length-missing (line)
-  "Complain about the mboxcl2 message at LINE having no `Content-Length'.
-An error unless `vm-mboxcl2-strict' is nil, in which case a warning: the
-caller then falls back on looking for the next line beginning \"From \",
-which is how to get such a folder open in order to repair it."
-  (let ((what (format "Message at line %d has no %s, which this mboxcl2 folder needs"
-		      line (string-remove-suffix ":" vm-content-length-header))))
+(defun vm-mboxcl2-length-missing (position)
+  "Complain about the mboxcl2 message at POSITION having no `Content-Length'.
+An error unless `vm-mboxcl2-strict' is nil, in which case one warning for the
+folder, naming no message: the caller then falls back on looking for the next
+line beginning \"From \", which is how to get such a folder open in order to
+repair it.
+
+The strict error stops the read, so numbering its line costs one count.  The
+warning stops nothing and is reached once per message, where both halves of
+naming one are quadratic: `line-number-at-pos' counts from the start of the
+buffer, and `vm-warn' pauses for two seconds on each warning whose text it did
+not just show -- a line number in the text making every one of them new.  A
+1.1 gigabyte IMAP cache short of a length on 6433 of its 6498 messages paid
+both per message, and the repair this error recommends, which reads a folder
+this way, did not finish.  It takes seven seconds with the number left out."
+  (let ((header (string-remove-suffix ":" vm-content-length-header)))
     (if vm-mboxcl2-strict
-	(error (concat what ".  To repair it: C-u M-x vm-change-folder-type"
+	(error (concat "Message at line %d has no %s, which this mboxcl2 folder"
+		       " needs.  To repair it: C-u M-x vm-change-folder-type"
 		       " mboxcl2, which converts the folder on disk without"
 		       " visiting it, gives every message a length, and keeps"
-		       " the folder as it was in a backup file"))
-      (vm-warn 0 2 "%s; looking for the next From_ line instead" what))))
+		       " the folder as it was in a backup file")
+	       (line-number-at-pos position) header)
+      (vm-warn 0 2 (concat "This mboxcl2 folder has messages with no %s;"
+			   " looking for the next From_ line instead")
+	       header))))
 
 (defun vm-find-trailing-message-separator (&optional headers-start)
   "Find the next trailing message separator in a folder.
@@ -1310,7 +1404,7 @@ behaviour they always had."
 	;; that makes it one.  Falling back on the next From_ line, which is
 	;; what VM did, reads the folder as something other than what it says
 	;; it is and says nothing about a message written wrongly.
-	(vm-mboxcl2-length-missing (line-number-at-pos start-point)))
+	(vm-mboxcl2-length-missing start-point))
       (if (or (eobp) (looking-at reg1))
 	  nil
 	(goto-char start-point)
@@ -5833,7 +5927,10 @@ one when saving a buffer."
     (with-temp-buffer
       (set-buffer-multibyte nil)
       (insert-file-contents-literally file)
-      (setq original (buffer-string))
+      ;; A hash of the folder rather than a copy of it: an IMAP cache folder
+      ;; runs to a gigabyte, and `buffer-string' here and again at the end
+      ;; would ask for two more of them.
+      (setq original (buffer-hash))
       (let ((vm-folder-type old)
 	    (vm-mboxcl2-strict nil))
 	(setq before (vm-count-messages-in-buffer))
@@ -5846,7 +5943,7 @@ one when saving a buffer."
 	     (error (concat "Not writing %s: it holds %d messages and the"
 			    " conversion produced %d")
 		    (file-name-nondirectory file) before after))
-	    ((equal original (buffer-string))
+	    ((equal original (buffer-hash))
 	     (vm-inform 5 "%s is already a sound %s folder, %d messages"
 			(file-name-nondirectory file) type after))
 	    (t
@@ -5856,6 +5953,25 @@ one when saving a buffer."
 	       (vm-inform 5 "%s converted from %s to %s, %d messages; was %s"
 			  (file-name-nondirectory file) old type after
 			  (abbreviate-file-name backup))))))))
+
+(defun vm-error-if-folder-not-read-through ()
+  "Signal unless this folder buffer holds the whole of its folder.
+A visit that fails partway leaves a `vm-mode' buffer behind holding the
+messages read before the error and no `vm-message-pointer' -- five of seven,
+for the mboxcl2 folder this was written for.  Rewriting that buffer converts
+those messages and leaves the rest in the format they were, so the folder ends
+up half of each; the missing pointer then signalled `wrong-type-argument
+arrayp nil', with the buffer already modified and the folder already backed up.
+
+The repair for such a folder is the on-disk conversion, which reads the file
+rather than the buffer -- see `vm-change-folder-type-of-file'."
+  (when (and vm-message-list (null vm-message-pointer))
+    (error (concat "%s was not read all the way through, so its type cannot"
+		   " be changed here.  Convert it on disk instead:"
+		   " C-u M-x vm-change-folder-type, which asks for the file")
+	   (or (and buffer-file-name
+		    (file-name-nondirectory buffer-file-name))
+	       (buffer-name)))))
 
 ;;;###autoload
 (defun vm-change-folder-type (type &optional file)
@@ -5880,7 +5996,11 @@ folder to what it already is rewrites every message in it, which for mboxcl2
 recomputes every `Content-Length'.  That is the repair for a folder whose
 lengths are wrong -- and a wrong length is not a missing one, so such a folder
 opens without complaint and the reader quietly falls back on searching for the
-next separator."
+next separator.
+
+Without FILE the folder in the current buffer is converted, and a buffer whose
+visit failed partway is refused: it holds only the messages read before the
+error, and the on-disk conversion is what such a folder wants."
   (interactive
    (let ((this-command this-command)
 	 (last-command last-command)
@@ -5897,16 +6017,21 @@ next separator."
        (list (vm-canonical-folder-type
 	      (intern (vm-read-string "Change folder to type: " types)))
 	     file))))
+  ;; Both paths, and before either does anything: the old name has to reach
+  ;; the conversion as the current one, and a type neither path can write is
+  ;; worth saying so about before a folder is rewritten in it.
+  (setq type (vm-canonical-folder-type type))
+  (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
+      (error "Unknown folder type: %s" type))
   (when file
     (vm-change-folder-type-of-file (expand-file-name file) type))
   (unless file
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-virtual-folder)
-  (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
-      (error "Unknown folder type: %s" type))
   (if (or (null vm-folder-type)
 	  (eq vm-folder-type 'unknown))
       (error "Current folder's type is unknown, can't change it."))
+  (vm-error-if-folder-not-read-through)
   ;; Changing the type rewrites every message in the folder, so keep what is
   ;; on disk now.  Emacs' own backup happens on the first save of a buffer,
   ;; which for a folder saved earlier in the session has been and gone.

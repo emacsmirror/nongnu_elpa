@@ -3900,6 +3900,185 @@ never written.  Nothing of it is left to call."
                   vm-folders-summary-buffer))
     (should-not (boundp name))))
 
+(ert-deftest vm-folder-test-one-length-does-not-make-a-folder-mboxcl2 ()
+  "A From_ folder holding a message with a `Content-Length' stays From_.
+
+The two types are the same folder but for that header, so one message's is no
+evidence: mail arrives carrying a `Content-Length' of its own, and VM adds one
+to each message it rewrites, so a From_ folder ends up with a few.  Read as
+mboxcl2, such a folder stops at the first message without one -- 6433 of 6498
+messages in a maintainer's IMAP cache had none, and the folder would not open.
+
+Two lengths in a row is what says the folder is written that way."
+  (let* ((body "A short body.\n")
+         (length (number-to-string (length body)))
+         (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
+                              "From: a@example.com\nSubject: one\n"
+                              "Content-Length: " length "\n\n" body))
+         (without (concat "From VM Thu May  7 06:22:18 2026\n"
+                          "From: b@example.com\nSubject: two\n\n" body))
+         (vm-trust-content-length t)
+         (vm-default-folder-type 'mboxcl2)
+         (vm-default-From_-folder-type 'From_))
+    ;; the maintainer's folder: the first message has one, the rest do not
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert with-length without without)
+      (should (eq (vm-get-folder-type) 'From_)))
+    ;; a folder written as mboxcl2: every message has one
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert with-length with-length with-length)
+      (should (eq (vm-get-folder-type) 'mboxcl2)))
+    ;; and a plain From_ folder is unchanged
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert without without)
+      (should (eq (vm-get-folder-type) 'From_)))))
+
+(ert-deftest vm-folder-test-the-type-is-read-past-a-long-first-message ()
+  "The second message decides even when the first is longer than the first read.
+
+`vm-get-folder-type' reads 4096 bytes of a file, and the maintainer's first
+message was 237 kilobytes: without reading further, a folder written as mboxcl2
+would be taken for From_ and one that is not for mboxcl2.  It reads as far as
+the first message's length says the second one begins,
+`vm-folder-type-examine-limit' permitting."
+  (let* ((body (concat (make-string 20000 ?x) "\n"))
+         (length (number-to-string (length body)))
+         (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
+                              "From: a@example.com\nSubject: big\n"
+                              "Content-Length: " length "\n\n" body))
+         (without (concat "From VM Thu May  7 06:22:18 2026\n"
+                          "From: b@example.com\nSubject: two\n\n" body))
+         (dir (file-name-as-directory (make-temp-file "vm-folder-type" t)))
+         (vm-trust-content-length t)
+         (vm-default-folder-type 'mboxcl2)
+         (vm-default-From_-folder-type 'From_))
+    (unwind-protect
+        (let ((all (expand-file-name "all-lengths" dir))
+              (one (expand-file-name "one-length" dir))
+              (coding-system-for-write 'binary))
+          (write-region (concat with-length with-length with-length) nil all
+                        nil 'quiet)
+          (write-region (concat with-length without without) nil one nil 'quiet)
+          (should (eq (vm-get-folder-type all) 'mboxcl2))
+          (should (eq (vm-get-folder-type one) 'From_)))
+      (delete-directory dir t))))
+
+;;; The repair a folder VM will not read is told to use
+
+(ert-deftest vm-folder-test-a-lax-read-warns-once-and-counts-no-lines ()
+  "Reading such a folder with `vm-mboxcl2-strict' nil warns once, for the folder.
+It used to warn per message, naming its line, and both halves of that are
+quadratic: `line-number-at-pos' counts from the start of the buffer, and
+`vm-warn' pauses for two seconds on every warning whose text is new, which a
+line number makes each of them.  The repair itself reads a folder this way, so
+on a 1.1 gigabyte IMAP cache short of a length on 6433 of its 6498 messages the
+repair the strict error recommends did not finish; it takes seven seconds now.
+
+What is checked is the text and the counting, not a duration: a folder big
+enough to be slow would be too slow to have in a test."
+  (let ((folder (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                        "From: alice@example.com\nSubject: one\n"
+                        "Content-Length: 10\n\nBody one.\n"))
+        (texts nil)
+        (numberings 0))
+    (dotimes (i 40)
+      (setq folder (concat folder
+                           (format "From bob@example.com Sun Aug  9 09:%02d:00 2026\n"
+                                   i)
+                           "From: bob@example.com\nSubject: short\n\nBody.\n\n")))
+    (with-temp-buffer
+      (insert folder)
+      (let ((vm-folder-type 'mboxcl2)
+            (vm-mboxcl2-strict nil)
+            (number (symbol-function 'line-number-at-pos)))
+        (cl-letf (((symbol-function 'vm-warn)
+                   (lambda (_l _secs &rest args)
+                     (push (apply #'format args) texts)))
+                  ((symbol-function 'line-number-at-pos)
+                   (lambda (&rest args)
+                     (setq numberings (1+ numberings))
+                     (apply number args))))
+          (should (= (vm-count-messages-in-buffer) 41)))))
+    ;; every message short of a length was warned about
+    (should (> (length texts) 1))
+    ;; with one text, so `vm-warn' shows it once and pauses once
+    (should (= (length (delete-dups (copy-sequence texts))) 1))
+    ;; and no line was numbered: naming the message is what cost the scan
+    (should (= numberings 0))))
+
+(ert-deftest vm-folder-test-a-half-read-folder-is-not-converted-in-place ()
+  "The buffer a failed visit leaves behind is refused, not converted.
+That buffer holds only the messages read before the error and has no
+`vm-message-pointer'.  Converting it rewrote those and left the rest in the
+format they were, then signalled `wrong-type-argument arrayp nil' on the
+missing pointer -- with the folder already backed up and the buffer already
+modified.  This is what a reader who misses the prefix argument does, since
+the error that sends them here leaves them in exactly that buffer."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((vm-mboxcl2-strict t)
+          (text-quoting-style 'grave))
+      (should-error (vm-visit-folder file))
+      (with-current-buffer (vm-get-file-buffer file)
+        (should vm-message-list)
+        (should-not vm-message-pointer)
+        (let ((err (should-error (vm-change-folder-type 'mboxcl2))))
+          (should (eq (car err) 'error))
+          (should (string-match-p "not read all the way through" (cadr err)))
+          (should (string-match-p "vm-change-folder-type" (cadr err))))
+        (should-not (buffer-modified-p)))
+      ;; and it did not get as far as backing the folder up or writing it
+      (should-not (file-exists-p (vm-folder-backup-name file)))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should (equal (buffer-string) vm-folder-test--seven-and-two-short))))))
+
+(ert-deftest vm-folder-test-a-prefix-argument-repairs-the-folder-it-asks-for ()
+  "The whole of the documented repair, from the interactive spec onwards.
+`C-u M-x vm-change-folder-type mboxcl2' is what the error tells the reader to
+type, so what that reads from the minibuffer has to reach the on-disk
+conversion and the folder has to open afterwards."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((vm-mboxcl2-strict t))
+      (should-error (vm-visit-folder file))
+      ;; the name is not `file': the interactive spec binds one of its own,
+      ;; and a special variable of that name would be shadowed by it
+      (let* ((answer file)
+             (args (let ((current-prefix-arg '(4)))
+                     (cl-letf (((symbol-function 'vm-read-string)
+                                (lambda (&rest _) "mboxcl2"))
+                               ((symbol-function 'vm-read-file-name)
+                                (lambda (&rest _) answer)))
+                       (eval (cadr (interactive-form 'vm-change-folder-type))
+                             t)))))
+        (should (equal args (list 'mboxcl2 file)))
+        (apply #'vm-change-folder-type args))
+      (should (file-exists-p (vm-folder-backup-name file)))
+      (vm-visit-folder file)
+      (should (= (length vm-message-list) 3))
+      (should (eq vm-folder-type 'mboxcl2)))))
+
+(ert-deftest vm-folder-test-both-conversion-paths-check-the-type ()
+  "`From_-with-Content-Length' reaches either path as `mboxcl2', and a type
+neither can write is refused before a folder is rewritten in it.  The checks
+used to be inside the in-buffer branch, so the on-disk one took whatever it
+was given and the alias the docstring promises was rejected."
+  (vm-folder-test-with-file (file "plain.mbox"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (let ((text-quoting-style 'grave))
+      (vm-change-folder-type 'From_-with-Content-Length file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string))))
+      (should (string-match-p "Unknown folder type: mbox"
+                              (cadr (should-error
+                                     (vm-change-folder-type 'mbox file))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
