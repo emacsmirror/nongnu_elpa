@@ -41,6 +41,7 @@
     - `markdown-table-align` now aligns centered cells
     - Fix highlightings of inline code or bold in strike-through  [GH-926][]
     - Fix fence code block highlighting that uses more than 3 backticks [GH-933][]
+    - Fix `gfm-mode` exception when buffer ends with unterminated code fence [GH-948][]
 
 *   Improvements:
     - Support drag and drop features on Windows and multiple files' drag and drop
@@ -62,6 +63,7 @@
   [gh-926]: https://github.com/jrblevin/markdown-mode/issues/926
   [gh-930]: https://github.com/jrblevin/markdown-mode/issues/930
   [gh-933]: https://github.com/jrblevin/markdown-mode/issues/933
+  [gh-948]: https://github.com/jrblevin/markdown-mode/pull/948
 
 # Markdown Mode 2.7
 
