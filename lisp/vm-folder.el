@@ -757,6 +757,77 @@ See `vm-folder-type-by-name-alist'."
 	(setq alist (cdr alist)))
       type)))
 
+(defconst vm-folder-type-examine-limit (* 8 1024 1024)
+  "How far into a folder `vm-get-folder-type\=' will read to decide its type.
+It reads as far as the second message when the first says how long it is; a
+first message longer than this leaves the folder read as From_, which is what
+VM did with every folder before the length was looked at.")
+
+(defun vm-folder-second-message-position ()
+  "Where the second message begins, going by the first one's length, or nil.
+Point is at the start of a folder that looks like From_.  Answers a position
+even when it is past what the buffer holds, which is what says how much of a
+file has to be read to see it."
+  (save-excursion
+    (let ((case-fold-search t))
+      (and (re-search-forward vm-content-length-search-regexp nil t)
+	   (null (match-beginning 1))
+	   (progn (goto-char (match-beginning 0))
+		  (vm-match-header vm-content-length-header))
+	   (let ((length (string-to-number (vm-matched-header-contents))))
+	     (goto-char (match-beginning 0))
+	     (and (search-forward "\n\n" nil t)
+		  (+ (point) length)))))))
+
+(defun vm-folder-looks-like-mboxcl2-p ()
+  "Whether the folder at point is written with a length on every message.
+
+Point is at the start of a folder that looks like From_.  From_ and mboxcl2 are
+the same folder but for the `Content-Length\=' header, so the headers are the
+only evidence -- and one message\='s is not evidence.  Mail arrives carrying a
+`Content-Length\=' of its own, and VM gives one to each message it rewrites, so
+a From_ folder ends up with a few.  Read as mboxcl2, such a folder stops at the
+first message that has none: 6433 of the 6498 messages in a maintainer\='s IMAP
+cache had none, and the folder would not open at all.
+
+So the first message\='s length has to say where the message ends, and then:
+
+  - it ends the folder, and there is nothing else to ask.  A folder holding one
+    message is all the evidence there is, which is how an FCC file starts.
+  - the next message begins there, and it must carry a length too.  Two in a
+    row is what tells a folder written this way from a message that came with
+    the header.
+  - it lands in the middle of something, and the folder is not this type.
+
+Answering from match data is what this replaces: the search for a length could
+fail and leave the match of the `From \=' at the top of the folder standing, and
+that was read as a length having been found."
+  (save-excursion
+    (let ((case-fold-search t)
+	  (length nil))
+      (and (re-search-forward vm-content-length-search-regexp nil t)
+	   (null (match-beginning 1))
+	   (progn (goto-char (match-beginning 0))
+		  (and (vm-match-header vm-content-length-header)
+		       (setq length (string-to-number
+				     (vm-matched-header-contents)))))
+	   (progn (goto-char (match-beginning 0))
+		  (search-forward "\n\n" nil t))
+	   (<= (+ (point) length) (point-max))
+	   (progn (forward-char length)
+		  ;; a trailing newline the count does not include, which the
+		  ;; reader allows for as well
+		  (skip-chars-forward "\n")
+		  (cond
+		   ((eobp) t)
+		   ((looking-at "From ")
+		    (and (re-search-forward vm-content-length-search-regexp
+					    nil t)
+			 (null (match-beginning 1))
+			 (progn (goto-char (match-beginning 0))
+				(vm-match-header vm-content-length-header))))
+		   (t nil)))))))
+
 (defun vm-get-folder-type (&optional file start end ignore-visited)
   "Return a symbol indicating the folder type of the current buffer.
 This function works by examining the beginning of a folder.
@@ -804,7 +875,22 @@ the value of vm-default-From_folder-type will be returned."
 		  (if (file-readable-p file)
 		      (let ((coding-system-for-read
 				(vm-binary-coding-system)))
-			(insert-file-contents file nil 0 4096))))))
+			(insert-file-contents file nil 0 4096)
+			;; Enough to see the second message, when the first says
+			;; how long it is.  4096 bytes need not reach even the
+			;; end of the first message's headers: in a maintainer's
+			;; cache the first message is VM's own bookkeeping and
+			;; its header block is 237 kilobytes, so the search for a
+			;; length found nothing and the answer came from match
+			;; data the previous search had left behind.  A second
+			;; read of a bounded region, not of the file: a folder
+			;; can be a gigabyte.
+			(let ((wanted (vm-folder-second-message-position)))
+			  (when (and wanted (> wanted (buffer-size))
+				     (<= wanted vm-folder-type-examine-limit))
+			    (erase-buffer)
+			    (insert-file-contents file nil 0
+						  (+ wanted 4096)))))))))
 	  (save-excursion
 	    (save-restriction
 	      (or start (setq start 1))
@@ -827,14 +913,9 @@ the value of vm-default-From_folder-type will be returned."
 			((not vm-trust-content-length)
 			 vm-default-From_-folder-type)
 			(t
-			 (let ((case-fold-search t))
-			   (re-search-forward vm-content-length-search-regexp
-					      nil t))
-			 (cond ((match-beginning 1)
-				vm-default-From_-folder-type)
-			       ((match-beginning 0)
-				'mboxcl2)
-			       (t vm-default-From_-folder-type))))))
+			 (if (vm-folder-looks-like-mboxcl2-p)
+			     'mboxcl2
+			   vm-default-From_-folder-type)))))
 		    ((looking-at "\001\001\001\001\n") 'mmdf)
 		    ((looking-at "BABYL OPTIONS:") 'babyl)
 		    (t 'unknown)))))

@@ -3878,6 +3878,74 @@ never written.  Nothing of it is left to call."
                   vm-folders-summary-buffer))
     (should-not (boundp name))))
 
+(ert-deftest vm-folder-test-one-length-does-not-make-a-folder-mboxcl2 ()
+  "A From_ folder holding a message with a `Content-Length' stays From_.
+
+The two types are the same folder but for that header, so one message's is no
+evidence: mail arrives carrying a `Content-Length' of its own, and VM adds one
+to each message it rewrites, so a From_ folder ends up with a few.  Read as
+mboxcl2, such a folder stops at the first message without one -- 6433 of 6498
+messages in a maintainer's IMAP cache had none, and the folder would not open.
+
+Two lengths in a row is what says the folder is written that way."
+  (let* ((body "A short body.\n")
+         (length (number-to-string (length body)))
+         (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
+                              "From: a@example.com\nSubject: one\n"
+                              "Content-Length: " length "\n\n" body))
+         (without (concat "From VM Thu May  7 06:22:18 2026\n"
+                          "From: b@example.com\nSubject: two\n\n" body))
+         (vm-trust-content-length t)
+         (vm-default-folder-type 'mboxcl2)
+         (vm-default-From_-folder-type 'From_))
+    ;; the maintainer's folder: the first message has one, the rest do not
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert with-length without without)
+      (should (eq (vm-get-folder-type) 'From_)))
+    ;; a folder written as mboxcl2: every message has one
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert with-length with-length with-length)
+      (should (eq (vm-get-folder-type) 'mboxcl2)))
+    ;; and a plain From_ folder is unchanged
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert without without)
+      (should (eq (vm-get-folder-type) 'From_)))))
+
+(ert-deftest vm-folder-test-the-type-is-read-past-a-long-first-message ()
+  "The second message decides even when the first is longer than the first read.
+
+`vm-get-folder-type' reads 4096 bytes of a file, and the maintainer's first
+message was 237 kilobytes: without reading further, a folder written as mboxcl2
+would be taken for From_ and one that is not for mboxcl2.  It reads as far as
+the first message's length says the second one begins,
+`vm-folder-type-examine-limit' permitting."
+  (let* ((body (concat (make-string 20000 ?x) "\n"))
+         (length (number-to-string (length body)))
+         (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
+                              "From: a@example.com\nSubject: big\n"
+                              "Content-Length: " length "\n\n" body))
+         (without (concat "From VM Thu May  7 06:22:18 2026\n"
+                          "From: b@example.com\nSubject: two\n\n" body))
+         (dir (file-name-as-directory (make-temp-file "vm-folder-type" t)))
+         (vm-trust-content-length t)
+         (vm-default-folder-type 'mboxcl2)
+         (vm-default-From_-folder-type 'From_))
+    (unwind-protect
+        (let ((all (expand-file-name "all-lengths" dir))
+              (one (expand-file-name "one-length" dir))
+              (coding-system-for-write 'binary))
+          (write-region (concat with-length with-length with-length) nil all
+                        nil 'quiet)
+          (write-region (concat with-length without without) nil one nil 'quiet)
+          (should (eq (vm-get-folder-type all) 'mboxcl2))
+          (should (eq (vm-get-folder-type one) 'From_)))
+      (delete-directory dir t))))
+
+;;; The repair a folder VM will not read is told to use
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
