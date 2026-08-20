@@ -1,0 +1,171 @@
+* How a folder's type is decided, and how it should be
+
+All line references were verified against the tree at the time of writing.
+
+Issue: https://gitlab.com/emacs-vm/vm/-/work_items/736
+
+** The problem
+
+mboxcl2 is a From_ folder plus a =Content-Length= header on each message.  A
+folder therefore cannot say which of the two it is by looking like one, and
+no signature exists to test.  mmdf and babyl do have signatures and are never
+in doubt (vm-folder.el:926, vm-folder.el:927); From_ against BellFrom_ has no
+test either and is answered by =vm-default-From_-folder-type=.
+
+VM answers the mboxcl2 question by sniffing: read the first message, and if
+it carries a length, call the folder mboxcl2.  The sniff is gated by
+=vm-trust-content-length= (vm-vars.el:997), whose default is
+=(eq vm-default-folder-type 'mboxcl2)=.
+
+That derivation is the wart.  Setting =vm-default-folder-type= to mboxcl2
+says what new folders should be written as, and it forces the sniff on for
+every folder read, because otherwise a folder VM itself wrote as mboxcl2
+reads back as From_ and the next save writes it as neither.  The docstring
+says so: if you set the default type you must set the trust variable.
+
+Two consequences:
+
+- A statement about new folders is also a statement about existing ones.
+- The sniff decided a 1.1 gigabyte IMAP cache was mboxcl2 when 6394 of its
+  6459 messages had no length.  That was issue 733, fixed by making the test
+  look at two messages instead of one, but the sniff is why the question was
+  being asked of that folder at all.
+
+** Where a type comes from today
+
+| source                       | decides                    | where                                |
+|------------------------------+----------------------------+--------------------------------------|
+| signature                    | mmdf, babyl                | vm-folder.el:926                     |
+| name rule                    | From_, BellFrom_, mboxcl2  | vm-folder.el:754, vm-vars.el:1031    |
+| structure test               | mboxcl2                    | vm-folder.el:789                     |
+| =vm-default-From_-folder-type= | From_ against BellFrom_  | vm-vars.el:926                       |
+| =vm-default-folder-type=       | new and empty folders    | vm-vars.el:885                       |
+| index file                   | any                        | =vm-index-file-suffix=, nil by default |
+
+=vm-get-folder-type= applies them in that order at vm-folder.el:908.  The name
+rule matches =(file-name-nondirectory file)= only (vm-folder.el:759).
+
+A folder header exists as a concept, =vm-folder-header= (vm-folder.el:1213),
+but it is the empty string for every type except babyl, so From_ and mboxcl2
+folders have nothing at the top that could carry a declaration.
+
+** Proposal
+
+*** 1. The folder records its own type
+
+A folder-level header, =X-VM-Folder-Type: mboxcl2=, in the header block of the
+first message.  That block is where VM already keeps its folder-level state:
+=X-VM-Message-Order=, =X-VM-Bookmark=, =X-VM-Labels=, =X-VM-Summary-Format=,
+=X-VM-VHeader=, =X-VM-IMAP-Retrieved=, =X-VM-Last-Modified= (vm-vars.el:6482
+to vm-vars.el:6505), each written by its own =vm-stuff-= function
+(vm-folder.el:2851, 2910, 2953, 3049, 3152, 3247) from
+=vm-stuff-folder-data= (vm-folder.el:2649).
+
+Why the first message's header block works as the place:
+
+- It can be read knowing nothing about the folder type.  The first message
+  begins at the start of the file and its header block ends at the first
+  blank line, so no message boundary has to be found first, which is the
+  whole difficulty.
+- Every folder VM has saved once has the block, so it can carry the
+  declaration for the primary inbox and for the IMAP and POP caches with
+  nothing renamed.
+- The =vm-stuff-= functions insert at the top of the block, so stuffing the
+  type last puts it in the first few hundred bytes and the reader does not
+  have to get past =X-VM-IMAP-Retrieved=, which is 237 kilobytes in a
+  maintainer's cache.  The reader still needs the fallback: header not found
+  in the bytes read, and the block not ended, means read on or give up and
+  use the next rule.
+- Deleting and expunging the first message does not lose it.  The folder-level
+  headers are re-stuffed into whatever message is first.
+
+What it does not cover: a folder VM has never saved, and a folder another
+mailer wrote.  Those fall to the name rule and the default.
+
+*** 2. Name rules match the whole path
+
+=vm-folder-type-for-name= matches the last component only.  Matching the whole
+name lets a directory answer for the folders in it, which is what a primary
+inbox called INBOX and a cache called imap-cache-<md5> need:
+
+: (setq vm-folder-type-by-name-alist
+:       '(("\\.mboxcl2\\'"           . mboxcl2)
+:         ("/mail/current/"          . mboxcl2)
+:         ("/imap-cache-[0-9a-f]+\\'" . mboxcl2)))
+
+No INBOX.mboxcl2.  First match still wins, and the suffix rule still works for
+FCC files.
+
+Rejected: naming new caches =imap-cache-<md5>.mboxcl2=.  VM invents those names
+(vm-imap.el:308) so it costs nothing to write, but an existing cache would
+stop being found and a user would refetch a gigabyte, so it needs a fallback
+to the unsuffixed name and a rename on first save.  Part 1 covers the caches
+without any of that.
+
+*** 3. Nothing is guessed
+
+The order becomes:
+
+1. signature
+2. the type recorded in the folder
+3. the name rule
+4. =vm-default-From_-folder-type=
+
+mboxcl2 is then reachable only from an explicit statement.
+=vm-trust-content-length= is deprecated, and
+=vm-folder-looks-like-mboxcl2-p= stays but changes job: it stops deciding a
+type and becomes the check on a recorded one, which is what part 1 needs.
+
+Transition, one release: where the structure test would have said mboxcl2 and
+nothing else said anything, read the folder as mboxcl2, warn once naming it,
+and record the type so the next visit does not need the test.
+
+*** 4. =vm-default-folder-type= decides new folders only, and is From_ everywhere
+
+Its platform table (vm-vars.el:885) gives mboxcl2 on Solaris, AIX and
+usg-unix-v: a guess about what the local delivery agent writes, and now the
+only thing that makes the trust default non-nil.  The variable never decides
+an existing folder's type, so changing its default cannot change how an
+existing folder reads.
+
+** Mismatches
+
+Three are possible and they want different answers.
+
+- Recorded type against the folder's own structure.  Error, naming the folder
+  and the repair command, under the policy pair VM already has for the crash
+  box against the inbox: =vm-check-folder-types= and
+  =vm-convert-folder-types=, both t (vm-vars.el:965, vm-vars.el:984, used at
+  vm-folder.el:4773).  This is the case that deserves an error and has none.
+- Name rule against recorded type.  Error.  Two explicit statements
+  contradicting each other, and VM should not pick one.
+- =vm-default-folder-type= against =vm-trust-content-length=.  The wart.
+  After part 3 the pairing means nothing, so what happens to an init that
+  still sets both is a choice: warn once and ignore the trust setting, error
+  at startup, or override silently.  Recommended: warn.  After part 1 the
+  setting is redundant rather than wrong, and erroring on a redundant setting
+  stops a working init from starting.
+
+** What it costs
+
+A genuinely mboxcl2 folder from another mailer, with no name rule, never saved
+by VM, reads as From_.  Not free: the lengths are what stop a body line
+beginning "From " being taken as a separator.
+=vm-leading-message-separator-regexp-From_= requires the line to end in a
+digit (vm-folder.el:1239) and =vm-find-From_-in-header-block= catches the
+header-block case, so a wrong split is rare rather than impossible.  That risk
+is the price of never guessing, and the warning in part 3 is how a user finds
+out they are paying it.
+
+** Order of work
+
+1. Read and write the recorded type, with the mismatch error.  Nothing else
+   changes: the sniff still runs where no type is recorded, so a folder VM has
+   saved stops being sniffed and every other folder behaves as it does now.
+2. Name rules match the whole path.
+3. Deprecate =vm-trust-content-length=, with the one-release warning.
+4. Drop the platform table from =vm-default-folder-type=.
+
+Each is a separate merge request.  1 is the one that removes the coupling; 3
+is the one that changes what an existing installation does, and wants the
+release note.
