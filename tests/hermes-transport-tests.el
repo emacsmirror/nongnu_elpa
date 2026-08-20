@@ -2460,6 +2460,29 @@ This is the contract that replaces hand-mirroring every event name: an invented
       (should (equal opened-url
                      "ws://100.64.0.10:9119/api/ws?token=remote-token")))))
 
+(ert-deftest hermes-transport-dashboard-remote-start-contains-throwing-callback ()
+  "A failing legacy callback cannot strand remote startup before socket open."
+  :tags '(candidate-4a)
+  (let ((hermes-dashboard-transport-ready-timeout nil)
+        client opened)
+    (let ((hermes-dashboard-transport-websocket-open-function
+           (lambda (_url _client) (setq opened t) 'fake-websocket)))
+      (setq client
+            (hermes-dashboard-transport--start-remote
+             :host "dash.example" :port 443 :remote-url "https://dash.example"
+             :remote-auth-method 'token :token "secret"
+             :callback (lambda (_event) (error "consumer failed"))))
+      (should opened)
+      (should (eq (hermes-dashboard-transport-client-websocket client)
+                  'fake-websocket))
+      (hermes-dashboard-transport--handle-frame
+       client '((jsonrpc . "2.0") (method . "event")
+                (params . ((type . "gateway.ready")))))
+      (should (eq (hermes--promise-state
+                   (hermes-dashboard-transport-client-ready-promise client))
+                  'resolved))
+      (should-not (hermes-dashboard-transport-client-stopping-p client)))))
+
 (ert-deftest hermes-transport-dashboard-message-complete-carries-usage ()
   "A `message.complete' event carries input/output token usage."
   (let* ((frame '((jsonrpc . "2.0") (method . "event")
@@ -2637,6 +2660,53 @@ url.el flags every 4xx/5xx via the callback status; the useless
            :secrets ("token")))
         (should-not opened)
         (should-not scheduled)))))
+
+(ert-deftest hermes-transport-dashboard-real-reusable-auth-redacts-aux-errors ()
+  "Real spawn and explicit-token clients own every auxiliary redaction secret."
+  :tags '(candidate-4a)
+  (dolist (mode '(spawn token))
+    (let* ((secret (format "%s-secret" mode)) client auth error-message)
+      (let ((hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _) 'process))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (&rest _) 'chat-websocket)))
+        (setq client
+              (if (eq mode 'spawn)
+                  (hermes-dashboard-transport--start-spawn
+                   :host "127.0.0.1" :port 9119 :token secret)
+                (hermes-dashboard-transport--start-remote
+                 :host "dash.example" :port 443
+                 :remote-url "https://dash.example"
+                 :remote-auth-method 'token :token secret))))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+                 (lambda (&rest _) (ert-fail "reusable auth resolved afresh"))))
+        (hermes--promise-then
+         (hermes-dashboard-transport-capability-url-async :client client)
+         (lambda (value) (setq auth value))))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
+                 #'ignore)
+                ((symbol-function 'websocket-open)
+                 (lambda (_url &rest args)
+                   (funcall (plist-get args :on-error)
+                            nil 'error (concat "boom " secret))
+                   'aux-websocket)))
+        (hermes-dashboard-transport-open-websocket
+         (plist-get auth :url) (plist-get auth :redacted-url)
+         (plist-get auth :secrets)
+         :on-error (lambda (message) (setq error-message message))))
+      (should (member secret (hermes-dashboard-transport--client-secrets client)))
+      (should error-message)
+      (should-not (string-match-p (regexp-quote secret) error-message)))))
+
+(ert-deftest hermes-transport-dashboard-client-secrets-cover-all-owners ()
+  "Spawn token, resolver token, and active auth secrets are one redaction set."
+  :tags '(candidate-4a)
+  (let ((client (make-hermes-dashboard-transport-client
+                 :token "spawn" :auth-token "resolver"
+                 :secrets '("active"))))
+    (should (equal (hermes-dashboard-transport--client-secrets client)
+                   '("spawn" "resolver" "active")))))
 
 (ert-deftest hermes-transport-dashboard-reconnect-ignores-startup-timeout ()
   "A stale startup timeout cannot terminate a fresh reconnect window."
