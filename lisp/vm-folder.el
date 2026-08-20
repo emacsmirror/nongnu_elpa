@@ -753,13 +753,21 @@ apply to anything that might be a folder type."
 
 (defun vm-folder-type-for-name (file)
   "The folder type FILE's name asks for, or nil if no name says anything.
+The whole name is matched, directories and all, so a rule can answer for every
+folder in a directory.  That is what a primary inbox called INBOX and a cache
+called imap-cache-<md5> need: neither can be given a suffix without renaming
+the file, and one rule for the directory names them both.
+
+A suffix rule is unaffected, `\\.mboxcl2\\\\=' matching the whole name as well as
+the last part of it.  A rule anchored at the front with \\=`\\=` is not: it now
+has to allow for the directories, or match nothing.
+
 See `vm-folder-type-by-name-alist'."
   (when file
     (let ((alist vm-folder-type-by-name-alist)
-	  (name (file-name-nondirectory file))
 	  (type nil))
       (while (and alist (null type))
-	(when (string-match (car (car alist)) name)
+	(when (string-match (car (car alist)) file)
 	  (setq type (cdr (car alist))))
 	(setq alist (cdr alist)))
       type)))
@@ -848,6 +856,43 @@ that was read as a length having been found."
 				(vm-match-header vm-content-length-header))))
 		   (t nil)))))))
 
+(defun vm-warn-about-deprecated-trust-setting ()
+  "Say once at startup that `vm-trust-content-length' is on and deprecated.
+Setting `vm-default-folder-type' to mboxcl2 used to require it, so an init
+file that asks for mboxcl2 folders almost certainly sets both -- and that is
+the pairing being undone: what new folders are written as should not decide
+how every folder is read.
+
+A warning and not an error.  The setting still works this release, and an
+error here would stop a working configuration from starting."
+  (when vm-trust-content-length
+    (vm-warn 1 2 (concat "vm-trust-content-length is deprecated: VM decides"
+			 " a folder is mboxcl2 by looking at it.  Name the"
+			 " folders in vm-folder-type-by-name-alist instead"
+			 (if (eq vm-default-folder-type 'mboxcl2)
+			     ", which vm-default-folder-type no longer needs"
+			   "")))))
+
+(defvar vm-guessed-folder-types nil
+  "Folders `vm-trust-content-length' has already been warned about.
+By name, so a folder visited again in the same session is not complained
+about again.")
+
+(defun vm-warn-about-guessed-folder-type (file)
+  "Say that FILE was read as mboxcl2 because of how it looks, once per folder.
+`vm-trust-content-length' is the last release to decide a type by looking, and
+a folder read as something it does not say it is is the reason: what the
+looking got wrong on one 1.1 GB cache took the folder out of use entirely.
+The name is where to say it instead."
+  (let ((name (or file (buffer-name))))
+    (unless (member name vm-guessed-folder-types)
+      (push name vm-guessed-folder-types)
+      (vm-warn 1 1 (concat "%s is read as mboxcl2 because its first messages"
+			   " have lengths; vm-trust-content-length is"
+			   " deprecated, so say the type in"
+			   " vm-folder-type-by-name-alist")
+	       (file-name-nondirectory name)))))
+
 (defun vm-get-folder-type (&optional file start end ignore-visited)
   "Return a symbol indicating the folder type of the current buffer.
 This function works by examining the beginning of a folder.
@@ -934,7 +979,10 @@ the value of vm-default-From_folder-type will be returned."
 			 vm-default-From_-folder-type)
 			(t
 			 (if (vm-folder-looks-like-mboxcl2-p)
-			     'mboxcl2
+			     (progn
+			       (vm-warn-about-guessed-folder-type
+				(or file (buffer-file-name)))
+			       'mboxcl2)
 			   vm-default-From_-folder-type)))))
 		    ((looking-at "\001\001\001\001\n") 'mmdf)
 		    ((looking-at "BABYL OPTIONS:") 'babyl)
@@ -6536,6 +6584,30 @@ bodies in one command can do this for each of them as its response arrives
   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
   (delete-region (point) (point-max)))
 
+(defun vm-settle-message-boundaries (mm)
+  "Put the boundary markers MM's body was inserted in front of back in order.
+MM's text now ends at point-max, the folder being narrowed to MM.
+
+A marker at the position text is inserted at stays in front of that text, so
+every marker that sat at the end of MM's empty text region is now before the
+body rather than after it: MM's own end, and the start of the message that
+follows it.  The bytes are in the right order -- only the markers were left
+behind, which is why this repairs them rather than the insertion being done
+differently.
+
+An mboxcl2 folder is where they coincide.  Its trailing message separator is
+the empty string (`vm-trailing-message-separator'), so a message whose body
+has not been retrieved ends exactly where the next one begins, and that is
+also where the body goes.  A From_ folder has a newline between the two and
+nothing here has anything to do.  Issue #737."
+  (let ((end (point-max))
+	(next (cadr (memq mm vm-message-list))))
+    (set-marker (vm-text-end-of mm) end)
+    (when (< (vm-end-of mm) end)
+      (set-marker (vm-end-of mm) end))
+    (when (and next (< (vm-start-of next) end))
+      (set-marker (vm-start-of next) end))))
+
 (defun vm-settle-message-body (mm modified)
   "Put the folder and MM in order after its body has been inserted.
 MODIFIED is what `buffer-modified-p' said before the retrieval.  The other
@@ -6554,7 +6626,7 @@ took the whole message out again."
    (or (re-search-forward "\n\n" (point-max) t) (point-max)))
   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
   ;; fix markers now
-  (set-marker (vm-text-end-of mm) (point-max))
+  (vm-settle-message-boundaries mm)
   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
   ;; the headers were written with a length of zero, and in an mboxcl2 folder
   ;; that is where the next message starts

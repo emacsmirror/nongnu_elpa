@@ -4079,6 +4079,169 @@ was given and the alias the docstring promises was rejected."
                               (cadr (should-error
                                      (vm-change-folder-type 'mbox file))))))))
 
+;;; a cache file says its type in its name (issue #736)
+
+(defmacro vm-folder-test--in-a-cache-directory (&rest body)
+  "Run BODY with DIR an empty directory both cache directories point at.
+BODY can look at WARNINGS, the list of warning strings."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (make-temp-file "vm-cache-" t))
+          (vm-imap-folder-cache-directory dir)
+          (vm-pop-folder-cache-directory dir)
+          (warnings nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'vm-warn)
+                    (lambda (_level _secs format &rest args)
+                      (push (apply #'format format args) warnings))))
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-new-cache-is-named-after-its-type ()
+  "A cache that does not exist yet gets the type suffix."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (should (equal (vm-cache-file-in-use base)
+                     (concat base vm-cache-folder-type-suffix)))
+      (should-not warnings))))
+
+(ert-deftest vm-folder-test-an-existing-cache-keeps-its-name ()
+  "A cache made before VM named them is used as it stands.
+Renaming it would say a type of it that need not be true, and refusing it
+would mean refetching the mailbox."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
+      (should (equal (vm-cache-file-in-use base) base))
+      (should-not warnings))))
+
+(ert-deftest vm-folder-test-a-converted-cache-names-the-file-left-behind ()
+  "Both names present means a conversion that left the old file.
+The suffixed one is the cache, and the other holds the older mail, so it is
+named rather than passed over."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (write-region "old\n" nil base)
+      (write-region "new\n" nil (concat base vm-cache-folder-type-suffix))
+      (should (equal (vm-cache-file-in-use base)
+                     (concat base vm-cache-folder-type-suffix)))
+      (should (= 1 (length warnings)))
+      (should (string-match-p "ignoring imap-cache-0123456789abcdef\\'"
+                              (car warnings))))))
+
+(ert-deftest vm-folder-test-a-suffixed-cache-is-still-a-cache ()
+  "The type suffix does not stop a cache being recognised as one.
+`vm-cache-folder-name-p' is what warns a user who opened a cache as a folder
+of its own, so a name it does not match is a cache with the warning lost."
+  (should (vm-cache-folder-name-p
+           (concat "imap-cache-b979c2934ac0b4ba3f08dabfdd1b2299"
+                   vm-cache-folder-type-suffix)))
+  (should (vm-cache-folder-name-p
+           (concat "/home/someone/Mail/pop-cache-0123456789abcdef"
+                   vm-cache-folder-type-suffix)))
+  (should-not (vm-cache-folder-name-p "imap-cache-0123456789abcdef.txt")))
+
+(ert-deftest vm-folder-test-an-imap-cache-file-name-carries-the-type ()
+  "The name VM builds for a maildrop is the suffixed one, or the file there."
+  (vm-folder-test--in-a-cache-directory
+    (let* ((spec "imap-ssl:imap.example.com:993:INBOX:login:someone:*")
+           (named (vm-imap-make-filename-for-spec spec))
+           (base (string-remove-suffix vm-cache-folder-type-suffix named)))
+      (should (string-suffix-p vm-cache-folder-type-suffix named))
+      (should-not (equal named base))
+      (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
+      (should (equal (vm-imap-make-filename-for-spec spec) base)))))
+
+;;; the guess is deprecated and says so (issue #736)
+
+(defmacro vm-folder-test--warnings (&rest body)
+  "Run BODY with `vm-warn' captured, and answer with the warnings it gave."
+  (declare (indent 0) (debug t))
+  `(let ((warnings nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _secs format &rest args)
+                  (push (apply #'format format args) warnings))))
+       ,@body)
+     (nreverse warnings)))
+
+(ert-deftest vm-folder-test-a-guessed-type-warns-once-per-folder ()
+  "Reading a folder as mboxcl2 because of how it looks says so, once.
+`vm-trust-content-length' is the last release to decide a type by looking, and
+a folder read as something it does not say it is is why."
+  (vm-folder-test-with-file
+      (file "guessed"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "Content-Length: 5\nFrom: alice@example.com\n"
+                    "Subject: one\n\nbody\n"
+                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                    "Content-Length: 5\nFrom: bob@example.com\n"
+                    "Subject: two\n\nbody\n"))
+    (let ((vm-trust-content-length t)
+          (vm-folder-type-by-name-alist nil)
+          (vm-guessed-folder-types nil))
+      (let ((said (vm-folder-test--warnings
+                    (should (eq 'mboxcl2 (vm-get-folder-type file))))))
+        (should (= 1 (length said)))
+        (should (string-match-p "vm-folder-type-by-name-alist" (car said)))
+        (should (string-match-p "guessed" (car said))))
+      ;; the same folder again says nothing
+      (should-not (vm-folder-test--warnings (vm-get-folder-type file))))))
+
+(ert-deftest vm-folder-test-a-named-type-is-not-guessed-and-says-nothing ()
+  "A folder whose name says its type is not looked at, so nothing is warned.
+That is the way out of the warning above, so it has to be silent."
+  (vm-folder-test-with-file
+      (file "named.mboxcl2"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "Content-Length: 5\nFrom: alice@example.com\n"
+                    "Subject: one\n\nbody\n"))
+    (let ((vm-trust-content-length t)
+          (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2)))
+          (vm-guessed-folder-types nil))
+      (should-not (vm-folder-test--warnings
+                    (should (eq 'mboxcl2 (vm-get-folder-type file))))))))
+
+(ert-deftest vm-folder-test-the-trust-setting-is-called-deprecated-at-startup ()
+  "An init file that still turns the guess on is told, and is not stopped.
+The setting works this release; an error would stop a working configuration
+from starting."
+  (let ((vm-trust-content-length t)
+        (vm-default-folder-type 'mboxcl2))
+    (let ((said (vm-folder-test--warnings
+                  (vm-warn-about-deprecated-trust-setting))))
+      (should (= 1 (length said)))
+      (should (string-match-p "deprecated" (car said)))
+      (should (string-match-p "vm-default-folder-type no longer needs"
+                              (car said)))))
+  ;; and nothing to say where it is off
+  (let ((vm-trust-content-length nil))
+    (should-not (vm-folder-test--warnings
+                  (vm-warn-about-deprecated-trust-setting)))))
+
+(ert-deftest vm-folder-test-the-default-folder-type-is-From_-everywhere ()
+  "No platform decides `vm-default-folder-type' now.
+It was mboxcl2 on Solaris, AIX and System V: a guess about the local delivery
+agent, and the only thing that made `vm-trust-content-length' default on."
+  (should (eq 'From_ (eval (car (get 'vm-default-folder-type 'standard-value)))))
+  (let ((vm-default-folder-type 'From_))
+    (should-not (eval (car (get 'vm-trust-content-length 'standard-value))))))
+
+;;; a name rule answers for a directory (issue #736)
+
+(ert-deftest vm-folder-test-a-name-rule-can-name-a-directory ()
+  "The whole path is matched, so one rule answers for the folders in a
+directory.  A primary inbox called INBOX and a cache called imap-cache-<md5>
+have no suffix to match and cannot be renamed, so this is the only way to say
+what they are."
+  (let ((vm-folder-type-by-name-alist
+         '(("\\.mboxcl2\\'" . mboxcl2)
+           ("/mail/current/" . mboxcl2))))
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "/home/me/mail/current/INBOX")))
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "/tmp/sent.mboxcl2")))
+    ;; a suffix rule still matches on the last part of the name alone
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "sent.mboxcl2")))
+    (should-not (vm-folder-type-for-name "/home/me/mail/old/INBOX"))
+    (should-not (vm-folder-type-for-name nil))))
+
 ;;; the type a new folder is written in, and keeping a length true (issue #736)
 
 (ert-deftest vm-folder-test-the-type-to-write-comes-from-the-name ()
@@ -4095,32 +4258,73 @@ have been stated, and it has to beat `vm-default-folder-type'."
       (setq vm-folder-type 'BellFrom_)
       (should (eq 'BellFrom_ (vm-folder-type-to-write "/tmp/imap-cache-ab.mboxcl2"))))))
 
+(defmacro vm-folder-test--two-mboxcl2-messages (&rest body)
+  "Visit a two-message mboxcl2 folder and run BODY in it.
+The first message is shaped as a headers-only fetch writes one: a length of
+zero and no body, so its text region is empty and ends where the second
+message begins."
+  (declare (indent 0) (debug t))
+  `(vm-folder-test-with-file
+       (file "two.mboxcl2"
+             (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                     "Content-Length: 0\nFrom: alice@example.com\n"
+                     "Subject: one\n\n"
+                     "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                     "Content-Length: 5\nFrom: bob@example.com\n"
+                     "Subject: two\n\nbody\n"))
+     (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+       (vm-folder-test--visiting file
+         (should (eq vm-folder-type 'mboxcl2))
+         ,@body))))
+
+(ert-deftest vm-folder-test-a-body-lands-before-the-next-message-not-inside-it ()
+  "REGRESSION: a retrieved body does not end up in the next message's headers.
+Issue #737.  An mboxcl2 folder's trailing separator is empty, so a message
+whose body has not been retrieved ends exactly where the next one begins --
+and a marker at the position text is inserted at stays in front of that text,
+so the next message's start was left reading the body."
+  (vm-folder-test--two-mboxcl2-messages
+    (let ((m1 (car vm-message-list))
+          (m2 (nth 1 vm-message-list))
+          (inhibit-read-only t))
+      ;; the precondition: the two positions are the same one
+      (should (= (vm-text-end-of m1) (vm-start-of m2)))
+      (save-restriction
+        (widen)
+        (narrow-to-region (vm-headers-of m1) (vm-text-end-of m1))
+        (goto-char (vm-text-of m1))
+        (insert "INSERTED BODY\n")
+        (vm-settle-message-boundaries m1))
+      (save-restriction
+        (widen)
+        (should (= (vm-start-of m2) (vm-text-end-of m1)))
+        (should (string-prefix-p
+                 "From bob@example.com"
+                 (buffer-substring (vm-start-of m2)
+                                   (min (point-max)
+                                        (+ 20 (marker-position
+                                               (vm-start-of m2)))))))
+        ;; and the body is where it belongs, in message one
+        (should (string-match-p
+                 "INSERTED BODY"
+                 (buffer-substring (vm-text-of m1) (vm-text-end-of m1))))))))
+
 (ert-deftest vm-folder-test-a-body-that-arrives-brings-its-length-up-to-date ()
   "A `Content-Length' says what the body is now, not what it was.
 An external message's headers are written with a length of zero and the body
 arrives later.  In an mboxcl2 folder that header is where the next message
 starts, so a stale one puts every message after this one in the wrong place."
-  (vm-folder-test-with-file
-      (file "two.mboxcl2"
-            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
-                    "Content-Length: 0\nFrom: alice@example.com\n"
-                    "Subject: one\n\n"
-                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
-                    "Content-Length: 5\nFrom: bob@example.com\n"
-                    "Subject: two\n\nbody\n"))
-    (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
-      (vm-folder-test--visiting file
-        (should (eq vm-folder-type 'mboxcl2))
-        (let ((m (car vm-message-list))
-              (inhibit-read-only t))
-          (save-restriction
-            (widen)
-            (goto-char (vm-text-of m))
-            (insert "six.\n")
-            (set-marker (vm-text-end-of m) (point))
-            (vm-set-content-length-of m)
-            (goto-char (vm-headers-of m))
-            (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))))
+  (vm-folder-test--two-mboxcl2-messages
+    (let ((m (car vm-message-list))
+          (inhibit-read-only t))
+      (save-restriction
+        (widen)
+        (goto-char (vm-text-of m))
+        (insert "six.\n")
+        (set-marker (vm-text-end-of m) (point))
+        (vm-set-content-length-of m)
+        (goto-char (vm-headers-of m))
+        (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))
 
 (provide 'vm-folder-test)
 

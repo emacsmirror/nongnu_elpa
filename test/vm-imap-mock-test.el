@@ -1068,6 +1068,26 @@ each one a wait on a server VM cannot do anything else during."
                                     commands)
                        3))))))
 
+;;; a cache says its type in its name (issue #736)
+
+(ert-deftest vm-imap-mock-test-a-new-cache-is-named-and-written-as-mboxcl2 ()
+  "A cache VM creates says its type in its name, and is written in that type.
+The file is VM's own and VM writes every message in it, so unlike any other
+folder its type is known rather than guessed at.  The folder text is what
+gets written, so a length on every message there is a cache that reads back
+strictly."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (should (string-suffix-p vm-cache-folder-type-suffix buffer-file-name))
+    (should (eq vm-folder-type 'mboxcl2))
+    (should (equal (length vm-message-list) 2))
+    (save-restriction
+      (widen)
+      (should (= 2 (how-many "^Content-Length:" (point-min) (point-max))))
+      (goto-char (point-min))
+      ;; two lengths in a row, each landing on the next message
+      (should (vm-folder-looks-like-mboxcl2-p)))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
