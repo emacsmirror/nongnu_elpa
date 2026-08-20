@@ -1108,10 +1108,9 @@ next fetch's business."
 				   (if gone
 				       (format ", %d already gone" (length gone))
 				     "")))))))
-	    (vm-net-start session
-			  (vm-pop-net-expunge-session (nth 1 opened)
-						      (nth 2 opened) uidls))
-	    (vm-pop-net-take-session session)
+	    (vm-pop-net-take-session session
+				     (vm-pop-net-expunge-session
+				      (nth 1 opened) (nth 2 opened) uidls))
 	    (vm-net-inform 6 "%s: deleting %d message%s on the server without waiting"
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)

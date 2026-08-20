@@ -1002,18 +1002,25 @@ what went wrong is no longer visible."
   (unless (buffer-live-p folder)
     (vm-imap-normal-error "the folder was closed while its session ran")))
 
-(defun vm-imap-net-store (folder folder-type source start end)
-  "Copy the message between START and END of SOURCE into FOLDER.
+(defun vm-imap-net-hold (holding folder-type source start end)
+  "Copy the message between START and END of SOURCE into HOLDING.
+
+HOLDING is a buffer of its own, not the folder: a bunch is written there and
+put into the folder in one piece when it is taken in.  The folder therefore
+never holds a message the message list does not know about, which is what a
+save landing in the middle of a bunch used to write to the cache file -- and
+after a crash there, the next fetch had no UID for it and brought it again, so
+the reader had it twice.
+
 The same cleaning up the blocking path does, in the same order: CRLF to LF,
-the separators the folder's own type wants, and the headers that go with
+the separators the folder\='s own type wants, and the headers that go with
 them."
-  (vm-imap-net-require-folder folder)
-  (with-current-buffer folder
+  (with-current-buffer holding
     (save-excursion
       (save-restriction
 	(widen)
 	(goto-char (point-max))
-	(let ((buffer-read-only nil)	; a folder buffer is read-only
+	(let ((buffer-read-only nil)
 	      (start-of-message (point))
 	      (end-of-message nil))
 	  (insert-buffer-substring source start end)
@@ -1031,6 +1038,22 @@ them."
 	  (goto-char end-of-message)
 	  (insert-before-markers (vm-trailing-message-separator folder-type))
 	  (set-marker end-of-message nil))))))
+
+(defun vm-imap-net-put-in-folder (folder holding)
+  "Put what HOLDING has collected into FOLDER, in one piece, and empty it.
+Answers whether there was anything.  One insert, so that no save can see the
+folder part way through a bunch."
+  (vm-imap-net-require-folder folder)
+  (when (> (buffer-size holding) 0)
+    (with-current-buffer folder
+      (save-excursion
+	(save-restriction
+	  (widen)
+	  (goto-char (point-max))
+	  (let ((buffer-read-only nil))	; a folder buffer is read-only
+	    (insert-buffer-substring holding)))))
+    (with-current-buffer holding (erase-buffer))
+    t))
 
 (defun vm-imap-net-entries-written (uids entries)
   "The ENTRIES for UIDS, in the order the messages were written.
@@ -1164,9 +1187,11 @@ the choice is taken and the label says which messages it was taken for."
 (iter-defun vm-imap-net-get-new-mail (folder mailbox user password
 					     &optional attributes all-flags full)
   "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
-The messages are written into FOLDER as they arrive, a bunch at a time; the
-folder takes them into its message list once they are all there, as the
-blocking path does.
+The messages arrive a bunch at a time, are collected in a buffer of their own,
+and go into FOLDER in one piece as each bunch is taken into the message list.
+The folder therefore never holds a message the list does not know about: a save
+landing in the middle of a bunch wrote one to the cache file, and after a crash
+there the next fetch had no UID for it and brought it again.
 
 The three options are what a synchronisation asks for on top of a fetch:
 ATTRIBUTES gives the folder's own messages the flags the server has for them,
@@ -1185,7 +1210,9 @@ expunged."
     	       (folder-type nil)
     	       (data nil)
     	       (plan nil)
-    	       (retrieved 0))
+	       (retrieved 0)
+	       ;; where a bunch is collected before it goes into the folder
+	       (holding (generate-new-buffer " *vm-imap-bunch*")))
 	  (with-current-buffer folder
 	    (let ((known (vm-folder-imap-uid-validity)))
     	      (when (and known uid-validity (not (equal known uid-validity)))
@@ -1261,11 +1288,16 @@ expunged."
 						       " it; not written twice")
 					   (buffer-name folder) uid)
 				(push uid written)
-				(vm-imap-net-store folder folder-type source
-						 start end)))))
+				(vm-imap-net-hold holding folder-type source
+						  start end)))))
     		(iter-yield-from
     		 (vm-imap-net-fetch (car range) (cdr range) body-peek headers-only
     				    store))
+		;; the bunch goes into the folder in one piece, so that a save
+		;; -- the reader's, or the one a queued save does when this
+		;; session ends -- never writes the cache file with a message
+		;; the message list does not know about
+		(vm-imap-net-put-in-folder folder holding)
 		;; taken in a bunch at a time: the folder shows what has
 		;; arrived while the rest is still coming, and no single
 		;; slice of the work is long enough to be felt.
@@ -1293,6 +1325,7 @@ expunged."
     		(iter-yield-from (vm-imap-net-expunge uids))
     		(with-current-buffer folder
     		  (vm-imap-net-note-expunged uids))))
+	    (when (buffer-live-p holding) (kill-buffer holding))
 	    retrieved)))
     (vm-imap-net-logout)))
 
@@ -2516,12 +2549,13 @@ is a caller\\='s cue to use the blocking implementation."
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))))
-    (vm-net-start session
-		  (vm-imap-net-get-new-mail folder (nth 1 opened) (nth 2 opened)
-					    (nth 3 opened)))
     ;; the folder's session, so that what is queued behind it runs and nothing
-    ;; else opens a second connection while this one writes
-    (vm-imap-net-take-session session)))
+    ;; else opens a second connection while this one writes -- taken before it
+    ;; is started, so a second one is refused rather than reported
+    (vm-imap-net-take-session session
+			      (vm-imap-net-get-new-mail folder (nth 1 opened)
+							(nth 2 opened)
+							(nth 3 opened)))))
 
 (declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
 (declare-function vm-inform "vm-misc" (level &rest args))

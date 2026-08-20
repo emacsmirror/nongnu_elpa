@@ -1786,10 +1786,9 @@ binds `debug-on-error' and batch has nobody to debug for."
   "VM's own flush timer writing the folder does not spoil a fetch.
 
 `vm-flush-interval\=' is 90 seconds by default, so `vm-flush-cached-data-all-folders\='
-runs in every VM session and writes X-VM headers into folder buffers.  A fetch
-writes messages into the same buffer, one at a time, and each waits for the
-next: in that gap the folder holds text the message list does not know about.
-Here the flush is made to fire in exactly that gap, after every message."
+runs in every VM session and writes X-VM headers into folder buffers, while a
+fetch is collecting a bunch to put into the same folder.  Here the flush is
+made to fire after every message that arrives."
   (let ((vm-imap-message-bunch-size 2)
         (flushes 0))
     (vm-imap-net-test--visiting (mock)
@@ -1797,8 +1796,8 @@ Here the flush is made to fire in exactly that gap, after every message."
         (vm-imap-mock-add-message
          mock "INBOX"
          (format "From: s%d@example.com\nSubject: m%d\n\nBody %d.\n" i i i)))
-      (let ((real (symbol-function 'vm-imap-net-store)))
-        (cl-letf (((symbol-function 'vm-imap-net-store)
+      (let ((real (symbol-function 'vm-imap-net-hold)))
+        (cl-letf (((symbol-function 'vm-imap-net-hold)
                    (lambda (&rest args)
                      (let ((answer (apply real args)))
                        (setq flushes (1+ flushes))
@@ -1882,6 +1881,75 @@ The second waits its turn now, and both lots of mail arrive."
                 (with-current-buffer buffer (set-buffer-modified-p nil))
                 (kill-buffer buffer))))
           (delete-directory dir t)
+          (delete-directory cache t))))))
+
+(ert-deftest vm-imap-net-test-a-save-mid-fetch-leaves-no-duplicate ()
+  "A save landing inside a bunch does not write a message twice over a crash.
+
+The fetch used to write each message straight into the folder as it arrived,
+so between messages the folder held text the message list did not know about.
+A save then wrote that to the cache file with none of VM's own data on it, and
+if Emacs went before the bunch was taken in, the next fetch had no UID for it
+and brought it again: the reader saw the message twice.
+
+The bunch is collected in a buffer of its own now and goes into the folder in
+one piece, so a save can only ever see whole messages the list knows about."
+  (let ((vm-imap-message-bunch-size 4))
+    (vm-imap-mock-with (mock :messages (list "From: z@example.com\nSubject: first\n\nZ.\n"))
+      (let* ((cache (make-temp-file "vm-imap-save-cache" t))
+             (vm-imap-folder-cache-directory cache)
+             (vm-imap-server-timeout 10)
+             (vm-frame-per-folder nil)
+             (vm-mutable-frame-configuration nil)
+             (before (buffer-list))
+             (folder nil) (file nil) (saved nil))
+        (unwind-protect
+            (progn
+              (vm-visit-imap-folder (vm-imap-mock-spec mock))
+              (setq folder (current-buffer) file (buffer-file-name))
+              (should (vm-imap-net-wait nil 15))
+              (should (equal (length vm-message-list) 1))
+              (dotimes (i 4)
+                (vm-imap-mock-add-message
+                 mock "INBOX"
+                 (format "From: s%d@example.com\nSubject: m%d\n\nBody.\n" i i)))
+              ;; a save while the bunch is part way in
+              (let ((real (symbol-function 'vm-imap-net-hold)))
+                (cl-letf (((symbol-function 'vm-imap-net-hold)
+                           (lambda (&rest args)
+                             (let ((answer (apply real args)))
+                               (unless saved
+                                 (setq saved t)
+                                 (with-current-buffer folder
+                                   (set-buffer-modified-p t)
+                                   (vm-save-folder)))
+                               answer))))
+                  (with-current-buffer folder (vm-get-new-mail))
+                  (let ((deadline (+ (float-time) 10)))
+                    (while (and (not saved) (< (float-time) deadline))
+                      (accept-process-output nil 0.05)))))
+              (should saved)
+              ;; the file holds only what the folder had taken in
+              (should (equal (with-temp-buffer
+                               (insert-file-contents file)
+                               (count-matches "^From " (point-min) (point-max)))
+                             1))
+              ;; the crash: stop, drop the buffer, visit again and fetch
+              (with-current-buffer folder
+                (vm-imap-net-stop)
+                (set-buffer-modified-p nil))
+              (kill-buffer folder)
+              (vm-visit-imap-folder (vm-imap-mock-spec mock))
+              (should (vm-imap-net-wait nil 20))
+              (let ((subjects (mapcar #'vm-su-subject vm-message-list)))
+                (should (equal (length subjects) 5))
+                (should (equal (length subjects)
+                               (length (delete-dups (copy-sequence subjects)))))))
+          (dolist (buffer (buffer-list))
+            (unless (memq buffer before)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))
+                (kill-buffer buffer))))
           (delete-directory cache t))))))
 
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
