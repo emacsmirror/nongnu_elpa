@@ -193,16 +193,20 @@ The `Content-Length' was stale as well -- the headers say zero and the body
 has arrived -- which =vm-set-content-length-of= now settles from
 =vm-settle-message-body= and =vm-discard-real-message-body=.
 
-** Order of work
+** What was done
 
-0. The external body that lands in front of the next message's start marker,
-   above.
-1. New caches named and written as mboxcl2, with the type of a new folder
-   taken from its name at every insertion path.  Existing caches untouched.
-2. Name rules match the whole path.
-3. Deprecate =vm-trust-content-length=, with the one-release warning.
-4. Drop the platform table from =vm-default-folder-type=.
+| # | what | where |
+|---|------+-------|
+| 0 | the external body that landed in front of the next message's start marker | issue 737, =vm-settle-message-boundaries= |
+| 1 | a new cache named and written as mboxcl2, and the type of a new folder taken from its name at every insertion path | =vm-cache-file-in-use=, =vm-folder-type-to-write= |
+| 2 | name rules match the whole path | =vm-folder-type-for-name= |
+| 3 | =vm-trust-content-length= deprecated, warning once per folder and once at startup | =vm-warn-about-guessed-folder-type=, =vm-warn-about-deprecated-trust-setting= |
+| 4 | the platform table gone from =vm-default-folder-type= | vm-vars.el |
 
-Each is a separate merge request.  1 and 2 are what a user needs in place
-before 3 takes the sniff away; 3 is the one that changes what an existing
-installation does, and wants the release note.
+Also =vm-set-content-length-of=, so a body that arrives or is discarded leaves
+the length saying what the body is now.  The stale zero was the other half of
+the bug in 0.
+
+What is left of the plan: the sniff itself, which this release still does
+where it is switched on.  Taking it out is the release after, once the warning
+has been seen.
