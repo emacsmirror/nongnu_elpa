@@ -246,6 +246,25 @@ generator rather than dropping it."
 (declare-function vm-setup-stunnel-random-data-if-needed "vm-crypto" ())
 (declare-function vm-stunnel-configuration-args "vm-crypto" (host port))
 
+(defvar vm-pop-keep-trace-buffer)
+(defvar vm-kept-pop-buffers)
+(declare-function vm-keep-some-buffers "vm-misc"
+		  (buffer ring-variable number-to-keep &optional rename-prefix))
+
+(defun vm-pop-net-done-with-buffer (buffer)
+  "Finish with BUFFER, a session's process buffer.
+Kept as a trace when `vm-pop-keep-trace-buffer\=' says to; see
+`vm-imap-net-done-with-buffer\='."
+  (when (buffer-live-p buffer)
+    ;; nothing to keep when nothing was said: a connection that was never made
+    ;; leaves an empty buffer, and keeping those is how a session that failed
+    ;; early leaves one behind for every attempt
+    (if (or (null vm-pop-keep-trace-buffer)
+	    (zerop (buffer-size buffer)))
+	(kill-buffer buffer)
+      (vm-keep-some-buffers buffer 'vm-kept-pop-buffers
+			    vm-pop-keep-trace-buffer "saved "))))
+
 (defun vm-pop-net-connect (name host port buffer &optional tls)
   "A connection to HOST at PORT, made without waiting for it to come up.
 The process is not open when this returns; the session's sentinel hears
@@ -378,7 +397,7 @@ output.  A maildrop whose password VM has not been told signals
 					(equal protocol "pop-ssl")))))
 	    (setq opened t))
 	(unless opened
-	  (when (buffer-live-p buffer) (kill-buffer buffer))))
+	  (vm-pop-net-done-with-buffer buffer)))
       (list session user password))))
 
 ;;; Checking for mail, which is the first thing a command wanted
@@ -444,7 +463,7 @@ Nothing waits: this returns as soon as the connection is made."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-pop-net-done-with-buffer buffer)
 	    (funcall callback
 		     (if (vm-net-session-error finished)
 			 (vm-net-session-error finished)
@@ -579,7 +598,7 @@ buffer is, not in a process filter."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-pop-net-done-with-buffer buffer)
 	    (funcall callback (or (vm-net-session-error finished)
 				  (vm-net-session-value finished)))))
     ;; taken by the folder before it is started, so that a second fetch of the
@@ -1082,7 +1101,7 @@ next fetch's business."
 		  (lambda (finished)
 		    (let ((process (vm-net-session-process finished)))
 		      (when (process-live-p process) (delete-process process)))
-		    (when (buffer-live-p buffer) (kill-buffer buffer))
+		    (vm-pop-net-done-with-buffer buffer)
 		    (cond
 		     ((vm-net-session-error finished)
 		      (vm-net-warn 0 "%s: %s" name
@@ -1131,7 +1150,7 @@ whether it started."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-pop-net-done-with-buffer buffer)
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session

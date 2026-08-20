@@ -563,6 +563,28 @@ read, which is what keeps a mailbox of any size out of memory."
 (defvar vm-ssh-remote-command)
 (defvar vm-imap-session-preauth-hook)
 
+(defvar vm-imap-keep-trace-buffer)
+(defvar vm-kept-imap-buffers)
+(declare-function vm-keep-some-buffers "vm-misc"
+		  (buffer ring-variable number-to-keep &optional rename-prefix))
+
+(defun vm-imap-net-done-with-buffer (buffer)
+  "Finish with BUFFER, a session's process buffer.
+
+Kept as a trace when `vm-imap-keep-trace-buffer\=' says to, as the blocking
+path keeps its own: the driver killed every session buffer the moment the
+session ended, so there was nothing left to look at afterwards -- and \"did VM
+send that delete?\" is answered by the traffic and by nothing else."
+  (when (buffer-live-p buffer)
+    ;; nothing to keep when nothing was said: a connection that was never made
+    ;; leaves an empty buffer, and keeping those is how a session that failed
+    ;; early leaves one behind for every attempt
+    (if (or (null vm-imap-keep-trace-buffer)
+	    (zerop (buffer-size buffer)))
+	(kill-buffer buffer)
+      (vm-keep-some-buffers buffer 'vm-kept-imap-buffers
+			    vm-imap-keep-trace-buffer "saved "))))
+
 (defun vm-imap-net-session-buffer (name)
   "A process buffer for a session called NAME, ready to be read from."
   (let ((buffer (generate-new-buffer (format " *%s*" name))))
@@ -775,7 +797,7 @@ from inside a filter."
 					 (equal protocol "imap-ssl")))))
 	    (setq opened t))
 	(unless opened
-	  (when (buffer-live-p buffer) (kill-buffer buffer))))
+	  (vm-imap-net-done-with-buffer buffer)))
       (list session mailbox user password))))
 
 (iter-defun vm-imap-net-open-session (user password)
@@ -1757,7 +1779,7 @@ is the caller\\='s cue to use the blocking implementation."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
@@ -1904,7 +1926,7 @@ open."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
@@ -1935,7 +1957,7 @@ sent by then, and the copy is what did not arrive."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(if (vm-net-session-error finished)
 		    (vm-net-warn 0 "Not filed in %s on %s: %s" mailbox name
 			     (error-message-string
@@ -2032,7 +2054,7 @@ slowest thing VM asks a server for and the one worst spent frozen."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
@@ -2071,7 +2093,7 @@ the mailbox still has."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
@@ -2129,7 +2151,7 @@ whether it started."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-imap-net-take-session session
@@ -2233,7 +2255,7 @@ Answers whether the asking started."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
@@ -2270,7 +2292,7 @@ send it the blocking way."
 	      (lambda (finished)
 		(let ((process (vm-net-session-process finished)))
 		  (when (process-live-p process) (delete-process process)))
-		(when (buffer-live-p buffer) (kill-buffer buffer))
+		(vm-imap-net-done-with-buffer buffer)
 		(when done
 		  (funcall done (or (vm-net-session-error finished) t)))))
 	(vm-net-start session
@@ -2381,7 +2403,7 @@ messages is what the queue exists to prevent."
 		   (lambda (finished)
 		     (let ((process (vm-net-session-process finished)))
 		       (when (process-live-p process) (delete-process process)))
-		     (when (buffer-live-p buffer) (kill-buffer buffer))
+		     (vm-imap-net-done-with-buffer buffer)
 		     (when (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (if (vm-net-session-error finished)
@@ -2447,7 +2469,7 @@ keep their modification flags and go up next time."
 		   (lambda (finished)
 		     (let ((process (vm-net-session-process finished)))
 		       (when (process-live-p process) (delete-process process)))
-		     (when (buffer-live-p buffer) (kill-buffer buffer))
+		     (vm-imap-net-done-with-buffer buffer)
 		     (cond ((vm-net-session-error finished)
 			    (vm-net-warn 0 "%s: %s" name
 				     (error-message-string
@@ -2506,7 +2528,7 @@ is `later\='."
 		     (lambda (finished)
 		       (let ((process (vm-net-session-process finished)))
 			 (when (process-live-p process) (delete-process process)))
-		       (when (buffer-live-p buffer) (kill-buffer buffer))
+		       (vm-imap-net-done-with-buffer buffer)
 		       (when (buffer-live-p folder)
 			 (with-current-buffer folder
 			   (if (vm-net-session-error finished)
@@ -2544,7 +2566,7 @@ is a caller\\='s cue to use the blocking implementation."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
@@ -2613,7 +2635,7 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
 		   (lambda (finished)
 		     (let ((process (vm-net-session-process finished)))
 		       (when (process-live-p process) (delete-process process)))
-		     (when (buffer-live-p buffer) (kill-buffer buffer))
+		     (vm-imap-net-done-with-buffer buffer)
 		     (cond
 		      ((vm-net-session-error finished)
 		       (vm-net-warn 0 "%s: %s" name
@@ -2780,7 +2802,7 @@ CALLBACK how many were copied, or the error that stopped it."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
 		(funcall callback (or (vm-net-session-error finished)
@@ -3079,7 +3101,7 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (when (buffer-live-p folder)
 	      (with-current-buffer folder
 		(let ((error-data (vm-net-session-error finished)))
@@ -3138,7 +3160,7 @@ say what arrived anyway."
 		  (lambda (finished)
 		    (let ((process (vm-net-session-process finished)))
 		      (when (process-live-p process) (delete-process process)))
-		    (when (buffer-live-p buffer) (kill-buffer buffer))
+		    (vm-imap-net-done-with-buffer buffer)
 		    (when (buffer-live-p folder)
 		      (with-current-buffer folder
 			(if (vm-net-session-error finished)
@@ -3217,7 +3239,7 @@ Nothing waits: this returns as soon as the connection is started."
 	  (lambda (finished)
 	    (let ((process (vm-net-session-process finished)))
 	      (when (process-live-p process) (delete-process process)))
-	    (when (buffer-live-p buffer) (kill-buffer buffer))
+	    (vm-imap-net-done-with-buffer buffer)
 	    (funcall callback
 		     (if (vm-net-session-error finished)
 			 (vm-net-session-error finished)
