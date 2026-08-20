@@ -548,17 +548,23 @@ thousand messages in it should not be one command."
 					  " fetched; no mail was retrieved")
 				  (vm-safe-popdrop-string source)))))
 	  (vm-pop-net-note-progress folder 0 total)
+	  ;; the start, said once: a fetch nobody is frozen out of looks like
+	  ;; nothing happening unless VM says it began
+	  (unless (zerop total)
+	    (vm-net-inform 5 "%s: retrieving %d message%s..."
+			   (vm-safe-popdrop-string source) total
+			   (if (= total 1) "" "s")))
 	  (dolist (pair wanted)
 	    (push (cons (cdr pair)
 			(iter-yield-from (vm-pop-net-retrieve (car pair))))
 		  fetched)
 	    (setq count (1+ count))
-	    ;; level 5, so a fetch that takes a while looks like one that is
-	    ;; getting somewhere: nothing else says so, the reader not being
-	    ;; frozen out of Emacs while it runs.  The mode line keeps the count
-	    ;; after the echo area has moved on.
+	    ;; level 6, so it is logged and not shown: the mode line carries the
+	    ;; count live, and a line per bunch in the echo area is in the way of
+	    ;; whoever is using Emacs while the fetch runs -- which is the point of
+	    ;; the fetch not freezing them out.  The start and the end are said.
 	    (vm-pop-net-note-progress folder count total)
-	    (vm-net-inform 5 "%s: %d of %d messages retrieved"
+	    (vm-net-inform 6 "%s: %d of %d messages retrieved"
 		       (vm-safe-popdrop-string source) count total))
 	  (nreverse fetched)))
     (let ((process (get-buffer-process (current-buffer))))
@@ -773,7 +779,7 @@ again."
 (declare-function vm-update-summary-and-mode-line "vm-summary" ())
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
 (declare-function vm-present-current-message "vm-page" ())
-(declare-function vm-emit-totals-blurb "vm-folder" ())
+(declare-function vm-totals-blurb "vm-folder" ())
 (declare-function vm-inform "vm-misc" (level &rest args))
 (declare-function vm-warn "vm-misc" (l secs &rest args))
 (declare-function vm-get-folder-type "vm-folder"
@@ -987,7 +993,7 @@ fetched again."
 	(vm-update-summary-and-mode-line))
       (vm-net-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
 		 (length new) (if (= (length new) 1) "" "s")
-		 (vm-emit-totals-blurb))
+		 (vm-totals-blurb))
       (length new))))
 
 (defun vm-pop-net-get-folder-mail ()

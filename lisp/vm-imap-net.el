@@ -1336,7 +1336,12 @@ expunged."
 		   uid-validity))
     		(setq retrieved (+ retrieved count))
 		(vm-imap-net-note-progress folder retrieved (length retrieve-list))
-		(vm-net-inform 5 "%s: %d of %d messages retrieved"
+		;; level 6, so it is logged and not shown: the mode line carries the
+		;; count live, and a line per bunch in the echo area is in the way of
+		;; whoever is using Emacs while the fetch runs -- which is the point
+		;; of the fetch not freezing them out.  The start and the end are
+		;; said.
+		(vm-net-inform 6 "%s: %d of %d messages retrieved"
 			       (buffer-name folder) retrieved (length retrieve-list))))
 	    (vm-imap-net-arrived folder)
 	    ;; and what the folder has expunged locally goes on the server, in the
@@ -1498,7 +1503,7 @@ synchronisation asks for: `vm-imap-save-attributes\=' with `:all-flags\='."
 
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
 (declare-function vm-present-current-message "vm-page" ())
-(declare-function vm-emit-totals-blurb "vm-folder" ())
+(declare-function vm-totals-blurb "vm-folder" ())
 
 (defun vm-imap-net-show-arrival (folder count)
   "Say that COUNT messages arrived in FOLDER, and show one of them.
@@ -1507,7 +1512,7 @@ than when the command was typed.  A folder that was empty has no current
 message until this runs, and every command that works on the current message
 would have nothing to work on."
   (with-current-buffer folder
-    (let ((blurb (vm-emit-totals-blurb)))
+    (let ((blurb (vm-totals-blurb)))
       (if (vm-thoughtfully-select-message)
 	  (vm-present-current-message)
 	(vm-update-summary-and-mode-line))
