@@ -43,6 +43,89 @@
       (setq ran 'should-not-run))
     (should (eq ran 'untouched))))
 
+(ert-deftest hermes-chat-old-lifetime-bare-callbacks-ignore-reentered-buffer ()
+  "Bare callbacks from lifetime A cannot mutate same-buffer lifetime B."
+  (let ((client (hermes-test--dashboard-client))
+        catalog-resolve stop-resolve background-resolve model-rejects model-resolves provider-candidate)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-commands-catalog)
+               (lambda (_client &rest args) (setq catalog-resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-dashboard-transport-process-stop)
+               (lambda (_client &rest args) (setq stop-resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-background)
+               (lambda (_client _content &rest args) (setq background-resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (push (plist-get args :resolve) model-resolves) (push (plist-get args :reject) model-rejects)))
+              ((symbol-function 'hermes-onboarding--choose-provider)
+               (lambda (_result) (fundamental-mode) (hermes-chat-mode) '((slug . "old"))))
+              ((symbol-function 'hermes-chat--connect-provider-candidate)
+               (lambda (&rest _) (setq provider-candidate t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "old-session" hermes-chat--dashboard-session-ready-p t
+             hermes-chat--lifecycle-generation 2
+             hermes-chat--lifetime-sequence 0)
+       (hermes-chat--fetch-commands-catalog)
+       (hermes-chat-stop-processes)
+       (hermes-chat--background-submit "old task" (current-buffer))
+       (hermes-chat-switch-model)
+       (hermes-chat-connect-provider)
+       (should (cl-every #'functionp
+                         (append (list catalog-resolve stop-resolve background-resolve)
+                                 model-rejects model-resolves)))
+       (funcall (car model-resolves) nil)
+       (should-not provider-candidate)
+       (fundamental-mode)
+       (hermes-chat-mode)
+       (setq hermes-chat--commands-cache '(("new" . "current"))
+             hermes-chat--dashboard-client 'new-client
+             hermes-chat--dashboard-active-session-id "new-session"
+             hermes-chat--queued-messages '((:id "new-queue"))
+             hermes-chat--background-counter 7)
+       (funcall catalog-resolve '((pairs . (("/old" "stale")))))
+       (funcall stop-resolve '((killed . 3)))
+       (funcall background-resolve '((task_id . "old-task")))
+       (mapc (lambda (reject) (funcall reject "stale-model-error")) model-rejects)
+       (mapc (lambda (resolve) (funcall resolve nil)) model-resolves)
+       (should (equal hermes-chat--commands-cache '(("new" . "current"))))
+       (should (eq hermes-chat--dashboard-client 'new-client))
+       (should (equal hermes-chat--dashboard-active-session-id "new-session"))
+       (should (equal hermes-chat--queued-messages '((:id "new-queue"))))
+       (should (and (= hermes-chat--background-counter 7) (null (hermes-chat--entries))))))))
+
+(ert-deftest hermes-chat-mode-exit-and-kill-release-resources-once ()
+  "Mode exit and kill each release requests, subscriber, and client once."
+  (dolist (exit '(mode-change kill))
+    (let ((buffer (generate-new-buffer " *hermes-chat-cleanup*"))
+          (client 'owned-client)
+          (token 'owned-subscriber)
+          cancel unsubscribe release lifetime-at-cancel)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-cancel-owner-requests)
+                 (lambda (_client _owner)
+                   (setq cancel (1+ (or cancel 0))
+                         lifetime-at-cancel hermes-chat--lifecycle-generation)))
+                ((symbol-function 'hermes-dashboard-transport-unsubscribe)
+                 (lambda (_client _token)
+                   (setq unsubscribe (1+ (or unsubscribe 0)))))
+                ((symbol-function 'hermes-dashboard-transport-release)
+                 (lambda (_client)
+                   (setq release (1+ (or release 0))))))
+        (unwind-protect
+            (with-current-buffer buffer
+              (hermes-chat-mode)
+              (let ((owned-lifetime hermes-chat--lifecycle-generation))
+                (setq hermes-chat--dashboard-client client
+                      hermes-chat--dashboard-token token
+                      hermes-chat--process client)
+                (if (eq exit 'kill)
+                    (kill-buffer buffer)
+                  (fundamental-mode)
+                  (kill-buffer buffer))
+                (should-not (equal lifetime-at-cancel owned-lifetime))))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer)))
+        (should (equal (list cancel unsubscribe release) '(1 1 1)))))))
+
 (ert-deftest hermes-chat-mode-map-sends-and-inserts-newlines ()
   (should (eq (keymap-lookup hermes-chat-mode-map "RET") #'hermes-chat-send))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-j") #'hermes-chat-newline))
@@ -3819,7 +3902,7 @@
        (insert "/compact")
        (hermes-chat-send)
        (setq hermes-chat--lifecycle-generation
-             (1+ hermes-chat--lifecycle-generation))
+             (hermes-chat--next-lifetime-token))
        (funcall resolve
                 '((summary . ((headline . "Compressed: 40 → 12 messages")))))
        (should (string-match-p "Compressing" (buffer-string)))

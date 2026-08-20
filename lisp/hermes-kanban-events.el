@@ -289,7 +289,7 @@ dropped connection, instead of permanently killing the tail."
   (setf (hermes-kanban--events-tail-socket tail) nil))
 
 (defun hermes-kanban--events-teardown ()
-  "Disconnect the board buffer's events tail when the buffer is killed."
+  "Disconnect the board buffer's events tail on mode exit or buffer kill."
   (when hermes-kanban--events-tail
     (hermes-kanban--events-disconnect hermes-kanban--events-tail)
     (setq hermes-kanban--events-tail nil)))
@@ -330,7 +330,6 @@ place; the mode line shows a live indicator."
                  :instance hermes-instance
                  :cursor (or hermes-kanban--latest-event-id 0))))
       (setq hermes-kanban--events-tail tail)
-      (add-hook 'kill-buffer-hook #'hermes-kanban--events-teardown nil t)
       (force-mode-line-update)
       (hermes-kanban--events-connect tail)
       (message "Hermes kanban live updates on"))))

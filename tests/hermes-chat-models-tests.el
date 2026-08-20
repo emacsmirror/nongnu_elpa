@@ -319,7 +319,8 @@
              hermes-chat--dashboard-active-session-id "sid-1"
              hermes-chat--dashboard-session-ready-p t)
        (hermes-chat-switch-model)
-       (cl-incf hermes-chat--lifecycle-generation)
+       (setq hermes-chat--lifecycle-generation
+             (hermes-chat--next-lifetime-token))
        (funcall resolve
                 '((providers . (((slug . "p") (authenticated . t)
                                   (models . ("model")))))))

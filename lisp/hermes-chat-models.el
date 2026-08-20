@@ -139,16 +139,17 @@ identity is part of the selection."
   "Warm model completion data asynchronously for CLIENT once."
   (unless (eq client hermes-chat--model-completion-client)
     (setq hermes-chat--model-completion-client client)
-    (let ((buffer (current-buffer)))
+    (let ((buffer (current-buffer))
+          (lifetime hermes-chat--lifecycle-generation))
       (hermes-dashboard-transport-model-options-cached
        client
        :session-id hermes-chat--dashboard-active-session-id
        :resolve (lambda (_result)
-                  (hermes-chat--in-buffer buffer
+                  (hermes-chat--in-lifetime buffer lifetime
                     (when (eq client hermes-chat--model-completion-client)
                       (setq hermes-chat--model-completion-client nil))))
        :reject (lambda (_message)
-                 (hermes-chat--in-buffer buffer
+                 (hermes-chat--in-lifetime buffer lifetime
                    (when (eq client hermes-chat--model-completion-client)
                      (setq hermes-chat--model-completion-client nil))))))))
 
@@ -188,12 +189,12 @@ identity is part of the selection."
       (and-let* ((buffer (plist-get context :buffer))
                  ((buffer-live-p buffer)))
         (with-current-buffer buffer
-          (and (eq hermes-chat--dashboard-client
+          (and (hermes-chat--current-lifetime-p
+                (plist-get context :lifecycle-generation))
+               (eq hermes-chat--dashboard-client
                    (plist-get context :client))
                (equal hermes-chat--dashboard-active-session-id
                       (plist-get context :session-id))
-               (= hermes-chat--lifecycle-generation
-                  (plist-get context :lifecycle-generation))
                (= hermes-chat--transport-generation
                   (plist-get context :transport-generation))
                (not (hermes-chat--active-turn-p)))))))
@@ -216,7 +217,8 @@ through `config.set' right after the next session is created."
                        buffer client candidate result confirm context))
            :reject (lambda (message)
                      (hermes-chat--in-buffer buffer
-                       (hermes-chat--command-error message))))
+                       (when (hermes-chat--model-switch-current-p context)
+                         (hermes-chat--command-error message)))))
         (setq hermes-chat--dashboard-create-model
               (if (stringp candidate) candidate (plist-get candidate :model))
               hermes-chat--dashboard-create-provider
@@ -310,7 +312,8 @@ refetch it from the dashboard instead."
                  buffer client result context))
      :reject (lambda (message)
                (hermes-chat--in-buffer buffer
-                 (hermes-chat--command-error message))))))
+                 (when (hermes-chat--model-switch-current-p context)
+                   (hermes-chat--command-error message)))))))
 
 ;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
 ;; which requires this file, so it is loaded lazily inside the commands below to
@@ -369,17 +372,22 @@ against this session's live agent."
     (user-error "Connect this chat (send a message) before connecting a provider"))
   (require 'hermes-onboarding)
   (let ((buffer (current-buffer))
-        (client hermes-chat--dashboard-client))
+        (client hermes-chat--dashboard-client)
+        (context (hermes-chat--model-switch-context)))
     (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
      :resolve (lambda (result)
                 (hermes-chat--in-buffer buffer
-                  (hermes-chat--connect-provider-candidate
-                   buffer client (hermes-onboarding--choose-provider result))))
+                  (when (hermes-chat--model-switch-current-p context)
+                    (let ((provider (hermes-onboarding--choose-provider result)))
+                      (when (hermes-chat--model-switch-current-p context)
+                        (hermes-chat--connect-provider-candidate
+                         buffer client provider))))))
      :reject (lambda (message)
                (hermes-chat--in-buffer buffer
-                 (hermes-chat--command-error message))))))
+                 (when (hermes-chat--model-switch-current-p context)
+                   (hermes-chat--command-error message)))))))
 
 (provide 'hermes-chat-models)
 ;;; hermes-chat-models.el ends here

@@ -50,6 +50,13 @@ without each one repeating the liveness guard."
      (with-current-buffer ,buffer
        ,@body)))
 
+(defmacro hermes-chat--in-lifetime (buffer lifetime &rest body)
+  "Evaluate BODY when BUFFER still owns chat LIFETIME."
+  (declare (indent 2) (debug (form form body)))
+  `(hermes-chat--in-buffer ,buffer
+     (when (hermes-chat--current-lifetime-p ,lifetime)
+       ,@body)))
+
 
 
 (defvar-local hermes-chat--auto-prompt-keys nil
@@ -134,8 +141,12 @@ their own session with their own runtime.")
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn and transcript reset so stale async callbacks become obsolete.
 Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
-(defvar-local hermes-chat--lifecycle-generation 0
-  "Monotonic chat lifetime generation used to reject post-reset callbacks.")
+(defvar hermes-chat--lifetime-sequence 0
+  "Process-wide sequence issuing opaque chat lifetime tokens.")
+(defvar-local hermes-chat--lifecycle-generation nil
+  "Opaque process-unique token for the current chat mode lifetime.")
+(defvar-local hermes-chat--cleanup-done-p nil
+  "Non-nil after resources for the current chat lifetime were released.")
 (defvar-local hermes-chat--ansi-fragments nil
   "Hash of entry key to pending ANSI escape fragment.")
 (defvar-local hermes-chat--interrupted-assistant-id nil
@@ -145,6 +156,15 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 (defvar-local hermes-chat--interrupt-request-pending-p nil
   "Non-nil until the current `session.interrupt' request settles.")
 (defvar hermes-chat--transient-entry-roles)
+
+(defun hermes-chat--next-lifetime-token ()
+  "Return a fresh process-unique chat lifetime token."
+  (cons (cl-incf hermes-chat--lifetime-sequence) nil))
+
+(defun hermes-chat--current-lifetime-p (lifetime)
+  "Return non-nil when LIFETIME owns the exact current chat mode."
+  (and (eq major-mode 'hermes-chat-mode)
+       (eql lifetime hermes-chat--lifecycle-generation)))
 
 (defun hermes-chat--transport-entry-role (event)
   "Return EWOC entry role for transport EVENT."
@@ -441,7 +461,8 @@ text-property changes in the undo list."
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
     (cl-incf hermes-chat--transport-generation)
-    (cl-incf hermes-chat--lifecycle-generation)
+    (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token)
+          hermes-chat--cleanup-done-p nil)
     (erase-buffer)
     (setq-local header-line-format '(:eval (hermes-chat--header-line)))
     (hermes-chat--reset-header-state)
@@ -489,7 +510,7 @@ text-property changes in the undo list."
 (defun hermes-chat--invalidate-transport-state ()
   "Invalidate callbacks and pending work before releasing this buffer's client."
   (cl-incf hermes-chat--transport-generation)
-  (cl-incf hermes-chat--lifecycle-generation)
+  (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
   (run-hooks 'hermes-chat-lifecycle-invalidation-hook)
   (when (hash-table-p hermes-chat--auto-prompt-keys)
     (clrhash hermes-chat--auto-prompt-keys))

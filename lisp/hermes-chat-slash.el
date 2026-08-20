@@ -429,11 +429,12 @@ CONFIRMED acknowledges a prior expensive-model warning."
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."
   (when (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-    (let ((buffer (current-buffer)))
+    (let ((buffer (current-buffer))
+          (lifetime hermes-chat--lifecycle-generation))
       (hermes-dashboard-transport-commands-catalog
        hermes-chat--dashboard-client
        :resolve (lambda (result)
-                  (hermes-chat--in-buffer buffer
+                  (hermes-chat--in-lifetime buffer lifetime
                     (setq hermes-chat--commands-cache
                           (hermes-chat--catalog-candidates result))))))))
 
@@ -504,15 +505,16 @@ Only matches while typing the /command word in the writable input tail."
   "Fetch and display the dashboard slash command catalog."
   (interactive)
   (let ((buffer (current-buffer))
+        (lifetime hermes-chat--lifecycle-generation)
         (client (hermes-chat--dashboard-control-client)))
     (hermes-dashboard-transport-commands-catalog
      client
      :resolve (lambda (result)
-                (hermes-chat--in-buffer buffer
+                (hermes-chat--in-lifetime buffer lifetime
                   (hermes-chat--insert-local-status
                    (hermes-chat--commands-catalog-content result) 'done)))
      :reject (lambda (message)
-               (hermes-chat--in-buffer buffer
+               (hermes-chat--in-lifetime buffer lifetime
                  (hermes-chat--command-error message))))))
 
 (defvar hermes-chat--native-slash-commands nil
