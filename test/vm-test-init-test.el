@@ -114,7 +114,7 @@ and `make clean' removes it."
                "imap:mail.example.com:143:INBOX:login:someone:secret")))
     (should (string-prefix-p (expand-file-name vm-test-scratch-dir)
                             (expand-file-name file)))
-    (should (string-match-p "imap-cache-[0-9a-f]+\\'" file))
+    (should (vm-cache-folder-name-p file))
     (should-not (equal (file-name-directory (expand-file-name file))
                        (file-name-as-directory (expand-file-name "~"))))))
 

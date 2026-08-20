@@ -4057,6 +4057,78 @@ was given and the alias the docstring promises was rejected."
                               (cadr (should-error
                                      (vm-change-folder-type 'mbox file))))))))
 
+;;; a cache file says its type in its name (issue #736)
+
+(defmacro vm-folder-test--in-a-cache-directory (&rest body)
+  "Run BODY with DIR an empty directory both cache directories point at.
+BODY can look at WARNINGS, the list of warning strings."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (make-temp-file "vm-cache-" t))
+          (vm-imap-folder-cache-directory dir)
+          (vm-pop-folder-cache-directory dir)
+          (warnings nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'vm-warn)
+                    (lambda (_level _secs format &rest args)
+                      (push (apply #'format format args) warnings))))
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-new-cache-is-named-after-its-type ()
+  "A cache that does not exist yet gets the type suffix."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (should (equal (vm-cache-file-in-use base)
+                     (concat base vm-cache-folder-type-suffix)))
+      (should-not warnings))))
+
+(ert-deftest vm-folder-test-an-existing-cache-keeps-its-name ()
+  "A cache made before VM named them is used as it stands.
+Renaming it would say a type of it that need not be true, and refusing it
+would mean refetching the mailbox."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
+      (should (equal (vm-cache-file-in-use base) base))
+      (should-not warnings))))
+
+(ert-deftest vm-folder-test-a-converted-cache-names-the-file-left-behind ()
+  "Both names present means a conversion that left the old file.
+The suffixed one is the cache, and the other holds the older mail, so it is
+named rather than passed over."
+  (vm-folder-test--in-a-cache-directory
+    (let ((base (expand-file-name "imap-cache-0123456789abcdef" dir)))
+      (write-region "old\n" nil base)
+      (write-region "new\n" nil (concat base vm-cache-folder-type-suffix))
+      (should (equal (vm-cache-file-in-use base)
+                     (concat base vm-cache-folder-type-suffix)))
+      (should (= 1 (length warnings)))
+      (should (string-match-p "ignoring imap-cache-0123456789abcdef\\'"
+                              (car warnings))))))
+
+(ert-deftest vm-folder-test-a-suffixed-cache-is-still-a-cache ()
+  "The type suffix does not stop a cache being recognised as one.
+`vm-cache-folder-name-p' is what warns a user who opened a cache as a folder
+of its own, so a name it does not match is a cache with the warning lost."
+  (should (vm-cache-folder-name-p
+           (concat "imap-cache-b979c2934ac0b4ba3f08dabfdd1b2299"
+                   vm-cache-folder-type-suffix)))
+  (should (vm-cache-folder-name-p
+           (concat "/home/someone/Mail/pop-cache-0123456789abcdef"
+                   vm-cache-folder-type-suffix)))
+  (should-not (vm-cache-folder-name-p "imap-cache-0123456789abcdef.txt")))
+
+(ert-deftest vm-folder-test-an-imap-cache-file-name-carries-the-type ()
+  "The name VM builds for a maildrop is the suffixed one, or the file there."
+  (vm-folder-test--in-a-cache-directory
+    (let* ((spec "imap-ssl:imap.example.com:993:INBOX:login:someone:*")
+           (named (vm-imap-make-filename-for-spec spec))
+           (base (string-remove-suffix vm-cache-folder-type-suffix named)))
+      (should (string-suffix-p vm-cache-folder-type-suffix named))
+      (should-not (equal named base))
+      (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
+      (should (equal (vm-imap-make-filename-for-spec spec) base)))))
+
 ;;; the type a new folder is written in, and keeping a length true (issue #736)
 
 (ert-deftest vm-folder-test-the-type-to-write-comes-from-the-name ()

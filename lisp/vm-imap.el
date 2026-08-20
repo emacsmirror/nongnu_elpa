@@ -305,15 +305,17 @@ purposes.")
 
 ;;;###autoload
 (defun vm-imap-make-filename-for-spec (spec)
-  "Returns a cache file name appropriate for the IMAP maildrop
-specification SPEC."
+  "Returns the cache file in use for the IMAP maildrop specification SPEC.
+The name is built from the MD5 of the specification; `vm-cache-file-in-use'
+decides between an existing cache and the name a new one gets."
   (let (md5)
     (setq spec (vm-imap-normalize-spec spec))
     (setq md5 (vm-md5-string spec))
-    (expand-file-name (concat "imap-cache-" md5)
-		      (or vm-imap-folder-cache-directory
-			  vm-folder-directory
-			  (getenv "HOME")))))
+    (vm-cache-file-in-use
+     (expand-file-name (concat "imap-cache-" md5)
+		       (or vm-imap-folder-cache-directory
+			   vm-folder-directory
+			   (getenv "HOME"))))))
 
 ;;;###autoload
 (defun vm-imap-normalize-spec (spec)
