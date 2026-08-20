@@ -1260,8 +1260,9 @@ called from an interactive use of a command."
 
 ;;;###autoload
 (defun vm-pop-make-filename-for-spec (spec &optional scrub-password scrub-spec)
-  "Returns a cache file name appropriate for the POP maildrop
-specification SPEC."
+  "Returns the cache file in use for the POP maildrop specification SPEC.
+The name is built from the MD5 of the specification; `vm-cache-file-in-use'
+decides between an existing cache and the name a new one gets."
   (let (md5 list)
     (if (and (null scrub-password) (null scrub-spec))
 	nil
@@ -1279,10 +1280,11 @@ specification SPEC."
 		   (setcar (nthcdr 3 list) "*")))))
       (setq spec (mapconcat (function identity) list ":")))
     (setq md5 (vm-md5-string spec))
-    (expand-file-name (concat "pop-cache-" md5)
-		      (or vm-pop-folder-cache-directory
-			  vm-folder-directory
-			  (getenv "HOME")))))
+    (vm-cache-file-in-use
+     (expand-file-name (concat "pop-cache-" md5)
+		       (or vm-pop-folder-cache-directory
+			   vm-folder-directory
+			   (getenv "HOME"))))))
 
 (defun vm-pop-parse-spec-to-list (spec)
   (if (string-match "\\(pop\\|pop-ssh\\|pop-ssl\\)" spec)

@@ -837,10 +837,24 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(signal 'unrecognized-folder-type nil)
       (signal 'folder-empty nil))))
 
-(defconst vm-cache-folder-name-regexp "\\`\\(imap\\|pop\\)-cache-[0-9a-f]+\\'"
+(defconst vm-cache-folder-type-suffix ".mboxcl2"
+  "The name suffix VM gives a cache file it creates, and the type it writes it in.
+A cache is VM's own file and VM writes every message in it, so unlike any
+other folder its type is known and can be stated where
+`vm-folder-type-by-name-alist' reads it back.  mboxcl2 because the lengths
+make the message boundaries exact for arbitrary mail, which a cache holds.
+
+Said in the name rather than in a header inside the folder: a claim written
+into a folder outlives the belief that produced it, and a wrong one then
+survives the fix.  See dev/docs/design/folder-type.org.")
+
+(defconst vm-cache-folder-name-regexp
+  (concat "\\`\\(imap\\|pop\\)-cache-[0-9a-f]+"
+	  "\\(" (regexp-quote vm-cache-folder-type-suffix) "\\)?\\'")
   "Matches the name of a file VM uses as the local cache of a server folder.
 `vm-imap-make-filename-for-spec' and `vm-pop-make-filename-for-spec' build
-these names, from a prefix and the MD5 of the maildrop specification.")
+these names, from a prefix, the MD5 of the maildrop specification, and for a
+cache VM created the type suffix.")
 
 (defun vm-cache-folder-name-p (file)
   "Return non-nil if FILE is VM's local cache of a POP or IMAP folder.
@@ -850,6 +864,28 @@ reconnected to its server by reading it."
   (and file
        (string-match-p vm-cache-folder-name-regexp
 		       (file-name-nondirectory file))))
+
+(defun vm-cache-file-in-use (base)
+  "The cache file to use, given BASE, its name without a type suffix.
+BASE where that file exists, so a cache made before VM named them keeps its
+name and goes on being read as whatever it is: renaming it would say a type of
+it that may not be true, and refusing it would mean refetching the mailbox.
+
+BASE with `vm-cache-folder-type-suffix' otherwise, which is the name a new
+cache gets and the type it is then written in.
+
+Both existing means a cache that was converted with the old file left beside
+it.  The suffixed one is the cache, and the other is named in a warning rather
+than passed over in silence, since it is the one holding the older mail."
+  (let ((named (concat base vm-cache-folder-type-suffix)))
+    (cond ((file-exists-p named)
+	   (when (file-exists-p base)
+	     (vm-warn 0 2 "Using cache %s, ignoring %s"
+		      (file-name-nondirectory named)
+		      (file-name-nondirectory base)))
+	   named)
+	  ((file-exists-p base) base)
+	  (t named))))
 
 (defun vm-copy (object)
   "Make a copy of OBJECT, which could be a list, vector, string or marker."
