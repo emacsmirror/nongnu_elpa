@@ -2232,7 +2232,7 @@ its own and once inside the line that followed it."
 		(nth 4 vm-totals))))))
 
 (defun vm-emit-totals-blurb ()
-  "Show `vm-totals-blurb\=', and answer with it."
+  "Show the line `vm-totals-blurb' answers, and answer with it."
   (interactive)
   (let ((blurb (vm-totals-blurb)))
     (vm-inform 5 "%s" blurb)
