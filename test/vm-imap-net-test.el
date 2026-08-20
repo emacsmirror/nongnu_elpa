@@ -1952,6 +1952,46 @@ one piece, so a save can only ever see whole messages the list knows about."
                 (kill-buffer buffer))))
           (delete-directory cache t))))))
 
+(ert-deftest vm-imap-net-test-a-session-can-leave-its-traffic-behind ()
+  "`vm-imap-keep-trace-buffer' keeps a driver session's buffer, as it does the
+blocking path's.
+
+The driver killed every session buffer the moment the session ended, so after
+a save there was nothing left to look at -- and \"did VM send that delete?\" is
+answered by the traffic and by nothing else."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((vm-imap-keep-trace-buffer 2)
+          (vm-kept-imap-buffers nil))
+      (vm-set-deleted-flag (car vm-message-list) t)
+      (vm-expunge-folder :quiet t)
+      (set-buffer-modified-p t)
+      (vm-save-folder)
+      (should (vm-imap-net-wait nil 15))
+      ;; the session that sent the changes is still there, named as the
+      ;; blocking path names its own
+      (should vm-kept-imap-buffers)
+      (should (seq-find (lambda (buffer)
+                          (string-match-p "\\`saved " (buffer-name buffer)))
+                        vm-kept-imap-buffers))
+      ;; and it holds what went out and what the server said back
+      (should (seq-find
+               (lambda (buffer)
+                 (and (buffer-live-p buffer)
+                      (with-current-buffer buffer
+                        (and (string-match-p "UID STORE" (buffer-string))
+                             (string-match-p "EXPUNGE" (buffer-string))))))
+               vm-kept-imap-buffers))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            vm-kept-imap-buffers))
+    ;; and with the setting off, nothing is kept
+    (let ((vm-imap-keep-trace-buffer nil)
+          (vm-kept-imap-buffers nil))
+      (vm-imap-net-synchronize nil t)
+      (should (vm-imap-net-wait nil 15))
+      (should-not vm-kept-imap-buffers))))
+
 (ert-deftest vm-imap-net-test-a-session-says-goodbye ()
   "Every session says LOGOUT on its way out.  A server counts its
 connections, and a client that drops them without a word leaves it to time
