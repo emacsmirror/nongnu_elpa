@@ -51,36 +51,57 @@ folders have nothing at the top that could carry a declaration.
 
 ** Proposal
 
-*** 1. The folder records its own type
+*** 1. A cache declares its type in its name
 
-A folder-level header, =X-VM-Folder-Type: mboxcl2=, in the header block of the
-first message.  That block is where VM already keeps its folder-level state:
-=X-VM-Message-Order=, =X-VM-Bookmark=, =X-VM-Labels=, =X-VM-Summary-Format=,
-=X-VM-VHeader=, =X-VM-IMAP-Retrieved=, =X-VM-Last-Modified= (vm-vars.el:6482
-to vm-vars.el:6505), each written by its own =vm-stuff-= function
-(vm-folder.el:2851, 2910, 2953, 3049, 3152, 3247) from
-=vm-stuff-folder-data= (vm-folder.el:2649).
+Rejected first: a folder-level header, =X-VM-Folder-Type=, in the header block
+of the first message, beside =X-VM-Message-Order= and =X-VM-IMAP-Retrieved=
+(vm-vars.el:6482 to vm-vars.el:6505).  It reads knowing nothing about the type,
+since the first message begins at the start of the file and its header block
+ends at the first blank line, and it would cover every folder.  It is still
+wrong:
 
-Why the first message's header block works as the place:
+- A declaration inside the file is durable, so a wrong belief outlives the bug
+  that produced it.  The cache in issue 733 was decided to be mboxcl2 while
+  6394 of its 6459 messages had no length.  A VM that had stamped that into
+  the file would go on refusing the folder after the detection was fixed.
+- A folder another mailer appends to can have the claim invalidated behind
+  VM's back, and the folder then says mboxcl2 and is not.
 
-- It can be read knowing nothing about the folder type.  The first message
-  begins at the start of the file and its header block ends at the first
-  blank line, so no message boundary has to be found first, which is the
-  whole difficulty.
-- Every folder VM has saved once has the block, so it can carry the
-  declaration for the primary inbox and for the IMAP and POP caches with
-  nothing renamed.
-- The =vm-stuff-= functions insert at the top of the block, so stuffing the
-  type last puts it in the first few hundred bytes and the reader does not
-  have to get past =X-VM-IMAP-Retrieved=, which is 237 kilobytes in a
-  maintainer's cache.  The reader still needs the fallback: header not found
-  in the bytes read, and the block not ended, means read on or give up and
-  use the next rule.
-- Deleting and expunging the first message does not lose it.  The folder-level
-  headers are re-stuffed into whatever message is first.
+The claim is only true by construction where VM created the file and wrote
+every message in it.  That is a cache and nothing else, and for a cache the
+name says the same thing with no header to find, nothing to read past, and the
+type visible in =ls=.
 
-What it does not cover: a folder VM has never saved, and a folder another
-mailer wrote.  Those fall to the name rule and the default.
+So VM names a cache after the type it writes it in,
+=imap-cache-<md5>.mboxcl2=, and a new cache is written as mboxcl2: VM owns the
+file, the lengths make the boundaries exact for arbitrary mail, and the reader
+does not have to search for the next separator.
+
+- =vm-imap-make-filename-for-spec= (vm-imap.el:308) and
+  =vm-pop-make-filename-for-spec= (vm-pop.el:1277) answer the file in use: the
+  unsuffixed name where it exists, the suffixed name otherwise.  An existing
+  cache keeps its name and reads as it does today, so nobody refetches a
+  gigabyte.  Both callers want that answer, the visit path (vm.el:232) and
+  =vm-imap-cache-file-for-folder-name= (vm-imap.el:384).
+- Both names present means a cache that was converted with the old file left
+  behind: prefer the suffixed one and warn, naming the file being ignored.
+- =vm-cache-folder-name-regexp= (vm-misc.el:840) has to allow the suffix, or a
+  suffixed cache stops being recognised as one and the warning at
+  vm-folder.el:5778 stops firing.
+- A new folder's type has to come from its name for any of this to work.
+  Three save paths consult the name already (vm-save.el:389, vm-reply.el:1054,
+  vm-postpone.el:678); the insertion paths use
+  =(or vm-folder-type vm-default-folder-type)= instead, six of them across
+  vm-imap.el, vm-pop.el, vm-imap-net.el and vm-pop-net.el.  One function for
+  the type to write a folder in, =vm-folder-type-to-write=, consulting
+  =vm-folder-type=, then the name, then the default, used at all of them.
+- Converting an existing cache is the user's business and is the same
+  operation as for any other folder: =vm-change-folder-type=, then rename.
+  Deleting it works too, since it refetches.
+
+What this does not cover: a folder VM did not create.  Nothing can be written
+into one that VM is entitled to believe later, so those fall to the name rule
+and the default, which is what part 2 is for.
 
 *** 2. Name rules match the whole path
 
@@ -107,44 +128,38 @@ without any of that.
 The order becomes:
 
 1. signature
-2. the type recorded in the folder
-3. the name rule
-4. =vm-default-From_-folder-type=
+2. the name rule
+3. =vm-default-From_-folder-type=
 
 mboxcl2 is then reachable only from an explicit statement.
 =vm-trust-content-length= is deprecated, and
 =vm-folder-looks-like-mboxcl2-p= stays but changes job: it stops deciding a
-type and becomes the check on a recorded one, which is what part 1 needs.
+type and becomes the check on a name that claims one.
 
 Transition, one release: where the structure test would have said mboxcl2 and
-nothing else said anything, read the folder as mboxcl2, warn once naming it,
-and record the type so the next visit does not need the test.
+the name said nothing, read the folder as mboxcl2 and warn once, naming the
+folder and the name rule that would settle it.
 
 *** 4. =vm-default-folder-type= decides new folders only, and is From_ everywhere
 
-Its platform table (vm-vars.el:885) gives mboxcl2 on Solaris, AIX and
-usg-unix-v: a guess about what the local delivery agent writes, and now the
-only thing that makes the trust default non-nil.  The variable never decides
-an existing folder's type, so changing its default cannot change how an
-existing folder reads.
+Decided: the platform table goes.  It gives mboxcl2 on Solaris, AIX and
+usg-unix-v (vm-vars.el:885), a guess about what the local delivery agent
+writes, and now the only thing that makes the trust default non-nil.  The
+variable never decides an existing folder's type, so changing its default
+cannot change how an existing folder reads.
 
 ** Mismatches
 
-Three are possible and they want different answers.
-
-- Recorded type against the folder's own structure.  Error, naming the folder
-  and the repair command, under the policy pair VM already has for the crash
-  box against the inbox: =vm-check-folder-types= and
+- A name saying mboxcl2 against a folder with a message that has no length.
+  Error, naming the folder and the repair command, which is what
+  =vm-mboxcl2-length-missing= already does.  The policy pair VM has for the
+  crash box against the inbox governs it: =vm-check-folder-types= and
   =vm-convert-folder-types=, both t (vm-vars.el:965, vm-vars.el:984, used at
-  vm-folder.el:4773).  This is the case that deserves an error and has none.
-- Name rule against recorded type.  Error.  Two explicit statements
-  contradicting each other, and VM should not pick one.
+  vm-folder.el:4773).
 - =vm-default-folder-type= against =vm-trust-content-length=.  The wart.
-  After part 3 the pairing means nothing, so what happens to an init that
-  still sets both is a choice: warn once and ignore the trust setting, error
-  at startup, or override silently.  Recommended: warn.  After part 1 the
-  setting is redundant rather than wrong, and erroring on a redundant setting
-  stops a working init from starting.
+  After part 3 the pairing means nothing.  Decided: warn once and ignore the
+  trust setting.  Parts 1 and 2 leave it redundant rather than wrong, and
+  erroring on a redundant setting stops a working init from starting.
 
 ** What it costs
 
@@ -157,15 +172,37 @@ header-block case, so a wrong split is rare rather than impossible.  That risk
 is the price of never guessing, and the warning in part 3 is how a user finds
 out they are paying it.
 
+** What making a cache mboxcl2 turned up
+
+An mboxcl2 folder's messages abut exactly: the trailing separator is the empty
+string (vm-folder.el:1249), where From_ has a newline.  So the end of one
+message's text and the start of the next are the same position, and for a
+message whose body has not been retrieved -- headers written with a length of
+zero -- that is also where the body goes.  Inserting it there with =insert=
+leaves the next message's start marker in front of the body: the folder now
+has one message's body inside the next one's headers.  Twelve lines reproduce
+it with no server, and the two headers-only IMAP tests in
+test/vm-imap-live-test.el fail the moment a cache is mboxcl2.
+
+It is not new and it is not about caches: anyone with =vm-default-folder-type=
+mboxcl2 and =vm-enable-external-messages= has it now.  It has to be fixed
+before a cache is written as mboxcl2, since that would make it the default for
+IMAP and POP users.
+
+The `Content-Length' was stale as well -- the headers say zero and the body
+has arrived -- which =vm-set-content-length-of= now settles from
+=vm-settle-message-body= and =vm-discard-real-message-body=.
+
 ** Order of work
 
-1. Read and write the recorded type, with the mismatch error.  Nothing else
-   changes: the sniff still runs where no type is recorded, so a folder VM has
-   saved stops being sniffed and every other folder behaves as it does now.
+0. The external body that lands in front of the next message's start marker,
+   above.
+1. New caches named and written as mboxcl2, with the type of a new folder
+   taken from its name at every insertion path.  Existing caches untouched.
 2. Name rules match the whole path.
 3. Deprecate =vm-trust-content-length=, with the one-release warning.
 4. Drop the platform table from =vm-default-folder-type=.
 
-Each is a separate merge request.  1 is the one that removes the coupling; 3
-is the one that changes what an existing installation does, and wants the
-release note.
+Each is a separate merge request.  1 and 2 are what a user needs in place
+before 3 takes the sniff away; 3 is the one that changes what an existing
+installation does, and wants the release note.

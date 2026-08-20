@@ -757,6 +757,19 @@ See `vm-folder-type-by-name-alist'."
 	(setq alist (cdr alist)))
       type)))
 
+(defun vm-folder-type-to-write (&optional file)
+  "The folder type to write the current folder in.
+What the folder already is, else what FILE's name asks for, else
+`vm-default-folder-type'.  FILE defaults to the file the buffer is visiting.
+
+The name has to come before the default.  A folder that does not exist yet, or
+is empty, has no type of its own to read, and its name is then the only place
+its type can have been stated -- which is how an IMAP or POP cache VM creates
+comes out as the type `vm-cache-folder-type-suffix' names."
+  (or vm-folder-type
+      (vm-folder-type-for-name (or file (buffer-file-name)))
+      vm-default-folder-type))
+
 (defconst vm-folder-type-examine-limit (* 8 1024 1024)
   "How far into a folder `vm-get-folder-type\=' will read to decide its type.
 It reads as far as the second message when the first says how long it is; a
@@ -946,6 +959,34 @@ into one without a Content-Length cannot be read back -- see
 		  (if (re-search-forward "\n\n" nil t) (point) (point-max)))))
       (format "%s %d\n" vm-content-length-header
 	      (vm-message-body-octets body (point-max))))))
+
+(defun vm-set-content-length-of (mm)
+  "Make MM's `Content-Length' header say how long its body is now.
+Nothing to do in a folder of any other type than mboxcl2, which has no such
+header.
+
+In an mboxcl2 folder that header is how the reader finds the end of the
+message, so a body inserted or discarded without it being brought up to date
+leaves every message after this one misplaced.  An external body arrives
+after its headers have been written, and the headers were written with a
+length of zero, so both the fetch and the discard have to come through here.
+
+The header is rewritten in place, or inserted at the top of the block if the
+message has none.  Neither inserts before `vm-headers-of', so the message's
+markers stay where they are."
+  (when (eq vm-folder-type 'mboxcl2)
+    (let ((line (format "%s %d\n" vm-content-length-header
+			(vm-message-body-octets (vm-text-of mm)
+						(vm-text-end-of mm))))
+	  (case-fold-search t))
+      (save-excursion
+	(goto-char (vm-headers-of mm))
+	(if (re-search-forward (concat "^" (regexp-quote vm-content-length-header)
+				       ".*\n")
+			       (vm-text-of mm) t)
+	    (replace-match line t t)
+	  (goto-char (vm-headers-of mm))
+	  (insert line))))))
 
 (defun vm-count-messages-in-buffer ()
   "How many messages the current buffer holds, read as `vm-folder-type'.
@@ -6306,6 +6347,9 @@ took the whole message out again."
   ;; fix markers now
   (set-marker (vm-text-end-of mm) (point-max))
   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
+  ;; the headers were written with a length of zero, and in an mboxcl2 folder
+  ;; that is where the next message starts
+  (vm-set-content-length-of mm)
   ;; now care for the layout of the message
   (vm-set-mime-layout-of mm (vm-mime-parse-entity-safe mm))
   ;; update the message data
@@ -6405,6 +6449,7 @@ the folder is saved."
 		 (save-excursion (forward-line -1) (looking-at "\n")))
 	     (progn
 	       (delete-region (point) (vm-text-end-of mm))
+	       (vm-set-content-length-of mm)
 	       (vm-set-mime-layout-of mm nil)
 	       (vm-set-body-to-be-retrieved-flag mm t)
 	       (vm-set-body-to-be-discarded-flag mm nil)

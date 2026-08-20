@@ -1180,7 +1180,7 @@ Returns the process or nil if the session could not be created."
   (let ((shutdown nil)		   ; whether process is to be shutdown
 	(folder-type (if folder-buffer
 			 (with-current-buffer folder-buffer
-			   vm-folder-type)))
+			   (vm-folder-type-to-write))))
 	process ooo success
 	(folder (or (vm-imap-folder-for-spec source)
 		    (vm-safe-imapdrop-string source)))

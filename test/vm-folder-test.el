@@ -4057,6 +4057,49 @@ was given and the alias the docstring promises was rejected."
                               (cadr (should-error
                                      (vm-change-folder-type 'mbox file))))))))
 
+;;; the type a new folder is written in, and keeping a length true (issue #736)
+
+(ert-deftest vm-folder-test-the-type-to-write-comes-from-the-name ()
+  "An empty folder is written in the type its name asks for.
+It has no type of its own to read, so the name is the only place its type can
+have been stated, and it has to beat `vm-default-folder-type'."
+  (let ((vm-default-folder-type 'From_)
+        (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+    (with-temp-buffer
+      (setq vm-folder-type nil)
+      (should (eq 'mboxcl2 (vm-folder-type-to-write "/tmp/imap-cache-ab.mboxcl2")))
+      (should (eq 'From_ (vm-folder-type-to-write "/tmp/imap-cache-ab")))
+      ;; what the folder already is wins over both
+      (setq vm-folder-type 'BellFrom_)
+      (should (eq 'BellFrom_ (vm-folder-type-to-write "/tmp/imap-cache-ab.mboxcl2"))))))
+
+(ert-deftest vm-folder-test-a-body-that-arrives-brings-its-length-up-to-date ()
+  "A `Content-Length' says what the body is now, not what it was.
+An external message's headers are written with a length of zero and the body
+arrives later.  In an mboxcl2 folder that header is where the next message
+starts, so a stale one puts every message after this one in the wrong place."
+  (vm-folder-test-with-file
+      (file "two.mboxcl2"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "Content-Length: 0\nFrom: alice@example.com\n"
+                    "Subject: one\n\n"
+                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                    "Content-Length: 5\nFrom: bob@example.com\n"
+                    "Subject: two\n\nbody\n"))
+    (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+      (vm-folder-test--visiting file
+        (should (eq vm-folder-type 'mboxcl2))
+        (let ((m (car vm-message-list))
+              (inhibit-read-only t))
+          (save-restriction
+            (widen)
+            (goto-char (vm-text-of m))
+            (insert "six.\n")
+            (set-marker (vm-text-end-of m) (point))
+            (vm-set-content-length-of m)
+            (goto-char (vm-headers-of m))
+            (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

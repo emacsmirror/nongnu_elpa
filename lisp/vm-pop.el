@@ -442,7 +442,7 @@ retry.
 
 Returns the process or nil if the session could not be created." 
   (let ((shutdown nil)		   ; whether process is to be shutdown
-	(folder-type vm-folder-type)
+	(folder-type (vm-folder-type-to-write))
 	process success
 	(popdrop (or (vm-pop-find-name-for-spec source)
 		     (vm-safe-popdrop-string source)))
