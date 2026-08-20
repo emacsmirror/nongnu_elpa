@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
-;; Version: 0.2.0
+;; Version: 0.2.1
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
