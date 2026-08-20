@@ -4129,6 +4129,97 @@ of its own, so a name it does not match is a cache with the warning lost."
       (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
       (should (equal (vm-imap-make-filename-for-spec spec) base)))))
 
+;;; the guess is deprecated and says so (issue #736)
+
+(defmacro vm-folder-test--warnings (&rest body)
+  "Run BODY with `vm-warn' captured, and answer with the warnings it gave."
+  (declare (indent 0) (debug t))
+  `(let ((warnings nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _secs format &rest args)
+                  (push (apply #'format format args) warnings))))
+       ,@body)
+     (nreverse warnings)))
+
+(ert-deftest vm-folder-test-a-guessed-type-warns-once-per-folder ()
+  "Reading a folder as mboxcl2 because of how it looks says so, once.
+`vm-trust-content-length' is the last release to decide a type by looking, and
+a folder read as something it does not say it is is why."
+  (vm-folder-test-with-file
+      (file "guessed"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "Content-Length: 5\nFrom: alice@example.com\n"
+                    "Subject: one\n\nbody\n"
+                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                    "Content-Length: 5\nFrom: bob@example.com\n"
+                    "Subject: two\n\nbody\n"))
+    (let ((vm-trust-content-length t)
+          (vm-folder-type-by-name-alist nil)
+          (vm-guessed-folder-types nil))
+      (let ((said (vm-folder-test--warnings
+                    (should (eq 'mboxcl2 (vm-get-folder-type file))))))
+        (should (= 1 (length said)))
+        (should (string-match-p "vm-folder-type-by-name-alist" (car said)))
+        (should (string-match-p "guessed" (car said))))
+      ;; the same folder again says nothing
+      (should-not (vm-folder-test--warnings (vm-get-folder-type file))))))
+
+(ert-deftest vm-folder-test-a-named-type-is-not-guessed-and-says-nothing ()
+  "A folder whose name says its type is not looked at, so nothing is warned.
+That is the way out of the warning above, so it has to be silent."
+  (vm-folder-test-with-file
+      (file "named.mboxcl2"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "Content-Length: 5\nFrom: alice@example.com\n"
+                    "Subject: one\n\nbody\n"))
+    (let ((vm-trust-content-length t)
+          (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2)))
+          (vm-guessed-folder-types nil))
+      (should-not (vm-folder-test--warnings
+                    (should (eq 'mboxcl2 (vm-get-folder-type file))))))))
+
+(ert-deftest vm-folder-test-the-trust-setting-is-called-deprecated-at-startup ()
+  "An init file that still turns the guess on is told, and is not stopped.
+The setting works this release; an error would stop a working configuration
+from starting."
+  (let ((vm-trust-content-length t)
+        (vm-default-folder-type 'mboxcl2))
+    (let ((said (vm-folder-test--warnings
+                  (vm-warn-about-deprecated-trust-setting))))
+      (should (= 1 (length said)))
+      (should (string-match-p "deprecated" (car said)))
+      (should (string-match-p "vm-default-folder-type no longer needs"
+                              (car said)))))
+  ;; and nothing to say where it is off
+  (let ((vm-trust-content-length nil))
+    (should-not (vm-folder-test--warnings
+                  (vm-warn-about-deprecated-trust-setting)))))
+
+(ert-deftest vm-folder-test-the-default-folder-type-is-From_-everywhere ()
+  "No platform decides `vm-default-folder-type' now.
+It was mboxcl2 on Solaris, AIX and System V: a guess about the local delivery
+agent, and the only thing that made `vm-trust-content-length' default on."
+  (should (eq 'From_ (eval (car (get 'vm-default-folder-type 'standard-value)))))
+  (let ((vm-default-folder-type 'From_))
+    (should-not (eval (car (get 'vm-trust-content-length 'standard-value))))))
+
+;;; a name rule answers for a directory (issue #736)
+
+(ert-deftest vm-folder-test-a-name-rule-can-name-a-directory ()
+  "The whole path is matched, so one rule answers for the folders in a
+directory.  A primary inbox called INBOX and a cache called imap-cache-<md5>
+have no suffix to match and cannot be renamed, so this is the only way to say
+what they are."
+  (let ((vm-folder-type-by-name-alist
+         '(("\\.mboxcl2\\'" . mboxcl2)
+           ("/mail/current/" . mboxcl2))))
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "/home/me/mail/current/INBOX")))
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "/tmp/sent.mboxcl2")))
+    ;; a suffix rule still matches on the last part of the name alone
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "sent.mboxcl2")))
+    (should-not (vm-folder-type-for-name "/home/me/mail/old/INBOX"))
+    (should-not (vm-folder-type-for-name nil))))
+
 ;;; the type a new folder is written in, and keeping a length true (issue #736)
 
 (ert-deftest vm-folder-test-the-type-to-write-comes-from-the-name ()

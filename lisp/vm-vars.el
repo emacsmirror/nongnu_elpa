@@ -882,19 +882,19 @@ This variable's value is local in all buffers.
 VM maintains this variable, you should not set it.")
 (make-variable-buffer-local 'vm-spooled-mail-waiting)
 
-(defcustom vm-default-folder-type
-  (cond ((not (boundp 'system-configuration))
-         'From_)
-        ((or (string-match "-solaris" system-configuration)
-             (string-match "usg-unix-v" system-configuration)
-             (string-match "-ibm-aix" system-configuration))
-         'mboxcl2)
-        ((string-match "-sco" system-configuration)
-         'mmdf)
-        (t 'From_))
+(defcustom vm-default-folder-type 'From_
   "Default folder type for empty folders.
 If VM has to add messages that have no specific folder type to an
 empty folder, the folder will become this default type.
+
+It decides a folder that does not exist yet or is empty, and nothing else, so
+changing it cannot change how an existing folder is read.  Where the folder's
+name says a type -- see `vm-folder-type-by-name-alist' -- that wins.
+
+It was mboxcl2 on Solaris, AIX and System V and mmdf on SCO until 2026: a
+guess about what the local delivery agent writes, made when VM could not be
+told.  Say what you want in the name of the folder, or here.
+
 Allowed types are:
 
    From_
@@ -996,16 +996,23 @@ consulted."
 
 (defcustom vm-trust-content-length
   (eq vm-default-folder-type 'mboxcl2)
-  "*Non-nil value means that if the first message in a folder contains
-a Content-Length header and begins with \"From \" VM can safely
-assume that all messages in the folder have Content-Length headers
-that specify the length of the text section of each message.  VM
-will then use these headers to determine message boundaries
-instead of the usual way of searching for two newlines followed by a
-line that begins with \"From \".
+  "*Non-nil means decide that a From_ folder is mboxcl2 by looking at it.
+Deprecated, and the last release to do the looking.  Say the type in
+`vm-folder-type-by-name-alist' instead, which is a folder being told what it
+is rather than VM guessing, and which VM warns about once per folder while
+this is still on.
 
-If you set `vm-default-folder-type' to mboxcl2 you
-must set this variable non-nil."
+What it does: VM reads the start of the folder, and takes a `Content-Length'
+on each of the first two messages as saying that every message in the folder
+has one.  That is the whole evidence available, From_ and mboxcl2 being the
+same folder but for the header, and it was wrong on a 1.1 GB IMAP cache where
+6394 of 6459 messages had no length.
+
+Why it existed: `vm-default-folder-type' set to mboxcl2 says what new folders
+are written as, and until a folder could be told its type, a folder VM had
+written as mboxcl2 read back as From_ and was half-written on the next save.
+Turning this on was the only compensation.  Naming the folder is the answer
+now."
   :group 'vm-folders
   :type 'boolean)
 
@@ -1031,8 +1038,16 @@ not need it."
 (defcustom vm-folder-type-by-name-alist
   '(("\\.mboxcl2\\'" . mboxcl2))
   "*Alist of (REGEXP . TYPE): the folder type a folder's name asks for.
-REGEXP is matched against the file name, TYPE is one of the types
-`vm-default-folder-type' accepts.  The first match wins.
+REGEXP is matched against the whole file name, directories and all, TYPE is
+one of the types `vm-default-folder-type' accepts.  The first match wins.
+
+Matching the whole name lets one rule answer for a directory, which is what a
+primary inbox called INBOX and an IMAP cache need, neither having a suffix to
+match:
+
+    (setq vm-folder-type-by-name-alist
+          \\='((\"\\\\.mboxcl2\\\\\\='\" . mboxcl2)
+            (\"/mail/current/\" . mboxcl2)))
 
 This is consulted where a folder cannot say for itself what it is:
 

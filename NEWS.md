@@ -112,6 +112,46 @@ vm-log-level 10)` keeps the detail of a slow operation without changing what
 appears in the echo area.  `vm-log-max-lines` bounds the buffer, oldest lines
 first.
 
+## A folder says what type it is, and VM no longer guesses
+
+From_ and mboxcl2 are the same folder but for a `Content-Length` header on each
+message, so a folder cannot say which it is by looking like one.  VM used to
+decide by sniffing the first message, which read a maintainer's 1.1 GB IMAP
+cache as mboxcl2 while 6394 of its 6459 messages had no length.  The type is
+now something a folder is told, in one of two places.
+
+  * `vm-folder-type-by-name-alist` matches the **whole** file name, where it
+    matched only the last part of it.  One rule can then answer for a
+    directory, which is what a primary inbox called INBOX needs, having no
+    suffix to match and no way to be renamed:
+
+    ```elisp
+    (setq vm-folder-type-by-name-alist
+          '(("\\.mboxcl2\\'"  . mboxcl2)
+            ("/mail/current/" . mboxcl2)))
+    ```
+
+    A suffix rule keeps working unchanged.  A rule anchored at the front with
+    `` \` `` has to allow for the directories now, or it matches nothing.
+
+  * **An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2`**
+    and written in that type.  A cache is VM's own file and VM writes every
+    message in it, so its type is known rather than guessed at, and the
+    lengths make the boundaries exact.  A cache that already exists keeps its
+    name and is read as whatever it is; nothing is converted and nothing is
+    refetched.
+
+`vm-default-folder-type` is `From_` on every platform now.  It was mboxcl2 on
+Solaris, AIX and System V, a guess about the local delivery agent, and it
+decides only folders that do not exist yet.
+
+`vm-trust-content-length` is **deprecated**.  It is what turned the sniffing
+on, and setting `vm-default-folder-type` to mboxcl2 used to require it: a
+statement about new folders was also a statement about every folder read.  Say
+it in the name instead.  For this release the sniffing still happens where it
+is switched on, and warns once per folder, naming the rule that would settle
+the question.
+
 ## VM 8.x.x released
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a
