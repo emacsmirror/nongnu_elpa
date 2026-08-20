@@ -420,6 +420,7 @@
 (ert-deftest hermes-dashboard-kanban-events-url-async-reuses-client ()
   "A live client's resolved URL is reused without a fresh auth round-trip."
   (let ((client (make-hermes-dashboard-transport-client
+                 :credential-kind 'legacy-token :credential-reusable-p t
                  :websocket-url "ws://127.0.0.1:8765/api/ws?token=SEKRIT"
                  :redacted-websocket-url "ws://127.0.0.1:8765/api/ws?token=<redacted>"
                  :secrets '("SEKRIT")))
@@ -434,6 +435,94 @@
                            "?token=SEKRIT&since=9&board=emacs-lisp")
                    (plist-get result :url)))
     (should (equal '("SEKRIT") (plist-get result :secrets)))))
+
+(ert-deftest hermes-dashboard-credential-reuse-is-explicit-and-fail-closed ()
+  "Only explicitly reusable credential kinds expose active socket auth."
+  :tags '(candidate-4a)
+  (dolist (case '((nil t nil) (ticket t nil) (spawn nil nil)
+                  (spawn t t) (internal t t) (legacy-token t t)))
+    (let ((client (make-hermes-dashboard-transport-client
+                   :credential-kind (nth 0 case)
+                   :credential-reusable-p (nth 1 case)
+                   :websocket-url "ws://h/api/ws?token=active"
+                   :redacted-websocket-url "ws://h/api/ws?token=<redacted>"
+                   :secrets '("active"))))
+      (should (eq (and (hermes-dashboard-transport--client-auth-plist client) t)
+                  (nth 2 case))))))
+
+(ert-deftest hermes-dashboard-nonreusable-auxiliary-auth-resolves-fresh ()
+  "Nil-kind and ticket clients resolve from stored inputs, never active auth."
+  :tags '(candidate-4a)
+  (dolist (kind '(nil ticket))
+    (let ((client (make-hermes-dashboard-transport-client
+                   :host "dash.example" :port 443
+                   :base-url "https://dash.example"
+                   :auth-method 'token :auth-token "resolver"
+                   :credential-kind kind :credential-reusable-p t
+                   :websocket-url "wss://dash.example/api/ws?ticket=consumed"
+                   :secrets '("consumed")))
+          call result)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+                 (lambda (&rest args)
+                   (setq call args)
+                   (hermes--promise-resolved
+                    '(:kind legacy-token :reusable-p t
+                      :url "wss://dash.example/api/ws?token=fresh"
+                      :redacted-url "wss://dash.example/api/ws?token=<redacted>"
+                      :secrets ("fresh"))))))
+        (hermes--promise-then
+         (hermes-dashboard-transport-capability-url-async :client client)
+         (lambda (value) (setq result value))))
+      (should (equal call
+                     '("dash.example" 443 "https://dash.example"
+                       token "resolver" nil)))
+      (should (string-suffix-p "token=fresh" (plist-get result :url)))
+      (should-not (string-match-p "consumed" (format "%S" result))))))
+
+(ert-deftest hermes-dashboard-auth-results-classify-credential-lifetime ()
+  "Token auth is reusable while basic/native tickets are explicitly one-shot."
+  :tags '(candidate-4a)
+  (let ((token (hermes-dashboard-transport--remote-token-auth
+                "h" 1 "http://h:1" "legacy"))
+        (basic (hermes-dashboard-transport--basic-ticket-auth
+                "h" 1 "http://h:1" "password" "cookie"
+                '(:body ((ticket . "basic-ticket")))))
+        (native (hermes-dashboard-transport--native-ticket-auth
+                 "h" 1 "http://h:1"
+                 '(:access-token "access" :refresh-token "refresh")
+                 '(:body ((ticket . "native-ticket"))))))
+    (should (equal (list (plist-get token :kind) (plist-get token :reusable-p))
+                   '(legacy-token t)))
+    (dolist (auth (list basic native))
+      (should (equal (list (plist-get auth :kind) (plist-get auth :reusable-p))
+                     '(ticket nil))))))
+
+(ert-deftest hermes-dashboard-native-auth-requires-explicit-browser-authority ()
+  "Automatic native auth stays headless; one interactive call may browse once."
+  :tags '(candidate-4a)
+  (let ((browsed 0) automatic-reason interactive-result)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
+               (lambda (_base) nil))
+              ((symbol-function 'hermes-dashboard-transport--native-token-store)
+               (lambda (_base tokens) tokens))
+              ((symbol-function 'hermes-dashboard-transport--native-login-async)
+               (lambda (_base _provider)
+                 (hermes-dashboard-transport--browse-url "https://login.example")
+                 (hermes--promise-resolved
+                  '(:access-token "access" :refresh-token "refresh")))))
+      (let ((hermes-dashboard-transport-browse-url-function
+             (lambda (_url) (cl-incf browsed))))
+        (hermes--promise-then
+         (hermes-dashboard-transport--native-ensure-tokens-async
+          "https://dash.example" nil nil nil)
+         #'ignore (lambda (reason) (setq automatic-reason reason)))
+        (hermes--promise-then
+         (hermes-dashboard-transport--native-ensure-tokens-async
+          "https://dash.example" nil nil t)
+         (lambda (tokens) (setq interactive-result tokens)))))
+    (should automatic-reason)
+    (should interactive-result)
+    (should (= browsed 1))))
 
 (ert-deftest hermes-dashboard-kanban-events-url-async-resolves-fresh ()
   "Without a client, auth resolves against the configured URL and is path-swapped."

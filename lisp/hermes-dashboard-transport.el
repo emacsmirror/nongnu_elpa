@@ -260,7 +260,8 @@ CLIENT's legacy callback for single-callback callers."
                               client)))
                   (hermes-dashboard-transport--deliver fn event))))
           (hermes-dashboard-transport--broadcast-event client event))
-      (funcall (hermes-dashboard-transport-client-callback client) event))))
+      (hermes-dashboard-transport--deliver
+       (hermes-dashboard-transport-client-callback client) event))))
 
 (defvar hermes-dashboard-transport--clients (make-hash-table :test #'equal)
   "Hash of endpoint key to the shared dashboard client serving that endpoint.
@@ -1061,6 +1062,7 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
          (token (or token (hermes-dashboard-transport--generate-token)))
          (client (make-hermes-dashboard-transport-client
                   :host host :port port :token token
+                  :credential-kind 'spawn :credential-reusable-p t
                   :ready-promise (hermes--promise-make)
                   :callback (or callback #'ignore)))
          (argv (hermes-dashboard-transport--command host port command))
@@ -1089,7 +1091,11 @@ AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
         (hermes-dashboard-transport-client-redacted-websocket-url client)
         (plist-get auth :redacted-url)
         (hermes-dashboard-transport-client-secrets client)
-        (plist-get auth :secrets))
+        (plist-get auth :secrets)
+        (hermes-dashboard-transport-client-credential-kind client)
+        (plist-get auth :kind)
+        (hermes-dashboard-transport-client-credential-reusable-p client)
+        (plist-get auth :reusable-p))
   (hermes-dashboard-transport--dispatch-event
    client (hermes-dashboard-transport--remote-connect-event
            (plist-get auth :redacted-url)))
@@ -1109,6 +1115,7 @@ Emacs."
                      hermes-dashboard-transport-remote-auth-method))
          (client (make-hermes-dashboard-transport-client
                   :host host :port port :base-url base-url
+                  :auth-method method :auth-token token
                   :ready-promise (hermes--promise-make)
                   :callback (or callback #'ignore)))
          (generation (hermes-dashboard-transport-client-generation client)))
@@ -1119,12 +1126,13 @@ Emacs."
         client (hermes-dashboard-transport--remote-connected-event
                 (hermes-dashboard-transport--client-redacted-websocket-url
                  client)))))
-    (hermes--promise-then
-     (hermes-dashboard-transport--remote-auth-async host port base-url method
-                                                     token)
-     (lambda (auth)
-       (when (hermes-dashboard-transport--generation-live-p client generation)
-         (hermes-dashboard-transport--remote-connect client auth)))
+    (hermes--promise-catch
+     (hermes--promise-then
+      (hermes-dashboard-transport--remote-auth-async host port base-url method
+                                                      token t)
+      (lambda (auth)
+        (when (hermes-dashboard-transport--generation-live-p client generation)
+          (hermes-dashboard-transport--remote-connect client auth))))
      (lambda (reason)
        (when (hermes-dashboard-transport--generation-live-p client generation)
          (hermes-dashboard-transport--fail-ready

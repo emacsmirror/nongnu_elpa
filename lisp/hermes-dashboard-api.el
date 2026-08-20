@@ -535,6 +535,10 @@ Return a promise of the response plist."
   port
   token
   base-url
+  auth-method
+  auth-token
+  credential-kind
+  credential-reusable-p
   websocket-url
   redacted-websocket-url
   secrets
@@ -1162,6 +1166,7 @@ HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
                 host port ticket base-url "ticket")
           :redacted-url (hermes-dashboard-transport--redacted-websocket-url
                          host port base-url "ticket")
+          :kind 'ticket :reusable-p nil
           :secrets (delq nil (list access refresh ticket)))))
 
 (defun hermes-dashboard-transport--native-ticket-async
@@ -1214,10 +1219,10 @@ TOKENS must include a refresh token; successful rotation is stored."
          (hermes--promise-rejected reason))))))
 
 (defun hermes-dashboard-transport--native-ensure-tokens-async
-    (base-url &optional provider force-login)
+    (base-url &optional provider force-login interactive)
   "Return a promise of usable native tokens for BASE-URL.
 Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
-skip stored tokens and open the browser flow."
+skip stored tokens.  INTERACTIVE explicitly permits one browser login."
   (let ((stored (and (not force-login)
                      (hermes-dashboard-transport--native-token-load base-url))))
     (cond
@@ -1230,33 +1235,38 @@ skip stored tokens and open the browser flow."
       (hermes--promise-catch
        (hermes-dashboard-transport--native-refresh-async base-url stored)
        (lambda (reason)
-         ;; A dead refresh token forces a fresh interactive login; leave the
-         ;; previous store untouched until the new login succeeds.
-         (if (and (stringp reason) (string-match-p "(HTTP 401)" reason))
+         ;; A dead refresh token may force a fresh login only when the caller
+         ;; explicitly owns browser interaction; preserve the old store until
+         ;; the new login succeeds.
+         (if (and interactive (stringp reason)
+                  (string-match-p "(HTTP 401)" reason))
              (hermes--promise-then
               (hermes-dashboard-transport--native-login-async base-url provider)
               (lambda (tokens)
                 (hermes-dashboard-transport--native-token-store base-url tokens)
                 tokens))
            (hermes--promise-rejected reason)))))
-     (t
+     (interactive
       (hermes--promise-then
        (hermes-dashboard-transport--native-login-async base-url provider)
        (lambda (tokens)
          (hermes-dashboard-transport--native-token-store base-url tokens)
-         tokens))))))
+         tokens)))
+     (t
+      (hermes--promise-rejected
+       "Native dashboard sign-in requires explicit interactive authorization")))))
 
 (defun hermes-dashboard-transport--remote-native-auth-async
-    (host port base-url &optional status force-login)
+    (host port base-url &optional status force-login interactive)
   "Return a promise of native PKCE WebSocket auth for HOST, PORT, BASE-URL.
 Optional STATUS supplies the OAuth provider name.  FORCE-LOGIN skips stored
-tokens."
+tokens.  INTERACTIVE explicitly permits one browser login."
   (let ((provider (and status
                        (hermes-dashboard-transport--status-oauth-provider
                         status))))
     (hermes--promise-then
      (hermes-dashboard-transport--native-ensure-tokens-async
-      base-url provider force-login)
+      base-url provider force-login interactive)
      (lambda (tokens)
        (hermes-dashboard-transport--native-ticket-async
         host port base-url tokens)))))
@@ -1287,7 +1297,8 @@ Optional STATUS supplies the OAuth provider name."
 (defun hermes-dashboard-transport--client-secrets (client)
   "Return all known secret strings currently associated with CLIENT."
   (hermes-dashboard-transport--secret-list
-   (append (list (hermes-dashboard-transport-client-token client))
+   (append (list (hermes-dashboard-transport-client-token client)
+                 (hermes-dashboard-transport-client-auth-token client))
            (hermes-dashboard-transport-client-secrets client))))
 
 (defun hermes-dashboard-transport--client-redacted-websocket-url (client)
@@ -1920,6 +1931,7 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
          (redacted-url (hermes-dashboard-transport--redacted-websocket-url
                         host port base-url "token")))
     (list :token token :url url :redacted-url redacted-url
+          :kind 'legacy-token :reusable-p t
           :secrets (list token))))
 
 (defun hermes-dashboard-transport--basic-ticket-auth
@@ -1936,6 +1948,7 @@ redacted secret list."
                 host port ticket base-url "ticket")
           :redacted-url (hermes-dashboard-transport--redacted-websocket-url
                          host port base-url "ticket")
+          :kind 'ticket :reusable-p nil
           :secrets (list password cookies ticket))))
 
 (defun hermes-dashboard-transport--remote-basic-ticket-async
@@ -1984,10 +1997,10 @@ network; a missing token rejects the promise."
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-auth-async
-    (host port base-url method &optional token)
+    (host port base-url method &optional token interactive)
   "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
-Mirrors the previous synchronous resolution without blocking: the status probe
-and the basic password/ticket exchange resolve through promises."
+Mirrors the previous synchronous resolution without blocking.  INTERACTIVE
+explicitly permits native authentication to open one browser login."
   (pcase method
     ('token (hermes-dashboard-transport--remote-token-auth-async
              host port base-url token))
@@ -2000,7 +2013,7 @@ and the basic password/ticket exchange resolve through promises."
               (hermes-dashboard-transport--remote-status-async base-url)
               (lambda (status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status))))
+                host port base-url status nil interactive))))
     ('auto (hermes--promise-then
             (hermes-dashboard-transport--remote-status-async base-url)
             (lambda (status)
@@ -2012,7 +2025,7 @@ and the basic password/ticket exchange resolve through promises."
                ((hermes-dashboard-transport--status-supports-native-pkce-p
                  status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status))
+                 host port base-url status nil interactive))
                ((hermes-dashboard-transport--status-basic-provider status)
                 (hermes-dashboard-transport--remote-basic-auth-async
                  host port base-url status))
@@ -2040,13 +2053,19 @@ both URLs and SINCE/BOARD are appended as query parameters."
           :secrets (plist-get auth :secrets))))
 
 (defun hermes-dashboard-transport--client-auth-plist (client)
-  "Return a (:url :redacted-url :secrets) auth plist from live CLIENT, or nil."
-  (when-let* ((url (hermes-dashboard-transport-client-websocket-url client)))
+  "Return reusable active socket auth from CLIENT, or nil.
+Only explicitly reusable spawn, internal, and legacy-token credentials qualify."
+  (when-let* (((hermes-dashboard-transport-client-credential-reusable-p client))
+              ((memq (hermes-dashboard-transport-client-credential-kind client)
+                     '(spawn internal legacy-token)))
+              (url (hermes-dashboard-transport--client-websocket-url client)))
     (list :url url
           :redacted-url
           (or (hermes-dashboard-transport-client-redacted-websocket-url client)
-              url)
-          :secrets (hermes-dashboard-transport-client-secrets client))))
+              (hermes-dashboard-transport--client-redacted-websocket-url client))
+          :secrets (hermes-dashboard-transport--client-secrets client)
+          :kind (hermes-dashboard-transport-client-credential-kind client)
+          :reusable-p t)))
 
 (defun hermes-dashboard-transport--auth-plist-async (client)
   "Return a promise of a WebSocket auth (:url :redacted-url :secrets) plist.
@@ -2056,16 +2075,29 @@ the chat client does."
   (if-let* ((auth (and client
                        (hermes-dashboard-transport--client-auth-plist client))))
       (hermes--promise-resolved auth)
-    (let* ((target (hermes-dashboard-transport--parse-url
-                    hermes-dashboard-transport-url))
+    (let* ((target (and (not client)
+                        (hermes-dashboard-transport--parse-url
+                         hermes-dashboard-transport-url)))
            (host (or (plist-get target :host) "127.0.0.1"))
            (port (plist-get target :port))
            (remote-url (and (not (hermes-dashboard-transport--loopback-host-p host))
                             hermes-dashboard-transport-url))
-           (base-url (hermes-dashboard-transport--base-url host port remote-url))
-           (method (or hermes-dashboard-transport-remote-auth-method 'auto)))
+           (host (or (and client
+                          (hermes-dashboard-transport-client-host client))
+                     host))
+           (port (or (and client
+                          (hermes-dashboard-transport-client-port client))
+                     port))
+           (base-url (or (and client
+                              (hermes-dashboard-transport-client-base-url client))
+                         (hermes-dashboard-transport--base-url host port remote-url)))
+           (method (or (and client
+                            (hermes-dashboard-transport-client-auth-method client))
+                       hermes-dashboard-transport-remote-auth-method 'auto))
+           (token (and client
+                       (hermes-dashboard-transport-client-auth-token client))))
       (hermes-dashboard-transport--remote-auth-async
-       host port base-url method))))
+       host port base-url method token nil))))
 
 (cl-defun hermes-dashboard-transport-kanban-events-url-async
     (&key since board client)
