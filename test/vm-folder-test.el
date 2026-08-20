@@ -4073,32 +4073,73 @@ have been stated, and it has to beat `vm-default-folder-type'."
       (setq vm-folder-type 'BellFrom_)
       (should (eq 'BellFrom_ (vm-folder-type-to-write "/tmp/imap-cache-ab.mboxcl2"))))))
 
+(defmacro vm-folder-test--two-mboxcl2-messages (&rest body)
+  "Visit a two-message mboxcl2 folder and run BODY in it.
+The first message is shaped as a headers-only fetch writes one: a length of
+zero and no body, so its text region is empty and ends where the second
+message begins."
+  (declare (indent 0) (debug t))
+  `(vm-folder-test-with-file
+       (file "two.mboxcl2"
+             (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                     "Content-Length: 0\nFrom: alice@example.com\n"
+                     "Subject: one\n\n"
+                     "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                     "Content-Length: 5\nFrom: bob@example.com\n"
+                     "Subject: two\n\nbody\n"))
+     (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+       (vm-folder-test--visiting file
+         (should (eq vm-folder-type 'mboxcl2))
+         ,@body))))
+
+(ert-deftest vm-folder-test-a-body-lands-before-the-next-message-not-inside-it ()
+  "REGRESSION: a retrieved body does not end up in the next message's headers.
+Issue #737.  An mboxcl2 folder's trailing separator is empty, so a message
+whose body has not been retrieved ends exactly where the next one begins --
+and a marker at the position text is inserted at stays in front of that text,
+so the next message's start was left reading the body."
+  (vm-folder-test--two-mboxcl2-messages
+    (let ((m1 (car vm-message-list))
+          (m2 (nth 1 vm-message-list))
+          (inhibit-read-only t))
+      ;; the precondition: the two positions are the same one
+      (should (= (vm-text-end-of m1) (vm-start-of m2)))
+      (save-restriction
+        (widen)
+        (narrow-to-region (vm-headers-of m1) (vm-text-end-of m1))
+        (goto-char (vm-text-of m1))
+        (insert "INSERTED BODY\n")
+        (vm-settle-message-boundaries m1))
+      (save-restriction
+        (widen)
+        (should (= (vm-start-of m2) (vm-text-end-of m1)))
+        (should (string-prefix-p
+                 "From bob@example.com"
+                 (buffer-substring (vm-start-of m2)
+                                   (min (point-max)
+                                        (+ 20 (marker-position
+                                               (vm-start-of m2)))))))
+        ;; and the body is where it belongs, in message one
+        (should (string-match-p
+                 "INSERTED BODY"
+                 (buffer-substring (vm-text-of m1) (vm-text-end-of m1))))))))
+
 (ert-deftest vm-folder-test-a-body-that-arrives-brings-its-length-up-to-date ()
   "A `Content-Length' says what the body is now, not what it was.
 An external message's headers are written with a length of zero and the body
 arrives later.  In an mboxcl2 folder that header is where the next message
 starts, so a stale one puts every message after this one in the wrong place."
-  (vm-folder-test-with-file
-      (file "two.mboxcl2"
-            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
-                    "Content-Length: 0\nFrom: alice@example.com\n"
-                    "Subject: one\n\n"
-                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
-                    "Content-Length: 5\nFrom: bob@example.com\n"
-                    "Subject: two\n\nbody\n"))
-    (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
-      (vm-folder-test--visiting file
-        (should (eq vm-folder-type 'mboxcl2))
-        (let ((m (car vm-message-list))
-              (inhibit-read-only t))
-          (save-restriction
-            (widen)
-            (goto-char (vm-text-of m))
-            (insert "six.\n")
-            (set-marker (vm-text-end-of m) (point))
-            (vm-set-content-length-of m)
-            (goto-char (vm-headers-of m))
-            (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))))
+  (vm-folder-test--two-mboxcl2-messages
+    (let ((m (car vm-message-list))
+          (inhibit-read-only t))
+      (save-restriction
+        (widen)
+        (goto-char (vm-text-of m))
+        (insert "six.\n")
+        (set-marker (vm-text-end-of m) (point))
+        (vm-set-content-length-of m)
+        (goto-char (vm-headers-of m))
+        (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))
 
 (provide 'vm-folder-test)
 

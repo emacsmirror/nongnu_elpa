@@ -6327,6 +6327,30 @@ bodies in one command can do this for each of them as its response arrives
   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
   (delete-region (point) (point-max)))
 
+(defun vm-settle-message-boundaries (mm)
+  "Put the boundary markers MM's body was inserted in front of back in order.
+MM's text now ends at point-max, the folder being narrowed to MM.
+
+A marker at the position text is inserted at stays in front of that text, so
+every marker that sat at the end of MM's empty text region is now before the
+body rather than after it: MM's own end, and the start of the message that
+follows it.  The bytes are in the right order -- only the markers were left
+behind, which is why this repairs them rather than the insertion being done
+differently.
+
+An mboxcl2 folder is where they coincide.  Its trailing message separator is
+the empty string (`vm-trailing-message-separator'), so a message whose body
+has not been retrieved ends exactly where the next one begins, and that is
+also where the body goes.  A From_ folder has a newline between the two and
+nothing here has anything to do.  Issue #737."
+  (let ((end (point-max))
+	(next (cadr (memq mm vm-message-list))))
+    (set-marker (vm-text-end-of mm) end)
+    (when (< (vm-end-of mm) end)
+      (set-marker (vm-end-of mm) end))
+    (when (and next (< (vm-start-of next) end))
+      (set-marker (vm-start-of next) end))))
+
 (defun vm-settle-message-body (mm modified)
   "Put the folder and MM in order after its body has been inserted.
 MODIFIED is what `buffer-modified-p' said before the retrieval.  The other
@@ -6345,7 +6369,7 @@ took the whole message out again."
    (or (re-search-forward "\n\n" (point-max) t) (point-max)))
   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
   ;; fix markers now
-  (set-marker (vm-text-end-of mm) (point-max))
+  (vm-settle-message-boundaries mm)
   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
   ;; the headers were written with a length of zero, and in an mboxcl2 folder
   ;; that is where the next message starts
