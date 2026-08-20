@@ -4304,6 +4304,52 @@ starts, so a stale one puts every message after this one in the wrong place."
         (goto-char (vm-headers-of m))
         (should (re-search-forward "^Content-Length: 5$" (vm-text-of m) t))))))
 
+
+;;; a folder is shown under its own name (issue #738)
+
+(ert-deftest vm-folder-test-a-folder-keeps-its-name-over-an-open-buffer ()
+  "REGRESSION: a folder is shown under its name even where its file was open.
+Issue #738.  `vm-read-folder' answered with the buffer already visiting the
+file and left it named after the file, which for an IMAP or POP folder is the
+local cache -- imap-cache-<md5>, saying nothing about which mailbox it holds.
+Something else makes that buffer: desktop.el restoring the session,
+`recover-file', or a plain `find-file'."
+  (vm-folder-test-with-file
+      (file "imap-cache-0123456789abcdef"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "From: alice@example.com\nSubject: one\n\nBody.\n"))
+    (let ((opened (find-file-noselect file))
+          (before (buffer-list)))
+      (unwind-protect
+          (progn
+            ;; as something other than VM left it
+            (should (equal (buffer-name opened)
+                           (file-name-nondirectory file)))
+            (let ((buffer (vm-read-folder file nil "ucsc")))
+              (should (eq buffer opened))
+              (should (equal (buffer-name buffer) "ucsc"))))
+        (dolist (buffer (buffer-list))
+          (when (or (eq buffer opened) (not (memq buffer before)))
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest vm-folder-test-a-folder-with-no-name-of-its-own-keeps-the-buffer ()
+  "A plain file folder has no name but its file's, and nothing is renamed."
+  (vm-folder-test-with-file
+      (file "plain.mbox"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "From: alice@example.com\nSubject: one\n\nBody.\n"))
+    (let ((opened (find-file-noselect file)))
+      (unwind-protect
+          (progn
+            (should (eq opened (vm-read-folder file)))
+            (should (equal (buffer-name opened)
+                           (file-name-nondirectory file))))
+        (when (buffer-live-p opened)
+          (with-current-buffer opened (set-buffer-modified-p nil))
+          (kill-buffer opened))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
