@@ -9,8 +9,8 @@ doomgeneric_emacs.so: doomgeneric.zip
 	unzip -q doomgeneric.zip '*/doomgeneric/*' -d doomgeneric_tmp
 	mv doomgeneric_tmp/*/doomgeneric .
 	rm -rf doomgeneric_tmp
-	cp emacs-module.h doomgeneric_emacs.c Makefile.emacs doomgeneric/
-	cd doomgeneric && $(MAKE) -f Makefile.emacs -j$$(nproc)
+	cp emacs-module.h doomgeneric_emacs.c doomgeneric_emacs.mk doomgeneric/
+	cd doomgeneric && $(MAKE) -f doomgeneric_emacs.mk -j$$(nproc)
 	cp doomgeneric/doomgeneric_emacs.so .
 	rm -rf doomgeneric_tmp doomgeneric
 
