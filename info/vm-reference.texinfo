@@ -1293,6 +1293,10 @@ recomputes every @code{Content-Length}.  That is the repair for a folder whose
 lengths are wrong -- and a wrong length is not a missing one, so such a folder
 opens without complaint and the reader quietly falls back on searching for the
 next separator.
+
+Without FILE the folder in the current buffer is converted, and a buffer whose
+visit failed partway is refused: it holds only the messages read before the
+error, and the on-disk conversion is what such a folder wants.
 @end deffn
 
 @deffn Command vm-emit-totals-blurb
