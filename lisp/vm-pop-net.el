@@ -231,6 +231,7 @@ generator rather than dropping it."
 (declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
 (declare-function vm-popdrop-sans-password "vm-misc" (source))
 (declare-function vm-binary-coding-system "vm-misc" ())
+(declare-function vm-folder-type-to-write "vm-folder" (&optional file))
 
 (defvar vm-pop-server-timeout)
 (defvar vm-pop-retrieved-messages)
@@ -717,7 +718,7 @@ the server still has is what VM has not saved yet."
   (let ((folder (current-buffer))
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back
-	(folder-type (or vm-folder-type vm-default-folder-type)))
+	(folder-type (vm-folder-type-to-write)))
     (vm-pop-net-when-free
      (format "fetching from %s" (vm-safe-popdrop-string source))
      (lambda ()
@@ -995,7 +996,7 @@ Nil means this maildrop is one that cannot be opened without waiting, or a
 session is already running, and the caller is to use the blocking path."
   (let* ((folder (current-buffer))
 	 (source (vm-folder-pop-maildrop-spec))
-	 (folder-type (or vm-folder-type vm-default-folder-type)))
+	 (folder-type (vm-folder-type-to-write)))
     (cond
      ((vm-pop-net-busy-p) nil)
      (t

@@ -541,6 +541,7 @@ read, which is what keeps a mailbox of any size out of memory."
 
 (declare-function vm-parse "vm-misc" (string regexp &optional matchn matches))
 (declare-function vm-binary-coding-system "vm-misc" ())
+(declare-function vm-folder-type-to-write "vm-folder" (&optional file))
 
 (defvar vm-imap-server-timeout)
 (defvar vm-imap-passwords)
@@ -1244,7 +1245,7 @@ expunged."
     		(vm-imap-normal-error
     		 "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
     		 mailbox)))
-	    (setq folder-type (or vm-folder-type vm-default-folder-type))
+	    (setq folder-type (vm-folder-type-to-write))
 	    (vm-set-folder-imap-uid-validity uid-validity)
 	    (vm-set-folder-imap-mailbox-count count)
 	    (unless (vm-folder-imap-retrieved-count)
@@ -3091,7 +3092,7 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
 (defun vm-imap-net-move-mail-1 (source crash-box callback)
   "Fetch from SOURCE into CRASH-BOX now.  See `vm-imap-net-move-mail\='."
   (let* ((folder (current-buffer))
-	 (folder-type (or vm-folder-type vm-default-folder-type))
+	 (folder-type (vm-folder-type-to-write))
 	 (retrieved vm-imap-retrieved-messages)
 	 (delete (vm-imap-net-auto-expunge-p source))
 	 (opened (vm-imap-net-open source "IMAP movemail" 'may-ask))
