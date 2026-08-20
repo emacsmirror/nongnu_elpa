@@ -1197,17 +1197,18 @@ for that."
   (interactive)
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support stopping processes"))
-  (let ((buffer (current-buffer)))
+  (let ((buffer (current-buffer))
+        (lifetime hermes-chat--lifecycle-generation))
     (hermes-dashboard-transport-process-stop
      hermes-chat--dashboard-client
      :resolve (lambda (result)
-                (hermes-chat--in-buffer buffer
+                (hermes-chat--in-lifetime buffer lifetime
                   (hermes-chat--insert-local-status
                    (format "Stopped %s background process(es)"
                            (or (hermes-transport--get result 'killed) 0))
                    'done)))
      :reject (lambda (message)
-               (hermes-chat--in-buffer buffer
+               (hermes-chat--in-lifetime buffer lifetime
                  (hermes-chat--command-error message))))))
 
 (defun hermes-chat--reset-transcript ()
@@ -1392,7 +1393,8 @@ visible while reading."
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session over the dashboard and render its prior messages."
   (with-current-buffer buffer
-    (let ((client
+    (let ((lifetime hermes-chat--lifecycle-generation)
+          (client
            (hermes-chat--dashboard-start
             (hermes-chat--transport-callback
              buffer nil t (hermes-chat--next-transport-generation)))))
@@ -1401,12 +1403,12 @@ visible while reading."
        :cols (hermes-chat--dashboard-cols)
        :profile hermes-chat--profile
        :resolve (lambda (result)
-                  (hermes-chat--in-buffer buffer
+                  (hermes-chat--in-lifetime buffer lifetime
                     (hermes-chat--dashboard-record-session client result)
                     (hermes-chat--render-history
                      (hermes-transport--get result 'messages))))
        :reject (lambda (message)
-                 (hermes-chat--in-buffer buffer
+                 (hermes-chat--in-lifetime buffer lifetime
                    (hermes-chat--insert-local-status
                     (format "Could not load Hermes session history: %s" message)
                     'error)))))))
@@ -1768,6 +1770,7 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (setq-local scroll-conservatively 5)
   (setq-local display-line-numbers nil)
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
+  (add-hook 'change-major-mode-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--model-capf t t)
   (add-hook 'completion-at-point-functions #'hermes-chat--file-ref-capf t t)

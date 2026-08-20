@@ -626,6 +626,8 @@ the board detail buffer shows the most recently created tasks at the top."
   "Major mode for browsing a single Hermes Kanban board."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-kanban--revert)
+  (add-hook 'kill-buffer-hook #'hermes-kanban--events-teardown nil t)
+  (add-hook 'change-major-mode-hook #'hermes-kanban--events-teardown nil t)
   (add-hook 'window-size-change-functions
             #'hermes-kanban--window-size-change nil t)
   (hermes-kanban--init-board-header))

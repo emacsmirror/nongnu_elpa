@@ -1753,8 +1753,52 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (should (= 7 (hermes-kanban--events-tail-cursor
                     hermes-kanban--events-tail)))
       (should (memq #'hermes-kanban--events-teardown kill-buffer-hook))
+      (should (memq #'hermes-kanban--events-teardown change-major-mode-hook))
       (hermes-kanban-toggle-live)
       (should-not hermes-kanban--events-tail))))
+
+(ert-deftest hermes-kanban-mode-exit-and-kill-release-tail-once ()
+  "Mode exit and kill each deactivate and release one captured live tail."
+  (dolist (exit '(mode-change kill))
+    (let ((buffer (generate-new-buffer " *hermes-kanban-cleanup*"))
+          cancelled closed old-tail)
+      (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 80))
+                ((symbol-function 'cancel-timer)
+                 (lambda (timer) (push timer cancelled)))
+                ((symbol-function 'websocket-close)
+                 (lambda (socket) (push socket closed))))
+        (unwind-protect
+            (with-current-buffer buffer
+              (hermes-kanban-mode)
+              (setq old-tail
+                    (hermes-kanban--events-tail-create
+                     :buffer buffer :slug "old" :socket 'old-socket
+                     :refresh-timer 'refresh :reconnect-timer 'reconnect)
+                    hermes-kanban--events-tail old-tail)
+              (if (eq exit 'kill)
+                  (kill-buffer buffer)
+                (fundamental-mode)
+                (hermes-kanban-mode)
+                (let ((successor
+                       (hermes-kanban--events-tail-create
+                        :buffer buffer :slug "new")))
+                  (setq hermes-kanban--events-tail successor)
+                  (cl-letf (((symbol-function 'revert-buffer)
+                             (lambda (&rest _) (ert-fail "stale refresh")))
+                            ((symbol-function 'hermes-kanban--events-connect)
+                             (lambda (&rest _) (ert-fail "stale reconnect"))))
+                    (hermes-kanban--events-refresh old-tail)
+                    (hermes-kanban--events-do-reconnect old-tail))
+                  (should (eq hermes-kanban--events-tail successor)))
+                (kill-buffer buffer)))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer)))
+        (should-not (hermes-kanban--events-tail-active old-tail))
+        (should (equal (sort cancelled
+                             (lambda (left right)
+                               (string< (symbol-name left) (symbol-name right))))
+                       '(reconnect refresh)))
+        (should (equal closed '(old-socket)))))))
 
 (ert-deftest hermes-kanban-render-board-seeds-latest-event-id ()
   "Rendering a board records its latest_event_id for live seeding."

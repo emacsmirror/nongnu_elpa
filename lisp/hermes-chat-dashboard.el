@@ -207,11 +207,13 @@ so a new session can be started afterwards."
   (hermes-chat--forget-live-dashboard-session))
 
 (defun hermes-chat--cleanup-buffer ()
-  "Release per-buffer Hermes chat resources before killing the buffer."
-  (run-hooks 'hermes-chat-cleanup-functions)
-  (hermes-chat--invalidate-transport-state)
-  (hermes-chat--stop-dashboard-client)
-  (hermes-chat--notify-state-change))
+  "Release this chat lifetime's resources before mode exit or buffer kill."
+  (unless hermes-chat--cleanup-done-p
+    (setq hermes-chat--cleanup-done-p t)
+    (hermes-chat--invalidate-transport-state)
+    (run-hooks 'hermes-chat-cleanup-functions)
+    (hermes-chat--stop-dashboard-client)
+    (hermes-chat--notify-state-change)))
 
 (defun hermes-chat--next-transport-generation ()
   "Advance and return this buffer's transport callback generation."
@@ -644,8 +646,8 @@ shared client."
 (defun hermes-chat--dashboard-context-current-p
     (client generation &optional session-id)
   "Return non-nil when CLIENT, GENERATION, and SESSION-ID still own this chat."
-  (and (eq client hermes-chat--dashboard-client)
-       (= generation hermes-chat--lifecycle-generation)
+  (and (hermes-chat--current-lifetime-p generation)
+       (eq client hermes-chat--dashboard-client)
        (or (null session-id)
            (equal session-id hermes-chat--dashboard-active-session-id))))
 
@@ -771,31 +773,33 @@ shared client."
 (defun hermes-chat--transport-callback
     (buffer assistant-id dashboard-p generation)
   "Return transport callback for BUFFER, ASSISTANT-ID, DASHBOARD-P, and GENERATION."
-  (lambda (event)
-    (hermes-chat--in-buffer buffer
-      (when (and (hermes-chat--current-transport-generation-p generation)
-                 (or (not dashboard-p)
-                     (and (not (hermes-chat--dashboard-control-error-event-p
-                                event))
-                          (hermes-chat--dashboard-event-for-session-p event))))
-        (unless (and dashboard-p
-                     (funcall hermes-chat--busy-submit-event-function event))
-          (if (and dashboard-p
-                   (hermes-chat--assistant-independent-event-p event))
-              (hermes-chat--handle-transport-event nil event)
-            (when dashboard-p
-              (hermes-chat--dashboard-start-server-turn
-               hermes-chat--dashboard-client event))
-            (when-let* ((target-id (if dashboard-p
-                                       (hermes-chat--dashboard-event-assistant-id
-                                        assistant-id event)
-                                     assistant-id)))
-              (if (and dashboard-p
-                       (hermes-chat--dashboard-suppressed-content-event-p
-                        event))
-                  (hermes-chat--handle-suppressed-dashboard-terminal-event
-                   target-id event)
-                (hermes-chat--handle-transport-event target-id event)))))))))
+  (let ((lifetime (buffer-local-value 'hermes-chat--lifecycle-generation buffer)))
+    (lambda (event)
+      (hermes-chat--in-lifetime buffer lifetime
+        (when (and (hermes-chat--current-transport-generation-p generation)
+                   (or (not dashboard-p)
+                       (and (not (hermes-chat--dashboard-control-error-event-p
+                                  event))
+                            (hermes-chat--dashboard-event-for-session-p event))))
+          (unless (and dashboard-p
+                       (funcall hermes-chat--busy-submit-event-function event))
+            (if (and dashboard-p
+                     (hermes-chat--assistant-independent-event-p event))
+                (hermes-chat--handle-transport-event nil event)
+              (when dashboard-p
+                (hermes-chat--dashboard-start-server-turn
+                 hermes-chat--dashboard-client event))
+              (when-let* ((target-id
+                           (if dashboard-p
+                               (hermes-chat--dashboard-event-assistant-id
+                                assistant-id event)
+                             assistant-id)))
+                (if (and dashboard-p
+                         (hermes-chat--dashboard-suppressed-content-event-p
+                          event))
+                    (hermes-chat--handle-suppressed-dashboard-terminal-event
+                     target-id event)
+                  (hermes-chat--handle-transport-event target-id event))))))))))
 
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
@@ -1443,17 +1447,18 @@ defaults to this chat's gateway working directory."
 With no live session, keep the title as local session metadata."
   (if (and (hermes-chat--dashboard-session-attached-p)
            hermes-chat--dashboard-active-session-id)
-      (let ((buffer (current-buffer)))
+      (let ((buffer (current-buffer))
+            (lifetime hermes-chat--lifecycle-generation))
         (hermes-dashboard-transport-session-title
          hermes-chat--dashboard-client
          :session-id hermes-chat--dashboard-active-session-id
          :title title
          :resolve (lambda (result)
-                    (when (and (buffer-live-p buffer)
-                               (eq (hermes-transport--get result 'pending) t))
-                      (message "Title queued; applies once the session is saved")))
+                    (hermes-chat--in-lifetime buffer lifetime
+                      (when (eq (hermes-transport--get result 'pending) t)
+                        (message "Title queued; applies once the session is saved"))))
          :reject (lambda (message)
-                   (hermes-chat--in-buffer buffer
+                   (hermes-chat--in-lifetime buffer lifetime
                      (hermes-chat--command-error message)))))
     (message "Session title saved locally; no live session to update")))
 
@@ -1471,9 +1476,9 @@ MANUAL-P is nil (the user has not pinned a title)."
        (not (string-empty-p title))
        (not (equal title current))))
 
-(defun hermes-chat--apply-fetched-title (buffer result)
-  "Apply the session title carried by RESULT to BUFFER when it should change."
-  (hermes-chat--in-buffer buffer
+(defun hermes-chat--apply-fetched-title (buffer lifetime result)
+  "Apply RESULT's title when BUFFER still owns LIFETIME."
+  (hermes-chat--in-lifetime buffer lifetime
     (let ((title (string-trim
                   (or (hermes-transport--scalar-string
                        (hermes-transport--get result 'title))
@@ -1482,17 +1487,17 @@ MANUAL-P is nil (the user has not pinned a title)."
              title hermes-chat--title hermes-chat--title-manual-p)
         (hermes-chat--apply-session-title title)))))
 
-(defun hermes-chat--fetch-session-title (buffer)
-  "Fetch BUFFER's server session title and apply it as session metadata.
+(defun hermes-chat--fetch-session-title (buffer lifetime)
+  "Fetch BUFFER's title while it still owns LIFETIME.
 Guards are re-checked here since this runs after the turn settles."
-  (hermes-chat--in-buffer buffer
+  (hermes-chat--in-lifetime buffer lifetime
     (when (and (hermes-chat--dashboard-session-attached-p)
                (not hermes-chat--title-manual-p))
       (hermes-dashboard-transport-session-title-fetch
        hermes-chat--dashboard-client
        :session-id hermes-chat--dashboard-active-session-id
        :resolve (lambda (result)
-                  (hermes-chat--apply-fetched-title buffer result))
+                  (hermes-chat--apply-fetched-title buffer lifetime result))
        ;; A background title fetch must never surface as a chat error; swallow
        ;; failures rather than letting them reach the transport callback.
        :reject #'ignore))))
@@ -1503,7 +1508,8 @@ Deferred to the next idle moment so no network I/O runs inside the transport
 event handler.  A no-op without a live dashboard session or with a manual title."
   (when (and (hermes-chat--dashboard-session-attached-p)
              (not hermes-chat--title-manual-p))
-    (run-at-time 0 nil #'hermes-chat--fetch-session-title (current-buffer))))
+    (run-at-time 0 nil #'hermes-chat--fetch-session-title
+                 (current-buffer) hermes-chat--lifecycle-generation)))
 
 (defun hermes-chat-rename (title)
   "Rename this chat session to TITLE.
@@ -1561,19 +1567,20 @@ BUFFER's client gains a result listener when no turn is streaming, so the
 
 (defun hermes-chat--background-submit (content buffer)
   "Launch CONTENT as a background task for BUFFER's dashboard session."
-  (hermes-chat--with-dashboard-session
-   content buffer
-   (lambda (live-client)
-     (hermes-dashboard-transport-prompt-background
-      live-client content
-      :session-id hermes-chat--dashboard-active-session-id
-      :resolve (lambda (result)
-                 (hermes-chat--in-buffer buffer
-                   (hermes-chat--background-started result content buffer)))
-      :reject (lambda (message)
-                (hermes-chat--in-buffer buffer
-                  (hermes-chat--command-error message)
-                  (hermes-chat--preserve-control-content content)))))))
+  (let ((lifetime hermes-chat--lifecycle-generation))
+    (hermes-chat--with-dashboard-session
+     content buffer
+     (lambda (live-client)
+       (hermes-dashboard-transport-prompt-background
+        live-client content
+        :session-id hermes-chat--dashboard-active-session-id
+        :resolve (lambda (result)
+                   (hermes-chat--in-lifetime buffer lifetime
+                     (hermes-chat--background-started result content buffer)))
+        :reject (lambda (message)
+                  (hermes-chat--in-lifetime buffer lifetime
+                    (hermes-chat--command-error message)
+                    (hermes-chat--preserve-control-content content))))))))
 
 (defun hermes-chat--handle-background-complete (event)
   "Insert a persistent result entry for a `background' EVENT.

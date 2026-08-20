@@ -199,7 +199,7 @@ With nil CLAIM, release any claim for KEY."
          (hermes-dashboard-transport-client-websocket client)
          (equal hermes-chat--dashboard-active-session-id
                 (plist-get context :session-id))
-         (= hermes-chat--lifecycle-generation (plist-get context :generation))
+         (eql hermes-chat--lifecycle-generation (plist-get context :generation))
          (eq hermes-chat--pending-prompts (plist-get context :prompts))
          (when-let* ((prompt (gethash key hermes-chat--pending-prompts)))
            (and (or (null expected) (eq prompt expected))
@@ -683,7 +683,7 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
   (and (eq hermes-chat--dashboard-client (plist-get context :client))
        (equal hermes-chat--dashboard-active-session-id
               (plist-get context :session-id))
-       (= hermes-chat--lifecycle-generation (plist-get context :generation))
+       (eql hermes-chat--lifecycle-generation (plist-get context :generation))
        (eq hermes-chat--pending-prompts (plist-get context :prompts))
        (eq (plist-get
             (gethash (plist-get context :key) hermes-chat--pending-prompts)
