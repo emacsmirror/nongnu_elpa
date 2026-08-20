@@ -4535,6 +4535,22 @@ run `vm-expunge-folder' followed by `vm-save-folder'."
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs, maybe?
 
 ;;;###autoload
+(defun vm-rename-folder-buffer (buffer folder-name)
+  "Give BUFFER the name FOLDER-NAME, and answer with it.  Nil stays nil.
+A folder VM is asked for by name is shown under that name even where the
+buffer for its file was made by something else -- desktop.el restoring the
+session, `recover-file\=', or a plain `find-file\=' -- since that buffer is named
+after the file.  For an IMAP or POP folder the file is the local cache,
+imap-cache-<md5>, which says nothing about which mailbox it holds.
+
+`rename-buffer\=' uniquifies, so a name already taken gets a suffix rather than
+an error."
+  (when buffer
+    (when (and folder-name (not (equal (buffer-name buffer) folder-name)))
+      (with-current-buffer buffer
+	(rename-buffer folder-name t)))
+    buffer))
+
 (defun vm-read-folder (folder &optional remote-spec folder-name)
   "Reads the FOLDER from the file system and creates a buffer.
 Returns the buffer created.
@@ -4551,7 +4567,7 @@ be used as the name of the buffer."
     (if (file-directory-p file)
 	;; MH code perhaps... ?
 	(error "%s is a directory" file)
-      (or (vm-get-file-buffer file)
+      (or (vm-rename-folder-buffer (vm-get-file-buffer file) folder-name)
 	  (let ((default-directory
 		  (or (and vm-folder-directory
 			   (expand-file-name vm-folder-directory))
