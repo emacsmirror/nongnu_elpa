@@ -13,7 +13,10 @@ endif
 
 EMACS ?= emacs
 EMACS_CMD ?= $(EMACS)
+EMACSCLIENT ?= emacsclient
 KEYMAP_POPUP ?=
+
+export EMACSCLIENT
 
 SRCS = lisp/hermes-promise.el lisp/hermes-notifications.el lisp/hermes-session-title.el lisp/hermes-transport.el lisp/hermes-transport-cli.el lisp/hermes-dashboard-api.el lisp/hermes-dashboard-transport.el lisp/hermes-dashboard-rpc.el lisp/hermes-chat-format.el lisp/hermes-chat-render.el lisp/hermes-chat-buffer.el lisp/hermes-chat-prompts.el lisp/hermes-chat-dashboard.el lisp/hermes-chat-models.el lisp/hermes-chat-handoff.el lisp/hermes-chat-slash.el lisp/hermes-chat.el lisp/hermes-browser.el lisp/hermes-sessions.el lisp/hermes-inventory.el lisp/hermes-rollback.el lisp/hermes-subagents.el lisp/hermes-cron.el lisp/hermes-profiles.el lisp/hermes-messaging.el lisp/hermes-kanban-log.el lisp/hermes-kanban-events.el lisp/hermes-kanban.el lisp/hermes-mcp.el lisp/hermes-config.el lisp/hermes-system.el lisp/hermes-command-palette.el lisp/hermes-exec.el lisp/hermes-onboarding.el lisp/hermes-capabilities.el lisp/hermes.el
 TEST_SUPPORT = tests/hermes-test-helpers.el
@@ -34,7 +37,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all verify-sources compile do-compile test do-test lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load clean
+.PHONY: all verify-sources compile do-compile test do-test test-load lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load do-load clean
 
 all: compile
 
@@ -93,6 +96,55 @@ do-test:
 	      --eval '(ert-run-tests-batch-and-exit (quote $(SELECTOR)))' || exit 1; \
 	  done
 
+test-load:
+	@test_root=$$(mktemp -d) || exit 1; \
+	  trap 'rm -rf "$$test_root"' 0 1 2 15; \
+	  fake="$$test_root/emacsclient"; configured="$$test_root/configured-client"; \
+	  log="$$test_root/calls"; expected="$$test_root/expected"; \
+	  configured_mark="$$test_root/configured-called"; conflict="$$test_root/conflict.mk"; \
+	  printf '%s\n' '#!/bin/sh' \
+	    'case "$$*" in' \
+	    '  *makunbound*) kind=reset ;;' \
+	    '  *load-file*)' \
+	    '    kind=; for f in $${FAKE_EMACSCLIENT_SRCS:?}; do' \
+	    '      case "$$*" in *"$$f"*) kind="load:$$f"; break ;; esac' \
+	    '    done ;;' \
+	    '  *"dolist (buf (buffer-list))"*) kind=refresh ;;' \
+	    '  *) kind=other ;;' \
+	    'esac' \
+	    'printf "%s\n" "$$kind" >> "$${FAKE_EMACSCLIENT_LOG:?}"' \
+	    'case "$$kind" in' \
+	    '  "load:$${FAKE_EMACSCLIENT_FAIL-}")' \
+	    '    [ -z "$${FAKE_EMACSCLIENT_FAIL-}" ] || exit 1 ;;' \
+	    'esac' > "$$fake" || exit 1; \
+	  printf '%s\n' '#!/bin/sh' \
+	    'printf called > "$${FAKE_CONFIGURED_MARK:?}"' > "$$configured" || exit 1; \
+	  chmod +x "$$fake" "$$configured" || exit 1; \
+	  printf 'EMACSCLIENT := %s\n' "$$configured" > "$$conflict" || exit 1; \
+	  if MAKEFILES="$$conflict" FAKE_CONFIGURED_MARK="$$configured_mark" \
+	      FAKE_EMACSCLIENT_LOG="$$log" FAKE_EMACSCLIENT_FAIL=fail.el \
+	      FAKE_EMACSCLIENT_SRCS='ok-before.el fail.el ok-after.el' \
+	      $(MAKE) --no-print-directory load EMACSCLIENT="$$fake" \
+	        SRCS='ok-before.el fail.el ok-after.el' \
+	        > "$$test_root/failure-output" 2>&1; then \
+	    echo "failing module load unexpectedly succeeded"; exit 1; \
+	  fi; \
+	  printf '%s\n' reset load:ok-before.el load:fail.el load:ok-after.el > "$$expected"; \
+	  cmp -s "$$expected" "$$log" || exit 1; \
+	  ! grep -q 'Loaded all modules into Emacs' "$$test_root/failure-output" || exit 1; \
+	  test ! -e "$$configured_mark" || exit 1; \
+	  : > "$$log"; \
+	  MAKEFILES="$$conflict" FAKE_CONFIGURED_MARK="$$configured_mark" \
+	    FAKE_EMACSCLIENT_LOG="$$log" \
+	    FAKE_EMACSCLIENT_SRCS='ok-before.el ok-after.el' \
+	    $(MAKE) --no-print-directory load EMACSCLIENT="$$fake" \
+	      SRCS='ok-before.el ok-after.el' \
+	      > "$$test_root/success-output" 2>&1 || exit 1; \
+	  printf '%s\n' reset load:ok-before.el load:ok-after.el refresh > "$$expected"; \
+	  cmp -s "$$expected" "$$log" || exit 1; \
+	  grep -q 'Loaded all modules into Emacs' "$$test_root/success-output" || exit 1; \
+	  test ! -e "$$configured_mark" || exit 1
+
 lint:
 	@$(ENV_MAKE) do-lint
 
@@ -117,9 +169,9 @@ do-native-comp:
 dev:
 	@$(ENV_MAKE) do-compile do-lint do-test
 
-check: verify-sources dev
+check: verify-sources test-load dev
 
-pre-commit: verify-sources
+pre-commit: verify-sources test-load
 	git diff --check
 	@$(ENV_MAKE) do-compile do-lint do-native-comp do-test
 
@@ -137,17 +189,23 @@ pre-handoff-check:
 	    ".#checks.$$system.package-smoke"
 
 load: clean
-	@emacsclient --eval "(progn \
+	@$(MAKE) --no-print-directory do-load
+
+do-load:
+	@$(EMACSCLIENT) --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
 	  (mapatoms (lambda (s) \
 	    (when (and (string-prefix-p \"hermes-\" (symbol-name s)) \
 	               (boundp s) (keymapp (symbol-value s))) \
-	      (makunbound s)))))" > /dev/null
-	@for f in $(SRCS); do \
-	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m $$f\n"; \
-	done
-	@emacsclient --eval "(dolist (buf (buffer-list)) \
+	      (makunbound s)))))" > /dev/null || exit 1; \
+	failed=0; \
+	for f in $(SRCS); do \
+	  $(EMACSCLIENT) --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || { \
+	    printf "\033[31mFAIL\033[0m $$f\n"; failed=1; \
+	  }; \
+	done; \
+	[ "$$failed" -eq 0 ] || exit 1; \
+	$(EMACSCLIENT) --eval "(dolist (buf (buffer-list)) \
 	  (with-current-buffer buf \
 	    (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
 	      (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
@@ -155,8 +213,8 @@ load: clean
 	        (use-local-map (symbol-value map)))) \
 	    (when (and (derived-mode-p 'hermes-kanban-log-mode) \
 	               (fboundp 'hermes-kanban-log--refontify-buffer)) \
-	      (hermes-kanban-log--refontify-buffer))))" > /dev/null
-	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
+	      (hermes-kanban-log--refontify-buffer))))" > /dev/null || exit 1; \
+	printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:
 	rm -f *.elc lisp/*.elc tests/*.elc
