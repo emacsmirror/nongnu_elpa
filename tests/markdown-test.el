@@ -7252,6 +7252,14 @@ x|"
   (markdown-test-string "[|"
     (should-not (gfm--table-at-point-p))))
 
+(ert-deftest test-markdown-gfm/gfm-parse-buffer-for-languages-unterminated-block ()
+  "Don't signal on a buffer whose final line is an unterminated code fence.
+Details: https://github.com/jrblevin/markdown-mode/pull/948"
+  (markdown-test-string-gfm "``` MADEUP"
+    (should (equal markdown-gfm-used-languages (list "MADEUP"))))
+  (markdown-test-string-gfm "``` MADEUP\nfoo\n```\n\n``` LANGUAGES"
+    (should (equal markdown-gfm-used-languages (list "LANGUAGES" "MADEUP")))))
+
 ;;; Tests for other extensions:
 
 (ert-deftest test-markdown-ext/pandoc-fancy-lists ()

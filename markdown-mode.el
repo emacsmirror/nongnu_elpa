@@ -4803,7 +4803,8 @@ at the beginning of the block."
        while pos-prop
        for lang = (markdown-code-block-lang pos-prop)
        do (progn (when lang (markdown-gfm-add-used-language lang))
-                 (goto-char (next-single-property-change (point) prop)))))))
+                 (goto-char (or (next-single-property-change (point) prop)
+                                (point-max))))))))
 
 (defun markdown-insert-foldable-block ()
   "Insert details disclosure element to make content foldable.
