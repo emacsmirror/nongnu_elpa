@@ -1005,6 +1005,60 @@
               :code)
              "ok"))))
 
+(ert-deftest hermes-transport-dashboard-native-cancel-closes-lifetime ()
+  "Stop and reconnect close native login resources and reject exactly once."
+  (dolist (operation '(hermes-dashboard-transport-stop
+                       hermes-dashboard-transport-reconnect))
+    (let ((client (make-hermes-dashboard-transport-client :refcount 1))
+          timer attempted cancelled reason rejections reconnected)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--pkce-pair)
+                 (lambda () '(:verifier "verifier" :challenge "challenge")))
+                ((symbol-function 'hermes-dashboard-transport--native-state)
+                 (lambda () "state"))
+                ((symbol-function 'make-network-process)
+                 (lambda (&rest args)
+                   (funcall (plist-get args :log) 'listener 'child-a "open")
+                   (funcall (plist-get args :log) 'listener 'child-b "open")
+                   'listener))
+                ((symbol-function 'process-contact) (lambda (&rest _) 54321))
+                ((symbol-function 'set-process-query-on-exit-flag) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport--browse-url) #'ignore)
+                ((symbol-function 'run-at-time)
+                 (lambda (&rest _args) (setq timer 'login-timer)))
+                ((symbol-function 'cancel-timer)
+                 (lambda (value)
+                   (setq cancelled value)
+                   (error "timer teardown failed")))
+                ((symbol-function 'process-live-p) (lambda (_process) t))
+                ((symbol-function 'delete-process)
+                 (lambda (process)
+                   (push process attempted)
+                   (when (eq process 'child-a)
+                     (error "child teardown failed"))))
+                ((symbol-function 'hermes-dashboard-transport--reconnect-attempt)
+                 (lambda (&rest _) (setq reconnected t))))
+        (let* ((setter
+                (lambda (expected next)
+                  (hermes-dashboard-transport--startup-cancel-setter
+                   client expected next)))
+               (promise
+                (hermes-dashboard-transport--native-login-async
+                 "http://dash.example" "oauth" setter))
+               (hermes-dashboard-transport-ready-timeout nil))
+          (hermes--promise-catch
+           promise
+           (lambda (value)
+             (setq reason value rejections (1+ (or rejections 0)))))
+          (funcall operation client)
+          (funcall operation client)
+          (should (= rejections 1))
+          (should (string-match-p "superseded" reason))
+          (should (eq cancelled timer))
+          (should (equal attempted '(listener child-a child-b)))
+          (should (eq reconnected (eq operation
+                                      'hermes-dashboard-transport-reconnect)))
+          (should-not (hermes-dashboard-transport-client-startup-cancel client)))))))
+
 (ert-deftest hermes-transport-dashboard-native-pkce-happy-path ()
   "Native PKCE attach stores tokens, mints a ticket, and opens the WS."
   (let* ((base "http://100.64.0.10:9119")
@@ -1012,7 +1066,7 @@
          (refresh "native-refresh-token")
          (ticket "native-ticket-secret")
          (store (make-hash-table :test #'equal))
-         requests browsed opened-url events
+         client requests browsed opened-url events
          loopback-filter loopback-process)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
                (lambda (url) (gethash url store)))
@@ -1039,8 +1093,10 @@
                    (:service 54321)
                    (:local '(127 0 0 1 54321))
                    (_ proc))))
-              ((symbol-function 'delete-process) #'ignore)
-              ((symbol-function 'process-send-string) #'ignore)
+              ((symbol-function 'delete-process)
+               (lambda (&rest _) (error "close failed")))
+              ((symbol-function 'process-send-string)
+               (lambda (&rest _) (error "send failed")))
               ((symbol-function 'process-live-p)
                (lambda (_proc) t)))
       (let ((hermes-dashboard-transport-start-mode 'auto)
@@ -1056,7 +1112,9 @@
                (push (list :url url
                            :method (plist-get args :method)
                            :headers (plist-get args :headers)
-                           :data (plist-get args :data))
+                           :data (plist-get args :data)
+                           :cancel-setter (plist-get args :cancel-setter)
+                           :cancel-expected (plist-get args :cancel-expected))
                      requests)
                (cond
                 ((string-suffix-p "/api/status" url)
@@ -1079,9 +1137,10 @@
                     :body ((ticket . ,ticket) (ttl_seconds . 30)))))
                 (t (hermes--promise-rejected
                     (format "unexpected request %s" url)))))))
-        (hermes-dashboard-transport-start
-         :host "100.64.0.10" :port 9119
-         :callback (lambda (event) (push event events)))
+        (setq client
+              (hermes-dashboard-transport-start
+               :host "100.64.0.10" :port 9119
+               :callback (lambda (event) (push event events))))
         (should (stringp browsed))
         (should (string-match-p "/auth/native/authorize" browsed))
         (should (string-match-p "code_challenge_method=S256" browsed))
@@ -1108,12 +1167,15 @@
                (stored (gethash base store)))
           (should (equal (hermes-transport--get token-body 'code) "gw-code"))
           (should (hermes-transport--get token-body 'code_verifier))
+          (should (functionp (plist-get token-req :cancel-setter)))
+          (should (functionp (plist-get token-req :cancel-expected)))
           (should (equal (alist-get "Authorization"
                                     (plist-get ticket-req :headers)
                                     nil nil #'equal)
                          (concat "Bearer " access)))
           (should (equal (plist-get stored :access-token) access))
-          (should (equal (plist-get stored :refresh-token) refresh)))
+          (should (equal (plist-get stored :refresh-token) refresh))
+          (should-not (hermes-dashboard-transport-client-startup-cancel client)))
         (let ((visible (format "%S" events)))
           (dolist (secret (list access refresh ticket "gw-code"))
             (should-not (string-match-p (regexp-quote secret) visible)))

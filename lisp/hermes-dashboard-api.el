@@ -1027,7 +1027,7 @@ OK non-nil means the callback was accepted."
                     "\r\n\r\n"
                     body)))
       (ignore-errors (process-send-string process payload))
-      (delete-process process))))
+      (ignore-errors (delete-process process)))))
 
 (defconst hermes-dashboard-transport--native-loopback-max-bytes 16384
   "Maximum accepted bytes for one native loopback HTTP request.")
@@ -1055,14 +1055,14 @@ ON-REQUEST receives (REQUEST CLIENT).  Return a plist with :process, :port,
            :server t
            :noquery t
            :coding 'binary
+           :log
+           (lambda (_server client _message)
+             (push client children)
+             (set-process-query-on-exit-flag client nil))
            :filter
            (lambda (client chunk)
              (unless (processp client)
                (setq client process))
-             (unless (memq client children)
-               (push client children)
-               (when (processp client)
-                 (set-process-query-on-exit-flag client nil)))
              (let* ((prev (or (gethash client acc) ""))
                     (next (concat prev (if (stringp chunk) chunk ""))))
                (cond
@@ -1096,31 +1096,41 @@ ON-REQUEST receives (REQUEST CLIENT).  Return a plist with :process, :port,
 (defun hermes-dashboard-transport--native-loopback-close (server)
   "Close SERVER listener and any accepted child connections."
   (when server
-    (dolist (child (and (functionp (plist-get server :children))
-                        (funcall (plist-get server :children))))
-      (when (process-live-p child)
-        (delete-process child)))
+    (dolist (child (ignore-errors
+                     (and (functionp (plist-get server :children))
+                          (funcall (plist-get server :children)))))
+      (when (ignore-errors (process-live-p child))
+        (ignore-errors (delete-process child))))
     (when-let* ((proc (plist-get server :process)))
-      (when (process-live-p proc)
-        (delete-process proc)))))
+      (when (ignore-errors (process-live-p proc))
+        (ignore-errors (delete-process proc))))))
 
 (defun hermes-dashboard-transport--native-login-async
-    (base-url &optional provider)
+    (base-url &optional provider startup-cancel-setter)
   "Return a promise of native tokens for BASE-URL after browser PKCE login.
-Optional PROVIDER is forwarded to the authorize URL when non-empty."
+Optional PROVIDER is forwarded to the authorize URL when non-empty.
+STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil."
   (let* ((promise (hermes--promise-make))
          (pkce (hermes-dashboard-transport--pkce-pair))
          (state (hermes-dashboard-transport--native-state))
          (settled nil)
          (server nil)
          (timer nil)
+         (cancel nil)
+         (cancel-registered nil)
          (cleanup
           (lambda ()
-            (when timer
-              (cancel-timer timer)
-              (setq timer nil))
-            (hermes-dashboard-transport--native-loopback-close server)
-            (setq server nil)))
+            (let ((owned-timer timer)
+                  (owned-server server)
+                  (registered cancel-registered))
+              (setq timer nil server nil cancel-registered nil)
+              (when owned-timer
+                (ignore-errors (cancel-timer owned-timer)))
+              (ignore-errors
+                (hermes-dashboard-transport--native-loopback-close owned-server))
+              (when (and registered startup-cancel-setter cancel)
+                (ignore-errors
+                  (funcall startup-cancel-setter cancel nil))))))
          (fail
           (lambda (reason)
             (unless settled
@@ -1133,46 +1143,60 @@ Optional PROVIDER is forwarded to the authorize URL when non-empty."
               (setq settled t)
               (funcall cleanup)
               (hermes--promise-resolve promise tokens)))))
+    (setq cancel
+          (lambda ()
+            (funcall fail "Native dashboard sign-in was superseded")))
     (condition-case err
         (progn
+          (when startup-cancel-setter
+            (unless (funcall startup-cancel-setter nil cancel)
+              (user-error "Native dashboard sign-in was superseded"))
+            (setq cancel-registered t))
           (setq server
                 (hermes-dashboard-transport--native-loopback-listen
                  (lambda (request client)
-                   (condition-case request-err
-                       (let* ((parsed
-                               (hermes-dashboard-transport--native-parse-loopback
-                                request state))
-                              (code (plist-get parsed :code)))
-                         ;; Accept only after state/code validation, then close
-                         ;; the listener before the token exchange starts.
-                         (hermes-dashboard-transport--native-loopback-reply
-                          client t)
-                         (hermes-dashboard-transport--native-loopback-close
-                          server)
-                         (setq server nil)
-                         (hermes--promise-then
-                          (hermes-dashboard-transport--http-json-async
-                           (hermes-dashboard-transport--api-url
-                            base-url "/auth/native/token")
-                           :method "POST"
-                           :headers '(("Content-Type" . "application/json"))
-                           :body `((code . ,code)
-                                   (code_verifier
-                                    . ,(plist-get pkce :verifier)))
-                           :secrets (list code (plist-get pkce :verifier)))
-                          (lambda (response)
-                            (if-let* ((tokens
-                                       (hermes-dashboard-transport--native-token-plist
-                                        (plist-get response :body))))
-                                (funcall finish tokens)
-                              (funcall fail
-                                       "Gateway token response missing access_token")))
-                          (lambda (reason)
-                            (funcall fail reason))))
-                     (error
-                      (hermes-dashboard-transport--native-loopback-reply
-                       client nil)
-                      (funcall fail (error-message-string request-err)))))))
+                   (unless settled
+                     (condition-case request-err
+                         (let* ((parsed
+                                 (hermes-dashboard-transport--native-parse-loopback
+                                  request state))
+                                (code (plist-get parsed :code)))
+                           ;; Accept only after state/code validation, then close
+                           ;; the listener before the token exchange starts.
+                           (hermes-dashboard-transport--native-loopback-reply
+                            client t)
+                           (hermes-dashboard-transport--native-loopback-close
+                            server)
+                           (setq server nil)
+                           (hermes--promise-then
+                            (hermes-dashboard-transport--http-json-async
+                             (hermes-dashboard-transport--api-url
+                              base-url "/auth/native/token")
+                             :method "POST"
+                             :headers '(("Content-Type" . "application/json"))
+                             :body `((code . ,code)
+                                     (code_verifier
+                                      . ,(plist-get pkce :verifier)))
+                             :secrets (list code (plist-get pkce :verifier))
+                             :cancel-setter startup-cancel-setter
+                             :cancel-expected cancel)
+                            (lambda (response)
+                              (condition-case response-err
+                                  (if-let* ((tokens
+                                             (hermes-dashboard-transport--native-token-plist
+                                              (plist-get response :body))))
+                                      (funcall finish tokens)
+                                    (funcall fail
+                                             "Gateway token response missing access_token"))
+                                (error
+                                 (funcall fail
+                                          (error-message-string response-err)))))
+                            (lambda (reason)
+                              (funcall fail reason))))
+                       (error
+                        (hermes-dashboard-transport--native-loopback-reply
+                         client nil)
+                        (funcall fail (error-message-string request-err))))))))
           (setq timer
                 (run-at-time
                  hermes-dashboard-transport-native-login-timeout
@@ -1266,7 +1290,8 @@ CANCEL-SETTER owns the in-flight request when non-nil."
     (base-url &optional provider force-login interactive cancel-setter)
   "Return a promise of usable native tokens for BASE-URL.
 Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
-skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh."
+skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh or
+interactive login work."
   (let ((stored (and (not force-login)
                      (hermes-dashboard-transport--native-token-load base-url))))
     (cond
@@ -1286,14 +1311,16 @@ skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh."
          (if (and interactive (stringp reason)
                   (string-match-p "(HTTP 401)" reason))
              (hermes--promise-then
-              (hermes-dashboard-transport--native-login-async base-url provider)
+              (hermes-dashboard-transport--native-login-async
+               base-url provider cancel-setter)
               (lambda (tokens)
                 (hermes-dashboard-transport--native-token-store base-url tokens)
                 tokens))
            (hermes--promise-rejected reason)))))
      (interactive
       (hermes--promise-then
-       (hermes-dashboard-transport--native-login-async base-url provider)
+       (hermes-dashboard-transport--native-login-async
+        base-url provider cancel-setter)
        (lambda (tokens)
          (hermes-dashboard-transport--native-token-store base-url tokens)
          tokens)))
@@ -1305,7 +1332,7 @@ skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh."
     (host port base-url &optional status force-login interactive cancel-setter)
   "Return a promise of native PKCE WebSocket auth for HOST, PORT, BASE-URL.
 Optional STATUS supplies the OAuth provider name.  FORCE-LOGIN skips stored
-tokens.  INTERACTIVE permits login; CANCEL-SETTER owns native HTTP."
+tokens.  INTERACTIVE permits login; CANCEL-SETTER owns native startup work."
   (let ((provider (and status
                        (hermes-dashboard-transport--status-oauth-provider
                         status))))
@@ -2048,7 +2075,7 @@ network; a missing token rejects the promise."
     (host port base-url method &optional token interactive cancel-setter)
   "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
 Mirrors the previous synchronous resolution without blocking.  INTERACTIVE
-permits native login; CANCEL-SETTER owns startup HTTP."
+permits native login; CANCEL-SETTER owns native startup work."
   (pcase method
     ('token (hermes-dashboard-transport--remote-token-auth-async
              host port base-url token))

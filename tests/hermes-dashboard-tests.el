@@ -506,7 +506,7 @@
               ((symbol-function 'hermes-dashboard-transport--native-token-store)
                (lambda (_base tokens) tokens))
               ((symbol-function 'hermes-dashboard-transport--native-login-async)
-               (lambda (_base _provider)
+               (lambda (_base _provider &optional _cancel-setter)
                  (hermes-dashboard-transport--browse-url "https://login.example")
                  (hermes--promise-resolved
                   '(:access-token "access" :refresh-token "refresh")))))
