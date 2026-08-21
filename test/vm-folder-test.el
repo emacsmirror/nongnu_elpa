@@ -4350,6 +4350,74 @@ Something else makes that buffer: desktop.el restoring the session,
           (with-current-buffer opened (set-buffer-modified-p nil))
           (kill-buffer opened))))))
 
+
+;;; a cache with no type in its name is the older format (issue #739)
+
+(defconst vm-folder-test--two-with-lengths
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "Content-Length: 22\nFrom: alice@example.com\nSubject: one\n\n"
+          "From $249.50 a month\n\n"
+          "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+          "Content-Length: 5\nFrom: bob@example.com\nSubject: two\n\nbody\n")
+  "A folder carrying a length on each message, whose first body holds a
+From_ line.  mboxcl2 does not escape one -- the lengths delimit instead -- so
+read as From_ this folder has a message of nonsense in it.")
+
+(ert-deftest vm-folder-test-a-cache-not-named-mboxcl2-is-the-older-format ()
+  "A cache whose name does not say mboxcl2 is read as the older format.
+Issue #739.  Its lengths are not to be relied on: VM gave one to each message
+it rewrote, so a From_ cache collects a few, and a length believed wrongly
+puts a message boundary inside a body.  Nothing here is guessed at."
+  (vm-folder-test-with-file
+      (file "imap-cache-0123456789abcdef" vm-folder-test--two-with-lengths)
+    (let ((vm-trust-content-length nil)
+          (vm-folder-type-by-name-alist nil)
+          (vm-unnamed-mboxcl2-caches nil)
+          (vm-default-From_-folder-type 'From_))
+      (should (eq 'From_ (vm-get-folder-type file))))))
+
+(ert-deftest vm-folder-test-a-cache-that-looks-like-mboxcl2-says-so ()
+  "Looking like the other format is worth one warning, naming the way out.
+Renaming the file is all it takes where the folder really is mboxcl2, and
+that is the reader\='s call, not VM\='s."
+  (vm-folder-test-with-file
+      (file "imap-cache-0123456789abcdef" vm-folder-test--two-with-lengths)
+    (let ((vm-trust-content-length nil)
+          (vm-folder-type-by-name-alist nil)
+          (vm-unnamed-mboxcl2-caches nil)
+          (vm-default-From_-folder-type 'From_))
+      (let ((said (vm-folder-test--warnings (vm-get-folder-type file))))
+        (should (= 1 (length said)))
+        (should (string-match-p "rename it" (car said)))
+        (should (string-match-p "\\.mboxcl2" (car said))))
+      ;; and once only
+      (should-not (vm-folder-test--warnings (vm-get-folder-type file))))))
+
+(ert-deftest vm-folder-test-a-named-cache-is-mboxcl2-and-says-nothing ()
+  "The way out works: the same bytes under the suffixed name are mboxcl2."
+  (vm-folder-test-with-file
+      (file "imap-cache-0123456789abcdef.mboxcl2" vm-folder-test--two-with-lengths)
+    (let ((vm-trust-content-length nil)
+          (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2)))
+          (vm-unnamed-mboxcl2-caches nil))
+      (should-not (vm-folder-test--warnings
+                    (should (eq 'mboxcl2 (vm-get-folder-type file))))))))
+
+(ert-deftest vm-folder-test-a-From_-cache-says-nothing ()
+  "A cache with no lengths in it is the older format and unremarkable."
+  (vm-folder-test-with-file
+      (file "imap-cache-0123456789abcdef"
+            (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                    "From: alice@example.com\nSubject: one\n\nBody.\n\n"
+                    "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                    "From: bob@example.com\nSubject: two\n\nBody.\n"))
+    (let ((vm-trust-content-length nil)
+          (vm-folder-type-by-name-alist nil)
+          (vm-unnamed-mboxcl2-caches nil)
+          (vm-default-From_-folder-type 'From_))
+      (should-not (vm-folder-test--warnings
+                    (should (eq 'From_ (vm-get-folder-type file))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
