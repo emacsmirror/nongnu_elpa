@@ -1,7 +1,7 @@
 #+title: Elfeed News
 #+language: en
 
-* Development (Upcoming 4.2.0)
+* Version 4.2.0 (2026-08-21)
 
 ** General
 
