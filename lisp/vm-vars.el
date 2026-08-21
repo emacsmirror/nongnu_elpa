@@ -889,7 +889,7 @@ empty folder, the folder will become this default type.
 
 It decides a folder that does not exist yet or is empty, and nothing else, so
 changing it cannot change how an existing folder is read.  Where the folder's
-name says a type -- see `vm-folder-type-by-name-alist' -- that wins.
+name says a type -- see `vm-folder-type-by-extension-alist' -- that wins.
 
 It was mboxcl2 on Solaris, AIX and System V and mmdf on SCO until 2026: a
 guess about what the local delivery agent writes, made when VM could not be
@@ -998,9 +998,9 @@ consulted."
   (eq vm-default-folder-type 'mboxcl2)
   "*Non-nil means decide that a From_ folder is mboxcl2 by looking at it.
 Deprecated, and the last release to do the looking.  Say the type in
-`vm-folder-type-by-name-alist' instead, which is a folder being told what it
-is rather than VM guessing, and which VM warns about once per folder while
-this is still on.
+`vm-folder-type-by-extension-alist' instead, which is a folder being told
+what it is rather than VM guessing, and which VM warns about once per folder
+while this is still on.
 
 What it does: VM reads the start of the folder, and takes a `Content-Length'
 on each of the first two messages as saying that every message in the folder
@@ -1035,46 +1035,35 @@ not need it."
   :group 'vm-folders
   :type 'boolean)
 
-(defcustom vm-folder-type-by-name-alist
-  '(("\\.mboxcl2\\'" . mboxcl2))
-  "*Alist of (REGEXP . TYPE): the folder type a folder's name asks for.
-REGEXP is matched against the whole file name, directories and all, TYPE is
-one of the types `vm-default-folder-type' accepts.  The first match wins.
-
-Matching the whole name lets one rule answer for a directory, which is what a
-primary inbox called INBOX and an IMAP cache need, neither having a suffix to
-match:
-
-    (setq vm-folder-type-by-name-alist
-          \\='((\"\\\\.mboxcl2\\\\\\='\" . mboxcl2)
-            (\"/mail/current/\" . mboxcl2)))
+(defcustom vm-folder-type-by-extension-alist
+  '(("mboxcl2" . mboxcl2))
+  "*Alist of (EXTENSION . TYPE): the folder type a folder\='s name asks for.
+EXTENSION is matched literally against the file name\='s extension, without
+the dot, and TYPE is one of the types `vm-default-folder-type\=' accepts.
 
 This is consulted where a folder cannot say for itself what it is:
 
   - a folder that does not exist yet, or is empty, is created in the type
-    its name asks for rather than in `vm-default-folder-type';
+    its name asks for rather than in `vm-default-folder-type\=';
   - a From_ folder is read as the type its name gives.  From_ and mboxcl2
-    are the same folder but for the `Content-Length' header, so looking
+    are the same folder but for the `Content-Length\=' header, so looking
     like one is no evidence: a folder named mboxcl2 is mboxcl2, and a
     message in it that has no length is then something the reader
     complains about -- which is the use of saying so in the name.
 
-What a folder's own contents say is never overridden where they settle the
-question: a name matching mboxcl2 does not make VM read a BABYL file as one.
+What a folder\='s own contents say is never overridden where they settle the
+question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
 
-Add to it rather than replacing it, so the rule for `.mboxcl2\=' stays:
-
-    (add-to-list \='vm-folder-type-by-name-alist
-                 \='(\"/mail/current/\" . mboxcl2))
-
-A regexp is a string, so its backslashes are doubled.  Written with one each,
-Lisp reads the escapes away and leaves a regexp that matches nothing, and a
-rule that matches nothing says nothing while doing nothing.  VM checks this
-alist as it starts and complains about a rule that cannot work.
+An extension and not a pattern over the name.  A pattern can be written so
+that it matches nothing, silently, and it can be written so that it claims
+every folder in a directory -- and a directory of nine From_ folders claimed
+as mboxcl2 is nine folders VM then refuses to read.  The cost is that a
+folder which cannot be renamed cannot be typed by its name; that is what
+`vm-default-folder-type\=' is for.
 
 Set it to nil to have names mean nothing, which is what VM did before."
   :group 'vm-folders
-  :type '(alist :key-type (regexp :tag "Name matching")
+  :type '(alist :key-type (string :tag "Extension, without the dot")
 		:value-type (symbol :tag "Folder type")))
 
 (defcustom vm-sync-thunderbird-status t

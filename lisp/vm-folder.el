@@ -753,73 +753,36 @@ apply to anything that might be a folder type."
 
 (defconst vm-folder-types '(From_ BellFrom_ mboxcl2 mmdf babyl)
   "The folder types VM can read and write.
-`vm-folder-type-aliases\=' has the older name for one of them.")
+`vm-folder-type-aliases' has the older name for one of them.")
 
-(defun vm-name-rule-fault (rule)
-  "What is wrong with RULE of `vm-folder-type-by-name-alist', or nil.
-Answers a sentence saying what, for `vm-check-folder-type-rules'."
-  (let ((regexp (car-safe rule))
-	(type (cdr-safe rule)))
-    (cond
-     ((not (consp rule)) "is not a (REGEXP . TYPE) pair")
-     ((not (stringp regexp)) "does not begin with a regular expression")
-     ((not (memq (vm-canonical-folder-type type) vm-folder-types))
-      (format "names %S, which is not a folder type" type))
-     ;; The mistake this exists for.  A regexp is a string, so its backslashes
-     ;; are doubled in the source: "\\.mboxcl2\\'" is the regexp \.mboxcl2\'.
-     ;; Written with one backslash each, Lisp reads the escapes away and
-     ;; leaves .mboxcl2' -- which asks for a name ending in an apostrophe and
-     ;; matches nothing, silently, the folder type simply never being named.
-     ((string-match-p "\\(\\`\\|[^\\\\]\\)'" regexp)
-      "has an apostrophe of its own, so \\' was written with one backslash")
-     ((string-match-p "\\``[^`]" regexp)
-      "begins with a backquote of its own, so \\` was written with one backslash")
-     ;; The same slip in the other spelling.  "\.mboxcl2$" written with one
-     ;; backslash is the regexp .mboxcl2$, which still matches sent.mboxcl2 --
-     ;; so nothing looks wrong -- and also matches xmboxcl2, a name with no
-     ;; dot in it.  Nobody writing a rule for a suffix means "any character".
-     ((string-match-p "\\`\\.[A-Za-z0-9]" regexp)
-      "begins with a dot of its own, so \\. was written with one backslash")
-     ((condition-case nil
-	  (progn (string-match regexp "") nil)
-	(invalid-regexp t))
-      "is not a valid regular expression"))))
-
-(defun vm-check-folder-type-rules ()
-  "Complain about a rule of `vm-folder-type-by-name-alist\=' that cannot work.
-Run as VM starts, after the init file has been read.
-
-A rule that matches nothing does nothing, and says nothing while doing it: the
-folder is read as whatever it would have been read as anyway, which is right
-until the day it is not.  A maintainer\='s sent-mail folder was filed into in
-the wrong format for a month that way."
-  (dolist (rule vm-folder-type-by-name-alist)
-    (let ((fault (vm-name-rule-fault rule)))
-      (when fault
-	(vm-warn 1 2 (concat "vm-folder-type-by-name-alist: the rule %S %s."
-			     "  A regexp is a string, so write it %S")
-		 rule fault "\\.mboxcl2\\'")))))
+(defun vm-check-folder-type-extensions ()
+  "Complain about an entry of `vm-folder-type-by-extension-alist' that cannot work.
+Run as VM starts, after the init file has been read.  An extension is matched
+literally, so there is nothing to mistype there; a folder type is a symbol,
+and a symbol that is not one names a type VM will never give anything."
+  (dolist (entry vm-folder-type-by-extension-alist)
+    (let ((type (cdr-safe entry)))
+      (unless (and (consp entry)
+		   (stringp (car entry))
+		   (memq (vm-canonical-folder-type type) vm-folder-types))
+	(vm-warn 1 2 (concat "vm-folder-type-by-extension-alist: %S is not"
+			     " (EXTENSION . TYPE) naming one of %s")
+		 entry vm-folder-types)))))
 
 (defun vm-folder-type-for-name (file)
-  "The folder type FILE's name asks for, or nil if no name says anything.
-The whole name is matched, directories and all, so a rule can answer for every
-folder in a directory.  That is what a primary inbox called INBOX and a cache
-called imap-cache-<md5> need: neither can be given a suffix without renaming
-the file, and one rule for the directory names them both.
+  "The folder type FILE's name asks for, or nil if the name says nothing.
+The extension decides, matched literally against
+`vm-folder-type-by-extension-alist': a folder called sent.mboxcl2 is mboxcl2.
 
-A suffix rule is unaffected, `\\.mboxcl2\\\\=' matching the whole name as well as
-the last part of it.  A rule anchored at the front with \\=`\\=` is not: it now
-has to allow for the directories, or match nothing.
-
-See `vm-folder-type-by-name-alist'."
-  (when file
-    (let ((alist vm-folder-type-by-name-alist)
-	  (type nil))
-      (while (and alist (null type))
-	(when (string-match (car (car alist)) file)
-	  (setq type (cdr (car alist))))
-	(setq alist (cdr alist)))
-      type)))
+An extension and not a pattern.  A pattern over the whole name can be written
+so that it matches nothing, silently, and it can be written so that it claims
+a whole directory -- and a directory of nine From_ folders claimed as mboxcl2
+is nine folders VM then refuses to read.  Neither can be said in an
+extension.  A folder that cannot be renamed therefore cannot be typed by its
+name, which is what `vm-default-folder-type' is for."
+  (let ((extension (and file (file-name-extension file))))
+    (when extension
+      (cdr (assoc extension vm-folder-type-by-extension-alist)))))
 
 (defun vm-folder-type-to-write (&optional file)
   "The folder type to write the current folder in.
@@ -917,7 +880,7 @@ error here would stop a working configuration from starting."
   (when vm-trust-content-length
     (vm-warn 1 2 (concat "vm-trust-content-length is deprecated: VM decides"
 			 " a folder is mboxcl2 by looking at it.  Name the"
-			 " folders in vm-folder-type-by-name-alist instead"
+			 " folders .mboxcl2 instead"
 			 (if (eq vm-default-folder-type 'mboxcl2)
 			     ", which vm-default-folder-type no longer needs"
 			   "")))))
@@ -960,8 +923,7 @@ The name is where to say it instead."
       (push name vm-guessed-folder-types)
       (vm-warn 1 1 (concat "%s is read as mboxcl2 because its first messages"
 			   " have lengths; vm-trust-content-length is"
-			   " deprecated, so say the type in"
-			   " vm-folder-type-by-name-alist")
+			   " deprecated, so name such a folder .mboxcl2")
 	       (file-name-nondirectory name)))))
 
 (defun vm-get-folder-type (&optional file start end ignore-visited)

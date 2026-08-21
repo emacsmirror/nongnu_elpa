@@ -2393,20 +2393,25 @@ Mozilla headers into a folder at all."
        (delete-directory ,var t))))
 
 (ert-deftest vm-folder-test-type-for-name-reads-the-alist ()
-  "`vm-folder-type-for-name' answers from `vm-folder-type-by-name-alist'."
+  "`vm-folder-type-for-name' answers from `vm-folder-type-by-extension-alist'."
   (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mboxcl2") 'mboxcl2))
   (should-not (vm-folder-type-for-name "/mail/2026-08.out.mbox"))
   (should-not (vm-folder-type-for-name "/mail/INBOX"))
-  ;; the suffix has to end the name, so a backup file is not a folder type
-  (should-not (vm-folder-type-for-name "/mail/sent.mboxcl2~"))
+  ;; `file-name-extension' looks past a backup suffix, so the backup of an
+  ;; mboxcl2 folder is one too -- which it is, and which the old pattern,
+  ;; anchored at the end of the name, said it was not
+  (should (eq (vm-folder-type-for-name "/mail/sent.mboxcl2~") 'mboxcl2))
+  ;; a compressed folder is named for the compression, and VM is not asked
+  (should-not (vm-folder-type-for-name "/mail/sent.mboxcl2.gz"))
   (should-not (vm-folder-type-for-name nil))
   ;; and nothing is claimed when the option is empty
-  (let ((vm-folder-type-by-name-alist nil))
+  (let ((vm-folder-type-by-extension-alist nil))
     (should-not (vm-folder-type-for-name "/mail/sent.mboxcl2")))
   ;; the first match wins, and any type may be named
-  (let ((vm-folder-type-by-name-alist '(("\\.babyl\\'" . babyl)
-                                        ("\\.b" . mmdf))))
-    (should (eq (vm-folder-type-for-name "/mail/old.babyl") 'babyl))))
+  (let ((vm-folder-type-by-extension-alist '(("babyl" . babyl)
+                                             ("b" . mmdf))))
+    (should (eq (vm-folder-type-for-name "/mail/old.babyl") 'babyl))
+    (should (eq (vm-folder-type-for-name "/mail/old.b") 'mmdf))))
 
 (ert-deftest vm-folder-test-a-name-does-not-override-what-a-folder-says ()
   "A folder's own contents decide its type; the name is consulted only when
@@ -2436,7 +2441,7 @@ message that has none, which is the point of saying so in the name."
                     nil without nil 'quiet)
       (should (eq (vm-get-folder-type without) 'mboxcl2))
       ;; and with the option off, the name is not consulted at all
-      (let ((vm-folder-type-by-name-alist nil))
+      (let ((vm-folder-type-by-extension-alist nil))
         (should (eq (vm-get-folder-type with-length)
                     vm-default-From_-folder-type))))))
 
@@ -2779,7 +2784,7 @@ it to the contents."
   ;; and with the option empty, a name says nothing at all
   (vm-folder-test-with-file (file "sent.mboxcl2"
                                   vm-folder-test--mboxcl2-without-one)
-    (let ((vm-folder-type-by-name-alist nil))
+    (let ((vm-folder-type-by-extension-alist nil))
       (should (eq (vm-get-folder-type file) vm-default-From_-folder-type)))))
 
 (ert-deftest vm-folder-test-a-folder-named-mboxcl2-without-lengths-is-refused ()
@@ -4176,12 +4181,12 @@ a folder read as something it does not say it is is why."
                     "Content-Length: 5\nFrom: bob@example.com\n"
                     "Subject: two\n\nbody\n"))
     (let ((vm-trust-content-length t)
-          (vm-folder-type-by-name-alist nil)
+          (vm-folder-type-by-extension-alist nil)
           (vm-guessed-folder-types nil))
       (let ((said (vm-folder-test--warnings
                     (should (eq 'mboxcl2 (vm-get-folder-type file))))))
         (should (= 1 (length said)))
-        (should (string-match-p "vm-folder-type-by-name-alist" (car said)))
+        (should (string-match-p "name such a folder .mboxcl2" (car said)))
         (should (string-match-p "guessed" (car said))))
       ;; the same folder again says nothing
       (should-not (vm-folder-test--warnings (vm-get-folder-type file))))))
@@ -4195,7 +4200,7 @@ That is the way out of the warning above, so it has to be silent."
                     "Content-Length: 5\nFrom: alice@example.com\n"
                     "Subject: one\n\nbody\n"))
     (let ((vm-trust-content-length t)
-          (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2)))
+          (vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2)))
           (vm-guessed-folder-types nil))
       (should-not (vm-folder-test--warnings
                     (should (eq 'mboxcl2 (vm-get-folder-type file))))))))
@@ -4225,22 +4230,23 @@ agent, and the only thing that made `vm-trust-content-length' default on."
   (let ((vm-default-folder-type 'From_))
     (should-not (eval (car (get 'vm-trust-content-length 'standard-value))))))
 
-;;; a name rule answers for a directory (issue #736)
+;;; the extension says what a folder is (issue #741)
 
-(ert-deftest vm-folder-test-a-name-rule-can-name-a-directory ()
-  "The whole path is matched, so one rule answers for the folders in a
-directory.  A primary inbox called INBOX and a cache called imap-cache-<md5>
-have no suffix to match and cannot be renamed, so this is the only way to say
-what they are."
-  (let ((vm-folder-type-by-name-alist
-         '(("\\.mboxcl2\\'" . mboxcl2)
-           ("/mail/current/" . mboxcl2))))
-    (should (eq 'mboxcl2 (vm-folder-type-for-name "/home/me/mail/current/INBOX")))
-    (should (eq 'mboxcl2 (vm-folder-type-for-name "/tmp/sent.mboxcl2")))
-    ;; a suffix rule still matches on the last part of the name alone
+(ert-deftest vm-folder-test-the-extension-says-the-type ()
+  "The extension decides, matched literally, wherever the folder sits."
+  (let ((vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
+    (should (eq 'mboxcl2 (vm-folder-type-for-name "/home/me/mail/sent.mboxcl2")))
     (should (eq 'mboxcl2 (vm-folder-type-for-name "sent.mboxcl2")))
-    (should-not (vm-folder-type-for-name "/home/me/mail/old/INBOX"))
-    (should-not (vm-folder-type-for-name nil))))
+    ;; no extension, so the name says nothing: an inbox has to be renamed or
+    ;; left to vm-default-folder-type
+    (should-not (vm-folder-type-for-name "/home/me/mail/current/INBOX"))
+    (should-not (vm-folder-type-for-name "/home/me/mail/imap-cache-0123abcd"))
+    ;; a directory cannot be claimed, which is the point
+    (should-not (vm-folder-type-for-name "/home/me/mail/current/archive.mbox"))
+    (should-not (vm-folder-type-for-name nil))
+    ;; and the extension is matched whole, not as a pattern
+    (should-not (vm-folder-type-for-name "/home/me/mail/sent.mboxcl2x"))
+    (should-not (vm-folder-type-for-name "/home/me/mail/sent.xmboxcl2"))))
 
 ;;; the type a new folder is written in, and keeping a length true (issue #736)
 
@@ -4249,7 +4255,7 @@ what they are."
 It has no type of its own to read, so the name is the only place its type can
 have been stated, and it has to beat `vm-default-folder-type'."
   (let ((vm-default-folder-type 'From_)
-        (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+        (vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
     (with-temp-buffer
       (setq vm-folder-type nil)
       (should (eq 'mboxcl2 (vm-folder-type-to-write "/tmp/imap-cache-ab.mboxcl2")))
@@ -4272,7 +4278,7 @@ message begins."
                      "From bob@example.com Sat Aug  8 14:25:13 2026\n"
                      "Content-Length: 5\nFrom: bob@example.com\n"
                      "Subject: two\n\nbody\n"))
-     (let ((vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2))))
+     (let ((vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
        (vm-folder-test--visiting file
          (should (eq vm-folder-type 'mboxcl2))
          ,@body))))
@@ -4393,7 +4399,7 @@ puts a message boundary inside a body.  Nothing here is guessed at."
   (vm-folder-test-with-file
       (file "imap-cache-0123456789abcdef" vm-folder-test--two-with-lengths)
     (let ((vm-trust-content-length nil)
-          (vm-folder-type-by-name-alist nil)
+          (vm-folder-type-by-extension-alist nil)
           (vm-unnamed-mboxcl2-caches nil)
           (vm-default-From_-folder-type 'From_))
       (should (eq 'From_ (vm-get-folder-type file))))))
@@ -4405,7 +4411,7 @@ that is the reader\='s call, not VM\='s."
   (vm-folder-test-with-file
       (file "imap-cache-0123456789abcdef" vm-folder-test--two-with-lengths)
     (let ((vm-trust-content-length nil)
-          (vm-folder-type-by-name-alist nil)
+          (vm-folder-type-by-extension-alist nil)
           (vm-unnamed-mboxcl2-caches nil)
           (vm-default-From_-folder-type 'From_))
       (let ((said (vm-folder-test--warnings (vm-get-folder-type file))))
@@ -4420,7 +4426,7 @@ that is the reader\='s call, not VM\='s."
   (vm-folder-test-with-file
       (file "imap-cache-0123456789abcdef.mboxcl2" vm-folder-test--two-with-lengths)
     (let ((vm-trust-content-length nil)
-          (vm-folder-type-by-name-alist '(("\\.mboxcl2\\'" . mboxcl2)))
+          (vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2)))
           (vm-unnamed-mboxcl2-caches nil))
       (should-not (vm-folder-test--warnings
                     (should (eq 'mboxcl2 (vm-get-folder-type file))))))))
@@ -4434,74 +4440,29 @@ that is the reader\='s call, not VM\='s."
                     "From bob@example.com Sat Aug  8 14:25:13 2026\n"
                     "From: bob@example.com\nSubject: two\n\nBody.\n"))
     (let ((vm-trust-content-length nil)
-          (vm-folder-type-by-name-alist nil)
+          (vm-folder-type-by-extension-alist nil)
           (vm-unnamed-mboxcl2-caches nil)
           (vm-default-From_-folder-type 'From_))
       (should-not (vm-folder-test--warnings
                     (should (eq 'From_ (vm-get-folder-type file))))))))
 
-;;; a name rule that cannot work says so (issue #740)
+;;; an extension that names no folder type says so (issue #741)
 
-(ert-deftest vm-folder-test-a-mistyped-name-rule-is-caught ()
-  "REGRESSION: the classic mis-escaped regexp is complained about.
-Issue #740.  A regexp is a string, so `\\.mboxcl2\\'' in the source is the
-regexp \\.mboxcl2\\'.  Written with one backslash each it is read as
-.mboxcl2', which wants a file name ending in an apostrophe and matches
-nothing -- silently.  A maintainer's sent-mail folder was filed into in the
-wrong format for a month that way."
-  (let ((vm-folder-type-by-name-alist (list (cons ".mboxcl2'" 'mboxcl2))))
-    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
+(ert-deftest vm-folder-test-a-bad-type-in-an-extension-rule-is-caught ()
+  "An extension cannot be mistyped -- it is matched literally -- but the type
+it names can be, and a symbol that is not a folder type is as quiet as a
+regexp that matched nothing used to be."
+  (let ((vm-folder-type-by-extension-alist '(("mbox" . mbox))))
+    (let ((said (vm-folder-test--warnings (vm-check-folder-type-extensions))))
       (should (= 1 (length said)))
-      (should (string-match-p "apostrophe of its own" (car said)))
-      ;; and it shows what to write instead
-      (should (string-match-p "\\\\\\\\\\.mboxcl2" (car said))))))
-
-(ert-deftest vm-folder-test-a-good-name-rule-says-nothing ()
-  "The rule written correctly is silent, including VM's own default."
-  (let ((vm-folder-type-by-name-alist
-         (list (cons "\\.mboxcl2\\'" 'mboxcl2)
-               (cons "/mail/current/" 'From_)
-               (cons "\\`/var/mail/" 'BellFrom_))))
-    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules))))
-  (let ((vm-folder-type-by-name-alist
-         (eval (car (get 'vm-folder-type-by-name-alist 'standard-value)))))
-    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
-
-(ert-deftest vm-folder-test-a-name-rule-with-a-bad-type-is-caught ()
-  "A rule naming something that is not a folder type is a rule that cannot
-work either, and a mistyped symbol is as quiet as a mistyped regexp."
-  (let ((vm-folder-type-by-name-alist (list (cons "\\.mbox\\'" 'mbox))))
-    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
-      (should (= 1 (length said)))
-      (should (string-match-p "not a folder type" (car said)))))
-  ;; the old name for mboxcl2 is still a folder type
-  (let ((vm-folder-type-by-name-alist
-         (list (cons "\\.mboxcl2\\'" 'From_-with-Content-Length))))
-    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
-
-(ert-deftest vm-folder-test-a-broken-name-rule-regexp-is-caught ()
-  "An invalid regexp is caught rather than signalling later, from wherever
-the alist happens to be consulted."
-  (let ((vm-folder-type-by-name-alist (list (cons "\\(unclosed" 'mboxcl2))))
-    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
-      (should (= 1 (length said)))
-      (should (string-match-p "not a valid regular expression" (car said))))))
-
-(ert-deftest vm-folder-test-a-bare-dot-in-a-name-rule-is-caught ()
-  "The same slip in the other spelling is caught too.
-`\\.mboxcl2$' written with one backslash is the regexp .mboxcl2$, which still
-matches sent.mboxcl2 -- so nothing looks wrong -- and also matches xmboxcl2,
-a name with no dot in it.  Nobody writing a rule for a suffix means \"any
-character\"."
-  (let ((vm-folder-type-by-name-alist (list (cons ".mboxcl2$" 'mboxcl2))))
-    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
-      (should (= 1 (length said)))
-      (should (string-match-p "dot of its own" (car said)))))
-  ;; a regexp that means to start with any character is not this mistake
-  (let ((vm-folder-type-by-name-alist
-         (list (cons ".*-archive\\'" 'mboxcl2)
-               (cons "\\.mboxcl2\\'" 'mboxcl2))))
-    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
+      (should (string-match-p "not (EXTENSION . TYPE)" (car said)))))
+  ;; the old name for mboxcl2 is still a folder type, and the default is fine
+  (let ((vm-folder-type-by-extension-alist
+         '(("mboxcl2" . From_-with-Content-Length))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-extensions))))
+  (let ((vm-folder-type-by-extension-alist
+         (eval (car (get 'vm-folder-type-by-extension-alist 'standard-value)))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-extensions)))))
 
 (provide 'vm-folder-test)
 
