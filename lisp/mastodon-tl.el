@@ -829,18 +829,22 @@ If it is a boost, return \\='$username boosted'."
                      'face 'mastodon-boosted-face
                      'continued-thread t
                      'help-echo "Browse thread"))
-          (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
-                 (name (or (alist-get 'display_name acc)
-                           (alist-get 'username acc))))
-            (concat (mastodon-tl--symbol 'reply)
-                    (mastodon-tl--buttonify-link
-                     " in reply to "
-                     'face 'mastodon-boosted-face
-                     'continued-thread t
-                     'help-echo "Browse thread")
-                    (propertize name
-                                'face 'mastodon-display-name-face)
-                    "\n")))))
+          (let-alist (mastodon-tl--acc-by-id reply-acc-id)
+            (let ((name (or .display_name .username)))
+              (concat (mastodon-tl--symbol 'reply)
+                      (mastodon-tl--buttonify-link
+                       " in reply to "
+                       'face 'mastodon-boosted-face
+                       'continued-thread t
+                       'help-echo "Browse thread")
+                      (mastodon-tl--buttonify-link name
+                                        'face 'mastodon-display-name-face
+                                        'keymap mastodon-tl--link-keymap
+                                        'mastodon-tab-stop 'user-handle
+                                        'shr-url .url
+                                        'mastodon-handle (concat "@" .acct)
+                                        'mouse-face 'highlight)
+                      "\n"))))))
      (t ""))))
 
 (defun mastodon-tl-continued-thread-load ()
