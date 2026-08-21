@@ -779,6 +779,16 @@ Legacy unencoded JSON secrets remain readable."
   (make-hash-table :test #'equal)
   "Process-local native token cache keyed by normalized base URL.")
 
+(defvar hermes-dashboard-transport--native-token-store-active nil
+  "Base URL keys being persisted in the current dynamic call stack.")
+
+(defun hermes-dashboard-transport--native-owner-current-p (owner-current-p)
+  "Return non-nil when optional OWNER-CURRENT-P still owns native auth."
+  (or (null owner-current-p)
+      (condition-case nil
+          (funcall owner-current-p)
+        (error nil))))
+
 (defun hermes-dashboard-transport--native-token-memory-key (base-url)
   "Return the memory-cache key for BASE-URL."
   (or (hermes-dashboard-transport--normalize-base-url base-url) base-url))
@@ -884,12 +894,10 @@ Legacy unencoded JSON secrets remain readable."
       (funcall save))
     (when (fboundp 'auth-source-forget-all-cached)
       (auth-source-forget-all-cached))
-    (let ((loaded (hermes-dashboard-transport--native-token-load-disk base-url)))
-      (and loaded
-           (equal (plist-get loaded :access-token)
-                  (plist-get tokens :access-token))
-           (equal (plist-get loaded :refresh-token)
-                  (plist-get tokens :refresh-token))))))
+    (let ((loaded (hermes-dashboard-transport--native-token-load-disk base-url))
+          (expected (hermes-dashboard-transport--native-token-decode
+                     (hermes-dashboard-transport--native-token-encode tokens))))
+      (equal loaded expected))))
 
 (defun hermes-dashboard-transport--native-token-load-disk (base-url)
   "Return native tokens for BASE-URL from auth-source only, or nil."
@@ -910,46 +918,78 @@ Legacy unencoded JSON secrets remain readable."
           (puthash key disk hermes-dashboard-transport--native-token-memory)
           disk))))
 
-(defun hermes-dashboard-transport--native-token-store (base-url tokens)
-  "Persist TOKENS for BASE-URL, or delete the stored entry when TOKENS is nil.
-Failed writes restore any previously stored tokens."
+(defun hermes-dashboard-transport--native-token-restore
+    (base-url key prior-memory-present prior-memory prior-disk)
+  "Restore native state for BASE-URL and memory KEY.
+PRIOR-MEMORY-PRESENT distinguishes PRIOR-MEMORY from an absent cache entry.
+PRIOR-DISK is the exact durable token value to restore."
+  (if prior-memory-present
+      (puthash key prior-memory hermes-dashboard-transport--native-token-memory)
+    (remhash key hermes-dashboard-transport--native-token-memory))
+  (condition-case nil
+      (let ((auth-source-save-behavior t)
+            (auth-source-netrc-cache nil))
+        (when (fboundp 'auth-source-forget-all-cached)
+          (auth-source-forget-all-cached))
+        (if prior-disk
+            (progn
+              (hermes-dashboard-transport--native-token-delete-disk base-url)
+              (unless (hermes-dashboard-transport--native-token-write-disk
+                       base-url prior-disk)
+                (error "Native token rollback verification failed")))
+          (hermes-dashboard-transport--native-token-delete-disk base-url)
+          (when (hermes-dashboard-transport--native-token-load-disk base-url)
+            (error "Native token rollback deletion failed")))
+        t)
+    ((error quit)
+     ;; Fail closed: make one last best-effort removal of stale new credentials.
+     (condition-case nil
+         (hermes-dashboard-transport--native-token-delete-disk base-url)
+       ((error quit) nil))
+     nil)))
+
+(defun hermes-dashboard-transport--native-token-store
+    (base-url tokens &optional owner-current-p)
+  "Persist TOKENS for BASE-URL while OWNER-CURRENT-P owns the effect.
+Delete the stored entry when TOKENS is nil.  Failed or stale writes restore the
+exact previous memory presence/value and durable token value."
   (hermes-dashboard-transport--require-auth-source)
-  (let* ((key (hermes-dashboard-transport--native-token-memory-key base-url))
-         (prior-memory
-          (gethash key hermes-dashboard-transport--native-token-memory))
-         (prior-disk
-          (hermes-dashboard-transport--native-token-load-disk base-url))
-         (prior (or prior-memory prior-disk)))
-    (cond
-     ((null tokens)
-      (remhash key hermes-dashboard-transport--native-token-memory)
-      (hermes-dashboard-transport--native-token-delete-disk base-url)
-      nil)
-     (t
-      (puthash key tokens hermes-dashboard-transport--native-token-memory)
-      (condition-case err
-          (progn
-            ;; Replace disk only after the new secret is in hand.  Delete then
-            ;; write, and restore PRIOR on any failure so durable state cannot
-            ;; disappear because create/save failed mid-update.
-            (hermes-dashboard-transport--native-token-delete-disk base-url)
-            (unless (hermes-dashboard-transport--native-token-write-disk
-                     base-url tokens)
-              (error "Native token store verification failed"))
-            tokens)
-        (error
-         (if prior
-             (progn
-               (puthash key prior
-                        hermes-dashboard-transport--native-token-memory)
-               (ignore-errors
-                 (hermes-dashboard-transport--native-token-delete-disk base-url)
-                 (hermes-dashboard-transport--native-token-write-disk
-                  base-url prior)))
-           (remhash key hermes-dashboard-transport--native-token-memory)
-           (ignore-errors
-             (hermes-dashboard-transport--native-token-delete-disk base-url)))
-         (signal (car err) (cdr err))))))))
+  (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+    (user-error "Native dashboard sign-in was superseded"))
+  (let ((key (hermes-dashboard-transport--native-token-memory-key base-url)))
+    (when (member key hermes-dashboard-transport--native-token-store-active)
+      (user-error "Native token persistence is already in progress"))
+    (let ((hermes-dashboard-transport--native-token-store-active
+           (cons key hermes-dashboard-transport--native-token-store-active)))
+      (let* ((missing (make-symbol "missing"))
+             (prior-memory
+              (gethash key hermes-dashboard-transport--native-token-memory missing))
+             (prior-memory-present (not (eq prior-memory missing)))
+             (prior-disk
+              (hermes-dashboard-transport--native-token-load-disk base-url)))
+        (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+          (user-error "Native dashboard sign-in was superseded"))
+        (condition-case err
+            (progn
+              (if tokens
+                  (puthash key tokens
+                           hermes-dashboard-transport--native-token-memory)
+                (remhash key hermes-dashboard-transport--native-token-memory))
+              (hermes-dashboard-transport--native-token-delete-disk base-url)
+              (when (and tokens
+                         (not (hermes-dashboard-transport--native-token-write-disk
+                               base-url tokens)))
+                (error "Native token store verification failed"))
+              (unless (hermes-dashboard-transport--native-owner-current-p
+                       owner-current-p)
+                (user-error "Native dashboard sign-in was superseded"))
+              tokens)
+          ((error quit)
+           (unless (hermes-dashboard-transport--native-token-restore
+                    base-url key prior-memory-present prior-memory prior-disk)
+             (user-error
+              "Native token persistence failed and durable rollback failed"))
+           (signal (car err) (cdr err))))))))
 
 (defun hermes-dashboard-transport--native-token-needs-refresh-p
     (tokens &optional now skew)

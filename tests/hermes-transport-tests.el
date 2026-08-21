@@ -1335,6 +1335,218 @@
     (should (equal (hermes-dashboard-transport--native-token-decode legacy)
                    tokens))))
 
+(ert-deftest hermes-transport-dashboard-native-store-stale-owner-is-read-only ()
+  "An initially stale owner cannot touch existing native credentials."
+  (let* ((base "http://dash.example")
+         (key (hermes-dashboard-transport--native-token-memory-key base))
+         (prior-memory '(:access-token "memory" :refresh-token ""))
+         (prior-file "machine prior.test login keep port api password safe\n")
+         (auth-file (make-temp-file "hermes-native-auth-" nil nil prior-file))
+         (auth-sources (list auth-file))
+         (delete-fn (symbol-function
+                     'hermes-dashboard-transport--native-token-delete-disk))
+         (write-fn (symbol-function
+                    'hermes-dashboard-transport--native-token-write-disk))
+         deletes writes reason)
+    (unwind-protect
+        (progn
+          (puthash key prior-memory
+                   hermes-dashboard-transport--native-token-memory)
+          (cl-letf (((symbol-function
+                      'hermes-dashboard-transport--native-token-delete-disk)
+                     (lambda (&rest args)
+                       (cl-incf deletes)
+                       (apply delete-fn args)))
+                    ((symbol-function
+                      'hermes-dashboard-transport--native-token-write-disk)
+                     (lambda (&rest args)
+                       (cl-incf writes)
+                       (apply write-fn args))))
+            (condition-case err
+                (hermes-dashboard-transport--native-token-store
+                 base '(:access-token "stale") (lambda () nil))
+              (error (setq reason (error-message-string err)))))
+          (should (string-match-p "superseded" reason))
+          (should-not deletes)
+          (should-not writes)
+          (should (eq (gethash key hermes-dashboard-transport--native-token-memory)
+                      prior-memory))
+          (with-temp-buffer
+            (insert-file-contents auth-file)
+            (should (equal (buffer-string) prior-file))))
+      (remhash key hermes-dashboard-transport--native-token-memory)
+      (when (file-exists-p auth-file)
+        (delete-file auth-file)))))
+
+(ert-deftest hermes-transport-dashboard-native-save-reentry-restores-stale-owner ()
+  "A stale owner rolls back a real recursive auth-source save."
+  (let* ((base "http://dash.example")
+         (key (hermes-dashboard-transport--native-token-memory-key base))
+         (prior-memory '(:access-token "memory-prior" :refresh-token ""
+                         :expires-at 1 :provider "oauth" :user-id "memory"))
+         (prior-disk '(:access-token "disk-prior" :refresh-token "disk-refresh"
+                       :expires-at 2 :provider "oauth" :user-id "disk"))
+         (fresh '(:access-token "stale-fresh" :refresh-token "stale-refresh"
+                  :expires-at 4102444800 :provider "oauth" :user-id "fresh"))
+         (successor '(:access-token "successor" :refresh-token "successor-refresh"
+                      :expires-at 4102444800 :provider "oauth" :user-id "next"))
+         (host (car (hermes-dashboard-transport--auth-source-hosts base)))
+         (prior-file
+          (format "machine %s login %s port %s password '%s'\n"
+                  host hermes-dashboard-transport--native-auth-user
+                  hermes-dashboard-transport--native-auth-port
+                  (hermes-dashboard-transport--native-token-encode prior-disk)))
+         (auth-file (make-temp-file "hermes-native-auth-" nil nil prior-file))
+         (current t)
+         nested-reason outer-reason prompts)
+    (unwind-protect
+        (let ((auth-sources (list auth-file))
+              (auth-source-save-behavior 'ask)
+              (auth-source-do-cache nil)
+              (auth-source-netrc-cache nil))
+          (clrhash hermes-dashboard-transport--native-token-memory)
+          (puthash key prior-memory
+                   hermes-dashboard-transport--native-token-memory)
+          (cl-letf (((symbol-function 'auth-source-read-char-choice)
+                     (lambda (&rest _)
+                       (setq prompts (1+ (or prompts 0)))
+                       (when (= prompts 1)
+                         (setq current nil)
+                         (condition-case err
+                             (hermes-dashboard-transport--native-token-store
+                              base successor (lambda () t))
+                           (error
+                            (setq nested-reason (error-message-string err)))))
+                       ?y)))
+            (condition-case err
+                (hermes-dashboard-transport--native-token-store
+                 base fresh (lambda () current))
+              (error (setq outer-reason (error-message-string err)))))
+          (should (= prompts 1))
+          (should (string-match-p "already in progress" nested-reason))
+          (should (string-match-p "superseded" outer-reason))
+          (should (eq (gethash key hermes-dashboard-transport--native-token-memory)
+                      prior-memory))
+          (let ((loaded
+                 (hermes-dashboard-transport--native-token-load-disk base)))
+            (should (equal loaded prior-disk))
+            (should-not (equal loaded fresh)))
+          (with-temp-buffer
+            (insert-file-contents auth-file)
+            (dolist (tokens (list fresh successor))
+              (should-not
+               (search-forward
+                (hermes-dashboard-transport--native-token-encode tokens)
+                nil t)))))
+      (clrhash hermes-dashboard-transport--native-token-memory)
+      (when (fboundp 'auth-source-forget-all-cached)
+        (auth-source-forget-all-cached))
+      (when (file-exists-p auth-file)
+        (delete-file auth-file)))))
+
+(ert-deftest hermes-transport-dashboard-native-save-quit-restores-prior ()
+  "Quitting a real auth-source save restores the exact prior native state."
+  (let* ((base "http://dash.example")
+         (key (hermes-dashboard-transport--native-token-memory-key base))
+         (prior-memory '(:access-token "memory-prior" :refresh-token ""
+                         :expires-at 1 :provider "oauth" :user-id "memory"))
+         (prior-disk '(:access-token "disk-prior" :refresh-token "disk-refresh"
+                       :expires-at 2 :provider "oauth" :user-id "disk"))
+         (fresh '(:access-token "fresh" :refresh-token "fresh-refresh"
+                  :expires-at 4102444800 :provider "oauth" :user-id "fresh"))
+         (host (car (hermes-dashboard-transport--auth-source-hosts base)))
+         (prior-file
+          (format "machine %s login %s port %s password '%s'\n"
+                  host hermes-dashboard-transport--native-auth-user
+                  hermes-dashboard-transport--native-auth-port
+                  (hermes-dashboard-transport--native-token-encode prior-disk)))
+         (auth-file (make-temp-file "hermes-native-auth-" nil nil prior-file))
+         (quit-data (list "save-confirmation"))
+         caught prompts)
+    (unwind-protect
+        (let ((auth-sources (list auth-file))
+              (auth-source-save-behavior 'ask)
+              (auth-source-do-cache nil)
+              (auth-source-netrc-cache nil))
+          (clrhash hermes-dashboard-transport--native-token-memory)
+          (puthash key prior-memory
+                   hermes-dashboard-transport--native-token-memory)
+          (cl-letf (((symbol-function 'auth-source-read-char-choice)
+                     (lambda (&rest _)
+                       (setq prompts (1+ (or prompts 0)))
+                       (signal 'quit quit-data))))
+            (condition-case err
+                (hermes-dashboard-transport--native-token-store base fresh)
+              (quit (setq caught err))))
+          (should (= prompts 1))
+          (should (equal caught (cons 'quit quit-data)))
+          (should (eq (gethash key hermes-dashboard-transport--native-token-memory)
+                      prior-memory))
+          (let ((loaded
+                 (hermes-dashboard-transport--native-token-load-disk base)))
+            (should (equal loaded prior-disk))
+            (should-not (equal loaded fresh)))
+          (with-temp-buffer
+            (insert-file-contents auth-file)
+            (should-not
+             (search-forward
+              (hermes-dashboard-transport--native-token-encode fresh)
+              nil t))))
+      (clrhash hermes-dashboard-transport--native-token-memory)
+      (when (fboundp 'auth-source-forget-all-cached)
+        (auth-source-forget-all-cached))
+      (when (file-exists-p auth-file)
+        (delete-file auth-file)))))
+
+(ert-deftest hermes-transport-dashboard-native-rollback-verifies-metadata ()
+  "Rollback rejects stale durable metadata with matching token strings."
+  (let* ((base "http://dash.example")
+         (key (hermes-dashboard-transport--native-token-memory-key base))
+         (prior-memory '(:access-token "memory" :refresh-token ""))
+         (prior '(:access-token "same" :refresh-token "same-r"
+                  :expires-at 1 :provider "old" :user-id "old-user"))
+         (fresh '(:access-token "same" :refresh-token "same-r"
+                  :expires-at 2 :provider "new" :user-id "new-user"))
+         (file (make-temp-file "hermes-native-auth-"))
+         (auth-sources (list file)) (auth-source-save-behavior t)
+         (auth-source-do-cache nil) (auth-source-netrc-cache nil)
+         (search-fn (symbol-function 'auth-source-search))
+         (delete-fn (symbol-function
+                     'hermes-dashboard-transport--native-token-delete-disk))
+         rollback (checks 0) (rollback-deletes 0) reason)
+    (unwind-protect
+        (progn
+          (hermes-dashboard-transport--native-token-write-disk base prior)
+          (puthash key prior-memory
+                   hermes-dashboard-transport--native-token-memory)
+          (cl-letf (((symbol-function 'auth-source-search)
+                     (lambda (&rest args)
+                       (if (and rollback (plist-get args :create))
+                           (list (list :save-function (lambda () t)))
+                         (apply search-fn args))))
+                    ((symbol-function
+                      'hermes-dashboard-transport--native-token-delete-disk)
+                     (lambda (&rest args)
+                       (if (and rollback (= (cl-incf rollback-deletes) 1))
+                           nil
+                         (apply delete-fn args)))))
+            (condition-case err
+                (hermes-dashboard-transport--native-token-store
+                 base fresh
+                 (lambda ()
+                   (setq checks (1+ (or checks 0)))
+                   (when (= checks 3) (setq rollback t))
+                   (< checks 3)))
+              (error (setq reason (error-message-string err)))))
+          (should (equal reason
+                         "Native token persistence failed and durable rollback failed"))
+          (should (= rollback-deletes 2))
+          (should (eq (gethash key hermes-dashboard-transport--native-token-memory)
+                      prior-memory))
+          (should-not (hermes-dashboard-transport--native-token-load-disk base)))
+      (remhash key hermes-dashboard-transport--native-token-memory)
+      (when (file-exists-p file) (delete-file file)))))
+
 (ert-deftest hermes-transport-dashboard-native-token-store-cleans-failed-first-write ()
   "A failed first durable write leaves no native token behind."
   (let* ((prior "machine unrelated.test login keep port api password safe\n")
