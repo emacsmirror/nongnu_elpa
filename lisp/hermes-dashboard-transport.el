@@ -529,38 +529,123 @@ emitted its own transport error event."
   (when (eq (hermes-dashboard-transport-client-startup-cancel client) expected)
     (setf (hermes-dashboard-transport-client-startup-cancel client) next)))
 
-(defun hermes-dashboard-transport-stop (client &optional message)
-  "Release CLIENT's dashboard WebSocket, process, and pending requests.
-Teardown is best effort: a stale or corrupt CLIENT (for example one left over
-from a reload after a struct change) still has its socket and process closed
-and its session ended, so the caller can always start a new session.
-MESSAGE is reported to pending request reject callbacks, or as a normalized
-transport error when a pending request has no reject callback."
-  (when (hermes-dashboard-transport-client-p client)
+(defun hermes-dashboard-transport--stop-snapshot (client message event)
+  "Return plain teardown data captured from CLIENT for MESSAGE and EVENT."
+  (let* ((pending (hermes-dashboard-transport-client-pending client))
+         (requests (and (hash-table-p pending)
+                        (hermes-dashboard-transport--pending-requests client)))
+         (subscribers (hermes-dashboard-transport-client-subscribers client))
+         subscriber-fns)
+    (when (hash-table-p subscribers)
+      (maphash (lambda (_token record)
+                 (when (functionp (plist-get record :fn))
+                   (push (plist-get record :fn) subscriber-fns)))
+               subscribers))
+    (let* ((message (hermes-dashboard-transport--normalized-error-message
+                     client message))
+           (fallback (and (null subscriber-fns)
+                          (hermes-dashboard-transport-client-callback client))))
+      (list :message message :requests requests
+            :ready (hermes-dashboard-transport-client-ready-promise client)
+            :event-fns (or subscriber-fns (and (functionp fallback)
+                                                (list fallback)))
+            :events
+            (append (and event
+                         (list (plist-put (copy-sequence event)
+                                          :content message)))
+                    (cl-loop for request in requests
+                             unless (functionp (plist-get request :reject))
+                             collect (list :type 'error :event "jsonrpc.error"
+                                           :content message
+                                           :method (plist-get request :method))))
+            :startup (hermes-dashboard-transport-client-startup-cancel client)
+            :idle (hermes-dashboard-transport-client-idle-timer client)
+            :heartbeat (hermes-dashboard-transport-client-heartbeat-timer client)
+            :websocket (hermes-dashboard-transport-client-websocket client)
+            :process (hermes-dashboard-transport-client-process client)))))
+
+(defun hermes-dashboard-transport--attempt (function &rest args)
+  "Call FUNCTION with ARGS, containing both ordinary errors and quit."
+  (condition-case nil
+      (apply function args)
+    ((error quit) nil)))
+
+(defun hermes-dashboard-transport--clear-table (table)
+  "Clear and return TABLE when it is a hash table."
+  (when (hash-table-p table)
+    (clrhash table)
+    table))
+
+(defun hermes-dashboard-transport--detach-stop (client)
+  "Commit CLIENT's terminal state and detach all live ownership."
+  (let ((pending (hermes-dashboard-transport-client-pending client))
+        (subscribers (hermes-dashboard-transport-client-subscribers client))
+        (session-index (hermes-dashboard-transport-client-session-index client)))
     (cl-incf (hermes-dashboard-transport-client-generation client))
-    (setf (hermes-dashboard-transport-client-stopping-p client) t)
-    (ignore-errors (hermes-dashboard-transport--cancel-startup client))
-    (ignore-errors
-      (hermes-dashboard-transport--reject-pending-requests
-       client (or message "Hermes dashboard transport stopped")))
-    (ignore-errors
-      (when-let* ((promise (hermes-dashboard-transport-client-ready-promise
-                            client)))
-        (hermes--promise-reject
-         promise (or message "Hermes dashboard transport stopped"))))
-    (ignore-errors (hermes-dashboard-transport--unregister-client client))
-    (ignore-errors (hermes-dashboard-transport--cancel-idle-timer client))
-    (ignore-errors (hermes-dashboard-transport--cancel-heartbeat client))
-    (ignore-errors
-      (setf (hermes-dashboard-transport-client-callback client) #'ignore)
-      (clrhash (hermes-dashboard-transport-client-subscribers client))
-      (clrhash (hermes-dashboard-transport-client-session-index client)))
-    (ignore-errors (hermes-dashboard-transport--close-websocket client))
-    (ignore-errors (hermes-dashboard-transport--delete-process client))
-    (ignore-errors
-      (setf (hermes-dashboard-transport-client-session-id client) nil
-            (hermes-dashboard-transport-client-stored-session-id client) nil))
-    client))
+    (setf (hermes-dashboard-transport-client-stopping-p client) t
+          (hermes-dashboard-transport-client-ready-p client) nil
+          (hermes-dashboard-transport-client-reconnecting-p client) nil
+          (hermes-dashboard-transport-client-refcount client) 0
+          (hermes-dashboard-transport-client-websocket client) nil
+          (hermes-dashboard-transport-client-process client) nil
+          (hermes-dashboard-transport-client-startup-cancel client) nil
+          (hermes-dashboard-transport-client-idle-timer client) nil
+          (hermes-dashboard-transport-client-heartbeat-timer client) nil
+          (hermes-dashboard-transport-client-token client) nil
+          (hermes-dashboard-transport-client-auth-token client) nil
+          (hermes-dashboard-transport-client-secrets client) nil
+          (hermes-dashboard-transport-client-websocket-url client) nil
+          (hermes-dashboard-transport-client-credential-kind client) nil
+          (hermes-dashboard-transport-client-credential-reusable-p client) nil
+          (hermes-dashboard-transport-client-callback client) nil
+          (hermes-dashboard-transport-client-session-id client) nil
+          (hermes-dashboard-transport-client-stored-session-id client) nil)
+    (hermes-dashboard-transport--attempt
+     #'hermes-dashboard-transport--unregister-client client)
+    (setf (hermes-dashboard-transport-client-pending client)
+          (hermes-dashboard-transport--clear-table pending)
+          (hermes-dashboard-transport-client-subscribers client)
+          (hermes-dashboard-transport--clear-table subscribers)
+          (hermes-dashboard-transport-client-session-index client)
+          (hermes-dashboard-transport--clear-table session-index))))
+
+(defun hermes-dashboard-transport--run-stop-effects (snapshot)
+  "Run captured terminal SNAPSHOT effects independently."
+  (when (functionp (plist-get snapshot :startup))
+    (hermes-dashboard-transport--attempt (plist-get snapshot :startup)))
+  (dolist (timer (append (list (plist-get snapshot :idle)
+                               (plist-get snapshot :heartbeat))
+                         (mapcar (lambda (request) (plist-get request :timer))
+                                 (plist-get snapshot :requests))))
+    (when timer
+      (hermes-dashboard-transport--attempt #'cancel-timer timer)))
+  (when-let* ((websocket (plist-get snapshot :websocket)))
+    (when (fboundp 'websocket-close)
+      (hermes-dashboard-transport--attempt #'websocket-close websocket)))
+  (when-let* ((process (plist-get snapshot :process)))
+    (hermes-dashboard-transport--attempt #'delete-process process))
+  (dolist (terminal-event (plist-get snapshot :events))
+    (dolist (fn (plist-get snapshot :event-fns))
+      (hermes-dashboard-transport--attempt fn terminal-event)))
+  (dolist (request (plist-get snapshot :requests))
+    (when (functionp (plist-get request :reject))
+      (hermes-dashboard-transport--attempt
+       (plist-get request :reject) (plist-get snapshot :message))))
+  (when-let* ((ready (plist-get snapshot :ready)))
+    (hermes-dashboard-transport--attempt
+     #'hermes--promise-reject ready (plist-get snapshot :message))))
+
+(defun hermes-dashboard-transport-stop (client &optional message event)
+  "Terminally release CLIENT's dashboard resources and pending requests.
+MESSAGE is redacted before teardown and reported to request reject callbacks.
+Optional EVENT is delivered after detachment with the same redacted content."
+  (when (hermes-dashboard-transport-client-p client)
+    (let ((snapshot (hermes-dashboard-transport--stop-snapshot
+                     client (or message "Hermes dashboard transport stopped")
+                     event)))
+      (hermes-dashboard-transport--detach-stop client)
+      (hermes-dashboard-transport--run-stop-effects snapshot)
+      client)))
 
 (defun hermes-dashboard-transport-stop-all (&optional message)
   "Stop every shared dashboard client and return the number stopped.
@@ -573,7 +658,6 @@ MESSAGE is forwarded to `hermes-dashboard-transport-stop'."
     (mapc (lambda (client)
             (hermes-dashboard-transport-stop client message))
           clients)
-    (clrhash hermes-dashboard-transport--clients)
     (length clients)))
 
 ;;; Reconnect
@@ -666,9 +750,8 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
 
 (defun hermes-dashboard-transport--finalize-reconnect (client message)
   "Report terminal reconnect MESSAGE and stop CLIENT."
-  (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
-  (hermes-dashboard-transport--emit-status client "closed" message)
-  (hermes-dashboard-transport-stop client message))
+  (hermes-dashboard-transport-stop
+   client message (list :type 'status :status "closed" :content message)))
 
 (defun hermes-dashboard-transport--handle-socket-down (client message &optional websocket)
   "React to CLIENT's WebSocket closing with MESSAGE.
@@ -1001,8 +1084,9 @@ the timer-based connect and readiness flow without real timers.")
 (defun hermes-dashboard-transport--fail-ready (client message)
   "Report MESSAGE for CLIENT, reject its readiness, and release its resources.
 Used when the connection or `gateway.ready' handshake fails asynchronously."
-  (hermes-dashboard-transport--emit-error client message)
-  (hermes-dashboard-transport-stop client message))
+  (hermes-dashboard-transport-stop
+   client message
+   (list :type 'error :event "jsonrpc.error" :content message)))
 
 (defun hermes-dashboard-transport--generation-live-p (client generation)
   "Return non-nil when GENERATION still owns CLIENT startup work."
@@ -1282,12 +1366,14 @@ With `hermes-dashboard-transport-idle-close-delay' set, the last release keeps
 CLIENT warm for that delay instead of stopping immediately.  Return the
 remaining reference count, or nil when CLIENT is not a client."
   (when (hermes-dashboard-transport-client-p client)
-    (let ((count (max 0 (1- (or (hermes-dashboard-transport-client-refcount client)
-                                0)))))
-      (setf (hermes-dashboard-transport-client-refcount client) count)
-      (when (zerop count)
-        (hermes-dashboard-transport--release-idle-client client))
-      count)))
+    (if (hermes-dashboard-transport-client-stopping-p client)
+        0
+      (let ((count (max 0 (1- (or (hermes-dashboard-transport-client-refcount client)
+                                  0)))))
+        (setf (hermes-dashboard-transport-client-refcount client) count)
+        (when (zerop count)
+          (hermes-dashboard-transport--release-idle-client client))
+        count))))
 
 ;;; Heartbeat
 
