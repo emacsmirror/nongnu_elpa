@@ -34,7 +34,7 @@ static jmp_buf jmp;
 static bool exited = false;
 int plugin_is_GPL_compatible;
 
-static int doom_log(const char* fmt, va_list va) {
+int DG_vprintf(const char* fmt, va_list va) {
     char buf[1024];
     int len = vsnprintf(buf, sizeof (buf), fmt, va);
     env->funcall(env, Qdoom_log, 1,
@@ -44,8 +44,8 @@ static int doom_log(const char* fmt, va_list va) {
 
 int DG_vfprintf(FILE* fp, const char* fmt, va_list va) {
     return fp == stderr || fp == stdout
-        ? doom_log(fmt, va)
-        : (vfprintf)(stderr, fmt, va);
+        ? DG_vprintf(fmt, va)
+        : (vfprintf)(fp, fmt, va);
 }
 
 int DG_fprintf(FILE* fp, const char* fmt, ...) {
@@ -59,7 +59,7 @@ int DG_fprintf(FILE* fp, const char* fmt, ...) {
 int DG_printf(const char* fmt, ...) {
     va_list va;
     va_start(va, fmt);
-    int len = doom_log(fmt, va);
+    int len = DG_vprintf(fmt, va);
     va_end(va);
     return len;
 }
@@ -115,16 +115,16 @@ int DG_GetKey(int* pressed, unsigned char* key) {
     return i != 0;
 }
 
-static emacs_value doom_tick(emacs_env* env_, ptrdiff_t nargs,
-                             emacs_value args[], void* data) {
+static emacs_value Ftick(emacs_env* env_, ptrdiff_t nargs,
+                         emacs_value args[], void* data) {
     env = env_;
     if (!exited && !setjmp(jmp))
         doomgeneric_Tick();
     return Qnil;
 }
 
-static emacs_value doom_create(emacs_env* env_, ptrdiff_t nargs,
-                               emacs_value args[], void* data) {
+static emacs_value Fcreate(emacs_env* env_, ptrdiff_t nargs,
+                           emacs_value args[], void* data) {
     env = env_;
     char** argv = malloc(sizeof (char*) * (nargs + 2));
     if (!argv) {
@@ -172,7 +172,7 @@ int emacs_module_init(struct emacs_runtime *rt) {
     Qdoom_key = sym("doom--key");
     Qdoom_title = sym("doom--title");
     Qdoom_log = sym("doom--log");
-    defun(env, "doom--tick", 0, 0, doom_tick);
-    defun(env, "doom--create", 0, emacs_variadic_function, doom_create);
+    defun(env, "doom--tick", 0, 0, Ftick);
+    defun(env, "doom--create", 0, emacs_variadic_function, Fcreate);
     return 0;
 }
