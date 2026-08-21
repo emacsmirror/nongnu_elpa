@@ -1145,7 +1145,9 @@ Emacs."
        host port base-url method token t
        (lambda (expected next)
          (hermes-dashboard-transport--startup-cancel-setter
-          client expected next)))
+          client expected next))
+       (lambda ()
+         (hermes-dashboard-transport--generation-live-p client generation)))
       (lambda (auth)
         (when (hermes-dashboard-transport--generation-live-p client generation)
           (hermes-dashboard-transport--remote-connect client auth))))

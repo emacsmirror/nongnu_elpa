@@ -1162,10 +1162,11 @@ ON-REQUEST receives (REQUEST CLIENT).  Return a plist with :process, :port,
         (ignore-errors (delete-process proc))))))
 
 (defun hermes-dashboard-transport--native-login-async
-    (base-url &optional provider startup-cancel-setter)
+    (base-url &optional provider startup-cancel-setter owner-current-p)
   "Return a promise of native tokens for BASE-URL after browser PKCE login.
 Optional PROVIDER is forwarded to the authorize URL when non-empty.
-STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil."
+STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil.
+OWNER-CURRENT-P guards callback effects when non-nil."
   (let* ((promise (hermes--promise-make))
          (pkce (hermes-dashboard-transport--pkce-pair))
          (state (hermes-dashboard-transport--native-state))
@@ -1202,8 +1203,11 @@ STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil.
     (setq cancel
           (lambda ()
             (funcall fail "Native dashboard sign-in was superseded")))
-    (condition-case err
-        (progn
+    (if (not (hermes-dashboard-transport--native-owner-current-p
+              owner-current-p))
+        (funcall fail "Native dashboard sign-in was superseded")
+      (condition-case err
+          (progn
           (when startup-cancel-setter
             (unless (funcall startup-cancel-setter nil cancel)
               (user-error "Native dashboard sign-in was superseded"))
@@ -1212,7 +1216,14 @@ STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil.
                 (hermes-dashboard-transport--native-loopback-listen
                  (lambda (request client)
                    (unless settled
-                     (condition-case request-err
+                     (if (not (hermes-dashboard-transport--native-owner-current-p
+                               owner-current-p))
+                         (progn
+                           (hermes-dashboard-transport--native-loopback-reply
+                            client nil)
+                           (funcall fail
+                                    "Native dashboard sign-in was superseded"))
+                       (condition-case request-err
                          (let* ((parsed
                                  (hermes-dashboard-transport--native-parse-loopback
                                   request state))
@@ -1237,22 +1248,26 @@ STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil.
                              :cancel-setter startup-cancel-setter
                              :cancel-expected cancel)
                             (lambda (response)
-                              (condition-case response-err
-                                  (if-let* ((tokens
-                                             (hermes-dashboard-transport--native-token-plist
-                                              (plist-get response :body))))
-                                      (funcall finish tokens)
-                                    (funcall fail
-                                             "Gateway token response missing access_token"))
-                                (error
-                                 (funcall fail
-                                          (error-message-string response-err)))))
+                              (if (not (hermes-dashboard-transport--native-owner-current-p
+                                        owner-current-p))
+                                  (funcall fail
+                                           "Native dashboard sign-in was superseded")
+                                (condition-case response-err
+                                    (if-let* ((tokens
+                                               (hermes-dashboard-transport--native-token-plist
+                                                (plist-get response :body))))
+                                        (funcall finish tokens)
+                                      (funcall fail
+                                               "Gateway token response missing access_token"))
+                                  (error
+                                   (funcall fail
+                                            (error-message-string response-err))))))
                             (lambda (reason)
                               (funcall fail reason))))
                        (error
                         (hermes-dashboard-transport--native-loopback-reply
                          client nil)
-                        (funcall fail (error-message-string request-err))))))))
+                        (funcall fail (error-message-string request-err)))))))))
           (setq timer
                 (run-at-time
                  hermes-dashboard-transport-native-login-timeout
@@ -1267,7 +1282,7 @@ STARTUP-CANCEL-SETTER registers the exact login cancellation owner when non-nil.
             (plist-get server :redirect-uri)
             state
             provider)))
-      (error (funcall fail (error-message-string err))))
+        (error (funcall fail (error-message-string err)))))
     promise))
 
 (defun hermes-dashboard-transport--native-ticket-auth
@@ -1289,65 +1304,92 @@ HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
           :secrets (delq nil (list access refresh ticket)))))
 
 (defun hermes-dashboard-transport--native-ticket-async
-    (host port base-url tokens &optional cancel-setter)
+    (host port base-url tokens &optional cancel-setter owner-current-p)
   "Return a promise of ticket WebSocket auth using native TOKENS.
 HOST, PORT, and BASE-URL build the authenticated WebSocket URL.
-CANCEL-SETTER owns the in-flight request when non-nil."
-  (let* ((access (plist-get tokens :access-token))
-         (refresh (plist-get tokens :refresh-token))
-         (secrets (delq nil (list access refresh))))
-    (hermes--promise-then
-     (hermes-dashboard-transport--http-json-async
-      (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
-      :method "POST"
-      :headers `(("Authorization" . ,(concat "Bearer " access)))
-      :secrets secrets
-      :cancel-setter cancel-setter)
-     (lambda (ticket-response)
-       (hermes-dashboard-transport--native-ticket-auth
-        host port base-url tokens ticket-response))
-     (lambda (reason)
-       (hermes--promise-rejected reason)))))
-
-(defun hermes-dashboard-transport--native-refresh-async
-    (base-url tokens &optional cancel-setter)
-  "Return a promise of refreshed native tokens for BASE-URL.
-TOKENS must include a refresh token; successful rotation is stored.
-CANCEL-SETTER owns the in-flight request when non-nil."
-  (let ((refresh (plist-get tokens :refresh-token))
-        (provider (plist-get tokens :provider)))
-    (if (or (not (stringp refresh)) (string-empty-p refresh))
-        (hermes--promise-rejected
-         "Native dashboard tokens expired and no refresh token is stored")
+CANCEL-SETTER owns the request.  OWNER-CURRENT-P guards its effects."
+  (if (not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+      (hermes--promise-rejected "Native dashboard sign-in was superseded")
+    (let* ((access (plist-get tokens :access-token))
+           (refresh (plist-get tokens :refresh-token))
+           (secrets (delq nil (list access refresh))))
       (hermes--promise-then
        (hermes-dashboard-transport--http-json-async
-        (hermes-dashboard-transport--api-url base-url "/auth/native/refresh")
+        (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
         :method "POST"
-        :headers '(("Content-Type" . "application/json"))
-        :body (append `((refresh_token . ,refresh))
-                      (and (stringp provider)
-                           (not (string-empty-p provider))
-                           `((provider . ,provider))))
-        :secrets (list refresh)
+        :headers `(("Authorization" . ,(concat "Bearer " access)))
+        :secrets secrets
         :cancel-setter cancel-setter)
-       (lambda (response)
-         (if-let* ((next (hermes-dashboard-transport--native-token-plist
-                          (plist-get response :body)
-                          tokens)))
-             (progn
-               (hermes-dashboard-transport--native-token-store base-url next)
-               next)
+       (lambda (ticket-response)
+         (if (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+             (hermes-dashboard-transport--native-ticket-auth
+              host port base-url tokens ticket-response)
            (hermes--promise-rejected
-            "Gateway refresh response missing access_token")))
+            "Native dashboard sign-in was superseded")))
        (lambda (reason)
          (hermes--promise-rejected reason))))))
 
-(defun hermes-dashboard-transport--native-ensure-tokens-async
-    (base-url &optional provider force-login interactive cancel-setter)
-  "Return a promise of usable native tokens for BASE-URL.
-Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
-skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh or
-interactive login work."
+(defun hermes-dashboard-transport--native-store-owned-tokens
+    (base-url tokens owner-current-p)
+  "Store TOKENS for BASE-URL while OWNER-CURRENT-P owns native auth."
+  (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+    (user-error "Native dashboard sign-in was superseded"))
+  (if owner-current-p
+      (hermes-dashboard-transport--native-token-store
+       base-url tokens owner-current-p)
+    (hermes-dashboard-transport--native-token-store base-url tokens))
+  tokens)
+
+(defun hermes-dashboard-transport--native-login-and-store-async
+    (base-url provider cancel-setter owner-current-p)
+  "Return login tokens stored for BASE-URL under OWNER-CURRENT-P.
+PROVIDER selects OAuth; CANCEL-SETTER owns startup work."
+  (hermes--promise-map
+   (hermes-dashboard-transport--native-login-async
+    base-url provider cancel-setter owner-current-p)
+   (lambda (tokens)
+     (hermes-dashboard-transport--native-store-owned-tokens
+      base-url tokens owner-current-p))))
+
+(defun hermes-dashboard-transport--native-refresh-async
+    (base-url tokens &optional cancel-setter owner-current-p)
+  "Return a promise of refreshed native tokens for BASE-URL.
+TOKENS must include a refresh token; successful rotation is stored.
+CANCEL-SETTER owns the request.  OWNER-CURRENT-P guards token persistence."
+  (let ((refresh (plist-get tokens :refresh-token))
+        (provider (plist-get tokens :provider)))
+    (if (not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+        (hermes--promise-rejected "Native dashboard sign-in was superseded")
+      (if (or (not (stringp refresh)) (string-empty-p refresh))
+          (hermes--promise-rejected
+           "Native dashboard tokens expired and no refresh token is stored")
+        (hermes--promise-then
+         (hermes-dashboard-transport--http-json-async
+          (hermes-dashboard-transport--api-url base-url "/auth/native/refresh")
+          :method "POST"
+          :headers '(("Content-Type" . "application/json"))
+          :body (append `((refresh_token . ,refresh))
+                        (and (stringp provider)
+                             (not (string-empty-p provider))
+                             `((provider . ,provider))))
+          :secrets (list refresh)
+          :cancel-setter cancel-setter)
+         (lambda (response)
+           (if-let* ((next (hermes-dashboard-transport--native-token-plist
+                            (plist-get response :body)
+                            tokens)))
+               (hermes-dashboard-transport--native-store-owned-tokens
+                base-url next owner-current-p)
+             (hermes--promise-rejected
+              "Gateway refresh response missing access_token")))
+         (lambda (reason)
+           (hermes--promise-rejected reason)))))))
+
+(defun hermes-dashboard-transport--native-ensure-owned-tokens-async
+    (base-url provider force-login interactive cancel-setter owner-current-p)
+  "Continue usable native token resolution for BASE-URL under OWNER-CURRENT-P.
+PROVIDER selects OAuth.  FORCE-LOGIN skips stored tokens; INTERACTIVE permits
+login; CANCEL-SETTER owns startup work."
   (let ((stored (and (not force-login)
                      (hermes-dashboard-transport--native-token-load base-url))))
     (cond
@@ -1359,45 +1401,52 @@ interactive login work."
                    (plist-get stored :refresh-token)))
       (hermes--promise-catch
        (hermes-dashboard-transport--native-refresh-async
-        base-url stored cancel-setter)
+        base-url stored cancel-setter owner-current-p)
        (lambda (reason)
-         ;; A dead refresh token may force a fresh login only when the caller
-         ;; explicitly owns browser interaction; preserve the old store until
-         ;; the new login succeeds.
+         ;; Preserve the old store until an explicitly interactive login wins.
          (if (and interactive (stringp reason)
                   (string-match-p "(HTTP 401)" reason))
-             (hermes--promise-then
-              (hermes-dashboard-transport--native-login-async
-               base-url provider cancel-setter)
-              (lambda (tokens)
-                (hermes-dashboard-transport--native-token-store base-url tokens)
-                tokens))
+             (hermes-dashboard-transport--native-login-and-store-async
+              base-url provider cancel-setter owner-current-p)
            (hermes--promise-rejected reason)))))
      (interactive
-      (hermes--promise-then
-       (hermes-dashboard-transport--native-login-async
-        base-url provider cancel-setter)
-       (lambda (tokens)
-         (hermes-dashboard-transport--native-token-store base-url tokens)
-         tokens)))
+      (hermes-dashboard-transport--native-login-and-store-async
+       base-url provider cancel-setter owner-current-p))
      (t
       (hermes--promise-rejected
        "Native dashboard sign-in requires explicit interactive authorization")))))
 
+(defun hermes-dashboard-transport--native-ensure-tokens-async
+    (base-url &optional provider force-login interactive cancel-setter
+          owner-current-p)
+  "Return a promise of usable native tokens for BASE-URL.
+Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
+skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns startup work.
+OWNER-CURRENT-P guards native effects when non-nil."
+  (if (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+      (hermes-dashboard-transport--native-ensure-owned-tokens-async
+       base-url provider force-login interactive cancel-setter owner-current-p)
+    (hermes--promise-rejected "Native dashboard sign-in was superseded")))
+
 (defun hermes-dashboard-transport--remote-native-auth-async
-    (host port base-url &optional status force-login interactive cancel-setter)
+    (host port base-url &optional status force-login interactive cancel-setter
+          owner-current-p)
   "Return a promise of native PKCE WebSocket auth for HOST, PORT, BASE-URL.
 Optional STATUS supplies the OAuth provider name.  FORCE-LOGIN skips stored
-tokens.  INTERACTIVE permits login; CANCEL-SETTER owns native startup work."
+tokens.  INTERACTIVE permits login; CANCEL-SETTER owns native startup work.
+OWNER-CURRENT-P guards native effects when non-nil."
   (let ((provider (and status
                        (hermes-dashboard-transport--status-oauth-provider
                         status))))
     (hermes--promise-then
      (hermes-dashboard-transport--native-ensure-tokens-async
-      base-url provider force-login interactive cancel-setter)
+      base-url provider force-login interactive cancel-setter owner-current-p)
      (lambda (tokens)
-       (hermes-dashboard-transport--native-ticket-async
-        host port base-url tokens cancel-setter)))))
+       (if (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+           (hermes-dashboard-transport--native-ticket-async
+            host port base-url tokens cancel-setter owner-current-p)
+         (hermes--promise-rejected
+          "Native dashboard sign-in was superseded"))))))
 
 (defun hermes-dashboard-transport--api-native-auth-async
     (base-url &optional status)
@@ -2128,10 +2177,12 @@ network; a missing token rejects the promise."
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-auth-async
-    (host port base-url method &optional token interactive cancel-setter)
+    (host port base-url method &optional token interactive cancel-setter
+          owner-current-p)
   "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
 Mirrors the previous synchronous resolution without blocking.  INTERACTIVE
-permits native login; CANCEL-SETTER owns native startup work."
+permits native login; CANCEL-SETTER owns native startup work.  OWNER-CURRENT-P
+guards native effects when non-nil."
   (pcase method
     ('token (hermes-dashboard-transport--remote-token-auth-async
              host port base-url token))
@@ -2145,7 +2196,8 @@ permits native login; CANCEL-SETTER owns native startup work."
                base-url cancel-setter)
               (lambda (status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status nil interactive cancel-setter))))
+                 host port base-url status nil interactive cancel-setter
+                 owner-current-p))))
     ('auto (hermes--promise-then
             (hermes-dashboard-transport--remote-status-async
              base-url cancel-setter)
@@ -2158,7 +2210,8 @@ permits native login; CANCEL-SETTER owns native startup work."
                ((hermes-dashboard-transport--status-supports-native-pkce-p
                  status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status nil interactive cancel-setter))
+                 host port base-url status nil interactive cancel-setter
+                 owner-current-p))
                ((hermes-dashboard-transport--status-basic-provider status)
                 (hermes-dashboard-transport--remote-basic-auth-async
                  host port base-url status))

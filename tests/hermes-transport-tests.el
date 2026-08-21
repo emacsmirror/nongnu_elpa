@@ -1059,6 +1059,56 @@
                                       'hermes-dashboard-transport-reconnect)))
           (should-not (hermes-dashboard-transport-client-startup-cancel client)))))))
 
+(ert-deftest hermes-transport-dashboard-reconnect-discards-late-native-stages ()
+  "Reconnect makes late status, login, and refresh results inert."
+  (dolist (stage '(status login refresh))
+    (let ((deferred (hermes--promise-make)) client
+          (stored 0) (ticketed 0) (opened 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-status-async)
+                 (lambda (&rest _)
+                   (if (eq stage 'status) deferred
+                     (hermes--promise-resolved
+                      '((auth_required . t)
+                        (auth_providers . ("oauth"))
+                        (auth_flows . ("native_pkce")))))))
+                ((symbol-function 'hermes-dashboard-transport--native-token-load)
+                 (lambda (&rest _)
+                   (and (eq stage 'refresh)
+                        '(:access-token "old-access"
+                          :refresh-token "old-refresh" :expires-at 0))))
+                ((symbol-function 'hermes-dashboard-transport--native-login-async)
+                 (lambda (&rest _) deferred))
+                ((symbol-function 'hermes-dashboard-transport--http-json-async)
+                 (lambda (&rest _) deferred))
+                ((symbol-function 'hermes-dashboard-transport--native-token-store)
+                 (lambda (&rest _) (cl-incf stored)))
+                ((symbol-function 'hermes-dashboard-transport--native-ticket-async)
+                 (lambda (&rest _)
+                   (cl-incf ticketed)
+                   (hermes--promise-resolved nil)))
+                ((symbol-function 'hermes-dashboard-transport--remote-connect)
+                 (lambda (&rest _) (cl-incf opened)))
+                ((symbol-function 'hermes-dashboard-transport--reconnect-attempt)
+                 #'ignore))
+        (setq client
+              (hermes-dashboard-transport--start-remote
+               :host "dash.example" :port 9119
+               :remote-url "http://dash.example" :remote-auth-method 'native))
+        (setf (hermes-dashboard-transport-client-refcount client) 1)
+        (let ((hermes-dashboard-transport-ready-timeout nil))
+          (hermes-dashboard-transport-reconnect client))
+        (hermes--promise-resolve
+         deferred
+         (pcase stage
+           ('status '((auth_required . t)
+                      (auth_providers . ("oauth"))
+                      (auth_flows . ("native_pkce"))))
+           ('login '(:access-token "late-access"
+                     :refresh-token "late-refresh"))
+           ('refresh '(:body ((access_token . "late-access")
+                              (refresh_token . "late-refresh"))))))
+        (should (= stored ticketed opened 0))))))
+
 (ert-deftest hermes-transport-dashboard-native-pkce-happy-path ()
   "Native PKCE attach stores tokens, mints a ticket, and opens the WS."
   (let* ((base "http://100.64.0.10:9119")
@@ -1066,12 +1116,13 @@
          (refresh "native-refresh-token")
          (ticket "native-ticket-secret")
          (store (make-hash-table :test #'equal))
-         client requests browsed opened-url events
+         client requests browsed opened-url events store-owner
          loopback-filter loopback-process)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
                (lambda (url) (gethash url store)))
               ((symbol-function 'hermes-dashboard-transport--native-token-store)
-               (lambda (url tokens)
+               (lambda (url tokens &optional owner-current-p)
+                 (setq store-owner owner-current-p)
                  (if tokens
                      (puthash url tokens store)
                    (remhash url store))))
@@ -1175,6 +1226,8 @@
                          (concat "Bearer " access)))
           (should (equal (plist-get stored :access-token) access))
           (should (equal (plist-get stored :refresh-token) refresh))
+          (should (functionp store-owner))
+          (should (funcall store-owner))
           (should-not (hermes-dashboard-transport-client-startup-cancel client)))
         (let ((visible (format "%S" events)))
           (dolist (secret (list access refresh ticket "gw-code"))

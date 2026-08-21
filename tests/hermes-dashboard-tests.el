@@ -504,9 +504,9 @@
     (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load)
                (lambda (_base) nil))
               ((symbol-function 'hermes-dashboard-transport--native-token-store)
-               (lambda (_base tokens) tokens))
+               (lambda (_base tokens &optional _owner-current-p) tokens))
               ((symbol-function 'hermes-dashboard-transport--native-login-async)
-               (lambda (_base _provider &optional _cancel-setter)
+               (lambda (_base _provider &optional _cancel-setter _owner-current-p)
                  (hermes-dashboard-transport--browse-url "https://login.example")
                  (hermes--promise-resolved
                   '(:access-token "access" :refresh-token "refresh")))))
