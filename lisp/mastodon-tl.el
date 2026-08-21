@@ -163,7 +163,9 @@ nil."
 (defcustom mastodon-tl-use-nerd-icons nil
   "Whether to use nerd icons for icons/symbols.
 You need to install it yourself for this to work. See
-https://github.com/rainstormstudio/nerd-icons.el"
+https://github.com/rainstormstudio/nerd-icons.el.
+Nerd icons have the benefit of being a consistent icon kit.
+They have the possible disadvantage of being monochrome."
   :type 'boolean)
 
 (require 'nerd-icons nil :noerror)
