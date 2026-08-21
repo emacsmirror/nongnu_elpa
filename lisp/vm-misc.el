@@ -841,7 +841,7 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
   "The name suffix VM gives a cache file it creates, and the type it writes it in.
 A cache is VM's own file and VM writes every message in it, so unlike any
 other folder its type is known and can be stated where
-`vm-folder-type-by-name-alist' reads it back.  mboxcl2 because the lengths
+`vm-folder-type-by-extension-alist' reads it back.  mboxcl2 because the lengths
 make the message boundaries exact for arbitrary mail, which a cache holds.
 
 Said in the name rather than in a header inside the folder: a claim written

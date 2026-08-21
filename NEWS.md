@@ -120,19 +120,25 @@ decide by sniffing the first message, which read a maintainer's 1.1 GB IMAP
 cache as mboxcl2 while 6394 of its 6459 messages had no length.  The type is
 now something a folder is told, in one of two places.
 
-  * `vm-folder-type-by-name-alist` matches the **whole** file name, where it
-    matched only the last part of it.  One rule can then answer for a
-    directory, which is what a primary inbox called INBOX needs, having no
-    suffix to match and no way to be renamed:
+  * **The extension names the type.**  `vm-folder-type-by-extension-alist`
+    matches the file name's extension, literally, and a folder called
+    `sent.mboxcl2` is mboxcl2 wherever it sits:
 
     ```elisp
-    (setq vm-folder-type-by-name-alist
-          '(("\\.mboxcl2\\'"  . mboxcl2)
-            ("/mail/current/" . mboxcl2)))
+    (setq vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2)))
     ```
 
-    A suffix rule keeps working unchanged.  A rule anchored at the front with
-    `` \` `` has to allow for the directories now, or it matches nothing.
+    That is the default, so a folder named for its type needs no
+    configuration at all.  It replaces `vm-folder-type-by-name-alist`, which
+    matched a regular expression against the name and was never released: a
+    pattern can be written so that it matches nothing, silently, and so that
+    it claims every folder in a directory, which for a directory of nine
+    From_ folders and one mboxcl2 is nine folders VM then refuses to read.
+    Both mistakes were made within a week of each other by the same person.
+
+    The cost is that a folder which cannot be renamed cannot be typed by its
+    name -- a primary inbox called `INBOX` is the case, and
+    `vm-default-folder-type` is the answer for one.
 
   * **An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2`**
     and written in that type.  A cache is VM's own file and VM writes every
@@ -178,8 +184,8 @@ the question.
     `vm-default-folder-type` says, and is read as one -- so a folder named
     that way which has no `Content-Length` headers is refused, with how to
     convert it, instead of being read as a From_ folder in silence
-    (emacs-vm/vm#610, emacs-vm/vm#620).  `vm-folder-type-by-name-alist` is the
-    option.
+    (emacs-vm/vm#610, emacs-vm/vm#620).  `vm-folder-type-by-extension-alist`
+    is the option.
 
   * Sent copies work with IMAP.  An `FCC:` header naming an IMAP maildrop
     files the copy on the server instead of writing a file named after the
