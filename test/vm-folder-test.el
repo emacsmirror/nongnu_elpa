@@ -4465,6 +4465,22 @@ the alist happens to be consulted."
       (should (= 1 (length said)))
       (should (string-match-p "not a valid regular expression" (car said))))))
 
+(ert-deftest vm-folder-test-a-bare-dot-in-a-name-rule-is-caught ()
+  "The same slip in the other spelling is caught too.
+`\\.mboxcl2$' written with one backslash is the regexp .mboxcl2$, which still
+matches sent.mboxcl2 -- so nothing looks wrong -- and also matches xmboxcl2,
+a name with no dot in it.  Nobody writing a rule for a suffix means \"any
+character\"."
+  (let ((vm-folder-type-by-name-alist (list (cons ".mboxcl2$" 'mboxcl2))))
+    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
+      (should (= 1 (length said)))
+      (should (string-match-p "dot of its own" (car said)))))
+  ;; a regexp that means to start with any character is not this mistake
+  (let ((vm-folder-type-by-name-alist
+         (list (cons ".*-archive\\'" 'mboxcl2)
+               (cons "\\.mboxcl2\\'" 'mboxcl2))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
