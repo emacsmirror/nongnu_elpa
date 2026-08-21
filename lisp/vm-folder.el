@@ -873,6 +873,28 @@ error here would stop a working configuration from starting."
 			     ", which vm-default-folder-type no longer needs"
 			   "")))))
 
+(defvar vm-unnamed-mboxcl2-caches nil
+  "Caches already complained about for looking like mboxcl2, by name.")
+
+(defun vm-warn-about-unnamed-mboxcl2-cache (file)
+  "Say that cache FILE looks like mboxcl2 while its name does not say so.
+Read as the older format, which is what a cache with no type in its name is
+taken for, an mboxcl2 folder splits wherever a body line begins \"From \":
+mboxcl2 leaves those alone, the lengths delimiting instead of the separators.
+That is a message or two of nonsense in the summary rather than anything lost,
+and it is the reader\='s to settle -- by renaming the file, which is all it
+takes when the folder really is mboxcl2, or by converting it when it is not."
+  (let ((name (or file "this folder")))
+    (unless (member name vm-unnamed-mboxcl2-caches)
+      (push name vm-unnamed-mboxcl2-caches)
+      (vm-warn 1 2 (concat "%s carries lengths but is not named mboxcl2, so it"
+			   " is read as %s; rename it %s%s once you are sure,"
+			   " or convert it with vm-change-folder-type")
+	       (file-name-nondirectory name)
+	       vm-default-From_-folder-type
+	       (file-name-nondirectory name)
+	       vm-cache-folder-type-suffix))))
+
 (defvar vm-guessed-folder-types nil
   "Folders `vm-trust-content-length' has already been warned about.
 By name, so a folder visited again in the same session is not complained
@@ -975,6 +997,18 @@ the value of vm-default-From_folder-type will be returned."
 			;; then the reader's complaint rather than a folder
 			;; quietly read as something it does not claim to be.
 			((memq named '(From_ BellFrom_ mboxcl2)) named)
+			;; A cache whose name does not say mboxcl2 is the older
+			;; format, and its lengths are not to be relied on: VM gave
+			;; one to each message it rewrote, so a From_ cache collects a
+			;; few, and a length believed wrongly puts a message boundary
+			;; inside a body.  Read as From_ it is only ever a spurious
+			;; message, which is visible.  Say so where the folder looks
+			;; like the other thing, and let the reader decide.
+			((and (vm-cache-folder-name-p (or file (buffer-file-name)))
+			      (vm-folder-looks-like-mboxcl2-p))
+			 (vm-warn-about-unnamed-mboxcl2-cache
+			  (or file (buffer-file-name)))
+			 vm-default-From_-folder-type)
 			((not vm-trust-content-length)
 			 vm-default-From_-folder-type)
 			(t
