@@ -967,12 +967,12 @@ what the format is for --- takes the wrong bytes.  The folder's own type is
 offered by @code{vm-change-folder-type} for this reason, so it can be run on
 a folder that is open in front of you.
 
-@vindex vm-folder-type-by-name-alist
+@vindex vm-folder-type-by-extension-alist
 A folder that does not exist yet has no contents to examine, so a name
-can say what it is instead.  @code{vm-folder-type-by-name-alist} matches
-file names against folder types, and out of the box a folder whose name
-ends in @samp{.mboxcl2} is created as one --- which is what a name like
-@file{2026-08.out.mboxcl2} was already trying to say.
+can say what it is instead.  @code{vm-folder-type-by-extension-alist} matches
+the file name's extension against folder types, and out of the box a folder
+whose name ends in @samp{.mboxcl2} is created as one --- which is what a name
+like @file{2026-08.out.mboxcl2} was already trying to say.
 
 A name settles the question for an existing folder too, but only between
 From_ and mboxcl2: those are the same folder but for the
@@ -984,33 +984,16 @@ VM reading it as a From_ folder and saying nothing.  A folder's own
 contents win where they decide the question: a BABYL file called
 @file{old.mboxcl2} is read as BABYL.
 
-The name is the whole mechanism, so the simplest thing is to let it work:
-call an mboxcl2 folder @file{something.mboxcl2} and set nothing.  If you do
-set @code{vm-folder-type-by-name-alist}, two things are worth knowing.
+An extension, and not a pattern over the name.  A pattern can be written so
+that it matches nothing --- silently, since a rule that matches nothing is a
+rule that does nothing --- and it can be written so that it claims every
+folder in a directory, which for a directory holding one mboxcl2 folder and
+nine From_ ones is nine folders VM then refuses to read.  Neither can be
+said in an extension.
 
-Add to it rather than replacing it, or the rule for @samp{.mboxcl2} goes with
-your @code{setq} and nothing names your folders any more:
-
-@example
-(add-to-list 'vm-folder-type-by-name-alist
-             '("/mail/current/" . mboxcl2))
-@end example
-
-And each pattern is a regular expression, held in a Lisp string, so its
-backslashes are doubled.  Written with one each they are read away:
-@code{"\\.mboxcl2\\'"} is the regexp @code{\.mboxcl2\'}, while
-@code{"\.mboxcl2\'"} is the string @code{.mboxcl2'} --- which asks for a file
-name ending in an apostrophe and matches nothing at all.  A rule that matches
-nothing does nothing and says nothing while doing it: the folder is read as
-whatever it would have been read as anyway, which is right until the day it
-is not.  VM checks the alist as it starts and complains about a rule that
-cannot work, naming the form to write instead.
-
-A rule that names a directory claims every folder in it, which is a great
-deal to claim.  A directory holding one mboxcl2 folder and nine From_ ones
---- a sent-mail folder among archives, say --- gets nine folders VM then
-refuses to read, since a From_ folder has none of the lengths an mboxcl2
-folder must have.  Match the folders you mean, by their names.
+What it costs: a folder that cannot be renamed cannot be typed by its name.
+A primary inbox called @file{INBOX} is the case, and the answer for one is
+@code{vm-default-folder-type}, or a name with the extension on it.
 
 @findex vm-change-folder-type
 After a folder is loaded into VM, you can convert it to a different

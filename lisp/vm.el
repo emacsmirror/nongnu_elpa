@@ -1560,7 +1560,7 @@ draft messages."
 	(setq vm-default-folder-type
 	      (vm-canonical-folder-type vm-default-folder-type))
 	(vm-warn-about-deprecated-trust-setting)
-	(vm-check-folder-type-rules)
+	(vm-check-folder-type-extensions)
 	(if (not vm-window-configuration-file)
 	    (setq vm-window-configurations vm-default-window-configuration)
 	  (or (vm-load-window-configurations vm-window-configuration-file)
