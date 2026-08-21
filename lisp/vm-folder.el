@@ -767,6 +767,12 @@ Answers a sentence saying what, for `vm-check-folder-type-rules'."
       "has an apostrophe of its own, so \\' was written with one backslash")
      ((string-match-p "\\``[^`]" regexp)
       "begins with a backquote of its own, so \\` was written with one backslash")
+     ;; The same slip in the other spelling.  "\.mboxcl2$" written with one
+     ;; backslash is the regexp .mboxcl2$, which still matches sent.mboxcl2 --
+     ;; so nothing looks wrong -- and also matches xmboxcl2, a name with no
+     ;; dot in it.  Nobody writing a rule for a suffix means "any character".
+     ((string-match-p "\\`\\.[A-Za-z0-9]" regexp)
+      "begins with a dot of its own, so \\. was written with one backslash")
      ((condition-case nil
 	  (progn (string-match regexp "") nil)
 	(invalid-regexp t))
