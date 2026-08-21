@@ -600,7 +600,10 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/[[:alpha:]_]+$" query)
           (string-match "^/u/[[:alpha:]_]+$" query)
           (string-match "^/c/[[:alnum:]_]+$" query)
-          (string-match "^/post/[[:digit:]]+$" query)
+          ;; a lemmy post must NOT open in mastodon.el lest we get stuck in
+          ;; a self-loading circle and can't load the URL in the lemmy
+          ;; post itself:
+          ;; (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
