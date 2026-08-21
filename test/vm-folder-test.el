@@ -4418,6 +4418,53 @@ that is the reader\='s call, not VM\='s."
       (should-not (vm-folder-test--warnings
                     (should (eq 'From_ (vm-get-folder-type file))))))))
 
+;;; a name rule that cannot work says so (issue #740)
+
+(ert-deftest vm-folder-test-a-mistyped-name-rule-is-caught ()
+  "REGRESSION: the classic mis-escaped regexp is complained about.
+Issue #740.  A regexp is a string, so `\\.mboxcl2\\'' in the source is the
+regexp \\.mboxcl2\\'.  Written with one backslash each it is read as
+.mboxcl2', which wants a file name ending in an apostrophe and matches
+nothing -- silently.  A maintainer's sent-mail folder was filed into in the
+wrong format for a month that way."
+  (let ((vm-folder-type-by-name-alist (list (cons ".mboxcl2'" 'mboxcl2))))
+    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
+      (should (= 1 (length said)))
+      (should (string-match-p "apostrophe of its own" (car said)))
+      ;; and it shows what to write instead
+      (should (string-match-p "\\\\\\\\\\.mboxcl2" (car said))))))
+
+(ert-deftest vm-folder-test-a-good-name-rule-says-nothing ()
+  "The rule written correctly is silent, including VM's own default."
+  (let ((vm-folder-type-by-name-alist
+         (list (cons "\\.mboxcl2\\'" 'mboxcl2)
+               (cons "/mail/current/" 'From_)
+               (cons "\\`/var/mail/" 'BellFrom_))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules))))
+  (let ((vm-folder-type-by-name-alist
+         (eval (car (get 'vm-folder-type-by-name-alist 'standard-value)))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
+
+(ert-deftest vm-folder-test-a-name-rule-with-a-bad-type-is-caught ()
+  "A rule naming something that is not a folder type is a rule that cannot
+work either, and a mistyped symbol is as quiet as a mistyped regexp."
+  (let ((vm-folder-type-by-name-alist (list (cons "\\.mbox\\'" 'mbox))))
+    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
+      (should (= 1 (length said)))
+      (should (string-match-p "not a folder type" (car said)))))
+  ;; the old name for mboxcl2 is still a folder type
+  (let ((vm-folder-type-by-name-alist
+         (list (cons "\\.mboxcl2\\'" 'From_-with-Content-Length))))
+    (should-not (vm-folder-test--warnings (vm-check-folder-type-rules)))))
+
+(ert-deftest vm-folder-test-a-broken-name-rule-regexp-is-caught ()
+  "An invalid regexp is caught rather than signalling later, from wherever
+the alist happens to be consulted."
+  (let ((vm-folder-type-by-name-alist (list (cons "\\(unclosed" 'mboxcl2))))
+    (let ((said (vm-folder-test--warnings (vm-check-folder-type-rules))))
+      (should (= 1 (length said)))
+      (should (string-match-p "not a valid regular expression" (car said))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

@@ -744,6 +744,49 @@ An unknown or already-current name is returned unchanged, so this is safe to
 apply to anything that might be a folder type."
   (or (cdr (assq type vm-folder-type-aliases)) type))
 
+(defconst vm-folder-types '(From_ BellFrom_ mboxcl2 mmdf babyl)
+  "The folder types VM can read and write.
+`vm-folder-type-aliases\=' has the older name for one of them.")
+
+(defun vm-name-rule-fault (rule)
+  "What is wrong with RULE of `vm-folder-type-by-name-alist', or nil.
+Answers a sentence saying what, for `vm-check-folder-type-rules'."
+  (let ((regexp (car-safe rule))
+	(type (cdr-safe rule)))
+    (cond
+     ((not (consp rule)) "is not a (REGEXP . TYPE) pair")
+     ((not (stringp regexp)) "does not begin with a regular expression")
+     ((not (memq (vm-canonical-folder-type type) vm-folder-types))
+      (format "names %S, which is not a folder type" type))
+     ;; The mistake this exists for.  A regexp is a string, so its backslashes
+     ;; are doubled in the source: "\\.mboxcl2\\'" is the regexp \.mboxcl2\'.
+     ;; Written with one backslash each, Lisp reads the escapes away and
+     ;; leaves .mboxcl2' -- which asks for a name ending in an apostrophe and
+     ;; matches nothing, silently, the folder type simply never being named.
+     ((string-match-p "\\(\\`\\|[^\\\\]\\)'" regexp)
+      "has an apostrophe of its own, so \\' was written with one backslash")
+     ((string-match-p "\\``[^`]" regexp)
+      "begins with a backquote of its own, so \\` was written with one backslash")
+     ((condition-case nil
+	  (progn (string-match regexp "") nil)
+	(invalid-regexp t))
+      "is not a valid regular expression"))))
+
+(defun vm-check-folder-type-rules ()
+  "Complain about a rule of `vm-folder-type-by-name-alist\=' that cannot work.
+Run as VM starts, after the init file has been read.
+
+A rule that matches nothing does nothing, and says nothing while doing it: the
+folder is read as whatever it would have been read as anyway, which is right
+until the day it is not.  A maintainer\='s sent-mail folder was filed into in
+the wrong format for a month that way."
+  (dolist (rule vm-folder-type-by-name-alist)
+    (let ((fault (vm-name-rule-fault rule)))
+      (when fault
+	(vm-warn 1 2 (concat "vm-folder-type-by-name-alist: the rule %S %s."
+			     "  A regexp is a string, so write it %S")
+		 rule fault "\\.mboxcl2\\'")))))
+
 (defun vm-folder-type-for-name (file)
   "The folder type FILE's name asks for, or nil if no name says anything.
 The whole name is matched, directories and all, so a rule can answer for every
