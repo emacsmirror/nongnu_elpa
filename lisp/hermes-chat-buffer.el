@@ -1028,6 +1028,9 @@ METADATA is stored as the entry's `:metadata' plist."
 Takes (CONTENT &optional DISPLAY QUEUE-ENTRY).  The queue/drain flow below
 calls it so this file never references the submit pipeline defined above it.")
 
+(defvar hermes-chat--queue-drain-ready-function (lambda () t)
+  "Function returning non-nil when the current queue may drain.")
+
 (defun hermes-chat--queue-or-submit-content (content &optional display)
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
@@ -1105,7 +1108,8 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
 (defun hermes-chat--drain-queued-message ()
   "Submit one queued message after the active turn settles."
   (when (and hermes-chat--queued-messages
-             (not (hermes-chat--active-turn-p)))
+             (not (hermes-chat--active-turn-p))
+             (funcall hermes-chat--queue-drain-ready-function))
     (let ((entry (car hermes-chat--queued-messages)))
       (setq hermes-chat--queued-submit-id (plist-get entry :id))
       (condition-case err

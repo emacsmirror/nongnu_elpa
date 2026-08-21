@@ -1185,18 +1185,9 @@ session key is preserved, so the conversation can still be resumed."
 
 ;;;###autoload
 (defun hermes-dashboard-reconnect ()
-  "Restart this idle chat's shared Hermes dashboard WebSocket.
-The durable session id is preserved.  After the replacement socket reports
-ready, the chat resumes that durable session over a fresh live session id."
+  "Signal that dashboard reconnect is temporarily unavailable."
   (interactive)
-  (unless (hermes-chat--dashboard-default-transport-p)
-    (user-error "Hermes dashboard transport is not enabled for this chat"))
-  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-    (user-error "This Hermes chat has no live dashboard socket to reconnect"))
-  (when (hermes-chat--active-turn-p)
-    (user-error "Cannot reconnect while a turn is active; interrupt or wait first"))
-  (hermes-dashboard-transport-reconnect
-   hermes-chat--dashboard-client "Hermes dashboard socket reconnecting"))
+  (user-error "Hermes dashboard reconnect is temporarily unavailable"))
 
 ;;;###autoload
 (defalias 'hermes-reconnect #'hermes-dashboard-reconnect)
@@ -1808,6 +1799,8 @@ session is titled, after that title -- so chats stay filterable with
 (defun hermes-chat--install-registries ()
   "Install chat-owned callbacks into lower-layer registries."
   (setq hermes-chat--submit-function #'hermes-chat--submit-content
+        hermes-chat--queue-drain-ready-function
+        #'hermes-chat--dashboard-queue-drain-ready-p
         hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer
         hermes-chat--busy-submit-event-function
         #'hermes-chat--hold-busy-submit-event

@@ -521,8 +521,8 @@ Killing one buffer releases its reference without tearing down the other."
         (when (buffer-live-p buf-a) (kill-buffer buf-a))
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
-(ert-deftest hermes-chat-dashboard-reconnected-resumes-session ()
-  "A reconnected status re-resumes the buffer's stored dashboard session."
+(ert-deftest hermes-chat-dashboard-reconnected-keeps-session-lazy ()
+  "A reconnected status preserves the durable id without resuming it."
   (let ((client (hermes-test--dashboard-client)) resumed)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _) (error "CLI fallback should not run")))
@@ -540,7 +540,8 @@ Killing one buffer releases its reference without tearing down the other."
                    (current-buffer) "asst-reconnect" t
                    (hermes-chat--next-transport-generation))
                   '(:type status :status "reconnected"))
-         (should (equal resumed "stored-session")))))))
+         (should-not resumed)
+         (should (equal hermes-chat--session-id "stored-session")))))))
 
 
 (provide 'hermes-chat-handoff-tests)

@@ -595,8 +595,8 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not resume-reasoning)
          (should-not resume-fast))))))
 
-(ert-deftest hermes-chat-dashboard-reconnect-resumes-each-buffer-own-session ()
-  "On reconnect, each buffer resumes its own stored session id."
+(ert-deftest hermes-chat-dashboard-reconnected-keeps-each-buffer-detached ()
+  "A shared reconnect leaves each buffer's durable session lazy."
   :tags '(shared-socket-isolation)
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
         resumed shared buf-a buf-b)
@@ -636,8 +636,11 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
                         (current-buffer) "asst-b" t
                         (hermes-chat--next-transport-generation))
                        '(:type status :status "reconnected")))
-            (should (member "stored-a" resumed))
-            (should (member "stored-b" resumed)))
+            (should-not resumed)
+            (with-current-buffer buf-a
+              (should (equal hermes-chat--session-id "stored-a")))
+            (with-current-buffer buf-b
+              (should (equal hermes-chat--session-id "stored-b"))))
         (when (buffer-live-p buf-a) (kill-buffer buf-a))
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 

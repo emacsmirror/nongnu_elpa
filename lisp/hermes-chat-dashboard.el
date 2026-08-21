@@ -1026,6 +1026,13 @@ local FIFO submission."
   (and hermes-chat--dashboard-session-ready-p
        hermes-chat--dashboard-active-session-id))
 
+(defun hermes-chat--dashboard-queue-drain-ready-p ()
+  "Return non-nil when the current chat queue may submit."
+  (or (not (hermes-chat--dashboard-default-transport-p))
+      (and (hermes-chat--dashboard-session-attached-p)
+           (hermes-chat--dashboard-client-live-p
+            hermes-chat--dashboard-client))))
+
 (defun hermes-chat--dashboard-create-config-cells ()
   "Return pending (KEY . VALUE) `config.set' cells for this buffer.
 The cells carry the `hermes-chat--dashboard-create-*' runtime overrides
@@ -1422,16 +1429,8 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
     (hermes-chat--queue-or-submit-content content display)))
 
 (defun hermes-chat--dashboard-handle-reconnected (_event)
-  "Re-attach this buffer's stored dashboard session after a socket reconnect.
-A no-op unless the buffer has a durable session that is not currently attached
-and no turn is active -- the same guard a later send uses -- so a reconnected
-shared socket re-resumes every attached chat without waiting for the next send."
-  (when (hermes-chat--dashboard-stored-session-needs-resume-p)
-    (hermes-chat--with-dashboard-session
-     nil (current-buffer) #'ignore
-     (lambda (message)
-       (hermes-chat--command-error
-        (format "Hermes reconnect resume failed: %s" message))))))
+  "Leave the durable session lazy after a dashboard socket reconnect."
+  nil)
 
 ;;; Session title and background tasks
 

@@ -1012,17 +1012,14 @@
          (should entry)
          (should (equal (plist-get entry :content) "Idle task finished")))))))
 
-(ert-deftest hermes-chat-idle-session-reconnects-before-server-turn ()
-  "An idle control session resumes and renders after a socket reconnect."
+(ert-deftest hermes-chat-idle-session-reconnected-remains-detached ()
+  "A reconnected status leaves the durable session lazy and detached."
   (let ((client (hermes-test--dashboard-client)) resumed)
     (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
               ((symbol-function 'hermes-notifications-notify) #'ignore)
               ((symbol-function 'hermes-dashboard-transport-session-resume)
-               (lambda (_client stored-id &rest args)
-                 (setq resumed stored-id)
-                 (funcall (plist-get args :resolve)
-                          '((session_id . "sid-resumed")
-                            (resumed . "stored-idle"))))))
+               (lambda (_client stored-id &rest _args)
+                 (setq resumed stored-id))))
       (let ((hermes-chat-use-dashboard-transport t)
             (hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
@@ -1032,24 +1029,15 @@
                    (stored_session_id . "stored-idle")))
          (hermes-dashboard-transport--dispatch-event
           client '(:type status :status reconnecting))
+         (should (equal hermes-chat--session-id "stored-idle"))
          (should-not hermes-chat--dashboard-active-session-id)
          (should-not hermes-chat--dashboard-session-ready-p)
          (hermes-dashboard-transport--dispatch-event
           client '(:type status :status reconnected))
-         (should (equal resumed "stored-idle"))
-         (should (equal hermes-chat--dashboard-active-session-id "sid-resumed"))
-         (hermes-dashboard-transport--dispatch-event
-          client '(:type status :event "message.start" :status "started"
-                   :session-id "sid-resumed"))
-         (hermes-dashboard-transport--dispatch-event
-          client '(:type delta :content "Hello after reconnect"
-                   :session-id "sid-resumed"))
-         (hermes-dashboard-transport--dispatch-event
-          client '(:type done :session-id "sid-resumed"))
-         (let ((assistant (hermes-test--assistant-entry)))
-           (should (equal (plist-get assistant :content)
-                          "Hello after reconnect"))
-           (should (eq (plist-get assistant :status) 'done))))))))
+         (should-not resumed)
+         (should (equal hermes-chat--session-id "stored-idle"))
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not hermes-chat--dashboard-session-ready-p))))))
 
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
@@ -4911,32 +4899,50 @@
          (funcall callback '(:type done :session-id "sid-live"))
          (should-not hermes-chat--pending-assistant-id))))))
 
-(ert-deftest hermes-chat-queued-drain-resume-running-retains-head ()
-  "A resume race restores the live turn without consuming queued input."
-  (let ((client (hermes-test--dashboard-client)))
-    (cl-letf (((symbol-function 'hermes-transport-send)
-               (lambda (&rest _args) (error "CLI fallback should not run")))
-              ((symbol-function 'hermes-dashboard-transport-start)
-               (lambda (&rest _args) client))
-              ((symbol-function 'hermes-dashboard-transport-session-resume)
-               (lambda (_client _session-id &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((session_id . "sid-live")
-                            (resumed . "sid-stored")
-                            (running . t)
-                            (inflight . ((turn_id . "remote")))))))
-              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
-               (lambda (&rest _args)
-                 (ert-fail "prompt.submit must wait for the live turn"))))
-      (let ((hermes-transport-send-function #'hermes-transport-send))
-        (hermes-test-with-chat-buffer
-         (setq hermes-chat--session-id "sid-stored")
-         (hermes-chat--queue-content "queued")
+(ert-deftest hermes-chat-dashboard-queue-drain-requires-attached-session ()
+  "A detached dashboard preserves queued occurrences until it is attached."
+  (let ((hermes-transport-send-function #'hermes-transport-send)
+        submitted)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-chat--submit-function
+            (lambda (content &rest _args) (push content submitted))))
+       (setq hermes-chat--session-id "stored-session")
+       (hermes-chat--queue-content "duplicate")
+       (hermes-chat--queue-content "duplicate")
+       (insert "draft survives")
+       (let* ((queue hermes-chat--queued-messages)
+              (ids (mapcar (lambda (entry) (plist-get entry :id)) queue)))
          (hermes-chat--drain-queued-message)
-         (should (equal (hermes-test--queued-contents) '("queued")))
+         (should-not submitted)
          (should-not hermes-chat--queued-submit-id)
-         (should hermes-chat--dashboard-running-p)
-         (should hermes-chat--pending-assistant-id))))))
+         (should (eq hermes-chat--queued-messages queue))
+         (should (equal (mapcar (lambda (entry) (plist-get entry :id))
+                                hermes-chat--queued-messages)
+                        ids))
+         (should (equal (hermes-test--queued-contents)
+                        '("duplicate" "duplicate")))
+         (should (equal (hermes-chat-input-string) "draft survives"))
+         (should (equal hermes-chat--session-id "stored-session")))
+       (setq hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "live-session")
+       (hermes-chat--drain-queued-message)
+       (should-not submitted)
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))
+       (hermes-chat--drain-queued-message)
+       (should (equal submitted '("duplicate")))
+       (should (equal hermes-chat--queued-submit-id
+                      (plist-get (car hermes-chat--queued-messages) :id)))))))
+
+(ert-deftest hermes-chat-non-dashboard-queue-drain-remains-ready ()
+  "A non-Dashboard queue still drains when the transport is idle."
+  (let ((hermes-transport-send-function (lambda (&rest _args)))
+        submitted)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-chat--submit-function
+            (lambda (content &rest _args) (setq submitted content))))
+       (hermes-chat--queue-content "queued")
+       (hermes-chat--drain-queued-message)
+       (should (equal submitted "queued"))))))
 
 (ert-deftest hermes-chat-dashboard-resume-running-without-detached-suppresses-terminal-content ()
   (dolist (terminal '((:type done :session-id "sid-live"
@@ -5326,23 +5332,8 @@
   (hermes-test-with-chat-buffer
    (should-error (hermes-chat-disconnect) :type 'user-error)))
 
-(ert-deftest hermes-chat-dashboard-reconnect-restarts-current-client ()
-  "`hermes-dashboard-reconnect' restarts the current chat's dashboard socket."
-  (let ((client (make-hermes-dashboard-transport-client
-                 :websocket 'ws
-                 :refcount 1))
-        called)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
-               (lambda (c &optional message)
-                 (setq called (list c message)))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client)
-       (hermes-dashboard-reconnect)
-       (should (equal called
-                      (list client "Hermes dashboard socket reconnecting")))))))
-
-(ert-deftest hermes-chat-dashboard-reconnect-refuses-active-turn ()
-  "`hermes-dashboard-reconnect' refuses while a turn is active."
+(ert-deftest hermes-chat-dashboard-reconnect-fails-before-transport ()
+  "`hermes-dashboard-reconnect' is disabled without touching transport."
   (let ((client (make-hermes-dashboard-transport-client
                  :websocket 'ws
                  :refcount 1))
@@ -5350,8 +5341,7 @@
     (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
                (lambda (&rest _args) (setq called t))))
       (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--pending-assistant-id "assistant-1")
+       (setq hermes-chat--dashboard-client client)
        (should-error (hermes-dashboard-reconnect) :type 'user-error)
        (should-not called)))))
 
