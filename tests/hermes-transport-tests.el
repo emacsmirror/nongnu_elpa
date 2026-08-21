@@ -353,19 +353,144 @@
     (should (equal (plist-get request :secrets) '("hunter2")))))
 
 (ert-deftest hermes-transport-dashboard-http-json-async-returns-promise ()
-  (let* ((captured nil)
+  (let* (captured
          (hermes-dashboard-transport-http-request-async-function
-          (lambda (url &rest args)
-            (setq captured (cons url args))
-            (hermes--promise-resolved (list :status 200 :body '((ok . t))))))
-         (result nil))
+          (cl-function
+           (lambda (url &key method headers data secrets)
+             (ignore secrets)
+             (setq captured (list url method headers data))
+             (hermes--promise-resolved
+              (list :status 200 :body '((ok . t)))))))
+         result)
     (hermes--promise-then
      (hermes-dashboard-transport--http-json-async
       "http://x" :method "POST" :body '((a . 1)))
      (lambda (response) (setq result response)))
     (should (equal (plist-get result :body) '((ok . t))))
-    (should (equal (plist-get (cdr captured) :method) "POST"))
-    (should (assoc "Accept" (plist-get (cdr captured) :headers)))))
+    (should (equal (nth 1 captured) "POST"))
+    (should (assoc "Accept" (nth 2 captured)))))
+
+(ert-deftest hermes-transport-dashboard-http-cancel-releases-exact-owner ()
+  "Cancellation closes resources but cannot clear a successor owner."
+  (let ((client (make-hermes-dashboard-transport-client))
+        successor buffer cancelled deleted reason rejections)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _args) 'request-timer))
+              ((symbol-function 'cancel-timer)
+               (lambda (timer) (setq cancelled timer)))
+              ((symbol-function 'url-retrieve)
+               (lambda (&rest _args)
+                 (setq buffer (generate-new-buffer " *hermes-http-owned*"))))
+              ((symbol-function 'get-buffer-process)
+               (lambda (_buffer) (and (not deleted) 'request-process)))
+              ((symbol-function 'process-live-p)
+               (lambda (_process) (not deleted)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (unwind-protect
+          (let ((promise
+                 (hermes-dashboard-transport--default-http-request-async
+                  "http://dash.example/api/status"
+                  :cancel-setter
+                  (lambda (expected next)
+                    (hermes-dashboard-transport--startup-cancel-setter
+                     client expected next)))))
+            (hermes--promise-catch
+             promise
+             (lambda (value)
+               (setq reason value rejections (1+ (or rejections 0)))))
+            (let ((cancel (hermes-dashboard-transport-client-startup-cancel
+                           client)))
+              (setq successor (lambda ()))
+              (setf (hermes-dashboard-transport-client-startup-cancel client)
+                    successor)
+              (funcall cancel)
+              (funcall cancel))
+            (should (= rejections 1))
+            (should (string-match-p "superseded" reason))
+            (should (eq cancelled 'request-timer))
+            (should (eq deleted 'request-process))
+            (should-not (buffer-live-p buffer))
+            (should (eq (hermes-dashboard-transport-client-startup-cancel client)
+                        successor)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(defun hermes-test--cancels-http-stage (suffix starter &optional cancel-client)
+  "Assert cancelling a client closes STARTER's request ending in SUFFIX."
+  (let (buffer cancelled deleted requested)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _args) 'request-timer))
+              ((symbol-function 'cancel-timer)
+               (lambda (timer) (setq cancelled timer)))
+              ((symbol-function 'url-retrieve)
+               (lambda (url &rest _args)
+                 (setq requested url
+                       buffer (generate-new-buffer " *hermes-owned-stage*"))))
+              ((symbol-function 'get-buffer-process)
+               (lambda (_buffer) (and (not deleted) 'request-process)))
+              ((symbol-function 'process-live-p) (lambda (_) (not deleted)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (unwind-protect
+          (let* ((client (make-hermes-dashboard-transport-client :refcount 1))
+                 (setter (lambda (expected next)
+                           (hermes-dashboard-transport--startup-cancel-setter
+                            client expected next))))
+            (funcall starter setter)
+            (should (string-suffix-p suffix requested))
+            (should (functionp
+                     (hermes-dashboard-transport-client-startup-cancel client)))
+            (funcall (or cancel-client #'hermes-dashboard-transport-stop)
+                     client)
+            (should (eq cancelled 'request-timer))
+            (should (eq deleted 'request-process))
+            (should-not (buffer-live-p buffer))
+            (should-not (hermes-dashboard-transport-client-startup-cancel
+                         client)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-transport-dashboard-stop-cancels-native-status-http ()
+  "Stop aborts an in-flight native status request."
+  (hermes-test--cancels-http-stage
+   "/api/status"
+   (lambda (setter) (hermes-dashboard-transport--remote-status-async
+                     "http://dash.example" setter))))
+
+(ert-deftest hermes-transport-dashboard-stop-cancels-native-refresh-http ()
+  "Stop aborts an in-flight native refresh request."
+  (hermes-test--cancels-http-stage
+   "/auth/native/refresh"
+   (lambda (setter)
+     (hermes-dashboard-transport--native-refresh-async
+      "http://dash.example" '(:access-token "old-access"
+        :refresh-token "old-refresh"
+        :expires-at 1 :provider "oauth")
+      setter))))
+
+(ert-deftest hermes-transport-dashboard-stop-cancels-native-ticket-http ()
+  "Stop aborts an in-flight native WebSocket ticket request."
+  (hermes-test--cancels-http-stage
+   "/api/auth/ws-ticket"
+   (lambda (setter)
+     (hermes-dashboard-transport--native-ticket-async
+      "dash.example" 9119 "http://dash.example" '(:access-token "access"
+        :refresh-token "refresh") setter))))
+
+(ert-deftest hermes-transport-dashboard-reconnect-cancels-native-status-http ()
+  "Manual reconnect aborts and forgets its in-flight status request."
+  (hermes-test--cancels-http-stage
+   "/api/status"
+   (lambda (setter)
+     (hermes-dashboard-transport--remote-status-async
+      "http://dash.example" setter))
+   (lambda (client)
+     (cl-letf (((symbol-function
+                 'hermes-dashboard-transport--reconnect-attempt)
+                #'ignore)
+               ((symbol-function
+                 'hermes-dashboard-transport--arm-ready-timeout)
+                #'ignore))
+       (hermes-dashboard-transport-reconnect client)))))
 
 (ert-deftest hermes-transport-dashboard-api-request-async-token-auth ()
   (let* ((hermes-dashboard-transport--api-auth nil)

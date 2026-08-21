@@ -518,6 +518,17 @@ emitted its own transport error event."
        client request message))
     emitted-unhandled))
 
+(defun hermes-dashboard-transport--cancel-startup (client)
+  "Cancel CLIENT's currently registered startup operation, if any."
+  (when-let* ((cancel (hermes-dashboard-transport-client-startup-cancel client)))
+    (setf (hermes-dashboard-transport-client-startup-cancel client) nil)
+    (funcall cancel)))
+
+(defun hermes-dashboard-transport--startup-cancel-setter (client expected next)
+  "Replace CLIENT's startup cancellation owner from EXPECTED with NEXT."
+  (when (eq (hermes-dashboard-transport-client-startup-cancel client) expected)
+    (setf (hermes-dashboard-transport-client-startup-cancel client) next)))
+
 (defun hermes-dashboard-transport-stop (client &optional message)
   "Release CLIENT's dashboard WebSocket, process, and pending requests.
 Teardown is best effort: a stale or corrupt CLIENT (for example one left over
@@ -528,6 +539,7 @@ transport error when a pending request has no reject callback."
   (when (hermes-dashboard-transport-client-p client)
     (cl-incf (hermes-dashboard-transport-client-generation client))
     (setf (hermes-dashboard-transport-client-stopping-p client) t)
+    (ignore-errors (hermes-dashboard-transport--cancel-startup client))
     (ignore-errors
       (hermes-dashboard-transport--reject-pending-requests
        client (or message "Hermes dashboard transport stopped")))
@@ -583,6 +595,7 @@ status UI and reject callbacks."
              hermes-dashboard-transport-reconnect-max-attempts
            1)))
     (cl-incf (hermes-dashboard-transport-client-generation client))
+    (ignore-errors (hermes-dashboard-transport--cancel-startup client))
     (hermes-dashboard-transport--cancel-idle-timer client)
     (setf (hermes-dashboard-transport-client-stopping-p client) t)
     (ignore-errors (hermes-dashboard-transport--close-websocket client))
@@ -1128,8 +1141,11 @@ Emacs."
                  client)))))
     (hermes--promise-catch
      (hermes--promise-then
-      (hermes-dashboard-transport--remote-auth-async host port base-url method
-                                                      token t)
+      (hermes-dashboard-transport--remote-auth-async
+       host port base-url method token t
+       (lambda (expected next)
+         (hermes-dashboard-transport--startup-cancel-setter
+          client expected next)))
       (lambda (auth)
         (when (hermes-dashboard-transport--generation-live-p client generation)
           (hermes-dashboard-transport--remote-connect client auth))))

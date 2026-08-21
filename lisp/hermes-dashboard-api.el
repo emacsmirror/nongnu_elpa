@@ -412,57 +412,89 @@ network on the main thread is banned by AGENTS.md."
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
+(defun hermes-dashboard-transport--close-http-buffer (buffer)
+  "Quietly close BUFFER and its live process."
+  (when (buffer-live-p buffer)
+    (when-let* ((process (ignore-errors (get-buffer-process buffer))))
+      (when (ignore-errors (process-live-p process))
+        (ignore-errors (delete-process process))))
+    (ignore-errors (kill-buffer buffer))))
+
 (cl-defun hermes-dashboard-transport--default-http-request-async
-    (url &key (method "GET") headers data secrets timeout)
+    (url &key (method "GET") headers data secrets timeout
+         cancel-setter cancel-expected)
   "Fetch URL with METHOD, HEADERS, and DATA asynchronously using url.el.
 Return a promise of the response plist; SECRETS are redacted from any error.
-TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil."
+TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil.
+CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
         (url-request-extra-headers headers)
         (url-request-data data)
         (request-timeout (or timeout hermes-dashboard-transport-http-timeout))
         (promise (hermes--promise-make))
-        timer request-buffer)
-    (setq timer (run-at-time
-                 request-timeout nil
-                 (lambda ()
-                   (hermes--promise-reject
-                    promise (format "Hermes dashboard request timed out at %s"
-                                    safe-url))
-                   ;; Also drop the abandoned connection: url.el would keep
-                   ;; the process and its buffer alive until its own cleanup.
-                   (when (buffer-live-p request-buffer)
-                     (kill-buffer request-buffer)))))
-    (condition-case err
-        (setq request-buffer
-              (url-retrieve
-               url
-               (lambda (status)
-                 (cancel-timer timer)
-                 (let ((buffer (current-buffer)))
-                   (unwind-protect
-                       ;; No signal may escape: the timeout timer is already
-                       ;; cancelled, so an error here would strand the promise.
-                       (condition-case err
-                           (hermes-dashboard-transport--settle-http-response
-                            promise status buffer safe-url secrets)
-                         (error
-                          (hermes--promise-reject
-                           promise
-                           (format "Hermes dashboard response error at %s: %s"
-                                   safe-url
-                                   (hermes-dashboard-transport--redact-secret
-                                    (error-message-string err) secrets)))))
-                     (when (buffer-live-p buffer)
-                       (kill-buffer buffer)))))
-               nil t t))
-      (error
-       (cancel-timer timer)
-       (hermes--promise-reject
-        promise (hermes-dashboard-transport--redact-secret
-                 (error-message-string err) secrets))))
-    promise))
+        timer request-buffer cancel registered settled)
+    (cl-labels
+        ((release-owner ()
+           (when timer
+             (ignore-errors (cancel-timer timer))
+             (setq timer nil))
+           (when (and registered cancel-setter)
+             (setq registered nil)
+             (ignore-errors (funcall cancel-setter cancel nil))))
+         (reject (reason)
+           (unless settled
+             (setq settled t)
+             (release-owner)
+             (hermes-dashboard-transport--close-http-buffer request-buffer)
+             (hermes--promise-reject promise reason))))
+      (setq cancel
+            (lambda ()
+              (reject "Hermes dashboard request was superseded")))
+      (condition-case err
+          (progn
+            (when cancel-setter
+              (unless (funcall cancel-setter cancel-expected cancel)
+                (user-error "Hermes dashboard request was superseded"))
+              (setq registered t))
+            (setq timer
+                  (run-at-time
+                   request-timeout nil
+                   (lambda ()
+                     (reject
+                      (format "Hermes dashboard request timed out at %s"
+                              safe-url)))))
+            (setq request-buffer
+                  (url-retrieve
+                   url
+                   (lambda (status)
+                     (let ((buffer (current-buffer)))
+                       (if settled
+                           (hermes-dashboard-transport--close-http-buffer buffer)
+                         (setq settled t)
+                         (release-owner)
+                         (unwind-protect
+                             (condition-case response-error
+                                 (hermes-dashboard-transport--settle-http-response
+                                  promise status buffer safe-url secrets)
+                               (error
+                                (hermes--promise-reject
+                                 promise
+                                 (format
+                                  "Hermes dashboard response error at %s: %s"
+                                  safe-url
+                                  (hermes-dashboard-transport--redact-secret
+                                   (error-message-string response-error)
+                                   secrets)))))
+                           (hermes-dashboard-transport--close-http-buffer
+                            buffer)))))
+                   nil t t))
+            (when settled
+              (hermes-dashboard-transport--close-http-buffer request-buffer)))
+        (error
+         (reject (hermes-dashboard-transport--redact-secret
+                  (error-message-string err) secrets))))
+      promise)))
 
 (defvar hermes-dashboard-transport-http-request-function
   #'hermes-dashboard-transport--default-http-request
@@ -474,8 +506,9 @@ It is called with URL and keyword arguments :method, :headers, :data, and
   #'hermes-dashboard-transport--default-http-request-async
   "Function used for asynchronous remote dashboard HTTP requests.
 Called with URL and keyword arguments :method, :headers, :data, and :secrets.
-A caller-specific override adds :timeout.  The function returns a promise of
-the response plist.")
+Caller-specific overrides add :timeout or the paired :cancel-setter and
+:cancel-expected keywords.  The function returns a promise of the response
+plist.")
 
 (cl-defun hermes-dashboard-transport--http-json
     (url &key (method "GET") headers body secrets)
@@ -488,9 +521,11 @@ the response plist.")
            :secrets secrets))
 
 (cl-defun hermes-dashboard-transport--http-json-async
-    (url &key (method "GET") headers body secrets timeout)
+    (url &key (method "GET") headers body secrets timeout
+         cancel-setter cancel-expected)
   "Request URL as JSON asynchronously using METHOD, HEADERS, BODY, and SECRETS.
-Return a promise of the response plist.  TIMEOUT overrides the default."
+Return a promise of the response plist.  TIMEOUT overrides the default.
+CANCEL-SETTER replaces CANCEL-EXPECTED while this request owns its slot."
   (apply hermes-dashboard-transport-http-request-async-function
          url
          (append
@@ -498,7 +533,10 @@ Return a promise of the response plist.  TIMEOUT overrides the default."
                 :headers (append '(("Accept" . "application/json")) headers)
                 :data (and body (json-serialize body))
                 :secrets secrets)
-          (and timeout (list :timeout timeout)))))
+          (and timeout (list :timeout timeout))
+          (and cancel-setter
+               (list :cancel-setter cancel-setter
+                     :cancel-expected cancel-expected)))))
 
 (defun hermes-dashboard-transport--http-json-request (request)
   "Send REQUEST, a (:url :method :headers :body :secrets) plist, synchronously."
@@ -564,7 +602,8 @@ Return a promise of the response plist."
   ;; Bumped by `hermes-dashboard-transport-stop' and manual reconnect so
   ;; scheduled reconnect attempts and ready timeouts armed for an earlier
   ;; connection lifetime become no-ops instead of racing the replacement.
-  (generation 0))
+  (generation 0)
+  startup-cancel)
 
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
   "Authentication method for remote dashboard attach.
@@ -1170,9 +1209,10 @@ HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
           :secrets (delq nil (list access refresh ticket)))))
 
 (defun hermes-dashboard-transport--native-ticket-async
-    (host port base-url tokens)
+    (host port base-url tokens &optional cancel-setter)
   "Return a promise of ticket WebSocket auth using native TOKENS.
-HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
+HOST, PORT, and BASE-URL build the authenticated WebSocket URL.
+CANCEL-SETTER owns the in-flight request when non-nil."
   (let* ((access (plist-get tokens :access-token))
          (refresh (plist-get tokens :refresh-token))
          (secrets (delq nil (list access refresh))))
@@ -1181,16 +1221,19 @@ HOST, PORT, and BASE-URL build the authenticated WebSocket URL."
       (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
       :method "POST"
       :headers `(("Authorization" . ,(concat "Bearer " access)))
-      :secrets secrets)
+      :secrets secrets
+      :cancel-setter cancel-setter)
      (lambda (ticket-response)
        (hermes-dashboard-transport--native-ticket-auth
         host port base-url tokens ticket-response))
      (lambda (reason)
        (hermes--promise-rejected reason)))))
 
-(defun hermes-dashboard-transport--native-refresh-async (base-url tokens)
+(defun hermes-dashboard-transport--native-refresh-async
+    (base-url tokens &optional cancel-setter)
   "Return a promise of refreshed native tokens for BASE-URL.
-TOKENS must include a refresh token; successful rotation is stored."
+TOKENS must include a refresh token; successful rotation is stored.
+CANCEL-SETTER owns the in-flight request when non-nil."
   (let ((refresh (plist-get tokens :refresh-token))
         (provider (plist-get tokens :provider)))
     (if (or (not (stringp refresh)) (string-empty-p refresh))
@@ -1205,7 +1248,8 @@ TOKENS must include a refresh token; successful rotation is stored."
                       (and (stringp provider)
                            (not (string-empty-p provider))
                            `((provider . ,provider))))
-        :secrets (list refresh))
+        :secrets (list refresh)
+        :cancel-setter cancel-setter)
        (lambda (response)
          (if-let* ((next (hermes-dashboard-transport--native-token-plist
                           (plist-get response :body)
@@ -1219,10 +1263,10 @@ TOKENS must include a refresh token; successful rotation is stored."
          (hermes--promise-rejected reason))))))
 
 (defun hermes-dashboard-transport--native-ensure-tokens-async
-    (base-url &optional provider force-login interactive)
+    (base-url &optional provider force-login interactive cancel-setter)
   "Return a promise of usable native tokens for BASE-URL.
 Optional PROVIDER is used for authorize/refresh.  When FORCE-LOGIN is non-nil,
-skip stored tokens.  INTERACTIVE explicitly permits one browser login."
+skip stored tokens.  INTERACTIVE permits login; CANCEL-SETTER owns refresh."
   (let ((stored (and (not force-login)
                      (hermes-dashboard-transport--native-token-load base-url))))
     (cond
@@ -1233,7 +1277,8 @@ skip stored tokens.  INTERACTIVE explicitly permits one browser login."
      ((and stored (hermes-transport--non-empty-string
                    (plist-get stored :refresh-token)))
       (hermes--promise-catch
-       (hermes-dashboard-transport--native-refresh-async base-url stored)
+       (hermes-dashboard-transport--native-refresh-async
+        base-url stored cancel-setter)
        (lambda (reason)
          ;; A dead refresh token may force a fresh login only when the caller
          ;; explicitly owns browser interaction; preserve the old store until
@@ -1257,19 +1302,19 @@ skip stored tokens.  INTERACTIVE explicitly permits one browser login."
        "Native dashboard sign-in requires explicit interactive authorization")))))
 
 (defun hermes-dashboard-transport--remote-native-auth-async
-    (host port base-url &optional status force-login interactive)
+    (host port base-url &optional status force-login interactive cancel-setter)
   "Return a promise of native PKCE WebSocket auth for HOST, PORT, BASE-URL.
 Optional STATUS supplies the OAuth provider name.  FORCE-LOGIN skips stored
-tokens.  INTERACTIVE explicitly permits one browser login."
+tokens.  INTERACTIVE permits login; CANCEL-SETTER owns native HTTP."
   (let ((provider (and status
                        (hermes-dashboard-transport--status-oauth-provider
                         status))))
     (hermes--promise-then
      (hermes-dashboard-transport--native-ensure-tokens-async
-      base-url provider force-login interactive)
+      base-url provider force-login interactive cancel-setter)
      (lambda (tokens)
        (hermes-dashboard-transport--native-ticket-async
-        host port base-url tokens)))))
+        host port base-url tokens cancel-setter)))))
 
 (defun hermes-dashboard-transport--api-native-auth-async
     (base-url &optional status)
@@ -1546,11 +1591,14 @@ main thread is banned by AGENTS.md."
      method path :body body :query query :headers headers :secrets secrets
      :retry (equal method "GET"))))
 
-(defun hermes-dashboard-transport--remote-status-async (base-url)
-  "Return a promise of the /api/status object from dashboard BASE-URL."
+(defun hermes-dashboard-transport--remote-status-async
+    (base-url &optional cancel-setter)
+  "Return a promise of the /api/status object from dashboard BASE-URL.
+CANCEL-SETTER owns the in-flight request when non-nil."
   (hermes--promise-map
    (hermes-dashboard-transport--http-json-async
-    (hermes-dashboard-transport--api-url base-url "/api/status"))
+    (hermes-dashboard-transport--api-url base-url "/api/status")
+    :cancel-setter cancel-setter)
    (lambda (response) (plist-get response :body))))
 
 (defun hermes-dashboard-transport--api-token-auth-async (base-url)
@@ -1997,10 +2045,10 @@ network; a missing token rejects the promise."
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-auth-async
-    (host port base-url method &optional token interactive)
+    (host port base-url method &optional token interactive cancel-setter)
   "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
 Mirrors the previous synchronous resolution without blocking.  INTERACTIVE
-explicitly permits native authentication to open one browser login."
+permits native login; CANCEL-SETTER owns startup HTTP."
   (pcase method
     ('token (hermes-dashboard-transport--remote-token-auth-async
              host port base-url token))
@@ -2010,12 +2058,14 @@ explicitly permits native authentication to open one browser login."
                (hermes-dashboard-transport--remote-basic-auth-async
                 host port base-url status))))
     ('native (hermes--promise-then
-              (hermes-dashboard-transport--remote-status-async base-url)
+              (hermes-dashboard-transport--remote-status-async
+               base-url cancel-setter)
               (lambda (status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                host port base-url status nil interactive))))
+                 host port base-url status nil interactive cancel-setter))))
     ('auto (hermes--promise-then
-            (hermes-dashboard-transport--remote-status-async base-url)
+            (hermes-dashboard-transport--remote-status-async
+             base-url cancel-setter)
             (lambda (status)
               (cond
                ((not (hermes-dashboard-transport--status-auth-required-p
@@ -2025,7 +2075,7 @@ explicitly permits native authentication to open one browser login."
                ((hermes-dashboard-transport--status-supports-native-pkce-p
                  status)
                 (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status nil interactive))
+                 host port base-url status nil interactive cancel-setter))
                ((hermes-dashboard-transport--status-basic-provider status)
                 (hermes-dashboard-transport--remote-basic-auth-async
                  host port base-url status))
