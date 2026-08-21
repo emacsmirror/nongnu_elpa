@@ -780,28 +780,39 @@ extends the input instead of prepending a blank line to it."
      (when-let* ((queue-id (plist-get context :queue-id)))
        (hermes-chat--queue-submit-accepted queue-id)))))
 
+(defun hermes-chat--submit-context-current-p (context)
+  "Return non-nil when CONTEXT still owns the current dashboard submission."
+  (let ((queue-id (plist-get context :queue-id)))
+    (and (eq context hermes-chat--unsettled-submit-context)
+         (hermes-chat--current-lifetime-p (plist-get context :lifetime))
+         (hermes-chat--current-transport-generation-p
+          (plist-get context :generation))
+         (eq (plist-get context :client) hermes-chat--dashboard-client)
+         (equal (plist-get context :session-id)
+                hermes-chat--dashboard-active-session-id)
+         (equal (plist-get context :assistant-id)
+                hermes-chat--pending-assistant-id)
+         (and hermes-chat--nodes
+              (gethash (plist-get context :user-id) hermes-chat--nodes))
+         (or (null queue-id)
+             (hermes-chat--queue-submit-current-p queue-id)))))
+
 (defun hermes-chat--submit-resolve-callback (buffer context)
   "Return BUFFER callback settling dashboard submission CONTEXT."
   (let (settled)
     (lambda (result)
       (hermes-chat--in-buffer buffer
-        (let ((queue-id (plist-get context :queue-id))
-              (user-id (plist-get context :user-id)))
-          (when (and (not settled)
-                     (or (and queue-id
-                              (hermes-chat--queue-submit-current-p queue-id))
-                         (and hermes-chat--nodes
-                              (gethash user-id hermes-chat--nodes))))
-            (setq settled t)
-            (hermes-chat--submit-resolved context result)
-            (hermes-chat--clear-submit-context context)))))))
+        (when (and (not settled)
+                   (hermes-chat--submit-context-current-p context))
+          (setq settled t)
+          (hermes-chat--submit-resolved context result)
+          (hermes-chat--clear-submit-context context))))))
 
 (defun hermes-chat--queue-reject-callback (buffer context)
   "Return BUFFER callback rejecting the queued turn described by CONTEXT."
   (lambda (message)
     (hermes-chat--in-buffer buffer
-      (when (hermes-chat--current-transport-generation-p
-             (plist-get context :generation))
+      (when (hermes-chat--submit-context-current-p context)
         (hermes-chat--clear-submit-context context)
         (hermes-chat--queue-submit-rejected
          (plist-get context :queue-id)
@@ -813,10 +824,7 @@ extends the input instead of prepending a blank line to it."
   "Return BUFFER callback rejecting the turn described by CONTEXT."
   (lambda (message)
     (hermes-chat--in-buffer buffer
-      (when (and (hermes-chat--current-transport-generation-p
-                  (plist-get context :generation))
-                 (equal hermes-chat--pending-assistant-id
-                        (plist-get context :assistant-id)))
+      (when (hermes-chat--submit-context-current-p context)
         (hermes-chat--clear-submit-context context)
         (setq hermes-chat--dashboard-running-p nil)
         (hermes-chat--handle-transport-event
@@ -884,6 +892,9 @@ extends the input instead of prepending a blank line to it."
   "Return transport context for CONTENT, DISPLAY, QUEUE-ENTRY, USER, and ASSISTANT."
   (let ((dashboard-p (hermes-chat--dashboard-default-transport-p)))
     (list :buffer (current-buffer)
+          :lifetime hermes-chat--lifecycle-generation
+          :client nil
+          :session-id nil
           :user-id (plist-get user :id)
           :assistant-id (plist-get assistant :id)
           :dashboard-p dashboard-p

@@ -456,15 +456,17 @@ settlement order lives in one place."
   (hermes-chat--set-header-state
    :status 'reconnecting :activity "Reconnecting dashboard socket"))
 
-(defun hermes-chat--dashboard-settle-terminal (interrupted-p)
-  "Settle dashboard bookkeeping for a terminal event.
+(defun hermes-chat--dashboard-settle-terminal (assistant-id interrupted-p)
+  "Settle dashboard bookkeeping for ASSISTANT-ID's terminal event.
 When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (when interrupted-p
     (setq hermes-chat--interrupted-assistant-id nil
           hermes-chat--interrupted-events nil
           hermes-chat--interrupt-request-pending-p nil))
-  (hermes-chat--dashboard-schedule-idle-reconciliation
-   #'hermes-chat--drain-queued-message))
+  (unless (and hermes-chat--pending-assistant-id
+               (not (equal hermes-chat--pending-assistant-id assistant-id)))
+    (hermes-chat--dashboard-schedule-idle-reconciliation
+     #'hermes-chat--drain-queued-message)))
 
 (defun hermes-chat--interrupted-error-event-p (event)
   "Return whether error EVENT represents an intentional interruption."
@@ -517,7 +519,7 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (when (memq (plist-get event :type) '(done error))
       (hermes-chat--notify-terminal-event assistant-id event))
     (when (memq (plist-get event :type) '(done error))
-      (hermes-chat--dashboard-settle-terminal interrupted-p))
+      (hermes-chat--dashboard-settle-terminal assistant-id interrupted-p))
     (when (eq (plist-get event :type) 'done)
       (hermes-chat--maybe-refresh-session-title))
     (unless (memq (plist-get event :type)
@@ -685,11 +687,13 @@ shared client."
                        hermes-chat--dashboard-active-session-id)
         :generation hermes-chat--transport-generation
         :delay 0.1
+        :terminal-p nil
         :on-idle on-idle))
 
 (defun hermes-chat--dashboard-idle-context-valid-p (context)
   "Return non-nil when idle reconciliation CONTEXT still owns this chat."
-  (and hermes-chat--dashboard-running-p
+  (and (not (plist-get context :terminal-p))
+       hermes-chat--dashboard-running-p
        (eq (plist-get context :client) hermes-chat--dashboard-client)
        (equal (plist-get context :active-id)
               hermes-chat--dashboard-active-session-id)
@@ -706,24 +710,26 @@ shared client."
   (run-at-time (plist-get context :delay) nil
                #'hermes-chat--dashboard-reconcile-idle context))
 
+(defun hermes-chat--dashboard-finish-idle-context (context)
+  "Finish CONTEXT exactly once before running its idle effect."
+  (setf (plist-get context :terminal-p) t)
+  (setq hermes-chat--dashboard-running-p nil)
+  (funcall (plist-get context :on-idle)))
+
 (defun hermes-chat--dashboard-handle-idle-result (context result)
   "Handle session resume RESULT for idle reconciliation CONTEXT."
   (when (hermes-chat--dashboard-idle-context-valid-p context)
     (if (hermes-chat--dashboard-result-live-turn-p result)
         (hermes-chat--dashboard-reconcile-idle-later
          (hermes-chat--dashboard-next-idle-context context))
-      (setq hermes-chat--dashboard-running-p nil)
-      (funcall (plist-get context :on-idle)))))
+      (hermes-chat--dashboard-finish-idle-context context))))
 
 (defun hermes-chat--dashboard-idle-reject (context message)
   "Handle idle reconciliation rejection MESSAGE for CONTEXT."
   (when (hermes-chat--dashboard-idle-context-valid-p context)
     (if (and (stringp message)
-             (null hermes-chat--pending-assistant-id)
              (string-match-p "session not found" (downcase message)))
-        (progn
-          (setq hermes-chat--dashboard-running-p nil)
-          (funcall (plist-get context :on-idle)))
+        (hermes-chat--dashboard-finish-idle-context context)
       (hermes-chat--dashboard-reconcile-idle-later
        (hermes-chat--dashboard-next-idle-context context)))))
 
@@ -744,8 +750,9 @@ shared client."
                      (hermes-chat--in-buffer (plist-get context :buffer)
                        (hermes-chat--dashboard-idle-reject context message))))
         (error
-         (hermes-chat--dashboard-reconcile-idle-later
-          (hermes-chat--dashboard-next-idle-context context)))))))
+         (when (hermes-chat--dashboard-idle-context-valid-p context)
+           (hermes-chat--dashboard-reconcile-idle-later
+            (hermes-chat--dashboard-next-idle-context context))))))))
 
 (defun hermes-chat--dashboard-schedule-idle-reconciliation (on-idle)
   "Schedule ON-IDLE after this session is authoritatively no longer running."
@@ -953,12 +960,20 @@ path; a client with no readiness promise (such as a test stub) is left alone."
         client :resolve #'ignore :reject #'ignore))
      #'ignore)))
 
+(defun hermes-chat--dashboard-claim-submit-context (client)
+  "Bind the current unsettled submission to CLIENT and its live session."
+  (when-let* ((context hermes-chat--unsettled-submit-context))
+    (setf (plist-get context :client) client
+          (plist-get context :session-id)
+          hermes-chat--dashboard-active-session-id)))
+
 (defun hermes-chat--dashboard-submit-prompt
     (client prompt &optional resolve reject)
   "Submit PROMPT to CLIENT's active dashboard session.
 RESOLVE and REJECT receive the asynchronous request result."
   (unless hermes-chat--dashboard-active-session-id
     (user-error "Hermes dashboard did not return a live session id"))
+  (hermes-chat--dashboard-claim-submit-context client)
   (setq hermes-chat--dashboard-running-p t)
   (hermes-dashboard-transport-prompt-submit
    client prompt
@@ -976,6 +991,7 @@ fresh session, pending create-time runtime overrides are applied through
 prompt request result.  QUEUED-P means a local FIFO entry owns the request.
 GENERATION scopes asynchronous create-time overrides."
   (hermes-chat--dashboard-record-session client result)
+  (hermes-chat--dashboard-claim-submit-context client)
   (cond
    ((and resume-p (hermes-chat--dashboard-result-live-turn-p result))
     (when (and queued-p reject)
@@ -1113,6 +1129,7 @@ RESOLVE and REJECT receive the prompt request result.  QUEUED-P identifies a
 local FIFO submission."
   (let ((buffer (current-buffer))
         (client (hermes-chat--dashboard-start callback)))
+    (hermes-chat--dashboard-claim-submit-context client)
     (hermes-chat--dashboard-ensure-session
      client prompt buffer resolve reject queued-p)
     client))
