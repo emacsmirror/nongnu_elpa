@@ -408,6 +408,16 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
   `((t :inherit highlight :extend t))
   "Face for `mastodon-tl--highlight-current-toot'.")
 
+(defface mastodon-toot-nerd-icons-face
+  '((t ( :inherit mastodon-toot-docs-face
+         :family "Symbols Nerd Font Mono")))
+  "Face for Nerd Icons symbols for toot stats.")
+
+(defface mastodon-success-nerd-icons-face
+  '((t ( :inherit success
+         :family "Symbols Nerd Font Mono")))
+  "Face for Nerd Icons success symbols in the toot byline.")
+
 ;;;###autoload
 (defun mastodon ()
   "Connect client to `mastodon-instance-url' instance.

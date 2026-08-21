@@ -401,7 +401,9 @@ JSON is added to the string as its item-json."
          (propertize
           (format "(%s) "
                   (propertize marker
-                              'face 'success))
+                              'face (if mastodon-tl-use-nerd-icons
+                                        'mastodon-success-nerd-icons-face
+                                      'success)))
           'cursor-face 'mastodon-cursor-highlight-face
           'item-json json)))) ;; for (un)folding items
     (when at-byline-p
