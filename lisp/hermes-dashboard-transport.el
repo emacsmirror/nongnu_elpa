@@ -268,6 +268,11 @@ CLIENT's legacy callback for single-callback callers."
 One client -- one WebSocket and one authentication -- is shared by every chat
 buffer attached to the same dashboard endpoint.")
 
+(defun hermes-dashboard-transport--client-viable-p (client)
+  "Return non-nil when CLIENT may retain or acquire shared ownership."
+  (and (hermes-dashboard-transport-client-p client)
+       (not (hermes-dashboard-transport-client-stopping-p client))))
+
 (defun hermes-dashboard-transport--unregister-client (client)
   "Remove CLIENT from the shared registry when it is still the registered one."
   (when-let* ((key (hermes-dashboard-transport-client-endpoint-key client)))
@@ -1108,7 +1113,7 @@ Used when the connection or `gateway.ready' handshake fails asynchronously."
 
 (defun hermes-dashboard-transport--generation-live-p (client generation)
   "Return non-nil when GENERATION still owns CLIENT startup work."
-  (and (not (hermes-dashboard-transport-client-stopping-p client))
+  (and (hermes-dashboard-transport--client-viable-p client)
        (= generation (hermes-dashboard-transport-client-generation client))))
 
 (defun hermes-dashboard-transport--connect-async
@@ -1126,20 +1131,28 @@ readiness flow to resolve the readiness promise."
         (max-attempts (max 1 hermes-dashboard-transport-connect-retries)))
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (condition-case err
-          (setf (hermes-dashboard-transport-client-websocket client)
-                (hermes-dashboard-transport--open-websocket-once client url))
+          (let ((websocket
+                 (hermes-dashboard-transport--open-websocket-once client url)))
+            (if (hermes-dashboard-transport--generation-live-p client generation)
+                (setf (hermes-dashboard-transport-client-websocket client)
+                      websocket)
+              (when (fboundp 'websocket-close)
+                (hermes-dashboard-transport--attempt
+                 #'websocket-close websocket))))
         (user-error
-         (hermes-dashboard-transport--fail-ready
-          client (hermes-dashboard-transport--condition-message client err)))
-        (error
-         (if (< (1+ attempt) max-attempts)
-             (hermes-dashboard-transport--schedule
-              hermes-dashboard-transport-connect-retry-delay
-              #'hermes-dashboard-transport--connect-async
-              client (1+ attempt) generation)
+         (when (hermes-dashboard-transport--generation-live-p client generation)
            (hermes-dashboard-transport--fail-ready
-            client (hermes-dashboard-transport--connection-error-message
-                    client err))))))))
+            client (hermes-dashboard-transport--condition-message client err))))
+        (error
+         (when (hermes-dashboard-transport--generation-live-p client generation)
+           (if (< (1+ attempt) max-attempts)
+               (hermes-dashboard-transport--schedule
+                hermes-dashboard-transport-connect-retry-delay
+                #'hermes-dashboard-transport--connect-async
+                client (1+ attempt) generation)
+             (hermes-dashboard-transport--fail-ready
+              client (hermes-dashboard-transport--connection-error-message
+                      client err)))))))))
 
 (defun hermes-dashboard-transport--ready-timeout-error (client)
   "Return a redacted `gateway.ready' timeout message for CLIENT."
@@ -1181,41 +1194,50 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
                   :ready-promise (hermes--promise-make)
                   :callback (or callback #'ignore)))
          (argv (hermes-dashboard-transport--command host port command))
-         (env (hermes-dashboard-transport--environment token base-environment)))
+         (env (hermes-dashboard-transport--environment token base-environment))
+         (generation (hermes-dashboard-transport-client-generation client)))
     (hermes-dashboard-transport--dispatch-event
      client (hermes-dashboard-transport--start-event host port token))
     (condition-case err
-        (setf (hermes-dashboard-transport-client-process client)
-              (hermes-dashboard-transport--start-process client argv env))
+        (let ((process
+               (hermes-dashboard-transport--start-process client argv env)))
+          (if (hermes-dashboard-transport--generation-live-p client generation)
+              (setf (hermes-dashboard-transport-client-process client) process)
+            (hermes-dashboard-transport--attempt #'delete-process process)))
       (error
        (hermes-dashboard-transport--cleanup-start-failure client)
        (signal 'user-error
                (list (hermes-dashboard-transport--condition-message
                       client err)))))
-    (hermes-dashboard-transport--connect-async client)
-    (hermes-dashboard-transport--arm-ready-timeout client)
+    (when (hermes-dashboard-transport--generation-live-p client generation)
+      (hermes-dashboard-transport--connect-async client nil generation))
+    (when (hermes-dashboard-transport--generation-live-p client generation)
+      (hermes-dashboard-transport--arm-ready-timeout client))
     client))
 
 (defun hermes-dashboard-transport--remote-connect (client auth)
   "Store AUTH on CLIENT, announce connecting, and open its WebSocket.
 AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
-  (setf (hermes-dashboard-transport-client-token client)
-        (plist-get auth :token)
-        (hermes-dashboard-transport-client-websocket-url client)
-        (plist-get auth :url)
-        (hermes-dashboard-transport-client-redacted-websocket-url client)
-        (plist-get auth :redacted-url)
-        (hermes-dashboard-transport-client-secrets client)
-        (plist-get auth :secrets)
-        (hermes-dashboard-transport-client-credential-kind client)
-        (plist-get auth :kind)
-        (hermes-dashboard-transport-client-credential-reusable-p client)
-        (plist-get auth :reusable-p))
-  (hermes-dashboard-transport--dispatch-event
-   client (hermes-dashboard-transport--remote-connect-event
-           (plist-get auth :redacted-url)))
-  (hermes-dashboard-transport--connect-async client)
-  (hermes-dashboard-transport--arm-ready-timeout client))
+  (let ((generation (hermes-dashboard-transport-client-generation client)))
+    (setf (hermes-dashboard-transport-client-token client)
+          (plist-get auth :token)
+          (hermes-dashboard-transport-client-websocket-url client)
+          (plist-get auth :url)
+          (hermes-dashboard-transport-client-redacted-websocket-url client)
+          (plist-get auth :redacted-url)
+          (hermes-dashboard-transport-client-secrets client)
+          (plist-get auth :secrets)
+          (hermes-dashboard-transport-client-credential-kind client)
+          (plist-get auth :kind)
+          (hermes-dashboard-transport-client-credential-reusable-p client)
+          (plist-get auth :reusable-p))
+    (hermes-dashboard-transport--dispatch-event
+     client (hermes-dashboard-transport--remote-connect-event
+             (plist-get auth :redacted-url)))
+    (when (hermes-dashboard-transport--generation-live-p client generation)
+      (hermes-dashboard-transport--connect-async client nil generation))
+    (when (hermes-dashboard-transport--generation-live-p client generation)
+      (hermes-dashboard-transport--arm-ready-timeout client))))
 
 (cl-defun hermes-dashboard-transport--start-remote
     (&key callback host port token remote-url remote-auth-method)
@@ -1331,6 +1353,11 @@ is reused, since attached buffers subscribe rather than seize the callback."
                :host host :port port :start-mode start-mode
                :remote-url remote-url))
          (existing (gethash key hermes-dashboard-transport--clients)))
+    (when (and existing
+               (not (hermes-dashboard-transport--client-viable-p existing))
+               (eq (gethash key hermes-dashboard-transport--clients) existing))
+      (remhash key hermes-dashboard-transport--clients)
+      (setq existing nil))
     (if existing
         (progn
           (hermes-dashboard-transport--cancel-idle-timer existing)
@@ -1341,6 +1368,9 @@ is reused, since attached buffers subscribe rather than seize the callback."
                      :token token :base-environment base-environment
                      :start-mode start-mode :remote-url remote-url
                      :remote-auth-method remote-auth-method)))
+        (unless (hermes-dashboard-transport--client-viable-p client)
+          (signal 'user-error
+                  '("Hermes dashboard transport failed during startup")))
         (setf (hermes-dashboard-transport-client-refcount client) 1
               (hermes-dashboard-transport-client-endpoint-key client) key)
         (puthash key client hermes-dashboard-transport--clients)

@@ -564,6 +564,157 @@
         (should (stringp err))
         (should-not (string-match-p "SEKRIT" err))))))
 
+;;; Group: startup viability
+
+(ert-deftest hermes-dashboard-transport-spawn-return-is-stale-after-starting-stop ()
+  "A synchronous starting callback cannot attach a returned process."
+  (let* ((dispatch (symbol-function
+                    'hermes-dashboard-transport--dispatch-event))
+         (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-ready-timeout 15)
+         (hermes-dashboard-transport-make-process-function
+          (lambda (&rest _) 'returned-process))
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (&rest _) (ert-fail "Terminal spawn opened a socket")))
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (ert-fail "Terminal spawn armed a timeout")))
+         client ready returned deleted)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--dispatch-event)
+               (lambda (current event)
+                 (setq client current
+                       ready (hermes-dashboard-transport-client-ready-promise
+                              current))
+                 (funcall dispatch current event)))
+              ((symbol-function 'delete-process)
+               (lambda (process)
+                 (push process deleted)
+                 (signal 'quit nil))))
+      (setq returned
+            (hermes-dashboard-transport-start
+             :start-mode 'spawn :host "127.0.0.1" :port 9119
+             :token "token"
+             :callback
+             (lambda (_event)
+               (hermes-dashboard-transport-stop client)))))
+    (should (eq returned client))
+    (should (hermes-dashboard-transport-client-stopping-p client))
+    (should (eq (hermes--promise-state ready) 'rejected))
+    (should (equal deleted '(returned-process)))
+    (should-not (hermes-dashboard-transport-client-process client))
+    (should-not (hermes-dashboard-transport-client-websocket client))
+    (should-not (hermes-dashboard-transport-client-idle-timer client))
+    (should-not (hermes-dashboard-transport-client-heartbeat-timer client))
+    (should-not (gethash '(spawn "127.0.0.1" 9119)
+                         hermes-dashboard-transport--clients))))
+
+(ert-deftest hermes-dashboard-transport-socket-return-is-stale-after-open-stop ()
+  "A synchronous socket opener cannot attach its return after stopping."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-ready-timeout 15)
+         scheduled client ready returned closed
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay &rest _) (push delay scheduled) 'timer))
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (_url current)
+            (setq client current
+                  ready (hermes-dashboard-transport-client-ready-promise current))
+            (hermes-dashboard-transport-stop current)
+            'returned-socket)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '(:token "ticket" :url "wss://dash.example/ws?token=ticket"
+                    :redacted-url "wss://dash.example/ws?token=<redacted>"
+                    :secrets ("ticket") :kind ticket :reusable-p nil))))
+              ((symbol-function 'websocket-close)
+               (lambda (socket)
+                 (push socket closed)
+                 (error "close failed"))))
+      (setq returned
+            (hermes-dashboard-transport-start
+             :start-mode 'remote :remote-url "https://dash.example")))
+    (should (eq returned client))
+    (should (hermes-dashboard-transport-client-stopping-p client))
+    (should (eq (hermes--promise-state ready) 'rejected))
+    (should (equal closed '(returned-socket)))
+    (should-not scheduled)
+    (should-not (hermes-dashboard-transport-client-process client))
+    (should-not (hermes-dashboard-transport-client-websocket client))
+    (should-not (hermes-dashboard-transport-client-idle-timer client))
+    (should-not (hermes-dashboard-transport-client-heartbeat-timer client))
+    (should-not (gethash "https://dash.example"
+                         hermes-dashboard-transport--clients))))
+
+(ert-deftest hermes-dashboard-transport-socket-stop-then-error-does-not-retry ()
+  "A socket callback that stops before an error cannot schedule stale retry."
+  (let* ((hermes-dashboard-transport-connect-retries 3)
+         (hermes-dashboard-transport-ready-timeout nil)
+         scheduled client)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '(:token "ticket" :url "wss://dash.example/ws?token=ticket"
+                    :redacted-url "wss://dash.example/ws?token=<redacted>"
+                    :secrets ("ticket") :kind ticket :reusable-p nil))))
+              ((symbol-function 'hermes-dashboard-transport--open-websocket-once)
+               (lambda (current _url)
+                 (setq client current)
+                 (hermes-dashboard-transport-stop current)
+                 (error "open failed")))
+              ((symbol-function 'hermes-dashboard-transport--schedule)
+               (lambda (&rest args) (push args scheduled))))
+      (should (eq (hermes-dashboard-transport-start
+                   :start-mode 'remote :remote-url "https://dash.example")
+                  client)))
+    (should (hermes-dashboard-transport-client-stopping-p client))
+    (should-not scheduled)))
+
+(ert-deftest hermes-dashboard-transport-acquire-rejects-synchronous-auth-stop ()
+  "Shared acquire never publishes a client stopped by synchronous auth."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (stop (symbol-function 'hermes-dashboard-transport-stop))
+         clients messages auth-tokens
+         (auth-calls 0))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (_host _port _base _method token &rest _)
+                 (push token auth-tokens)
+                 (hermes--promise-rejected
+                  (format "remote auth SECRET-%d rejected"
+                          (cl-incf auth-calls)))))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest args)
+                 (push client clients)
+                 (apply stop client args))))
+      (dotimes (_ 2)
+        (push (cadr (should-error
+                     (hermes-dashboard-transport-acquire
+                      :start-mode 'remote
+                      :remote-url "https://dash.example")
+                     :type 'user-error))
+              messages)))
+    (setq clients (nreverse clients)
+          messages (nreverse messages)
+          auth-tokens (nreverse auth-tokens))
+    (should (= auth-calls 2))
+    (should (equal auth-tokens '(nil nil)))
+    (should (= (length clients) 2))
+    (should-not (eq (car clients) (cadr clients)))
+    (dolist (client clients)
+      (should (hermes-dashboard-transport-client-stopping-p client))
+      (should (eq (hermes--promise-state
+                   (hermes-dashboard-transport-client-ready-promise client))
+                  'rejected))
+      (should (= (hermes-dashboard-transport-client-refcount client) 0))
+      (should-not (hermes-dashboard-transport-client-endpoint-key client))
+      (should-not (hermes-dashboard-transport-client-token client))
+      (should-not (hermes-dashboard-transport-client-auth-token client))
+      (should-not (hermes-dashboard-transport-client-secrets client)))
+    (dolist (message messages)
+      (should (equal message "Hermes dashboard transport failed during startup"))
+      (should-not (string-match-p "SECRET" message)))
+    (should-not (gethash "https://dash.example"
+                         hermes-dashboard-transport--clients))))
+
 ;;; Group: terminal stop
 
 (ert-deftest hermes-dashboard-transport-terminal-routes-detach-before-callbacks ()
@@ -1458,6 +1609,24 @@
         (should (eq c1 c2))
         (should (= made 1))
         (should (= (hermes-dashboard-transport-client-refcount c1) 2))))))
+
+(ert-deftest hermes-dashboard-transport-acquire-replaces-stopping-registry-entry ()
+  "Acquire identity-removes a stopping entry and starts a fresh client."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (key '(spawn "127.0.0.1" 9119))
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :stopping-p t :refcount 7))
+         fresh)
+    (puthash key old hermes-dashboard-transport--clients)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (setq fresh (make-hermes-dashboard-transport-client)))))
+      (let ((client (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (should (eq client fresh))
+        (should-not (eq client old))
+        (should (= (hermes-dashboard-transport-client-refcount old) 7))
+        (should (= (hermes-dashboard-transport-client-refcount fresh) 1))
+        (should (eq (gethash key hermes-dashboard-transport--clients) fresh))))))
 
 (ert-deftest hermes-dashboard-transport-acquire-distinct-endpoints ()
   "Different remote endpoints get distinct clients."
