@@ -742,21 +742,37 @@ When BODY omits refresh_token, keep PREVIOUS's refresh token if present."
             :provider provider
             :user-id user-id))))
 
+(defconst hermes-dashboard-transport--native-token-prefix "base64:"
+  "Prefix for netrc-safe native token secrets.")
+
 (defun hermes-dashboard-transport--native-token-encode (tokens)
   "Return the auth-source secret string for TOKENS."
-  (json-serialize
-   `((access_token . ,(plist-get tokens :access-token))
-     (refresh_token . ,(plist-get tokens :refresh-token))
-     (expires_at . ,(or (plist-get tokens :expires-at) 0))
-     (provider . ,(or (plist-get tokens :provider) ""))
-     (user_id . ,(or (plist-get tokens :user-id) "")))))
+  (concat
+   hermes-dashboard-transport--native-token-prefix
+   (base64-encode-string
+    (json-serialize
+     `((access_token . ,(plist-get tokens :access-token))
+       (refresh_token . ,(plist-get tokens :refresh-token))
+       (expires_at . ,(or (plist-get tokens :expires-at) 0))
+       (provider . ,(or (plist-get tokens :provider) ""))
+       (user_id . ,(or (plist-get tokens :user-id) ""))))
+    t)))
 
 (defun hermes-dashboard-transport--native-token-decode (secret)
-  "Return a native token plist decoded from SECRET, or nil."
+  "Return a native token plist decoded from SECRET, or nil.
+Legacy unencoded JSON secrets remain readable."
   (when (and (stringp secret) (not (string-empty-p secret)))
     (condition-case nil
-        (hermes-dashboard-transport--native-token-plist
-         (hermes-transport-json-parse secret))
+        (let ((json
+               (if (string-prefix-p
+                    hermes-dashboard-transport--native-token-prefix secret)
+                   (base64-decode-string
+                    (substring
+                     secret
+                     (length hermes-dashboard-transport--native-token-prefix)))
+                 secret)))
+          (hermes-dashboard-transport--native-token-plist
+           (hermes-transport-json-parse json)))
       (error nil))))
 
 (defvar hermes-dashboard-transport--native-token-memory

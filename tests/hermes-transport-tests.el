@@ -1319,6 +1319,22 @@
                      prior))
       (should (equal restored prior)))))
 
+(ert-deftest hermes-transport-dashboard-native-token-codec-is-netrc-safe ()
+  "Native tokens use netrc-safe encoding while legacy JSON stays readable."
+  (let* ((tokens '(:access-token "access" :refresh-token "refresh"
+                   :expires-at 42 :provider "oauth" :user-id "user"))
+         (encoded (hermes-dashboard-transport--native-token-encode tokens))
+         (legacy (json-serialize
+                  '((access_token . "access") (refresh_token . "refresh")
+                    (expires_at . 42) (provider . "oauth") (user_id . "user")))))
+    (should (string-prefix-p
+             hermes-dashboard-transport--native-token-prefix encoded))
+    (should-not (string-match-p "[[:space:]\"'\\\\]" encoded))
+    (should (equal (hermes-dashboard-transport--native-token-decode encoded)
+                   tokens))
+    (should (equal (hermes-dashboard-transport--native-token-decode legacy)
+                   tokens))))
+
 (ert-deftest hermes-transport-dashboard-native-token-store-cleans-failed-first-write ()
   "A failed first durable write leaves no native token behind."
   (let* ((prior "machine unrelated.test login keep port api password safe\n")
@@ -1342,14 +1358,11 @@
                      'hermes-dashboard-transport--native-token-load-disk)
                     (lambda (_url)
                       (setq loads (1+ loads))
-                      (when (> loads 1)
+                      (when (= loads 2)
                         (with-temp-buffer
                           (insert-file-contents auth-file)
                           (setq persisted-before-failure
-                                (and (search-forward
-                                      hermes-dashboard-transport--native-auth-user
-                                      nil t)
-                                     (search-forward "fresh-access" nil t)))))
+                                (not (equal (buffer-string) prior)))))
                       nil)))
             (condition-case err
                 (hermes-dashboard-transport--native-token-store base fresh)
