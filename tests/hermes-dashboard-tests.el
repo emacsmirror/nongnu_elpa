@@ -709,6 +709,248 @@
 
 ;;; Group: reconnect
 
+(ert-deftest hermes-dashboard-transport-socket-down-without-reconnect-stops-before-callbacks ()
+  "Terminal socket loss detaches and closes before callback reentry."
+  (dolist (callback-kind '(reject subscriber fallback))
+    (let* ((hermes-dashboard-transport--clients
+            (make-hash-table :test #'equal))
+           (hermes-dashboard-transport-reconnect-max-attempts nil)
+           (key '(spawn "127.0.0.1" 9119))
+           (pending (make-hash-table :test #'equal))
+           closed deleted order facts replacement
+           (old (make-hermes-dashboard-transport-client
+                 :endpoint-key key :websocket 'old-ws :process 'old-process
+                 :refcount 1 :pending pending)))
+      (puthash key old hermes-dashboard-transport--clients)
+      (let ((reenter
+             (lambda (&rest _)
+               (push callback-kind order)
+               (setq facts
+                     (list (hermes-dashboard-transport-client-stopping-p old)
+                           (eq (gethash key hermes-dashboard-transport--clients)
+                               old)
+                           (hermes-dashboard-transport-client-websocket old)
+                           (hermes-dashboard-transport-client-process old)
+                           (copy-sequence closed) (copy-sequence deleted))
+                     replacement
+                     (hermes-dashboard-transport-acquire :start-mode 'spawn)))))
+        (puthash "request"
+                 (list :method "test.method"
+                       :reject (if (eq callback-kind 'reject)
+                                   reenter
+                                 (lambda (&rest _) (push 'pending order))))
+                 pending)
+        (pcase callback-kind
+          ('subscriber (hermes-dashboard-transport-subscribe old reenter))
+          ('fallback
+           (setf (hermes-dashboard-transport-client-callback old) reenter)))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                   (lambda (&rest _)
+                     (make-hermes-dashboard-transport-client
+                      :websocket 'replacement-ws)))
+                  ((symbol-function 'websocket-close)
+                   (lambda (resource) (push resource closed)))
+                  ((symbol-function 'delete-process)
+                   (lambda (resource) (push resource deleted))))
+          (hermes-dashboard-transport--handle-socket-down
+           old "dropped" 'old-ws)
+          (hermes-dashboard-transport--handle-socket-down
+           old "late old close" 'old-ws))
+        (should (equal facts '(t nil nil nil (old-ws) (old-process))))
+        (should-not (eq replacement old))
+        (should (eq (gethash key hermes-dashboard-transport--clients)
+                    replacement))
+        (should (eq (hermes-dashboard-transport-client-websocket replacement)
+                    'replacement-ws))
+        (when (memq callback-kind '(subscriber fallback))
+          (should (equal (nreverse order) (list callback-kind 'pending))))))))
+
+(ert-deftest hermes-dashboard-transport-socket-down-stops-after-last-release ()
+  "A reconnect loses viability after rejection and stops without idle delay."
+  (let* ((hermes-dashboard-transport--clients
+          (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (hermes-dashboard-transport-idle-close-delay 30)
+         (key '(spawn "127.0.0.1" 9119))
+         (pending (make-hash-table :test #'equal))
+         scheduled cancelled deleted replacement
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay _fn &rest _args)
+            (push delay scheduled)
+            'idle-timer))
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'old-ws :process 'old-process
+               :refcount 1 :pending pending)))
+    (puthash key old hermes-dashboard-transport--clients)
+    (puthash "request"
+             (list :method "test.method"
+                   :reject (lambda (&rest _)
+                             (hermes-dashboard-transport-release old)))
+             pending)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'replacement-ws)))
+              ((symbol-function 'cancel-timer)
+               (lambda (timer) (push timer cancelled)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (push process deleted))))
+      (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws)
+      (setq replacement
+            (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+    (should (hermes-dashboard-transport-client-stopping-p old))
+    (should-not (hermes-dashboard-transport-client-idle-timer old))
+    (should-not (hermes-dashboard-transport-client-process old))
+    (should (equal scheduled '(30)))
+    (should (equal cancelled '(idle-timer)))
+    (should (equal deleted '(old-process)))
+    (should-not (eq replacement old))
+    (should (eq (gethash key hermes-dashboard-transport--clients) replacement))))
+
+(ert-deftest hermes-dashboard-transport-socket-down-is-inert-after-callback-replacement ()
+  "A reject callback may stop and replace the old client without later effects."
+  (let* ((hermes-dashboard-transport--clients
+          (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (key '(spawn "127.0.0.1" 9119))
+         (pending (make-hash-table :test #'equal))
+         closed deleted scheduled replacement generation-after-stop
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq scheduled t) 'timer))
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'old-ws :process 'old-process
+               :refcount 1 :pending pending)))
+    (puthash key old hermes-dashboard-transport--clients)
+    (puthash "request"
+             (list :method "test.method"
+                   :reject
+                   (lambda (&rest _)
+                     (hermes-dashboard-transport-stop old "callback stop")
+                     (setq generation-after-stop
+                           (hermes-dashboard-transport-client-generation old)
+                           replacement
+                           (hermes-dashboard-transport-acquire
+                            :start-mode 'spawn))))
+             pending)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'replacement-ws)))
+              ((symbol-function 'websocket-close)
+               (lambda (websocket) (push websocket closed)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (push process deleted))))
+      (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws))
+    (should (= (hermes-dashboard-transport-client-generation old)
+               generation-after-stop))
+    (should-not scheduled)
+    (should (equal deleted '(old-process)))
+    (should-not (memq 'replacement-ws closed))
+    (should (eq (gethash key hermes-dashboard-transport--clients) replacement))
+    (should (eq (hermes-dashboard-transport-client-websocket replacement)
+                'replacement-ws))
+    (should-not (hermes-dashboard-transport-client-stopping-p replacement))))
+
+(ert-deftest hermes-dashboard-transport-socket-down-is-inert-after-registry-replacement ()
+  "A callback replacing the exact registry identity makes old continuation inert."
+  (let* ((hermes-dashboard-transport--clients
+          (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (key '(spawn "127.0.0.1" 9119))
+         (pending (make-hash-table :test #'equal))
+         scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq scheduled t) 'timer))
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'old-ws :refcount 1
+               :pending pending))
+         (replacement (make-hermes-dashboard-transport-client
+                       :endpoint-key key :websocket 'replacement-ws :refcount 1)))
+    (puthash key old hermes-dashboard-transport--clients)
+    (puthash "request"
+             (list :method "test.method"
+                   :reject (lambda (&rest _)
+                             (puthash key replacement
+                                      hermes-dashboard-transport--clients)))
+             pending)
+    (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws)
+    (should-not scheduled)
+    (should-not (hermes-dashboard-transport-client-reconnecting-p old))
+    (should (eq (gethash key hermes-dashboard-transport--clients) replacement))
+    (should (eq (hermes-dashboard-transport-client-websocket replacement)
+                'replacement-ws))))
+
+(ert-deftest hermes-dashboard-transport-socket-down-is-inert-after-registry-removal ()
+  "A callback removing the old registry identity makes its continuation inert."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (key '(spawn "127.0.0.1" 9119))
+         (pending (make-hash-table :test #'equal)) scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq scheduled t) 'timer))
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'old-ws :refcount 1 :pending pending)))
+    (puthash key old hermes-dashboard-transport--clients)
+    (puthash "request"
+             (list :method "test.method"
+                   :reject (lambda (&rest _)
+                             (remhash key hermes-dashboard-transport--clients)))
+             pending)
+    (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws)
+    (should-not scheduled)
+    (should-not (hermes-dashboard-transport-client-reconnecting-p old))
+    (should-not (gethash key hermes-dashboard-transport--clients))))
+
+(ert-deftest hermes-dashboard-transport-closed-status-revalidates-before-reconnect ()
+  "Closed-status callbacks cannot continue a stale or unreferenced reconnect."
+  (dolist (callback-kind '(subscriber fallback))
+    (dolist (action '(remove replace release))
+      (let* ((hermes-dashboard-transport--clients
+              (make-hash-table :test #'equal))
+             (hermes-dashboard-transport-reconnect-max-attempts 3)
+             (hermes-dashboard-transport-idle-close-delay 30)
+             (key '(spawn "127.0.0.1" 9119))
+             scheduled cancelled opened
+             (old (make-hermes-dashboard-transport-client
+                   :endpoint-key key :websocket 'old-ws :refcount 1
+                   :pending (make-hash-table :test #'equal)))
+             (replacement
+              (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'replacement-ws :refcount 1))
+             (hermes-dashboard-transport-schedule-function
+              (lambda (delay fn &rest args)
+                (let ((timer (list delay fn args)))
+                  (push timer scheduled)
+                  timer)))
+             (callback
+              (lambda (event)
+                (when (equal (plist-get event :status) "closed")
+                  (pcase action
+                    ('remove (remhash key hermes-dashboard-transport--clients))
+                    ('replace (puthash key replacement
+                                       hermes-dashboard-transport--clients))
+                    ('release (hermes-dashboard-transport-release old)))))))
+        (puthash key old hermes-dashboard-transport--clients)
+        (if (eq callback-kind 'subscriber)
+            (hermes-dashboard-transport-subscribe old callback)
+          (setf (hermes-dashboard-transport-client-callback old) callback))
+        (cl-letf (((symbol-function 'cancel-timer)
+                   (lambda (timer) (push timer cancelled)))
+                  ((symbol-function 'hermes-dashboard-transport--open-websocket-once)
+                   (lambda (&rest _) (setq opened t) 'reopened-old)))
+          (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws))
+        (should-not (cl-find 1 scheduled :key #'car :test #'=))
+        (should-not opened)
+        (pcase action
+          ('remove (should-not (gethash key hermes-dashboard-transport--clients)))
+          ('replace
+           (should (eq (gethash key hermes-dashboard-transport--clients)
+                       replacement)))
+          ('release
+           (should (hermes-dashboard-transport-client-stopping-p old))
+           (should-not (hermes-dashboard-transport-client-idle-timer old))
+           (should cancelled)))))))
+
 (ert-deftest hermes-dashboard-transport-reconnect-backoff-doubles-and-caps ()
   "Reconnect backoff doubles per attempt and caps at the max delay."
   (let ((hermes-dashboard-transport-reconnect-base-delay 1)
@@ -755,6 +997,35 @@
         (should-not scheduled)
         (should-not (gethash '(spawn "127.0.0.1" 9119)
                              hermes-dashboard-transport--clients))))))
+
+(ert-deftest hermes-dashboard-transport-unreferenced-close-stops-before-reject ()
+  "A configured but unreferenced client terminalizes before pending callbacks."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (key '(spawn "127.0.0.1" 9119))
+         (pending (make-hash-table :test #'equal)) observed-stopping replacement
+         (old (make-hermes-dashboard-transport-client
+               :endpoint-key key :websocket 'old-ws :refcount 0
+               :pending pending)))
+    (puthash key old hermes-dashboard-transport--clients)
+    (puthash "request"
+             (list :method "test.method"
+                   :reject (lambda (&rest _)
+                             (setq observed-stopping
+                                   (hermes-dashboard-transport-client-stopping-p old)
+                                   replacement
+                                   (hermes-dashboard-transport-acquire
+                                    :start-mode 'spawn))))
+             pending)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'replacement-ws))))
+      (hermes-dashboard-transport--handle-socket-down old "dropped" 'old-ws))
+    (should observed-stopping)
+    (should replacement)
+    (should-not (eq replacement old))
+    (should (eq (gethash key hermes-dashboard-transport--clients) replacement))))
 
 (ert-deftest hermes-dashboard-transport-stop-suppresses-reconnect ()
   "An intentional stop marks the socket closed without scheduling a reconnect."
