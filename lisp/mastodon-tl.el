@@ -900,7 +900,9 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                            ((string= letter (or "🔖" "K"))
                             "bookmarked"))))
     (format "(%s) "
-            (propertize letter 'face 'mastodon-boost-fave-face
+            (propertize letter 'face (if mastodon-tl-use-nerd-icons
+                                         'mastodon-success-nerd-icons-face
+                                       'mastodon-boost-fave-face)
                         ;; emojify breaks this for 🔖:
                         'help-echo (format "You have %s this status."
                                            ;; FIXME: this is often nil
@@ -1987,9 +1989,13 @@ See https://docs.joinmastodon.org/entities/Quote/#state for details.")
 (defun mastodon-tl--quote-symbol-str ()
   "Return a propertized quote symbol, \"."
   ;; quote symbol hack:
-  (propertize "“" 'face
-              '( :inherit success :weight bold
-                 :height 1.8)))
+  (propertize (mastodon-tl--symbol 'quote)
+              ;; "“"
+              'face
+              (if mastodon-tl-use-nerd-icons 'mastodon-success-nerd-icons-face
+                '( :inherit success
+                   :weight bold
+                   :height 1.8))))
 
 (defun mastodon-tl--insert-quoted (data toot)
   "Propertize quoted status DATA for insertion.
