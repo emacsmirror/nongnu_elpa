@@ -2459,7 +2459,7 @@ To disable showing the stats, customize
                                   'help-echo (format "%s quotes" .quotes_count)
                                   'face (if mastodon-tl-use-nerd-icons
                                             'mastodon-toot-nerd-icons-face
-                                          'mastodon-toot-docs-face))))))
+                                          '(:inherit success :box t)))))))
            (right-spacing
             (propertize " "
                         'display
