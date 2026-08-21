@@ -1062,6 +1062,16 @@ This is consulted where a folder cannot say for itself what it is:
 What a folder's own contents say is never overridden where they settle the
 question: a name matching mboxcl2 does not make VM read a BABYL file as one.
 
+Add to it rather than replacing it, so the rule for `.mboxcl2\=' stays:
+
+    (add-to-list \='vm-folder-type-by-name-alist
+                 \='(\"/mail/current/\" . mboxcl2))
+
+A regexp is a string, so its backslashes are doubled.  Written with one each,
+Lisp reads the escapes away and leaves a regexp that matches nothing, and a
+rule that matches nothing says nothing while doing nothing.  VM checks this
+alist as it starts and complains about a rule that cannot work.
+
 Set it to nil to have names mean nothing, which is what VM did before."
   :group 'vm-folders
   :type '(alist :key-type (regexp :tag "Name matching")
