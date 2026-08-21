@@ -36,6 +36,7 @@ ERT_OPTS ?=
 
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
+HERMES_CLIENT_LIVE_ABI = (and (fboundp 'hermes-dashboard-transport-client-p) (mapcar (function car) (cl-struct-slot-info 'hermes-dashboard-transport-client)))
 
 .PHONY: all verify-sources compile do-compile test do-test test-load lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load do-load clean
 
@@ -97,53 +98,64 @@ do-test:
 	  done
 
 test-load:
-	@test_root=$$(mktemp -d) || exit 1; \
-	  trap 'rm -rf "$$test_root"' 0 1 2 15; \
-	  fake="$$test_root/emacsclient"; configured="$$test_root/configured-client"; \
-	  log="$$test_root/calls"; expected="$$test_root/expected"; \
-	  configured_mark="$$test_root/configured-called"; conflict="$$test_root/conflict.mk"; \
-	  printf '%s\n' '#!/bin/sh' \
-	    'case "$$*" in' \
-	    '  *makunbound*) kind=reset ;;' \
-	    '  *load-file*)' \
-	    '    kind=; for f in $${FAKE_EMACSCLIENT_SRCS:?}; do' \
-	    '      case "$$*" in *"$$f"*) kind="load:$$f"; break ;; esac' \
-	    '    done ;;' \
-	    '  *"dolist (buf (buffer-list))"*) kind=refresh ;;' \
-	    '  *) kind=other ;;' \
-	    'esac' \
-	    'printf "%s\n" "$$kind" >> "$${FAKE_EMACSCLIENT_LOG:?}"' \
-	    'case "$$kind" in' \
-	    '  "load:$${FAKE_EMACSCLIENT_FAIL-}")' \
-	    '    [ -z "$${FAKE_EMACSCLIENT_FAIL-}" ] || exit 1 ;;' \
-	    'esac' > "$$fake" || exit 1; \
-	  printf '%s\n' '#!/bin/sh' \
-	    'printf called > "$${FAKE_CONFIGURED_MARK:?}"' > "$$configured" || exit 1; \
-	  chmod +x "$$fake" "$$configured" || exit 1; \
-	  printf 'EMACSCLIENT := %s\n' "$$configured" > "$$conflict" || exit 1; \
-	  if MAKEFILES="$$conflict" FAKE_CONFIGURED_MARK="$$configured_mark" \
-	      FAKE_EMACSCLIENT_LOG="$$log" FAKE_EMACSCLIENT_FAIL=fail.el \
-	      FAKE_EMACSCLIENT_SRCS='ok-before.el fail.el ok-after.el' \
-	      $(MAKE) --no-print-directory load EMACSCLIENT="$$fake" \
-	        SRCS='ok-before.el fail.el ok-after.el' \
-	        > "$$test_root/failure-output" 2>&1; then \
+	@test_root=$$(mktemp -d "$(CURDIR)/.test-load.XXXXXX") || exit 1; \
+	  test_dir=$${test_root#$(CURDIR)/}; \
+	  home="$$test_root/home"; server=hermes-load-$${test_root##*.}; \
+	  before="$$test_root/before.el"; fail="$$test_root/fail.el"; \
+	  after="$$test_root/after.el"; \
+	  api_src=lisp/hermes-dashboard-api.el; \
+	  before_src="$$test_dir/before.el"; fail_src="$$test_dir/fail.el"; \
+	  after_src="$$test_dir/after.el"; conflict="$$test_root/conflict.mk"; \
+	  cleanup () { \
+	    HOME="$$home" emacsclient -s "$$server" --eval '(kill-emacs)' \
+	      > /dev/null 2>&1 || true; \
+	    rm -rf "$$test_root"; \
+	  }; \
+	  trap cleanup 0 1 2 15; \
+	  mkdir -p "$$home" || exit 1; \
+	  printf '%s\n' "(setq hermes-review-before 'loaded)" > "$$before" || exit 1; \
+	  printf '%s\n' '(error "intentional load failure")' > "$$fail" || exit 1; \
+	  printf '%s\n' "(setq hermes-review-after 'loaded)" > "$$after" || exit 1; \
+	  printf '%s\n' 'EMACSCLIENT := false' > "$$conflict" || exit 1; \
+	  HOME="$$home" $(EMACS_CMD) -Q --daemon="$$server" \
+	    > "$$test_root/daemon-output" 2>&1 || exit 1; \
+	  HOME="$$home" emacsclient -s "$$server" --eval \
+	    "(progn (add-to-list 'load-path \"$(CURDIR)/lisp\") \
+	            (require 'hermes-dashboard-api))" > /dev/null || exit 1; \
+	  client="env HOME=$$home emacsclient -s $$server"; \
+	  MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
+	    EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
+	    > "$$test_root/success-output" 2>&1 || exit 1; \
+	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
+	    '(list hermes-review-before hermes-review-after)') || exit 1; \
+	  test "$$state" = '(loaded loaded)' || exit 1; \
+	  HOME="$$home" emacsclient -s "$$server" --eval \
+	    "(mapc (lambda (symbol) (when (boundp symbol) (makunbound symbol))) \
+	           '(hermes-review-before hermes-review-after))" > /dev/null || exit 1; \
+	  if MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
+	      EMACSCLIENT="$$client" \
+	      SRCS="$$api_src $$before_src $$fail_src $$after_src" \
+	      > "$$test_root/failure-output" 2>&1; then \
 	    echo "failing module load unexpectedly succeeded"; exit 1; \
 	  fi; \
-	  printf '%s\n' reset load:ok-before.el load:fail.el load:ok-after.el > "$$expected"; \
-	  cmp -s "$$expected" "$$log" || exit 1; \
-	  ! grep -q 'Loaded all modules into Emacs' "$$test_root/failure-output" || exit 1; \
-	  test ! -e "$$configured_mark" || exit 1; \
-	  : > "$$log"; \
-	  MAKEFILES="$$conflict" FAKE_CONFIGURED_MARK="$$configured_mark" \
-	    FAKE_EMACSCLIENT_LOG="$$log" \
-	    FAKE_EMACSCLIENT_SRCS='ok-before.el ok-after.el' \
-	    $(MAKE) --no-print-directory load EMACSCLIENT="$$fake" \
-	      SRCS='ok-before.el ok-after.el' \
-	      > "$$test_root/success-output" 2>&1 || exit 1; \
-	  printf '%s\n' reset load:ok-before.el load:ok-after.el refresh > "$$expected"; \
-	  cmp -s "$$expected" "$$log" || exit 1; \
-	  grep -q 'Loaded all modules into Emacs' "$$test_root/success-output" || exit 1; \
-	  test ! -e "$$configured_mark" || exit 1
+	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
+	    '(list (boundp (quote hermes-review-before)) \
+	           (boundp (quote hermes-review-after)))') || exit 1; \
+	  test "$$state" = '(nil nil)' || exit 1; \
+	  grep -q 'intentional load failure' "$$test_root/failure-output" || exit 1; \
+	  HOME="$$home" emacsclient -s "$$server" --eval \
+	    "(eval '(cl-defstruct hermes-dashboard-transport-client incompatible))" \
+	    > /dev/null || exit 1; \
+	  if MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
+	      EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
+	      > "$$test_root/abi-output" 2>&1; then \
+	    echo "incompatible client layout unexpectedly loaded"; exit 1; \
+	  fi; \
+	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
+	    '(list (boundp (quote hermes-review-before)) \
+	           (boundp (quote hermes-review-after)))') || exit 1; \
+	  test "$$state" = '(nil nil)' || exit 1; \
+	  grep -q 'Hermes client layout changed' "$$test_root/abi-output" || exit 1
 
 lint:
 	@$(ENV_MAKE) do-lint
@@ -189,31 +201,36 @@ pre-handoff-check:
 	    ".#checks.$$system.package-smoke"
 
 load: clean
-	@$(MAKE) --no-print-directory do-load
+	@$(ENV_MAKE) do-load
 
 do-load:
-	@$(EMACSCLIENT) --eval "(progn \
-	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
-	  (mapatoms (lambda (s) \
-	    (when (and (string-prefix-p \"hermes-\" (symbol-name s)) \
-	               (boundp s) (keymapp (symbol-value s))) \
-	      (makunbound s)))))" > /dev/null || exit 1; \
-	failed=0; \
-	for f in $(SRCS); do \
-	  $(EMACSCLIENT) --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || { \
-	    printf "\033[31mFAIL\033[0m $$f\n"; failed=1; \
-	  }; \
-	done; \
-	[ "$$failed" -eq 0 ] || exit 1; \
-	$(EMACSCLIENT) --eval "(dolist (buf (buffer-list)) \
-	  (with-current-buffer buf \
-	    (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
-	      (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
-	                 map (boundp map) (keymapp (symbol-value map))) \
-	        (use-local-map (symbol-value map)))) \
-	    (when (and (derived-mode-p 'hermes-kanban-log-mode) \
-	               (fboundp 'hermes-kanban-log--refontify-buffer)) \
-	      (hermes-kanban-log--refontify-buffer))))" > /dev/null || exit 1; \
+	@client_abi=$$($(BATCH) $(foreach file,$(SRCS),-l $(file)) \
+	    --eval "(prin1 (mapcar (function car) \
+	      (cl-struct-slot-info (quote hermes-dashboard-transport-client))))") || exit 1; \
+	$(EMACSCLIENT) --eval "(progn \
+	  (require 'cl-lib) \
+	  (require 'subr-x) \
+	  (let* ((source-abi '$$client_abi) \
+	         (live-abi $(HERMES_CLIENT_LIVE_ABI))) \
+	    (when (and live-abi (not (equal source-abi live-abi))) \
+	      (error \"Hermes client layout changed; restart Emacs before make load\")) \
+	    (add-to-list 'load-path \"$(CURDIR)/lisp\") \
+	    (mapatoms (lambda (symbol) \
+	      (when (and (string-prefix-p \"hermes-\" (symbol-name symbol)) \
+	                 (boundp symbol) (keymapp (symbol-value symbol))) \
+	        (makunbound symbol)))) \
+	    (mapc (lambda (file) \
+	            (load-file (expand-file-name file \"$(CURDIR)\"))) \
+	          '($(foreach file,$(SRCS),\"$(file)\"))) \
+	    (dolist (buf (buffer-list)) \
+	      (with-current-buffer buf \
+	        (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
+	          (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
+	                     map (boundp map) (keymapp (symbol-value map))) \
+	            (use-local-map (symbol-value map)))) \
+	        (when (and (derived-mode-p 'hermes-kanban-log-mode) \
+	                   (fboundp 'hermes-kanban-log--refontify-buffer)) \
+	          (hermes-kanban-log--refontify-buffer))))))" > /dev/null || exit 1; \
 	printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:
