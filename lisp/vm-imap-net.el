@@ -1334,34 +1334,18 @@ expunged."
     		     (count (1+ (- (cdr range) (car range))))
     		     (entries (seq-take (nthcdr retrieved retrieve-list) count))
     		     (written nil)
-		     ;; Once for the bunch, not once for each message in it.
-		     ;; `vm-imap-net-uid-held-p\=' builds this table itself, and
-		     ;; a mailbox of 6505 called it per message: 1.9 GB
-		     ;; allocated in `puthash\=', eleven collections and 2.9
-		     ;; seconds of the fetch spent in them, which is what the
-		     ;; half-second stops during a fetch were (emacs-vm/vm#742).
-		     ;;
-		     ;; A UID the plan asked for was not held when the plan was
-		     ;; made, `vm-imap-net-only-new-uids\=' having dropped the
-		     ;; ones that were, so the only thing that can make one held
-		     ;; part way through is this fetch writing it -- earlier in
-		     ;; this bunch, which the `puthash\=' below records, or in an
-		     ;; earlier bunch, which the folder holds by now and this
-		     ;; table is built after.
-		     (held (with-current-buffer folder
-			     (vm-imap-net-uids-held)))
     		     (store (lambda (uid start end)
 			      ;; asked for as new, and here by the time it
 			      ;; arrived: written twice, the folder would hold
 			      ;; the one message twice over.  Said out loud and
 			      ;; left out, the rest of the fetch going on -- the
 			      ;; other messages are new mail the reader wants
-			      (if (gethash uid held)
+			      (if (with-current-buffer folder
+				    (vm-imap-net-uid-held-p uid))
 				  (vm-net-warn 0 (concat "%s: UID %s arrived while"
 						       " the folder was gaining"
 						       " it; not written twice")
 					   (buffer-name folder) uid)
-				(puthash uid t held)
 				(push uid written)
 				(vm-imap-net-hold holding folder-type source
 						  start end)))))
