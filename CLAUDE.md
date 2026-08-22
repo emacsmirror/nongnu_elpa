@@ -239,13 +239,31 @@ read without opening every one.
 - `Analyzed` — investigated and commented on, but left open. Use it whenever
   findings are posted without the issue being closed, so a reader can tell an
   answered issue from an untouched one.
-- `Pending` — the fix is merged into `develop` but has not reached `main`, so
-  the issue is still open only because merging to `develop` does not close it.
-  The set is derivable: take the `Closes #NNN` / `Re #NNN` trailers of
-  `git log central/main..central/develop`. Do not put it on a closed issue —
-  nothing is pending there. Note that a `Re #NNN` trailer means the commit only
-  *mentions* the issue, so it is not on its own grounds for `Pending`; check
-  which trailer it was before labelling.
+- `Pending` — the work is done and sitting on `develop` or `develop-async`,
+  ready to reach `main`. That is all it means. How the issue closes is a
+  separate question, answered by `Close by hand`.
+
+  **Both branches count.** `develop-async` is the integration branch for the
+  asynchronous IMAP and POP work, and a fix that lives only there is as pending
+  as one on `develop`. Deriving the set from `main..develop` alone missed nine
+  async issues. The set is derivable from the `Closes #NNN` /
+  `Re #NNN` trailers of both ranges:
+
+  ```sh
+  git log central/main..central/develop
+  git log central/develop..central/develop-async
+  ```
+
+  **A `Re #NNN` trailer is no bar to `Pending`.** A fix often lands under
+  another issue's number, and three pending issues have no trailer of their own
+  at all. What a trailer cannot tell you is whether the work is finished, so
+  read the issue before labelling.
+
+  Do not put it on a closed issue, nothing is pending there. Do not put it on
+  an issue whose fix is only partly done, or whose remaining step is outside
+  the repo: #487 wants a page on nongnu.org edited, which no merge to `main`
+  will do, so it carries `Human` instead. Anything that is not simply waiting
+  for `main` needs its own label, not this one.
 - `Decision Needed` — waiting on a maintainer decision rather than on effort:
   the analysis is on the issue and the next step is a choice. Assign the issue
   to the maintainer as well, so it shows up as theirs and not merely unowned.
@@ -268,11 +286,15 @@ read without opening every one.
   `In Progress`. Nor the same as `Kick can`, which records a decision already
   taken — to defer. An issue can be both: deferred, and now wanting a second
   look.
-- `Close by hand` — `Pending`, but the commit trailer is `Re #NNN` or names
-  another issue, so merging `develop` into `main` will not close it. The work
-  is done; someone has to close it at that point. Derivable the same way
-  `Pending` is: an issue whose only trailers in
-  `git log central/main..central/develop` are `Re`, or none at all.
+- `Close by hand` — `Pending`, and the merge will not close it: the trailer is
+  `Re #NNN`, or names another issue, or the fix landed under another number and
+  there is no trailer here at all. Someone has to close it when the branch
+  reaches `main`.
+
+  **Additive, never an alternative.** Every `Close by hand` issue carries
+  `Pending` too, and a filter on `Pending` is expected to return it. Derivable
+  from the same two ranges as `Pending`: an issue whose trailers there are all
+  `Re`, or which has none.
 - `irreproducible` — as above.
 
 ### Attributing comments written by Claude
