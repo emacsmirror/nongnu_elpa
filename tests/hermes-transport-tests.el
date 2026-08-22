@@ -3380,5 +3380,76 @@ url.el flags every 4xx/5xx via the callback status; the useless
         (should (eq (hermes-dashboard-transport-client-websocket replacement)
                     'replacement-websocket))))))
 
+(ert-deftest hermes-transport-dashboard-reconnect-validates-child-around-open ()
+  "Reconnect never opens for a dead child or retries after child exit in open."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-ready-timeout nil)
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (live nil) scheduled (opens 0)
+         (key '(spawn "127.0.0.1" 4567))
+         (client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 4567 :token "token"
+                  :credential-kind 'spawn :endpoint-key key :refcount 1
+                  :reconnecting-p t :process 'child
+                  :ready-promise (hermes--promise-make) :callback #'ignore)))
+    (puthash key client hermes-dashboard-transport--clients)
+    (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+          (hermes-dashboard-transport-websocket-open-function
+           (lambda (&rest _) (cl-incf opens) 'foreign-websocket))
+          (hermes-dashboard-transport-schedule-function
+           (lambda (&rest args) (push args scheduled))))
+      (hermes-dashboard-transport--reconnect-attempt client 0)
+      (should (and (= opens 0) (not scheduled)))
+      (should (hermes-dashboard-transport-client-stopping-p client))
+      (setq live t scheduled nil)
+      (let* ((second (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1" :port 4568 :token "token"
+                      :credential-kind 'spawn :refcount 1 :reconnecting-p t
+                      :process 'second-child
+                      :ready-promise (hermes--promise-make) :callback #'ignore))
+             (hermes-dashboard-transport-websocket-open-function
+              (lambda (&rest _)
+                (cl-incf opens)
+                (setq live nil)
+                (hermes-dashboard-transport--handle-process-exit
+                 second 'second-child
+                 (hermes-dashboard-transport-client-process-generation second))
+                (error "child exited during open"))))
+        (hermes-dashboard-transport--reconnect-attempt second 0)
+        (should (and (= opens 1) (not scheduled)))
+        (should (hermes-dashboard-transport-client-stopping-p second))))))
+
+(ert-deftest hermes-transport-dashboard-reconnect-discards-stale-process-open ()
+  "A process replacement closes the stale socket without harming remote attach."
+  (let* ((live t) closed
+         (hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+         (hermes-dashboard-transport-ready-timeout nil)
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (spawn (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 4567 :token "token"
+                 :credential-kind 'spawn :refcount 1 :reconnecting-p t
+                 :process 'old-child :callback #'ignore))
+         (remote (make-hermes-dashboard-transport-client
+                  :host "dash.example" :port 443 :credential-kind 'token
+                  :refcount 1 :reconnecting-p t :callback #'ignore)))
+    (cl-letf (((symbol-function 'websocket-close) (lambda (ws) (setq closed ws))))
+      (let ((hermes-dashboard-transport-websocket-open-function
+             (lambda (_url client)
+               (if (eq client spawn)
+                   (progn
+                     (setf (hermes-dashboard-transport-client-process spawn)
+                           'new-child)
+                     (cl-incf
+                      (hermes-dashboard-transport-client-process-generation spawn))
+                     'stale-websocket)
+                 'remote-websocket))))
+        (hermes-dashboard-transport--reconnect-attempt spawn 0)
+        (hermes-dashboard-transport--reconnect-attempt remote 0))
+      (should (eq closed 'stale-websocket))
+      (should-not (hermes-dashboard-transport-client-websocket spawn))
+      (should (eq (hermes-dashboard-transport-client-process spawn) 'new-child))
+      (should (eq (hermes-dashboard-transport-client-websocket remote)
+                  'remote-websocket)))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

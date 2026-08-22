@@ -750,15 +750,21 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
     (hermes-dashboard-transport--finalize-reconnect
      client "Hermes dashboard reconnect failed"))
    (t
-    (condition-case _err
-        (setf (hermes-dashboard-transport-client-websocket client)
-              (hermes-dashboard-transport--open-websocket-once
-               client
-               (hermes-dashboard-transport--client-websocket-url client)))
-      (error
-       (setf (hermes-dashboard-transport-client-reconnect-attempts client)
-             (1+ attempt))
-       (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))
+    (let ((generation (hermes-dashboard-transport-client-generation client)))
+      (condition-case _err
+          (when-let* ((websocket
+                       (hermes-dashboard-transport--open-owned-websocket
+                        client
+                        (hermes-dashboard-transport--client-websocket-url client)
+                        generation)))
+            (setf (hermes-dashboard-transport-client-websocket client) websocket))
+        (error
+         (when (and (hermes-dashboard-transport--generation-live-p
+                     client generation)
+                    (hermes-dashboard-transport-client-reconnecting-p client))
+           (setf (hermes-dashboard-transport-client-reconnect-attempts client)
+                 (1+ attempt))
+           (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))))
 
 (defun hermes-dashboard-transport--finalize-reconnect (client message)
   "Report terminal reconnect MESSAGE and stop CLIENT."
@@ -1147,6 +1153,45 @@ FN must accept trailing :resolve/:reject keywords, as the typed
   "Open CLIENT's WebSocket at URL once."
   (funcall hermes-dashboard-transport-websocket-open-function url client))
 
+(defun hermes-dashboard-transport--open-owner-current-p
+    (client generation process process-generation)
+  "Return non-nil when CLIENT owns GENERATION and PROCESS.
+PROCESS-GENERATION identifies the captured child lifetime."
+  (and (hermes-dashboard-transport--generation-live-p client generation)
+       (or (not (eq (hermes-dashboard-transport-client-credential-kind client)
+                    'spawn))
+           (and (= process-generation
+                   (hermes-dashboard-transport-client-process-generation client))
+                (eq process (hermes-dashboard-transport-client-process client))
+                (hermes-dashboard-transport--process-live-p process)))))
+
+(defun hermes-dashboard-transport--open-owned-websocket (client url generation)
+  "Open URL only while CLIENT owns GENERATION and its spawned process."
+  (let ((process (hermes-dashboard-transport-client-process client))
+        (process-generation
+         (hermes-dashboard-transport-client-process-generation client)))
+    (if (not (hermes-dashboard-transport--open-owner-current-p
+              client generation process process-generation))
+        (progn
+          (hermes-dashboard-transport--handle-process-exit
+           client process process-generation)
+          nil)
+      (condition-case err
+          (let ((websocket
+                 (hermes-dashboard-transport--open-websocket-once client url)))
+            (if (hermes-dashboard-transport--open-owner-current-p
+                 client generation process process-generation)
+                websocket
+              (when (fboundp 'websocket-close)
+                (hermes-dashboard-transport--attempt #'websocket-close websocket))
+              (hermes-dashboard-transport--handle-process-exit
+               client process process-generation)
+              nil))
+        (error
+         (hermes-dashboard-transport--handle-process-exit
+          client process process-generation)
+         (signal (car err) (cdr err)))))))
+
 (defvar hermes-dashboard-transport-schedule-function
   (lambda (delay fn &rest args) (apply #'run-at-time delay nil fn args))
   "Function used to schedule deferred dashboard connection work.
@@ -1185,11 +1230,14 @@ readiness flow to resolve the readiness promise."
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (condition-case err
           (let ((websocket
-                 (hermes-dashboard-transport--open-websocket-once client url)))
-            (if (hermes-dashboard-transport--generation-live-p client generation)
+                 (hermes-dashboard-transport--open-owned-websocket
+                  client url generation)))
+            (if (and websocket
+                     (hermes-dashboard-transport--generation-live-p
+                      client generation))
                 (setf (hermes-dashboard-transport-client-websocket client)
                       websocket)
-              (when (fboundp 'websocket-close)
+              (when (and websocket (fboundp 'websocket-close))
                 (hermes-dashboard-transport--attempt
                  #'websocket-close websocket))))
         (user-error
