@@ -5085,14 +5085,45 @@ implementation than the expected one damages mail -- so this asks instead."
 (defun vm-movemail-specific-spool-file-p (file)
   (string-match "^po:[^:]+$" file))
 
+(defvar vm-mail-check-failed nil
+  "Whether the last check of this folder's server for new mail failed.
+The periodic check runs every `vm-mail-check-interval\=' seconds, so a
+server VM cannot ask -- most often one whose password it does not hold --
+would otherwise report the same failure for as long as Emacs runs
+(emacs-vm/vm#712).")
+(make-variable-buffer-local 'vm-mail-check-failed)
+
+(defun vm-check-folder-for-mail (interactive check)
+  "Call CHECK to ask this folder's server whether it has new mail.
+INTERACTIVE says whether a question may be asked, and is passed to CHECK.
+
+A check that is not interactive comes from the mail-check timer, which can
+neither answer a password prompt nor do anything with the same failure every
+`vm-mail-check-interval\=' seconds.  Such a failure is reported once and the
+folder is then left alone until a check succeeds again; set
+`vm-mail-check-interval\=' to nil to stop checking altogether."
+  (if interactive
+      (funcall check interactive)
+    (condition-case err
+	(prog1 (funcall check nil)
+	  (setq vm-mail-check-failed nil))
+      (error
+       (unless vm-mail-check-failed
+	 (setq vm-mail-check-failed t)
+	 (vm-warn 0 0 "%s: not checking for new mail: %s"
+		  (buffer-name) (error-message-string err)))
+       nil))))
+
 (defun vm-check-for-spooled-mail (&optional interactive this-buffer-only)
   (if vm-global-block-new-mail
       nil
     (if (and vm-folder-access-method this-buffer-only)
 	(cond ((eq vm-folder-access-method 'pop)
-	       (vm-pop-folder-check-mail interactive))
+	       (vm-check-folder-for-mail interactive
+					 #'vm-pop-folder-check-mail))
 	      ((eq vm-folder-access-method 'imap)
-	       (vm-imap-folder-check-mail interactive)))
+	       (vm-check-folder-for-mail interactive
+					 #'vm-imap-folder-check-mail)))
       (let ((triples (vm-compute-spool-files (not this-buffer-only)))
 	    ;; since we could accept-process-output here (POP code),
 	    ;; a timer process might try to start retrieving mail
