@@ -1067,6 +1067,33 @@ the next message wipes that; this stays until the next bunch moves it on."
           (should (equal vm-ml-session
                          (with-current-buffer vm-mail-buffer vm-ml-session))))))))
 
+(ert-deftest vm-imap-net-test-the-mode-line-says-which-phase-it-is-in ()
+  "A fetch is several things in a row, and the mode line says which.
+Before a message arrives the server has to be asked what it holds -- one
+response per message, which on a mailbox of thousands is the long wait -- and
+saying \"fetching\" through that says the wrong thing about it as well as
+saying nothing about progress."
+  (let ((seen nil))
+    (vm-imap-net-test--visiting (mock)
+      (dotimes (i 3)
+        (vm-imap-mock-add-message
+         mock "INBOX"
+         (format "From: s%d@example.com\nSubject: m%d\n\nBody.\n" i i)))
+      (let ((real (symbol-function 'vm-imap-net-note-progress)))
+        (cl-letf (((symbol-function 'vm-imap-net-note-progress)
+                   (lambda (&rest args)
+                     (apply real args)
+                     (with-current-buffer (car args)
+                       (push (substring-no-properties (or vm-ml-session "")) seen)))))
+          (should (equal (vm-imap-net-test--get-mail mock) 3))))
+      (setq seen (nreverse seen))
+      ;; the listing comes first, with the mailbox count as its total
+      (should (equal (car seen) " listing 0/3 "))
+      ;; and the fetch itself puts the session's own word back
+      (should (member " fetching 0/3 " seen))
+      (should-not (seq-find (lambda (s) (string-match-p "listing" s))
+                            (cdr (member " fetching 0/3 " seen)))))))
+
 (ert-deftest vm-imap-net-test-quitting-stops-what-the-folder-was-doing ()
   "Quitting a folder stops its session rather than leaving it writing.
 
