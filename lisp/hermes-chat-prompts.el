@@ -452,6 +452,145 @@ A nil SESSION-ID matches every prompt in the current buffer."
       (hermes-chat--replace-input-tail
        (mapconcat (lambda (owner) (plist-get owner :text)) owners "\n")))))
 
+(defun hermes-chat--terminal-approval-session (prompt)
+  "Return PROMPT's exact approval session, including nil."
+  (hermes-chat--event-string prompt '(:session-id :session_id)))
+
+(defun hermes-chat--terminal-prompt-entry (key prompt)
+  "Return terminal authority for PROMPT under KEY."
+  (let* ((approval-p (hermes-chat--approval-prompt-p prompt))
+         (queue (and approval-p (or (plist-get prompt :prompt-queue)
+                                    (list prompt)))))
+    (list :key key
+          :prompt prompt
+          :response-token (plist-get prompt :response-token)
+          :approval-p approval-p
+          :approval-members (and approval-p (copy-sequence queue))
+          :session-id (and approval-p
+                           (hermes-chat--terminal-approval-session
+                            (car queue))))))
+
+(defun hermes-chat--capture-terminal-prompts ()
+  "Return immutable plain terminal prompt authority for the current chat."
+  (list :buffer (current-buffer)
+        :generation hermes-chat--lifecycle-generation
+        :prompt-table hermes-chat--pending-prompts
+        :auto-table hermes-chat--auto-prompt-keys
+        :retained-owners (copy-sequence hermes-chat--retained-clarify-owners)
+        :entries
+        (mapcar (lambda (key)
+                  (hermes-chat--terminal-prompt-entry
+                   key (gethash key hermes-chat--pending-prompts)))
+                (hermes-chat--pending-prompt-keys))))
+
+(defun hermes-chat--terminal-snapshot-current-p (snapshot)
+  "Return non-nil when SNAPSHOT owns a live current prompt lifecycle."
+  (let ((buffer (plist-get snapshot :buffer)))
+    (and (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (and (derived-mode-p 'hermes-chat-mode)
+                (eql hermes-chat--lifecycle-generation
+                     (plist-get snapshot :generation))
+                (eq hermes-chat--pending-prompts
+                    (plist-get snapshot :prompt-table))
+                (eq hermes-chat--auto-prompt-keys
+                    (plist-get snapshot :auto-table)))))))
+
+(defun hermes-chat--terminal-entry-matches-p (entry prompt)
+  "Return non-nil when nonapproval PROMPT is owned by ENTRY."
+  (and prompt
+       (not (hermes-chat--approval-prompt-p prompt))
+       (let ((token (plist-get entry :response-token)))
+         (if token
+             (eq (plist-get prompt :response-token) token)
+           (eq prompt (plist-get entry :prompt))))))
+
+(defun hermes-chat--terminal-auto-prompt (key)
+  "Return KEY's current auto-prompt owner prompt, or nil."
+  (and (hash-table-p hermes-chat--auto-prompt-keys)
+       (cadr (gethash key hermes-chat--auto-prompt-keys))))
+
+(defun hermes-chat--take-terminal-nonapproval (entry)
+  "Take nonapproval ENTRY and return its response token, or nil."
+  (let* ((key (plist-get entry :key))
+         (prompt (gethash key hermes-chat--pending-prompts)))
+    (when (hermes-chat--terminal-entry-matches-p entry prompt)
+      (when (hermes-chat--terminal-entry-matches-p
+             entry (hermes-chat--terminal-auto-prompt key))
+        (remhash key hermes-chat--auto-prompt-keys))
+      (remhash key hermes-chat--pending-prompts)
+      (plist-get entry :response-token))))
+
+(defun hermes-chat--take-terminal-approval (entry)
+  "Remove ENTRY's captured-session approval aggregate."
+  (let* ((key (plist-get entry :key))
+         (session (plist-get entry :session-id))
+         (prompt (gethash key hermes-chat--pending-prompts))
+         (queue (and (hermes-chat--approval-prompt-p prompt)
+                     (or (plist-get prompt :prompt-queue) (list prompt))))
+         (represented
+          (cl-some (lambda (item)
+                     (and (equal (hermes-chat--terminal-approval-session item)
+                                 session)
+                          (memq item queue)))
+                   (plist-get entry :approval-members)))
+         (remaining
+          (and represented
+               (cl-remove-if
+                (lambda (item)
+                  (equal (hermes-chat--terminal-approval-session item) session))
+                queue))))
+    (when represented
+      (let ((auto (hermes-chat--terminal-auto-prompt key)))
+        (when (and (hermes-chat--approval-prompt-p auto)
+                   (equal (hermes-chat--terminal-approval-session auto) session))
+          (remhash key hermes-chat--auto-prompt-keys)))
+      (if remaining
+          (puthash key (hermes-chat--approval-prompt-with-queue remaining)
+                   hermes-chat--pending-prompts)
+        (remhash key hermes-chat--pending-prompts)))))
+
+(defun hermes-chat--terminal-restore-effect (owner)
+  "Return a dormant one-shot restoration thunk for OWNER."
+  (let ((pending t)
+        (buffer (plist-get owner :buffer))
+        (generation (plist-get owner :generation))
+        (text (plist-get owner :text)))
+    (lambda ()
+      (when pending
+        (setq pending nil)
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (when (and (derived-mode-p 'hermes-chat-mode)
+                       (eql hermes-chat--lifecycle-generation generation))
+              (hermes-chat--restore-prompt-response text))))))))
+
+(defun hermes-chat--take-terminal-retained (snapshot tokens)
+  "Take SNAPSHOT retained owners matching exact TOKENS and return effects."
+  (delq nil
+        (mapcar
+         (lambda (owner)
+           (when (and (memq owner hermes-chat--retained-clarify-owners)
+                      (memq (plist-get owner :response-token) tokens))
+             (setq hermes-chat--retained-clarify-owners
+                   (delq owner hermes-chat--retained-clarify-owners))
+             (hermes-chat--terminal-restore-effect owner)))
+         (plist-get snapshot :retained-owners))))
+
+(defun hermes-chat--take-terminal-prompts (snapshot)
+  "Take current authority from terminal prompt SNAPSHOT and return effects."
+  (when (hermes-chat--terminal-snapshot-current-p snapshot)
+    (with-current-buffer (plist-get snapshot :buffer)
+      (let ((tokens
+             (delq nil
+                   (mapcar
+                    (lambda (entry)
+                      (if (plist-get entry :approval-p)
+                          (hermes-chat--take-terminal-approval entry)
+                        (hermes-chat--take-terminal-nonapproval entry)))
+                    (plist-get snapshot :entries)))))
+        (hermes-chat--take-terminal-retained snapshot tokens)))))
+
 (defun hermes-chat--response-redaction-variants (response)
   "Return string variants of RESPONSE that may appear in errors."
   (when (and (stringp response) (not (string-empty-p response)))

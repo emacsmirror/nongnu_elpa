@@ -1369,5 +1369,215 @@ stays available."
         (should-not (cadr holder))
         (should-not hermes-chat--retained-clarify-owners)))))
 
+(ert-deftest hermes-chat-p2-takes-equivalent-clarify-claim-dormantly ()
+  "Terminal take follows an exact token through replay and restores once."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+             (lambda (&rest _args) 'pending)))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "clarify.request"
+       '((request_id . "req-terminal") (question . "Branch?")))
+      (insert "feature")
+      (hermes-chat-send)
+      (let* ((snapshot (hermes-chat--capture-terminal-prompts))
+             (owner (car hermes-chat--retained-clarify-owners))
+             (token (plist-get owner :response-token)))
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-terminal") (question . "Branch?")))
+        (should (eq token (plist-get (gethash "req-terminal"
+                                              hermes-chat--pending-prompts)
+                                     :response-token)))
+        (let ((effects (hermes-chat--take-terminal-prompts snapshot)))
+          (should (= (length effects) 1))
+          (should (string-empty-p (hermes-chat-input-string)))
+          (should-not (gethash "req-terminal" hermes-chat--pending-prompts))
+          (should-not hermes-chat--retained-clarify-owners)
+          (funcall (car effects))
+          (should (equal (hermes-chat-input-string) "feature"))
+          (funcall (car effects))
+          (should (equal (hermes-chat-input-string) "feature")))))))
+
+(ert-deftest hermes-chat-p2-stale-take-is-total-no-op-for-prompt-matrix ()
+  "Invalidation makes claimed and unclaimed prompt authority wholly stale."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+             (lambda (&rest _args) 'pending))
+            ((symbol-function 'hermes-dashboard-transport-approval-respond)
+             (lambda (&rest _args) 'pending)))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "clarify.request"
+       '((request_id . "claimed-clarify") (question . "Branch?")))
+      (hermes-chat-respond-to-prompt "claimed-clarify" "feature" nil t)
+      (dolist (prompt '((:prompt-type "sudo" :request-id "open-sudo")
+                        (:prompt-type "approval" :request-id "claimed-approval"
+                         :session-id nil :content "Claimed?")
+                        (:prompt-type "approval" :request-id "open-approval"
+                         :session-id "other" :content "Open?")))
+        (hermes-chat--record-prompt-request prompt nil))
+      (hermes-chat-respond-to-prompt "claimed-approval" "once")
+      (dolist (key '("claimed-clarify" "open-sudo"
+                     "claimed-approval" "open-approval"))
+        (puthash key (list key) (hermes-chat--ensure-auto-prompt-keys)))
+      (let ((snapshot (hermes-chat--capture-terminal-prompts)))
+        (hermes-chat--invalidate-transport-state)
+        (let ((prompts (mapcar (lambda (key)
+                                (cons key (gethash key hermes-chat--pending-prompts)))
+                              '("claimed-clarify" "open-sudo"
+                                "claimed-approval" "open-approval")))
+              (owners (copy-sequence hermes-chat--retained-clarify-owners))
+              (auto-count (hash-table-count hermes-chat--auto-prompt-keys)))
+          (should-not (hermes-chat--take-terminal-prompts snapshot))
+          (dolist (entry prompts)
+            (should (eq (cdr entry)
+                        (gethash (car entry) hermes-chat--pending-prompts))))
+          (should (equal owners hermes-chat--retained-clarify-owners))
+          (should (= auto-count
+                     (hash-table-count hermes-chat--auto-prompt-keys))))))))
+
+(ert-deftest hermes-chat-p2-effects-consume-on-stale-lifecycle ()
+  "Taken restoration effects cannot cross invalidation, kill, mode, or reset."
+  (dolist (action '(invalidate kill mode reset))
+    (ert-info ((format "effect action: %s" action))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                 (lambda (&rest _args) 'pending)))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "req-effect") (question . "Branch?")))
+          (insert "stale answer")
+          (hermes-chat-send)
+          (let* ((snapshot (hermes-chat--capture-terminal-prompts))
+                 (effect (car (hermes-chat--take-terminal-prompts snapshot))))
+            (should effect)
+            (pcase action
+              ('invalidate (hermes-chat--invalidate-transport-state))
+              ('mode (fundamental-mode))
+              ('reset (hermes-chat--reset-transcript))
+              ('kill (kill-buffer buffer)))
+            (if (eq action 'kill)
+                (let ((successor (generate-new-buffer " *Hermes successor*")))
+                  (unwind-protect
+                      (with-current-buffer successor
+                        (hermes-chat-mode)
+                        (setq hermes-chat--lifecycle-generation
+                              (plist-get snapshot :generation))
+                        (funcall effect)
+                        (should (string-empty-p (hermes-chat-input-string))))
+                    (kill-buffer successor)))
+              (let ((before (buffer-string)))
+                (funcall effect)
+                (funcall effect)
+                (should (equal (buffer-string) before))))))))))
+
+(ert-deftest hermes-chat-p2-approval-authority-is-session-tagged ()
+  "Approval take handles nil sessions and preserves different-session queues."
+  (hermes-test-with-chat-buffer
+    (let ((key "approval-key"))
+      (dolist (content '("nil-one" "nil-two"))
+        (hermes-chat--record-prompt-request
+         `(:prompt-type "approval" :request-id ,key
+           :session-id nil :content ,content) nil))
+      (let* ((snapshot (hermes-chat--capture-terminal-prompts))
+             (entry (car (plist-get snapshot :entries))))
+        (should (plist-get entry :approval-p))
+        (should (plist-member entry :session-id))
+        (should-not (plist-get entry :session-id))
+        (hermes-chat--record-prompt-request
+         `(:prompt-type "approval" :request-id ,key
+           :session-id nil :content "nil-three") nil)
+        (puthash key (list key (gethash key hermes-chat--pending-prompts))
+                 (hermes-chat--ensure-auto-prompt-keys))
+        (should-not (hermes-chat--take-terminal-prompts snapshot))
+        (should-not (gethash key hermes-chat--pending-prompts))
+        (should-not (gethash key hermes-chat--auto-prompt-keys)))
+      (hermes-chat--record-prompt-request
+       `(:prompt-type "approval" :request-id ,key
+         :session-id "same" :content "captured") nil)
+      (let ((snapshot (hermes-chat--capture-terminal-prompts)))
+        (hermes-chat--clear-pending-prompts "same")
+        (let* ((successor
+                (hermes-chat--record-prompt-request
+                 `(:prompt-type "approval" :request-id ,key
+                   :session-id "same" :content "successor") nil))
+               (claim (list key successor)))
+          (puthash key claim (hermes-chat--ensure-auto-prompt-keys))
+          (hermes-chat--take-terminal-prompts snapshot)
+          (should (eq successor (gethash key hermes-chat--pending-prompts)))
+          (should (eq claim (gethash key hermes-chat--auto-prompt-keys)))
+          (hermes-chat--clear-pending-prompts "same")))
+      (hermes-chat--record-prompt-request
+       `(:prompt-type "approval" :request-id ,key
+         :session-id "old" :content "old") nil)
+      (let ((snapshot (hermes-chat--capture-terminal-prompts)))
+        (dolist (content '("new-one" "new-one" "new-two"))
+          (hermes-chat--record-prompt-request
+           `(:prompt-type "approval" :request-id ,key
+             :session-id "new" :content ,content) nil))
+        (let* ((prompt (gethash key hermes-chat--pending-prompts))
+               (new-owner (cadr (plist-get prompt :prompt-queue)))
+               (claim (list key new-owner)))
+          (puthash key claim (hermes-chat--ensure-auto-prompt-keys))
+          (should-not (hermes-chat--take-terminal-prompts snapshot))
+          (let ((survivor (gethash key hermes-chat--pending-prompts)))
+            (should (= (plist-get survivor :prompt-count) 3))
+            (should (equal (mapcar (lambda (item) (plist-get item :content))
+                                   (plist-get survivor :prompt-queue))
+                           '("new-one" "new-one" "new-two")))
+            (should (eq (gethash key hermes-chat--auto-prompt-keys) claim))))))))
+
+(ert-deftest hermes-chat-p2-retained-effects-preserve-order-and-successors ()
+  "Take preserves duplicate effect order and does not claim replacements."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+             (lambda (&rest _args) 'pending)))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (dolist (spec '(("req-one" "same") ("req-two" "same")
+                      ("req-three" "third")))
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         `((request_id . ,(car spec)) (question . "Answer?")))
+        (hermes-chat-respond-to-prompt (car spec) (cadr spec) nil t))
+      (let* ((snapshot (hermes-chat--capture-terminal-prompts))
+             (effects (hermes-chat--take-terminal-prompts snapshot)))
+        (should (= (length effects) 3))
+        (should-not (hermes-chat--take-terminal-prompts snapshot))
+        (mapc #'funcall effects)
+        (should (equal (hermes-chat-input-string) "same\nsame\nthird")))
+      (hermes-chat--record-prompt-request
+       '(:prompt-type "sudo" :request-id "successor") nil)
+      (hermes-chat--record-prompt-request
+       '(:prompt-type "secret" :request-id "unclaimed") nil)
+      (let ((claimed (gethash "successor" hermes-chat--pending-prompts)))
+        (puthash "successor"
+                 (plist-put (copy-sequence claimed)
+                            :response-token '(captured token))
+                 hermes-chat--pending-prompts))
+      (let* ((snapshot (hermes-chat--capture-terminal-prompts))
+             (old-table hermes-chat--pending-prompts)
+             (old-auto hermes-chat--auto-prompt-keys)
+             (successor '(:prompt-type "sudo" :request-id "successor"
+                          :content "new" :response-token (new token)))
+             (new-table (make-hash-table :test #'equal))
+             (new-auto (make-hash-table :test #'equal))
+             (claim (list "successor" successor)))
+        (puthash "successor" successor new-table)
+        (puthash "successor" claim new-auto)
+        (setq hermes-chat--pending-prompts new-table
+              hermes-chat--auto-prompt-keys new-auto)
+        (should-not (hermes-chat--take-terminal-prompts snapshot))
+        (should (eq (gethash "successor" new-table) successor))
+        (should (eq (gethash "successor" new-auto) claim))
+        (setq hermes-chat--pending-prompts old-table
+              hermes-chat--auto-prompt-keys old-auto)
+        (let* ((old (gethash "successor" old-table))
+               (different (plist-put (copy-sequence old)
+                                     :response-token '(different token)))
+               (unclaimed (copy-sequence (gethash "unclaimed" old-table))))
+          (puthash "successor" different old-table)
+          (puthash "unclaimed" unclaimed old-table)
+          (should-not (hermes-chat--take-terminal-prompts snapshot))
+          (should (eq (gethash "successor" old-table) different))
+          (should (eq (gethash "unclaimed" old-table) unclaimed)))))))
+
 (provide 'hermes-chat-prompts-tests)
 ;;; hermes-chat-prompts-tests.el ends here
