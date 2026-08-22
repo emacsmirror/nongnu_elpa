@@ -36,6 +36,96 @@
            (jabber-chat--msg-nodes (make-hash-table :test 'equal)))
        ,@body)))
 
+(defmacro jabber-test-chatbuffer-with-input (&rest body)
+  "Set up a temporary chat composition area, then run BODY."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let ((jabber-chat-display-help-at-point nil))
+       (jabber-chat-mode))
+     (insert "Transcript\n")
+     (setq-local jabber-point-insert (point-marker))
+     ,@body))
+
+;;; Input history
+
+(ert-deftest jabber-test-chatbuffer-mode-map-has-input-history ()
+  "Chat input history uses the conventional M-p and M-n bindings."
+  (should (eq (keymap-lookup jabber-chat-mode-map "M-p")
+              #'jabber-chat-input-history-previous))
+  (should (eq (keymap-lookup jabber-chat-mode-map "M-n")
+              #'jabber-chat-input-history-next)))
+
+(ert-deftest jabber-test-chatbuffer-input-history-restores-draft ()
+  "Input history navigates newest-first and restores the unsent draft."
+  (jabber-test-chatbuffer-with-input
+    (let ((jabber-connections '(connection))
+          sent)
+      (setq-local jabber-buffer-connection 'connection)
+      (setq-local jabber-send-function
+                  (lambda (_jc body &optional _extra-elements)
+                    (push body sent)))
+      (should-error (jabber-chat-input-history-previous) :type 'user-error)
+      (dolist (input '("first" "second" "second"))
+        (insert input)
+        (jabber-chat-buffer-send))
+      (should (equal (reverse sent) '("first" "second" "second")))
+      (insert "draft")
+      (jabber-chat-input-history-previous)
+      (should (equal (buffer-substring-no-properties
+                      jabber-point-insert (point-max))
+                     "second"))
+      (jabber-chat-input-history-previous)
+      (should (equal (buffer-substring-no-properties
+                      jabber-point-insert (point-max))
+                     "first"))
+      (jabber-chat-input-history-previous)
+      (should (equal (buffer-substring-no-properties
+                      jabber-point-insert (point-max))
+                     "first"))
+      (jabber-chat-input-history-next)
+      (should (equal (buffer-substring-no-properties
+                      jabber-point-insert (point-max))
+                     "second"))
+      (jabber-chat-input-history-next)
+      (should (equal (buffer-substring-no-properties
+                      jabber-point-insert (point-max))
+                     "draft"))
+      (should-error (jabber-chat-input-history-next) :type 'user-error))))
+
+(ert-deftest jabber-test-chatbuffer-input-history-rejects-transcript-point ()
+  "Input history does not replace text when point is in the transcript."
+  (jabber-test-chatbuffer-with-input
+    (let ((jabber-connections '(connection)))
+      (setq-local jabber-buffer-connection 'connection)
+      (setq-local jabber-send-function #'ignore)
+      (insert "sent")
+      (jabber-chat-buffer-send)
+      (goto-char (point-min))
+      (should-error (jabber-chat-input-history-previous) :type 'user-error)
+      (should (equal (buffer-string) "Transcript\n")))))
+
+(ert-deftest jabber-test-chatbuffer-failed-send-is-not-history ()
+  "A synchronously rejected send does not enter input history."
+  (jabber-test-chatbuffer-with-input
+    (let ((jabber-connections '(connection)))
+      (setq-local jabber-buffer-connection 'connection)
+      (setq-local jabber-send-function
+                  (lambda (&rest _) (error "Rejected")))
+      (insert "not sent")
+      (should-error (jabber-chat-buffer-send) :type 'error)
+      (should-not jabber-chat--input-history))))
+
+(ert-deftest jabber-test-chatbuffer-send-preserves-result ()
+  "Recording input history preserves the sender's return value."
+  (jabber-test-chatbuffer-with-input
+    (let ((jabber-connections '(connection)))
+      (setq-local jabber-buffer-connection 'connection)
+      (setq-local jabber-send-function
+                  (lambda (&rest _) :sender-result))
+      (insert "sent")
+      (should (eq (jabber-chat-buffer-send) :sender-result))
+      (should (equal jabber-chat--input-history '("sent"))))))
+
 ;;; Group 1: jabber-chat-ewoc-enter
 
 (ert-deftest jabber-test-chatbuffer-ewoc-enter-registers-id ()

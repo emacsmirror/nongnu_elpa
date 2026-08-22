@@ -204,6 +204,8 @@ MAM sync in this buffer.  Set via the operations menu.")
 (defvar-keymap jabber-chat-mode-map
   "S-<return>"   #'jabber-chat-newline
   "TAB"     #'completion-at-point
+  "M-p"     #'jabber-chat-input-history-previous
+  "M-n"     #'jabber-chat-input-history-next
   "<backtab>" #'backward-button)
 
 (defcustom jabber-chat-display-help-at-point t
