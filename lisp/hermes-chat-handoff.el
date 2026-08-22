@@ -74,6 +74,33 @@
        hermes-chat--handoff-poll
        (eq id (plist-get hermes-chat--handoff-poll :id))))
 
+(defun hermes-chat--capture-handoff-terminal-owner ()
+  "Return plain terminal authority for the current handoff lease."
+  (list :owner hermes-chat--handoff-owner
+        :poll hermes-chat--handoff-poll
+        :timer (plist-get hermes-chat--handoff-poll :timer)))
+
+(defun hermes-chat--handoff-cancel-effect (timer)
+  "Return a dormant one-shot cancellation thunk for TIMER."
+  (let ((pending t))
+    (lambda ()
+      (when pending
+        (setq pending nil)
+        (cancel-timer timer)))))
+
+(defun hermes-chat--take-handoff-terminal-owner (snapshot)
+  "Take exact handoff SNAPSHOT and return its dormant cancellation effect."
+  (let ((owner (plist-get snapshot :owner))
+        (poll (plist-get snapshot :poll))
+        (timer (plist-get snapshot :timer)))
+    (when (and owner
+               (eq owner hermes-chat--handoff-owner)
+               (eq poll hermes-chat--handoff-poll)
+               (eq timer (plist-get hermes-chat--handoff-poll :timer)))
+      (setq hermes-chat--handoff-owner nil
+            hermes-chat--handoff-poll nil)
+      (and timer (list (hermes-chat--handoff-cancel-effect timer))))))
+
 (defun hermes-chat--handoff-stop ()
   "Cancel any active handoff poll timer in the current buffer."
   (when hermes-chat--handoff-poll

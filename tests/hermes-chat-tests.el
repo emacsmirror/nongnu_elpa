@@ -6239,5 +6239,74 @@
       (should (equal (hermes-chat--create-image-from-url url) '(image dummy)))
       (should (equal (nth 0 args) raw)))))
 
+(ert-deftest hermes-chat-command-terminal-take-clears-only-exact-owner ()
+  "Command terminal take cannot clear a replacement operation."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--command-owner 'old)
+   (let ((snapshot (hermes-chat--capture-command-terminal-owner)))
+     (should (eq (plist-get snapshot :owner) 'old))
+     (setq hermes-chat--command-owner 'new)
+     (should-not (hermes-chat--take-command-terminal-owner snapshot))
+     (should (eq hermes-chat--command-owner 'new)))
+   (let ((snapshot (hermes-chat--capture-command-terminal-owner)))
+     (should-not (hermes-chat--take-command-terminal-owner snapshot))
+     (should-not hermes-chat--command-owner))))
+
+(ert-deftest hermes-chat-terminal-owner-registry-takes-current-dormantly-in-order ()
+  "Combined take clears exact owners and returns ordered dormant effects."
+  (hermes-test-with-chat-buffer
+   (let* ((token (list 'response-token))
+          (timer (timer-create))
+          (poll (list :id 'handoff :timer timer))
+          (prompt (list :prompt-type "clarify" :request-id "request"
+                        :response-token token))
+          (retained (list :buffer (current-buffer)
+                          :generation hermes-chat--lifecycle-generation
+                          :response-token token :text "answer"))
+          observed)
+     (puthash "request" prompt hermes-chat--pending-prompts)
+     (setq hermes-chat--retained-clarify-owners (list retained)
+           hermes-chat--command-owner 'command
+           hermes-chat--handoff-owner 'handoff
+           hermes-chat--handoff-poll poll)
+     (let* ((snapshot (hermes-chat--capture-terminal-owners))
+            (effects (hermes-chat--take-terminal-owners snapshot)))
+       (should (= (length effects) 2))
+       (should-not observed)
+       (should-not hermes-chat--command-owner)
+       (should-not hermes-chat--handoff-owner)
+       (should-not hermes-chat--handoff-poll)
+       (should-not (gethash "request" hermes-chat--pending-prompts))
+       (cl-letf (((symbol-function 'hermes-chat--restore-prompt-response)
+                  (lambda (_text) (setq observed (append observed '(prompt)))))
+                 ((symbol-function 'cancel-timer)
+                  (lambda (_timer) (setq observed (append observed '(timer))))))
+         (mapc #'funcall effects))
+       (should (equal observed '(prompt timer)))))))
+
+(ert-deftest hermes-chat-terminal-owner-registry-preserves-all-replacements ()
+  "Combined stale take leaves every successor authority intact."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--command-owner 'old-command
+         hermes-chat--handoff-owner 'old-handoff
+         hermes-chat--handoff-poll
+         (list :id 'old-handoff :timer (timer-create)))
+   (let ((snapshot (hermes-chat--capture-terminal-owners))
+         (prompt-table (make-hash-table :test #'equal))
+         (auto-table (make-hash-table :test #'equal))
+         (poll (list :id 'new-handoff :timer (timer-create))))
+     (puthash "successor" '(:prompt-type "sudo") prompt-table)
+     (setq hermes-chat--pending-prompts prompt-table
+           hermes-chat--auto-prompt-keys auto-table
+           hermes-chat--command-owner 'new-command
+           hermes-chat--handoff-owner 'new-handoff
+           hermes-chat--handoff-poll poll)
+     (should-not (hermes-chat--take-terminal-owners snapshot))
+     (should (eq hermes-chat--pending-prompts prompt-table))
+     (should (eq hermes-chat--auto-prompt-keys auto-table))
+     (should (eq hermes-chat--command-owner 'new-command))
+     (should (eq hermes-chat--handoff-owner 'new-handoff))
+     (should (eq hermes-chat--handoff-poll poll)))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

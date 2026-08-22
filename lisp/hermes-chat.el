@@ -1806,6 +1806,16 @@ session is titled, after that title -- so chats stay filterable with
 
 
 ;; Registries keep lower chat layers free of upward references.
+(defun hermes-chat--install-terminal-owner-registry ()
+  "Install capture/take functions in deterministic effect order."
+  (setq hermes-chat--terminal-owner-functions
+        '((hermes-chat--capture-terminal-prompts
+           . hermes-chat--take-terminal-prompts)
+          (hermes-chat--capture-command-terminal-owner
+           . hermes-chat--take-command-terminal-owner)
+          (hermes-chat--capture-handoff-terminal-owner
+           . hermes-chat--take-handoff-terminal-owner))))
+
 (defun hermes-chat--install-registries ()
   "Install chat-owned callbacks into lower-layer registries."
   (setq hermes-chat--submit-function #'hermes-chat--submit-content
@@ -1851,6 +1861,7 @@ session is titled, after that title -- so chats stay filterable with
                (lambda (arg) (hermes-chat--dashboard-compress "compress" arg)))
          (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))))
 
+(hermes-chat--install-terminal-owner-registry)
 (hermes-chat--install-registries)
 
 (provide 'hermes-chat)

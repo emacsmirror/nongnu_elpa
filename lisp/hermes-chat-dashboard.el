@@ -116,6 +116,21 @@ the reducer defined in `hermes-chat'.")
 Modules add their per-buffer teardown here (e.g. `hermes-chat-handoff'
 stops its poll) instead of being called by name from this file.")
 
+(defvar hermes-chat--terminal-owner-functions nil
+  "Ordered (CAPTURE . TAKE) functions for chat terminal authority.")
+
+(defun hermes-chat--capture-terminal-owners ()
+  "Capture each registered terminal owner as plain data in registry order."
+  (mapcar (lambda (functions)
+            (cons (cdr functions) (funcall (car functions))))
+          hermes-chat--terminal-owner-functions))
+
+(defun hermes-chat--take-terminal-owners (snapshot)
+  "Take current owners in SNAPSHOT and return ordered dormant effects."
+  (mapcan (lambda (entry)
+            (funcall (car entry) (cdr entry)))
+          snapshot))
+
 (defun hermes-chat-register-cleanup-function (function)
   "Register FUNCTION to release per-buffer chat resources."
   (add-hook 'hermes-chat-cleanup-functions function))

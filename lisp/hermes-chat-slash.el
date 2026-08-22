@@ -144,6 +144,17 @@
   "Return non-nil when OWNER owns the current command operation."
   (and owner (eq owner hermes-chat--command-owner)))
 
+(defun hermes-chat--capture-command-terminal-owner ()
+  "Return plain terminal authority for the current command operation."
+  (list :owner hermes-chat--command-owner))
+
+(defun hermes-chat--take-command-terminal-owner (snapshot)
+  "Clear the exact command owner in SNAPSHOT and return no effects."
+  (let ((owner (plist-get snapshot :owner)))
+    (when (hermes-chat--command-owner-current-p owner)
+      (setq hermes-chat--command-owner nil)))
+  nil)
+
 (defun hermes-chat--command-start ()
   "Acquire and return exclusive ownership for a command operation."
   (when hermes-chat--command-owner

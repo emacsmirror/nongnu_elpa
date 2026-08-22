@@ -543,6 +543,66 @@ Killing one buffer releases its reference without tearing down the other."
          (should-not resumed)
          (should (equal hermes-chat--session-id "stored-session")))))))
 
+(ert-deftest hermes-chat-handoff-terminal-take-is-coherent-across-replacement ()
+  "Terminal take clears only one exact owner, poll, and timer lease."
+  (dolist (replacement '(owner poll timer split))
+    (with-temp-buffer
+      (let* ((old-timer (list 'old-timer))
+             (new-timer (list 'new-timer))
+             (old-poll (list :id 'old :timer old-timer))
+             (new-poll (list :id 'new :timer new-timer)))
+        (setq hermes-chat--handoff-owner 'old
+              hermes-chat--handoff-poll old-poll)
+        (let ((snapshot (hermes-chat--capture-handoff-terminal-owner)))
+          (pcase replacement
+            ('owner (setq hermes-chat--handoff-owner 'new))
+            ('poll (setq hermes-chat--handoff-poll new-poll))
+            ('timer
+             (should (eq old-poll (plist-put old-poll :timer new-timer))))
+            ('split
+             (setq hermes-chat--handoff-owner 'new
+                   hermes-chat--handoff-poll new-poll)))
+          (should-not (hermes-chat--take-handoff-terminal-owner snapshot))
+          (should (eq hermes-chat--handoff-owner
+                      (if (memq replacement '(owner split)) 'new 'old)))
+          (should (eq hermes-chat--handoff-poll
+                      (if (memq replacement '(poll split)) new-poll old-poll)))
+          (should (eq (plist-get hermes-chat--handoff-poll :timer)
+                      (if (memq replacement '(poll timer split))
+                          new-timer old-timer))))))))
+
+(ert-deftest hermes-chat-handoff-terminal-cancel-clears-first-and-runs-once ()
+  "Timer cancellation signals only after local authority is gone, once."
+  (dolist (condition '(error quit))
+    (with-temp-buffer
+      (let* ((timer (list condition))
+             (poll (list :id 'owner :timer timer))
+             calls)
+        (setq hermes-chat--handoff-owner 'owner
+              hermes-chat--handoff-poll poll)
+        (let* ((snapshot (hermes-chat--capture-handoff-terminal-owner))
+               (effects (hermes-chat--take-handoff-terminal-owner snapshot)))
+          (should (= (length effects) 1))
+          (should-not hermes-chat--handoff-owner)
+          (should-not hermes-chat--handoff-poll)
+          (should-not calls)
+          (cl-letf (((symbol-function 'cancel-timer)
+                     (lambda (captured)
+                       (push captured calls)
+                       (should-not hermes-chat--handoff-owner)
+                       (should-not hermes-chat--handoff-poll)
+                       (signal condition nil))))
+            (pcase condition
+              ('error (should-error (funcall (car effects)) :type 'error))
+              ('quit
+               (let (signalled)
+                 (condition-case nil
+                     (funcall (car effects))
+                   (quit (setq signalled t)))
+                 (should signalled))))
+            (funcall (car effects)))
+          (should (equal calls (list timer))))))))
+
 
 (provide 'hermes-chat-handoff-tests)
 ;;; hermes-chat-handoff-tests.el ends here
