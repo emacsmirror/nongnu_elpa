@@ -6494,5 +6494,193 @@
      (should (equal hermes-chat--queued-messages
                     '((:id "queue" :content "durable")))))))
 
+;;; Integrated terminal owner authority
+
+(defun hermes-chat-test--terminal-owner-fixture ()
+  "Install real prompt, command, and handoff owners and return their leaves."
+  (let* ((token (list 'response-token))
+         (prompt (list :prompt-type "clarify" :request-id "clarify"
+                       :response-token token))
+         (member (list :prompt-type "approval" :session-id "session"))
+         (approval (list :prompt-type "approval" :prompt-queue (list member)))
+         (claim (list "clarify" prompt))
+         (retained (list :buffer (current-buffer)
+                         :generation hermes-chat--lifecycle-generation
+                         :response-token token :text "answer"))
+         (timer (timer-create))
+         (meta (list "poll-metadata"))
+         (poll (list :id 'handoff :timer timer :meta meta)))
+    (puthash "clarify" prompt hermes-chat--pending-prompts)
+    (puthash "approval" approval hermes-chat--pending-prompts)
+    (puthash "clarify" claim hermes-chat--auto-prompt-keys)
+    (setq hermes-chat--retained-clarify-owners (list retained)
+          hermes-chat--command-owner (list 'command)
+          hermes-chat--handoff-owner (list 'handoff)
+          hermes-chat--handoff-poll poll)
+    (list :prompt prompt :approval approval :token token :member member
+          :claim claim :retained retained :timer timer :poll poll :meta meta)))
+
+(defun hermes-chat-test--replace-terminal-owner-leaf (case fixture)
+  "Replace CASE authority in FIXTURE with an equal successor."
+  (pcase case
+    ('registry (setq hermes-chat--terminal-owner-functions
+                     (copy-sequence hermes-chat--terminal-owner-functions)))
+    ('lifecycle (setq hermes-chat--lifecycle-generation
+                      (list 'replacement-lifecycle)))
+    ('mode (fundamental-mode))
+    ('take (let ((registry (copy-tree hermes-chat--terminal-owner-functions)))
+             (setcdr (car registry) #'ignore)
+             (setq hermes-chat--terminal-owner-functions registry)))
+    ('command (setq hermes-chat--command-owner
+                    (copy-tree hermes-chat--command-owner)))
+    ('handoff-owner (setq hermes-chat--handoff-owner
+                          (copy-tree hermes-chat--handoff-owner)))
+    ('handoff-poll (setq hermes-chat--handoff-poll
+                         (copy-tree hermes-chat--handoff-poll)))
+    ('handoff-timer (setf (plist-get hermes-chat--handoff-poll :timer)
+                          (timer-create)))
+    ('prompt-table (setq hermes-chat--pending-prompts
+                         (copy-hash-table hermes-chat--pending-prompts)))
+    ('auto-table (setq hermes-chat--auto-prompt-keys
+                       (copy-hash-table hermes-chat--auto-prompt-keys)))
+    ('prompt (puthash "approval" (copy-sequence (plist-get fixture :approval))
+                      hermes-chat--pending-prompts))
+    ('token (setf (plist-get (plist-get fixture :prompt) :response-token)
+                  (copy-tree (plist-get fixture :token))))
+    ('retained (setq hermes-chat--retained-clarify-owners
+                     (list (copy-tree (plist-get fixture :retained)))))
+    ('member (setf (plist-get (plist-get fixture :approval) :prompt-queue)
+                   (list (copy-tree (plist-get fixture :member)))))
+    ('claim (puthash "clarify" (copy-sequence (plist-get fixture :claim))
+                     hermes-chat--auto-prompt-keys))))
+
+(ert-deftest hermes-chat-terminal-owner-authority-is-integrated-and-inert ()
+  "Real registered owners validate in capture order without taking authority."
+  (hermes-test-with-chat-buffer
+   (let* ((fixture (hermes-chat-test--terminal-owner-fixture))
+          (prompt-capture (symbol-function 'hermes-chat--capture-terminal-prompts))
+          (command-capture (symbol-function 'hermes-chat--capture-command-terminal-owner))
+          (handoff-capture (symbol-function 'hermes-chat--capture-handoff-terminal-owner))
+          observed authority)
+     (cl-letf (((symbol-function 'hermes-chat--capture-terminal-prompts)
+                (lambda () (setq observed (append observed '(prompt)))
+                  (funcall prompt-capture)))
+               ((symbol-function 'hermes-chat--capture-command-terminal-owner)
+                (lambda () (setq observed (append observed '(command)))
+                  (funcall command-capture)))
+               ((symbol-function 'hermes-chat--capture-handoff-terminal-owner)
+                (lambda () (setq observed (append observed '(handoff)))
+                  (funcall handoff-capture)))
+               ((symbol-function 'hermes-chat--take-terminal-prompts) #'ert-fail)
+               ((symbol-function 'hermes-chat--take-command-terminal-owner) #'ert-fail)
+               ((symbol-function 'hermes-chat--take-handoff-terminal-owner) #'ert-fail))
+       (setq authority (hermes-chat--capture-terminal-owner-authority))
+       (should (hermes-chat--terminal-owner-authority-current-p authority)))
+     (should (eq (plist-get authority :registry)
+                 hermes-chat--terminal-owner-functions))
+     (should (equal (mapcar #'car (plist-get authority :owners))
+                    '(hermes-chat--take-terminal-prompts
+                      hermes-chat--take-command-terminal-owner
+                      hermes-chat--take-handoff-terminal-owner)))
+     (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'"
+                             (plist-get authority :digest)))
+     (should (equal observed '(prompt command handoff prompt command handoff)))
+     (should (eq (gethash "clarify" hermes-chat--auto-prompt-keys)
+                 (plist-get fixture :claim))))))
+
+(ert-deftest hermes-chat-terminal-owner-authority-rejects-equal-successors ()
+  "Every exact registry and owner leaf rejects a structurally equal successor."
+  (dolist (case '(registry lifecycle mode take command
+                  handoff-owner handoff-poll handoff-timer
+                  prompt-table auto-table prompt token retained member claim))
+    (let ((hermes-chat--terminal-owner-functions
+           hermes-chat--terminal-owner-functions))
+      (hermes-test-with-chat-buffer
+       (let* ((fixture (hermes-chat-test--terminal-owner-fixture))
+              (authority (hermes-chat--capture-terminal-owner-authority))
+              (table hermes-chat--auto-prompt-keys)
+              (prompt (plist-get fixture :prompt)))
+         (hermes-chat-test--replace-terminal-owner-leaf case fixture)
+         (cl-letf (((symbol-function 'remhash) #'ert-fail)
+                   ((symbol-function 'cancel-timer) #'ert-fail)
+                   ((symbol-function 'hermes-chat--take-terminal-prompts) #'ert-fail)
+                   ((symbol-function 'hermes-chat--take-command-terminal-owner) #'ert-fail)
+                   ((symbol-function 'hermes-chat--take-handoff-terminal-owner) #'ert-fail))
+           (should-not (hermes-chat--terminal-owner-authority-current-p authority)))
+         (when (eq case 'claim)
+           (should (eq table hermes-chat--auto-prompt-keys))
+           (should (eq prompt (cadr (gethash "clarify" table))))))))))
+
+(ert-deftest hermes-chat-terminal-owner-authority-digest-detects-nested-mutation ()
+  "Saved digest rejects shared nested mutation under hostile printer settings."
+  (hermes-test-with-chat-buffer
+   (let* ((fixture (hermes-chat-test--terminal-owner-fixture))
+          (authority (hermes-chat--capture-terminal-owner-authority)))
+     (setcar (plist-get fixture :meta) "mutated-poll-metadata")
+     (let ((print-length 1) (print-level 1) (print-circle nil)
+           (print-quoted nil) (print-escape-newlines nil)
+           (print-symbols-bare t) (float-output-format "%.1f"))
+       (should-not (hermes-chat--terminal-owner-authority-current-p authority))))))
+
+(ert-deftest hermes-chat-terminal-owner-authority-malformed-fails-closed ()
+  "Unknown schemas and invalid A3a claims neither signal nor run effects."
+  (hermes-test-with-chat-buffer
+   (hermes-chat-test--terminal-owner-fixture)
+   (let* ((authority (hermes-chat--capture-terminal-owner-authority))
+          (owners-bad (plist-put (copy-tree authority) :owners '(malformed)))
+          (unknown '((hermes-chat-test--unexpected . ignore)))
+          (registries (list nil unknown
+                            (reverse hermes-chat--terminal-owner-functions)
+                            (cons (car hermes-chat--terminal-owner-functions)
+                                  hermes-chat--terminal-owner-functions)
+                            (cons (car hermes-chat--terminal-owner-functions) 'dotted)))
+          (calls 0))
+     (cl-letf (((symbol-function 'hermes-chat-test--unexpected)
+                (lambda () (setq calls (1+ calls))))
+               ((symbol-function 'hermes-chat--take-terminal-prompts)
+                (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'remhash) (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'cancel-timer) (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'hermes-chat--restore-prompt-response)
+                (lambda (&rest _) (setq calls (1+ calls)))))
+       (dolist (malformed (list nil '(dotted . authority) owners-bad))
+         (should-not (hermes-chat--terminal-owner-authority-current-p malformed)))
+       (dolist (registry registries)
+         (let ((hermes-chat--terminal-owner-functions registry))
+           (should-not (hermes-chat--terminal-owner-authority-current-p authority))))
+       (let ((hermes-chat--auto-prompt-keys 'invalid-a3a-state))
+         (should-not (hermes-chat--terminal-owner-authority-current-p authority)))
+       (should (= calls 0))))))
+
+(ert-deftest hermes-chat-terminal-owner-authority-contains-capture-quit ()
+  "Capture and validation fail closed when an exact owner capture quits."
+  (hermes-test-with-chat-buffer
+   (let* ((fixture (hermes-chat-test--terminal-owner-fixture))
+          (authority (hermes-chat--capture-terminal-owner-authority))
+          (table hermes-chat--auto-prompt-keys)
+          (claim (plist-get fixture :claim))
+          (calls 0))
+     (cl-letf (((symbol-function 'hermes-chat--capture-terminal-prompts)
+                (lambda () (signal 'quit nil)))
+               ((symbol-function 'hermes-chat--take-terminal-prompts)
+                (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'remhash)
+                (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'cancel-timer)
+                (lambda (&rest _) (setq calls (1+ calls))))
+               ((symbol-function 'hermes-chat--restore-prompt-response)
+                (lambda (&rest _) (setq calls (1+ calls)))))
+       (should-not
+        (condition-case nil
+            (hermes-chat--capture-terminal-owner-authority)
+          (quit 'signaled)))
+       (should-not
+        (condition-case nil
+            (hermes-chat--terminal-owner-authority-current-p authority)
+          (quit 'signaled))))
+     (should (= calls 0))
+     (should (eq table hermes-chat--auto-prompt-keys))
+     (should (eq claim (gethash "clarify" table))))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

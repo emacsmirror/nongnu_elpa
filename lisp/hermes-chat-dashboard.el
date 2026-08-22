@@ -192,6 +192,163 @@ stops its poll) instead of being called by name from this file.")
             (cons (cdr functions) (funcall (car functions))))
           hermes-chat--terminal-owner-functions))
 
+(defconst hermes-chat--terminal-owner-registry-schema
+  '((hermes-chat--capture-terminal-prompts
+     . hermes-chat--take-terminal-prompts)
+    (hermes-chat--capture-command-terminal-owner
+     . hermes-chat--take-command-terminal-owner)
+    (hermes-chat--capture-handoff-terminal-owner
+     . hermes-chat--take-handoff-terminal-owner))
+  "Exact registered terminal owner schemas in capture order.")
+
+(defun hermes-chat--terminal-exact-plist-p (value keys)
+  "Return non-nil when VALUE is a plist with exactly ordered KEYS."
+  (and (proper-list-p value)
+       (= (length value) (* 2 (length keys)))
+       (equal (cl-loop for tail on value by #'cddr collect (car tail)) keys)))
+
+(defun hermes-chat--terminal-owner-registry-schema-p (registry)
+  "Return non-nil when REGISTRY has the exact known owner functions."
+  (and (proper-list-p registry)
+       (equal registry hermes-chat--terminal-owner-registry-schema)))
+
+(defun hermes-chat--terminal-prompt-entry-schema-p (entry)
+  "Return non-nil when ENTRY has the exact terminal prompt entry schema."
+  (hermes-chat--terminal-exact-plist-p
+   entry '(:key :prompt :response-token :approval-p
+           :approval-members :session-id)))
+
+(defun hermes-chat--terminal-auto-claim-schema-p (claim)
+  "Return non-nil when CLAIM has the exact A3a record schema."
+  (hermes-chat--terminal-exact-plist-p claim '(:key :claim :prompt)))
+
+(defun hermes-chat--terminal-prompt-snapshot-schema-p (snapshot)
+  "Return non-nil when SNAPSHOT has the exact prompt authority schema."
+  (and (hermes-chat--terminal-exact-plist-p
+        snapshot '(:buffer :generation :prompt-table :auto-table :auto-claims
+                   :retained-owners :entries))
+       (proper-list-p (plist-get snapshot :retained-owners))
+       (proper-list-p (plist-get snapshot :entries))
+       (cl-every #'hermes-chat--terminal-prompt-entry-schema-p
+                 (plist-get snapshot :entries))
+       (let ((claims (plist-get snapshot :auto-claims)))
+         (and (not (eq claims hermes-chat--invalid-terminal-auto-claims))
+              (proper-list-p claims)
+              (cl-every #'hermes-chat--terminal-auto-claim-schema-p claims)))))
+
+(defun hermes-chat--terminal-owner-records-schema-p (owners)
+  "Return non-nil when OWNERS contain only exact known ordered schemas."
+  (and (proper-list-p owners)
+       (= (length owners) 3)
+       (equal (mapcar #'car owners)
+              (mapcar #'cdr hermes-chat--terminal-owner-registry-schema))
+       (hermes-chat--terminal-prompt-snapshot-schema-p (cdr (nth 0 owners)))
+       (hermes-chat--terminal-exact-plist-p (cdr (nth 1 owners)) '(:owner))
+       (hermes-chat--terminal-exact-plist-p
+        (cdr (nth 2 owners)) '(:owner :poll :timer))))
+
+(defun hermes-chat--terminal-exact-occurrences-p (saved current)
+  "Return non-nil when SAVED and CURRENT contain the same occurrences."
+  (and (proper-list-p saved) (proper-list-p current)
+       (= (length saved) (length current))
+       (cl-every #'eq saved current)))
+
+(defun hermes-chat--terminal-prompt-entry-current-p (saved current)
+  "Return non-nil when CURRENT retains SAVED prompt entry authority."
+  (and (equal (plist-get saved :key) (plist-get current :key))
+       (eq (plist-get saved :prompt) (plist-get current :prompt))
+       (eq (plist-get saved :response-token) (plist-get current :response-token))
+       (eq (plist-get saved :approval-p) (plist-get current :approval-p))
+       (equal (plist-get saved :session-id) (plist-get current :session-id))
+       (hermes-chat--terminal-exact-occurrences-p
+        (plist-get saved :approval-members)
+        (plist-get current :approval-members))))
+
+(defun hermes-chat--terminal-auto-claim-current-p (saved current)
+  "Return non-nil when CURRENT retains SAVED exact auto-claim authority."
+  (and (equal (plist-get saved :key) (plist-get current :key))
+       (eq (plist-get saved :claim) (plist-get current :claim))
+       (eq (plist-get saved :prompt) (plist-get current :prompt))))
+
+(defun hermes-chat--terminal-prompt-snapshot-current-p (saved current)
+  "Return non-nil when CURRENT retains all SAVED prompt authority."
+  (and (eq (plist-get saved :buffer) (plist-get current :buffer))
+       (eql (plist-get saved :generation) (plist-get current :generation))
+       (eq (plist-get saved :prompt-table) (plist-get current :prompt-table))
+       (eq (plist-get saved :auto-table) (plist-get current :auto-table))
+       (hermes-chat--terminal-exact-occurrences-p
+        (plist-get saved :retained-owners) (plist-get current :retained-owners))
+       (cl-every #'hermes-chat--terminal-prompt-entry-current-p
+                 (plist-get saved :entries) (plist-get current :entries))
+       (cl-every #'hermes-chat--terminal-auto-claim-current-p
+                 (plist-get saved :auto-claims)
+                 (plist-get current :auto-claims))))
+
+(defun hermes-chat--terminal-owner-records-current-p (saved current)
+  "Return non-nil when CURRENT retains all SAVED registered owner authority."
+  (and (hermes-chat--terminal-owner-records-schema-p saved)
+       (hermes-chat--terminal-owner-records-schema-p current)
+       (hermes-chat--terminal-prompt-snapshot-current-p
+        (cdr (nth 0 saved)) (cdr (nth 0 current)))
+       (eq (plist-get (cdr (nth 1 saved)) :owner)
+           (plist-get (cdr (nth 1 current)) :owner))
+       (cl-every #'eq
+                 (mapcar (lambda (key) (plist-get (cdr (nth 2 saved)) key))
+                         '(:owner :poll :timer))
+                 (mapcar (lambda (key) (plist-get (cdr (nth 2 current)) key))
+                         '(:owner :poll :timer)))))
+
+(defun hermes-chat--capture-terminal-owner-records ()
+  "Return exact current owner records; return nil after a registry change."
+  (let ((registry hermes-chat--terminal-owner-functions))
+    (when (hermes-chat--terminal-owner-registry-schema-p registry)
+      (let ((owners (hermes-chat--capture-terminal-owners)))
+        (and (eq registry hermes-chat--terminal-owner-functions)
+             (hermes-chat--terminal-owner-registry-schema-p registry)
+             owners)))))
+
+(defun hermes-chat--capture-terminal-owner-authority ()
+  "Capture inert digest-backed authority for all registered terminal owners."
+  (condition-case nil
+      (when-let* ((registry hermes-chat--terminal-owner-functions)
+                  (owners (hermes-chat--capture-terminal-owner-records)))
+        (list :registry registry :owners owners
+              :digest (hermes-chat--terminal-fingerprint owners)))
+    (error nil)
+    (quit nil)))
+
+(defun hermes-chat--terminal-owner-authority-current-p (authority)
+  "Return non-nil when AUTHORITY retains every registered terminal owner."
+  (condition-case nil
+      (and (hermes-chat--terminal-exact-plist-p
+            authority '(:registry :owners :digest))
+           (eq (plist-get authority :registry)
+               hermes-chat--terminal-owner-functions)
+           (hermes-chat--terminal-owner-registry-schema-p
+            hermes-chat--terminal-owner-functions)
+           (hermes-chat--terminal-owner-records-schema-p
+            (plist-get authority :owners))
+           (string-match-p "\\`[0-9a-f]\\{64\\}\\'"
+                           (plist-get authority :digest))
+           (equal (plist-get authority :digest)
+                  (hermes-chat--terminal-fingerprint
+                   (plist-get authority :owners)))
+           (let ((buffer (plist-get (cdr (car (plist-get authority :owners)))
+                                    :buffer)))
+             (and (buffer-live-p buffer)
+                  (with-current-buffer buffer
+                    (and (derived-mode-p 'hermes-chat-mode)
+                         (eq (plist-get authority :registry)
+                             hermes-chat--terminal-owner-functions)
+                         (when-let* ((current
+                                     (hermes-chat--capture-terminal-owner-records)))
+                           (and (equal (plist-get authority :digest)
+                                       (hermes-chat--terminal-fingerprint current))
+                                (hermes-chat--terminal-owner-records-current-p
+                                 (plist-get authority :owners) current))))))))
+    (error nil)
+    (quit nil)))
+
 (defun hermes-chat--take-terminal-owners (snapshot)
   "Take current owners in SNAPSHOT and return ordered dormant effects."
   (mapcan (lambda (entry)
