@@ -735,6 +735,53 @@ fault in one session would have cost every session afterwards its safety net."
       (should (equal (length said) 1))
       (should (string-match-p "watching it failed" (car said))))))
 
+;;; the resume loop hands Emacs back (issue #473)
+
+(iter-defun vm-net-test--many-steps (count)
+  "Ask COUNT times for something that is always there, doing a little work.
+What a fetch of thousands of messages looks like to the driver: the answer to
+the next read is already in the buffer, so nothing waits and the loop runs on
+until the work is done."
+  (let ((i 0))
+    (while (< i count)
+      (iter-yield (lambda () t))
+      ;; enough work that the loop cannot finish inside one slice
+      (let ((n 0)) (while (< n 400) (format "%d" n) (setq n (1+ n))))
+      (setq i (1+ i)))
+    i))
+
+(ert-deftest vm-net-test-a-long-run-of-work-is-cut-into-slices ()
+  "REGRESSION: one filter call does not hold Emacs for as long as it likes.
+Issue #473.  The answer to the next read is often already in the buffer -- a
+server sending six thousand responses to one FETCH fills it faster than they
+are parsed -- and the resume loop ran to the end of them without returning.
+Measured on a mailbox of 6438: 0.67 seconds of Emacs stopped in one filter
+call.  It now hands back after `vm-net--slice' and asks to be called again."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test"
+                                    :finished #'ignore))
+           (start (float-time))
+           (first-slice nil))
+      (vm-net-start session (vm-net-test--many-steps 4000))
+      (setq first-slice (- (float-time) start))
+      ;; the first run gave Emacs its turn back rather than finishing
+      (should (vm-net-session-live-p session))
+      (should (< first-slice (* 4 vm-net--slice)))
+      ;; and the work still finishes, from the timer it left behind
+      (should (eq (vm-net-test--wait session 30) 'done))
+      (should (equal (vm-net-session-value session) 4000)))))
+
+(ert-deftest vm-net-test-work-that-fits-in-a-slice-is-not-cut-up ()
+  "A short run finishes in the one call, with no timer and no waiting."
+  (vm-net-test--with-server (port #'vm-net-test--echo-once)
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :process process :name "test"
+                                    :finished #'ignore)))
+      (vm-net-start session (vm-net-test--many-steps 5))
+      (should-not (vm-net-session-live-p session))
+      (should (equal (vm-net-session-value session) 5)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

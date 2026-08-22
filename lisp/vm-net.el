@@ -305,6 +305,23 @@ reason -- there is nothing there to read the answer out of."
 		  (funcall request)))
 	(vm-net--resume session nil)))))
 
+(defconst vm-net--slice 0.05
+  "How long `vm-net--resume\=' may work before it hands Emacs back.
+Twenty turns a second, which is enough that typing and redisplay do not
+stutter, and long enough that the timer between slices costs nothing next to
+the parsing done in one.")
+
+(defun vm-net--continue-soon (session)
+  "Ask for SESSION to be resumed once Emacs has had its turn.
+A timer of no delay, so it runs after the current command and after
+redisplay.  Losing it costs a quarter of a second and not the session: the
+watchdog polls every live session, which is what finds a session whose answer
+arrived while its generator was running."
+  (run-at-time 0 nil
+	       (lambda ()
+		 (when (vm-net-session-live-p session)
+		   (vm-net-poll session)))))
+
 (defun vm-net--resume (session input)
   "Give INPUT to SESSION's generator and record what it asks for next.
 The generator returning ends the session; so does an error out of it, which
@@ -325,6 +342,7 @@ stopped dead, until something else happened to poll it."
     (error "%s session resumed while it was running"
 	   (or (vm-net-session-name session) "network")))
   (let ((buffer (vm-net-session-buffer session))
+	(deadline (+ (float-time) vm-net--slice))
 	(again t))
     (setf (vm-net-session-resuming session) t)
     (unwind-protect
@@ -344,7 +362,18 @@ stopped dead, until something else happened to poll it."
 			       (vm-net-session-live-p session)
 			       (buffer-live-p buffer)
 			       (with-current-buffer buffer
-				 (and (funcall request) t)))))
+				 (and (funcall request) t))))
+	      ;; Emacs gets a turn.  The answer to the next read is often
+	      ;; already in the buffer -- a server that sends six thousand
+	      ;; responses to one FETCH fills it faster than they are parsed --
+	      ;; and this loop would then run to the end of them without
+	      ;; returning, which is the whole of Emacs stopped for as long as
+	      ;; that takes: 0.67 seconds in one filter call, measured on a
+	      ;; mailbox of 6438.  Past the slice it hands back and asks to be
+	      ;; called again, so redisplay and the keyboard get in between.
+	      (when (and again (> (float-time) deadline))
+		(setq again nil)
+		(vm-net--continue-soon session)))
 	  (iter-end-of-sequence
 	   (setf (vm-net-session-value session) (cdr err))
 	   (vm-net--finish session 'done))
