@@ -27,8 +27,9 @@ SUBDIRS = lisp @INFO_SUBDIR@ pixmaps
 ALL_SUBDIRS = lisp info pixmaps
 
 # the list of source (documentation) files
-SOURCES = NEWS.md
-SOURCES += CHANGES
+SOURCES = NEWS-3.md
+SOURCES += NEWS-2.md
+SOURCES += NEWS-1.md
 SOURCES += README.md
 SOURCES += example.vm
 
@@ -214,5 +215,5 @@ xemacs-package:
 
 ##############################################################################
 tags::
-	etags lisp/*.el contrib/*.el info/*.texinfo NEWS.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
+	etags lisp/*.el contrib/*.el info/*.texinfo NEWS-3.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 

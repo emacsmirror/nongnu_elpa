@@ -6192,7 +6192,7 @@ the users or bound to other functions in future versions of VM."
   "Certain VM keys have optional bindings in VM, which differ from
 version to version.  Include \"(vm-legacy-key-bindings)\" in your
 `vm-preferences-file' in order to bind them as in version 7.19.  For
-other possibilities, see NEWS.md in the VM distribution."
+other possibilities, see the NEWS files in the VM distribution."
   (interactive)
   (error "This key has an optional binding in VM.  Do C-h k for help."))
 
