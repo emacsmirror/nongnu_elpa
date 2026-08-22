@@ -9,3 +9,4 @@
 docs/
 /local.mk
 __pycache__/
+.worktrees/
