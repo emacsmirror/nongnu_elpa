@@ -79,6 +79,18 @@ uninstall-pkg:
 	    echo "Uninstalling $$i from '$(DESTDIR)$(docdir)'" ;  \
 	    $(RM) -f "$(DESTDIR)$(docdir)/$$i" ;                     \
 	done ;
+# Then any NEWS file that is installed and no longer in the tree.  The loop
+# above matches $(SOURCES) against the source directory, so a file renumbered
+# out of it since the install stays behind for ever; the NEWS history is
+# numbered rather than renamed, which makes that the one name here that is
+# expected to change.  The `test' is for the no-match case, where the shell
+# hands the loop the pattern itself.
+	@for i in "$(DESTDIR)$(docdir)"/NEWS-*.md ; do             \
+	    if test -f "$$i" ; then                                \
+	      echo "Uninstalling stale $$i" ;                      \
+	      $(RM) -f "$$i" ;                                     \
+	    fi ;                                                   \
+	done ;
 
 clean:
 	@for i in $(ALL_SUBDIRS) ; do ($(MAKE) -C $$i clean) || exit 1; done
