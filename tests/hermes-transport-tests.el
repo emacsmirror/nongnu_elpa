@@ -3279,5 +3279,106 @@ url.el flags every 4xx/5xx via the callback status; the useless
           (hermes-dashboard-transport--endpoint-key
            :host "127.0.0.1" :port 9229 :start-mode 'spawn))))
 
+(ert-deftest hermes-transport-dashboard-child-exit-detaches-before-callbacks ()
+  "Child exit settles once and callback reacquisition gets a fresh client."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (live t) process-plist scheduled old replacement reject-client events
+        (opens 0) (spawns 0) (deletes 0))
+    (with-temp-buffer
+      (insert "token-secret\n[Errno 98] address already in use\n")
+      (cl-letf (((symbol-function 'process-buffer) (lambda (_) (current-buffer)))
+                ((symbol-function 'delete-process)
+                 (lambda (process)
+                   (cl-incf deletes)
+                   (funcall (plist-get process-plist :sentinel) process "exited\n")))
+                ((symbol-function 'hermes-dashboard-transport--generate-token)
+                 (lambda () "token-secret")))
+        (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+              (hermes-dashboard-transport-ready-timeout nil)
+              (hermes-dashboard-transport-connect-retries 2)
+              (hermes-dashboard-transport-make-process-function
+               (lambda (&rest plist)
+                 (setq process-plist plist live t)
+                 (intern (format "child-%d" (cl-incf spawns)))))
+              (hermes-dashboard-transport-websocket-open-function
+               (lambda (&rest _)
+                 (cl-incf opens)
+                 (if (= spawns 1) (error "not ready") 'replacement-websocket)))
+              (hermes-dashboard-transport-schedule-function
+               (lambda (_delay fn &rest args) (setq scheduled (cons fn args)))))
+          (setq old
+                (hermes-dashboard-transport-acquire
+                 :host "127.0.0.1" :port 4567 :start-mode 'spawn
+                 :callback
+                 (lambda (event)
+                   (push event events)
+                   (when (eq (plist-get event :type) 'error)
+                     (setq replacement
+                           (hermes-dashboard-transport-acquire
+                            :host "127.0.0.1" :port 4567 :start-mode 'spawn))))))
+          (puthash "handled"
+                   (list :method "session.create"
+                         :reject (lambda (_)
+                                   (setq reject-client
+                                         (hermes-dashboard-transport-acquire
+                                          :host "127.0.0.1" :port 4567
+                                          :start-mode 'spawn))))
+                   (hermes-dashboard-transport-client-pending old))
+          (puthash "unhandled" (list :method "config.get")
+                   (hermes-dashboard-transport-client-pending old))
+          (setq live nil)
+          (funcall (plist-get process-plist :sentinel) 'child-1 "exited\n")
+          (should (eq (hermes--promise-state
+                       (hermes-dashboard-transport-client-ready-promise old))
+                      'rejected))
+          (should (and (not (eq replacement old)) (eq reject-client replacement)))
+          (should (eq (gethash '(spawn "127.0.0.1" 4567)
+                               hermes-dashboard-transport--clients)
+                      replacement))
+          (should (= (hash-table-count
+                      (hermes-dashboard-transport-client-pending old)) 0))
+          (apply (car scheduled) (cdr scheduled))
+          (should (and (= opens 2) (= deletes 1)))
+          (let ((text (format "%S" events)))
+            (should (= (cl-count 'error events
+                                 :key (lambda (event) (plist-get event :type))) 1))
+            (should (string-match-p "address already in use" text))
+            (should-not (string-match-p "token-secret" text))))))))
+
+(ert-deftest hermes-transport-dashboard-dead-child-never-publishes-socket ()
+  "Immediate and during-open child exits leave no shared client or timer."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        live process-plist closed scheduled replacement (opens 0) (spawns 0))
+    (cl-letf (((symbol-function 'delete-process) #'ignore)
+              ((symbol-function 'websocket-close) (lambda (ws) (setq closed ws))))
+      (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+            (hermes-dashboard-transport-ready-timeout 5)
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest plist)
+               (setq process-plist plist live (> (cl-incf spawns) 1))
+               (intern (format "child-%d" spawns))))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (&rest _)
+               (cl-incf opens)
+               (when (= spawns 2)
+                 (setq live nil)
+                 (funcall (plist-get process-plist :sentinel) 'child-2 "exited\n"))
+               (if (= spawns 2) 'foreign-websocket 'replacement-websocket)))
+            (hermes-dashboard-transport-schedule-function
+             (lambda (&rest args) (push args scheduled))))
+        (dotimes (_ 2)
+          (should-error
+           (hermes-dashboard-transport-acquire
+            :host "127.0.0.1" :port 4567 :start-mode 'spawn)))
+        (should (and (= opens 1) (eq closed 'foreign-websocket)))
+        (should-not scheduled)
+        (should-not (gethash '(spawn "127.0.0.1" 4567)
+                             hermes-dashboard-transport--clients))
+        (setq replacement
+              (hermes-dashboard-transport-acquire
+               :host "127.0.0.1" :port 4567 :start-mode 'spawn))
+        (should (eq (hermes-dashboard-transport-client-websocket replacement)
+                    'replacement-websocket))))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

@@ -568,6 +568,8 @@ Return a promise of the response plist."
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
+  ;; Separate from WebSocket generation: reconnect can keep the same child.
+  (process-generation 0)
   websocket
   (host "127.0.0.1")
   port
