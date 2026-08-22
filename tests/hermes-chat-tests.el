@@ -6308,5 +6308,191 @@
      (should (eq hermes-chat--handoff-owner 'new-handoff))
      (should (eq hermes-chat--handoff-poll poll)))))
 
+;;; Terminal fingerprint schema
+
+(ert-deftest hermes-chat-terminal-clear-fields-are-exactly-ephemeral ()
+  "Terminal clear fields contain ephemeral authority, never durable state."
+  (should
+   (equal hermes-chat--terminal-clear-fields
+          '(hermes-chat--dashboard-client
+            hermes-chat--dashboard-token
+            hermes-chat--process
+            hermes-chat--dashboard-active-session-id
+            hermes-chat--dashboard-session-ready-p
+            hermes-chat--dashboard-running-p
+            hermes-chat--pending-assistant-id
+            hermes-chat--dashboard-stream-assistant-id
+            hermes-chat--dashboard-interim-assistant-id
+            hermes-chat--dashboard-detached-assistant-id
+            hermes-chat--dashboard-suppress-stream-p
+            hermes-chat--dashboard-last-start-idle-count
+            hermes-chat--server-queued-assistant-id
+            hermes-chat--server-queued-user-id
+            hermes-chat--server-queued-after-idle-count
+            hermes-chat--server-queued-prior-terminal-p
+            hermes-chat--busy-submit-context
+            hermes-chat--unsettled-submit-context
+            hermes-chat--prepared-submit-assistant-id
+            hermes-chat--queued-submit-id
+            hermes-chat--interrupted-assistant-id
+            hermes-chat--interrupted-events
+            hermes-chat--interrupt-request-pending-p
+            hermes-dashboard-transport-request-owner
+            hermes-chat--active-tools)))
+  (dolist (field '(hermes-chat--queued-messages
+                   hermes-chat--dashboard-idle-count
+                   hermes-chat--ewoc hermes-chat--nodes
+                   hermes-chat--input-history-draft default-directory
+                   hermes-chat--working-directory hermes-chat--profile
+                   hermes-chat--model hermes-chat--agent-name
+                   hermes-chat--context hermes-chat--goal
+                   hermes-chat--runtime-flags hermes-chat--session-id
+                   hermes-chat--status-state hermes-chat--title
+                   hermes-chat--transport-generation
+                   hermes-chat--lifecycle-generation))
+    (should-not (memq field hermes-chat--terminal-clear-fields))))
+
+(defun hermes-chat-test--fingerprint-under (value hostile callback)
+  "Fingerprint VALUE under one HOSTILE printer ambience using CALLBACK."
+  (let ((print-length (if hostile 1 nil))
+        (print-level (if hostile 1 nil))
+        (print-circle (not hostile))
+        (print-gensym (not hostile))
+        (print-quoted (not hostile))
+        (print-continuous-numbering hostile)
+        (print-number-table (and hostile (make-vector 67 nil)))
+        (print-escape-newlines (not hostile))
+        (print-escape-control-characters (not hostile))
+        (print-escape-nonascii (not hostile))
+        (print-escape-multibyte (not hostile))
+        (print-charset-text-property (not hostile))
+        (print-unreadable-function callback)
+        (print-integers-as-characters hostile)
+        (print-symbols-bare hostile)
+        (float-output-format (and hostile "%.2f")))
+    (hermes-chat--terminal-fingerprint value)))
+
+(ert-deftest hermes-chat-terminal-fingerprint-binds-every-printer-control ()
+  "Fingerprinting overrides every supported ambient printer control."
+  (let ((print-length 1) (print-level 1) (print-circle nil)
+        (print-gensym nil) (print-quoted nil)
+        (print-continuous-numbering t) (print-number-table (make-vector 67 nil))
+        (print-escape-newlines nil) (print-escape-control-characters nil)
+        (print-escape-nonascii nil) (print-escape-multibyte nil)
+        (print-charset-text-property nil) (print-unreadable-function #'ignore)
+        (print-integers-as-characters t) (print-symbols-bare t)
+        (float-output-format "%.2f") observed)
+    (cl-letf (((symbol-function 'prin1-to-string)
+               (lambda (&rest _)
+                 (setq observed
+                       (list print-length print-level print-circle print-gensym
+                             print-quoted print-continuous-numbering
+                             print-number-table print-escape-newlines
+                             print-escape-control-characters print-escape-nonascii
+                             print-escape-multibyte print-charset-text-property
+                             print-unreadable-function
+                             print-integers-as-characters print-symbols-bare
+                             float-output-format))
+                 "private")))
+      (hermes-chat--terminal-fingerprint nil))
+    (should (equal observed
+                   '(nil nil t t t nil nil t t t t t nil nil nil nil)))))
+
+(ert-deftest hermes-chat-terminal-fingerprint-is-private-and-deterministic ()
+  "Fingerprinting defeats hostile printer state for complete structured values."
+  (let* ((shared (list "shared-queue-secret"))
+         (cycle (list 'cycle-secret))
+         (charset (propertize "charset-λ-secret" 'charset 'greek-iso8859-7))
+         (value (list :nested (list (list "token-ZZ" "prompt-YY"))
+                      :shared shared shared :cycle cycle :charset charset
+                      :positioned (position-symbol 'positioned-secret 19)
+                      :gensym (make-symbol "gensym-secret")
+                      :unreadable (current-buffer) :quoted '(function quoted-secret)
+                      :response "response-XX"
+                      :input "input-WW\n\x1f" :held "held-VV"
+                      :nonascii (unibyte-string 200)
+                      :integer 9876543210123456789 :float 12345.6789))
+         (calls 0)
+         (state 'untouched)
+         (callback (lambda (&rest _)
+                     (setq calls (1+ calls) state 'mutated)
+                     "callback-secret")))
+    (setcdr cycle cycle)
+    (let ((hostile (hermes-chat-test--fingerprint-under value t callback))
+          (opposite (hermes-chat-test--fingerprint-under value nil nil)))
+      (should (equal hostile opposite))
+      (should (equal hostile
+                     (hermes-chat-test--fingerprint-under value t callback)))
+      (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" hostile))
+      (dolist (plaintext '("token-ZZ" "prompt-YY" "response-XX"
+                           "input-WW" "held-VV" "shared-queue-secret"
+                           "charset-λ-secret" "9876543210123456789"
+                           "12345.6789" "positioned-secret" "gensym-secret"
+                           "\n"))
+        (should-not (string-match-p (regexp-quote plaintext) hostile)))
+      (should (= calls 0))
+      (should (eq state 'untouched)))))
+
+(ert-deftest hermes-chat-terminal-field-record-schema-is-exact ()
+  "Only one exact three-element record per catalog field passes schema."
+  (let* ((exact-value (list :exact (car hermes-chat--terminal-clear-fields)
+                            "value-secret"))
+         (records
+          (cons (hermes-chat--terminal-field-record
+                 (car hermes-chat--terminal-clear-fields) exact-value)
+                (mapcar (lambda (field)
+                          (hermes-chat--terminal-field-record
+                           field (list :exact field "value-secret")))
+                        (cdr hermes-chat--terminal-clear-fields))))
+         (first (car records))
+         (second (cadr records)))
+    (should (equal first
+                   (list (car first) (cadr first)
+                         (hermes-chat--terminal-fingerprint (cadr first)))))
+    (should (eq exact-value (cadr first)))
+    (should (hermes-chat--terminal-fields-schema-p records))
+    (dolist (malformed
+             (list nil
+                   (butlast records)
+                   (cons first records)
+                   (cons (cons 'unknown-field (cdr first)) (cdr records))
+                   (cons second (cons first (cddr records)))
+                   (cons (cons 'hermes-chat--session-id (cdr first))
+                         (cdr records))
+                   (cons first 'dotted-tail)
+                   (cons (butlast first) (cdr records))
+                   (cons (append first '(extra)) (cdr records))
+                   (cons (list (car first) (cadr first) "not-a-digest")
+                         (cdr records))))
+      (should-not (hermes-chat--terminal-fields-schema-p malformed)))))
+
+(ert-deftest hermes-chat-terminal-fingerprint-schema-is-inert ()
+  "Catalog, fingerprint, record, and schema calls do not take live authority."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-client 'client
+         hermes-chat--pending-assistant-id "assistant"
+         hermes-chat--queued-messages '((:id "queue" :content "durable")))
+   (let ((before (mapcar #'symbol-value hermes-chat--terminal-clear-fields))
+         (route hermes-chat--turn-event-function)
+         (calls 0))
+     (let ((hermes-chat--busy-submit-event-function
+            (lambda (&rest _) (setq calls (1+ calls))))
+           (hermes-chat--busy-submit-abandon-function
+            (lambda (&rest _) (setq calls (1+ calls)))))
+       (let ((record (hermes-chat--terminal-field-record
+                      'hermes-chat--dashboard-client
+                      hermes-chat--dashboard-client)))
+         (hermes-chat--terminal-fingerprint record)
+         (hermes-chat--terminal-fields-schema-p
+          (mapcar (lambda (field)
+                    (hermes-chat--terminal-field-record field (symbol-value field)))
+                  hermes-chat--terminal-clear-fields))))
+     (should (equal before
+                    (mapcar #'symbol-value hermes-chat--terminal-clear-fields)))
+     (should (eq route hermes-chat--turn-event-function))
+     (should (= calls 0))
+     (should (equal hermes-chat--queued-messages
+                    '((:id "queue" :content "durable")))))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

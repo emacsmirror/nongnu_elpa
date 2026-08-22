@@ -99,6 +99,73 @@ number and the prompt that launched it.")
 (defvar hermes-chat--prepared-submit-assistant-id)
 (defvar hermes-dashboard-transport-request-owner)
 
+(defconst hermes-chat--terminal-clear-fields
+  '(hermes-chat--dashboard-client
+    hermes-chat--dashboard-token
+    hermes-chat--process
+    hermes-chat--dashboard-active-session-id
+    hermes-chat--dashboard-session-ready-p
+    hermes-chat--dashboard-running-p
+    hermes-chat--pending-assistant-id
+    hermes-chat--dashboard-stream-assistant-id
+    hermes-chat--dashboard-interim-assistant-id
+    hermes-chat--dashboard-detached-assistant-id
+    hermes-chat--dashboard-suppress-stream-p
+    hermes-chat--dashboard-last-start-idle-count
+    hermes-chat--server-queued-assistant-id
+    hermes-chat--server-queued-user-id
+    hermes-chat--server-queued-after-idle-count
+    hermes-chat--server-queued-prior-terminal-p
+    hermes-chat--busy-submit-context
+    hermes-chat--unsettled-submit-context
+    hermes-chat--prepared-submit-assistant-id
+    hermes-chat--queued-submit-id
+    hermes-chat--interrupted-assistant-id
+    hermes-chat--interrupted-events
+    hermes-chat--interrupt-request-pending-p
+    hermes-dashboard-transport-request-owner
+    hermes-chat--active-tools)
+  "Ephemeral fields cleared by a terminal state commit.")
+
+(defun hermes-chat--terminal-fingerprint (value)
+  "Return VALUE's deterministic private SHA-256 fingerprint."
+  (let ((print-length nil)
+        (print-level nil)
+        (print-circle t)
+        (print-gensym t)
+        (print-quoted t)
+        (print-continuous-numbering nil)
+        (print-number-table nil)
+        (print-escape-newlines t)
+        (print-escape-control-characters t)
+        (print-escape-nonascii t)
+        (print-escape-multibyte t)
+        (print-charset-text-property t)
+        (print-unreadable-function nil)
+        (print-integers-as-characters nil)
+        (print-symbols-bare nil)
+        (float-output-format nil))
+    (secure-hash 'sha256 (prin1-to-string value))))
+
+(defun hermes-chat--terminal-field-record (field value)
+  "Return exact terminal FIELD record for VALUE."
+  (list field value (hermes-chat--terminal-fingerprint value)))
+
+(defun hermes-chat--terminal-field-record-schema-p (record field)
+  "Return non-nil when RECORD has the exact schema for FIELD."
+  (and (proper-list-p record)
+       (= (length record) 3)
+       (eq (car record) field)
+       (stringp (nth 2 record))
+       (string-match-p "\\`[0-9a-fA-F]\\{64\\}\\'" (nth 2 record))))
+
+(defun hermes-chat--terminal-fields-schema-p (records)
+  "Return non-nil when RECORDS exactly match the terminal field catalog."
+  (and (proper-list-p records)
+       (= (length records) (length hermes-chat--terminal-clear-fields))
+       (cl-every #'hermes-chat--terminal-field-record-schema-p
+                 records hermes-chat--terminal-clear-fields)))
+
 (defvar hermes-chat--turn-event-function #'ignore
   "Function reducing one transport event, set by `hermes-chat'.
 Takes (ASSISTANT-ID EVENT); a nil ASSISTANT-ID reduces for the header only.
