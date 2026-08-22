@@ -828,14 +828,10 @@ sessions and backend data are preserved."
                    (if (= (length buffers) 1) "" "s")))
       (mapc #'hermes--call-if-defined
             '(hermes-capabilities-stop hermes-exec-stop))
-      (let* ((transient-connections
-              (hermes-browser-stop-all-transient-clients
-               "Hermes closed for restart"))
-             (killed (hermes--kill-managed-buffers buffers))
+      (let* ((killed (hermes--kill-managed-buffers buffers))
              (connections
-              (+ transient-connections
-                 (hermes-dashboard-transport-stop-all
-                  "Hermes closed for restart"))))
+              (hermes-dashboard-transport-stop-all
+               "Hermes closed for restart")))
         (message "Hermes closed: %d buffer%s, %d connection%s"
                  killed (if (= killed 1) "" "s")
                  connections (if (= connections 1) "" "s"))))))

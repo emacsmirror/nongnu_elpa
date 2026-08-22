@@ -534,8 +534,10 @@ emitted its own transport error event."
   (when (eq (hermes-dashboard-transport-client-startup-cancel client) expected)
     (setf (hermes-dashboard-transport-client-startup-cancel client) next)))
 
-(defun hermes-dashboard-transport--stop-snapshot (client message event)
-  "Return plain teardown data captured from CLIENT for MESSAGE and EVENT."
+(defun hermes-dashboard-transport--stop-snapshot
+    (client message event &optional single-event-p)
+  "Return plain teardown data captured from CLIENT for MESSAGE and EVENT.
+SINGLE-EVENT-P omits request-derived error events."
   (let* ((pending (hermes-dashboard-transport-client-pending client))
          (requests (and (hash-table-p pending)
                         (hermes-dashboard-transport--pending-requests client)))
@@ -558,11 +560,12 @@ emitted its own transport error event."
             (append (and event
                          (list (plist-put (copy-sequence event)
                                           :content message)))
-                    (cl-loop for request in requests
-                             unless (functionp (plist-get request :reject))
-                             collect (list :type 'error :event "jsonrpc.error"
-                                           :content message
-                                           :method (plist-get request :method))))
+                    (and (not single-event-p)
+                         (cl-loop for request in requests
+                                  unless (functionp (plist-get request :reject))
+                                  collect (list :type 'error :event "jsonrpc.error"
+                                                :content message
+                                                :method (plist-get request :method)))))
             :startup (hermes-dashboard-transport-client-startup-cancel client)
             :idle (hermes-dashboard-transport-client-idle-timer client)
             :heartbeat (hermes-dashboard-transport-client-heartbeat-timer client)
@@ -587,6 +590,7 @@ emitted its own transport error event."
         (subscribers (hermes-dashboard-transport-client-subscribers client))
         (session-index (hermes-dashboard-transport-client-session-index client)))
     (cl-incf (hermes-dashboard-transport-client-generation client))
+    (cl-incf (hermes-dashboard-transport-client-process-generation client))
     (setf (hermes-dashboard-transport-client-stopping-p client) t
           (hermes-dashboard-transport-client-ready-p client) nil
           (hermes-dashboard-transport-client-reconnecting-p client) nil
@@ -640,14 +644,17 @@ emitted its own transport error event."
     (hermes-dashboard-transport--attempt
      #'hermes--promise-reject ready (plist-get snapshot :message))))
 
-(defun hermes-dashboard-transport-stop (client &optional message event)
+(defun hermes-dashboard-transport-stop
+    (client &optional message event single-event-p)
   "Terminally release CLIENT's dashboard resources and pending requests.
 MESSAGE is redacted before teardown and reported to request reject callbacks.
-Optional EVENT is delivered after detachment with the same redacted content."
+Optional EVENT is delivered after detachment with the same redacted content.
+SINGLE-EVENT-P suppresses duplicate events for requests without reject
+callbacks."
   (when (hermes-dashboard-transport-client-p client)
     (let ((snapshot (hermes-dashboard-transport--stop-snapshot
                      client (or message "Hermes dashboard transport stopped")
-                     event)))
+                     event single-event-p)))
       (hermes-dashboard-transport--detach-stop client)
       (hermes-dashboard-transport--run-stop-effects snapshot)
       client)))
@@ -743,15 +750,21 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
     (hermes-dashboard-transport--finalize-reconnect
      client "Hermes dashboard reconnect failed"))
    (t
-    (condition-case _err
-        (setf (hermes-dashboard-transport-client-websocket client)
-              (hermes-dashboard-transport--open-websocket-once
-               client
-               (hermes-dashboard-transport--client-websocket-url client)))
-      (error
-       (setf (hermes-dashboard-transport-client-reconnect-attempts client)
-             (1+ attempt))
-       (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))
+    (let ((generation (hermes-dashboard-transport-client-generation client)))
+      (condition-case _err
+          (when-let* ((websocket
+                       (hermes-dashboard-transport--open-owned-websocket
+                        client
+                        (hermes-dashboard-transport--client-websocket-url client)
+                        generation)))
+            (setf (hermes-dashboard-transport-client-websocket client) websocket))
+        (error
+         (when (and (hermes-dashboard-transport--generation-live-p
+                     client generation)
+                    (hermes-dashboard-transport-client-reconnecting-p client))
+           (setf (hermes-dashboard-transport-client-reconnect-attempts client)
+                 (1+ attempt))
+           (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))))
 
 (defun hermes-dashboard-transport--finalize-reconnect (client message)
   "Report terminal reconnect MESSAGE and stop CLIENT."
@@ -1064,16 +1077,62 @@ FN must accept trailing :resolve/:reject keywords, as the typed
 
 ;;; Connection startup and readiness
 
-(defun hermes-dashboard-transport--start-process (_client command env)
-  "Start dashboard process using COMMAND and ENV."
-  (funcall hermes-dashboard-transport-make-process-function
-           :name "hermes-dashboard"
-           :buffer " *hermes-dashboard*"
-           :command command
-           :env env
-           :connection-type 'pipe
-           :noquery t
-           :sentinel #'ignore))
+(defvar hermes-dashboard-transport-process-live-p-function
+  (lambda (process)
+    (or (not (processp process)) (process-live-p process)))
+  "Function returning non-nil while a dashboard process is live.")
+
+(defun hermes-dashboard-transport--process-live-p (process)
+  "Return non-nil while PROCESS is live."
+  (funcall hermes-dashboard-transport-process-live-p-function process))
+
+(defun hermes-dashboard-transport--process-exit-detail (process)
+  "Return a safe actionable bind failure detail from PROCESS output."
+  (when-let* ((buffer (ignore-errors (process-buffer process)))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (let ((case-fold-search t)
+            (tail (buffer-substring-no-properties
+                   (max (point-min) (- (point-max) 2048)) (point-max))))
+        (when (string-match "address already in use" tail)
+          (match-string 0 tail))))))
+
+(defun hermes-dashboard-transport--process-exit-message (client process)
+  "Return a redacted terminal exit message for CLIENT's PROCESS."
+  (let ((detail (hermes-dashboard-transport--process-exit-detail process)))
+    (hermes-dashboard-transport--normalized-error-message
+     client
+     (concat "Hermes dashboard process exited at "
+             (format "%s:%s" (hermes-dashboard-transport-client-host client)
+                     (hermes-dashboard-transport-client-port client))
+             (if detail (concat ": " detail) "; see  *hermes-dashboard*")))))
+
+(defun hermes-dashboard-transport--handle-process-exit
+    (client process process-generation)
+  "Retire CLIENT when PROCESS exits in its owning PROCESS-GENERATION."
+  (when (and (= process-generation
+                (hermes-dashboard-transport-client-process-generation client))
+             (eq process (hermes-dashboard-transport-client-process client))
+             (not (hermes-dashboard-transport--process-live-p process)))
+    (let ((message (hermes-dashboard-transport--process-exit-message client process)))
+      (hermes-dashboard-transport-stop
+       client message (list :type 'error :event "jsonrpc.error") t))))
+
+(defun hermes-dashboard-transport--start-process (client command env)
+  "Start CLIENT's dashboard process using COMMAND and ENV."
+  (let ((process-generation
+         (cl-incf (hermes-dashboard-transport-client-process-generation client))))
+    (funcall hermes-dashboard-transport-make-process-function
+             :name "hermes-dashboard"
+             :buffer " *hermes-dashboard*"
+             :command command
+             :env env
+             :connection-type 'pipe
+             :noquery t
+             :sentinel
+             (lambda (process _event)
+               (hermes-dashboard-transport--handle-process-exit
+                client process process-generation)))))
 
 (defun hermes-dashboard-transport--connection-error (client)
   "Return a redacted connection failure message for CLIENT."
@@ -1093,6 +1152,45 @@ FN must accept trailing :resolve/:reject keywords, as the typed
 (defun hermes-dashboard-transport--open-websocket-once (client url)
   "Open CLIENT's WebSocket at URL once."
   (funcall hermes-dashboard-transport-websocket-open-function url client))
+
+(defun hermes-dashboard-transport--open-owner-current-p
+    (client generation process process-generation)
+  "Return non-nil when CLIENT owns GENERATION and PROCESS.
+PROCESS-GENERATION identifies the captured child lifetime."
+  (and (hermes-dashboard-transport--generation-live-p client generation)
+       (or (not (eq (hermes-dashboard-transport-client-credential-kind client)
+                    'spawn))
+           (and (= process-generation
+                   (hermes-dashboard-transport-client-process-generation client))
+                (eq process (hermes-dashboard-transport-client-process client))
+                (hermes-dashboard-transport--process-live-p process)))))
+
+(defun hermes-dashboard-transport--open-owned-websocket (client url generation)
+  "Open URL only while CLIENT owns GENERATION and its spawned process."
+  (let ((process (hermes-dashboard-transport-client-process client))
+        (process-generation
+         (hermes-dashboard-transport-client-process-generation client)))
+    (if (not (hermes-dashboard-transport--open-owner-current-p
+              client generation process process-generation))
+        (progn
+          (hermes-dashboard-transport--handle-process-exit
+           client process process-generation)
+          nil)
+      (condition-case err
+          (let ((websocket
+                 (hermes-dashboard-transport--open-websocket-once client url)))
+            (if (hermes-dashboard-transport--open-owner-current-p
+                 client generation process process-generation)
+                websocket
+              (when (fboundp 'websocket-close)
+                (hermes-dashboard-transport--attempt #'websocket-close websocket))
+              (hermes-dashboard-transport--handle-process-exit
+               client process process-generation)
+              nil))
+        (error
+         (hermes-dashboard-transport--handle-process-exit
+          client process process-generation)
+         (signal (car err) (cdr err)))))))
 
 (defvar hermes-dashboard-transport-schedule-function
   (lambda (delay fn &rest args) (apply #'run-at-time delay nil fn args))
@@ -1132,11 +1230,14 @@ readiness flow to resolve the readiness promise."
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (condition-case err
           (let ((websocket
-                 (hermes-dashboard-transport--open-websocket-once client url)))
-            (if (hermes-dashboard-transport--generation-live-p client generation)
+                 (hermes-dashboard-transport--open-owned-websocket
+                  client url generation)))
+            (if (and websocket
+                     (hermes-dashboard-transport--generation-live-p
+                      client generation))
                 (setf (hermes-dashboard-transport-client-websocket client)
                       websocket)
-              (when (fboundp 'websocket-close)
+              (when (and websocket (fboundp 'websocket-close))
                 (hermes-dashboard-transport--attempt
                  #'websocket-close websocket))))
         (user-error
@@ -1202,7 +1303,12 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
         (let ((process
                (hermes-dashboard-transport--start-process client argv env)))
           (if (hermes-dashboard-transport--generation-live-p client generation)
-              (setf (hermes-dashboard-transport-client-process client) process)
+              (progn
+                (setf (hermes-dashboard-transport-client-process client) process)
+                (unless (hermes-dashboard-transport--process-live-p process)
+                  (hermes-dashboard-transport--handle-process-exit
+                   client process
+                   (hermes-dashboard-transport-client-process-generation client))))
             (hermes-dashboard-transport--attempt #'delete-process process)))
       (error
        (hermes-dashboard-transport--cleanup-start-failure client)
@@ -1548,6 +1654,21 @@ socket would clobber each other's session state."
       client
       (format "Invalid Hermes dashboard frame: %s"
               (hermes-dashboard-transport--condition-message client err))))))
+
+(defun hermes-dashboard-transport--stop-spawn-clients-on-exit ()
+  "Stop every registered dashboard client that owns a spawned process."
+  (let ((clients
+         (delete-dups
+          (cl-remove-if-not
+           (lambda (client)
+             (and (hermes-dashboard-transport-client-p client)
+                  (hermes-dashboard-transport-client-process client)))
+           (hash-table-values hermes-dashboard-transport--clients)))))
+    (mapc #'hermes-dashboard-transport-stop clients)
+    (length clients)))
+
+(add-hook 'kill-emacs-hook
+          #'hermes-dashboard-transport--stop-spawn-clients-on-exit)
 
 (provide 'hermes-dashboard-transport)
 ;;; hermes-dashboard-transport.el ends here

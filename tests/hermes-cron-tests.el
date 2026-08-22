@@ -396,9 +396,9 @@
   "REST listing requests all profiles and keeps paused jobs visible."
   (let (request)
     (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
-              ((symbol-function 'hermes-dashboard-transport-start)
+              ((symbol-function 'hermes-dashboard-transport-acquire)
                (lambda (&rest _) 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
               ((symbol-function 'hermes-cron--api)
                (lambda (client method path &optional body query)
                  (setq request (list client method path body query))

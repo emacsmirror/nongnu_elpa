@@ -3279,5 +3279,207 @@ url.el flags every 4xx/5xx via the callback status; the useless
           (hermes-dashboard-transport--endpoint-key
            :host "127.0.0.1" :port 9229 :start-mode 'spawn))))
 
+(ert-deftest hermes-transport-dashboard-child-exit-detaches-before-callbacks ()
+  "Child exit settles once and callback reacquisition gets a fresh client."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (live t) process-plist scheduled old replacement reject-client events
+        (opens 0) (spawns 0) (deletes 0))
+    (with-temp-buffer
+      (insert "token-secret\n[Errno 98] address already in use\n")
+      (cl-letf (((symbol-function 'process-buffer) (lambda (_) (current-buffer)))
+                ((symbol-function 'delete-process)
+                 (lambda (process)
+                   (cl-incf deletes)
+                   (funcall (plist-get process-plist :sentinel) process "exited\n")))
+                ((symbol-function 'hermes-dashboard-transport--generate-token)
+                 (lambda () "token-secret")))
+        (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+              (hermes-dashboard-transport-ready-timeout nil)
+              (hermes-dashboard-transport-connect-retries 2)
+              (hermes-dashboard-transport-make-process-function
+               (lambda (&rest plist)
+                 (setq process-plist plist live t)
+                 (intern (format "child-%d" (cl-incf spawns)))))
+              (hermes-dashboard-transport-websocket-open-function
+               (lambda (&rest _)
+                 (cl-incf opens)
+                 (if (= spawns 1) (error "not ready") 'replacement-websocket)))
+              (hermes-dashboard-transport-schedule-function
+               (lambda (_delay fn &rest args) (setq scheduled (cons fn args)))))
+          (setq old
+                (hermes-dashboard-transport-acquire
+                 :host "127.0.0.1" :port 4567 :start-mode 'spawn
+                 :callback
+                 (lambda (event)
+                   (push event events)
+                   (when (eq (plist-get event :type) 'error)
+                     (setq replacement
+                           (hermes-dashboard-transport-acquire
+                            :host "127.0.0.1" :port 4567 :start-mode 'spawn))))))
+          (puthash "handled"
+                   (list :method "session.create"
+                         :reject (lambda (_)
+                                   (setq reject-client
+                                         (hermes-dashboard-transport-acquire
+                                          :host "127.0.0.1" :port 4567
+                                          :start-mode 'spawn))))
+                   (hermes-dashboard-transport-client-pending old))
+          (puthash "unhandled" (list :method "config.get")
+                   (hermes-dashboard-transport-client-pending old))
+          (setq live nil)
+          (funcall (plist-get process-plist :sentinel) 'child-1 "exited\n")
+          (should (eq (hermes--promise-state
+                       (hermes-dashboard-transport-client-ready-promise old))
+                      'rejected))
+          (should (and (not (eq replacement old)) (eq reject-client replacement)))
+          (should (eq (gethash '(spawn "127.0.0.1" 4567)
+                               hermes-dashboard-transport--clients)
+                      replacement))
+          (should (= (hash-table-count
+                      (hermes-dashboard-transport-client-pending old)) 0))
+          (apply (car scheduled) (cdr scheduled))
+          (should (and (= opens 2) (= deletes 1)))
+          (let ((text (format "%S" events)))
+            (should (= (cl-count 'error events
+                                 :key (lambda (event) (plist-get event :type))) 1))
+            (should (string-match-p "address already in use" text))
+            (should-not (string-match-p "token-secret" text))))))))
+
+(ert-deftest hermes-transport-dashboard-dead-child-never-publishes-socket ()
+  "Immediate and during-open child exits leave no shared client or timer."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        live process-plist closed scheduled replacement (opens 0) (spawns 0))
+    (cl-letf (((symbol-function 'delete-process) #'ignore)
+              ((symbol-function 'websocket-close) (lambda (ws) (setq closed ws))))
+      (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+            (hermes-dashboard-transport-ready-timeout 5)
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest plist)
+               (setq process-plist plist live (> (cl-incf spawns) 1))
+               (intern (format "child-%d" spawns))))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (&rest _)
+               (cl-incf opens)
+               (when (= spawns 2)
+                 (setq live nil)
+                 (funcall (plist-get process-plist :sentinel) 'child-2 "exited\n"))
+               (if (= spawns 2) 'foreign-websocket 'replacement-websocket)))
+            (hermes-dashboard-transport-schedule-function
+             (lambda (&rest args) (push args scheduled))))
+        (dotimes (_ 2)
+          (should-error
+           (hermes-dashboard-transport-acquire
+            :host "127.0.0.1" :port 4567 :start-mode 'spawn)))
+        (should (and (= opens 1) (eq closed 'foreign-websocket)))
+        (should-not scheduled)
+        (should-not (gethash '(spawn "127.0.0.1" 4567)
+                             hermes-dashboard-transport--clients))
+        (setq replacement
+              (hermes-dashboard-transport-acquire
+               :host "127.0.0.1" :port 4567 :start-mode 'spawn))
+        (should (eq (hermes-dashboard-transport-client-websocket replacement)
+                    'replacement-websocket))))))
+
+(ert-deftest hermes-transport-dashboard-reconnect-validates-child-around-open ()
+  "Reconnect never opens for a dead child or retries after child exit in open."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-ready-timeout nil)
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (live nil) scheduled (opens 0)
+         (key '(spawn "127.0.0.1" 4567))
+         (client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 4567 :token "token"
+                  :credential-kind 'spawn :endpoint-key key :refcount 1
+                  :reconnecting-p t :process 'child
+                  :ready-promise (hermes--promise-make) :callback #'ignore)))
+    (puthash key client hermes-dashboard-transport--clients)
+    (let ((hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+          (hermes-dashboard-transport-websocket-open-function
+           (lambda (&rest _) (cl-incf opens) 'foreign-websocket))
+          (hermes-dashboard-transport-schedule-function
+           (lambda (&rest args) (push args scheduled))))
+      (hermes-dashboard-transport--reconnect-attempt client 0)
+      (should (and (= opens 0) (not scheduled)))
+      (should (hermes-dashboard-transport-client-stopping-p client))
+      (setq live t scheduled nil)
+      (let* ((second (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1" :port 4568 :token "token"
+                      :credential-kind 'spawn :refcount 1 :reconnecting-p t
+                      :process 'second-child
+                      :ready-promise (hermes--promise-make) :callback #'ignore))
+             (hermes-dashboard-transport-websocket-open-function
+              (lambda (&rest _)
+                (cl-incf opens)
+                (setq live nil)
+                (hermes-dashboard-transport--handle-process-exit
+                 second 'second-child
+                 (hermes-dashboard-transport-client-process-generation second))
+                (error "child exited during open"))))
+        (hermes-dashboard-transport--reconnect-attempt second 0)
+        (should (and (= opens 1) (not scheduled)))
+        (should (hermes-dashboard-transport-client-stopping-p second))))))
+
+(ert-deftest hermes-transport-dashboard-reconnect-discards-stale-process-open ()
+  "A process replacement closes the stale socket without harming remote attach."
+  (let* ((live t) closed
+         (hermes-dashboard-transport-process-live-p-function (lambda (_) live))
+         (hermes-dashboard-transport-ready-timeout nil)
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (spawn (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 4567 :token "token"
+                 :credential-kind 'spawn :refcount 1 :reconnecting-p t
+                 :process 'old-child :callback #'ignore))
+         (remote (make-hermes-dashboard-transport-client
+                  :host "dash.example" :port 443 :credential-kind 'token
+                  :refcount 1 :reconnecting-p t :callback #'ignore)))
+    (cl-letf (((symbol-function 'websocket-close) (lambda (ws) (setq closed ws))))
+      (let ((hermes-dashboard-transport-websocket-open-function
+             (lambda (_url client)
+               (if (eq client spawn)
+                   (progn
+                     (setf (hermes-dashboard-transport-client-process spawn)
+                           'new-child)
+                     (cl-incf
+                      (hermes-dashboard-transport-client-process-generation spawn))
+                     'stale-websocket)
+                 'remote-websocket))))
+        (hermes-dashboard-transport--reconnect-attempt spawn 0)
+        (hermes-dashboard-transport--reconnect-attempt remote 0))
+      (should (eq closed 'stale-websocket))
+      (should-not (hermes-dashboard-transport-client-websocket spawn))
+      (should (eq (hermes-dashboard-transport-client-process spawn) 'new-child))
+      (should (eq (hermes-dashboard-transport-client-websocket remote)
+                  'remote-websocket)))))
+
+(ert-deftest hermes-transport-dashboard-emacs-exit-stops-only-spawn-owners ()
+  "Repeated package shutdown stops registered children but leaves remote attach."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (first (make-hermes-dashboard-transport-client
+                 :endpoint-key 'first :process 'child-1 :callback #'ignore))
+         (second (make-hermes-dashboard-transport-client
+                  :endpoint-key 'second :process 'child-2 :callback #'ignore))
+         (remote (make-hermes-dashboard-transport-client
+                  :endpoint-key 'remote :websocket 'remote-socket
+                  :callback #'ignore))
+         deleted)
+    (puthash 'first first hermes-dashboard-transport--clients)
+    (puthash 'second second hermes-dashboard-transport--clients)
+    (puthash 'remote remote hermes-dashboard-transport--clients)
+    (cl-letf (((symbol-function 'delete-process)
+               (lambda (process) (push process deleted))))
+      (hermes-dashboard-transport--stop-spawn-clients-on-exit)
+      (hermes-dashboard-transport--stop-spawn-clients-on-exit))
+    (should (equal (sort deleted
+                         (lambda (left right)
+                           (string< (symbol-name left) (symbol-name right))))
+                   '(child-1 child-2)))
+    (should (and (hermes-dashboard-transport-client-stopping-p first)
+                 (hermes-dashboard-transport-client-stopping-p second)))
+    (should-not (hermes-dashboard-transport-client-stopping-p remote))
+    (should (eq (hermes-dashboard-transport-client-websocket remote)
+                'remote-socket))
+    (should (memq #'hermes-dashboard-transport--stop-spawn-clients-on-exit
+                  kill-emacs-hook))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here
