@@ -4472,12 +4472,19 @@ regexp that matched nothing used to be."
 (defmacro vm-folder-test--with-a-failing-check (method function &rest body)
   "Run BODY in a folder buffer of METHOD whose server check always fails.
 FUNCTION is the blocking check that METHOD reaches, stubbed to signal the
-error a maildrop with no password gives."
+error a maildrop with no password gives.
+
+The checks that do not wait are stubbed to answer nil, which is what they
+answer for a maildrop VM holds no password for -- `vm-imap-net-checkable-p\='
+refuses one -- and is what sends the check down to FUNCTION.  Stubbed by
+name so that this reads the same on a branch where they do not exist."
   (declare (indent 2) (debug t))
   `(with-temp-buffer
      (setq vm-folder-access-method ,method)
      (let ((vm-global-block-new-mail nil))
-       (cl-letf (((symbol-function ,function)
+       (cl-letf (((symbol-function 'vm-imap-net-folder-check-mail) #'ignore)
+                 ((symbol-function 'vm-pop-net-folder-check-mail) #'ignore)
+                 ((symbol-function ,function)
                   (lambda (&rest _)
                     (error "Need password for gmail:INBOX for checkmail"))))
          ,@body))))
