@@ -316,9 +316,20 @@ Commits carry the equivalent through their `Co-Authored-By:` trailer.
 
 ## NEWS
 
-`NEWS` records new functionality and user-visible changes of behaviour —
-new commands, renamed or removed variables, changed defaults. **Bug fixes do
-not go in NEWS**; that is what the issue tracker is for.
+The NEWS files record new functionality and user-visible changes of
+behaviour: new commands, renamed or removed variables, changed defaults.
+**Bug fixes do not go in NEWS** unless they change what VM does that a user
+could depend on, such as what goes on the wire or what a command answers to
+a key; a repair of something that never worked belongs in the issue tracker
+and nowhere else.
+
+**Write new entries at the front of the highest-numbered file**, which is
+`NEWS-3.md`. The history is split the way Emacs splits `ChangeLog`: numbered
+files, `NEWS-1.md` for the releases up to 7.19, `NEWS-2.md` for 8.0.0 through
+8.2.0b1, `NEWS-3.md` for 8.3.0 onwards. There is deliberately no file called
+`NEWS`: a file is never renamed, so every archived path stays valid for ever
+and only the newest number moves. Start `NEWS-4.md` when `NEWS-3.md` grows
+unwieldy, and leave the older files alone.
 
 ## Architecture
 

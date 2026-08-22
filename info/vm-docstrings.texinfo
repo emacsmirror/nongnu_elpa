@@ -7110,7 +7110,7 @@ View the VM manual.
 @macro vmdocvmviewnews
 @deffn Command vm-view-news
 @findex vm-view-news
-View NEWS.md for the current VM version.
+View the newest of VM=’s NEWS files.
 @end deffn
 
 @end macro
@@ -7643,7 +7643,7 @@ B and E are the beginning and end of the marked region or the current line.
 Certain VM keys have optional bindings in VM, which differ from
 version to version.  Include "(vm-legacy-key-bindings)" in your
 @code{vm-preferences-file} in order to bind them as in version 7.19.  For
-other possibilities, see NEWS.md in the VM distribution.
+other possibilities, see the NEWS files in the VM distribution.
 @end deffn
 
 @end macro
