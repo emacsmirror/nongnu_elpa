@@ -454,6 +454,177 @@ stays available."
         (should-not (hermes-chat--prompt-response-in-flight-p
                      "req-reject"))))))
 
+(ert-deftest hermes-chat-clarify-failures-restore-before-presentation ()
+  "Clarify rejection, error, and quit restore the exact submitted tail once."
+  (dolist (mode '(async-reject sync-error sync-quit))
+    (ert-info ((format "failure mode: %s" mode))
+      (let (reject caught input-at-presentation (presentations 0))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                   (lambda (&rest args)
+                     (pcase mode
+                       ('async-reject (setq reject (car (last args))))
+                       ('sync-error (error "clarify failed"))
+                       ('sync-quit (signal 'quit '(p1a))))))
+                  ((symbol-function 'hermes-chat--command-error)
+                   (lambda (_message)
+                     (cl-incf presentations)
+                     (should-not (hermes-chat--prompt-response-in-flight-p
+                                  "req-failure"))
+                     (setq input-at-presentation (hermes-chat-input-string))
+                     (when (eq mode 'async-reject)
+                       (error "presentation failed")))))
+          (hermes-test-with-dashboard-prompt-session (client)
+            (hermes-test--emit-dashboard-prompt
+             client "clarify.request"
+             '((request_id . "req-failure")
+               (question . "Which branch should I use?")))
+            (insert "exact clarify answer")
+            (condition-case err
+                (hermes-chat-send)
+              (quit (setq caught err)))
+            (when reject
+              (should-error (funcall reject "clarify failed") :type 'error))
+            (should (equal (hermes-chat-input-string) "exact clarify answer"))
+            (should-not (hermes-chat--prompt-response-in-flight-p
+                         "req-failure"))
+            (if (eq mode 'sync-quit)
+                (progn
+                  (should (equal caught '(quit p1a)))
+                  (should (zerop presentations)))
+              (should (= presentations 1))
+              (should (equal input-at-presentation
+                             "exact clarify answer")))))))))
+
+(ert-deftest hermes-chat-genuine-missing-clarify-survives-response-overlap ()
+  "Exact backend missing evidence wins when clarification text overlaps it."
+  (let (reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request _answer &optional _resolve reject-fn)
+                 (setq reject reject-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-missing") (question . "Answer?")))
+        (hermes-chat-respond-to-prompt "req-missing" "no pending" nil t)
+        (funcall reject "no pending answer request")
+        (should-not (gethash "req-missing" hermes-chat--pending-prompts))
+        (should (equal (hermes-chat-input-string) "no pending"))))))
+
+(defun hermes-test--nonclarify-failure-spec (type)
+  "Return real prompt failure fixture data for TYPE."
+  (pcase type
+    ('approval
+     '(:event "approval.request" :key "approval:sid-prompt"
+       :payload ((command . "first approval"))
+       :transport hermes-dashboard-transport-approval-respond))
+    ('sudo
+     '(:event "sudo.request" :key "req-sudo-failure"
+       :payload ((request_id . "req-sudo-failure"))
+       :transport hermes-dashboard-transport-sudo-respond))
+    ('secret
+     '(:event "secret.request" :key "req-secret-failure"
+       :payload ((request_id . "req-secret-failure")
+                 (prompt . "Enter secret"))
+       :transport hermes-dashboard-transport-secret-respond))
+    ('terminal
+     '(:event "terminal.read.request" :key "req-terminal-failure"
+       :payload ((request_id . "req-terminal-failure") (start . 0) (count . 1))
+       :transport hermes-dashboard-transport-terminal-read-respond))))
+
+(ert-deftest hermes-chat-nonclarify-failures-never-preserve-response ()
+  "Nonclarify failures stay retryable without exposing their raw response."
+  (dolist (type '(approval sudo secret terminal))
+    (dolist (mode '(async-reject sync-error sync-quit inline-success-error))
+      (ert-info ((format "%s %s" type mode))
+        (let* ((spec (hermes-test--nonclarify-failure-spec type))
+               (transport (plist-get spec :transport))
+               (response (format "P1A-RAW-no pending-%s-%s" type mode))
+               (error-value (if (eq type 'terminal)
+                                (json-encode-string response)
+                              response))
+               (present (symbol-function 'hermes-chat--command-error))
+               reject caught presented approval-order approval-count)
+          (cl-letf (((symbol-function transport)
+                     (lambda (&rest args)
+                       (pcase mode
+                         ('async-reject
+                          (setq reject
+                                (if (eq type 'approval)
+                                    (plist-get (cdr args) :reject)
+                                  (car (last args)))))
+                         ('sync-error (error "failed response %s" error-value))
+                         ('inline-success-error
+                          (funcall (if (eq type 'approval)
+                                       (plist-get (cdr args) :resolve)
+                                     (nth 3 args))
+                                   '((status . "ok")))
+                          (error "failed response %s" error-value))
+                         ('sync-quit (signal 'quit '(p1a))))))
+                    ((symbol-function 'hermes-chat--command-error)
+                     (lambda (message)
+                       (setq presented t)
+                       (should-not (hermes-chat--prompt-response-in-flight-p
+                                    (plist-get spec :key)))
+                       (funcall present message))))
+            (hermes-test-with-dashboard-prompt-session (client)
+              (hermes-test--emit-dashboard-prompt
+               client (plist-get spec :event) (plist-get spec :payload))
+              (when (eq type 'approval)
+                (hermes-test--emit-dashboard-prompt
+                 client "approval.request" '((command . "second approval")))
+                (let ((prompt (gethash (plist-get spec :key)
+                                       hermes-chat--pending-prompts)))
+                  (setq approval-count (plist-get prompt :prompt-count)
+                        approval-order
+                        (mapcar (lambda (item) (plist-get item :command))
+                                (plist-get prompt :prompt-queue)))))
+              (condition-case err
+                  (hermes-chat-respond-to-prompt
+                   (plist-get spec :key) response nil t)
+                ((error quit) (setq caught err)))
+              (when reject
+                (funcall reject (format "failed response %s" error-value)))
+              (let ((prompt (gethash (plist-get spec :key)
+                                     hermes-chat--pending-prompts)))
+                (if (eq mode 'inline-success-error)
+                    (if (eq type 'approval)
+                        (progn
+                          (should (= (plist-get prompt :prompt-count) 1))
+                          (should (equal
+                                   (mapcar (lambda (item)
+                                             (plist-get item :command))
+                                           (plist-get prompt :prompt-queue))
+                                   (cdr approval-order))))
+                      (should-not prompt))
+                  (should prompt)
+                  (should-not (plist-get prompt :response-token))
+                  (should-not (string-match-p
+                               (regexp-quote response) (prin1-to-string prompt)))
+                  (when (eq type 'approval)
+                    (should (= (plist-get prompt :prompt-count) approval-count))
+                    (should (equal
+                             (mapcar (lambda (item) (plist-get item :command))
+                                     (plist-get prompt :prompt-queue))
+                             approval-order)))))
+              (cond
+               ((eq mode 'sync-quit)
+                (should (equal caught '(quit p1a))))
+               ((eq mode 'inline-success-error)
+                (should (eq (car caught) 'error))
+                (should-not (string-match-p
+                             (regexp-quote response)
+                             (error-message-string caught)))
+                (with-current-buffer (messages-buffer)
+                  (should-not (string-match-p
+                               (regexp-quote response) (buffer-string)))))
+               (t
+                (should-not caught)
+                (should presented)
+                (should (string-match-p "<redacted>" (buffer-string)))))
+              (should (string-empty-p (hermes-chat-input-string)))
+              (should-not (string-match-p (regexp-quote response)
+                                          (buffer-string))))))))))
+
 (ert-deftest hermes-chat-send-rejects-second-pending-clarify-answer ()
   "A second RET cannot lose text while the first response is in flight."
   (let (requests first-resolve)

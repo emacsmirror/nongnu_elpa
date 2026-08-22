@@ -391,9 +391,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
      :activity (hermes-chat--prompt-header-activity pending))
     pending))
 
-(defun hermes-chat--prompt-secret-response-p (prompt)
-  "Return non-nil when PROMPT's answer must be redacted."
-  (member (hermes-chat--prompt-event-type prompt) '("sudo" "secret")))
+(defun hermes-chat--clarify-prompt-p (prompt)
+  "Return non-nil when PROMPT accepts recoverable clarification text."
+  (equal (hermes-chat--prompt-event-type prompt) "clarify"))
 
 (defun hermes-chat--response-redaction-variants (response)
   "Return string variants of RESPONSE that may appear in errors."
@@ -418,9 +418,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
 
 (defun hermes-chat--prompt-safe-error (prompt response message)
   "Return safe error MESSAGE for PROMPT and RESPONSE."
-  (if (hermes-chat--prompt-secret-response-p prompt)
-      (hermes-chat--redact-response-value message response)
-    message))
+  (if (hermes-chat--clarify-prompt-p prompt)
+      message
+    (hermes-chat--redact-response-value message response)))
 
 (defun hermes-chat--prompt-choices (prompt)
   "Return PROMPT choices as strings, or nil."
@@ -589,10 +589,16 @@ Return the next pending prompt."
     (when next-prompt
       (hermes-chat--schedule-auto-prompt next-prompt))))
 
-(defun hermes-chat--prompt-missing-error-p (message)
-  "Return non-nil when MESSAGE reports that the backend prompt is gone."
-  (and (stringp message)
-       (string-match-p "\\bno pending\\b" (downcase message))))
+(defun hermes-chat--prompt-missing-error-p (prompt message)
+  "Return non-nil when MESSAGE is PROMPT's exact backend-missing error."
+  (when-let* ((message (and (stringp message) (downcase (string-trim message)))))
+    (pcase (hermes-chat--prompt-event-type prompt)
+      ("clarify" (equal message "no pending answer request"))
+      ("terminal" (equal message "no pending text request"))
+      ("sudo" (equal message "no pending password request"))
+      ("secret" (equal message "no pending value request"))
+      ("approval" (member message '("no pending approval"
+                                     "no pending approval request"))))))
 
 (defun hermes-chat--restore-prompt-response (response)
   "Restore failed chat-tail prompt RESPONSE without queueing a new turn."
@@ -606,17 +612,18 @@ Return the next pending prompt."
 (defun hermes-chat--prompt-response-rejected
     (context prompt response message &optional preserve-response)
   "Render rejection MESSAGE for PROMPT and RESPONSE owned by CONTEXT.
-When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
-  (let ((next-prompt
-         (if (hermes-chat--prompt-missing-error-p message)
-             (hermes-chat--advance-prompt-response
-              context prompt (plist-get context :response-count))
-           (hermes-chat--release-prompt-response context)
-           nil)))
-    (hermes-chat--command-error
-     (hermes-chat--prompt-safe-error prompt response message))
-    (when preserve-response
+When PRESERVE-RESPONSE is non-nil, keep clarification RESPONSE recoverable."
+  (let* ((safe-message
+          (hermes-chat--prompt-safe-error prompt response message))
+         (next-prompt
+          (if (hermes-chat--prompt-missing-error-p prompt message)
+              (hermes-chat--advance-prompt-response
+               context prompt (plist-get context :response-count))
+            (hermes-chat--release-prompt-response context)
+            nil)))
+    (when (and preserve-response (hermes-chat--clarify-prompt-p prompt))
       (hermes-chat--restore-prompt-response response))
+    (hermes-chat--command-error safe-message)
     (when next-prompt
       (hermes-chat--show-pending-prompt-state next-prompt)
       (hermes-chat--schedule-auto-prompt next-prompt))))
@@ -759,17 +766,29 @@ When PRESERVE-RESPONSE is non-nil, keep RESPONSE recoverable in chat input."
              context prompt response preserve-response)))
           (_ (user-error "Unsupported Hermes prompt type: %s" type)))
       (error
+       (if (hermes-chat--prompt-response-current-p context)
+           (hermes-chat--prompt-response-rejected
+            context prompt response (error-message-string err)
+            preserve-response)
+         (signal
+          (car err)
+          (if (hermes-chat--clarify-prompt-p prompt)
+              (cdr err)
+            (list (hermes-chat--prompt-safe-error
+                   prompt response (error-message-string err)))))))
+      (quit
        (when (hermes-chat--prompt-response-current-p context)
-         (hermes-chat--prompt-response-rejected
-          context prompt response (error-message-string err)
-          preserve-response))))))
+         (hermes-chat--release-prompt-response context)
+         (when (and preserve-response (hermes-chat--clarify-prompt-p prompt))
+           (hermes-chat--restore-prompt-response response)))
+       (signal (car err) (cdr err))))))
 
 (defun hermes-chat-respond-to-prompt (&optional key response all preserve-response)
   "Respond to pending prompt KEY with RESPONSE.
 When called interactively, select the prompt and read RESPONSE in the
 minibuffer.  With prefix argument ALL, approval responses apply to all pending
 approvals in the dashboard session.  PRESERVE-RESPONSE keeps programmatic
-chat-tail input recoverable when the request fails."
+clarification input recoverable when the request fails."
   (interactive (list nil nil current-prefix-arg))
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
