@@ -81,11 +81,27 @@ since that version to see how you might be affected.
   * MIME parameters with international characters are understood and generated
     per RFC 2231 (emacs-vm/vm#367).
 
+  * A line too long to send as it stands goes out quoted-printable, so it
+    arrives as the one line you wrote instead of the whole message being
+    BASE64 (emacs-vm/vm#593).
+
+  * A Subject with an accent in it is encoded rather than sent raw when
+    `vm-send-using-mime` is off (emacs-vm/vm#606).
+
   * Long headers can be folded to one line, with a widget to unfold them:
     `vm-enable-shrunken-headers`.
 
   * IMAP folders are quicker to read: several message bodies are fetched in
     one command (emacs-vm/vm#185).
+
+  * Labels reach the server more reliably.  A flag the server refuses no
+    longer stops the others being stored (emacs-vm/vm#391), a refused change
+    is no longer overwritten by the server's stale copy (emacs-vm/vm#270), and
+    a copy saved to another folder says so when it carries the server's flags
+    rather than yours (emacs-vm/vm#38).
+
+  * VM no longer asks a server to clear `\Recent`, which RFC 3501 forbids and
+    some servers answered with an error (emacs-vm/vm#389).
 
   * Labels on an arriving message are added to the folder's list, so they turn
     up in completion; and `vm-expunge-label`, `vm-list-unused-labels`,
@@ -97,6 +113,15 @@ since that version to see how you might be affected.
 
   * Opening a folder that has another name says so, since saving writes only
     one of them (emacs-vm/vm#185).
+
+  * A folder visited through a symbolic link is saved through the link, rather
+    than replacing it with a file (emacs-vm/vm#532).
+
+  * `t` keeps your place in a long message instead of jumping to the top
+    (emacs-vm/vm#513).
+
+  * A count larger than the messages left acts on the ones that are there,
+    instead of refusing (emacs-vm/vm#550).
 
   * Killing a folder buffer takes its virtual folders with it, and asks first
     if any have unsaved changes (emacs-vm/vm#573).
