@@ -317,6 +317,7 @@ order."
   (let ((lines nil)
 	(done nil)
 	(counted 0)
+	(worked (float-time))
 	response)
     (while (not done)
       (setq response
@@ -324,6 +325,16 @@ order."
 			      (or description command))))
       (push response lines)
       (setq counted (1+ counted))
+      ;; Yield with nothing to wait for, so that this is interruptible.  A
+      ;; server answering with a response per message sends faster than they
+      ;; are read, so the reads above never wait and the whole of a six
+      ;; thousand response FETCH was parsed inside one `iter-next\=' -- 0.68
+      ;; seconds of Emacs stopped, which the slice in `vm-net--resume\=' cannot
+      ;; help with because it sits between steps and there was only ever one.
+      ;; Measured: 78 steps for a synchronisation, 15 of them over 50ms.
+      (when (> (- (float-time) worked) vm-net--slice)
+	(setq worked (float-time))
+	(iter-yield (vm-net-request-now)))
       ;; A command that answers one line per message -- the FETCH of every
       ;; UID and flag, which is the long silence at the start of a fetch of a
       ;; big mailbox -- says how far it has got.  Every hundredth, because the

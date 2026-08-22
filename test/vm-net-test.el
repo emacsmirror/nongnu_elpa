@@ -782,6 +782,15 @@ call.  It now hands back after `vm-net--slice' and asks to be called again."
       (should-not (vm-net-session-live-p session))
       (should (equal (vm-net-session-value session) 5)))))
 
+(ert-deftest vm-net-test-a-request-of-nothing-is-satisfied-at-once ()
+  "`vm-net-request-now' means \"take me back as soon as you can\".
+What a generator yields when it has more to do and none of it is waiting, so
+that a long parse is interruptible: the driver takes it straight back, and
+the slice is then free to hand Emacs a turn first."
+  (should (funcall (vm-net-request-now)))
+  (with-temp-buffer
+    (should (funcall (vm-net-request-now)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here
