@@ -4464,6 +4464,71 @@ regexp that matched nothing used to be."
          (eval (car (get 'vm-folder-type-by-extension-alist 'standard-value)))))
     (should-not (vm-folder-test--warnings (vm-check-folder-type-extensions)))))
 
+
+;; The periodic mail check, which runs from a timer.  A timer cannot answer a
+;; password prompt, and an error in one is reported every time it fires
+;; (emacs-vm/vm#712).
+
+(defmacro vm-folder-test--with-a-failing-check (method function &rest body)
+  "Run BODY in a folder buffer of METHOD whose server check always fails.
+FUNCTION is the blocking check that METHOD reaches, stubbed to signal the
+error a maildrop with no password gives."
+  (declare (indent 2) (debug t))
+  `(with-temp-buffer
+     (setq vm-folder-access-method ,method)
+     (let ((vm-global-block-new-mail nil))
+       (cl-letf (((symbol-function ,function)
+                  (lambda (&rest _)
+                    (error "Need password for gmail:INBOX for checkmail"))))
+         ,@body))))
+
+(ert-deftest vm-folder-test-a-failed-mail-check-does-not-signal-from-a-timer ()
+  "A check that cannot reach the server answers no rather than signalling.
+`vm-check-mail-itimer-function' calls this every `vm-mail-check-interval'
+seconds and cannot be asked for a password, so a maildrop VM has no password
+for filled *Messages* with \"Error running timer\" for as long as Emacs ran."
+  (vm-folder-test--with-a-failing-check 'imap 'vm-imap-folder-check-mail
+    (let ((said (vm-folder-test--warnings
+                  (should-not (vm-check-for-spooled-mail nil t)))))
+      (should (= 1 (length said)))
+      (should (string-match-p "Need password" (car said)))))
+  ;; the POP side reaches its own check and is guarded with it
+  (vm-folder-test--with-a-failing-check 'pop 'vm-pop-folder-check-mail
+    (let ((said (vm-folder-test--warnings
+                  (should-not (vm-check-for-spooled-mail nil t)))))
+      (should (= 1 (length said))))))
+
+(ert-deftest vm-folder-test-a-failed-mail-check-is-reported-once ()
+  "The same failure is not reported again on the next round.
+Reporting it every interval is the complaint: a folder whose password VM does
+not hold is one nothing changes about until the user does something."
+  (vm-folder-test--with-a-failing-check 'imap 'vm-imap-folder-check-mail
+    (let ((said (vm-folder-test--warnings
+                  (dotimes (_ 5)
+                    (should-not (vm-check-for-spooled-mail nil t))))))
+      (should (= 1 (length said))))))
+
+(ert-deftest vm-folder-test-a-mail-check-that-works-again-is-reported-again ()
+  "A check that succeeds clears the report, so the next failure is said once
+more.  Otherwise a server that went down, came back and went down again would
+be silent the second time."
+  (vm-folder-test--with-a-failing-check 'imap 'vm-imap-folder-check-mail
+    (should (= 1 (length (vm-folder-test--warnings
+                           (vm-check-for-spooled-mail nil t)))))
+    (should (= 0 (length (vm-folder-test--warnings
+                           (vm-check-for-spooled-mail nil t)))))
+    (cl-letf (((symbol-function 'vm-imap-folder-check-mail)
+               (lambda (&rest _) nil)))
+      (should-not (vm-check-for-spooled-mail nil t)))
+    (should (= 1 (length (vm-folder-test--warnings
+                           (vm-check-for-spooled-mail nil t)))))))
+
+(ert-deftest vm-folder-test-a-mail-check-asked-for-by-hand-still-signals ()
+  "Asked interactively, the failure is the answer: the user typed the command
+and can be told why it did not work, and can be asked for a password."
+  (vm-folder-test--with-a-failing-check 'imap 'vm-imap-folder-check-mail
+    (should-error (vm-check-for-spooled-mail t t) :type 'error)))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

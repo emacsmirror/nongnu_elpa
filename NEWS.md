@@ -3,195 +3,19 @@
 If you are upgrading from a previous version of VM, look through the entries
 since that version to see how you might be affected.
 
-## IMAP and POP no longer stop Emacs
-
-Fetching mail, loading a message body, sending flag changes, expunging,
-saving, quitting, synchronising, filing a copy of what you send, making and
-listing mailboxes: all of it happens while you carry on reading.  Emacs is not
-held while VM talks to a server.
-
-The mode line of the folder, its summary and its presentation says what the
-folder is doing, how far it has got and how much is waiting for it:
-
-    VM: inbox   3 (of 412)   fetching 24/340 +1 
-
-It says what is happening rather than which protocol is doing it, in the face
-`vm-net-session-face` -- give that face a background if you want it louder.
-Quitting a folder stops what it was doing rather than leaving a session writing
-into a buffer that is going away.
-
-The folder is not locked while this goes on: read it, move about it, delete,
-mark, label and expunge as usual.  Work that needs the server is done when the
-session running now has finished -- a folder runs one session at a time, since
-two writing into it would interleave two sets of messages, flags and expunges
-in one buffer and one cache file.
-
-Two things still wait, and say so: saving or copying a message whose body is
-still on the server, which cannot be written without it, and completing a
-folder name, which has to answer with the names it has.  `C-g` works in both.
-
-New mail arrives a bunch at a time rather than all at the end, so a large
-mailbox fills in while you read it.
-
-`vm-imap-synchronize` is the exception worth knowing: it is the command whose
-job is the expensive half, and it too now runs in the background.
-
-## Two features must now be switched on
-
-Loading a file no longer switches it on.  If your init file loads either of
-these and you have not added the line below, the feature is doing nothing --
-silently, since neither has anything to say when it is off.
-
-  * **Personality Crisis**: `(vm-pcrisis-mode 1)`
-
-    Without it, compositions are set up with none of your rules: no From
-    address chosen for you, no signature, no headers.  `(require 'vm-pcrisis)`
-    was how one switched it on in earlier releases, and now only loads the
-    file; the mode is autoloaded, so the `require` is not needed at all
-    (emacs-vm/vm#561).
-
-    While you are there: every name now begins with `vm-pcrisis-` where it
-    began with `vmpc-` (emacs-vm/vm#657).  Replacing that prefix is the whole
-    change -- `vm-pcrisis-conditions`, `vm-pcrisis-actions`,
-    `vm-pcrisis-reply-rules`, and the functions a rule names, such as
-    `vm-pcrisis-signature`.  The old names still work, so this can wait.
-
-    Two keep the old spelling, being files rather than symbols:
-    `~/.vmpc-auto-profiles`, and the `vmpc-profile` field written into BBDB
-    records.
-
-  * **vm-biff**: `(vm-biff-mode 1)`
-
-    Without it, no new-mail notification (emacs-vm/vm#512).
-
-Both can be switched off again with an argument of -1, which is the reason
-for the change: a feature installed by loading a file could never be
-switched off.
-
-## Names that were obsolete are gone
-
-Thirty-four compatibility aliases have been removed (emacs-vm/vm#594).  Each
-had been marked obsolete for at least four release cycles, and each printed a
-warning when a byte-compiled configuration used it.  If your init file sets one
-of these, it now sets a variable nothing reads, or calls a function that does
-not exist:
-
-  * the sixteen `vm-summary-*-face` names, plus `vm-summary-filed` and
-    `vm-summary-written` -- use the face names without the suffix,
-    `vm-summary-deleted` and so on
-  * `vm-mime-save-all-attachments-types`, `vm-mime-delete-all-attachments-types`
-    and their `-exceptions` -- use `vm-mime-saveable-types`,
-    `vm-mime-deletable-types` and theirs
-  * `vm-flag-message-read`, `vm-flag-message-unread`,
-    `vm-imap-folder-check-for-mail`, `vm-pop-folder-check-for-mail`,
-    `vm-decode-postponed-mime-message`, `vm-decode-postponed-mime-button`,
-    `vm-mime-attach-object-from-message`, `vm-mime-nuke-alternative-text/html`,
-    `vm-sort-threads-by-youngest-date`
-  * `vm-mime-alternative-select-method`,
-    `vm-mime-attachment-infer-type-for-text-attachments`,
-    `vm-w3m-use-w3m-minor-mode-map`, `vm-mime-uuencode-decoder-program` and
-    `-switches`
-
-`C-h v` or `C-h f` on the old name will say it is void; the replacement for
-each is in the list above.
-
-Twelve more went with them, having been marked obsolete just as long but
-needing a little more than a deleted line:
-
-  * `vm-imap-server-list`, `vm-load-headers-only`, `vm-mime-show-alternatives`
-    and `vm-summary-faces-mode` (the variable; the command of that name stays)
-    were variables nothing read -- setting one had done nothing for years
-  * `vm-mime-yank-attachments` was an alias of `vm-include-mime-attachments`
-  * `vm-mime-save-all-attachments` and `vm-mime-delete-all-attachments` were
-    aliases of `vm-save-all-attachments` and `vm-delete-all-attachments`
-  * `vm-run-message-hook` and `vm-run-message-hook-with-args` took their
-    arguments the other way round from `vm-run-hook-on-message` and its
-    `-with-args`
-  * `vm-mime-fsfemacs-encode-composition` and
-    `vm-mime-fsfemacs-encode-text-part` were older copies of
-    `vm-mime-encode-composition-internal` and `vm-mime-encode-text-part`,
-    called from nowhere
-  * `vm-mime-forward-local-external-bodies` decided the default of
-    `vm-mime-forward-saved-attachments`, which is now simply `t`.  If you set
-    the old one to t, set `vm-mime-forward-saved-attachments` to nil instead:
-    it says the same thing the other way up.
-
-## Emacs/W3 is no longer one of the HTML viewers
-
-The W3 browser was dropped from Emacs and is in no package archive, so nothing
-could supply it (emacs-vm/vm#707).  If your init file sets
-`vm-mime-text/html-handler` to `emacs-w3`, set it to `emacs-w3m`, `w3m`, `lynx`
-or nil; the default `auto-select` no longer considers it.  `vm-url-browser`
-values `w3-fetch` and `w3-fetch-other-frame` are gone the same way, as is the
-`url-w3` entry in `vm-url-retrieval-methods`, which no code ever implemented.
-
-emacs-w3m is a different package and is unaffected.
-
-## A log of what VM did, and how long it took
-
-Everything VM says is kept in the buffer `*VM Log*`, timed.  `M-x vm-show-log`
-shows it; nothing has to be turned on.  Each line says when, and how long
-since the line before it:
-
-```
-14:03:12.481 +2.140s +0.310cpu [6] INBOX: Retrieving message 400 (of 100000)...
-```
-
-An interval that is all real time and no CPU went on the network.
-
-`vm-log-level` is for the messages that are *not* shown: it takes a level on
-`vm-verbosity`'s scale and records everything up to it, so `(setq
-vm-log-level 10)` keeps the detail of a slow operation without changing what
-appears in the echo area.  `vm-log-max-lines` bounds the buffer, oldest lines
-first.
-
-## A folder says what type it is, and VM no longer guesses
-
-From_ and mboxcl2 are the same folder but for a `Content-Length` header on each
-message, so a folder cannot say which it is by looking like one.  VM used to
-decide by sniffing the first message, which read a maintainer's 1.1 GB IMAP
-cache as mboxcl2 while 6394 of its 6459 messages had no length.  The type is
-now something a folder is told, in one of two places.
-
-  * **The extension names the type.**  `vm-folder-type-by-extension-alist`
-    matches the file name's extension, literally, and a folder called
-    `sent.mboxcl2` is mboxcl2 wherever it sits:
-
-    ```elisp
-    (setq vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2)))
-    ```
-
-    That is the default, so a folder named for its type needs no
-    configuration at all.  It replaces `vm-folder-type-by-name-alist`, which
-    matched a regular expression against the name and was never released: a
-    pattern can be written so that it matches nothing, silently, and so that
-    it claims every folder in a directory, which for a directory of nine
-    From_ folders and one mboxcl2 is nine folders VM then refuses to read.
-    Both mistakes were made within a week of each other by the same person.
-
-    The cost is that a folder which cannot be renamed cannot be typed by its
-    name -- a primary inbox called `INBOX` is the case, and
-    `vm-default-folder-type` is the answer for one.
-
-  * **An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2`**
-    and written in that type.  A cache is VM's own file and VM writes every
-    message in it, so its type is known rather than guessed at, and the
-    lengths make the boundaries exact.  A cache that already exists keeps its
-    name and is read as whatever it is; nothing is converted and nothing is
-    refetched.
-
-`vm-default-folder-type` is `From_` on every platform now.  It was mboxcl2 on
-Solaris, AIX and System V, a guess about the local delivery agent, and it
-decides only folders that do not exist yet.
-
-`vm-trust-content-length` is **deprecated**.  It is what turned the sniffing
-on, and setting `vm-default-folder-type` to mboxcl2 used to require it: a
-statement about new folders was also a statement about every folder read.  Say
-it in the name instead.  For this release the sniffing still happens where it
-is switched on, and warns once per folder, naming the rule that would settle
-the question.
-
 ## VM 8.x.x released
+
+  * IMAP and POP no longer stop Emacs.  Fetching mail, loading a body, sending
+    flag changes, expunging, saving, quitting, synchronising, filing an `FCC:`
+    copy and listing mailboxes all happen while you carry on reading
+    (emacs-vm/vm#473).  The folder is not locked while they do: read it, move
+    about it, delete, mark, label and expunge as usual, and work that needs
+    the server runs when the session now running has finished, one session to
+    a folder.  New mail arrives a bunch at a time, so a large mailbox fills in
+    while you read it.  The mode line says what the folder is doing and how
+    far it has got, in the face `vm-net-session-face`.  Two things still wait
+    and say so: saving or copying a message whose body is still on the server,
+    and completing a folder name.  `C-g` works in both.
 
   * VM reads and writes mboxcl2, the mbox variant that keeps a
     `Content-Length` header and stores a message exactly as it arrived
@@ -217,8 +41,25 @@ the question.
     `vm-default-folder-type` says, and is read as one -- so a folder named
     that way which has no `Content-Length` headers is refused, with how to
     convert it, instead of being read as a From_ folder in silence
-    (emacs-vm/vm#610, emacs-vm/vm#620).  `vm-folder-type-by-extension-alist`
-    is the option.
+    (emacs-vm/vm#610, emacs-vm/vm#620).  The option is
+    `vm-folder-type-by-extension-alist`, which matches the extension
+    literally and replaces `vm-folder-type-by-name-alist`
+    (emacs-vm/vm#741).
+
+  * VM no longer decides between From_ and mboxcl2 by sniffing the first
+    message of a folder, so `vm-trust-content-length` is deprecated
+    (emacs-vm/vm#736).  Name the type instead, by the folder's extension or
+    with `vm-default-folder-type`, which is the answer for a folder that
+    cannot be renamed such as `INBOX`.  The sniffing still happens where the
+    option is switched on, and warns once per folder.
+
+  * `vm-default-folder-type` is `From_` on every platform.  It was mboxcl2 on
+    Solaris, AIX and System V, and it decides only folders that do not exist
+    yet.
+
+  * An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2` and
+    written in that type.  A cache that already exists keeps its name and is
+    read as whatever it is: nothing is converted and nothing is refetched.
 
   * Sent copies work with IMAP.  An `FCC:` header naming an IMAP maildrop
     files the copy on the server instead of writing a file named after the
@@ -232,13 +73,6 @@ the question.
     so a reader who did not notice the instruction got no copy at all; a
     configuration that still adds `vm-imap-save-composition` to the hook is
     harmless, since by then the copy is filed and the header gone.
-
-  * A long line survives the trip.  A line too long to send as it stands goes
-    out quoted-printable, so it arrives as the one line you wrote instead of
-    the whole message being BASE64 (emacs-vm/vm#593).
-
-  * A Subject with an accent in it is no longer sent raw when
-    `vm-send-using-mime` is off (emacs-vm/vm#606).
 
   * Mail from a sender who wrapped their own text is re-wrapped to your
     window, and VM can mark its own wrapping the same way, per RFC 3676
@@ -256,39 +90,14 @@ the question.
   * A meeting invitation is shown as what it says, rather than as a
     `text/calendar` attachment (emacs-vm/vm#85).
 
-  * Headers that arrive as raw 8-bit bytes are readable, not octets
-    (emacs-vm/vm#368, emacs-vm/vm#11), and MIME parameters with international
-    characters are understood and generated per RFC 2231 (emacs-vm/vm#367).
-
-  * An HTML part sent to an external browser takes its pictures and its
-    character set with it, so it looks like the message rather than a page of
-    broken images (emacs-vm/vm#506, emacs-vm/vm#387).
-
-  * HTML quoted in a reply keeps its own line breaks (emacs-vm/vm#369).
-
-  * `t` keeps your place in a long message instead of jumping to the top
-    (emacs-vm/vm#513).
-
-  * A count larger than the messages left acts on the ones that are there,
-    instead of refusing (emacs-vm/vm#550).
+  * MIME parameters with international characters are understood and generated
+    per RFC 2231 (emacs-vm/vm#367).
 
   * Long headers can be folded to one line, with a widget to unfold them:
     `vm-enable-shrunken-headers`.
 
-  * Acting on an attachment whose body is still on the server says so instead
-    of doing nothing (emacs-vm/vm#386).
-
   * IMAP folders are quicker to read: several message bodies are fetched in
     one command (emacs-vm/vm#185).
-
-  * Labels reach the server more reliably.  A flag the server refuses no
-    longer stops the others being stored (emacs-vm/vm#391), a refused change
-    is no longer overwritten by the server's stale copy (emacs-vm/vm#270), and
-    a copy saved to another folder says so when it carries the server's flags
-    rather than yours (emacs-vm/vm#38).
-
-  * VM no longer asks a server to clear `\Recent`, which RFC 3501 forbids and
-    some servers answered with an error (emacs-vm/vm#389).
 
   * Labels on an arriving message are added to the folder's list, so they turn
     up in completion; and `vm-expunge-label`, `vm-list-unused-labels`,
@@ -298,18 +107,14 @@ the question.
   * Incoming mail can be filed and labelled by a table of virtual folder
     selectors, `vm-virtual-filter-alist` (emacs-vm/vm#542).
 
-  * A folder visited through a symbolic link is saved through the link, rather
-    than replacing it with a file (emacs-vm/vm#532).
-
   * Opening a folder that has another name says so, since saving writes only
     one of them (emacs-vm/vm#185).
 
   * Killing a folder buffer takes its virtual folders with it, and asks first
     if any have unsaved changes (emacs-vm/vm#573).
 
-  * Thunderbird folders keep in step: a flag you turn off in VM is turned off
-    in the file (emacs-vm/vm#602), and `vm-sync-thunderbird-status` is now an
-    ordinary option (emacs-vm/vm#589).
+  * `vm-sync-thunderbird-status` is now an ordinary option
+    (emacs-vm/vm#589).
 
   * The manual has an appendix listing every command and user option, taken
     from the code, so it cannot fall behind (emacs-vm/vm#586).
@@ -326,14 +131,25 @@ the question.
   * vm-pcrisis and vm-pine are part of VM rather than add-ons to install.
     vm-pine is now called vm-postpone.
 
+  * Personality Crisis and vm-biff must now be switched on, since loading a
+    file no longer does it and neither says anything when it is off.  Add
+    `(vm-pcrisis-mode 1)` (emacs-vm/vm#561) or `(vm-biff-mode 1)`
+    (emacs-vm/vm#512) to your init file; without the first, compositions are
+    set up with none of your rules, and without the second there is no
+    new-mail notification.  `(require 'vm-pcrisis)` now only loads the file,
+    and is not needed at all since the mode is autoloaded.  An argument of -1
+    switches either off, which a feature installed by loading a file could
+    never be.
+
   * Personality Crisis is named after VM: every `vmpc-` symbol is now
     `vm-pcrisis-`, so the feature turns up when you complete `M-x vm-`, run
     `C-h a vm-`, or look through the `vm` customize tree
     (emacs-vm/vm#657).  Everything an init file can name keeps working under
     its old name: the options carry a value saved by customize across, and
     the conditions and actions are aliased too, since rules name them as
-    data.  `~/.vmpc-auto-profiles` keeps its name, being a file rather than
-    a symbol.
+    data.  `~/.vmpc-auto-profiles` and the `vmpc-profile` field written into
+    BBDB records keep their names, being a file and a field rather than
+    symbols.
 
   * vm-rfaddons.el is gone, and with it `vm-enable-addons` (emacs-vm/vm#606).
     What was worth keeping is part of VM, each with an ordinary option:
@@ -351,6 +167,12 @@ the question.
 
   * VM says less as it works: `vm-verbosity` defaults to 5, the level its own
     documentation calls normal.
+
+  * Everything VM says is kept, timed, in the buffer `*VM Log*`, each line
+    giving the real and CPU time since the line before it.  `M-x vm-show-log`
+    shows it and nothing has to be turned on.  `vm-log-level` takes a level
+    on `vm-verbosity`'s scale and records up to it without changing what
+    reaches the echo area; `vm-log-max-lines` bounds the buffer.
 
   * `vm-movemail-program` defaults to the movemail Emacs came with
     (emacs-vm/vm#566).
@@ -372,6 +194,25 @@ the question.
   * The drag-and-drop attach command on macOS, `vm-ns-attach-file`, is gone;
     dropping a file into a composition was never bound to it in the way its
     own comment described (emacs-vm/vm#531).
+
+  * Thirty-four compatibility aliases and twelve further obsolete names are
+    gone, each marked obsolete for at least four release cycles
+    (emacs-vm/vm#594).  An init file that names one now calls a function that
+    does not exist, or sets a variable nothing reads; the ticket lists every
+    name and its replacement.  Two to watch: the sixteen `vm-summary-*-face`
+    names lose the `-face` suffix, and
+    `vm-mime-forward-local-external-bodies` set to t becomes
+    `vm-mime-forward-saved-attachments` set to nil, the same thing the other
+    way up.
+
+  * Emacs/W3 is no longer one of the HTML viewers, the browser having been
+    dropped from Emacs and being in no package archive (emacs-vm/vm#707).  If
+    your init file sets `vm-mime-text/html-handler` to `emacs-w3`, set it to
+    `emacs-w3m`, `w3m`, `lynx` or nil; the default `auto-select` no longer
+    considers it.  The `vm-url-browser` values `w3-fetch` and
+    `w3-fetch-other-frame` and the `url-w3` entry in
+    `vm-url-retrieval-methods` are gone the same way.  emacs-w3m is a
+    different package and is unaffected.
 
   * Three misspelled option names were corrected, and the misspellings are
     gone (emacs-vm/vm#589).
