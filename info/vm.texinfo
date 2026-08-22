@@ -7688,15 +7688,18 @@ new developers.
 
 @unnumberedsec Savannah project site
 
-The changes made in each of the releases is described in the @samp{NEWS}
-file, which can be found in the source code repository.  The changes made
-in versions up to 7.19 are described in the @samp{CHANGES} file.
+The changes made in each of the releases are described in numbered NEWS
+files, which can be found in the source code repository.  The newest is
+@samp{NEWS-3.md}, covering 8.3.0 onwards; @samp{NEWS-2.md} covers 8.0.0
+through 8.2.0b1, and @samp{NEWS-1.md} the releases up to 7.19.  A file is
+never renamed, so the newest entries are always at the front of the
+highest-numbered one.
 
 The @code{Download} link on the Savannah project page, takes you to the
 downloads area where all the recent releases are available.  Under the
 @code{Source Code} menu, the @code{Browse Sources Repository} takes you
-to the source files, which include, among others, the @samp{NEWS} and
-@samp{CHANGES} files mentioned above.
+to the source files, which include, among others, the NEWS files
+mentioned above.
 
 If you have obtained VM through a secondary distribution that does not
 include all the sources, you can browse and download the sources from

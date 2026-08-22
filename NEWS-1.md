@@ -1,10 +1,14 @@
--*-Text-*-
+# VM NEWS, releases through 7.19
 
-This file contains the list of changes up to revision 7.19, developed
-by Kyle Jones.  For recent changes, please see the `NEWS' file.
+Kyle Jones's releases, 4.10 in May 1989 through 7.19 in September 2004.  A
+frozen record, kept as he wrote it: the wording, the spelling and the
+attributions are his.
 
+Later releases are in NEWS-2.md, 8.0.0 through 8.2.0b1, and NEWS-3.md, 8.3.0
+onwards.  There is no file called NEWS: the newest entries are always at the
+front of the highest-numbered file, and an older file is never renamed.
 
-VM 7.19 released (29 September 2004)
+## VM 7.19 released (29 September 2004)
 
 * New variables:
   + vm-stunnel-program-additional-configuration-file
@@ -19,7 +23,7 @@ VM 7.19 released (29 September 2004)
   copy of a message.  It has the unexpected side-effect of
   breaking 'D' when vm-auto-decode-mime-messages is nil.
 
-VM 7.18 released (2 November 2003)
+## VM 7.18 released (2 November 2003)
 
 * New variables:
   + vm-default-new-folder-line-ending-type
@@ -42,7 +46,7 @@ VM 7.18 released (2 November 2003)
   presentation copy.  This helps prevent selection of the presentation
   buffer when the user likely needs to do M-x recover-file.
 
-VM 7.17 released (6 July 2003)
+## VM 7.17 released (6 July 2003)
 
 * New commands:
   + vm-create-imap-folder
@@ -71,7 +75,7 @@ VM 7.17 released (6 July 2003)
   type mention the conversion that will happen in the action
   string.
 
-VM 7.16 released (26 May 2003)
+## VM 7.16 released (26 May 2003)
 
 * New commands:
   + vm-visit-imap-folder
@@ -105,7 +109,7 @@ VM 7.16 released (26 May 2003)
   vm-set-forwarded-flag.
 * IMAP BYE responses are always untagged; changed code to match.
 
-VM 7.15 released (3 May 2003)
+## VM 7.15 released (3 May 2003)
 
 * Makefile: filter echo's output through tr to avoid CRs
   under Cygwin.
@@ -137,7 +141,7 @@ VM 7.15 released (3 May 2003)
   if the connection is closed or the process associated with the
   connection has exited.
 
-VM 7.14 released (27 March 2003)
+## VM 7.14 released (27 March 2003)
 
 * moved (provide ...) to bottom of .el files.
 * Made the vm-undo command undo everything the last command did.
@@ -146,11 +150,11 @@ VM 7.14 released (27 March 2003)
   called from vm-add-undo-boundaries now.  vm-add-undo-boundaries
   is called from post-command-hook.
 
-VM 7.13 released (19 March 2003)
+## VM 7.13 released (19 March 2003)
 
 * '(vm-marker -> (vm-marker in vm-mime-parse-entity.
 
-VM 7.12 released (14 March 2003)
+## VM 7.12 released (14 March 2003)
 
 * vm-pop-make-session: use new stunnel configuration code
   introduced in VM 7.11.  This was only installed in
@@ -163,7 +167,7 @@ VM 7.12 released (14 March 2003)
   the converted object buffer would be used in the folder buffer
   with disastrous results.
 
-VM 7.11 released (5 March 2003)
+## VM 7.11 released (5 March 2003)
 
 * fixed check for usability of uncompface's -X flag, needed
   symbol to be unquoted.
@@ -189,7 +193,7 @@ VM 7.11 released (5 March 2003)
 * added ] to char class exclusion in mailto spec in vm-url-regexp
   to help with MS EXchange's [mailto:foo] syntax.
 
-VM 7.10 released (5 March 2003)
+## VM 7.10 released (5 March 2003)
 
 * vm-menu-url-browser-menu: add third element to clipboard and
   Konqueror entries--- VM's menu code under GNU Emacs requires it.
@@ -200,7 +204,7 @@ VM 7.10 released (5 March 2003)
 * Makeflie: default install target now installs the .el files.
 * added support for version 4 of stunnel.
 
-VM 7.09 released (3 March 2003)
+## VM 7.09 released (3 March 2003)
 
 * New variables:
   + vm-mime-forward-local-external-bodies
@@ -244,7 +248,7 @@ VM 7.09 released (3 March 2003)
 * added Konqueror to vm-menu-url-browser-menu.
 * added option to send to the X clipboard to vm-menu-url-browser-menu.
 
-VM 7.08 released (14 February 2003)
+## VM 7.08 released (14 February 2003)
 
 * New variables
   + vm-mime-ignore-missing-multipart-boundary
@@ -331,7 +335,7 @@ VM 7.08 released (14 February 2003)
   contents rather than virtual copy.  Fixes utterly brokwn
   behavior when run on a virtual folder.
 
-VM 7.07 released (5 June 2002)
+## VM 7.07 released (5 June 2002)
 
 * vm-sort-messages: move first call of
   vm-update-summary-and-mode-line out to callers.  Threading bonks
@@ -343,7 +347,7 @@ VM 7.07 released (5 June 2002)
   vm-update-summary-and-mode-line to clear the decks before
   thread sorting.
 
-VM 7.06 released (3 June 2002)
+## VM 7.06 released (3 June 2002)
 
 * vm-save-folder,vm-write-file: support vm-default-folder-permission-bits here,
   since a folder might be created when it is saved.
@@ -358,7 +362,7 @@ VM 7.06 released (3 June 2002)
   coding system to 'raw-text' which should stop write-region from
   question the coding system inside mail-do-fcc.
 
-VM 7.05 released (10 May 2002)
+## VM 7.05 released (10 May 2002)
 
 * New variables:
   + vm-default-folder-permission-bits
@@ -392,7 +396,7 @@ VM 7.05 released (10 May 2002)
   of by oldest member.  Also sort thread siblings by date instead
   of by message-id; sort by messge-id if dates are equal (rare).
 
-VM 7.04 released (18 April 2002)
+## VM 7.04 released (18 April 2002)
 
 * New commands:
   + vm-mime-attach-object-from-message (bound to $ a)
@@ -429,12 +433,12 @@ VM 7.04 released (18 April 2002)
 * vm-mime-display-button-xxxx: always insert the button, even we
   have no method for displaying the MIME object.
 
-VM 7.03 released (4 March 2002)
+## VM 7.03 released (4 March 2002)
 
 * fixed defcustom syntax errors.
 * minor compiler warning cleanup.
 
-VM 7.02 released (3 March 2002)
+## VM 7.02 released (3 March 2002)
 
 * New variables:
   + vm-uncompface-program
@@ -458,7 +462,7 @@ VM 7.02 released (3 March 2002)
 * use defcustom instead of defvar for most user customization
   variables.
 
-VM 7.01 released (22 January 2002)
+## VM 7.01 released (22 January 2002)
 
 * New variables:
   + vm-mime-use-w3-for-text/html
@@ -500,7 +504,7 @@ VM 7.01 released (22 January 2002)
 * put image/xpm ahead of image/pbm in vm-mime-image-type-converter-alist.
 * vm-parse-date: find year even if it's at the end of line.
 
-VM 7.00 released (2 December 2001)
+## VM 7.00 released (2 December 2001)
 
 * New commands:
   + vm-visit-pop-folder
@@ -561,7 +565,7 @@ VM 7.00 released (2 December 2001)
 * vm-pop-stop-status-timer, vm-imap-stop-status-timer: if any
   status was reported, do (message "") to clear the echo area.
 
-VM 6.99 released (25 November 2001)
+## VM 6.99 released (25 November 2001)
 
 * New commands:
   + vm-scroll-forward-one-line
@@ -607,7 +611,7 @@ VM 6.99 released (25 November 2001)
   mail-signature is a string, subject the result to the same
   check for a proper signature separator.
 
-VM 6.98 released (18 November 2001)
+## VM 6.98 released (18 November 2001)
 
 * New variables:
   + vm-mime-use-image-strips
@@ -651,7 +655,7 @@ VM 6.98 released (18 November 2001)
   the message body.  Use MMDF for the temp folder type.
 * all your base no longer are belong to us.
 
-VM 6.97 released (28 October 2001)
+## VM 6.97 released (28 October 2001)
 
 * New variables:
   + vm-mime-require-mime-version-header
@@ -708,7 +712,7 @@ VM 6.97 released (28 October 2001)
   command and if non-zero return nil.  Fixed all callers to deal
   with this new reality.
 
-VM 6.96 released (5 September 2001)
+## VM 6.96 released (5 September 2001)
 
 * print-autoloads: handle fset calls.  There are paths through
   the code that reach functions that are to be defined by fset
@@ -765,7 +769,7 @@ VM 6.96 released (5 September 2001)
   seen before.  This is a heuristic to try to trim off
   parents-by-subject that are only parents due to clock skew.
 
-VM 6.95 released (23 July 2001)
+## VM 6.95 released (23 July 2001)
 
 * New variables:
   + vm-mime-attachment-auto-suffix-alist
@@ -821,14 +825,14 @@ VM 6.95 released (23 July 2001)
   then skip past them before applying the user's header filter
   variables.
 
-VM 6.94 released (9 July 2001)
+## VM 6.94 released (9 July 2001)
 
 * in the defconst of vm-menu-mime-dispose-menu, check whether a
   non-string s-expression is allowed as a menu element name
   before trying to use one.  Versions of XEmacs prior to 21.4
   don't allow expressions as item names.
 
-VM 6.93 released (23 June 2001)
+## VM 6.93 released (23 June 2001)
 
 * New variables:
   + vm-folder-file-precious-flag
@@ -882,7 +886,7 @@ VM 6.93 released (23 June 2001)
   can lead to B being considered the parent of A if A and B have
   the same subject and vm-thread-using-subject is non-nil.
 
-VM 6.92 released (11 March 2001)
+## VM 6.92 released (11 March 2001)
 
 * vm-imap-check-mail: throw to 'end-of-session instead of 'done.
   Fixes problem of vm-spooled-mail-waiting not being set.
@@ -907,7 +911,7 @@ VM 6.92 released (11 March 2001)
   vm-mime-default-face-charsets to apply to MULE-enabled Emacs
   and XEmacs.
 
-VM 6.91 released (1 March 2001)
+## VM 6.91 released (1 March 2001)
 
 * vm-mime-can-display-internal: check charset to verify that we
   can display it when checking text/html.
@@ -937,7 +941,7 @@ VM 6.91 released (1 March 2001)
   parameters from the old type and give them to the new type.
 * all your base are belong to us
 
-VM 6.90 released (9 January 2001)
+## VM 6.90 released (9 January 2001)
 
 * vm-compose-mail: Use apply instead of funcall to call the yank
   action.  We aren't passing a list of arguments to the function.
@@ -953,7 +957,7 @@ VM 6.90 released (9 January 2001)
 * vm-yank-message: call vm-decode-mime-encoded-words in the correct buffer.
 * default value of vm-auto-center-summary changed from nil to 0.
 
-VM 6.89 released (22 December 2000)
+## VM 6.89 released (22 December 2000)
 
 * vm-yank-message: MIME decode the headers of the yanked message
   if vm-display-using-mime is non-nil.
@@ -978,7 +982,7 @@ VM 6.89 released (22 December 2000)
   the display function because callers expect it.  This wasn't
   happening in the FSF Emacs part of the conditional.
 
-VM 6.88 released (11 December 2000)
+## VM 6.88 released (11 December 2000)
 
 * New variables:
   + vm-folders-summary-mode-hook
@@ -1029,7 +1033,7 @@ VM 6.88 released (11 December 2000)
   once we know there is mail waiting.  We still need to retrieve
   data for the remaining folders for the folders summary.
 
-VM 6.87 released (29 November 2000)
+## VM 6.87 released (29 November 2000)
 
 * New commands:
   + vm-delete-duplicate-messages
@@ -1066,7 +1070,7 @@ VM 6.87 released (29 November 2000)
 * vm-unbury-buffer: wrapped call to switch-to-buffer in condition-case
   in case it fails (dedicated window, minibuffer window)
 
-VM 6.86 released (26 November 2000)
+## VM 6.86 released (26 November 2000)
 
 * New variables:
   + vm-pop-read-quit-response (default value is t)
@@ -1106,7 +1110,7 @@ VM 6.86 released (26 November 2000)
   appear everywhere vm-mode-map is used thereafter.
 * panic buffoon's color changed from rgb:ff/7f/ff to rgb:e1/92/46 (tan).
 
-VM 6.85 released (23 November 2000)
+## VM 6.85 released (23 November 2000)
 
 * New commands:
   + vm-move-to-previous-button
@@ -1153,7 +1157,7 @@ VM 6.85 released (23 November 2000)
   if a new message has arrived.
 * use a normal keymap instead of a sparse keymap for vm-mode-map.
 
-VM 6.84 released (15 November 2000)
+## VM 6.84 released (15 November 2000)
 
 * vm-submit-bug-report: mail-user-agent should be a symbol not a
   list--- fixed.
@@ -1169,7 +1173,7 @@ VM 6.84 released (15 November 2000)
   just check fboundp instead of xemacs-mule-p or fsfemacs-mule-p.
   This should help XEmacs-NT+file-coding.
 
-VM 6.83 released (14 November 2000)
+## VM 6.83 released (14 November 2000)
 
 * New variables:
   + vm-page-continuation-glyph
@@ -1224,7 +1228,7 @@ VM 6.83 released (14 November 2000)
 * vm-expunge-folder: increment vm-modification-counter in the
   real folder buffers to invalidate vm-totals.
 
-VM 6.82 released (10 November 2000)
+## VM 6.82 released (10 November 2000)
 
 * New variables:
   + vm-url-retrieval-methods
@@ -1250,7 +1254,7 @@ VM 6.82 released (10 November 2000)
   sequence at the end to delete then insert.  It fixes the
   parsing of this header
      From: "Cajsa Ottesj=?ISO-8859-1?B?9g==?=" <cajsao@ling.gu.se>
-  Apparently if ö is inserted before \366 in a multibyte buffer,
+  Apparently if Ã¶ is inserted before \366 in a multibyte buffer,
   Emacs believes that the two characters are one character and
   moves point forward past the \366.  This loses because the \366
   needs to be deleted.
@@ -1277,7 +1281,7 @@ VM 6.82 released (10 November 2000)
 * vm-mime-display-internal-multipart/alternative: use the new 'deep'
   flag of vm-mime-can-display-internal.
 
-VM 6.81 released (7 November 2000)
+## VM 6.81 released (7 November 2000)
 
 * vm-menu-mime-dispose-menu: take car of vm-mm-layout-type to get
   type. (oops)
@@ -1290,7 +1294,7 @@ VM 6.81 released (7 November 2000)
 * vm-mime-display-internal-text/enriched: charset decode the body
   after inserting it.
 
-VM 6.80 released (6 November 2000)
+## VM 6.80 released (6 November 2000)
 
 * vm-scroll-forward: set window start to point-min if we just
   exposed a hidden message window and we're transitioning frmo
@@ -1305,7 +1309,7 @@ VM 6.80 released (6 November 2000)
   8-bit char width conflct between summary and folder buffers and
   to display undeclared 8-bit chars "properly" in the folder buffer.
 
-VM 6.79 released (5 November 2000)
+## VM 6.79 released (5 November 2000)
 
 * vm-make-presentation-copy: force use of multibyte presentation
   buffer.  Otherwise non-ASCII characters won't be displayed
@@ -1327,7 +1331,7 @@ VM 6.79 released (5 November 2000)
   property to a charset decoded region so that non-MULE XEmacs
   and FSF Emacs can display non-ISO-8859-1 chars in the summary.
 
-VM 6.78 released (5 November 2000)
+## VM 6.78 released (5 November 2000)
 
 * vm-save-message-sans-headers: if target file looks like a mail
   folder, ask the user if they really want to append to it.
@@ -1378,7 +1382,7 @@ VM 6.78 released (5 November 2000)
 * vm-decode-coding-region: use temp buffer for XEmacs also;
   generalize code to work for XEmacs and FSF Emacs.
 
-VM 6.77 released (2 November 2000)
+## VM 6.77 released (2 November 2000)
 
 * changed keybinding of vm-expunge-folder from # to ### so that
   typing it accidentally is less likely.
@@ -1436,7 +1440,7 @@ VM 6.77 released (2 November 2000)
   vm-toolbar-pixmap-directory, which is better done before
   vm-toolbar-initialize is called.
 
-VM 6.76 released (5 September 2000)
+## VM 6.76 released (5 September 2000)
 
 * New variables:
   + vm-movemail-program-switches
@@ -1516,7 +1520,7 @@ VM 6.76 released (5 September 2000)
 * vm-mm-encoded-header: bind case-fold-search to t during
   search for encoded words.
 
-VM 6.75 released (27 August 1999)
+## VM 6.75 released (27 August 1999)
 
 * New variables:
   + vm-mail-send-hook
@@ -1528,7 +1532,7 @@ VM 6.75 released (27 August 1999)
 * formatting and typo fixes in the manual and docstrings
   from will@fumblers.org.
 
-VM 6.74 released (2 August 1999)
+## VM 6.74 released (2 August 1999)
 
 * New variables:
   + vm-mime-external-content-type-exceptions
@@ -1537,7 +1541,7 @@ VM 6.74 released (2 August 1999)
 * vm-mime-discard-layout-contents: set m to be the layout's
   message, not the end of the layout's body.
 
-VM 6.73 released (27 July 1999)
+## VM 6.73 released (27 July 1999)
 
 * New variables:
   + vm-mime-decode-for-preview
@@ -1559,7 +1563,7 @@ VM 6.73 released (27 July 1999)
   text/html displayable if the character set is displayable.
   For text/html continue to require W3.
 
-VM 6.72 released (21 May 1999)
+## VM 6.72 released (21 May 1999)
 
 * New commands:
   + vm-delete-mime-object
@@ -1596,7 +1600,7 @@ VM 6.72 released (21 May 1999)
   This generates keys that the thread sort needs before the sort
   happens instead of during it.  Fixes thread sorting bugs.
 
-VM 6.71 released (8 April 1999)
+## VM 6.71 released (8 April 1999)
 
 * vm-mime-display-internal-text/plain: get message struct from
   the MIME layout instead of from vm-message-pointer, since the
@@ -1607,7 +1611,7 @@ VM 6.71 released (8 April 1999)
 * bind format-alist to nil around calls to insert-file-contents
   in MIME composition encoding functions.
 
-VM 6.70 released (21 March 1999)
+## VM 6.70 released (21 March 1999)
 
 * New variables:
   + vm-fill-paragraphs-containing-long-lines
@@ -1621,7 +1625,7 @@ VM 6.70 released (21 March 1999)
   child keymap and creating a circular keymap structure in a
   subsequent call.
 
-VM 6.69 released (16 March 1999)
+## VM 6.69 released (16 March 1999)
 
 * moved code that sets vm-xemacs-p, vm-fsfemacs-p, etc. to vm-version.el.
   Moved other basic feature checking code to vm-version.el.
@@ -1641,7 +1645,7 @@ VM 6.69 released (16 March 1999)
 * vm-compose-mail: this function is a VM entry point so call
   vm-session-initialization.
 
-VM 6.68 released (25 February 1999)
+## VM 6.68 released (25 February 1999)
 
 * put user specified Netscape switches before the -remote stuff
   in the arg list to Netscape.
@@ -1675,7 +1679,7 @@ VM 6.68 released (25 February 1999)
 * vm-imap-make-session: quote (using IMAP quoting rules) login
   name and password that are sent as part of the LOGIN command.
 
-VM 6.67 released (7 February 1999)
+## VM 6.67 released (7 February 1999)
 
 * vm-mime-parse-entity-safe: pass message and passing-message-only
   flag to vm-mime-parse-entity.
@@ -1694,7 +1698,7 @@ VM 6.67 released (7 February 1999)
   provided) before parsing and transfer encoding the object.
   vm-mime-xemacs-encode-composition similarly modified.
 
-VM 6.66 released (5 February 1999)
+## VM 6.66 released (5 February 1999)
 
 * New variables:
   + vm-mime-qp-decoder-program
@@ -1727,7 +1731,7 @@ VM 6.66 released (5 February 1999)
   Use this new argument appropriately in various places so the
   message slot gets filled in more places.
 
-VM 6.65 released (29 January 1999)
+## VM 6.65 released (29 January 1999)
 
 * New commands:
   + vm-mime-attach-buffer
@@ -1751,7 +1755,7 @@ VM 6.65 released (29 January 1999)
 * vm-so-sortable-subject: collapse consecutive whitespace chars
   to a single space after prefix/suffix processing.
 
-VM 6.64 released (17 January 1999)
+## VM 6.64 released (17 January 1999)
 
 * vm-mail-mode-insert-message-id-maybe: (stringp
   'mail-host-address) -> (stringp mail-host-address).
@@ -1774,7 +1778,7 @@ VM 6.64 released (17 January 1999)
 * vm-submit-bug-report: use 'vm-mail instead of 'mail for sending 
   bug reports.  Less confusing, and will work most of the time.
 
-VM 6.63 released (14 December 1998)
+## VM 6.63 released (14 December 1998)
 
 * set selective-display to nil in various places in the code
   where write-region and call-process-region (which calls
@@ -1822,7 +1826,7 @@ VM 6.63 released (14 December 1998)
 * vm-misc.el: moved macros to vm-macro.el.
 * Makefile: Preload vm-macro.el instead of vm-misc.el.
 
-VM 6.62 released (9 September 1998)
+## VM 6.62 released (9 September 1998)
 
 * vm-mouse-send-url-to-netscape: Change commas to %2C to avoid
   confusing Netscape -remote.
@@ -1835,7 +1839,7 @@ VM 6.62 released (9 September 1998)
   they'll have to either load W3 explicitly or set up an autoload
   for w3-region.
 
-VM 6.61 released (17 August 1998)
+## VM 6.61 released (17 August 1998)
 
 * vm-find-trailing-message-separator: point wasn't being moved
   backward when it should be.  Change check to use the return
@@ -1843,7 +1847,7 @@ VM 6.61 released (17 August 1998)
 * vm-build-message-list: add the starting position of the garbage 
   to the garbage warning.
 
-VM 6.60 released (17 August 1998)
+## VM 6.60 released (17 August 1998)
 
 * don't use gray75 to initialize gui-button-face under Windows
   (FSF Emacs only).  Use only primary colors instead.
@@ -1857,7 +1861,7 @@ VM 6.60 released (17 August 1998)
 * vm-visit-folder-other-frame: call vm-session-initialization
   even if the command is not called interactively.
 
-VM 6.59 released (24 July 1998)
+## VM 6.59 released (24 July 1998)
 
 * New variables:
   + vm-default-From_-folder-type
@@ -1872,11 +1876,11 @@ VM 6.59 released (24 July 1998)
   for hyper-apropos.  Change previous other uses of `foo' to
   ``foo''.
 
-VM 6.58 released (21 July 1998)
+## VM 6.58 released (21 July 1998)
 
 * fixed typo in vm-mime-fsfemacs-encode-composition; e -> o.
 
-VM 6.57 released (21 July 1998)
+## VM 6.57 released (21 July 1998)
 
 * added a defvar for timer-list in vm-folder.el.
 * added defvars for standard-display-table,
@@ -1899,7 +1903,7 @@ VM 6.57 released (21 July 1998)
   a MIME object only if the user wants it displayed internally,
   not just if it can be displayed internally.
 
-VM 6.56 released (14 July 1998)
+## VM 6.56 released (14 July 1998)
 
 * vm-get-spooled-mail: set the non-file maildrop flag on each pass 
   though the loop.
@@ -1909,7 +1913,7 @@ VM 6.56 released (14 July 1998)
 * removed greeting block on Cyrus server.
 * Shapiro typo fixes.
 
-VM 6.55 released (13 July 1998)
+## VM 6.55 released (13 July 1998)
 
 * vm-mail-mode-insert-message-id-maybe: check mail-host-address
   with stringp instead of boundp before using its value.
@@ -1922,7 +1926,7 @@ VM 6.55 released (13 July 1998)
   POP template will match both.
 * vm-imap-check-mail: bail early if message count in mailbox is zero.
 
-VM 6.54 released (13 July 1998)
+## VM 6.54 released (13 July 1998)
 
 * first crack at IMAP support.
 * New commands:
@@ -1963,14 +1967,14 @@ VM 6.54 released (13 July 1998)
 * vm-expunge-pop-messages: set buffer-read-only to nil in
   trouble-alert buffer before trying to modify erase it.
 
-VM 6.53 released (29 June 1998)
+## VM 6.53 released (29 June 1998)
 
 * vm-mf-default-action: needed car of vm-mm-layout-type to
   extract type string.
 * vm-mime-display-button-xxxx: don't display button unless
   there's a defined method for displaying the object.
 
-VM 6.52 released (28 June 1998)
+## VM 6.52 released (28 June 1998)
 
 * New variables:
   + vm-auto-displayed-mime-content-type-exceptions
@@ -2001,7 +2005,7 @@ VM 6.52 released (28 June 1998)
 * support foregroundToolBarColor symbol in the 'small' set of
   toolbar pixmaps (XEmacs only).
 
-VM 6.51 released (15 June 1998)
+## VM 6.51 released (15 June 1998)
 
 * don't call make-face if no face support is compiled into Emacs
   (FSF Emacs only).
@@ -2015,7 +2019,7 @@ VM 6.51 released (15 June 1998)
   vm-mime-mule-charset-to-coding-alist if vm-fsfemacs-mule-p is
   non-nil.
 
-VM 6.50 released (10 June 1998)
+## VM 6.50 released (10 June 1998)
 
 * vm-rename-current-mail-buffer: changed to recognize new default
   composition buffer name introduced in 6.49.
@@ -2037,7 +2041,7 @@ VM 6.50 released (10 June 1998)
   filename when creating a tempfile for use by an external MIME
   viewer.
 
-VM 6.49 released (4 June 1998)
+## VM 6.49 released (4 June 1998)
 
 * New variables:
   + vm-infer-mime-types
@@ -2051,7 +2055,7 @@ VM 6.49 released (4 June 1998)
 * default value of vm-auto-decode-mime-messages changed from nil
   to t.
 
-VM 6.48 released (1 June 1998)
+## VM 6.48 released (1 June 1998)
 
 * New variables:
   + vm-spooled-mail-waiting-hook
@@ -2084,7 +2088,7 @@ VM 6.48 released (1 June 1998)
   retrieved or not.  Not really correct but it is what the user
   expects.
 
-VM 6.47 released (8 April 1998)
+## VM 6.47 released (8 April 1998)
 
 * vm-write-string: bind buffer-read-only to nil before
   attempting to modify the buffer.
@@ -2104,11 +2108,11 @@ VM 6.47 released (8 April 1998)
 * If prefix arg is given to vm-visit-virtual-folder-* commands, say
   "read only" in the prompt string.
 
-VM 6.46 released (30 March 1998)
+## VM 6.46 released (30 March 1998)
 
 * don't clear Message-ID and Date headers after sending the message.
 
-VM 6.45 released (29 March 1998)
+## VM 6.45 released (29 March 1998)
 
 * New variables:
   + vm-mail-header-insert-date
@@ -2138,14 +2142,14 @@ VM 6.45 released (29 March 1998)
   real message instead of a virtual and potentially unmirrored
   message.
 
-VM 6.44 released (24 February 1998)
+## VM 6.44 released (24 February 1998)
 
 * vm-resend-bounced-message: insert Resent-To header near the top 
   of the composition instead of near the bottom.
 * provide second argument to format-time-string for older
   versions of XEmacs that require it.
 
-VM 6.43 released (18 February 1998)
+## VM 6.43 released (18 February 1998)
 
 * only use char-to-int if defined, use identity function
   otherwise.
@@ -2166,7 +2170,7 @@ VM 6.43 released (18 February 1998)
 * vm-mail-internal: add a Message-ID header.
 * vm-mail-send: add a Date header if not already present.
 
-VM 6.42 released (16 February 1998)
+## VM 6.42 released (16 February 1998)
 
 * New variables:
   + vm-pop-expunge-after-retrieving
@@ -2185,7 +2189,7 @@ VM 6.42 released (16 February 1998)
 * dropped use of vm-with-virtual-selector-variables in favor of
   using an alist.
 
-VM 6.41 released (11 February 1998)
+## VM 6.41 released (11 February 1998)
 
 * New variables:
   + vm-index-file-suffix
@@ -2208,7 +2212,7 @@ VM 6.41 released (11 February 1998)
   so we're sure to do buffer switch and unnarrowing necessary to
   retrieve the desired buffer contents.
 
-VM 6.40 released (30 January 1998)
+## VM 6.40 released (30 January 1998)
 
 * New variables:
   + vm-mime-7bit-composition-charset
@@ -2234,7 +2238,7 @@ VM 6.40 released (30 January 1998)
   revert-buffer" message and after a quit is signaled and caught
   in vm-get-spooled-mail.
 
-VM 6.39 released (20 January 1998)
+## VM 6.39 released (20 January 1998)
 
 * New commands:
   + vm-burst-digest-to-temp-folder
@@ -2272,7 +2276,7 @@ VM 6.39 released (20 January 1998)
   Protect value of buffer-file-coding-system from possible
   changes by insert-file-contents.
 
-VM 6.38 released (15 January 1998)
+## VM 6.38 released (15 January 1998)
 
 * add vm-virtual-selector-clause property to new selectors.
 * vm-read-virtual-selector: removed hard coded list of selectors
@@ -2284,7 +2288,7 @@ VM 6.38 released (15 January 1998)
   messages instead of the underlying real messages when current
   folder is a virtual folder.
 
-VM 6.37 released (29 December 1997)
+## VM 6.37 released (29 December 1997)
 
 * Folders menu code: create directories by default in vm-folder-directory.
 * added name parameter to vm-create-virtual-folder for use by
@@ -2307,7 +2311,7 @@ VM 6.37 released (29 December 1997)
 * report null results in mark commands as "No message marked"
   instead of "0 messages marked".
 
-VM 6.36 released (19 December 1997)
+## VM 6.36 released (19 December 1997)
 
 * vm-yank-message: commented out text/html code.
 * added toolbar initialization status message (XEmacs only).
@@ -2337,7 +2341,7 @@ VM 6.36 released (19 December 1997)
 * only delete the frame used for completion if VM created it.
 * vm-fsfemacs-p: Don't insist on v19.
 
-VM 6.35 released (24 November 1997)
+## VM 6.35 released (24 November 1997)
 
 * typo fixes
 * Gregory Neil Shapiro's Emacs 20 MULE patches, which inserted
@@ -2377,7 +2381,7 @@ VM 6.35 released (24 November 1997)
   system when inserting an attached file if the type of the
   attachment is not a textual MIME type.
 
-VM 6.34 released (15 September 1997)
+## VM 6.34 released (15 September 1997)
 
 * vm: use other frame if folder is visible there.
 * vm-auto-archive-messages: don't silently block archival
@@ -2388,7 +2392,7 @@ VM 6.34 released (15 September 1997)
 * vm-multiple-fonts-possible-p: added win32 as a window system
   that supports multiple fonts.
 
-VM 6.33 released (19 July 1997)
+## VM 6.33 released (19 July 1997)
 
 * vm-undisplay-buffer: don't delete frames unless both
   vm-mutable-windows and pop-up-frames are not non-nil.  Loop
@@ -2411,7 +2415,7 @@ VM 6.33 released (19 July 1997)
 * don't recognize <URL:...> as an URL if it contains a newline.
 * vm-scroll-backward: make argument optional.
 
-VM 6.32 released (30 May 1997)
+## VM 6.32 released (30 May 1997)
 
 * vm-toolbar-install-toolbar: don't change toolbar size specifier
   on frame unless VM created the frame.
@@ -2442,7 +2446,7 @@ VM 6.32 released (30 May 1997)
 * vm-mail-internal: support mail-personal-alias-file, fall back
   to ~/.mailrc if it is nil.
 
-VM 6.31 released (11 May 1997)
+## VM 6.31 released (11 May 1997)
 
 * vm-toolbar-support-possible-p: don't check device type, install
   toolbar if the 'toolbar feature is present.
@@ -2472,7 +2476,7 @@ VM 6.31 released (11 May 1997)
 * vm-burst-digest will now descend into nested MIME layouts to find
   digests to burst.
 
-VM 6.30 released (28 April 1997)
+## VM 6.30 released (28 April 1997)
 
 * vm-mail-send: rename and/or delete the composition buffer before
   trying to make the replied/forward/etc. attribute change, since
@@ -2494,7 +2498,7 @@ VM 6.30 released (28 April 1997)
   instantiated even if they aren't necessarily visible on the
   currently selected device.
 
-VM 6.29 released (23 April 1997)
+## VM 6.29 released (23 April 1997)
 
 * default value of vm-honor-mime-content-disposition now nil.
 * disable the setting of stack-trace-on-error for now.
@@ -2503,7 +2507,7 @@ VM 6.29 released (23 April 1997)
 * Makefile: doc fixes
 * Shapiro typo fixes.  
 
-VM 6.28 released (22 April 1997)
+## VM 6.28 released (22 April 1997)
 
 * added status messages for vm-mark-all-messages and vm-clear-all-marks.
 * vm-mime-set-extent-glyph-for-type: don't croak on unknown
@@ -2526,7 +2530,7 @@ VM 6.28 released (22 April 1997)
   insert into the composition buffer instead of directly into the
   digest buffer.
 
-VM 6.27 released (16 April 1997)
+## VM 6.27 released (16 April 1997)
 
 * vm-mime-rewrite-failed-button: add newline to displayed error
   string.
@@ -2548,12 +2552,12 @@ VM 6.27 released (16 April 1997)
   slot is nil; use nil in this slot to mean we've already marked
   this message.
 
-VM 6.26 released (13 April 1997)
+## VM 6.26 released (13 April 1997)
 
 * added missing application/octet-stream button display function.
 * Shapiro typo fixes
 
-VM 6.25 released (13 April 1997)
+## VM 6.25 released (13 April 1997)
 
 * copied vm-note-emacs-version to vm-menu.el so that it is
   available at load time for use there.
@@ -2605,7 +2609,7 @@ VM 6.25 released (13 April 1997)
 * vm-mime-preview-composition: remove mail header separator after
   the message is encoded since the encoder won't work without it.
 
-VM 6.24 released (9 April 1997)
+## VM 6.24 released (9 April 1997)
 
 * default value of vm-mime-avoid-folding-content-type now t due
   to pervasive broken Solaris sendmail installations that mangle
@@ -2638,7 +2642,7 @@ VM 6.24 released (9 April 1997)
   old behavior was to just croak an error and wedge the mailer.
 * vm-print-message: default count to 1 if passed no arguments.
 
-VM 6.23 released (4 April 1997)
+## VM 6.23 released (4 April 1997)
 
 * default value of vm-honor-mime-content-disposition now t.
 * Makefile: default VM build type is now back to `autoload'.
@@ -2679,7 +2683,7 @@ VM 6.23 released (4 April 1997)
 * gave up on using frame-totally-visible-p since it is still
   broken in 19.15.
 
-VM 6.22 released (22 March 1997)
+## VM 6.22 released (22 March 1997)
 
 * vm-mime-encode-composition: insert-file-contents-literally
   doesn't move point. the code assumed it does and corrupted
@@ -2687,7 +2691,7 @@ VM 6.22 released (22 March 1997)
 * vm-gobble-crash-box: remove/rename crash box even if it is
   zero-length.
 
-VM 6.21 released (21 March 1997)
+## VM 6.21 released (21 March 1997)
 
 * vm-save-folder: call clear-visited-file-modtime if folder was
   deleted to avoid "File changed on disk" warnings later.
@@ -2696,7 +2700,7 @@ VM 6.21 released (21 March 1997)
 * vm-mime-encode-composition: do the insert/delete dance to avoid
   text leaking into overlays in the file insertion case.
 
-VM 6.20 released (18 March 1997)
+## VM 6.20 released (18 March 1997)
 
 * vm-menu-support-possible-p: allow menu code to operate under
   NextStep.  window-system == ns.
@@ -2734,7 +2738,7 @@ VM 6.20 released (18 March 1997)
   up with a better way to write these status message only when
   we're doing something that might take a while.
 
-VM 6.19 released (8 March 1997)
+## VM 6.19 released (8 March 1997)
 
 * New user data functions:
   + vm-user-composition-folder-buffer
@@ -2753,7 +2757,7 @@ VM 6.19 released (8 March 1997)
   change.
 * vm-set-labels: same as vm-set-xxxx-flag and for same reason.
 
-VM 6.18 released (4 March 1997)
+## VM 6.18 released (4 March 1997)
 
 * New variables:
   + vm-mime-composition-armor-from-lines
@@ -2785,7 +2789,7 @@ VM 6.18 released (4 March 1997)
   vm-pop-move-mail, so crash box contents can be processed
   immediately after the quit.
 
-VM 6.17 released (27 February 1997)
+## VM 6.17 released (27 February 1997)
 
 * vm-pop-read-past-dot-sentinel-line: use re-search-forward
   instead of search-forward (oops).
@@ -2812,7 +2816,7 @@ VM 6.17 released (27 February 1997)
   This is a further effort to improve vm-mutable-windows == nil
   behavior.
 
-VM 6.16 released (25 February 1997)
+## VM 6.16 released (25 February 1997)
 
 * check for vm-xemacs-mule-p before using file-coding-system and
   friends, and also strengthen the checks that vm-xemacs-mule-p
@@ -2836,7 +2840,7 @@ VM 6.16 released (25 February 1997)
 * vm-run-command-on-region: don't visit file to determine how
   large it is.
 
-VM 6.15 released (20 February 1997)
+## VM 6.15 released (20 February 1997)
 
 * move start of attachment tag out of header section.
 * vm-mime-preview-composition: don't copy extents under XEmacs.
@@ -2846,7 +2850,7 @@ VM 6.15 released (20 February 1997)
 * better handling of M-x vm-mode w.r.t. coding systems under Mule.
 * Shapiro typo fixes.
 
-VM 6.14 released (19 February 1997)
+## VM 6.14 released (19 February 1997)
 
 * New variables:
   + vm-pop-max-message-size
@@ -2937,7 +2941,7 @@ VM 6.14 released (19 February 1997)
 * replace some FSF Emacs menubar command entries in Mail mode.
 * vm-kill-subject: type fix vm-move-after-deleting -> vm-move-after-killing
 
-VM 6.13 released (7 February 1997)
+## VM 6.13 released (7 February 1997)
 
 * set file-precious-flag to t in vm-mode buffers.
 * vm-mime-qp-encode-region: call vm-insert-char properly when
@@ -2970,7 +2974,7 @@ VM 6.13 released (7 February 1997)
 * vm-delete-buffer-frame: removes itself from
   vm-undisplay-buffer-hook, as it did before some recent changes.
 
-VM 6.12 released (6 February 1997)
+## VM 6.12 released (6 February 1997)
 
 * New commands:
   + vm-mime-encode-composition
@@ -3007,7 +3011,7 @@ VM 6.12 released (6 February 1997)
 * don't move message pointer if deleting after archiving even if
   vm-move-after-deleting is non-nil.
 
-VM 6.11 released (3 February 1997)
+## VM 6.11 released (3 February 1997)
 
 * vm-mime-encode-composition: don't encode the whole message when
   trying to encode the last text part.
@@ -3017,7 +3021,7 @@ VM 6.11 released (3 February 1997)
 * changed default value of vm-auto-displayed-mime-content-types
   to ("text" "multipart").
 
-VM 6.10 released (3 February 1997)
+## VM 6.10 released (3 February 1997)
 
 * New variables:
   + vm-honor-mime-content-disposition
@@ -3059,7 +3063,7 @@ VM 6.10 released (3 February 1997)
   that VM creates, since the random boundary strings might
   contain a /, which requires quoting.
 
-VM 6.09 released (30 January 1997)
+## VM 6.09 released (30 January 1997)
 
 * MIME composition (support for vm-send-using-mime)
 * New commands:
@@ -3090,7 +3094,7 @@ VM 6.09 released (30 January 1997)
 * fixed really doof bit shift and masking errors in
   vm-mime-qp-encode-region.
 
-VM 6.08 released (26 January 1997)
+## VM 6.08 released (26 January 1997)
 
 * New commands:
   + vm-mark-summary-region
@@ -3123,7 +3127,7 @@ VM 6.08 released (26 January 1997)
   summary entries earlier in the buffer when such entries are
   updated.
 
-VM 6.07 released (23 January 1997)
+## VM 6.07 released (23 January 1997)
 
 * New variables:
   + vm-raise-frame-at-startup
@@ -3151,7 +3155,7 @@ VM 6.07 released (23 January 1997)
 * use shell-command-switch instead of "-c" when running shell
   command lines.
 
-VM 6.06 released (21 January 1997)
+## VM 6.06 released (21 January 1997)
 
 * New variables:
   + vm-mime-type-converter-alist
@@ -3218,7 +3222,7 @@ VM 6.06 released (21 January 1997)
   buffer frame be raised.
 * Shapiro typo fixes
 
-VM 6.05 released (15 January 1997)
+## VM 6.05 released (15 January 1997)
 
 * New variables:
   + vm-popup-menu-on-mouse-3
@@ -3291,7 +3295,7 @@ VM 6.05 released (15 January 1997)
   vm-mime-button-face.
 * documentation improvements
 
-VM 6.04 released (9 January 1997)
+## VM 6.04 released (9 January 1997)
 
 * mime-error -> vm-mime-error
 * &optioanl to &optional in def of vm-mime-base64-decode-region
@@ -3304,7 +3308,7 @@ VM 6.04 released (9 January 1997)
   and glyph-height return 0, as they do sometimes at startup.
 * typo fixes from Shapiro.
 
-VM 6.03 released (8 January 1997)
+## VM 6.03 released (8 January 1997)
 
 * made vm-show-current-message use vm-mime-plain-message-p to
   decide whether to use the presentation buffer, just as
@@ -3341,7 +3345,7 @@ VM 6.03 released (8 January 1997)
 * disallow multipart types to be sent to an external viewer.
 * doc improvements
 
-VM 6.02 released (8 January 1997)
+## VM 6.02 released (8 January 1997)
 
 * New variables:
   + vm-mime-base64-decoder-switches
@@ -3373,7 +3377,7 @@ VM 6.02 released (8 January 1997)
   no opaque transfer encoding.
 * don't show autosave and backup file names in the *Files* window.
 
-VM 6.01 released (7 January 1997)
+## VM 6.01 released (7 January 1997)
 
 * fixed bug that caused a message not to be displayed if
   vm-auto-decode-mime-messages is non-nil.
@@ -3387,7 +3391,7 @@ VM 6.01 released (7 January 1997)
 * added popup menus to the MIME buttons.
 * typo fixes
 
-VM 6.00 released (6 January 1997)
+## VM 6.00 released (6 January 1997)
 
 * MIME reader support, digest send/burst, resend bounce
 * New commands:
@@ -3422,7 +3426,7 @@ VM 6.00 released (6 January 1997)
   don't handle menubar buttons.
 * use FSF Emacs' interval timer package if not (featurep 'itimer).
 
-VM 5.97 released (22 December 1996)
+## VM 5.97 released (22 December 1996)
 
 * temporarily set print-length to nil while VM is writing out
   Lisp objects.
@@ -3434,7 +3438,7 @@ VM 5.97 released (22 December 1996)
 * made vm-toolbar a user variable.  Experimental.
 * documentation fixes
 
-VM 5.96 released (9 June 1996)
+## VM 5.96 released (9 June 1996)
 
 * started shipping a pre-built vm.elc file for those who can't
   build VM.
@@ -3468,7 +3472,7 @@ VM 5.96 released (9 June 1996)
   frame because the loop will never visit a minibuffer-only frame
   again and thus never terminate.
 
-VM 5.95 released (18 August 1995)
+## VM 5.95 released (18 August 1995)
 
 * vm-find-leading-message-separator: for From_ type folders,
   removed requirement that there be two newlines before "From "
@@ -3493,7 +3497,7 @@ VM 5.95 released (18 August 1995)
   vm-mail-internal so the auto-save file name picks up the
   directory change.
 
-VM 5.94 released (4 August 1995)
+## VM 5.94 released (4 August 1995)
 
 * use window instead of frame in set-mouse-position call (XEmacs
   19.12 only).
@@ -3520,7 +3524,7 @@ VM 5.94 released (4 August 1995)
 * added status messages for when URLs are sent to browsers.
 * added "https" to the URL match regexp.
 
-VM 5.93 released (25 July 1995)
+## VM 5.93 released (25 July 1995)
 
 * fixed null menu problem if vm-use-menus == 1 (FSF Emacs only);
   menu map wasn't being built.
@@ -3533,14 +3537,14 @@ VM 5.93 released (25 July 1995)
 * vm-auto-archive-messages: don't really save message if the
   destination folder is /dev/null.
 
-VM 5.92 released (19 July 1995)
+## VM 5.92 released (19 July 1995)
 
 * vm-set-summary-pointer: check vm-su-start-of for nil value
   before trying to go to its position.
 * reuse vm-summary-overlay instead of deleting and recreating it.
 * fixed dup menu entries in FSF Emacs menubar toggled menubar.
 
-VM 5.91 released (19 July 1995)
+## VM 5.91 released (19 July 1995)
 
 * fixed dup menu problem in FSF Emacs.
 * vm-expunge-folder: disabled summary updates of expunged messages.
@@ -3551,7 +3555,7 @@ VM 5.91 released (19 July 1995)
   vm-update-message-summary; avoid work most of the time
   by testing for the common bailout cases early.
 
-VM 5.90 released (16 July 1995)
+## VM 5.90 released (16 July 1995)
 
 * use vm-set-deleted-flag-of instead of vm-set-deleted-flag in
   vm-expunge-folder.  Should make expunging much faster since
@@ -3560,7 +3564,7 @@ VM 5.90 released (16 July 1995)
   opposed to just a different symbol.  (FSF Emacs only.)  FSF
   Emacs seems to match against the names.
 
-VM 5.89 released (16 July 1995)
+## VM 5.89 released (16 July 1995)
 
 * deal with system-configuration not being bound.
 * don't call buffer-substring with three args in
@@ -3581,7 +3585,7 @@ VM 5.89 released (16 July 1995)
 * added "Recover" toolbar button that appears in conjunction with
   "Auto save file is newer..."
 
-VM 5.88 released (13 July 1995)
+## VM 5.88 released (13 July 1995)
 
 * New variables:
   + vm-frame-per-summary
@@ -3658,7 +3662,7 @@ VM 5.88 released (13 July 1995)
   font-lock (i.e. text properties) in a VM folder buffer under
   FSF Emacs now.
 
-VM 5.87 released (16 June 1995)
+## VM 5.87 released (16 June 1995)
 
 * New variables:
   + vm-search-other-frames
@@ -3679,7 +3683,7 @@ VM 5.87 released (16 June 1995)
   "undelete" toolbar button to appear in another folder.
 * Shapiro typo fixes
 
-VM 5.86 released (6 June 1995)
+## VM 5.86 released (6 June 1995)
 
 * toolbar support (XEmacs 19.12 only)
 * New commands:
@@ -3727,7 +3731,7 @@ VM 5.86 released (6 June 1995)
 * added (provide ...) calls for all vm-*.el files.
 * added version number to vm-mode help.
 
-VM 5.85 released (2 June 1995)
+## VM 5.85 released (2 June 1995)
 
 * dropped reporter.el and timezone.el from distribution
 * merged tree-menu.el into vm-menu.el; renamed functions to avoid
@@ -3781,7 +3785,7 @@ VM 5.85 released (2 June 1995)
 * dropped duplicate Reply-To from vm-resend-bounced-headers.
 * Shapiro typo fixes.
 
-VM 5.84 released (26 May 1995)
+## VM 5.84 released (26 May 1995)
 
 * fixed known-virtual-folders menu to use vm-visit-virtual-folder
   instead of vm-visit-folder.
@@ -3796,7 +3800,7 @@ VM 5.84 released (26 May 1995)
 * Added Visit tags to the known-virtual-folders and
   visited-folders menus.
 
-VM 5.83 released (25 May 1995)
+## VM 5.83 released (25 May 1995)
 
 * fixed incorrect mode menus selection that was due to mode-popup-menu being
   set before major-mode.
@@ -3821,7 +3825,7 @@ VM 5.83 released (25 May 1995)
 * added "Mail" item to menubar in mail-mode (XEmacs only).
 * Folders menu deep-sixed for FSF Emacs.
 
-VM 5.82 released (25 May 1995)
+## VM 5.82 released (25 May 1995)
 
 * New commands:
   + vm-iconify-frame
@@ -3848,13 +3852,13 @@ VM 5.82 released (25 May 1995)
 * "emacs -f vm" now ignores vm-frame-per-folder.
 * added `primary-folder' frame type for vm-frame-parameter-alist.
 
-VM 5.81 released (22 May 1995)
+## VM 5.81 released (22 May 1995)
 
 * backquote use in menu and mouse code removed, due to use of newer backquoting
   features that were unsupported in older Emacses.
 * Shapiro typo fixes.
 
-VM 5.80 released (22 May 1995)
+## VM 5.80 released (22 May 1995)
 
 * vm-su-do-author still not quite right, code not falling through
   to chop-full-name phase if Full-Name header existed but was empty.
@@ -3878,7 +3882,7 @@ VM 5.80 released (22 May 1995)
   any other VM command.  An initialization omission broke this
   before.
 
-VM 5.79 released (19 May 1995)
+## VM 5.79 released (19 May 1995)
 
 * New commands:
   + vm-mark-messages-same-author
@@ -3893,7 +3897,7 @@ VM 5.79 released (19 May 1995)
 * vm-mouse-set-fsfemacs-mouse-track-highlight changed to use
   overlays instead of text properties.
 
-VM 5.78 released (18 May 1995)
+## VM 5.78 released (18 May 1995)
 
 * needed to pass file history as sixth arg to read-file-name
   instead of fifth arg.
@@ -3905,7 +3909,7 @@ VM 5.78 released (18 May 1995)
   to set vm-frame-per-folder to nil so they wouldn't create too many
   frames.
 
-VM 5.77 released (18 May 1995)
+## VM 5.77 released (18 May 1995)
 
 * send APOP command with two args instead of one, as the spec demands.
 * vm-display-buffer makes the buffer to be displayed or
@@ -3952,7 +3956,7 @@ VM 5.77 released (18 May 1995)
   composition".  Previously it was "summary on top, composition
   on bottom".
 
-VM 5.76 released (7 May 1995)
+## VM 5.76 released (7 May 1995)
 
 * "\.el$" -> "\\.el$" in make-autoloads.
 * moved message separator unstuff call before the header
@@ -3976,7 +3980,7 @@ VM 5.76 released (7 May 1995)
   19.29.
 * docstring typo fixes.
 
-VM 5.75 released (30 April 1995)
+## VM 5.75 released (30 April 1995)
 
 * reinstated code that turns on auto-save-mode in
   vm-mail-internal.  Thought it was redundant; it ain't.
@@ -4002,7 +4006,7 @@ VM 5.75 released (30 April 1995)
 * added status message in vm-pop-move-mail to count out messages
   as they are retrieved.
 
-VM 5.74 released (24 April 1995)
+## VM 5.74 released (24 April 1995)
 
 * added new test data for mail-extract-address-components to
   catch its failure to handle "" in some older versions.
@@ -4031,7 +4035,7 @@ VM 5.74 released (24 April 1995)
   threader and summary functions would use the invalid markers.
 * Shapiro typo fixes
 
-VM 5.73 released (7 April 1995)
+## VM 5.73 released (7 April 1995)
 
 * allow a default non-nil value for vm-folder-read-only to work.
 * moved the running of vm-arrived-message-hook into
@@ -4079,7 +4083,7 @@ VM 5.73 released (7 April 1995)
 * made the virtual folder spec parser skip auto-save files and
   backup files when globbing the contents of a directory.
 
-VM 5.72 released (29 May 1994)
+## VM 5.72 released (29 May 1994)
 
 * doc fixes
 * fixed vm-after-revert-buffer-hook to not attack non-VM buffers.
@@ -4093,7 +4097,7 @@ VM 5.72 released (29 May 1994)
   message separator due to vm-skip-past-leading-message-separator
   being confused by newlines at the beginning of folder.
 
-VM 5.71 released (25 May 1994)
+## VM 5.71 released (25 May 1994)
 
 * (fboundp 'mail-signature-file) -> (boundp 'mail-signature-file).
   graaaggg.
@@ -4111,11 +4115,11 @@ VM 5.71 released (25 May 1994)
   has a new after-revert-hook that VM uses.
 * Shapiro and Foiani typo fixes.
 
-VM 5.70 released (18 May 1994)
+## VM 5.70 released (18 May 1994)
 
 * added missing quote in (fboundp mail-signature-file) in vm-reply.el.
 
-VM 5.69 released (18 May 1994)
+## VM 5.69 released (18 May 1994)
 
 * vm-munge-message-separators needed (goto-char start).
 * fixed vm-munge-message-separators to pay attention to
@@ -4159,7 +4163,7 @@ VM 5.69 released (18 May 1994)
   Previous convention seems to be to not display them.
 * doc string fixes.
 
-VM 5.68 released (12 April 1994)
+## VM 5.68 released (12 April 1994)
 
 * vm-resend-bounced-message now strips Sender.
 * for From_-with-Content-Length in vm-find-leading-message-separator
@@ -4181,7 +4185,7 @@ VM 5.68 released (12 April 1994)
   out of the box header highlighting functionality.
 * Shapiro typo fixes.
 
-VM 5.67 released (6 April 1994)
+## VM 5.67 released (6 April 1994)
 
 * used match-end instead of match-beginning in
   vm-find-leading-message-separator for From_-with-Content-Length
@@ -4198,7 +4202,7 @@ VM 5.67 released (6 April 1994)
 * don't stuff labels unless there are messages in the folder.
 * fixed a couple of calls to format that had too few args.
 
-VM 5.66 released (26 March 1994)
+## VM 5.66 released (26 March 1994)
 
 * added call to vm-unhighlight-region to turn off highlighing of
   headers gathered from the folder buffer.
@@ -4245,7 +4249,7 @@ VM 5.66 released (26 March 1994)
 * fix code that assumes a non-nil value for buffer-file-name in
   folder buffers.
 
-VM 5.65 released (17 March 1994)
+## VM 5.65 released (17 March 1994)
 
 * fixed reverse link bug in vm-expunge-folder that was causing
   renumbering to bug out.
@@ -4266,7 +4270,7 @@ VM 5.65 released (17 March 1994)
 * dropped vm-preview-current-message call in vm-save-folder;
   we'll see what the effects are.
 
-VM 5.64 released (9 March 1994)
+## VM 5.64 released (9 March 1994)
 
 * dropped call to widen in vm-do-reply, unneeded now that
   vm-yank-message is called instead of doing the yanking
@@ -4278,7 +4282,7 @@ VM 5.64 released (9 March 1994)
   folder in vm-assimilate-new-messages.
 * don't override pre-sort by calling vm-gobble-message-order in vm.
 
-VM 5.63 released (7 March 1994)
+## VM 5.63 released (7 March 1994)
 
 * Shapiro typo fixes
 * dropped duplicate buffer suppression in vm-build-virtual-message-list;
@@ -4293,7 +4297,7 @@ VM 5.63 released (7 March 1994)
   avoid being tripped by find-file-visit-truename being non-nil
   and get-file-buffer's obliviousness thereof.
 
-VM 5.62 released (6 March 1994)
+## VM 5.62 released (6 March 1994)
 
 * vm-burst-digest was honoring vm-delete-after-bursting in the
   real folder instead of the virtual one; fixed.
@@ -4313,7 +4317,7 @@ VM 5.62 released (6 March 1994)
 * fixed expunge in unmirrored virtual folder to remove virtual
   messages from the virtual message list of the real message.
 
-VM 5.61 released (3 March 1994)
+## VM 5.61 released (3 March 1994)
 
 * moved vm-session-initialization and vm-load-init-file to
   vm-startup.el so as to avoid autoloading vm-folder.el for M-x
@@ -4329,14 +4333,14 @@ VM 5.61 released (3 March 1994)
 * use epoch::selected-window instead screen-selected-window if it
   is fbound.
 
-VM 5.60 released (1 March 1994)
+## VM 5.60 released (1 March 1994)
 
 * vm-set-edited-flag -> vm-set-edited-flag-of
 * forgot to fix interactive spec of vm-yank-message; fixed.
 * vm-search18.el: signal error if vm-isearch is attempted in a
   virtual folder.
 
-VM 5.59 released (26 February 1994)
+## VM 5.59 released (26 February 1994)
 
 * was calling pos-visible-in-window-p in wrong window in
   vm-scroll-forward; fixed, which takes care of preview/scrolling
@@ -4350,7 +4354,7 @@ VM 5.59 released (26 February 1994)
 * use vm-selected-frame everywhere, instead of error-free-call
 * do multi-screens in Lucid Emacs like multi-frames in FSFmacs.
 
-VM 5.58 released (26 February 1994)
+## VM 5.58 released (26 February 1994)
 
 * New variables:
   + vm-included-text-headers
@@ -4390,7 +4394,7 @@ VM 5.58 released (26 February 1994)
   when point-max isn't visible on screen.  should help with
   vm-preview-lines == t.
 
-VM 5.57 released (18 February 1994)
+## VM 5.57 released (18 February 1994)
 
 * added missing refs to -other-window and -other-frame commands in
   root commands so that window configurations work.
@@ -4424,7 +4428,7 @@ VM 5.57 released (18 February 1994)
   binding as it might screw users who set local values of those
   variables.
 
-VM 5.56 released (14 February 1994)
+## VM 5.56 released (14 February 1994)
 
 * vm-save-folder no longer expunges, this also means that 'q' and
   'S' keys no longer expunge.
@@ -4511,7 +4515,7 @@ VM 5.56 released (14 February 1994)
 * added a level of indirection for virtual-messages-of so print
   will work on a message struct.
 
-VM 5.55 released (9 February 1994)
+## VM 5.55 released (9 February 1994)
 
 * vm-set-babyl-frob-flag -> vm-set-babyl-frob-flag-of
 * rewrote vm-delete-duplicates again; this one doesn't pitch the
@@ -4552,7 +4556,7 @@ VM 5.55 released (9 February 1994)
   timer processes might be fired up while the POP code is running.
 * added another missing set-buffer-modified-p in vm-gobble-crash-box.
 
-VM 5.54 released (4 February 1994)
+## VM 5.54 released (4 February 1994)
 
 * made vm-discard-cached-data fill the cache with nils instead of
   allocating a new array.  necessary so that the virtual messages
@@ -4564,7 +4568,7 @@ VM 5.54 released (4 February 1994)
   vm-discard-cached-data; I no longer think they are needed.
 * changed emacs to $(EMACS) in Makefile for make-autoloads run.
 
-VM 5.53 released (3 Feburary 1994)
+## VM 5.53 released (3 Feburary 1994)
 
 * got rid of reuse of count variable in vm-delete-message; used
   del-count instead.  this was hosing motion after
@@ -4576,7 +4580,7 @@ VM 5.53 released (3 Feburary 1994)
 * fixed vm-set-xxxx-flag to not add to the undo record list
   twice; more confusion due to virtual folders.
 
-VM 5.52 released (3 February 1994)
+## VM 5.52 released (3 February 1994)
 
 * BABYL file support.
 * fixed noautoload target in Makefile to depend on reporter.elc.
@@ -4669,7 +4673,7 @@ VM 5.52 released (3 February 1994)
   babyl folders.
 * added more test data to detect brokenesses in mail-extr.el.
 
-VM 5.51 released (29 January 1994)
+## VM 5.51 released (29 January 1994)
 
 * docstring fixes.
 * fixed logic behind how schedule-reindents is set in
@@ -4686,7 +4690,7 @@ VM 5.51 released (29 January 1994)
 * made vm-make-virtual-copy restore the modified status of the
   virtual folder buffer after doing the copy.
 
-VM 5.50 released (28 January 1994)
+## VM 5.50 released (28 January 1994)
 
 * found and fixed another bug in the threading code that can
   cause looping; interned a symbol into the wrong obarray.
@@ -4706,7 +4710,7 @@ VM 5.50 released (28 January 1994)
   duplicates in vm-virtual-messages-of.
 * dropped the rest of the undocumented stuff for hilit19.
 
-VM 5.49 released (25 January 1994)
+## VM 5.49 released (25 January 1994)
 
 * changed timezone.el not to call abs directly.
 * changed vm-mail-send-and-exit to notice if it's no longer in
@@ -4723,7 +4727,7 @@ VM 5.49 released (25 January 1994)
   non-nil; most in tapestry.el; one in vm-window.el.
 * doc fix in vm-summary-format var doc, h -> H.
 
-VM 5.48 released (23 January 1994)
+## VM 5.48 released (23 January 1994)
 
 * @cp -> cp in Makefile.
 * fixed bug in vm-load-window-configurations where
@@ -4731,7 +4735,7 @@ VM 5.48 released (23 January 1994)
 * Shapiro typos fixes.
 * added timezone.el to the distribution.
 
-VM 5.47 released (23 January 1994)
+## VM 5.47 released (23 January 1994)
 
 * vm-window-configuration-file now has a default value of
   "~/.vm.windows".
@@ -4815,7 +4819,7 @@ VM 5.47 released (23 January 1994)
 * if summary format doesn't match the cache summary format, force
   a restuff of the cache of all messages when the folder is saved.
 
-VM 5.46 released (17 January 1994)
+## VM 5.46 released (17 January 1994)
 
 * added header highlighting for FSF Emacs 19.
   + slightly different sematics for vm-highlighted-header-regexp
@@ -4828,7 +4832,7 @@ VM 5.46 released (17 January 1994)
 * chopped out undocumented hook for hilit19 in
   vm-preview-current-message.
 
-VM 5.45 released (17 January 1994)
+## VM 5.45 released (17 January 1994)
 
 * Shapiro typo fixes
 * editing a message that already had an edit buffer caused window
@@ -4871,7 +4875,7 @@ VM 5.45 released (17 January 1994)
   buffer.
 * moved a ( in a docstring right to avoid it being in column 0.
 
-VM 5.44 released (16 January 1994)
+## VM 5.44 released (16 January 1994)
 
 * fixed free variable reference (length) in vm-edit.el.
 * added a few missing commands to the supported window
@@ -4946,7 +4950,7 @@ VM 5.44 released (16 January 1994)
 * fixed some bad logic in vm-assimilate-new-messages that caused
   the summary to be rebuilt every time you ran M-x vm.
 
-VM 5.43 released (14 January 1994)
+## VM 5.43 released (14 January 1994)
 
 * changed another reference to window-frame in tapestry.el that I
   missed, sigh.
@@ -4979,7 +4983,7 @@ VM 5.43 released (14 January 1994)
 * New command:
   + vm-forward-message-all-headers
 
-VM 5.42 released (13 January 1994)
+## VM 5.42 released (13 January 1994)
 
 * made tapestry-frame-map call tapestry-window-frame instead of
   window-frame directly, which bombs under v18 Emacs.
@@ -5012,7 +5016,7 @@ VM 5.42 released (13 January 1994)
   conversion to keep kill-buffer silent.
 * turn on Emacs 19 compatbility in vm-byteopts.el.
 
-VM 5.41 released (10 January 1994)
+## VM 5.41 released (10 January 1994)
 
 * fixed "~/INBOX" dreg in vm-get-folder-type.
 * added more test data to detect for broken
@@ -5121,7 +5125,7 @@ VM 5.41 released (10 January 1994)
 * added protection for the variable last-command to the
   (interactive) forms that needed it.
 
-VM 5.40 released (21 December 1993)
+## VM 5.40 released (21 December 1993)
 
 * made vm-edit-message-end preview if edited message is current;
   comparison bug caused it not to.
@@ -5135,7 +5139,7 @@ VM 5.40 released (21 December 1993)
 * fixed bug in vm-default-chop-full-name, should use list instead
   of cons for the return value.
 
-VM 5.39 released (21 December 1993)
+## VM 5.39 released (21 December 1993)
 
 * sanity checked all bindings of case-fold-search.
 * sanity checked all searches for reasonable ambient values of
@@ -5221,7 +5225,7 @@ VM 5.39 released (21 December 1993)
 * 'make' != 'make all' in Makefile anymore
 * Info file created is now named vm.info.
 
-VM 5.38 released (16 December 1993)
+## VM 5.38 released (16 December 1993)
 
 * made vm function check vm-block-new-mail before calling
   vm-get-spooled-mail and thereby avoid having an error signaled
@@ -5246,7 +5250,7 @@ VM 5.38 released (16 December 1993)
   + vm-summary-mode-map
 * Slightly different semantics for vm-summary-uninteresting-senders.
 
-VM 5.37 released (15 December 1993)
+## VM 5.37 released (15 December 1993)
 
 * fixed "wrong type argument" arrayp nil problem in
   vm-pipe-message-to-command. (m -> (car mlist))
@@ -5283,7 +5287,7 @@ VM 5.37 released (15 December 1993)
   visited folder and offer it as a default for the next
   vm-visit-folder.
 
-VM 5.36 released (14 December 1993)
+## VM 5.36 released (14 December 1993)
 
 * no more marker sharing between message in real folders.
   Previously the start and end pointers were shared between
@@ -5381,7 +5385,7 @@ VM 5.36 released (14 December 1993)
   end of header names if you want exact matches, leave it off if
   you just want prefixes.
 
-VM 5.35 released (25 August 1993)
+## VM 5.35 released (25 August 1993)
 
 * fixed vm-fsf-emacs-19-p to not confuse FSF Emacs with Lucid
 * changed code to deal with screen.el's rename to tapestry.el
@@ -5392,7 +5396,7 @@ VM 5.35 released (25 August 1993)
 * added patch from jwz to use set-keymap parent in
   vm-edit-message under Lucid Emacs.
 
-VM 5.34 released (15 August 1993)
+## VM 5.34 released (15 August 1993)
 
 * used -l texinfmt explicitly in Makefile to get texinfo-format-buffer loaded
   under Emacs 19.18+.
@@ -5429,7 +5433,7 @@ VM 5.34 released (15 August 1993)
   vm-invisible-header-regexp.  If header was matched by both
   variables it would be displayed, which is wrong.
 
-VM 5.33 released (11 April 1993)
+## VM 5.33 released (11 April 1993)
 
 * fixed "wrong type argument arrayp, nil" error when primary
   inbox is empty.
@@ -5441,7 +5445,7 @@ VM 5.33 released (11 April 1993)
 * fixed Makefile to say *.el instead of . so compilation will
   occur even if there are no .elc files.
 
-VM 5.32 released (2 March 1992)
+## VM 5.32 released (2 March 1992)
 
 * changed `|' not to send the message separator strings to the command.
 * fixed bug in vm-parse-addresses; no longer considers an empty
@@ -5486,7 +5490,7 @@ VM 5.32 released (2 March 1992)
   A nil value of vm-folder-type could confuse it otherwise.  This
   is an interim fix.
 
-VM 5.31 released (31 March 1991)
+## VM 5.31 released (31 March 1991)
 
 * kill-buffer in vm-parse-address may cause a change to a random
   buffer; added save-excursion.
@@ -5497,7 +5501,7 @@ VM 5.31 released (31 March 1991)
 * no longer generate an empty In-Reply-To if mailer didn't
   provide message-ID.
 
-VM 5.30 released (26 March 1991)
+## VM 5.30 released (26 March 1991)
 
 * vm-resend-message now inserts a Resent-To header.
 * changed default value of vm-visible-headers to show Resent-From
@@ -5530,7 +5534,7 @@ VM 5.30 released (26 March 1991)
 * (setq file-precious-flag t) is no longer done by vm-mode-internal.
 * vm-reply puts together an appropriate Newsgroups header.
 
-VM 5.29 released (18 March 1991)
+## VM 5.29 released (18 March 1991)
 
 * fixed References being inserted after mail-header-separator
 * made a couple of VM find-file-hooks not assume that because
@@ -5538,7 +5542,7 @@ VM 5.29 released (18 March 1991)
 * removed last of \\[...] usage; might as well be consistent
   since these things waste more time than they save.
 
-VM 5.28 released (16 March 1991)
+## VM 5.28 released (16 March 1991)
 
 * fixed buffer renaming error; check for name collisions
 * vm-goto-message now tries to follow the summary cursor first;
@@ -5553,7 +5557,7 @@ VM 5.28 released (16 March 1991)
   local variables would have sane values in a non VM mode buffer.
 * VM maintains the References header in replies.
 
-VM 5.27 released (14 March 1991)
+## VM 5.27 released (14 March 1991)
 
 * fixed bug in vm-stuff-message-order; needed (cdr vm-message-list)
   instead of (cdr vm-message-pointer).
@@ -5585,7 +5589,7 @@ VM 5.27 released (14 March 1991)
 * New command: vm-continue-composing-message
 * `|' uses marks now
 
-VM 5.26 released (6 March 1991)
+## VM 5.26 released (6 March 1991)
 
 * vm-move-message-forward now sets the proper variables to get
   the message order saved.
@@ -5606,11 +5610,11 @@ VM 5.26 released (6 March 1991)
 * 'g' now switches to the primary inbox if you weren't there
   already and there is new mail.
 
-VM 5.25 released (3 March 1991)
+## VM 5.25 released (3 March 1991)
 
 * got rid of vm-local-message-list and vm-local-message-pointer
 
-VM 5.24 released (2 March 1991)
+## VM 5.24 released (2 March 1991)
 
 * New variable: vm-retain-message-order
 * New command: vm-move-message-forward
@@ -5631,7 +5635,7 @@ VM 5.24 released (2 March 1991)
   should be relatively cheap.
 * doc string correction in vm-delete-message.
 
-VM 5.23 released
+## VM 5.23 released
 
 * fixed display bug with virtual folders; virtual folder would
   switch real buffers when changing messages but the display
@@ -5656,7 +5660,7 @@ VM 5.23 released
 * made `g' go ahead and get new mail even if the current folder
   isn't the primary inbox.
 
-VM 5.22 released (beta-testable in Feb 22, 1991)
+## VM 5.22 released (beta-testable in Feb 22, 1991)
 
 * fixed obscure bug in vm-write-file-hook that might have bitten
   someone some day; vm-message-list vs. vm-local-message-list.
@@ -5674,14 +5678,14 @@ VM 5.22 released (beta-testable in Feb 22, 1991)
   minibuffer after vm-quit gets its answer.
 * tiny cleanup in mail buffer name used by vm-send-digest
 
-VM 5.21 released
+## VM 5.21 released
 
 * the auto-save file name scrubber was broken.  I also discovered
   that Emacs` aset function is broken.
 * vm-keep-sent-messages didn't quite work right; used rassq instead
   of memq...
 
-VM 5.20 released
+## VM 5.20 released
 
 * fixed doc string for vm-scroll-forward and vm-scroll-backward
 * removed whitespace from auto-save-file-names in VM Mail Mode
@@ -5699,7 +5703,7 @@ VM 5.20 released
 * added code to clear the question from the minibuffer after
   vm-quit gets its answer.
 
-VM 5.19 released
+## VM 5.19 released
 
 * fixed bug in vm-gobble-deleted-messages that causes the summary
   to be botched if the first message was expunged and the second
@@ -5718,13 +5722,13 @@ VM 5.19 released
 * vm-save-folder now handles prefix args like save-buffer does.
 * vm-mail now works if called before the rest of VM is loaded.
 
-VM 5.18 released
+## VM 5.18 released
 
 * VM now ignores garbage (e.g. blank lines) at the beginning of a folder.
 * C-x C-s and C-x C-w will now save the folder if invoked from
   the summary buffer.
 
-VM 5.17 released
+## VM 5.17 released
 
 * fixed bug in vm-build-=virtual-message-list that kept other
   virtual folder selectors from working.]
@@ -5735,7 +5739,7 @@ VM 5.17 released
 * fixed bug in vm-expose-hidden-headers; if message is unread
   body is not inadvertently displayed.
 
-VM 5.16 released
+## VM 5.16 released
 
 * message structs are no longer directly self-referential.  A
   symbol must now be dereferenced.  This was done to allow the
@@ -5743,7 +5747,7 @@ VM 5.16 released
 * vm-get-spooled-mail no longer assumes that there's always mail
   in an existing spool file.
 
-VM 5.15 released to the beta-testers
+## VM 5.15 released to the beta-testers
 
 * slight cleanup in vm-assimilate-new-messages
 * added some calls to vm-select-folder-buffer to some commands
@@ -5753,7 +5757,7 @@ VM 5.15 released to the beta-testers
   vm-set-folder-variables not always being called when it's
   needed.
 
-VM 5.14 released
+## VM 5.14 released
 
 * New variable: `vm-delete-after-archiving'
 * New variable: `vm-delete-after-bursting'
@@ -5761,24 +5765,24 @@ VM 5.14 released
   mail buffers are given more descriptive names, and more than
   one can exist concurrently.
 
-VM 5.13 released
+## VM 5.13 released
 
 * vm-kill-subject bug fixed; report of number of killed message
   was broken.
 * changed vm-message-list to vm-local-message-list in vm-do-summary
 
-VM 5.12 released
+## VM 5.12 released
 
 * last couple of changes to the grouping code didn't make it into the
   previous patch.
 
-VM 5.11 released
+## VM 5.11 released
 
 * added a check for a killed summary buffer to vm-group-message.
 * references to vm-local- variables still weren't right; there
   are now no references at all to their global counterparts.
 
-VM 5.10 released
+## VM 5.10 released
 
 * grouping code wasn't setting vm-local- vars... this didn't
   generate an error when I tested it with a virtual folder, but
@@ -5789,7 +5793,7 @@ VM 5.10 released
 * another type of bounced message delimiter added to the searches
   in vm-resend-bounced-message.
 
-VM 5.09 released 
+## VM 5.09 released 
 
 * New variable: `vm-folder-read-only'
 * removed all the "clever" code at the end of vm-quit that tried
@@ -5821,7 +5825,7 @@ VM 5.09 released
 * vm-resend-bounced-message moved from C-r to M-r.
 * support for Grapevine added to vm-resend-bounced-message.
 
-VM 5.08 released
+## VM 5.08 released
 
 * commands that send mail now inherit the default-directory of the
   folder buffer.
@@ -5839,7 +5843,7 @@ VM 5.08 released
   RFC 1123, i.e. four digit year numbers.
 * vm-mail need not be invoked from within VM now.
 
-VM 5.07 released
+## VM 5.07 released
 
 * purged the overlay-arrow filth, enough is enough.
 * changed incorrect reference to m to (car mp) in vm-write-file-hook.
@@ -5847,7 +5851,7 @@ VM 5.07 released
 * fixed full name parsing botch that left trailing quote on doublequoted names.
 * more virtual folders code added
 
-VM 5.06 released
+## VM 5.06 released
 
 * vm-save-restriction modified to hide its uninterned vars in a (let ...)
   because the byte-compiler interns them. :-(
@@ -5857,7 +5861,7 @@ VM 5.06 released
   be inside the save-restriction call instead of outside it.
 * some early virtual folder stubs added.
 
-VM 5.05 released
+## VM 5.05 released
 
 * Changed vm-thoughtfully-select-message to rely on vm-system-state to
   determine whether to jump to a new message or not.  Made mods to other
@@ -5868,7 +5872,7 @@ VM 5.05 released
 * added a modify flag to each message struct; should save time when
   saving by restuffing only those messages that need it.
 
-VM 5.04 released
+## VM 5.04 released
 
 * fixed problem with the summary arrow drifting out of view in the summary
   window.
@@ -5891,7 +5895,7 @@ VM 5.04 released
   vars are buffer local, so there shouldn't be any squabbles over their
   use.
 
-VM 5.03 released
+## VM 5.03 released
 
 * fixed problem with point and the summary arrow not coinciding at startup.
 * MAILPATH again; bash doesn't use `%' as sh does, it uses `?'.
@@ -5899,7 +5903,7 @@ VM 5.03 released
   `make all' does that now.
 * Fixed Makefile; vm.info wasn't being saved after formatting (oops).
 
-VM 5.02 released
+## VM 5.02 released
 
 * Changed defconst to defvar in the definition of vm-summary-format;
   this is a leftover from debugging.
@@ -5912,7 +5916,7 @@ VM 5.02 released
 * doc corrections and additions
 * modified vm-su-do-author to handle double quoted full names better.
 
-VM 5.01 released
+## VM 5.01 released
 
 * fixed MAILPATH parsing; forgot about "%message" stuff that could be
   tacked onto the end of the filenames.
@@ -5921,7 +5925,7 @@ VM 5.01 released
 * fixed bug involving vm-totals in vm-assimilate-new-messages.
 * doc corrections
 
-VM 5.00 released for alpha testing (sometime in 1990)
+## VM 5.00 released for alpha testing (sometime in 1990)
 
 * `t' now toggles exposing/hiding normally invisible headers.
 * VM now writes much more cached info into its data header resulting in
@@ -6018,19 +6022,16 @@ gnu.emacs.vm.info  started Feb 1, 1991
 
   http://groups.google.com/group/gnu.emacs.vm.info/browse_frm/month/1991-02
 
-
-VM 4.11 released May 30, 1989  (posted on comp.emacs)
+## VM 4.11 released May 30, 1989  (posted on comp.emacs)
 
 * VM has learned how to deal with MMDF folders
 
-VM 4.10 released May 23, 1989  (posted on comp.emacs)
+## VM 4.10 released May 23, 1989  (posted on comp.emacs)
 
  The first public release of VM
  http://groups.google.com/group/comp.emacs/browse_frm/month/1989-05 
 
--------
-
-Kyle Jones's note (written on Apr 27, 1997)
+## Kyle Jones's note (written on Apr 27, 1997)
 
 The earliest record I have of anything VM related is April 1989. 
 Sometime in the spring of 1989, I wrote the first version of VM 
@@ -6047,5 +6048,3 @@ the summer of 1993.
 
 I know that Jamie [Zawinski] was shipping VM with XEmacs as early as
 v19.9.  But beyond that I have no idea. 
-
-

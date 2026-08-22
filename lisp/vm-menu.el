@@ -1335,21 +1335,36 @@ separate dedicated menu bar, depending on the value of
   (interactive)
   (customize-group 'vm))
 
+(defun vm-news-file-number (path)
+  "The number in the name of the NEWS file PATH."
+  (string-to-number
+   (replace-regexp-in-string "\\`NEWS-\\([0-9]+\\)\\.md\\'" "\\1"
+			     (file-name-nondirectory path))))
+
+(defun vm-newest-news-file (dir)
+  "The newest NEWS file in DIR, or nil if it holds none.
+VM\='s history is kept in numbered files that are never renamed, so the
+newest entries are in the highest-numbered one."
+  (let ((files (and dir (file-directory-p dir)
+		    (directory-files dir t "\\`NEWS-[0-9]+\\.md\\'"))))
+    (car (sort files (lambda (a b)
+		       (> (vm-news-file-number a)
+			  (vm-news-file-number b)))))))
+
 (defun vm-view-news ()
-  "View NEWS.md for the current VM version."
+  "View the newest of VM\='s NEWS files."
   (interactive)
-  (let* ((vm-dir (file-name-directory (locate-library "vm")))
-	 (doc-dirs (list (and vm-configure-docdir
-			       (expand-file-name vm-configure-docdir))
-			 (concat vm-dir "../")))
-	 doc-dir)
-    (while doc-dirs
-      (setq doc-dir (car doc-dirs))
-      (if (and doc-dir
-               (file-exists-p (expand-file-name "NEWS.md" doc-dir)))
-          (setq doc-dirs nil)
-	(setq doc-dirs (cdr doc-dirs))))
-    (vm-view-file-other-frame (expand-file-name "NEWS.md" doc-dir))))
+  (let ((dirs (list (and vm-configure-docdir
+			 (expand-file-name vm-configure-docdir))
+		    (concat (file-name-directory (locate-library "vm"))
+			    "../")))
+	(news nil))
+    (while (and dirs (not news))
+      (setq news (vm-newest-news-file (car dirs))
+	    dirs (cdr dirs)))
+    (unless news
+      (error "No NEWS-<n>.md found beside VM; install the documentation, or read it in the repository"))
+    (vm-view-file-other-frame news)))
 
 (defun vm-view-manual ()
   "View the VM manual."
