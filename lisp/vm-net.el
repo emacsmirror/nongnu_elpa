@@ -569,6 +569,16 @@ What the IMAP parser wants: it re-reads from where it was and asks again."
   (let ((size (buffer-size)))
     (lambda () (> (buffer-size) size))))
 
+(defun vm-net-request-now ()
+  "A request that is satisfied straight away.
+What a generator yields to say \"I have more to do and none of it is
+waiting\": the driver takes it back at once, and the slice in
+`vm-net--resume\=' is then free to hand Emacs a turn first.  A generator that
+parses a great deal of what has already arrived -- thousands of responses to
+one command -- yields this between pieces of it, so that the work is
+interruptible rather than one step that runs to the end."
+  (lambda () t))
+
 (defun vm-net-request-position (position)
   "A request that is satisfied when the process buffer reaches POSITION.
 What a read of a known length asks with -- an IMAP literal, whose octet
