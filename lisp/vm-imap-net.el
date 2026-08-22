@@ -301,6 +301,13 @@ a transcript -- with a LOGIN's arguments left out of it."
     (process-send-string process (format "%s %s\r\n" tag command))
     tag))
 
+(defvar vm-imap-net-counting nil
+  "Where `vm-imap-net-command\=' is to report its progress, or nil.
+A list (FOLDER PHASE TOTAL): the folder whose mode line says so, the word for
+what is being done, and how many responses are expected.  Bound around a
+command that answers one line per message, which is the only kind worth
+counting.")
+
 (iter-defun vm-imap-net-command (command &optional description)
   "Send COMMAND and answer with every response line up to its tagged one.
 The tagged line is the last of them, so a caller that wants only whether it
@@ -309,12 +316,24 @@ order."
   (vm-imap-net-send command)
   (let ((lines nil)
 	(done nil)
+	(counted 0)
 	response)
     (while (not done)
       (setq response
 	    (iter-yield-from (vm-imap-net-read-response-and-verify
 			      (or description command))))
       (push response lines)
+      (setq counted (1+ counted))
+      ;; A command that answers one line per message -- the FETCH of every
+      ;; UID and flag, which is the long silence at the start of a fetch of a
+      ;; big mailbox -- says how far it has got.  Every hundredth, because the
+      ;; mode line is redrawn for each one and six thousand redraws are worth
+      ;; nothing to anybody.
+      (when (and vm-imap-net-counting (zerop (% counted 100)))
+	(vm-imap-net-note-progress (nth 0 vm-imap-net-counting)
+				   counted
+				   (nth 2 vm-imap-net-counting)
+				   (nth 1 vm-imap-net-counting)))
       (when (vm-imap-response-matches response 'VM 'OK)
 	(setq done t)))
     (nreverse lines)))
@@ -1264,10 +1283,16 @@ expunged."
 	  ;; through a first fetch of a large mailbox was left doing.
 	  (unless (zerop count)
 	    (vm-net-inform 5 "%s: reading the list of %d message%s on the server..."
-    		       (buffer-name folder) count (if (= count 1) "" "s")))
+    		       (buffer-name folder) count (if (= count 1) "" "s"))
+	    ;; The mode line says "listing 1200/6438" while this runs.  It is one
+	    ;; response per message and on a mailbox of thousands it is the long
+	    ;; wait before anything arrives; the word alone said "fetching" and
+	    ;; nothing was being fetched yet.
+	    (vm-imap-net-note-progress folder 0 count "listing"))
 	  (setq data (if (zerop count)
     			 nil
-    		       (iter-yield-from (vm-imap-net-message-data 1 count))))
+    		       (let ((vm-imap-net-counting (list folder "listing" count)))
+    			 (iter-yield-from (vm-imap-net-message-data 1 count)))))
 	  (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
 	  (let ((retrieve-list (nth 0 plan))
     		(bunches (nth 1 plan)))
@@ -1573,6 +1598,13 @@ buffer showing this folder says what it is doing."
 
 (defvar vm-ml-session)
 
+(defvar vm-imap-net-phase nil
+  "What the session running in this folder is doing, as a word, or nil.
+Shown in place of the word the session name gives.  A fetch is several things
+in a row and only one of them is fetching: the connection, then the list of
+what the server holds, then the messages themselves.")
+(make-variable-buffer-local 'vm-imap-net-phase)
+
 (defvar vm-imap-net-progress nil
   "How far the session running in this folder has got, as (DONE . TOTAL).
 
@@ -1583,10 +1615,15 @@ the word alone, on a mailbox of six thousand, says nothing about whether it
 is getting anywhere.")
 (make-variable-buffer-local 'vm-imap-net-progress)
 
-(defun vm-imap-net-note-progress (folder done total)
-  "Say that FOLDER's session has done DONE of TOTAL, and show it."
+(defun vm-imap-net-note-progress (folder done total &optional phase)
+  "Say that FOLDER's session has done DONE of TOTAL, and show it.
+PHASE is a word for what it is doing, shown in place of the word the session
+name gives -- \"listing\" while the server is being asked what it holds, which
+on a mailbox of thousands is the long wait before anything arrives.  Nil,
+which is what the fetch itself passes, puts the session's own word back."
   (when (buffer-live-p folder)
     (with-current-buffer folder
+      (setq vm-imap-net-phase phase)
       (setq vm-imap-net-progress (and total (> total 0) (cons done total)))
       (vm-imap-net-show-session))))
 
@@ -1603,10 +1640,13 @@ far it has got is there once it knows: \" fetching 24/340\"."
 		       (vm-net-session-doing (vm-net-session-name session))))
 	 (progress (and running vm-imap-net-progress))
 	 (waiting (length vm-imap-net-waiting)))
-    (unless running (setq vm-imap-net-progress nil))
+    (unless running
+      (setq vm-imap-net-progress nil)
+      (setq vm-imap-net-phase nil))
     (setq vm-ml-session
 	  (and running
-	       (propertize (concat " " running
+	       (propertize (concat " " (or (and running vm-imap-net-phase)
+					   running)
 				   (if progress
 				       (format " %d/%d" (car progress)
 					       (cdr progress))
