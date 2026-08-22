@@ -1217,10 +1217,20 @@ for that."
   "Tear down the live session and re-initialize this chat buffer empty.
 Stops any live dashboard client, clears the EWOC transcript and header, and
 forgets both the live and durable session ids so the next send starts fresh."
-  (run-hooks 'hermes-chat-cleanup-functions)
-  (hermes-chat--invalidate-transport-state)
-  (hermes-chat--stop-dashboard-client)
-  (hermes-chat--setup-buffer))
+  (let* ((active-sink
+          (and (eq (car hermes-chat--reset-clarify-owner-sink)
+                   (current-buffer))
+               hermes-chat--reset-clarify-owner-sink))
+         (outermost (null active-sink))
+         (hermes-chat--reset-clarify-owner-sink
+          (or active-sink (list (current-buffer) nil))))
+    (run-hooks 'hermes-chat-cleanup-functions)
+    (hermes-chat--invalidate-transport-state)
+    (hermes-chat--stop-dashboard-client)
+    (hermes-chat--setup-buffer)
+    (when outermost
+      (hermes-chat--drain-reset-clarify-owners
+       hermes-chat--reset-clarify-owner-sink))))
 
 (defun hermes-chat-clear ()
   "Clear this chat's transcript and start a fresh Hermes session in place."

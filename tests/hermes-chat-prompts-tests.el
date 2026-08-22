@@ -487,6 +487,7 @@ stays available."
             (should (equal (hermes-chat-input-string) "exact clarify answer"))
             (should-not (hermes-chat--prompt-response-in-flight-p
                          "req-failure"))
+            (should-not hermes-chat--retained-clarify-owners)
             (if (eq mode 'sync-quit)
                 (progn
                   (should (equal caught '(quit p1a)))
@@ -622,6 +623,7 @@ stays available."
                 (should presented)
                 (should (string-match-p "<redacted>" (buffer-string)))))
               (should (string-empty-p (hermes-chat-input-string)))
+              (should-not hermes-chat--retained-clarify-owners)
               (should-not (string-match-p (regexp-quote response)
                                           (buffer-string))))))))))
 
@@ -679,6 +681,7 @@ stays available."
         (insert "feature")
         (hermes-chat-send)
         (hermes-chat--reset-transcript)
+        (should-not hermes-chat--retained-clarify-owners)
         (insert "replacement draft")
         (let ((before (buffer-string)))
           (funcall reject "clarify failed")
@@ -1137,6 +1140,234 @@ stays available."
         (should-not (string-match-p (regexp-quote secret) (buffer-string)))
         (should-not (string-match-p (regexp-quote encoded-secret)
                                     (buffer-string)))))))
+
+(defun hermes-test--record-local-clarify (request question)
+  "Record a normalized local clarification for REQUEST and QUESTION."
+  (hermes-chat--record-prompt-request
+   (hermes-dashboard-transport--prompt-request-event
+    "clarify.request" '((session_id . "sid-prompt"))
+    `((request_id . ,request) (question . ,question)))
+   nil))
+
+(ert-deftest hermes-chat-p1b-equivalent-replay-keeps-clarify-owner ()
+  "Only an equivalent nonapproval replay inherits retained response authority."
+  (let (resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request _answer &optional resolve-fn _reject)
+                 (setq resolve resolve-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-replay") (question . "Branch?")))
+        (hermes-chat-respond-to-prompt "req-replay" "feature" nil t)
+        (let* ((owner (car hermes-chat--retained-clarify-owners))
+               (token (plist-get owner :response-token)))
+          (should (eq (plist-get owner :buffer) (current-buffer)))
+          (should (eql (plist-get owner :generation)
+                       hermes-chat--lifecycle-generation))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "req-replay") (question . "Branch?")))
+          (should (eq token (plist-get (gethash "req-replay"
+                                                hermes-chat--pending-prompts)
+                                       :response-token)))
+          (should (eq owner (car hermes-chat--retained-clarify-owners)))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "req-replay") (question . "Changed branch?")))
+          (should-not (plist-get (gethash "req-replay"
+                                         hermes-chat--pending-prompts)
+                                 :response-token))
+          (funcall resolve '((status . "ok")))
+          (should (gethash "req-replay" hermes-chat--pending-prompts))
+          (should (eq owner (car hermes-chat--retained-clarify-owners))))))))
+
+(ert-deftest hermes-chat-p1b-approval-never-inherits-nonapproval-token ()
+  "A same-key approval cannot inherit a nonapproval response claim."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+             (lambda (&rest _args) 'pending)))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "clarify.request"
+       '((request_id . "shared-key") (question . "Branch?")))
+      (hermes-chat-respond-to-prompt "shared-key" "feature" nil t)
+      (hermes-chat--record-prompt-request
+       '(:prompt-type "approval" :request-id "shared-key"
+         :session-id "sid-prompt" :content "Approve?") nil)
+      (let ((prompt (gethash "shared-key" hermes-chat--pending-prompts)))
+        (should (hermes-chat--approval-prompt-p prompt))
+        (should-not (plist-get prompt :response-token))
+        (should (= (length hermes-chat--retained-clarify-owners) 1))))))
+
+(ert-deftest hermes-chat-p1b-ordinary-clarify-owners-settle-exactly ()
+  "Concurrent duplicate answers retain FIFO occurrences and settle by identity."
+  (let ((callbacks (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client request _answer &optional resolve reject)
+                 (puthash request (cons resolve reject) callbacks))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (dolist (request '("req-one" "req-two" "req-three"))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           `((request_id . ,request) (question . "Same?")))
+          (hermes-chat-respond-to-prompt request "duplicate" nil t))
+        (let ((owners (copy-sequence hermes-chat--retained-clarify-owners)))
+          (should (equal (mapcar (lambda (owner) (plist-get owner :text)) owners)
+                         '("duplicate" "duplicate" "duplicate")))
+          (should-not (eq (plist-get (car owners) :text) "duplicate"))
+          (funcall (car (gethash "req-one" callbacks)) '((status . "ok")))
+          (should (equal hermes-chat--retained-clarify-owners (cdr owners)))
+          (funcall (cdr (gethash "req-two" callbacks)) "clarify failed")
+          (should (equal hermes-chat--retained-clarify-owners (cddr owners)))
+          (should (equal (hermes-chat-input-string) "duplicate"))
+          (funcall (car (gethash "req-three" callbacks)) '((status . "ok")))
+          (should-not hermes-chat--retained-clarify-owners))))))
+
+(ert-deftest hermes-chat-p1b-lifecycle-keeps-current-reentry-owner ()
+  "Invalidation drops old owners without dropping a hook-created replacement."
+  (dolist (action '(invalidate disconnect mode))
+    (ert-info ((format "lifecycle action: %s" action))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                 (lambda (&rest _args) 'pending)))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "req-old") (question . "Old?")))
+          (hermes-chat-respond-to-prompt "req-old" "old" nil t)
+          (unless (eq action 'mode)
+            (add-hook
+             'hermes-chat-lifecycle-invalidation-hook
+             (lambda ()
+               (unless (gethash "req-current" hermes-chat--pending-prompts)
+                 (hermes-test--record-local-clarify "req-current" "Current?")
+                 (hermes-chat-respond-to-prompt
+                  "req-current" "current" nil t)))
+             nil t))
+          (pcase action
+            ('invalidate (hermes-chat--invalidate-transport-state))
+            ('disconnect (hermes-chat-disconnect))
+            ('mode (fundamental-mode)))
+          (if (eq action 'mode)
+              (should-not hermes-chat--retained-clarify-owners)
+            (should (equal
+                     (mapcar (lambda (owner) (plist-get owner :text))
+                             hermes-chat--retained-clarify-owners)
+                     '("current")))))))))
+
+(defun hermes-test--p1b-reset-clarify (mode)
+  "Exercise reset-hook clarification settlement MODE."
+  (let (resolve reject holder caught doomed-input nested ran)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request _answer &optional resolve-fn reject-fn)
+                 (setq resolve resolve-fn reject reject-fn)
+                 (pcase mode
+                   ('sync-error (error "clarify failed"))
+                   ('sync-quit (signal 'quit '(p1b)))
+                   ('inline-reject (funcall reject-fn "clarify failed"))
+                   ('inline-success (funcall resolve-fn '((status . "ok"))))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (add-hook
+         'hermes-chat-lifecycle-invalidation-hook
+         (lambda ()
+           (when (and (eq mode 'nested) (not nested))
+             (setq nested t)
+             (hermes-chat--reset-transcript))
+           (unless ran
+             (setq ran t
+                   holder hermes-chat--reset-clarify-owner-sink)
+             (hermes-test--record-local-clarify "req-reset" "Reset answer?")
+             (insert "reset answer")
+             (condition-case err
+                 (hermes-chat-send)
+               (quit (setq caught err)))
+             (when (eq mode 'async-reject)
+               (funcall reject "clarify failed"))
+             (setq doomed-input (hermes-chat-input-string))))
+         nil t)
+        (hermes-chat--reset-transcript)
+        (should (equal doomed-input ""))
+        (should (equal caught (and (eq mode 'sync-quit) '(quit p1b))))
+        (should (equal (hermes-chat-input-string)
+                       (if (eq mode 'inline-success) "" "reset answer")))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should-not (cadr holder))
+        (should-not hermes-chat--reset-clarify-owner-sink)
+        (should (zerop (hash-table-count hermes-chat--pending-prompts)))
+        (should-not hermes-chat--queued-messages)
+        (let ((before (buffer-string)))
+          (when resolve (funcall resolve '((status . "ok"))))
+          (when reject (funcall reject "late rejection"))
+          (should (equal (buffer-string) before)))))))
+
+(ert-deftest hermes-chat-p1b-reset-hook-settles-clarify-owners ()
+  "Reset recovers failed or pending local answers and drops exact successes."
+  (dolist (mode '(pending sync-error sync-quit inline-reject
+                          async-reject inline-success nested))
+    (ert-info ((format "reset settlement: %s" mode))
+      (hermes-test--p1b-reset-clarify mode))))
+
+(ert-deftest hermes-chat-p1b-reset-sink-rejects-foreign-buffer-owner ()
+  "Reset cannot capture a clarification accepted in another chat buffer."
+  (let (foreign-hook other reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request _answer &optional _resolve reject-fn)
+                 (setq reject reject-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (setq other (generate-new-buffer " *Hermes foreign clarify*"))
+        (unwind-protect
+            (progn
+              (with-current-buffer other
+                (hermes-chat-mode)
+                (setq hermes-chat--dashboard-client client
+                      hermes-chat--dashboard-active-session-id "sid-prompt"))
+              (setq foreign-hook
+                    (lambda ()
+                      (with-current-buffer other
+                        (hermes-test--record-local-clarify "req-other" "Other?")
+                        (hermes-chat-respond-to-prompt
+                         "req-other" "other answer" nil t))))
+              (add-hook 'hermes-chat-lifecycle-invalidation-hook
+                        foreign-hook nil t)
+              (hermes-chat--reset-transcript)
+              (should (string-empty-p (hermes-chat-input-string)))
+              (with-current-buffer other
+                (should (equal (mapcar (lambda (owner) (plist-get owner :text))
+                                       hermes-chat--retained-clarify-owners)
+                               '("other answer")))
+                (funcall reject "clarify failed")
+                (should (equal (hermes-chat-input-string) "other answer"))
+                (should-not hermes-chat--retained-clarify-owners)))
+          (remove-hook 'hermes-chat-lifecycle-invalidation-hook foreign-hook t)
+          (when (buffer-live-p other) (kill-buffer other)))))))
+
+(ert-deftest hermes-chat-p1b-reset-preserves-duplicate-clarify-order ()
+  "Reset drains duplicate clarification occurrences oldest first."
+  (let (accepted holder ran)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (&rest _args) 'pending)))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (add-hook
+         'hermes-chat-lifecycle-invalidation-hook
+         (lambda ()
+           (unless ran
+             (setq ran t
+                   holder hermes-chat--reset-clarify-owner-sink)
+             (dolist (request '("req-one" "req-two"))
+               (hermes-test--record-local-clarify request "Same?")
+               (hermes-chat-respond-to-prompt request "same" nil t))
+             (setq accepted (copy-sequence (cadr holder)))))
+         nil t)
+        (hermes-chat--reset-transcript)
+        (should (equal
+                 (mapcar (lambda (owner)
+                           (car (plist-get owner :response-token)))
+                         accepted)
+                 '("req-one" "req-two")))
+        (should (equal (mapcar (lambda (owner) (plist-get owner :text)) accepted)
+                       '("same" "same")))
+        (should (equal (hermes-chat-input-string) "same\nsame"))
+        (should-not (cadr holder))
+        (should-not hermes-chat--retained-clarify-owners)))))
 
 (provide 'hermes-chat-prompts-tests)
 ;;; hermes-chat-prompts-tests.el ends here
