@@ -470,12 +470,50 @@ A nil SESSION-ID matches every prompt in the current buffer."
                            (hermes-chat--terminal-approval-session
                             (car queue))))))
 
+(defconst hermes-chat--invalid-terminal-auto-claims
+  'hermes-chat--invalid-terminal-auto-claims
+  "Marker for malformed terminal auto-prompt claim state.")
+
+(defun hermes-chat--terminal-auto-claims ()
+  "Return exact sorted auto-prompt claims, or the private invalid marker."
+  (cond
+   ((null hermes-chat--auto-prompt-keys) nil)
+   ((not (hash-table-p hermes-chat--auto-prompt-keys))
+    hermes-chat--invalid-terminal-auto-claims)
+   (t
+    (catch 'invalid
+      (let ((missing (make-symbol "missing-prompt")) entries keys)
+        (maphash
+         (lambda (key claim)
+           (unless (and (stringp key) (not (member key keys)))
+             (throw 'invalid hermes-chat--invalid-terminal-auto-claims))
+           (push key keys)
+           (push (cons key claim) entries))
+         hermes-chat--auto-prompt-keys)
+        (mapcar
+         (lambda (entry)
+           (let* ((key (car entry))
+                  (claim (cdr entry))
+                  (prompt (if (hash-table-p hermes-chat--pending-prompts)
+                              (gethash key hermes-chat--pending-prompts missing)
+                            missing)))
+             (unless (and (eql (proper-list-p claim) 2)
+                          (equal (car claim) key)
+                          prompt
+                          (not (eq prompt missing))
+                          (eq (cadr claim) prompt))
+               (throw 'invalid hermes-chat--invalid-terminal-auto-claims))
+             (list :key key :claim claim :prompt prompt)))
+         (sort entries (lambda (left right)
+                         (string< (car left) (car right))))))))))
+
 (defun hermes-chat--capture-terminal-prompts ()
   "Return immutable plain terminal prompt authority for the current chat."
   (list :buffer (current-buffer)
         :generation hermes-chat--lifecycle-generation
         :prompt-table hermes-chat--pending-prompts
         :auto-table hermes-chat--auto-prompt-keys
+        :auto-claims (hermes-chat--terminal-auto-claims)
         :retained-owners (copy-sequence hermes-chat--retained-clarify-owners)
         :entries
         (mapcar (lambda (key)
