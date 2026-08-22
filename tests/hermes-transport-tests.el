@@ -3451,5 +3451,35 @@ url.el flags every 4xx/5xx via the callback status; the useless
       (should (eq (hermes-dashboard-transport-client-websocket remote)
                   'remote-websocket)))))
 
+(ert-deftest hermes-transport-dashboard-emacs-exit-stops-only-spawn-owners ()
+  "Repeated package shutdown stops registered children but leaves remote attach."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (first (make-hermes-dashboard-transport-client
+                 :endpoint-key 'first :process 'child-1 :callback #'ignore))
+         (second (make-hermes-dashboard-transport-client
+                  :endpoint-key 'second :process 'child-2 :callback #'ignore))
+         (remote (make-hermes-dashboard-transport-client
+                  :endpoint-key 'remote :websocket 'remote-socket
+                  :callback #'ignore))
+         deleted)
+    (puthash 'first first hermes-dashboard-transport--clients)
+    (puthash 'second second hermes-dashboard-transport--clients)
+    (puthash 'remote remote hermes-dashboard-transport--clients)
+    (cl-letf (((symbol-function 'delete-process)
+               (lambda (process) (push process deleted))))
+      (hermes-dashboard-transport--stop-spawn-clients-on-exit)
+      (hermes-dashboard-transport--stop-spawn-clients-on-exit))
+    (should (equal (sort deleted
+                         (lambda (left right)
+                           (string< (symbol-name left) (symbol-name right))))
+                   '(child-1 child-2)))
+    (should (and (hermes-dashboard-transport-client-stopping-p first)
+                 (hermes-dashboard-transport-client-stopping-p second)))
+    (should-not (hermes-dashboard-transport-client-stopping-p remote))
+    (should (eq (hermes-dashboard-transport-client-websocket remote)
+                'remote-socket))
+    (should (memq #'hermes-dashboard-transport--stop-spawn-clients-on-exit
+                  kill-emacs-hook))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

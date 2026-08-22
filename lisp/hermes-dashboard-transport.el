@@ -1655,5 +1655,20 @@ socket would clobber each other's session state."
       (format "Invalid Hermes dashboard frame: %s"
               (hermes-dashboard-transport--condition-message client err))))))
 
+(defun hermes-dashboard-transport--stop-spawn-clients-on-exit ()
+  "Stop every registered dashboard client that owns a spawned process."
+  (let ((clients
+         (delete-dups
+          (cl-remove-if-not
+           (lambda (client)
+             (and (hermes-dashboard-transport-client-p client)
+                  (hermes-dashboard-transport-client-process client)))
+           (hash-table-values hermes-dashboard-transport--clients)))))
+    (mapc #'hermes-dashboard-transport-stop clients)
+    (length clients)))
+
+(add-hook 'kill-emacs-hook
+          #'hermes-dashboard-transport--stop-spawn-clients-on-exit)
+
 (provide 'hermes-dashboard-transport)
 ;;; hermes-dashboard-transport.el ends here
