@@ -26,10 +26,13 @@ SUBDIRS = lisp @INFO_SUBDIR@ pixmaps
 # is built here, or `distclean' would leave info/Makefile behind.
 ALL_SUBDIRS = lisp info pixmaps
 
-# the list of source (documentation) files
-SOURCES = NEWS-3.md
-SOURCES += NEWS-2.md
-SOURCES += NEWS-1.md
+# the list of source (documentation) files.
+#
+# A glob rather than each NEWS file by name, so that starting NEWS-4.md needs
+# no edit here: a file left out of this list is one that silently stops being
+# installed.  Expanded by the shell, in the `for' loops that are the only
+# things to use it, since $(wildcard) is GNU make only.
+SOURCES = NEWS-*.md
 SOURCES += README.md
 SOURCES += example.vm
 
@@ -215,5 +218,5 @@ xemacs-package:
 
 ##############################################################################
 tags::
-	etags lisp/*.el contrib/*.el info/*.texinfo NEWS-3.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
+	etags lisp/*.el contrib/*.el info/*.texinfo NEWS-*.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 
