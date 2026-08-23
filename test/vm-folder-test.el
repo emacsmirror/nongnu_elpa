@@ -2395,7 +2395,8 @@ Mozilla headers into a folder at all."
 (ert-deftest vm-folder-test-type-for-name-reads-the-alist ()
   "`vm-folder-type-for-name' answers from `vm-folder-type-by-extension-alist'."
   (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mboxcl2") 'mboxcl2))
-  (should-not (vm-folder-type-for-name "/mail/2026-08.out.mbox"))
+  ;; .mbox is what the rest of the world means by an mbox file, which is From_
+  (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mbox") 'From_))
   (should-not (vm-folder-type-for-name "/mail/INBOX"))
   ;; `file-name-extension' looks past a backup suffix, so the backup of an
   ;; mboxcl2 folder is one too -- which it is, and which the old pattern,
@@ -5005,6 +5006,45 @@ rather than of a buffer nobody asked about."
     (let* ((text-quoting-style 'grave)
            (err (should-error (vm-check-folder file) :type 'error)))
       (should (string-match-p "notes\\.txt has no folder type" (cadr err))))))
+
+(ert-deftest vm-folder-test-a-name-can-say-plain-mbox ()
+  "A folder named .mbox is From_, whatever `vm-default-folder-type' says.
+That is what everything outside VM means by an mbox file, and a folder that
+does not exist yet has nowhere else to have said it."
+  (let ((vm-default-folder-type 'mboxcl2))
+    (should (eq (vm-folder-type-for-name "/mail/sent.mbox") 'From_))
+    (should (eq (vm-folder-type-to-write "/mail/sent.mbox") 'From_))
+    ;; and the default still decides a name that says nothing
+    (should (eq (vm-folder-type-to-write "/mail/INBOX") 'mboxcl2))))
+
+(ert-deftest vm-folder-test-From_-is-never-imposed-on-a-name ()
+  "Converting to From_ does not put .mbox on a folder that has not got it.
+From_ is the type a folder has when its name says nothing about it, so it is
+not a type a name has to state -- and renaming INBOX to INBOX.mbox would take
+a `vm-primary-inbox' setting with it."
+  (should-not (vm-folder-extension-for-type 'From_))
+  (should (equal (vm-folder-name-for-type "/mail/INBOX" 'From_) "/mail/INBOX"))
+  (should (equal (vm-folder-name-for-type "/mail/notes.txt" 'From_)
+                 "/mail/notes.txt"))
+  ;; the extension that does state a type is still replaced
+  (should (equal (vm-folder-name-for-type "/mail/sent.mboxcl2" 'From_)
+                 "/mail/sent"))
+  (should (equal (vm-folder-extension-for-type 'mboxcl2) "mboxcl2")))
+
+(ert-deftest vm-folder-test-a-name-that-says-the-type-is-left-alone ()
+  "A folder the reader called sent.mbox is still sent.mbox after a conversion
+to From_, rather than losing the extension it was given."
+  (should (equal (vm-folder-name-for-type "/mail/sent.mbox" 'From_)
+                 "/mail/sent.mbox"))
+  (should (equal (vm-folder-name-for-type "/mail/sent.mboxcl2" 'mboxcl2)
+                 "/mail/sent.mboxcl2"))
+  ;; and the old name for the type counts as the type
+  (should (equal (vm-folder-name-for-type "/mail/sent.mboxcl2"
+                                          'From_-with-Content-Length)
+                 "/mail/sent.mboxcl2"))
+  ;; converting the other way still renames
+  (should (equal (vm-folder-name-for-type "/mail/sent.mbox" 'mboxcl2)
+                 "/mail/sent.mboxcl2")))
 
 (provide 'vm-folder-test)
 

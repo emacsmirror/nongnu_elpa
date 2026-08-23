@@ -784,12 +784,22 @@ name, which is what `vm-default-folder-type' is for."
     (when extension
       (cdr (assoc extension vm-folder-type-by-extension-alist)))))
 
+(defconst vm-folder-type-with-no-name-of-its-own 'From_
+  "The type a folder has when its name says nothing about it.
+So it is not a type a name has to state.  `.mbox\=' is read as this and a folder
+may be named that way, but a conversion to it does not put the extension on a
+folder that has not got one: that would rename INBOX to INBOX.mbox and take a
+`vm-primary-inbox\=' setting with it.")
+
 (defun vm-folder-extension-for-type (type)
-  "The file name extension that states TYPE, or nil if none does.
-The reverse of `vm-folder-type-by-extension-alist\='.  Nil for a type no
-extension names, and for every type when a user has emptied that option."
-  (car (rassq (vm-canonical-folder-type type)
-	      vm-folder-type-by-extension-alist)))
+  "The file name extension a folder is named with to state TYPE, or nil.
+Mostly the reverse of `vm-folder-type-by-extension-alist\='.  Nil for a type no
+extension names, for every type when a user has emptied that option, and for
+`vm-folder-type-with-no-name-of-its-own\=', which an extension may name without
+being the name that type is written under."
+  (let ((type (vm-canonical-folder-type type)))
+    (unless (eq type vm-folder-type-with-no-name-of-its-own)
+      (car (rassq type vm-folder-type-by-extension-alist)))))
 
 (defun vm-folder-name-for-type (file type)
   "The name FILE needs in order to say that it is TYPE.
@@ -799,14 +809,19 @@ sent.mboxcl2 converted to From_ is sent, and back again is sent.mboxcl2.  An
 extension VM does not know is part of the name and is kept: notes.txt
 converted to mboxcl2 is notes.txt.mboxcl2.
 
-Answers FILE itself when no extension names TYPE, which is the case for the
-types that have no entry and for a user who has emptied
+Answers FILE itself when its name already states TYPE, so a folder the reader
+called sent.mbox is still sent.mbox after being converted to From_ rather than
+losing the extension it was given.  And when no extension names TYPE, which is
+the case for the types that have no entry, for
+`vm-folder-type-with-no-name-of-its-own\=', and for a user who has emptied
 `vm-folder-type-by-extension-alist\='."
-  (let* ((base (if (vm-folder-type-for-name file)
-		   (file-name-sans-extension file)
-		 file))
-	 (extension (vm-folder-extension-for-type type)))
-    (if extension (concat base "." extension) base)))
+  (if (eq (vm-folder-type-for-name file) (vm-canonical-folder-type type))
+      file
+    (let* ((base (if (vm-folder-type-for-name file)
+		     (file-name-sans-extension file)
+		   file))
+	   (extension (vm-folder-extension-for-type type)))
+      (if extension (concat base "." extension) base))))
 
 (defun vm-folder-type-to-write (&optional file)
   "The folder type to write the current folder in.

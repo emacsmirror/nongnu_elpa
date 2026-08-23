@@ -1004,7 +1004,8 @@ A folder that does not exist yet has no contents to examine, so a name
 can say what it is instead.  @code{vm-folder-type-by-extension-alist} matches
 the file name's extension against folder types, and out of the box a folder
 whose name ends in @samp{.mboxcl2} is created as one --- which is what a name
-like @file{2026-08.out.mboxcl2} was already trying to say.
+like @file{2026-08.out.mboxcl2} was already trying to say.  @samp{.mbox} is
+From_, which is what everything outside VM means by an mbox file.
 
 A name settles the question for an existing folder too, but only between
 From_ and mboxcl2: those are the same folder but for the
@@ -1214,7 +1215,13 @@ already changed.
 The name moves with the type, since the name is what states the type: a
 folder converted to mboxcl2 is written as @file{@var{name}.mboxcl2}, one
 converted away from it loses the extension, and the file left behind under the
-old name is offered for deletion once the new one is on disk.  Keeping it is
+old name is offered for deletion once the new one is on disk.
+
+From_ is the exception, and is never put into a name that has not got it: it is
+the type a folder has when its name says nothing about it, so a folder called
+@file{INBOX} converted to From_ is still @file{INBOX} rather than
+@file{INBOX.mbox}.  A folder you called @file{sent.mbox} keeps that name,
+since the name already says what the folder now is.  Keeping it is
 allowed, and it is worth knowing what you are keeping: two folders holding the
 same mail, of which the old one is the copy VM is no longer looking at.  The
 folder as it was is kept in a backup file either way, named as Emacs names one
