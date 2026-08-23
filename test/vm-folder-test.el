@@ -2724,11 +2724,10 @@ to open leaves a buffer holding only the messages read before the error."
       (with-current-buffer (vm-get-file-buffer file) (set-buffer-modified-p nil))
       (vm-change-folder-type-of-file file 'mboxcl2)
       (should-not (vm-get-file-buffer file))
-      ;; the file is mboxcl2 now; whether VM *reads* it as one is a separate
-      ;; question, since this one is named .mbox and the default settings do
-      ;; not trust a Content-Length
+      ;; and it is written under the name mboxcl2 asks for, so that it reads
+      ;; back as one (emacs-vm/vm#743)
       (with-temp-buffer
-        (insert-file-contents file)
+        (insert-file-contents (vm-folder-name-for-type file 'mboxcl2))
         (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string)))))))
 
 (ert-deftest vm-folder-test-on-disk-conversion-needs-a-folder ()
@@ -4078,7 +4077,7 @@ was given and the alias the docstring promises was rejected."
     (let ((text-quoting-style 'grave))
       (vm-change-folder-type 'From_-with-Content-Length file)
       (with-temp-buffer
-        (insert-file-contents file)
+        (insert-file-contents (vm-folder-name-for-type file 'mboxcl2))
         (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string))))
       (should (string-match-p "Unknown folder type: mbox"
                               (cadr (should-error
@@ -4535,6 +4534,150 @@ be silent the second time."
 and can be told why it did not work, and can be asked for a password."
   (vm-folder-test--with-a-failing-check 'imap 'vm-imap-folder-check-mail
     (should-error (vm-check-for-spooled-mail t t) :type 'error)))
+
+
+;; Changing a folder's type changes its name to match, since the name is what
+;; states the type (emacs-vm/vm#743).
+
+(defconst vm-folder-test--743-message
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+  "A one-message From_ folder, for the conversion-renames-it tests.")
+
+(defmacro vm-folder-test--converting (spec &rest body)
+  "Visit the folder SPEC names and run BODY with the purge answered.
+SPEC is (VAR NAME CONTENT ANSWER): ANSWER is what `yes-or-no-p' says to the
+offer to delete the file left behind, and the conversion is made to look
+interactive so that the offer is put at all."
+  (declare (indent 1) (debug t))
+  (let ((var (nth 0 spec)) (name (nth 1 spec))
+        (content (nth 2 spec)) (answer (nth 3 spec)))
+    `(vm-folder-test-with-file (,var ,name ,content)
+       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) ,answer))
+                 ((symbol-function 'vm-warn) #'ignore))
+         (vm-visit-folder ,var)
+         ,@body))))
+
+(defun vm-folder-test--convert (type)
+  "Change this folder to TYPE as a reader typing the command would.
+The command decides whether to offer the deletion with `vm-interactive-p\=',
+a macro over `called-interactively-p\=', which in batch answers no however
+the call is made: `funcall-interactively' does not change it.  So the function
+is stubbed, and only around this call.  Stubbed for a whole test body, with
+the folder visited inside it, six of these took 25 seconds each."
+  (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t)))
+    (vm-change-folder-type type)))
+
+(ert-deftest vm-folder-test-conversion-to-mboxcl2-names-the-folder-for-it ()
+  "A folder converted to mboxcl2 is written as NAME.mboxcl2, and reads back
+as mboxcl2.  Left under a name saying nothing it was read as
+`vm-default-folder-type' next time and written back in it, so the conversion
+did not outlive the session."
+  (vm-folder-test--converting (file "inbox" vm-folder-test--743-message t)
+    (vm-folder-test--convert 'mboxcl2)
+    (should (equal (buffer-file-name) (concat file ".mboxcl2")))
+    (should (eq vm-folder-type 'mboxcl2))
+    (vm-quit-no-change)
+    ;; the old name is gone, the answer having been yes, and the new one reads
+    (should-not (file-exists-p file))
+    (vm-visit-folder (concat file ".mboxcl2"))
+    (should (eq vm-folder-type 'mboxcl2))
+    (should (= (length vm-message-list) 1))))
+
+(ert-deftest vm-folder-test-conversion-away-from-mboxcl2-drops-the-extension ()
+  "sent.mboxcl2 converted to From_ is written as sent.  Left named mboxcl2
+with its lengths stripped, the folder could not be opened at all: the strict
+reader refused it."
+  (vm-folder-test--converting (file "sent.mboxcl2"
+                                    (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                            "From: alice@example.com\nSubject: one\n"
+                                            "Content-Length: 6\n\nBody.\n\n")
+                                    t)
+    (should (eq vm-folder-type 'mboxcl2))
+    (vm-folder-test--convert 'From_)
+    (should (equal (buffer-file-name) (file-name-sans-extension file)))
+    (vm-quit-no-change)
+    (vm-visit-folder (file-name-sans-extension file))
+    (should (eq vm-folder-type 'From_))
+    (should (= (length vm-message-list) 1))))
+
+(ert-deftest vm-folder-test-conversion-keeps-the-old-file-when-told-to ()
+  "Answering no to the offer keeps the old file, and VM is on the new one.
+Two folders holding the same mail is the reader's business -- the old name may
+be where mail is delivered -- but the folder VM is looking at is the new one."
+  (vm-folder-test--converting (file "inbox" vm-folder-test--743-message nil)
+    (vm-folder-test--convert 'mboxcl2)
+    (should (equal (buffer-file-name) (concat file ".mboxcl2")))
+    (should (file-exists-p file))
+    (should (file-exists-p (concat file ".mboxcl2")))))
+
+(ert-deftest vm-folder-test-conversion-keeps-a-backup-even-when-purging ()
+  "The old file is backed up before it is offered for deletion.
+It looks like backup enough while it is there, which is exactly why deleting
+it would otherwise leave no previous copy at all."
+  (vm-folder-test--converting (file "inbox" vm-folder-test--743-message t)
+    (vm-folder-test--convert 'mboxcl2)
+    (should-not (file-exists-p file))
+    (should (file-exists-p (vm-folder-backup-name file)))))
+
+(ert-deftest vm-folder-test-conversion-will-not-overwrite-a-folder ()
+  "The name the new type asks for is refused when a folder already has it.
+Overwriting one folder with another is not something to ask about."
+  (vm-folder-test--converting (file "inbox" vm-folder-test--743-message t)
+    (write-region "not a folder VM wrote\n" nil (concat file ".mboxcl2") nil 'quiet)
+    (let ((text-quoting-style 'grave))
+      (should (string-match-p "is a folder already"
+                              (cadr (should-error
+                                     (vm-folder-test--convert 'mboxcl2))))))
+    ;; and nothing was done: the folder is what it was
+    (should (eq vm-folder-type 'From_))))
+
+(ert-deftest vm-folder-test-a-conversion-with-nobody-to-ask-keeps-both ()
+  "With no reader to answer, the old file stays.  A file is not deleted on a
+guess, and a batch caller has nobody to put the question to."
+  (vm-folder-test-with-file (file "inbox" vm-folder-test--743-message)
+    (cl-letf (((symbol-function 'vm-warn) #'ignore))
+      (vm-visit-folder file)
+      (vm-change-folder-type 'mboxcl2)
+      (should (equal (buffer-file-name) (concat file ".mboxcl2")))
+      (should (file-exists-p file)))))
+
+(ert-deftest vm-folder-test-a-name-that-already-fits-is-left-alone ()
+  "Converting mboxcl2 to mboxcl2 is the repair for wrong lengths, and the name
+already states the type, so nothing is renamed and nothing is offered."
+  (let ((asked 0))
+    (vm-folder-test-with-file (file "sent.mboxcl2"
+                                    (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                            "From: alice@example.com\nSubject: one\n"
+                                            "Content-Length: 6\n\nBody.\n\n"))
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (&rest _) (setq asked (1+ asked)) t)))
+        (vm-visit-folder file)
+        (vm-folder-test--convert 'mboxcl2)
+        (should (equal (buffer-file-name) file))
+        (should (equal asked 0))))))
+
+(ert-deftest vm-folder-test-the-name-a-type-asks-for ()
+  "`vm-folder-name-for-type' replaces an extension that states a type, keeps
+one that does not, and answers the name itself for a type no extension names."
+  (let ((vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
+    (should (equal (vm-folder-name-for-type "/m/inbox" 'mboxcl2)
+                   "/m/inbox.mboxcl2"))
+    (should (equal (vm-folder-name-for-type "/m/sent.mboxcl2" 'From_)
+                   "/m/sent"))
+    (should (equal (vm-folder-name-for-type "/m/sent.mboxcl2" 'mboxcl2)
+                   "/m/sent.mboxcl2"))
+    ;; an extension VM does not know is part of the name
+    (should (equal (vm-folder-name-for-type "/m/notes.txt" 'mboxcl2)
+                   "/m/notes.txt.mboxcl2"))
+    ;; the old name for mboxcl2 reaches the same answer
+    (should (equal (vm-folder-name-for-type "/m/inbox" 'From_-with-Content-Length)
+                   "/m/inbox.mboxcl2"))
+    ;; no extension names babyl, so the name stands
+    (should (equal (vm-folder-name-for-type "/m/inbox" 'babyl) "/m/inbox")))
+  ;; and with the option emptied, nothing is renamed at all
+  (let ((vm-folder-type-by-extension-alist nil))
+    (should (equal (vm-folder-name-for-type "/m/inbox" 'mboxcl2) "/m/inbox"))))
 
 (provide 'vm-folder-test)
 

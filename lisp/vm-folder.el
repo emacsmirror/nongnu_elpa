@@ -784,6 +784,30 @@ name, which is what `vm-default-folder-type' is for."
     (when extension
       (cdr (assoc extension vm-folder-type-by-extension-alist)))))
 
+(defun vm-folder-extension-for-type (type)
+  "The file name extension that states TYPE, or nil if none does.
+The reverse of `vm-folder-type-by-extension-alist\='.  Nil for a type no
+extension names, and for every type when a user has emptied that option."
+  (car (rassq (vm-canonical-folder-type type)
+	      vm-folder-type-by-extension-alist)))
+
+(defun vm-folder-name-for-type (file type)
+  "The name FILE needs in order to say that it is TYPE.
+
+The extension that states a type replaces one that states any type, so
+sent.mboxcl2 converted to From_ is sent, and back again is sent.mboxcl2.  An
+extension VM does not know is part of the name and is kept: notes.txt
+converted to mboxcl2 is notes.txt.mboxcl2.
+
+Answers FILE itself when no extension names TYPE, which is the case for the
+types that have no entry and for a user who has emptied
+`vm-folder-type-by-extension-alist\='."
+  (let* ((base (if (vm-folder-type-for-name file)
+		   (file-name-sans-extension file)
+		 file))
+	 (extension (vm-folder-extension-for-type type)))
+    (if extension (concat base "." extension) base)))
+
 (defun vm-folder-type-to-write (&optional file)
   "The folder type to write the current folder in.
 What the folder already is, else what FILE's name asks for, else
@@ -4412,6 +4436,13 @@ Refuses on a virtual folder, which has no file of its own."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-virtual-folder)
+  (vm-write-file-to nil))
+
+(defun vm-write-file-to (file)
+  "Write this folder to FILE, or to a name asked for when FILE is nil.
+What `vm-write-file\' does once it has a name, so that a caller which has
+worked one out -- `vm-change-folder-type\', naming a folder for the type it
+now holds -- gets the same treatment as a reader who typed one."
   (let ((old-buffer-name (buffer-name))
 	(oldmodebits (and (fboundp 'default-file-modes)
 			  (default-file-modes))))
@@ -4419,7 +4450,9 @@ Refuses on a virtual folder, which has no file of its own."
 	(save-excursion
 	  (and oldmodebits (set-default-file-modes
 			    vm-default-folder-permission-bits))
-	  (call-interactively 'write-file))
+	  (if file
+	      (write-file file)
+	    (call-interactively 'write-file)))
       (and oldmodebits (set-default-file-modes oldmodebits)))
     (if (not (equal (buffer-name) old-buffer-name))
 	(progn
@@ -6078,8 +6111,44 @@ none."
       (vm-inform 5 "Kept the folder as it was in %s"
 		 (abbreviate-file-name backup)))))
 
-(defun vm-change-folder-type-of-file (file type)
+(defun vm-folder-attendant-files (file)
+  "The files VM keeps beside the folder FILE.
+Its index file and the message summary Thunderbird writes.  Not the backup,
+which is a reader\='s to keep, and not the auto-save file, whose name a
+reader can have moved with `auto-save-file-name-transforms\='."
+  (let ((directory (file-name-directory file))
+	(name (file-name-nondirectory file)))
+    (append (when (stringp vm-index-file-suffix)
+	      (list (concat directory "." name vm-index-file-suffix)))
+	    (list (concat file ".msf")))))
+
+(defun vm-purge-renamed-folder-file (old interactive)
+  "Offer to delete OLD, left holding a folder that has been written elsewhere.
+INTERACTIVE says whether there is anybody to ask; without one nothing is
+deleted, since a file is not removed on a guess.
+
+Asked rather than done.  The old name may be where mail is delivered, or what
+`vm-spool-files\=' or an account\='s inbox names, and a reader who keeps it is
+entitled to.  Said either way, because two folders holding the same mail is
+a thing to know about: VM is looking at the new one, so the old goes stale."
+  (when (and old (file-exists-p old))
+    (if (and interactive
+	     (yes-or-no-p (format "Delete %s, which holds the folder in its old type? "
+				  (abbreviate-file-name old))))
+	(progn
+	  (vm-error-free-call 'delete-file old)
+	  (dolist (file (vm-folder-attendant-files old))
+	    (when (file-exists-p file)
+	      (vm-error-free-call 'delete-file file)))
+	  (vm-inform 5 "%s removed" (abbreviate-file-name old)))
+      (vm-warn 1 0 (concat "%s still holds this folder in its old type, and"
+			   " VM is not looking at it: it will go stale")
+	       (abbreviate-file-name old)))))
+
+(defun vm-change-folder-type-of-file (file type &optional interactive)
   "Convert the folder FILE on disk to TYPE, without visiting it.
+INTERACTIVE says whether there is anybody to ask about deleting the file left
+behind when the name changes.
 This is how to repair a folder VM will not read: a folder saying it is mboxcl2
 with a message that has no `Content-Length' cannot be visited, so its type
 cannot be changed in a buffer.  `vm-mboxcl2-strict' is bound to nil while the
@@ -6091,8 +6160,11 @@ recomputes every length, and that is the repair.
 
 The file is written only if the result reads back as TYPE, strictly, and holds
 the same number of messages; a folder already sound is not rewritten at all.
-The previous contents are kept in a backup file, named as Emacs would name
-one when saving a buffer."
+
+Written under the name TYPE asks for, since the name is what states the type:
+sent.mboxcl2 converted to From_ is written as sent, and FILE is then offered
+for deletion.  Where the name does not change, the previous contents are kept
+in a backup file, named as Emacs would name one when saving a buffer."
   (let ((buffer (vm-get-file-buffer file)))
     (when buffer
       (when (buffer-modified-p buffer)
@@ -6136,13 +6208,30 @@ one when saving a buffer."
 	    ((equal original (buffer-hash))
 	     (vm-inform 5 "%s is already a sound %s folder, %d messages"
 			(file-name-nondirectory file) type after))
-	    (t
+	    ((equal (vm-folder-name-for-type file type) file)
 	     (let ((backup (vm-folder-backup-name file)))
 	       (copy-file file backup t)
 	       (write-region (point-min) (point-max) file nil 'quiet)
 	       (vm-inform 5 "%s converted from %s to %s, %d messages; was %s"
 			  (file-name-nondirectory file) old type after
-			  (abbreviate-file-name backup))))))))
+			  (abbreviate-file-name backup))))
+	    (t
+	     ;; The name states the type, so the converted folder is written
+	     ;; under the name TYPE asks for, and FILE is then offered for
+	     ;; deletion (emacs-vm/vm#743).  Backed up all the same: FILE looks
+	     ;; like backup enough until the offer is accepted.
+	     (let ((new-file (vm-folder-name-for-type file type))
+		   (backup (vm-folder-backup-name file)))
+	       (when (file-exists-p new-file)
+		 (error (concat "%s is a folder already; move it aside, or"
+				" rename this one by hand")
+			(abbreviate-file-name new-file)))
+	       (copy-file file backup t)
+	       (write-region (point-min) (point-max) new-file nil 'quiet)
+	       (vm-inform 5 "%s converted from %s to %s as %s, %d messages"
+			  (file-name-nondirectory file) old type
+			  (file-name-nondirectory new-file) after)
+	       (vm-purge-renamed-folder-file file interactive)))))))
 
 (defun vm-error-if-folder-not-read-through ()
   "Signal unless this folder buffer holds the whole of its folder.
@@ -6214,17 +6303,35 @@ error, and the on-disk conversion is what such a folder wants."
   (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
       (error "Unknown folder type: %s" type))
   (when file
-    (vm-change-folder-type-of-file (expand-file-name file) type))
+    (vm-change-folder-type-of-file (expand-file-name file) type
+				   (vm-interactive-p)))
   (unless file
-  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  (let ((asked (vm-interactive-p))
+	(old-file nil)
+	(new-file nil))
+  (vm-select-folder-buffer-and-validate 1 asked)
   (vm-error-if-virtual-folder)
   (if (or (null vm-folder-type)
 	  (eq vm-folder-type 'unknown))
       (error "Current folder's type is unknown, can't change it."))
   (vm-error-if-folder-not-read-through)
+  ;; The name states the type, so a conversion that left the name alone would
+  ;; not outlive the session: the folder would be read as
+  ;; `vm-default-folder-type' next time and written back in it, or, where the
+  ;; name states the type it no longer holds, refused (emacs-vm/vm#743).
+  (setq old-file buffer-file-name
+	new-file (and old-file (vm-folder-name-for-type old-file type)))
+  (when (and new-file (not (equal new-file old-file)) (file-exists-p new-file))
+    (error (concat "%s is a folder already; move it aside, or rename this"
+		   " folder by hand and change its type in place")
+	   (abbreviate-file-name new-file)))
   ;; Changing the type rewrites every message in the folder, so keep what is
   ;; on disk now.  Emacs' own backup happens on the first save of a buffer,
   ;; which for a folder saved earlier in the session has been and gone.
+  ;;
+  ;; Where the name changes too, the file left behind is the folder as it was
+  ;; and looks like backup enough -- until the reader accepts the offer to
+  ;; delete it, and is left with no previous copy at all.  So: always.
   (vm-backup-folder-file)
   (let ((mp vm-message-list)
 	(buffer-read-only nil)
@@ -6278,7 +6385,15 @@ error, and the on-disk conversion is what such a folder wants."
   ;; message separator strings may have leaked into view
   (if (> (point-max) (vm-text-end-of (car vm-message-pointer)))
       (narrow-to-region (point-min) (vm-text-end-of (car vm-message-pointer))))
-  (vm-display nil nil '(vm-change-folder-type) '(vm-change-folder-type))))
+  ;; The folder is written under the name its new type asks for before
+  ;; anything is removed, so the mail is in two places or one and never in
+  ;; none.  What is left behind is then the folder as it was, and deleting it
+  ;; is asked about rather than done.
+  (when (and new-file (not (equal new-file old-file)))
+    (vm-write-file-to new-file)
+    (vm-inform 5 "Converted to %s" (abbreviate-file-name new-file))
+    (vm-purge-renamed-folder-file old-file asked))
+  (vm-display nil nil '(vm-change-folder-type) '(vm-change-folder-type)))))
 
 (defun vm-register-global-garbage-files (files)
   "Add global garbage collection actions to delete all of FILES."

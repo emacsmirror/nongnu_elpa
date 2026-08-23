@@ -55,13 +55,23 @@ left in a working tree is not part of the project."
 former was renamed README.md and the latter deleted.  GNU make ran the
 install loop, `install' failed on each, and because nothing checked the
 status make still exited 0, so the docs quietly went uninstalled.  BSD make,
-which runs recipes under `sh -e', aborted the whole install instead."
+which runs recipes under `sh -e', aborted the whole install instead.
+
+A word that is a glob has to match something rather than name something,
+`SOURCES' being where the NEWS files are matched by pattern."
   (let ((missing nil))
     (dolist (file (vm-build-test--make-variable
                    (expand-file-name "Makefile.in" vm-build-test--root)
                    "SOURCES"))
-      (unless (file-exists-p (expand-file-name file vm-build-test--root))
-        (push file missing)))
+      (let ((path (expand-file-name file vm-build-test--root)))
+        ;; A word may be a shell glob, which is how the NEWS files are named
+        ;; so that starting NEWS-4.md needs no edit to the Makefile.  It has
+        ;; to match something: a glob matching nothing installs nothing, and
+        ;; is the same silent failure as a name that does not exist.
+        (unless (if (string-match-p "[*?[]" file)
+                    (file-expand-wildcards path)
+                  (file-exists-p path))
+          (push file missing))))
     (should (equal missing nil))))
 
 (ert-deftest vm-build-test-no-elc-for-never-compiled-lisp ()
