@@ -1036,7 +1036,8 @@ not need it."
   :type 'boolean)
 
 (defcustom vm-folder-type-by-extension-alist
-  '(("mboxcl2" . mboxcl2))
+  '(("mboxcl2" . mboxcl2)
+    ("mbox" . From_))
   "*Alist of (EXTENSION . TYPE): the folder type a folder\='s name asks for.
 EXTENSION is matched literally against the file name\='s extension, without
 the dot, and TYPE is one of the types `vm-default-folder-type\=' accepts.
@@ -1053,6 +1054,17 @@ This is consulted where a folder cannot say for itself what it is:
 
 What a folder\='s own contents say is never overridden where they settle the
 question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
+
+.mbox is From_, which is what the rest of the world means by an mbox file.
+From_ is also the type a folder has when its name says nothing about it, so it
+is the one type an extension names without being the name that type is written
+under: a folder called sent.mbox keeps that name when converted to From_, and
+one called INBOX is not renamed INBOX.mbox by the same conversion.  See
+`vm-folder-type-with-no-name-of-its-own\='.
+
+Not .mboxcl: VM has no mboxcl type, and mboxcl quotes \"From \" lines in bodies
+where mboxcl2 does not, so reading one as the other would misread exactly
+those bodies.
 
 An extension and not a pattern over the name.  A pattern can be written so
 that it matches nothing, silently, and it can be written so that it claims
