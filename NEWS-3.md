@@ -49,6 +49,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     VM will not read, since such a folder cannot be visited to convert it
     (emacs-vm/vm#613).
 
+  * `vm-check-folder` says what the folder you are in is and whether it is
+    sound, and writes nothing: the type VM reads it as, what its name says,
+    what its contents say, how many messages it holds against how many
+    walking the separators finds, and for an mboxcl2 folder whether every
+    `Content-Length` matches its body.  A sound folder is one line in the echo
+    area.
+
+    What the contents say is counted over every message and the name is not
+    consulted for it, which is the case a name cannot answer: VM takes a
+    folder's type from its name, so a folder carrying a length that fits on
+    every message under a name that does not say mboxcl2 is read as From_ and
+    split wherever a body line begins `From `.  The check reports that, and
+    names the rename and the conversion.
+
   * An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2` and
     written in that type.  A cache that already exists keeps its name and is
     read as whatever it is: nothing is converted and nothing is refetched.

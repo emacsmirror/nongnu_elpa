@@ -919,13 +919,19 @@ taken for, an mboxcl2 folder splits wherever a body line begins \"From \":
 mboxcl2 leaves those alone, the lengths delimiting instead of the separators.
 That is a message or two of nonsense in the summary rather than anything lost,
 and it is the reader\='s to settle -- by renaming the file, which is all it
-takes when the folder really is mboxcl2, or by converting it when it is not."
+takes when the folder really is mboxcl2, or by converting it when it is not.
+
+`vm-check-folder\=' is what settles it, and is named here because \"once you are
+sure\" said no way of becoming sure.  It counts the lengths over the whole
+folder, where this looks at the first two messages, which is as much as a
+folder being visited can afford to read."
   (let ((name (or file "this folder")))
     (unless (member name vm-unnamed-mboxcl2-caches)
       (push name vm-unnamed-mboxcl2-caches)
       (vm-warn 1 2 (concat "%s carries lengths but is not named mboxcl2, so it"
-			   " is read as %s; rename it %s%s once you are sure,"
-			   " or convert it with vm-change-folder-type")
+			   " is read as %s; M-x vm-check-folder says what the"
+			   " contents are, then rename it %s%s or convert it with"
+			   " vm-change-folder-type")
 	       (file-name-nondirectory name)
 	       vm-default-From_-folder-type
 	       (file-name-nondirectory name)
@@ -6275,21 +6281,26 @@ short by them is one the reader accepts and this must not complain about."
       (skip-chars-backward "\n" (vm-text-of m))
       (vm-message-body-octets (vm-text-of m) (point)))))
 
-(defun vm-folder-length-fault (m number)
-  "What is wrong with M\='s `Content-Length\=', as a line, or nil if nothing is.
-NUMBER is the message\='s position in the folder, for the report.
-
+(defun vm-folder-length-fits-p (m)
+  "Whether M\='s `Content-Length\=' describes its body.  Nil when it has none.
 A length is right when it counts the body, and accepted when it counts the
 body without the newlines at the end of it, since that is what the reader
 accepts.  Anything else is a length that does not describe the message."
   (let ((claimed (vm-folder-claimed-content-length m))
 	(actual (vm-message-body-octets (vm-text-of m) (vm-text-end-of m)))
 	(least (vm-folder-body-octets-without-trailing-newlines m)))
+    (and claimed
+	 (or (= claimed actual) (and (>= claimed least) (<= claimed actual))))))
+
+(defun vm-folder-length-fault (m number)
+  "What is wrong with M\='s `Content-Length\=', as a line, or nil if nothing is.
+NUMBER is the message\='s position in the folder, for the report."
+  (let ((claimed (vm-folder-claimed-content-length m))
+	(actual (vm-message-body-octets (vm-text-of m) (vm-text-end-of m))))
     (cond ((null claimed)
 	   (format "message %d has no Content-Length; its body is %d octets"
 		   number actual))
-	  ((or (= claimed actual) (and (>= claimed least) (<= claimed actual)))
-	   nil)
+	  ((vm-folder-length-fits-p m) nil)
 	  (t
 	   (format "message %d says Content-Length %d and its body is %d octets"
 		   number claimed actual)))))
@@ -6306,23 +6317,93 @@ carries no such header, which has nothing to be wrong."
 	(let ((fault (vm-folder-length-fault m number)))
 	  (when fault (push fault faults)))))))
 
-(defun vm-check-folder-report (faults reader held)
+(defun vm-folder-length-survey ()
+  "How many messages carry a `Content-Length\=' and how many of those it fits.
+A cons of the two counts.  The type is not consulted: the header is what says
+a folder is mboxcl2, so counting it over the whole folder is how a name that
+says otherwise gets checked.  `vm-folder-looks-like-mboxcl2-p\=' asks the same
+question of the first two messages, which is as much as a folder being visited
+can afford to read."
+  (let ((carrying 0)
+	(fitting 0))
+    (dolist (m vm-message-list (cons carrying fitting))
+      (when (vm-folder-claimed-content-length m)
+	(setq carrying (1+ carrying))
+	(when (vm-folder-length-fits-p m)
+	  (setq fitting (1+ fitting)))))))
+
+(defun vm-folder-mboxcl2-by-contents-p (survey held)
+  "Whether the contents say mboxcl2: a length on every message, and each fits.
+SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+holds.  Read as From_, such a folder splits wherever a body line begins
+\"From \", so a name that does not say mboxcl2 is worth reporting."
+  (and (> held 0)
+       (= (car survey) held)
+       (= (cdr survey) held)))
+
+(defun vm-check-folder-misnamed-p (survey held)
+  "Whether the contents say mboxcl2 while the folder is read as something else.
+SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+holds.  The reader takes the type from the name, so this is the disagreement
+that leaves a folder read as a type it is not."
+  (and (not (eq vm-folder-type 'mboxcl2))
+       (vm-folder-mboxcl2-by-contents-p survey held)))
+
+(defun vm-check-folder-contents-line (survey held)
+  "What the contents say about the type, as a line for the report.
+SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+holds.  A few lengths in a folder are no evidence: mail arrives carrying the
+header, and VM gives one to every message it rewrites."
+  (cond ((vm-folder-mboxcl2-by-contents-p survey held)
+	 (format "mboxcl2 -- every one of %d messages carries a length that fits"
+		 held))
+	((zerop (car survey)) "nothing -- no message carries a length")
+	(t (format "nothing -- %d of %d messages carry a length, %d of those fit"
+		   (car survey) held (cdr survey)))))
+
+(defun vm-check-folder-name-advice (held)
+  "What to do about contents that say mboxcl2 under a name that does not.
+HELD is how many messages the folder holds, for the count in the sentence."
+  (format (concat "The contents say mboxcl2 and the name does not, so the"
+		  " folder is read as %s: the lengths that delimit its %d"
+		  " messages are ignored, and a body line beginning \"From \""
+		  " splits the message it is in.\n\nTo settle it, rename the"
+		  " file %s%s, which is all it takes when the folder really is"
+		  " this type, or convert it with M-x vm-change-folder-type"
+		  " when it is not.\n\n")
+	  vm-folder-type
+	  held
+	  (file-name-nondirectory (or (buffer-file-name) (buffer-name)))
+	  vm-cache-folder-type-suffix))
+
+(defun vm-check-folder-report (faults reader held survey)
   "Say what `vm-check-folder\=' found.
 FAULTS is what the lengths said, READER how many messages walking the
-separators finds and HELD how many the folder is holding.  A sound folder is
-one line in the echo area; anything else gets a buffer, since a list of
-messages is not something to read there."
-  (if (and (null faults) (equal reader held))
+separators finds, HELD how many the folder is holding and SURVEY what
+`vm-folder-length-survey\=' counted.  A sound folder is one line in the echo
+area; anything else gets a buffer, since a list of messages is not something
+to read there.
+
+Contents saying mboxcl2 under a name that does not is not a fault in the
+folder, and gets the buffer all the same: it is the one thing here that no
+other part of VM will tell the reader."
+  (if (and (null faults)
+	   (equal reader held)
+	   (not (vm-check-folder-misnamed-p survey held)))
       (vm-inform 5 "%s: %s, %d messages, sound"
 		 (buffer-name) vm-folder-type held)
     (let ((name (buffer-name)))
       (with-output-to-temp-buffer "*VM folder check*"
 	(princ (format "%s\n\n" name))
-	(princ (format "Type:          %s\n" vm-folder-type))
-	(princ (format "The name says: %s\n"
+	(princ (format "Type:              %s\n" vm-folder-type))
+	(princ (format "The name says:     %s\n"
 		       (or (vm-folder-type-for-name (buffer-file-name))
 			   "nothing")))
+	(princ (format "The contents say:  %s\n"
+		       (vm-check-folder-contents-line survey held)))
 	(princ (format "The default is %s\n\n" vm-default-folder-type))
+	(when (vm-check-folder-misnamed-p survey held)
+	  (princ (vm-check-folder-name-advice held)))
 	(unless (equal reader held)
 	  (princ (format (concat "The folder holds %d messages and walking the"
 				 " separators finds %d.\n\n")
@@ -6338,10 +6419,17 @@ messages is not something to read there."
 (defun vm-check-folder ()
   "Report this folder\='s type and check that it is sound, writing nothing.
 
-Says what type the folder is, what its name says it is and what the default
-is, how many messages it holds against how many the reader finds by walking
-the separators, and for an mboxcl2 folder whether every message\='s
-`Content-Length\=' matches its body.
+Says what type the folder is, what its name says it is, what its contents say
+and what the default is, how many messages it holds against how many the
+reader finds by walking the separators, and for an mboxcl2 folder whether every
+message\='s `Content-Length\=' matches its body.
+
+What the contents say is counted over every message, and the name is not
+consulted for it: the reader takes the type from the name, so a folder
+carrying a length on every message under a name that does not say mboxcl2 is
+read as From_ and split wherever a body line begins \"From \".  Nothing else
+tells the reader that, and it is the question the warning at visit time
+leaves open.
 
 A wrong length is the fault this is for, because it is the one that gives no
 other sign.  A missing one is refused when the folder is visited, but a
@@ -6370,7 +6458,8 @@ folder to the type it already is recomputes every length."
       (let ((vm-mboxcl2-strict nil))
 	(vm-check-folder-report (vm-folder-length-faults)
 				(vm-count-messages-in-buffer)
-				(length vm-message-list))))))
+				(length vm-message-list)
+				(vm-folder-length-survey))))))
 
 ;;;###autoload
 (defun vm-change-folder-type (type &optional file)

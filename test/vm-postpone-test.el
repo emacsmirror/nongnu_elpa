@@ -1108,21 +1108,66 @@ a draft to pick, so VM goes on and visits the folder."
             (should (eq (vm-continue-what-message-composing) 'visit)))
         (kill-buffer buffer)))))
 
-(ert-deftest vm-postpone-test-never-continuing-always-starts-a-message ()
-  "`vm-continue-what-message' nil is never continue, drafts or no drafts."
+(ert-deftest vm-postpone-test-never-continuing-never-continues ()
+  "`vm-continue-what-message' nil is never continue, drafts or no drafts.
+Which of the two it is, it says: `declined' where there are drafts it is not
+continuing, `new' where there are none.  Neither continues anything, and the
+difference is whether there is anything to say about drafts."
   (vm-postpone-test--deciding ((vm-continue-what-message nil))
+    (should (eq (vm-continue-what-message-composing) 'new))
     (vm-postpone-test--write-drafts dir)
-    (should (eq (vm-continue-what-message-composing) 'new))))
+    (should (eq (vm-continue-what-message-composing) 'declined))))
 
-(ert-deftest vm-postpone-test-asking-takes-no-for-a-new-message ()
-  "`ask' asks before visiting the drafts folder, and no starts a new
-message."
+(ert-deftest vm-postpone-test-asking-takes-no-for-a-decline ()
+  "`ask' asks before visiting the drafts folder, and no is a decline.
+Not `new': the drafts are there, which is what the question was about, and
+answering it no is not the same as there being none to answer about."
   (vm-postpone-test--deciding ()
     (vm-postpone-test--write-drafts dir)
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
-      (should (eq (vm-continue-what-message-composing) 'new)))
+      (should (eq (vm-continue-what-message-composing) 'declined)))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
       (should (eq (vm-continue-what-message-composing) 'visit)))))
+
+(ert-deftest vm-postpone-test-declining-says-nothing-about-drafts ()
+  "Answering no says nothing, rather than that there are no known drafts.
+That is what a reader saw: the question named the drafts, and declining it
+answered that there were none -- with the drafts still sitting in the folder
+VM had just offered to visit."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir)
+    (let (said)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'message)
+                 (lambda (format &rest args)
+                   (setq said (apply #'format format args)))))
+        (vm-continue-what-message))
+      (should-not said))))
+
+(ert-deftest vm-postpone-test-no-drafts-at-all-still-says-so ()
+  "With no drafts anywhere the message stands: there is nothing to continue
+and a keystroke that does nothing silently is one nobody can read."
+  (vm-postpone-test--deciding ()
+    (let (said)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest args)
+                   (setq said (apply #'format format args)))))
+        (vm-continue-what-message))
+      (should (equal said "There are no known drafts.")))))
+
+(ert-deftest vm-postpone-test-declining-composes-where-that-is-asked-for ()
+  "`vm-zero-drafts-start-compose' still composes on a decline.
+The option decides what a keystroke with nothing to continue does, and that
+is unchanged: only the sentence about there being no drafts has gone."
+  (vm-postpone-test--deciding ((vm-zero-drafts-start-compose t))
+    (vm-postpone-test--write-drafts dir)
+    (let (composed)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-mail)
+                 (lambda (&rest _) (setq composed t))))
+        (vm-continue-what-message))
+      (should composed))))
+
 
 (ert-deftest vm-postpone-test-asking-is-only-about-the-drafts-folder ()
   "`ask' asks about visiting the drafts folder and nothing else: a
