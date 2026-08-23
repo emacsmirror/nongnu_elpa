@@ -7392,10 +7392,6 @@ default value), then Emacs tries a plain text communication initially and
 upgrades it to @acronym{TLS} if the server requires @acronym{STARTTLS}.
 @end itemize
 
-(Emacs gained all of this in version 24, through an external
-@code{starttls.el} before that.  VM needs Emacs 28.1, so there is no longer a
-configuration to describe for those.)
-
 @node Customizations, History and Administration, Configuration, Top
 @chapter Customizations
 Useful ways to customize VM.
@@ -7805,8 +7801,8 @@ Ability to delete duplicate copies of messages.
 @node Future Plans, Bugs, Highlights, Top
 @chapter Future Plans
 
-Some of the ideas being worked on for future extensions of VM are the
-following:
+Ideas that have been considered for VM, and are recorded here so that they
+are not lost.  None of them is being worked on, and none is promised.
 
 @itemize
 @item 
@@ -7821,6 +7817,11 @@ Support for maildir folders.
 @item
 A message migration/expiration facility.
 @end itemize
+
+If you would like one of these, or have an idea that is not here, please open
+an issue at @uref{https://gitlab.com/emacs-vm/vm/-/issues}.  A suggestion in
+the tracker is one that can be discussed, found by the next person to want it
+and worked on by anybody; one that reaches only this list is none of those.
 
 
 @node Bugs, Internals, Future Plans, Top
