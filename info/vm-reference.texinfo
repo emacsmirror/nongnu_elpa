@@ -1343,6 +1343,26 @@ visit failed partway is refused: it holds only the messages read before the
 error, and the on-disk conversion is what such a folder wants.
 @end deffn
 
+@deffn Command vm-check-folder
+@findex vm-check-folder
+Report this folder=’s type and check that it is sound, writing nothing.
+
+Says what type the folder is, what its name says it is and what the default
+is, how many messages it holds against how many the reader finds by walking
+the separators, and for an mboxcl2 folder whether every message=’s
+@code{Content-Length=} matches its body.
+
+A wrong length is the fault this is for, because it is the one that gives no
+other sign.  A missing one is refused when the folder is visited, but a
+length that is merely wrong opens without complaint: the reader falls back on
+searching for the next separator when the count does not land on one, so VM
+reads the folder correctly while anything that believes the header -- which is
+what the format is for -- takes the wrong bytes.
+
+Nothing is written.  @code{vm-change-folder-type=} is the repair: converting a
+folder to the type it already is recomputes every length.
+@end deffn
+
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
 Show the line @code{vm-totals-blurb} answers, and answer with it.
