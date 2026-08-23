@@ -3039,21 +3039,80 @@ recorded in the undo stack."
   "Return FLAGS as an IMAP parenthesised flag list."
   (concat "(" (mapconcat #'identity flags " ") ")"))
 
+(defun vm-imap-keyword-p (flag)
+  "Whether FLAG is a keyword rather than one of the protocol\='s own flags.
+A keyword is what a VM label is on the wire, and what a server may decline to
+keep; a flag beginning with a backslash is the protocol\='s and every server
+has to know it."
+  (not (string-prefix-p "\\" flag)))
+
+(defun vm-imap-fetch-response-flags (response)
+  "The flag names in an untagged FETCH RESPONSE, downcased.
+Nil when the response carries no FLAGS item.  Reads the process buffer, so it
+is called there."
+  (let ((tokens (cdr (vm-imap-plist-get (car (nthcdr 3 response)) "FLAGS")))
+	(flags nil))
+    (dolist (token tokens (nreverse flags))
+      (when (eq (car token) 'atom)
+	(push (downcase (buffer-substring (nth 1 token) (nth 2 token)))
+	      flags)))))
+
 (defun vm-imap-store-flags-1 (process sign by-uid id flags)
   "Send one STORE of FLAGS to PROCESS, and wait for its OK.
 SIGN is \"+\" or \"-\", ID the message number, or its UID when BY-UID says so.
 The UID form is \"UID STORE\", the prefix going before the command and not
-after it.  Signals `vm-imap-normal-error\' if the server refuses the command."
-  (let ((command (format "%sSTORE %s %sFLAGS.SILENT %s"
-			 (if by-uid "UID " "") id sign
-			 (vm-imap-flag-list-string flags)))
-	(need-ok t) response)
+after it.  Signals `vm-imap-normal-error\' if the server refuses the command.
+
+Answers with (t . FLAGS), the flags the server reported for the message, or
+nil where it reported nothing at all.  The two are different: a message left
+with no flags reports an empty list, which is the very case this is here to
+catch, so \"none\" and \"did not say\" cannot share a value.  Asking costs a
+line of response per message, so it is
+asked only where there is something to check: a store of nothing but the
+protocol\='s own flags uses `.SILENT\' as before, and one that carries a
+keyword does not, because a keyword is what a server may take and discard
+(issue #601)."
+  (let* ((checking (seq-some #'vm-imap-keyword-p flags))
+	 (suffix (if checking "FLAGS" "FLAGS.SILENT"))
+	 (command (format "%sSTORE %s %s%s %s"
+			  (if by-uid "UID " "") id sign suffix
+			  (vm-imap-flag-list-string flags)))
+	 (need-ok t) response reported)
     (vm-imap-send-command process command)
     (while need-ok
       (setq response (vm-imap-read-response-and-verify
-		      process (format "STORE %sFLAGS.SILENT" sign)))
+		      process (format "STORE %s%s" sign suffix)))
       (cond ((vm-imap-response-matches response 'VM 'OK)
-	     (setq need-ok nil))))))
+	     (setq need-ok nil))
+	    ((and checking
+		  (vm-imap-response-matches response '* 'atom 'FETCH 'list))
+	     (setq reported (cons t (vm-imap-fetch-response-flags response))))))
+    reported))
+
+(defun vm-imap-note-dropped-flags (wanted reported)
+  "Complain about each of WANTED that REPORTED does not have, once per session.
+The server said OK and did not keep it.  REPORTED is what
+`vm-imap-store-flags-1\=' answered: nil where the server said nothing, which is
+a server that did not answer the question rather than one that dropped
+anything.
+
+The flag is not remembered as refused and is offered again: unlike a refusal,
+which is an error the server means, this is a difference of opinion about what
+a mailbox can hold, and a mailbox that gains the ability keeps working."
+  (when reported
+    (let* ((have (cdr reported))
+	   (lost (seq-filter (lambda (flag)
+			       (and (vm-imap-keyword-p flag)
+				    (not (member (downcase flag) have))
+				    (not (member flag vm-imap-dropped-flags))))
+			     wanted)))
+      (when lost
+	(setq vm-imap-dropped-flags (append lost vm-imap-dropped-flags))
+	(vm-warn 0 2 (concat "IMAP server accepted and discarded the label%s %s:"
+			     " set here, absent there.  Gmail does this with"
+			     " every label; see the manual under Gmail")
+		 (if (cdr lost) "s" "")
+		 (mapconcat #'identity lost ", "))))))
 
 (defun vm-imap-store-flags (process sign by-uid id flags)
   "Store FLAGS on the server, one command if it will take them, singly if not.
@@ -3074,16 +3133,23 @@ pending for a later retry (issue #270).  This is called in the process buffer."
 	(refused nil))
     (when wanted
       (condition-case _err
-	  (progn (vm-imap-store-flags-1 process sign by-uid id wanted)
-		 (setq accepted wanted))
+	  (let ((reported (vm-imap-store-flags-1 process sign by-uid id wanted)))
+	    (setq accepted wanted)
+	    ;; Only for the adding direction: a keyword still there after a
+	    ;; removal is a different fault, and not one Gmail has.
+	    (when (equal sign "+")
+	      (vm-imap-note-dropped-flags wanted reported)))
 	(vm-imap-normal-error
 	 ;; The server refused the lot.  Find out which of them it will take --
 	 ;; unless there was only one, which has just been refused on its own
 	 ;; already: asking again would double the errors this is here to reduce.
 	 (dolist (flag (if (cdr wanted) wanted nil))
 	   (condition-case _err2
-	       (progn (vm-imap-store-flags-1 process sign by-uid id (list flag))
-		      (setq accepted (cons flag accepted)))
+	       (let ((reported (vm-imap-store-flags-1
+				process sign by-uid id (list flag))))
+		 (setq accepted (cons flag accepted))
+		 (when (equal sign "+")
+		   (vm-imap-note-dropped-flags (list flag) reported)))
 	     (vm-imap-normal-error
 	      (setq refused (cons flag refused))
 	      (setq vm-imap-refused-flags

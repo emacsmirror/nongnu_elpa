@@ -962,6 +962,93 @@ strictly."
       ;; two lengths in a row, each landing on the next message
       (should (vm-folder-looks-like-mboxcl2-p)))))
 
+
+;;; A keyword the server takes and does not keep (issue #601)
+
+(defmacro vm-imap-mock-test--warnings (&rest body)
+  "Run BODY with `vm-warn' captured, and answer with what it said."
+  (declare (indent 0) (debug t))
+  `(let ((said nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _seconds format &rest args)
+                  (push (apply #'format format args) said))))
+       ,@body)
+     (nreverse said)))
+
+(ert-deftest vm-imap-mock-test-a-discarded-keyword-is-reported ()
+  "A server that answers OK to a keyword and does not keep it is complained
+about, naming the keyword.  This is Gmail: a VM label is an IMAP keyword, and
+Gmail takes the STORE, says OK, and stores nothing, so the label was lost with
+nothing said at any point."
+  (vm-imap-mock-test--with-session
+      (mock process :messages (list vm-imap-mock-test--alice)
+            :drops-keywords t)
+    (vm-imap-select-mailbox process "INBOX" nil)
+    (let ((said (vm-imap-mock-test--warnings
+                  (vm-imap-store-flags process "+" t "1" '("important")))))
+      (should (= (length said) 1))
+      (should (string-match-p "accepted and discarded" (car said)))
+      (should (string-match-p "important" (car said))))
+    ;; and the server really does not have it, which is the thing being detected
+    (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-mock-test-a-kept-keyword-is-not-reported ()
+  "A server that keeps the keyword is not complained about.  The check has to
+be silent in the ordinary case, since it runs on every label VM stores."
+  (vm-imap-mock-test--with-session
+      (mock process :messages (list vm-imap-mock-test--alice))
+    (vm-imap-select-mailbox process "INBOX" nil)
+    (let ((said (vm-imap-mock-test--warnings
+                  (vm-imap-store-flags process "+" t "1" '("important")))))
+      (should (equal said nil)))
+    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-mock-test-a-discarded-keyword-is-reported-once ()
+  "Said once per session, not once per message: a folder of a thousand
+messages carrying the same label would otherwise complain a thousand times."
+  (vm-imap-mock-test--with-session
+      (mock process :messages (list vm-imap-mock-test--alice
+                                    vm-imap-mock-test--bob)
+            :drops-keywords t)
+    (vm-imap-select-mailbox process "INBOX" nil)
+    (let ((said (vm-imap-mock-test--warnings
+                  (vm-imap-store-flags process "+" t "1" '("important"))
+                  (vm-imap-store-flags process "+" t "2" '("important")))))
+      (should (= (length said) 1)))))
+
+(ert-deftest vm-imap-mock-test-a-dropped-keyword-is-still-offered ()
+  "Unlike a refused flag, a discarded one is sent again.  A refusal is an
+error the server means; this is a mailbox that cannot hold keywords, and one
+that gains the ability should start working without restarting Emacs."
+  (vm-imap-mock-test--with-session
+      (mock process :messages (list vm-imap-mock-test--alice)
+            :drops-keywords t)
+    (vm-imap-select-mailbox process "INBOX" nil)
+    (cl-letf (((symbol-function 'vm-warn) #'ignore))
+      (vm-imap-store-flags process "+" t "1" '("important")))
+    (should-not (member "important" vm-imap-refused-flags))
+    (should (member "important" vm-imap-dropped-flags))
+    ;; the server stops dropping, and the label lands without a restart
+    (setf (vm-imap-mock-drops-keywords mock) nil)
+    (vm-imap-store-flags process "+" t "1" '("important"))
+    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-mock-test-only-a-keyword-store-asks-for-the-flags-back ()
+  "The protocol's own flags are stored with `.SILENT' as before, so the
+ordinary business of marking messages read costs no extra response; a store
+carrying a keyword asks, because a keyword is what a server may discard."
+  (vm-imap-mock-test--with-session
+      (mock process :messages (list vm-imap-mock-test--alice))
+    (vm-imap-select-mailbox process "INBOX" nil)
+    (vm-imap-store-flags process "+" t "1" '("\\Seen"))
+    (should (seq-find (lambda (line) (string-match-p "FLAGS\\.SILENT" line))
+                      (vm-imap-mock-log mock)))
+    (vm-imap-store-flags process "+" t "1" '("important"))
+    (should (seq-find (lambda (line)
+                        (and (string-match-p "STORE" line)
+                             (string-match-p "+FLAGS (important)" line)))
+                      (vm-imap-mock-log mock)))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

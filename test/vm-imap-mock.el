@@ -42,6 +42,8 @@
 ;;                    another command, which a server does when somebody else
 ;;                    changes them
 ;;   :no-uidplus      leave UIDPLUS out of CAPABILITY
+;;   :drops-keywords  take a STORE of a keyword, answer OK, and keep only the
+;;                    protocol's own flags, which is what Gmail does
 ;;   :capabilities    replace the advertised capability list outright
 ;;
 ;; The server records every command it received, so a test can assert on what
@@ -63,6 +65,7 @@
   ;; faults
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
   no-uidplus capabilities extra-fetch-items unsolicited-flags
+  drops-keywords
   authenticated)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
@@ -340,7 +343,13 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 		   (mapcar (lambda (n) (nth (1- n) messages))
 			   (vm-imap-mock--number-range spec (length messages))))))
     (dolist (message wanted)
-      (vm-imap-mock--set-flags message sign flags)
+      ;; Gmail accepts a keyword and does not keep it, so the flags that go on
+      ;; the message are not always the flags that were asked for.
+      (vm-imap-mock--set-flags
+       message sign
+       (if (vm-imap-mock-drops-keywords mock)
+	   (seq-filter (lambda (flag) (string-prefix-p "\\" flag)) flags)
+	 flags))
       (unless silent
 	(vm-imap-mock--send process
 			    (format "* %d FETCH (%s)\r\n"
@@ -637,7 +646,7 @@ not ask about the live process."
 				   refuse bad drop-on truncate-fetch
 				   lie-about-size slow-greeting no-uidplus
 				   capabilities extra-fetch-items
-				   unsolicited-flags)
+				   unsolicited-flags drops-keywords)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -653,7 +662,8 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:no-uidplus no-uidplus
 		:capabilities capabilities
 		:extra-fetch-items extra-fetch-items
-		:unsolicited-flags unsolicited-flags))
+		:unsolicited-flags unsolicited-flags
+		:drops-keywords drops-keywords))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t
