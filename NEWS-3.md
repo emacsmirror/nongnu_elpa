@@ -8,6 +8,50 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * VM reads and writes mboxcl2, the mbox variant that keeps a
+    `Content-Length` header and stores a message exactly as it arrived
+    (emacs-vm/vm#466).  A fallout: the folder type is now called `mboxcl2`
+    rather than `From_-with-Content-Length`, and `vm-trust-content-length`
+    rather than `vm-trust-From_-with-Content-Length`.  The old names still
+    work.
+
+  * A folder's name can say what format it is.  A folder whose name ends in
+    `.mboxcl2` is created as one, rather than as whatever
+    `vm-default-folder-type` says, and is read as one -- so a folder named
+    that way which has no `Content-Length` headers is refused, with how to
+    convert it, instead of being read as a From_ folder in silence
+    (emacs-vm/vm#610, emacs-vm/vm#620).  The option is
+    `vm-folder-type-by-extension-alist`, which matches the extension
+    literally and replaces `vm-folder-type-by-name-alist`
+    (emacs-vm/vm#741).
+
+  * An mboxcl2 folder is kept sound.  Every message VM writes into one carries
+    a `Content-Length`, which is how the end of a message is found there, and
+    a message that has none is refused rather than guessed at;
+    `vm-mboxcl2-strict` nil opens such a folder so that
+    `vm-change-folder-type` can repair it (emacs-vm/vm#612).
+
+  * `vm-change-folder-type` with a prefix argument converts a folder on disk,
+    without visiting it, and keeps the folder as it was in a backup file --
+    as does changing a visited folder's type.  That is how to repair a folder
+    VM will not read, since such a folder cannot be visited to convert it
+    (emacs-vm/vm#613).
+
+  * An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2` and
+    written in that type.  A cache that already exists keeps its name and is
+    read as whatever it is: nothing is converted and nothing is refetched.
+
+  * `vm-default-folder-type` is `From_` on every platform.  It was mboxcl2 on
+    Solaris, AIX and System V, and it decides only folders that do not exist
+    yet.
+
+  * VM no longer decides between From_ and mboxcl2 by sniffing the first
+    message of a folder, so `vm-trust-content-length` is deprecated
+    (emacs-vm/vm#736).  Name the type instead, by the folder's extension or
+    with `vm-default-folder-type`, which is the answer for a folder that
+    cannot be renamed such as `INBOX`.  The sniffing still happens where the
+    option is switched on, and warns once per folder.
+
   * Personality Crisis and vm-biff must now be switched on, since loading a
     file no longer does it and neither says anything when it is off.  Add
     `(vm-pcrisis-mode 1)` (emacs-vm/vm#561) or `(vm-biff-mode 1)`
@@ -53,50 +97,6 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
   * Three misspelled option names were corrected, and the misspellings are
     gone (emacs-vm/vm#589).
-
-  * `vm-default-folder-type` is `From_` on every platform.  It was mboxcl2 on
-    Solaris, AIX and System V, and it decides only folders that do not exist
-    yet.
-
-  * VM no longer decides between From_ and mboxcl2 by sniffing the first
-    message of a folder, so `vm-trust-content-length` is deprecated
-    (emacs-vm/vm#736).  Name the type instead, by the folder's extension or
-    with `vm-default-folder-type`, which is the answer for a folder that
-    cannot be renamed such as `INBOX`.  The sniffing still happens where the
-    option is switched on, and warns once per folder.
-
-  * VM reads and writes mboxcl2, the mbox variant that keeps a
-    `Content-Length` header and stores a message exactly as it arrived
-    (emacs-vm/vm#466).  A fallout: the folder type is now called `mboxcl2`
-    rather than `From_-with-Content-Length`, and `vm-trust-content-length`
-    rather than `vm-trust-From_-with-Content-Length`.  The old names still
-    work.
-
-  * A folder's name can say what format it is.  A folder whose name ends in
-    `.mboxcl2` is created as one, rather than as whatever
-    `vm-default-folder-type` says, and is read as one -- so a folder named
-    that way which has no `Content-Length` headers is refused, with how to
-    convert it, instead of being read as a From_ folder in silence
-    (emacs-vm/vm#610, emacs-vm/vm#620).  The option is
-    `vm-folder-type-by-extension-alist`, which matches the extension
-    literally and replaces `vm-folder-type-by-name-alist`
-    (emacs-vm/vm#741).
-
-  * An mboxcl2 folder is kept sound.  Every message VM writes into one carries
-    a `Content-Length`, which is how the end of a message is found there, and
-    a message that has none is refused rather than guessed at;
-    `vm-mboxcl2-strict` nil opens such a folder so that
-    `vm-change-folder-type` can repair it (emacs-vm/vm#612).
-
-  * `vm-change-folder-type` with a prefix argument converts a folder on disk,
-    without visiting it, and keeps the folder as it was in a backup file --
-    as does changing a visited folder's type.  That is how to repair a folder
-    VM will not read, since such a folder cannot be visited to convert it
-    (emacs-vm/vm#613).
-
-  * An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2` and
-    written in that type.  A cache that already exists keeps its name and is
-    read as whatever it is: nothing is converted and nothing is refetched.
 
   * New PGP/MIME support, vm-epg, built on the epg interface that comes with
     Emacs.  vm-pgg still works but is deprecated (emacs-vm/vm#581,
