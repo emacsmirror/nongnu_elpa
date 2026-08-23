@@ -995,12 +995,119 @@ What it costs: a folder that cannot be renamed cannot be typed by its name.
 A primary inbox called @file{INBOX} is the case, and the answer for one is
 @code{vm-default-folder-type}, or a name with the extension on it.
 
+@subheading Why mboxcl2 is worth having
+
+@cindex mboxcl2, why
+In a From_ folder the end of a message is the next line that begins
+``From ''.  Nothing but the shape of the line says so, and mail contains such
+lines: a message that quotes another message, a digest, a mailing list
+footer, a base64 attachment that happens to wrap that way.  A From_ folder
+therefore has to alter the mail to protect itself, turning ``From '' in a body
+into ``>From '', and even then a line that already read ``>From '' is
+indistinguishable afterwards.  What you read back is close to what arrived
+rather than what arrived.
+
+An mboxcl2 folder records the length of each body instead, so the boundary is
+arithmetic rather than a guess, and no body needs altering.  Two things follow:
+
+@itemize
+@item
+A message is stored exactly as it came, byte for byte.  A signature still
+verifies, an attachment still has its original bytes, and a message
+containing a From_ line cannot split a folder in two.
+@item
+Finding the end of a message costs a count rather than a search, which for a
+folder of tens of thousands of messages is the difference between reading the
+lengths and scanning the file.
+@end itemize
+
+@noindent
+The cost is that the header must be right.  A missing one is refused and
+named; a wrong one is worse, because the folder opens.  @xref{Folder types}
+above for the repair.  This is why VM writes its own files -- the caches
+below -- in mboxcl2 and can be relied on to have got the lengths right, while
+a folder some other mailer wrote is only as good as that mailer.
+
+@subheading How VM decides what a folder is
+
+@cindex folder type, how it is decided
+In this order:
+
+@enumerate
+@item
+@b{What the folder says it is.}  A BABYL or MMDF folder announces itself in
+its first bytes, so those need no configuration and no guessing.  An empty
+file says nothing, and neither does a folder that does not exist yet.
+@item
+@b{What the name says}, through
+@code{vm-folder-type-by-extension-alist}, matched against the file name's
+extension.  This is the only thing that separates From_ from mboxcl2, since
+those two look alike -- the difference is a header that a From_ folder is
+free to carry as well.
+@item
+@b{@code{vm-default-folder-type}}, for a folder whose name says nothing.  It
+is @code{From_} on every platform.
+@end enumerate
+
+@noindent
+So a folder called @file{sent.mboxcl2} is mboxcl2 wherever it sits, a folder
+called @file{INBOX} is whatever the default says, and a BABYL file called
+@file{old.mboxcl2} is BABYL, because what the folder says about itself beats
+what its name claims.
+
+@subheading The folders VM writes for you
+
+@cindex FCC, folder type
+@cindex postponed messages, folder type
+@cindex cache file, folder type
+An @code{FCC:} copy, a postponed draft and a server cache are all folders VM
+creates without asking, and each is written in the type that the same rule
+gives: what the folder already is, else what its name asks for, else
+@code{vm-default-folder-type}.
+
+@itemize
+@item
+@b{@code{FCC:} and postponed drafts.}  Name the file for the type and it is
+written in it, so an @code{FCC:} of @file{~/mail/2026-08.out.mboxcl2}
+accumulates mboxcl2 and one of @file{~/mail/2026-08.out} accumulates whatever
+the default is.  An existing folder keeps its own type, so an @code{FCC:}
+never converts a folder behind you.
+@item
+@b{@acronym{IMAP} and @acronym{POP} caches.}  A cache VM creates is named
+@file{imap-cache-@var{md5}.mboxcl2}, or @file{pop-cache-...}, and written in
+that type: it holds arbitrary mail that VM alone writes, which is exactly the
+case the lengths are for.  A cache made by an earlier VM has no suffix, keeps
+its name, and is read as whatever it is -- nothing is converted and nothing is
+refetched.  Such a cache carrying lengths it does not claim is reported once,
+with the name to rename it to.
+@end itemize
+
+@noindent
+Note that a cache file is not the same thing as a local @acronym{IMAP} server
+holding a copy of a remote mailbox.  @xref{IMAP Cache Server}.
+
+@subheading Converting a folder
+
 @findex vm-change-folder-type
-After a folder is loaded into VM, you can convert it to a different
-format using the command @code{vm-change-folder-type}.  With a prefix
-argument it converts a folder on disk instead, one VM is not visiting.  It is a good
-idea to keep all your mail folders in a single format in order to avoid
+@code{vm-change-folder-type} converts the folder you are in.  With a prefix
+argument it asks for a file and converts that instead, without visiting it,
+which is the only way in when a folder cannot be read.  It is a good idea to
+keep all your mail folders in a single format in order to avoid
 incompatibilities.
+
+The name moves with the type, since the name is what states the type: a
+folder converted to mboxcl2 is written as @file{@var{name}.mboxcl2}, one
+converted away from it loses the extension, and the file left behind under the
+old name is offered for deletion once the new one is on disk.  Keeping it is
+allowed, and it is worth knowing what you are keeping: two folders holding the
+same mail, of which the old one is the copy VM is no longer looking at.  The
+folder as it was is kept in a backup file either way, named as Emacs names one
+when saving a buffer.
+
+A conversion that would overwrite an existing folder is refused rather than
+asked about.  Where the name already states the new type -- converting mboxcl2
+to mboxcl2 to recompute every length, which is the repair described above --
+nothing is renamed and nothing is offered.
 
 @cindex Unix
 @cindex From_
@@ -1037,11 +1144,15 @@ Solaris, System V and AIX operating systems use another variant of the mbox
 format, in which each message carries a @code{Content-Length} header giving
 the length of its body, and that count rather than the next ``From '' line
 says where the message ends.  VM refers to this format as
-@code{mboxcl2}.  Since the counts may be unreliable --
-nothing stops a message carrying a @code{Content-Length} header that means
-something else -- you must also set the variable
-@code{vm-trust-content-length} to a non-@code{nil} value in order
-to convince VM that you really want to use this format.
+@code{mboxcl2}.
+
+@vindex vm-trust-content-length
+Asking for it used to mean setting @code{vm-trust-content-length}, which told
+VM to believe a @code{Content-Length} header wherever it found one.  That
+option is deprecated: it made a statement about every folder read, in order to
+say something about one, and nothing stops a message carrying such a header
+that means something else.  Name the folder for the type instead, or set
+@code{vm-default-folder-type}; both are described below.
 
 @cindex mbox variants
 @cindex mboxo
@@ -1591,6 +1702,195 @@ Whatever that is set to, the synchronization can always be asked for:
 
 
 
+
+@anchor{Gmail}
+@unnumberedsubsec Gmail, and why labels do not stick
+
+@cindex Gmail
+@cindex labels, lost on the server
+@cindex X-GM-LABELS
+Gmail's @acronym{IMAP} is a mapping onto Gmail's own model rather than an
+implementation of the protocol, and the differences are not ones VM can
+paper over.
+
+@table @asis
+@item A label is a mailbox.
+A message carrying two labels appears in two mailboxes, and @code{All Mail}
+holds every message once.  Applying a label is a @code{UID COPY} into the
+mailbox of that name, not a flag.
+
+@item @acronym{IMAP} keywords are not labels.
+A VM label is an @acronym{IMAP} keyword on the wire.  Gmail accepts a
+@code{STORE} of an arbitrary keyword, answers success, and does not keep it.
+The label is simply gone by the next session, with no error at any point ---
+which is why labels set in VM against Gmail appear to work and then vanish.
+Nothing VM can do at the protocol level fixes this: the server took the
+change and discarded it.
+
+@item @code{\Deleted} does not delete.
+Setting the flag marks nothing for removal in the usual sense.  What deletes
+is an @code{EXPUNGE} from @code{All Mail}, or moving the message to
+@code{[Gmail]/Trash}.
+@end table
+
+@noindent
+Gmail advertises its own extension, @code{X-GM-EXT-1} in the
+@code{CAPABILITY} response, whose @code{X-GM-LABELS} does the mapping
+properly, and that is what clients written for Gmail use.  VM does not use it
+today.
+
+@subheading What you can do about it
+
+The workable arrangement is to put a local @acronym{IMAP} server in front of
+Gmail and let VM talk to that.  Keywords persist against a local server, so
+labels behave, and the local server is faster besides.
+@xref{IMAP Cache Server}.
+
+Be clear about the ceiling: labels then live on your machine.  A keyword set
+in VM reaches the local server and stops there, because Gmail has nowhere to
+put it and the sync tools do not translate keywords into labels.  The reverse
+direction is possible with a tool that carries Gmail's labels ---
+@code{offlineimap} writes them as an @code{X-Keywords:} header with
+@code{synclabels = yes} --- but that is a header rather than a keyword, so VM
+does not read it as labels either.  If your labels matter across machines and
+clients, they cannot be VM labels against Gmail today.
+
+@anchor{IMAP Cache Server}
+@unnumberedsubsec A local @acronym{IMAP} server as a cache
+
+@cindex cache server
+@cindex dovecot
+@cindex mbsync
+@cindex isync
+@cindex offlineimap
+A remote server that is slow to answer makes every operation slow, because
+each one is a round trip.  Gmail is the usual example.  The arrangement that
+fixes it is not a VM feature at all: run an @acronym{IMAP} server on your own
+machine, hold a copy of the remote mailbox in it, and point VM at
+@code{localhost}.  VM then sees a fast @acronym{IMAP} server, and something
+else deals with the slow one on its own schedule.
+
+Two things follow, and the second is the one people do not expect:
+
+@itemize
+@item
+Every VM operation answers at local speed rather than at the remote's.
+@item
+Changes are queued for you.  A local server accepts a flag change
+immediately and its sync tool pushes it when the remote is reachable, so VM
+neither waits nor fails when the network is down.
+@end itemize
+
+@subheading The shape of it
+
+Three pieces:
+
+@enumerate
+@item
+An @acronym{IMAP} server on the local machine.  @code{dovecot} is the usual
+choice.
+@item
+A sync tool that mirrors the remote mailbox into it.  @code{mbsync} (from
+isync) is the usual choice; @code{offlineimap} and @code{imapsync} are
+alternatives.
+@item
+Optionally something that runs the sync when mail arrives rather than on a
+timer.  @code{goimapnotify} watches the remote with @acronym{IMAP} IDLE and
+runs the sync tool.
+@end enumerate
+
+@noindent
+VM's part is one line: a maildrop specification naming @code{localhost} and
+the password you gave the local server.
+
+@example
+(setq vm-imap-account-alist
+      '(("imap:localhost:143:INBOX:login:you@@example.com:*" "local")))
+@end example
+
+@subheading Setting it up
+
+What follows is the shape rather than a recipe, because the paths and the
+service manager differ by system.  Use your packaging's own locations: a
+MacPorts install puts configuration under @file{/opt/local/etc} and its store
+under @file{/opt/local/var}, Homebrew uses @file{/opt/homebrew} or
+@file{/usr/local}, and a Linux distribution package uses @file{/etc/dovecot}
+and @file{/var/mail}.  @code{dovecot -n} prints the configuration actually in
+force, which is the quickest way to find out where yours lives.
+
+@enumerate
+@item
+@b{A user and a directory for the store.}  Create a system user that owns the
+mail store, make its directory, and give it to that user with permissions
+@code{0700}.  On Linux the package usually does this; on macOS you create the
+user yourself, with a free numeric id, and it will not appear in the
+graphical user list.
+
+@item
+@b{Virtual users, one per account.}  A local server needs an account for VM to
+log in to, and it need not correspond to a Unix user.  Generate a hashed
+password with
+
+@example
+doveadm pw -s BLF-CRYPT
+@end example
+
+@noindent
+and put the hash in dovecot's user database, readable by the authentication
+user and nothing else.  Use the same account names as the remote ones if you
+want to keep your own bearings.
+
+@item
+@b{Passwords where the sync tool can reach them}, rather than in its
+configuration file.  @code{mbsync} takes @code{PassCmd}, which runs a command
+and reads the password from its output, so any secret store will do: the
+Keychain on macOS through @code{security find-generic-password}, or
+@code{secret-tool}, @code{pass} or @code{gpg} on other systems.  Two passwords
+are involved per account and they are easy to confuse: the remote server's,
+which the sync tool needs, and the local server's, which both the sync tool
+and VM need.
+
+@item
+@b{A sync channel per account}, with its own state directory, so that one
+account's state cannot be confused with another's.
+
+@item
+@b{Run it.}  A timer is the simple answer, through @code{launchd} on macOS or
+a systemd user timer on Linux; @code{goimapnotify} on the remote account is
+the responsive one, running the sync when the server says something has
+arrived.  A service started by the system does not inherit your interactive
+@env{PATH}, so name programs by absolute path in whatever you install there.
+@end enumerate
+
+@subheading What to watch
+
+@cindex UIDVALIDITY
+@itemize
+@item
+@b{A resync from scratch changes @code{UIDVALIDITY}.}  Deleting the local
+store and syncing again gives every message a new @acronym{UID}, and VM
+notices: it treats the mailbox as a different one, which is the correct
+response and not a fault.  Expect it after any rebuild of the local store.
+
+@item
+@b{A cache file is not the cache server.}  VM keeps its own local copy of a
+server folder, named @file{imap-cache-@var{md5}.mboxcl2}
+(@pxref{Folder types}), and that is a separate thing from the local
+@acronym{IMAP} server's own store.  Running a cache server does not remove
+VM's cache file, and the two hold the same mail for different reasons.
+
+@item
+@b{Metadata is where the arrangement leaks.}  @code{mbsync} maps folders and
+flags, and a keyword set in VM stops at the local server (@pxref{Gmail}).
+Verify what reaches the remote before relying on it.
+
+@item
+@b{Test the pieces separately.}  @code{doveadm mailbox list} and
+@code{doveadm fetch} against the local server answer ``is the mail here'',
+which is a different question from whether VM can see it.  Where a
+notification tool is involved, note that it can exit successfully having
+displayed nothing, so its exit status is not evidence.
+@end itemize
 
 @node Thunderbird Folders, External Messages, @acronym{POP} and @acronym{IMAP} Folders, Starting Up
 @section Thunderbird Folders
