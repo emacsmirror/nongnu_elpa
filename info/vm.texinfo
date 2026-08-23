@@ -1123,11 +1123,20 @@ holding a copy of a remote mailbox.  @xref{IMAP Cache Server}.
 @findex vm-check-folder
 @code{vm-check-folder} reports what the folder you are in is and whether it is
 sound, and writes nothing.  It says what type VM reads it as, what its name
-says it is and what @code{vm-default-folder-type} is, how many messages the
-folder holds against how many the reader finds by walking the separators, and
-for an mboxcl2 folder whether every message's @code{Content-Length} matches
-its body.  A sound folder is one line in the echo area; anything else gets a
-report naming each message at fault.
+says it is, what its contents say and what @code{vm-default-folder-type} is,
+how many messages the folder holds against how many the reader finds by
+walking the separators, and for an mboxcl2 folder whether every message's
+@code{Content-Length} matches its body.  A sound folder is one line in the
+echo area; anything else gets a report naming each message at fault.
+
+What the contents say is counted over every message in the folder, and the
+name is not consulted for it.  That is the case a name cannot answer: VM takes
+a folder's type from its name, so a folder carrying a @code{Content-Length}
+that fits on every message, under a name that does not say mboxcl2, is read as
+From_ and split wherever a body line begins @samp{From }.  Visiting such a
+folder warns, and the check is what settles it --- the warning looks at the
+first two messages, which is as much as a folder being visited can afford to
+read.  The report then names the rename and the conversion.
 
 A wrong length is what the command exists for, because it is the only one of
 these faults that gives no other sign.  A missing length is refused when the

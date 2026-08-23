@@ -1505,10 +1505,17 @@ error, and the on-disk conversion is what such a folder wants.
 @findex vm-check-folder
 Report this folder=’s type and check that it is sound, writing nothing.
 
-Says what type the folder is, what its name says it is and what the default
-is, how many messages it holds against how many the reader finds by walking
-the separators, and for an mboxcl2 folder whether every message=’s
-@code{Content-Length=} matches its body.
+Says what type the folder is, what its name says it is, what its contents say
+and what the default is, how many messages it holds against how many the
+reader finds by walking the separators, and for an mboxcl2 folder whether every
+message=’s @code{Content-Length=} matches its body.
+
+What the contents say is counted over every message, and the name is not
+consulted for it: the reader takes the type from the name, so a folder
+carrying a length on every message under a name that does not say mboxcl2 is
+read as From_ and split wherever a body line begins "From ".  Nothing else
+tells the reader that, and it is the question the warning at visit time
+leaves open.
 
 A wrong length is the fault this is for, because it is the one that gives no
 other sign.  A missing one is refused when the folder is visited, but a
