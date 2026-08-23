@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
+;; Assisted-by: Deepseek:deepseek-v4-pro default
 ;; Version: 0.2.2
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
