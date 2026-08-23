@@ -51,6 +51,9 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     split wherever a body line begins `From `.  The check reports that, and
     names the rename and the conversion.
 
+    With a prefix argument it asks for a folder file and checks that, without
+    visiting it, which is the only way to check a folder VM will not read.
+
   * An IMAP or POP cache VM creates is named `imap-cache-<md5>.mboxcl2` and
     written in that type.  A cache that already exists keeps its name and is
     read as whatever it is: nothing is converted and nothing is refetched.

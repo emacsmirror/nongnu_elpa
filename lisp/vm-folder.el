@@ -6280,8 +6280,12 @@ other part of VM will tell the reader."
 			 " which recomputes every length.\n")))))))
 
 ;;;###autoload
-(defun vm-check-folder ()
+(defun vm-check-folder (&optional file)
   "Report this folder\='s type and check that it is sound, writing nothing.
+
+With a prefix argument, or with FILE given, check a folder on disk that VM is
+not visiting -- see `vm-check-folder-of-file\='.  That is how to check a folder
+VM will not read, which is the folder most likely to want it.
 
 Says what type the folder is, what its name says it is, what its contents say
 and what the default is, how many messages it holds against how many the
@@ -6304,26 +6308,67 @@ what the format is for -- takes the wrong bytes.
 
 Nothing is written.  `vm-change-folder-type\=' is the repair: converting a
 folder to the type it already is recomputes every length."
-  (interactive)
-  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-  (vm-error-if-virtual-folder)
-  (when (or (null vm-folder-type) (eq vm-folder-type 'unknown))
-    (error (concat "%s has no folder type VM recognizes, so there is nothing"
-		   " to check")
-	   (buffer-name)))
-  (save-excursion
-    (save-restriction
-      (widen)
-      ;; Not strictly, while counting: `vm-count-messages-in-buffer' reads with
-      ;; the reader, and the reader refuses a message with no Content-Length --
-      ;; which is one of the things being reported on.  Refusing to count the
-      ;; folder that most needs counting is no use to anybody, and nothing
-      ;; global is left switched off afterwards.
+  (interactive
+   (list (when current-prefix-arg
+	   (vm-read-file-name "Check folder file: "
+			      (or vm-folder-directory default-directory)
+			      nil t nil 'vm-folder-history))))
+  (if file
+      (vm-check-folder-of-file file)
+    (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+    (vm-error-if-virtual-folder)
+    (when (or (null vm-folder-type) (eq vm-folder-type 'unknown))
+      (error (concat "%s has no folder type VM recognizes, so there is nothing"
+		     " to check")
+	     (buffer-name)))
+    (save-excursion
+      (save-restriction
+	(widen)
+	;; Not strictly, while counting: `vm-count-messages-in-buffer' reads
+	;; with the reader, and the reader refuses a message with no
+	;; Content-Length -- which is one of the things being reported on.
+	;; Refusing to count the folder that most needs counting is no use to
+	;; anybody, and nothing global is left switched off afterwards.
+	(let ((vm-mboxcl2-strict nil))
+	  (vm-check-folder-report (vm-folder-length-faults)
+				  (vm-count-messages-in-buffer)
+				  (length vm-message-list)
+				  (vm-folder-length-survey)))))))
+
+(defun vm-check-folder-of-file (file)
+  "Report on the folder FILE on disk, without visiting it.  Writes nothing.
+The folder that most wants checking is one VM will not visit: a folder whose
+name says mboxcl2 and which has a message with no `Content-Length\=' is refused,
+so there is no buffer in which to check it.  `vm-mboxcl2-strict\=' is bound nil
+here, as the on-disk conversion binds it, and nothing global is left switched
+off afterwards.
+
+The type is the one the reader would take, from the name, and everything
+`vm-check-folder\=' says of a visited folder is said of this one."
+  (let ((type (vm-get-folder-type file))
+	(coding-system-for-read (vm-binary-coding-system)))
+    (when (memq type '(nil unknown))
+      (error (concat "%s has no folder type VM recognizes, so there is nothing"
+		     " to check")
+	     (file-name-nondirectory file)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (vm-inform 5 "Reading %s..." (file-name-nondirectory file))
+      (insert-file-contents-literally file)
+      ;; The name is what states the type, and the report says what the name
+      ;; says, so the buffer has to carry it.  Renamed as well, since the
+      ;; report is headed with the buffer name and " *temp*" names nothing.
+      (setq buffer-file-name file)
+      (rename-buffer (file-name-nondirectory file) t)
       (let ((vm-mboxcl2-strict nil))
+	(vm-build-message-list)
 	(vm-check-folder-report (vm-folder-length-faults)
 				(vm-count-messages-in-buffer)
 				(length vm-message-list)
-				(vm-folder-length-survey))))))
+				(vm-folder-length-survey)))
+      ;; or killing the buffer offers to save the folder back
+      (setq buffer-file-name nil)
+      (set-buffer-modified-p nil))))
 
 ;;;###autoload
 (defun vm-change-folder-type (type &optional file)

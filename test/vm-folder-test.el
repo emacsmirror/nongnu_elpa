@@ -4912,6 +4912,71 @@ not distinguishable from a hung Emacs."
       (should (vm-folder-test--said-p said "^Backing sent\\.mboxcl2 up as"))
       (should (vm-folder-test--said-p said "^Writing sent")))))
 
+(defconst vm-folder-test--message-with-no-length
+  (concat "From bob@example.com Sat Aug  8 15:24:13 2026\n"
+          "From: bob@example.com\nSubject: two\n\nNo length here.\n\n")
+  "A message with no Content-Length, which an mboxcl2 folder must not have.")
+
+(defun vm-folder-test--check-file (file)
+  "Check FILE on disk and answer the text of the report, or nil if there was none."
+  (cl-letf (((symbol-function 'vm-inform) #'ignore)
+            ((symbol-function 'vm-warn) #'ignore))
+    (vm-check-folder file))
+  (when (get-buffer "*VM folder check*")
+    (let ((report (with-current-buffer "*VM folder check*" (buffer-string))))
+      (kill-buffer "*VM folder check*")
+      report)))
+
+(ert-deftest vm-folder-test-check-folder-checks-a-file-vm-will-not-visit ()
+  "A folder on disk is checked without being visited, which is the whole point.
+An mboxcl2 folder with a message that has no length cannot be visited at all,
+so there is no buffer in which to check the folder that most wants checking."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          vm-folder-test--message-with-no-length
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((report (vm-folder-test--check-file file)))
+      (should report)
+      (should (string-match-p "Type: *mboxcl2" report))
+      (should (string-match-p "message 2 has no Content-Length" report))
+      ;; and it is not visited: no folder buffer is left holding the file
+      (should-not (get-file-buffer file)))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-reads-the-contents ()
+  "The contents are counted for a file too, so a misnamed cache can be
+settled without visiting it -- the case the visit-time warning leaves open."
+  (vm-folder-test-with-file (file "imap-cache-d0c3b3a9"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((report (vm-folder-test--check-file file)))
+      (should (string-match-p "Type: *From_" report))
+      (should (string-match-p "The name says: *nothing" report))
+      (should (string-match-p "The contents say: *mboxcl2" report)))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-writes-nothing ()
+  "It reports and does not repair: the file on disk is untouched, and no
+buffer is left behind to be saved over it."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message 999)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((before (with-temp-buffer (insert-file-contents file) (buffer-string)))
+          (stamp (file-attribute-modification-time (file-attributes file)))
+          (buffers (buffer-list)))
+      (vm-folder-test--check-file file)
+      (should (equal before (with-temp-buffer (insert-file-contents file)
+                                             (buffer-string))))
+      (should (equal stamp (file-attribute-modification-time
+                            (file-attributes file))))
+      (should (equal buffers (buffer-list))))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-refuses-an-unknown-type ()
+  "A file that is no folder VM knows is refused, and says so of the file
+rather than of a buffer nobody asked about."
+  (vm-folder-test-with-file (file "notes.txt" "This is not a folder at all.\n")
+    (let* ((text-quoting-style 'grave)
+           (err (should-error (vm-check-folder file) :type 'error)))
+      (should (string-match-p "notes\\.txt has no folder type" (cadr err))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
