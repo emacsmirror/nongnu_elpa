@@ -29,10 +29,8 @@
     ("-arg \"'a b' 'c d'\""                          ("a b" "c d"))
     ("-arg \"'a' 'b'\""                              ("a" "b"))
     ("-arg \"a'b c'd\""                              ("ab cd"))
-    ("-arg \"a 'b c' d 'e\""                         ("a" "b c" "d" "e"))
     ("-arg \"-Q '' Foo\""                            ("-Q" "" "Foo"))
     ("-arg \"''\""                                   (""))
-    ("-arg \"'\""                                    (""))
     ("-arg \"\""                                     nil)
     ("-arg \"   \""                                  nil)
     ("-arg \"-w\tall\""                              ("-w\tall"))
@@ -50,6 +48,14 @@
       (should (equal (cons contents (coq--extract-prog-args
                                      (coq--read-options-from-project-file contents)))
                      (cons contents expected))))))
+
+(ert-deftest coq-project-file-unpaired-quote ()
+  (dolist (contents '("-arg \"'\""
+                      "-arg \"a 'b c' d 'e\""
+                      "-arg \"-w 'all\""
+                      "-arg 'val -arg val'"))
+    (should-error (coq--extract-prog-args
+                   (coq--read-options-from-project-file contents)))))
 
 (ert-deftest coq-project-file-unterminated-string ()
   (should-error (coq--read-options-from-project-file "-arg \"-w all\n-arg -foo")))

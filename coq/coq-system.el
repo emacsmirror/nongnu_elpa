@@ -23,6 +23,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'proof)
 (require 'coq-mode)                     ;for coq-prog-name
 
@@ -676,8 +677,9 @@ the next double quote; there is no escape character."
     (nreverse tokens)))
 
 (defun coq--split-arg-value (value)
-  "Split VALUE, the argument of a -arg option, into coqtop arguments.
-Single quotes protect spaces and are removed."
+  "Split VALUE, the argument of a -arg option, into coqtop arguments."
+  (when (cl-oddp (cl-count ?' value))
+    (error "Unpaired single quote in -arg value: %S" value))
   (let ((pos 0) (args nil))
     (while (string-match coq--arg-value-token-regexp value pos)
       (setq pos (match-end 0))
