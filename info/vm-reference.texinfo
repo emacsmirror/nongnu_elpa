@@ -1343,9 +1343,13 @@ visit failed partway is refused: it holds only the messages read before the
 error, and the on-disk conversion is what such a folder wants.
 @end deffn
 
-@deffn Command vm-check-folder
+@deffn Command vm-check-folder &optional file
 @findex vm-check-folder
 Report this folder=’s type and check that it is sound, writing nothing.
+
+With a prefix argument, or with FILE given, check a folder on disk that VM is
+not visiting -- see @code{vm-check-folder-of-file=}.  That is how to check a folder
+VM will not read, which is the folder most likely to want it.
 
 Says what type the folder is, what its name says it is, what its contents say
 and what the default is, how many messages it holds against how many the
