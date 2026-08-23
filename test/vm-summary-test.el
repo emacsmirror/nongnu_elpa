@@ -672,6 +672,97 @@ whose unread mail you have not seen would hide the reason you were looking."
       (vm-collapse-thread nil root)
       (should (= (vm-summary-test--hidden-replies) 1)))))
 
+(defconst vm-summary-test--three
+  (concat "From a@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: a@example.com\nSubject: one\n\nFirst body.\n\n"
+          "From b@example.com Sat Aug  8 15:00:00 2026\n"
+          "From: b@example.com\nSubject: two\n\nSecond body.\n\n"
+          "From c@example.com Sat Aug  8 16:00:00 2026\n"
+          "From: c@example.com\nSubject: three\n\nThird body.\n\n")
+  "Three unrelated messages, so the summary has three lines and no threads.")
+
+(defmacro vm-summary-test--with-summary (spec &rest body)
+  "Visit a three-message folder with its summary built and run BODY.
+SPEC is (FOLDER-VAR).  No threading, every message read, and the first
+message selected, which is where the summary cursor starts."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-summary-cursor" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "three" dir))
+               (vm-summary-show-threads nil)
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil))
+           (write-region vm-summary-test--three nil ,(car spec) nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder ,(car spec))
+             (dolist (m vm-message-list)
+               (vm-set-new-flag m nil)
+               (vm-set-unread-flag m nil))
+             (vm-update-summary-and-mode-line)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-summary-test--cursor-message ()
+  "The message the summary cursor is on."
+  (with-current-buffer vm-summary-buffer (vm-summary-message-at-point)))
+
+(defun vm-summary-test--put-cursor-on (m)
+  "Move the summary cursor to M, as a reader moving about the summary does."
+  (with-current-buffer vm-summary-buffer
+    (goto-char (vm-su-start-of m))
+    (forward-line 0)))
+
+(ert-deftest vm-summary-test-a-rebuild-leaves-the-cursor-where-it-was ()
+  "Messages arriving during a fetch do not drag the cursor back.
+A reader who moves to the end of the summary with \\[end-of-buffer] while a
+fetch is running had the cursor pulled back to the selected message as each
+bunch arrived: `vm-do-needed-summary-rebuild' set the summary pointer, which
+moves point, and the reader could not stay where they had gone."
+  (vm-summary-test--with-summary (_folder)
+    (let ((last (car (last vm-message-list))))
+      (vm-summary-test--put-cursor-on last)
+      (should (eq (vm-summary-test--cursor-message) last))
+      ;; what an arriving bunch does
+      (vm-set-summary-redo-start-point t)
+      (vm-update-summary-and-mode-line)
+      (should (eq (vm-summary-test--cursor-message) last)))))
+
+(ert-deftest vm-summary-test-a-rebuild-still-follows-the-selection ()
+  "The cursor sitting on the selected message follows it, as it always did.
+That is what moving through the folder looks like: the reader has not gone
+anywhere else, so the pointer takes the cursor with it."
+  (vm-summary-test--with-summary (_folder)
+    (let ((first (car vm-message-list))
+          (second (nth 1 vm-message-list)))
+      (should (eq (vm-summary-test--cursor-message) first))
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-set-summary-redo-start-point t)
+      (vm-update-summary-and-mode-line)
+      (should (eq (vm-summary-test--cursor-message) second)))))
+
+(ert-deftest vm-summary-test-end-of-buffer-is-where-a-reader-lands ()
+  "The cursor survives where \\[end-of-buffer] actually leaves it.
+Which is `point-max', not the start of the last summary line -- and
+`vm-summary-message-at-point' answers nil at end of buffer, so a fix that
+only knew about a cursor on a message would not have covered the keystroke
+the fault was reported against."
+  (vm-summary-test--with-summary (_folder)
+    (let (where)
+      (with-current-buffer vm-summary-buffer
+        (goto-char (point-max))
+        (setq where (point)))
+      (vm-set-summary-redo-start-point t)
+      (vm-update-summary-and-mode-line)
+      (with-current-buffer vm-summary-buffer
+        (should (eobp))
+        (should (= (point) where))))))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here
