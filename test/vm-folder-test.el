@@ -4864,6 +4864,148 @@ with its name: there is no disagreement to report, so it stays one line."
     (should-not report)
     (should (string-match-p "sound" said))))
 
+;;; Saying what a conversion is doing
+
+(defmacro vm-folder-test--saying (&rest body)
+  "Run BODY with what `vm-inform' was told bound to `said', newest last.
+The progress interval is 1, so every message counts: the tests have three
+messages to work with, not the thousands a folder that needs reporting on has."
+  (declare (indent 0) (debug t))
+  `(let ((said nil)
+         (vm-folder-progress-interval 1))
+     (cl-letf (((symbol-function 'vm-inform)
+                (lambda (_level format &rest args)
+                  (setq said (append said (list (apply #'format format args)))))))
+       ,@body)
+     said))
+
+(defun vm-folder-test--said-p (said pattern)
+  "Whether any line of SAID matches PATTERN."
+  (and (seq-find (lambda (line) (string-match-p pattern line)) said) t))
+
+(ert-deftest vm-folder-test-progress-says-at-the-interval-and-not-between ()
+  "`vm-folder-say-progress' speaks every `vm-folder-progress-interval'.
+A message per message would be the echo area doing more work than the job it
+is reporting on."
+  (let ((said nil)
+        (vm-folder-progress-interval 3))
+    (cl-letf (((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (dolist (n '(1 2 3 4 5 6))
+        (vm-folder-say-progress "Converting" n 6)))
+    (should (equal (nreverse said)
+                   '("Converting... 3 of 6" "Converting... 6 of 6")))))
+
+(ert-deftest vm-folder-test-progress-without-a-total-says-the-count ()
+  "A phase whose total is not yet known says how far it has got and no more.
+A folder has to be walked before it can be counted, and the walk is itself the
+slow part."
+  (let ((said nil)
+        (vm-folder-progress-interval 1))
+    (cl-letf (((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-folder-say-progress "Finding the messages" 7))
+    (should (equal said '("Finding the messages... 7")))))
+
+(ert-deftest vm-folder-test-converting-a-buffer-counts-against-the-total ()
+  "`vm-convert-folder-type' says which message of how many it is on.
+It said nothing at all, and it is where the on-disk repair of a gigabyte
+folder spends its time."
+  (let ((said (vm-folder-test--saying
+                (with-temp-buffer
+                  (insert (vm-folder-test--mboxcl2-message)
+                          (vm-folder-test--mboxcl2-message)
+                          (vm-folder-test--mboxcl2-message))
+                  (let ((vm-mboxcl2-strict nil))
+                    (vm-convert-folder-type 'mboxcl2 'From_))))))
+    (should (vm-folder-test--said-p said "Finding the messages\\.\\.\\. 3"))
+    (should (vm-folder-test--said-p said "Converting\\.\\.\\. 3 of 3"))
+    (should (vm-folder-test--said-p said "3 messages, done"))))
+
+(ert-deftest vm-folder-test-the-on-disk-conversion-names-every-phase ()
+  "Each phase that walks or copies the whole folder says it is starting.
+On a gigabyte cache each is a minute of silence, and six of them in a row is
+not distinguishable from a hung Emacs."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((said (vm-folder-test--saying
+                  (vm-change-folder-type-of-file file 'From_ nil))))
+      (should (vm-folder-test--said-p said "^Reading sent\\.mboxcl2\\.\\.\\."))
+      (should (vm-folder-test--said-p said "bytes, checksumming"))
+      (should (vm-folder-test--said-p said "^Counting the messages in sent"))
+      (should (vm-folder-test--said-p said "^Converting sent.* from mboxcl2 to From_, 2 messages"))
+      (should (vm-folder-test--said-p said "^Checking that the result reads back as From_"))
+      (should (vm-folder-test--said-p said "^Backing sent\\.mboxcl2 up as"))
+      (should (vm-folder-test--said-p said "^Writing sent")))))
+
+(defconst vm-folder-test--message-with-no-length
+  (concat "From bob@example.com Sat Aug  8 15:24:13 2026\n"
+          "From: bob@example.com\nSubject: two\n\nNo length here.\n\n")
+  "A message with no Content-Length, which an mboxcl2 folder must not have.")
+
+(defun vm-folder-test--check-file (file)
+  "Check FILE on disk and answer the text of the report, or nil if there was none."
+  (cl-letf (((symbol-function 'vm-inform) #'ignore)
+            ((symbol-function 'vm-warn) #'ignore))
+    (vm-check-folder file))
+  (when (get-buffer "*VM folder check*")
+    (let ((report (with-current-buffer "*VM folder check*" (buffer-string))))
+      (kill-buffer "*VM folder check*")
+      report)))
+
+(ert-deftest vm-folder-test-check-folder-checks-a-file-vm-will-not-visit ()
+  "A folder on disk is checked without being visited, which is the whole point.
+An mboxcl2 folder with a message that has no length cannot be visited at all,
+so there is no buffer in which to check the folder that most wants checking."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          vm-folder-test--message-with-no-length
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((report (vm-folder-test--check-file file)))
+      (should report)
+      (should (string-match-p "Type: *mboxcl2" report))
+      (should (string-match-p "message 2 has no Content-Length" report))
+      ;; and it is not visited: no folder buffer is left holding the file
+      (should-not (get-file-buffer file)))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-reads-the-contents ()
+  "The contents are counted for a file too, so a misnamed cache can be
+settled without visiting it -- the case the visit-time warning leaves open."
+  (vm-folder-test-with-file (file "imap-cache-d0c3b3a9"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((report (vm-folder-test--check-file file)))
+      (should (string-match-p "Type: *From_" report))
+      (should (string-match-p "The name says: *nothing" report))
+      (should (string-match-p "The contents say: *mboxcl2" report)))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-writes-nothing ()
+  "It reports and does not repair: the file on disk is untouched, and no
+buffer is left behind to be saved over it."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message 999)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((before (with-temp-buffer (insert-file-contents file) (buffer-string)))
+          (stamp (file-attribute-modification-time (file-attributes file)))
+          (buffers (buffer-list)))
+      (vm-folder-test--check-file file)
+      (should (equal before (with-temp-buffer (insert-file-contents file)
+                                             (buffer-string))))
+      (should (equal stamp (file-attribute-modification-time
+                            (file-attributes file))))
+      (should (equal buffers (buffer-list))))))
+
+(ert-deftest vm-folder-test-check-folder-of-a-file-refuses-an-unknown-type ()
+  "A file that is no folder VM knows is refused, and says so of the file
+rather than of a buffer nobody asked about."
+  (vm-folder-test-with-file (file "notes.txt" "This is not a folder at all.\n")
+    (let* ((text-quoting-style 'grave)
+           (err (should-error (vm-check-folder file) :type 'error)))
+      (should (string-match-p "notes\\.txt has no folder type" (cadr err))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

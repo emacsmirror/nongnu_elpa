@@ -1129,6 +1129,12 @@ walking the separators, and for an mboxcl2 folder whether every message's
 @code{Content-Length} matches its body.  A sound folder is one line in the
 echo area; anything else gets a report naming each message at fault.
 
+With a prefix argument, @code{vm-check-folder} asks for a folder file and
+checks that, without visiting it.  That is how to check the folder most likely
+to want it: a folder whose name says mboxcl2 and which has a message with no
+@code{Content-Length} cannot be visited at all, so there is no buffer in which
+to check it.  Nothing is written either way.
+
 What the contents say is counted over every message in the folder, and the
 name is not consulted for it.  That is the case a name cannot answer: VM takes
 a folder's type from its name, so a folder carrying a @code{Content-Length}

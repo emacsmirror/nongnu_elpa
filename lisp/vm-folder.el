@@ -1133,14 +1133,34 @@ same way the reader does, so a folder it cannot parse signals here."
 	(vm-skip-past-trailing-message-separator))
       n)))
 
+(defvar vm-folder-progress-interval 100
+  "How many messages between one progress message and the next.
+A folder that takes long enough to want reporting on holds thousands, so a
+message per message would be the echo area doing more work than the job.
+Bound down in the tests, which do not have thousands of messages to spare.")
+
+(defun vm-folder-say-progress (what n &optional total)
+  "Say that N of TOTAL messages of WHAT are done, every so often.
+TOTAL is omitted where it is not yet known -- a folder has to be walked before
+it can be counted, which is itself the slow part on a folder of any size."
+  (when (zerop (% n vm-folder-progress-interval))
+    (if total
+	(vm-inform 5 "%s... %d of %d" what n total)
+      (vm-inform 5 "%s... %d" what n))))
+
 (defun vm-convert-folder-type (old-type new-type)
   "Convert buffer from OLD-TYPE to NEW-TYPE.
 OLD-TYPE and NEW-TYPE should be symbols returned from vm-get-folder-type.
 This should be called on non-live buffers like crash boxes.
-This will confuse VM if called on a folder buffer in vm-mode."
+This will confuse VM if called on a folder buffer in vm-mode.
+
+Says how far it has got as it goes: this is what the on-disk repair spends its
+time in, and it used to say nothing at all while doing it (emacs-vm/vm#748)."
   (let ((vm-folder-type old-type)
 	(pos-list nil)
-	beg end)
+	(found 0)
+	(done 0)
+	total beg end)
     (goto-char (point-min))
     (vm-skip-past-folder-header)
     (while (vm-find-leading-message-separator)
@@ -1150,8 +1170,11 @@ This will confuse VM if called on a folder buffer in vm-mode."
       (vm-find-trailing-message-separator)
       (setq pos-list (cons (point-marker) pos-list))
       (vm-skip-past-trailing-message-separator)
-      (setq pos-list (cons (point-marker) pos-list)))
+      (setq pos-list (cons (point-marker) pos-list))
+      (setq found (1+ found))
+      (vm-folder-say-progress "Finding the messages" found))
     (setq pos-list (nreverse pos-list))
+    (setq total found)
     (goto-char (point-min))
     (vm-convert-folder-header old-type new-type)
     (while pos-list
@@ -1176,7 +1199,10 @@ This will confuse VM if called on a folder buffer in vm-mode."
       (delete-region (car pos-list) (car (cdr pos-list)))
       (goto-char beg)
       (vm-munge-message-separators new-type beg end)
-      (setq pos-list (cdr (cdr pos-list))))))
+      (setq pos-list (cdr (cdr pos-list)))
+      (setq done (1+ done))
+      (vm-folder-say-progress "Converting" done total))
+    (vm-inform 5 "Converting... %d messages, done" total)))
 
 (defun vm-convert-folder-header (old-type new-type)
   "Convert the folder header form OLD-TYPE to NEW-TYPE.
@@ -6194,17 +6220,28 @@ in a backup file, named as Emacs would name one when saving a buffer."
 	     (file-name-nondirectory file)))
     (with-temp-buffer
       (set-buffer-multibyte nil)
+      ;; Each of these walks or copies the whole folder, which on a gigabyte
+      ;; cache is a minute at a time, so each says it is starting: a silence
+      ;; that long is indistinguishable from a hung Emacs (emacs-vm/vm#748).
+      (vm-inform 5 "Reading %s..." (file-name-nondirectory file))
       (insert-file-contents-literally file)
       ;; A hash of the folder rather than a copy of it: an IMAP cache folder
       ;; runs to a gigabyte, and `buffer-string' here and again at the end
       ;; would ask for two more of them.
+      (vm-inform 5 "Reading %s... %d bytes, checksumming"
+		 (file-name-nondirectory file) (buffer-size))
       (setq original (buffer-hash))
       (let ((vm-folder-type old)
 	    (vm-mboxcl2-strict nil))
+	(vm-inform 5 "Counting the messages in %s..."
+		   (file-name-nondirectory file))
 	(setq before (vm-count-messages-in-buffer))
+	(vm-inform 5 "Converting %s from %s to %s, %d messages..."
+		   (file-name-nondirectory file) old type before)
 	(vm-convert-folder-type old type))
       ;; strict this time: what would be written has to read back as what it
       ;; now says it is, or the file is left as it was
+      (vm-inform 5 "Checking that the result reads back as %s..." type)
       (let ((vm-folder-type type))
 	(setq after (vm-count-messages-in-buffer)))
       (cond ((/= before after)
@@ -6216,7 +6253,11 @@ in a backup file, named as Emacs would name one when saving a buffer."
 			(file-name-nondirectory file) type after))
 	    ((equal (vm-folder-name-for-type file type) file)
 	     (let ((backup (vm-folder-backup-name file)))
+	       (vm-inform 5 "Backing %s up as %s..."
+			  (file-name-nondirectory file)
+			  (file-name-nondirectory backup))
 	       (copy-file file backup t)
+	       (vm-inform 5 "Writing %s..." (file-name-nondirectory file))
 	       (write-region (point-min) (point-max) file nil 'quiet)
 	       (vm-inform 5 "%s converted from %s to %s, %d messages; was %s"
 			  (file-name-nondirectory file) old type after
@@ -6232,7 +6273,11 @@ in a backup file, named as Emacs would name one when saving a buffer."
 		 (error (concat "%s is a folder already; move it aside, or"
 				" rename this one by hand")
 			(abbreviate-file-name new-file)))
+	       (vm-inform 5 "Backing %s up as %s..."
+			  (file-name-nondirectory file)
+			  (file-name-nondirectory backup))
 	       (copy-file file backup t)
+	       (vm-inform 5 "Writing %s..." (file-name-nondirectory new-file))
 	       (write-region (point-min) (point-max) new-file nil 'quiet)
 	       (vm-inform 5 "%s converted from %s to %s as %s, %d messages"
 			  (file-name-nondirectory file) old type
@@ -6416,8 +6461,12 @@ other part of VM will tell the reader."
 			 " which recomputes every length.\n")))))))
 
 ;;;###autoload
-(defun vm-check-folder ()
+(defun vm-check-folder (&optional file)
   "Report this folder\='s type and check that it is sound, writing nothing.
+
+With a prefix argument, or with FILE given, check a folder on disk that VM is
+not visiting -- see `vm-check-folder-of-file\='.  That is how to check a folder
+VM will not read, which is the folder most likely to want it.
 
 Says what type the folder is, what its name says it is, what its contents say
 and what the default is, how many messages it holds against how many the
@@ -6440,26 +6489,67 @@ what the format is for -- takes the wrong bytes.
 
 Nothing is written.  `vm-change-folder-type\=' is the repair: converting a
 folder to the type it already is recomputes every length."
-  (interactive)
-  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-  (vm-error-if-virtual-folder)
-  (when (or (null vm-folder-type) (eq vm-folder-type 'unknown))
-    (error (concat "%s has no folder type VM recognizes, so there is nothing"
-		   " to check")
-	   (buffer-name)))
-  (save-excursion
-    (save-restriction
-      (widen)
-      ;; Not strictly, while counting: `vm-count-messages-in-buffer' reads with
-      ;; the reader, and the reader refuses a message with no Content-Length --
-      ;; which is one of the things being reported on.  Refusing to count the
-      ;; folder that most needs counting is no use to anybody, and nothing
-      ;; global is left switched off afterwards.
+  (interactive
+   (list (when current-prefix-arg
+	   (vm-read-file-name "Check folder file: "
+			      (or vm-folder-directory default-directory)
+			      nil t nil 'vm-folder-history))))
+  (if file
+      (vm-check-folder-of-file file)
+    (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+    (vm-error-if-virtual-folder)
+    (when (or (null vm-folder-type) (eq vm-folder-type 'unknown))
+      (error (concat "%s has no folder type VM recognizes, so there is nothing"
+		     " to check")
+	     (buffer-name)))
+    (save-excursion
+      (save-restriction
+	(widen)
+	;; Not strictly, while counting: `vm-count-messages-in-buffer' reads
+	;; with the reader, and the reader refuses a message with no
+	;; Content-Length -- which is one of the things being reported on.
+	;; Refusing to count the folder that most needs counting is no use to
+	;; anybody, and nothing global is left switched off afterwards.
+	(let ((vm-mboxcl2-strict nil))
+	  (vm-check-folder-report (vm-folder-length-faults)
+				  (vm-count-messages-in-buffer)
+				  (length vm-message-list)
+				  (vm-folder-length-survey)))))))
+
+(defun vm-check-folder-of-file (file)
+  "Report on the folder FILE on disk, without visiting it.  Writes nothing.
+The folder that most wants checking is one VM will not visit: a folder whose
+name says mboxcl2 and which has a message with no `Content-Length\=' is refused,
+so there is no buffer in which to check it.  `vm-mboxcl2-strict\=' is bound nil
+here, as the on-disk conversion binds it, and nothing global is left switched
+off afterwards.
+
+The type is the one the reader would take, from the name, and everything
+`vm-check-folder\=' says of a visited folder is said of this one."
+  (let ((type (vm-get-folder-type file))
+	(coding-system-for-read (vm-binary-coding-system)))
+    (when (memq type '(nil unknown))
+      (error (concat "%s has no folder type VM recognizes, so there is nothing"
+		     " to check")
+	     (file-name-nondirectory file)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (vm-inform 5 "Reading %s..." (file-name-nondirectory file))
+      (insert-file-contents-literally file)
+      ;; The name is what states the type, and the report says what the name
+      ;; says, so the buffer has to carry it.  Renamed as well, since the
+      ;; report is headed with the buffer name and " *temp*" names nothing.
+      (setq buffer-file-name file)
+      (rename-buffer (file-name-nondirectory file) t)
       (let ((vm-mboxcl2-strict nil))
+	(vm-build-message-list)
 	(vm-check-folder-report (vm-folder-length-faults)
 				(vm-count-messages-in-buffer)
 				(length vm-message-list)
-				(vm-folder-length-survey))))))
+				(vm-folder-length-survey)))
+      ;; or killing the buffer offers to save the folder back
+      (setq buffer-file-name nil)
+      (set-buffer-modified-p nil))))
 
 ;;;###autoload
 (defun vm-change-folder-type (type &optional file)
@@ -6548,8 +6638,7 @@ error, and the on-disk conversion is what such a folder wants."
 	;; no interruptions
 	(inhibit-quit t)
 	(n 0)
-	;; Just for laughs, make the update interval vary.
-	(modulus (+ (% (vm-abs (random)) 11) 5))
+	(total (length vm-message-list))
 	text-end) ;; opoint
     (save-excursion
       (save-restriction
@@ -6585,8 +6674,7 @@ error, and the on-disk conversion is what such a folder wants."
 	 ;; much and the summary regeneration would make this
 	 ;; process slower.
 	 (setq mp (cdr mp) n (1+ n))
-	 (if (zerop (% n modulus))
-	     (vm-inform 5 "Converting... %d" n))))))
+	 (vm-folder-say-progress "Converting" n total)))))
   (vm-clear-modification-flag-undos)
   (intern (buffer-name) vm-buffers-needing-display-update)
   (vm-update-summary-and-mode-line)
