@@ -4835,6 +4835,83 @@ with its name: there is no disagreement to report, so it stays one line."
     (should-not report)
     (should (string-match-p "sound" said))))
 
+;;; Saying what a conversion is doing
+
+(defmacro vm-folder-test--saying (&rest body)
+  "Run BODY with what `vm-inform' was told bound to `said', newest last.
+The progress interval is 1, so every message counts: the tests have three
+messages to work with, not the thousands a folder that needs reporting on has."
+  (declare (indent 0) (debug t))
+  `(let ((said nil)
+         (vm-folder-progress-interval 1))
+     (cl-letf (((symbol-function 'vm-inform)
+                (lambda (_level format &rest args)
+                  (setq said (append said (list (apply #'format format args)))))))
+       ,@body)
+     said))
+
+(defun vm-folder-test--said-p (said pattern)
+  "Whether any line of SAID matches PATTERN."
+  (and (seq-find (lambda (line) (string-match-p pattern line)) said) t))
+
+(ert-deftest vm-folder-test-progress-says-at-the-interval-and-not-between ()
+  "`vm-folder-say-progress' speaks every `vm-folder-progress-interval'.
+A message per message would be the echo area doing more work than the job it
+is reporting on."
+  (let ((said nil)
+        (vm-folder-progress-interval 3))
+    (cl-letf (((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (dolist (n '(1 2 3 4 5 6))
+        (vm-folder-say-progress "Converting" n 6)))
+    (should (equal (nreverse said)
+                   '("Converting... 3 of 6" "Converting... 6 of 6")))))
+
+(ert-deftest vm-folder-test-progress-without-a-total-says-the-count ()
+  "A phase whose total is not yet known says how far it has got and no more.
+A folder has to be walked before it can be counted, and the walk is itself the
+slow part."
+  (let ((said nil)
+        (vm-folder-progress-interval 1))
+    (cl-letf (((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-folder-say-progress "Finding the messages" 7))
+    (should (equal said '("Finding the messages... 7")))))
+
+(ert-deftest vm-folder-test-converting-a-buffer-counts-against-the-total ()
+  "`vm-convert-folder-type' says which message of how many it is on.
+It said nothing at all, and it is where the on-disk repair of a gigabyte
+folder spends its time."
+  (let ((said (vm-folder-test--saying
+                (with-temp-buffer
+                  (insert (vm-folder-test--mboxcl2-message)
+                          (vm-folder-test--mboxcl2-message)
+                          (vm-folder-test--mboxcl2-message))
+                  (let ((vm-mboxcl2-strict nil))
+                    (vm-convert-folder-type 'mboxcl2 'From_))))))
+    (should (vm-folder-test--said-p said "Finding the messages\\.\\.\\. 3"))
+    (should (vm-folder-test--said-p said "Converting\\.\\.\\. 3 of 3"))
+    (should (vm-folder-test--said-p said "3 messages, done"))))
+
+(ert-deftest vm-folder-test-the-on-disk-conversion-names-every-phase ()
+  "Each phase that walks or copies the whole folder says it is starting.
+On a gigabyte cache each is a minute of silence, and six of them in a row is
+not distinguishable from a hung Emacs."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (let ((said (vm-folder-test--saying
+                  (vm-change-folder-type-of-file file 'From_ nil))))
+      (should (vm-folder-test--said-p said "^Reading sent\\.mboxcl2\\.\\.\\."))
+      (should (vm-folder-test--said-p said "bytes, checksumming"))
+      (should (vm-folder-test--said-p said "^Counting the messages in sent"))
+      (should (vm-folder-test--said-p said "^Converting sent.* from mboxcl2 to From_, 2 messages"))
+      (should (vm-folder-test--said-p said "^Checking that the result reads back as From_"))
+      (should (vm-folder-test--said-p said "^Backing sent\\.mboxcl2 up as"))
+      (should (vm-folder-test--said-p said "^Writing sent")))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
