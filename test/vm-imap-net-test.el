@@ -2354,6 +2354,36 @@ it, which is what makes those forms run."
       (should (vm-imap-mock-received-p mock "LOGOUT"))
       (when (process-live-p process) (delete-process process)))))
 
+(defun vm-imap-net-test--bunch-buffers ()
+  "The bunch-collecting buffers left alive."
+  (seq-filter (lambda (buffer)
+                (string-prefix-p " *vm-imap-bunch*" (buffer-name buffer)))
+              (buffer-list)))
+
+(ert-deftest vm-imap-net-test-an-abandoned-fetch-leaves-no-bunch-buffer ()
+  "The buffer a bunch is collected in is killed however the fetch ends.
+It was killed by the last form of the generator\'s body, which an abandoned
+session or any error never reaches -- and the buffer is made before the first
+thing that can fail, so a refused UIDVALIDITY leaked one every time."
+  (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice))
+    (let* ((buffer (vm-imap-net-session-buffer "leak"))
+           (process (make-network-process
+                     :name "vm-imap-net-test" :host 'local
+                     :service (vm-imap-mock-port mock)
+                     :buffer buffer :noquery t :coding 'binary))
+           (session (vm-net-session :process process :name "imap" :timeout 10)))
+      (setq vm-imap-net-test--buffer buffer)
+      (should-not (vm-imap-net-test--bunch-buffers))
+      (vm-net-start session (vm-imap-net-get-new-mail (current-buffer) "INBOX"
+                                                      "vmtest" "secret"))
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (not (vm-imap-mock-received-p mock "SELECT"))
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (vm-net-abandon session)
+      (should-not (vm-imap-net-test--bunch-buffers))
+      (when (process-live-p process) (delete-process process)))))
+
 (ert-deftest vm-imap-net-test-waiting-answers-nil-when-it-runs-out ()
   "`vm-imap-net-wait' says whether the session finished.  A caller that has
 to have the mail can tell the difference between having it and having waited

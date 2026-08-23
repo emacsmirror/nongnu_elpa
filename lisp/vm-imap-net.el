@@ -1252,7 +1252,12 @@ ALL-FLAGS sends every message's flags rather than only those that changed, and
 FULL deletes on the server what the folder no longer holds.  Without them this
 is `vm-get-new-mail\=': what has arrived, and what the folder has asked to be
 expunged."
-  (unwind-protect
+  ;; The bunch buffer is made here and killed in the cleanup below, not at the
+  ;; end of the body: an abandoned session or any error on the way -- the
+  ;; refused UIDVALIDITY a few lines down is the first of them -- never reaches
+  ;; the end of the body, and left one behind every time.
+  (let ((holding (generate-new-buffer " *vm-imap-bunch*")))
+    (unwind-protect
       (progn
 	(let* ((capabilities (iter-yield-from (vm-imap-net-open-session user password)))
     	       (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t))
@@ -1263,9 +1268,7 @@ expunged."
     	       (folder-type nil)
     	       (data nil)
     	       (plan nil)
-	       (retrieved 0)
-	       ;; where a bunch is collected before it goes into the folder
-	       (holding (generate-new-buffer " *vm-imap-bunch*")))
+	       (retrieved 0))
 	  (with-current-buffer folder
 	    (let ((known (vm-folder-imap-uid-validity)))
     	      (when (and known uid-validity (not (equal known uid-validity)))
@@ -1389,9 +1392,9 @@ expunged."
     		(iter-yield-from (vm-imap-net-expunge uids))
     		(with-current-buffer folder
     		  (vm-imap-net-note-expunged uids))))
-	    (when (buffer-live-p holding) (kill-buffer holding))
 	    retrieved)))
-    (vm-imap-net-logout)))
+      (vm-imap-net-logout)
+      (when (buffer-live-p holding) (kill-buffer holding)))))
 
 ;;; Flags, and what the server would not take
 
