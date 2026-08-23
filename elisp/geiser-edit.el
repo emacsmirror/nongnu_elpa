@@ -93,10 +93,14 @@ or following links in error buffers.")
                 "define*"
                 "define-method"
                 "define-class"
-                "define-struct")))
+                "define-struct"
+                ;; SRFI 253
+                "define-checked")))
 
 (defconst geiser-edit--def-re*
-  (regexp-opt '("define-syntaxes" "define-values")))
+  (regexp-opt '("define-syntaxes" "define-values"
+                ;; SRFI 273
+                "define-values-checked")))
 
 (defsubst geiser-edit--def-re (thing)
   (let ((sx (regexp-quote (format "%s" thing))))
