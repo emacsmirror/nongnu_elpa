@@ -10,6 +10,18 @@ This appendix is generated from the docstrings when the manual is
 built, so it says what the code says; the chapters above explain
 what to do with it.
 
+Each section lists what you can type, then the options that
+govern it, then what VM invokes for itself: a toolbar button, a
+mouse menu, a keymap entry or a hook function.  The last are
+here because they can be called, not because a reader normally
+would.
+
+An entry marked @emph{not autoloaded} needs VM loaded before
+@kbd{M-x} will offer it, which for a command that only makes
+sense inside a folder is no hardship.  The mark is worked out
+when the manual is built, so it says what is so rather than
+what was so.
+
 @menu
 * Reference for Deleting and expunging::
 * Reference for Digests::
@@ -828,11 +840,15 @@ C-c # e         vm-epg-encrypt
 C-c # k         vm-epg-attach-public-key
 C-c # s         vm-epg-sign
 @end example
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-epg-compose-mode-menu arg1
 @findex vm-epg-compose-mode-menu
 PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-epg-encrypt &optional sign
@@ -861,6 +877,8 @@ inline rather than attached as a MIME part.
 Prompt for a PGP action and return it.
 The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
 choice, and @code{q} aborts sending with an error.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-epg-sign
@@ -1015,31 +1033,43 @@ put something like
        (add-hook 'vm-mail-send-hook #'vm-pgg-ask-hook t)
 
 into your VM init file.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-attach-public-key
 @findex vm-pgg-attach-public-key
 Attach your public key to a composition.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-cleartext-decrypt
 @findex vm-pgg-cleartext-decrypt
 Decrypt the contents of the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-cleartext-encrypt sign
 @findex vm-pgg-cleartext-encrypt
 Encrypt the composition as cleartext and with a prefix also SIGN it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-cleartext-sign
 @findex vm-pgg-cleartext-sign
 Sign the message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-cleartext-verify
 @findex vm-pgg-cleartext-verify
 Verify the signature in the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-compose-mode &optional arg
@@ -1047,21 +1077,29 @@ Verify the signature in the current message.
 Minor mode for interfacing with cryptographic functions.
 
 Switch mode on/off according to ARG.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-compose-mode-menu arg1
 @findex vm-pgg-compose-mode-menu
 PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-encrypt &optional sign
 @findex vm-pgg-encrypt
 Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-prompt-for-action
 @findex vm-pgg-prompt-for-action
 Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-sign
@@ -1081,16 +1119,22 @@ set @code{vm-mime-8bit-text-transfer-encoding} to something different than 8bit 
 
 The transfer encoding done by @code{vm-pgg-sign} can be controlled by the variable
 @code{vm-pgg-sign-text-transfer-encoding}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-sign-and-encrypt
 @findex vm-pgg-sign-and-encrypt
 Sign and encrypt the composition as PGP/MIME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pgg-snarf-keys
 @findex vm-pgg-snarf-keys
 Snarf keys from the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -1306,6 +1350,8 @@ New, unread and deleted are counted separately, and a folder with nothing
 in it says so.  This is the line the mode line summarises, printed on
 demand.  The totals are recomputed only when the folder has changed since
 they were last worked out.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-folder-cache-file &optional buffer
@@ -1488,6 +1534,8 @@ and the folder is visited afresh with the access method it had, so an
 IMAP or POP folder comes back connected rather than as a plain file.
 
 Also available as @code{vm-revert-folder}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-save-and-expunge-folder &optional prefix
@@ -3248,6 +3296,8 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-delete-folder folder
@@ -3257,6 +3307,8 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-list-folders account &optional filter-new
@@ -3267,6 +3319,8 @@ counts of messages in them.  The account must be one declared in
 
 With a prefix argument, it lists only the folders with new messages in
 them.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-rename-folder source dest
@@ -3276,6 +3330,8 @@ Argument SOURCE and DEST are read from the minibuffer if called
 interactively.  Non-interactive callers must provide full IMAP
 maildrop specifications for SOURCE and DEST as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-start-bug-report
@@ -3308,12 +3364,16 @@ This is useful for saving offline work on the cache folder.
 @findex vm-imap-unset-body-retrieve
 Unset the body-to-be-retrieved flag of all the messages.  May
   be needed if the folder has become corrupted somehow.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-unset-byte-counts
 @findex vm-imap-unset-byte-counts
 Unset the byte counts of all the messages, so that the size of the
 downloaded bodies will be displayed.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-list-imap-folders account &optional filter-new
@@ -3609,6 +3669,8 @@ which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
 match.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-attach-message message &optional description
@@ -3748,174 +3810,11 @@ The MIME object is replaced by a text/plain object that briefly
 describes what was deleted.
 @end deffn
 
-@deffn Command vm-fetch-mode &optional read-only
-@findex vm-fetch-mode
-Major mode for reading mail.
-
-This is VM.
-
-Use M-x vm-submit-bug-report to submit a bug report.
-
-Commands:
-@example
-Key             Binding
--------------------------------------------------------------------------------
-0 .. 9          digit-argument
-
-C-d             vm-delete-message-backward
-TAB             vm-goto-message-last-seen
-RET             vm-goto-message
-C-t             vm-toggle-threads-display
-C-_             vm-undo
-SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
--               negative-argument
-.               vm-mark-message-read
-=               vm-optional-key
-?               vm-help
-@@               vm-send-digest
-A               vm-auto-archive-messages
-B               vm-resend-message
-C               vm-collapse-all-threads
-D               vm-decode-mime-message
-E               vm-expand-all-threads
-F               vm-followup-include-text
-G               vm-sort-messages
-K               vm-kill-thread-subtree
-L               vm-optional-key
-N               vm-next-message-no-skip
-O               vm-unload-message
-P               vm-previous-message-no-skip
-R               vm-reply-include-text
-S               vm-save-folder
-T               vm-toggle-thread
-U               vm-mark-message-unread
-Z               vm-forward-message-plain
-[               vm-move-to-previous-button
-]               vm-move-to-next-button
-^               vm-goto-parent-message
-a .. b          vm-optional-key
-c               vm-continue-composing-message
-d               vm-delete-message
-e               vm-optional-key
-f               vm-followup
-g               vm-get-new-mail
-h               vm-summarize
-i               vm-optional-key
-j               vm-discard-cached-data
-k               vm-kill-subject
-m               vm-mail-from-folder
-n               vm-next-message
-o               vm-load-message
-p               vm-previous-message
-q               vm-quit
-r               vm-reply
-s               vm-save-message
-t               vm-expose-hidden-headers
-u               vm-undelete-message
-v               vm-visit-folder
-w               vm-optional-key
-x               vm-quit-no-change
-z               vm-forward-message
-DEL             vm-scroll-backward
-C-/             vm-undo
-<backspace>     vm-scroll-backward
-<delete>        vm-scroll-backward
-
-C-c C-d         vm-delete-all-attachments
-C-c C-e         vm-edit-message
-C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
-
-C-x C-q         vm-toggle-read-only
-C-x C-s         vm-save-folder
-C-x C-w         vm-write-file
-C-x u           vm-undo
-
-C-M-n           vm-move-message-forward
-C-M-p           vm-move-message-backward
-M-C             vm-show-copying-restrictions
-M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
-M-n             vm-next-unread-message
-M-p             vm-previous-unread-message
-M-r             vm-resend-bounced-message
-M-s             vm-isearch-forward
-
-M ?             vm-mark-help
-M A             vm-mark-messages-same-author
-M C             vm-mark-messages-by-selector
-M M             vm-mark-message
-M N             vm-next-command-uses-marks
-M R             vm-mark-summary-region
-M S             vm-mark-messages-same-subject
-M T             vm-mark-thread-subtree
-M U             vm-unmark-message
-M V             vm-toggle-all-marks
-M X             vm-mark-messages-by-virtual-folder
-M a             vm-unmark-messages-same-author
-M c             vm-unmark-messages-by-selector
-M m             vm-mark-all-messages
-M n             vm-next-command-uses-marks
-M r             vm-unmark-summary-region
-M s             vm-unmark-messages-same-subject
-M t             vm-unmark-thread-subtree
-M u             vm-clear-all-marks
-M x             vm-unmark-messages-by-virtual-folder
-
-V !             vm-create-flagged-virtual-folder
-V ?             vm-virtual-help
-V A             vm-create-virtual-folder-same-author
-V C             vm-create-virtual-folder
-V M             vm-toggle-virtual-mirror
-V R             vm-create-virtual-folder-same-recipient
-V S             vm-create-virtual-folder-same-subject
-V T             vm-create-virtual-folder-of-threads
-V V             vm-visit-virtual-folder
-V X             vm-apply-virtual-folder
-V a             vm-create-author-virtual-folder
-V d             vm-create-date-virtual-folder
-V l             vm-create-label-virtual-folder
-V n             vm-create-new-virtual-folder
-V r             vm-create-author-or-recipient-virtual-folder
-V s             vm-create-subject-virtual-folder
-V t             vm-create-text-virtual-folder
-V u             vm-create-unseen-virtual-folder
-
-W ?             vm-window-help
-W D             vm-delete-window-configuration
-W S             vm-save-window-configuration
-W W             vm-apply-window-configuration
-
-l a             vm-add-message-labels
-l d             vm-delete-message-labels
-l e             vm-add-existing-message-labels
-
-| d             vm-pipe-message-to-command-discard-output
-| n             vm-pipe-messages-to-command-discard-output
-| s             vm-pipe-messages-to-command
-| |             vm-pipe-message-to-command
-
-# # #           vm-expunge-folder
-@end example
-
-
-Customize VM by setting variables and store them in the @code{vm-init-file}.
-@end deffn
-
 @deffn Command vm-list-mime-part-structure &optional verbose
 @findex vm-list-mime-part-structure
 List mime part structure of the current message.
-@end deffn
 
-@deffn Command vm-mime-Q-decode-region start end
-@findex vm-mime-Q-decode-region
-Not documented.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-buffer buffer type &optional charset description
@@ -3947,6 +3846,8 @@ header section at the top.  For files with MIME headers, you
 should use @code{vm-attach-mime-file} to attach such a file.  VM
 will extract the content type information from the headers in
 this case and not prompt you for it in the minibuffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-file file type &optional charset description _no-suggested-filename
@@ -3977,6 +3878,8 @@ header section at the top.  For files with MIME headers, you
 should use @code{vm-attach-mime-file} to attach such a file.  VM
 will extract the content type information from the headers in
 this case and not prompt you for it in the minibuffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-message message &optional description
@@ -4012,6 +3915,8 @@ thread are attached.
 Optional second argument DESCRIPTION is a one-line description of
 the message being attached.  This is also read from the
 minibuffer if the command is run interactively.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-message-to-composition composition &optional description
@@ -4040,6 +3945,8 @@ thread are attached.
 Optional second argument DESCRIPTION is a one-line description of
 the message being attached.  This is also read from the
 minibuffer if the command is run interactively.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-mime-file file type
@@ -4063,6 +3970,8 @@ The second argument, TYPE, is the MIME Content-Type of the object.
 This command is for attaching files that have a MIME
 header section at the top.  For files without MIME headers, you
 should use @code{vm-attach-file} to attach the file.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-auto-save-all-attachments &optional count
@@ -4114,18 +4023,6 @@ Attachment tags added to the buffer with @code{vm-attach-file} are expanded
 and the appropriate content-type and boundary markup information is added.
 @end deffn
 
-@deffn Command vm-mime-encode-headers
-@findex vm-mime-encode-headers
-Encodes the headers of a message.
-
-Only the words containing a non-ASCII characters are encoded, but
-not the whole header as this will cause trouble for the
-recipient and author headers.
-
-Whitespace between encoded words is trimmed during decoding and thus those
-should be encoded together.
-@end deffn
-
 @deffn Command vm-mime-list-part-structure &optional verbose
 @findex vm-mime-list-part-structure
 List mime part structure of the current message.
@@ -4138,6 +4035,8 @@ in a MIME-aware mail reader.  VM copies and encodes the current
 mail composition buffer and displays it as a mail folder.
 Type @code{q} to quit this temp folder and return to composing your
 message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-reader-map-attach-to-composition
@@ -4213,166 +4112,6 @@ Removes the text/html part of all multipart/alternative message parts.
 This is a destructive operation and cannot be undone!
 @end deffn
 
-@deffn Command vm-presentation-mode &optional read-only
-@findex vm-presentation-mode
-Major mode for reading mail.
-
-This is VM.
-
-Use M-x vm-submit-bug-report to submit a bug report.
-
-Commands:
-@example
-Key             Binding
--------------------------------------------------------------------------------
-0 .. 9          digit-argument
-
-C-d             vm-delete-message-backward
-TAB             vm-goto-message-last-seen
-RET             vm-goto-message
-C-t             vm-toggle-threads-display
-C-_             vm-undo
-SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
--               negative-argument
-.               vm-mark-message-read
-=               vm-optional-key
-?               vm-help
-@@               vm-send-digest
-A               vm-auto-archive-messages
-B               vm-resend-message
-C               vm-collapse-all-threads
-D               vm-decode-mime-message
-E               vm-expand-all-threads
-F               vm-followup-include-text
-G               vm-sort-messages
-K               vm-kill-thread-subtree
-L               vm-optional-key
-N               vm-next-message-no-skip
-O               vm-unload-message
-P               vm-previous-message-no-skip
-R               vm-reply-include-text
-S               vm-save-folder
-T               vm-toggle-thread
-U               vm-mark-message-unread
-Z               vm-forward-message-plain
-[               vm-move-to-previous-button
-]               vm-move-to-next-button
-^               vm-goto-parent-message
-a .. b          vm-optional-key
-c               vm-continue-composing-message
-d               vm-delete-message
-e               vm-optional-key
-f               vm-followup
-g               vm-get-new-mail
-h               vm-summarize
-i               vm-optional-key
-j               vm-discard-cached-data
-k               vm-kill-subject
-m               vm-mail-from-folder
-n               vm-next-message
-o               vm-load-message
-p               vm-previous-message
-q               vm-quit
-r               vm-reply
-s               vm-save-message
-t               vm-expose-hidden-headers
-u               vm-undelete-message
-v               vm-visit-folder
-w               vm-optional-key
-x               vm-quit-no-change
-z               vm-forward-message
-DEL             vm-scroll-backward
-C-/             vm-undo
-<backspace>     vm-scroll-backward
-<delete>        vm-scroll-backward
-
-C-c C-d         vm-delete-all-attachments
-C-c C-e         vm-edit-message
-C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
-
-C-x C-q         vm-toggle-read-only
-C-x C-s         vm-save-folder
-C-x C-w         vm-write-file
-C-x u           vm-undo
-
-C-M-n           vm-move-message-forward
-C-M-p           vm-move-message-backward
-M-C             vm-show-copying-restrictions
-M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
-M-n             vm-next-unread-message
-M-p             vm-previous-unread-message
-M-r             vm-resend-bounced-message
-M-s             vm-isearch-forward
-
-M ?             vm-mark-help
-M A             vm-mark-messages-same-author
-M C             vm-mark-messages-by-selector
-M M             vm-mark-message
-M N             vm-next-command-uses-marks
-M R             vm-mark-summary-region
-M S             vm-mark-messages-same-subject
-M T             vm-mark-thread-subtree
-M U             vm-unmark-message
-M V             vm-toggle-all-marks
-M X             vm-mark-messages-by-virtual-folder
-M a             vm-unmark-messages-same-author
-M c             vm-unmark-messages-by-selector
-M m             vm-mark-all-messages
-M n             vm-next-command-uses-marks
-M r             vm-unmark-summary-region
-M s             vm-unmark-messages-same-subject
-M t             vm-unmark-thread-subtree
-M u             vm-clear-all-marks
-M x             vm-unmark-messages-by-virtual-folder
-
-V !             vm-create-flagged-virtual-folder
-V ?             vm-virtual-help
-V A             vm-create-virtual-folder-same-author
-V C             vm-create-virtual-folder
-V M             vm-toggle-virtual-mirror
-V R             vm-create-virtual-folder-same-recipient
-V S             vm-create-virtual-folder-same-subject
-V T             vm-create-virtual-folder-of-threads
-V V             vm-visit-virtual-folder
-V X             vm-apply-virtual-folder
-V a             vm-create-author-virtual-folder
-V d             vm-create-date-virtual-folder
-V l             vm-create-label-virtual-folder
-V n             vm-create-new-virtual-folder
-V r             vm-create-author-or-recipient-virtual-folder
-V s             vm-create-subject-virtual-folder
-V t             vm-create-text-virtual-folder
-V u             vm-create-unseen-virtual-folder
-
-W ?             vm-window-help
-W D             vm-delete-window-configuration
-W S             vm-save-window-configuration
-W W             vm-apply-window-configuration
-
-l a             vm-add-message-labels
-l d             vm-delete-message-labels
-l e             vm-add-existing-message-labels
-
-| d             vm-pipe-message-to-command-discard-output
-| n             vm-pipe-messages-to-command-discard-output
-| s             vm-pipe-messages-to-command
-| |             vm-pipe-message-to-command
-
-# # #           vm-expunge-folder
-@end example
-
-
-Customize VM by setting variables and store them in the @code{vm-init-file}.
-@end deffn
-
 @deffn Command vm-save-all-attachments &optional count directory
 @findex vm-save-all-attachments
 Save all attachments in the next COUNT messages or marked
@@ -4406,6 +4145,8 @@ The variables @code{vm-mime-all-attachments-directory} or
 @code{vm-mime-attachment-save-directory} can be used to set the
 default location.  When directory does not exist it will be
 confirmed before creating a new directory.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-toggle-best-mime
@@ -5726,6 +5467,357 @@ encrypting this S/MIME encoded composition. Valid valus are as follows:
 Default value: @code{ask}
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-fetch-mode &optional read-only
+@findex vm-fetch-mode
+Major mode for reading mail.
+
+This is VM.
+
+Use M-x vm-submit-bug-report to submit a bug report.
+
+Commands:
+@example
+Key             Binding
+-------------------------------------------------------------------------------
+0 .. 9          digit-argument
+
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
+
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
+
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
+
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
+
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
+
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
+
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
+
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
+
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
+
+# # #           vm-expunge-folder
+@end example
+
+
+Customize VM by setting variables and store them in the @code{vm-init-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-mime-Q-decode-region start end
+@findex vm-mime-Q-decode-region
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-mime-encode-headers
+@findex vm-mime-encode-headers
+Encodes the headers of a message.
+
+Only the words containing a non-ASCII characters are encoded, but
+not the whole header as this will cause trouble for the
+recipient and author headers.
+
+Whitespace between encoded words is trimmed during decoding and thus those
+should be encoded together.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-presentation-mode &optional read-only
+@findex vm-presentation-mode
+Major mode for reading mail.
+
+This is VM.
+
+Use M-x vm-submit-bug-report to submit a bug report.
+
+Commands:
+@example
+Key             Binding
+-------------------------------------------------------------------------------
+0 .. 9          digit-argument
+
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
+
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
+
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
+
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
+
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
+
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
+
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
+
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
+
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
+
+# # #           vm-expunge-folder
+@end example
+
+
+Customize VM by setting variables and store them in the @code{vm-init-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Marks, Reference for Menus, Reference for MIME and attachments, Reference
 @appendixsec Marks
 @cindex Marks
@@ -5753,11 +5845,15 @@ Mark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mark-matching-messages-with-virtual-folder name
 @findex vm-mark-matching-messages-with-virtual-folder
 Mark messages that are matched by the selectors of virtual folder NAME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mark-message count
@@ -5822,11 +5918,15 @@ Unmark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-unmark-matching-messages-with-virtual-folder name
 @findex vm-unmark-matching-messages-with-virtual-folder
 Unmark messages that are matched by the selectors of virtual folder NAME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-unmark-message count
@@ -5886,6 +5986,8 @@ Customize VM options.
 Visit a virtual folder of every message by this one’s author.
 The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
 author filled in from the current message rather than prompted for.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-create-subject-virtual-folder
@@ -5893,79 +5995,37 @@ author filled in from the current message rather than prompted for.
 Visit a virtual folder of every message with this one’s subject.
 The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
 subject filled in from the current message rather than prompted for.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-hm-create-dir parent-dir
 @findex vm-menu-hm-create-dir
 Create a subdir in PARENT-DIR.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-hm-delete-folder folder
 @findex vm-menu-hm-delete-folder
 Query deletes a folder.
-@end deffn
 
-@deffn Command vm-menu-hm-make-folder-menu
-@findex vm-menu-hm-make-folder-menu
-Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-hm-rename-folder folder
 @findex vm-menu-hm-rename-folder
 Rename a folder.
-@end deffn
 
-@deffn Command vm-menu-mail-to
-@findex vm-menu-mail-to
-Compose a message to the author of this one.
-The menu’s way to @code{vm-mail}, with the From: header of the current message
-as the recipient.  Not a reply: no subject, no references, no citation.
-@end deffn
-
-@deffn Command vm-menu-popup-attachment-menu event
-@findex vm-menu-popup-attachment-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-context-menu event
-@findex vm-menu-popup-context-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-fsfemacs-menu event &optional menu
-@findex vm-menu-popup-fsfemacs-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-image-menu event
-@findex vm-menu-popup-image-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-mailto-url-browser-menu event
-@findex vm-menu-popup-mailto-url-browser-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-mime-dispose-menu event
-@findex vm-menu-popup-mime-dispose-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-mode-menu event
-@findex vm-menu-popup-mode-menu
-Not documented.
-@end deffn
-
-@deffn Command vm-menu-popup-url-browser-menu event
-@findex vm-menu-popup-url-browser-menu
-Not documented.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-toggle-menubar &optional buffer
 @findex vm-menu-toggle-menubar
 Toggle between the VM’s dedicated menu bar and the standard Emacs
 menu bar.                                             USR, 2011-02-27
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-menu-yank-original
@@ -5974,6 +6034,8 @@ Yank every message being replied to into this composition.
 The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
 this yanks all of @code{vm-reply-list} one after another, which is what a reply
 to several messages at once is replying to.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-view-manual
@@ -5984,6 +6046,84 @@ View the VM manual.
 @deffn Command vm-view-news
 @findex vm-view-news
 View the newest of VM=’s NEWS files.
+@end deffn
+
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-menu-hm-make-folder-menu
+@findex vm-menu-hm-make-folder-menu
+Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-mail-to
+@findex vm-menu-mail-to
+Compose a message to the author of this one.
+The menu’s way to @code{vm-mail}, with the From: header of the current message
+as the recipient.  Not a reply: no subject, no references, no citation.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-attachment-menu event
+@findex vm-menu-popup-attachment-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-context-menu event
+@findex vm-menu-popup-context-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-fsfemacs-menu event &optional menu
+@findex vm-menu-popup-fsfemacs-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-image-menu event
+@findex vm-menu-popup-image-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-mailto-url-browser-menu event
+@findex vm-menu-popup-mailto-url-browser-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-mime-dispose-menu event
+@findex vm-menu-popup-mime-dispose-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-mode-menu event
+@findex vm-menu-popup-mode-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-popup-url-browser-menu event
+@findex vm-menu-popup-url-browser-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @node Reference for Message History, Reference for Minibuf, Reference for Menus, Reference
@@ -6006,6 +6146,8 @@ Select a message from a popup menu of the current folder’s history.
 @deffn Command vm-message-history-browse-select
 @findex vm-message-history-browse-select
 Select the message below the cursor.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-message-history-forward &optional arg
@@ -6027,11 +6169,17 @@ Default value: @code{32}
 @appendixsec Minibuf
 @cindex Minibuf
 
-@appendixsubsec Commands
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
 
 @deffn Command vm-minibuffer-complete-word &optional exiting
 @findex vm-minibuffer-complete-word
 Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-minibuffer-complete-word-and-exit
@@ -6039,6 +6187,8 @@ Not documented.
 Complete the word before point and leave the minibuffer at once.
 @code{vm-minibuffer-complete-word} and then @code{exit-minibuffer}, for a prompt
 where one word is the whole answer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-minibuffer-completion-help
@@ -6048,6 +6198,8 @@ Unlike ordinary minibuffer completion, which works on the whole of the
 input, this completes one word of it -- so a prompt that takes a space
 separated list, as the label and attribute prompts do, can complete each
 item in turn.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @node Reference for Mouse, Reference for Moving about, Reference for Minibuf, Reference
@@ -6098,6 +6250,8 @@ Not documented.
 @deffn Command vm-goto-last-message-seen
 @findex vm-goto-last-message-seen
 Go to the message last previewed.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-goto-message n
@@ -6361,13 +6515,8 @@ Default value: @code{120}
 @findex vm-current-key-bindings
 Install optional key bindings for VM modes, as per versions 8.2.0
 and up.
-@end deffn
 
-@deffn Command vm-do-fcc-before-mime-encode
-@findex vm-do-fcc-before-mime-encode
-The name says it all.
-Sometimes you may want to save a message unencoded, specifically not to waste
-storage for attachments which are stored on disk anyway.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-legacy-key-bindings
@@ -6376,6 +6525,8 @@ Install optional key bindings for VM modes, as per version 7.19.
 
 These key bindings are considered optional.  They can be rebound by
 the users or bound to other functions in future versions of VM.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-load-init-file &optional init-only
@@ -6387,20 +6538,14 @@ preferences file).
 
 The file names may be customized via the variables @code{vm-init-file} and
 @code{vm-preferences-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-mode-elide-reply-region b e
 @findex vm-mail-mode-elide-reply-region
 Replace marked region or current line with @code{vm-mail-mode-elide-reply-region}.
 B and E are the beginning and end of the marked region or the current line.
-@end deffn
-
-@deffn Command vm-optional-key
-@findex vm-optional-key
-Certain VM keys have optional bindings in VM, which differ from
-version to version.  Include "(vm-legacy-key-bindings)" in your
-@code{vm-preferences-file} in order to bind them as in version 7.19.  For
-other possibilities, see the NEWS files in the VM distribution.
 @end deffn
 
 @deffn Command vm-show-log
@@ -6434,12 +6579,16 @@ Install optional key bindings for VM modes, as per version 7.19.
 
 These key bindings are considered optional.  They can be rebound by
 the users or bound to other functions in future versions of VM.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-v8-key-bindings
 @findex vm-v8-key-bindings
 Install optional key bindings for VM modes, as per versions 8.2.0
 and up.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-view-file-other-frame 91 65 114 103 32 108 105 115 116 32 110 111 116 32 97 118 97 105 108 97 98 108 101 32 117 110 116 105 108 32 102 117 110 99 116 105 111 110 32 100 101 102 105 110 105 116 105 111 110 32 105 115 32 108 111 97 100 101 100 46 93
@@ -6456,6 +6605,8 @@ Space scrolls forward, Delete scrolls backward.
 For a list of all View commands, type H or h while viewing.
 
 This command runs the normal hook @code{view-mode-hook}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -6761,6 +6912,31 @@ header line in email messages,
 - SCORE-FN is a function that converts the score string into a number.
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-do-fcc-before-mime-encode
+@findex vm-do-fcc-before-mime-encode
+The name says it all.
+Sometimes you may want to save a message unencoded, specifically not to waste
+storage for attachments which are stored on disk anyway.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-optional-key
+@findex vm-optional-key
+Certain VM keys have optional bindings in VM, which differ from
+version to version.  Include "(vm-legacy-key-bindings)" in your
+@code{vm-preferences-file} in order to bind them as in version 7.19.  For
+other possibilities, see the NEWS files in the VM distribution.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for POP, Reference for Personality Crisis, Reference for Other settings, Reference
 @appendixsec POP
 @cindex POP
@@ -6878,6 +7054,8 @@ Call @code{vm-pcrisis-no-automorph} to disable it for the current buffer.
 @deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
 @findex vm-pcrisis-backward-tab-header-or-tab-stop
 Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-build-actions-to-run-list
@@ -6886,22 +7064,30 @@ Build a list of the actions to run.
 These are the true conditions mapped to actions.  Duplicates will be
 eliminated.  You may run it in a composition buffer in order to see what
 actions will be run.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-build-true-conditions-list
 @findex vm-pcrisis-build-true-conditions-list
 Build list of true conditions and store it in the variable 
 @code{vm-pcrisis-true-conditions}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-fix-auto-profiles-file
 @findex vm-pcrisis-fix-auto-profiles-file
 Change @code{vm-pcrisis-auto-profiles-file} to the format used by v0.82+.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-load-auto-profiles
 @findex vm-pcrisis-load-auto-profiles
 Initialise @code{vm-pcrisis-auto-profiles} from @code{vm-pcrisis-auto-profiles-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-migrate-profiles-to-BBDB
@@ -6910,6 +7096,8 @@ Migrate the profiles stored in @code{vm-pcrisis-auto-profiles-file} to the BBDB.
 
 This will automatically create records if they do not exist and add the new
 field @code{vmpc-profile} to the records which is a sexp not meant to be edited.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-mode &optional arg
@@ -6967,6 +7155,8 @@ PROMPT argument and call this function interactively in the composition buffer.
 @findex vm-pcrisis-read-actions
 Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
 The special action "none" will result in an empty action list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-run-action &optional action-regexp
@@ -6981,6 +7171,8 @@ completion.
 Run the argument actions, or the actions stored in @code{vm-pcrisis-actions-to-run}.
 If verbose is supplied, it should be a STRING, indicating the name of a
 buffer to which to write diagnostic output.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
@@ -6992,6 +7184,8 @@ If BACKWARD is specified and non-nil, moves to previous useful header
 field, whether point is in the body or the headers.
 "Useful header fields" are currently, in order, "To" and
 "Subject".
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-toggle-no-automorph
@@ -7005,6 +7199,8 @@ current composition, then call this function.
 @findex vm-pcrisis-true-conditions
 Return a list of all true conditions.
 Run this function in order to test/check your conditions.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -7219,6 +7415,8 @@ Ask for continuing of postponed messages if there are some.
 @deffn Command vm-delete-postponed-message
 @findex vm-delete-postponed-message
 Delete the source message belonging to the continued composition.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-auto-fcc
@@ -7672,17 +7870,6 @@ for customization of the output.
 Moves to the beginning of the current message.
 @end deffn
 
-@deffn Command vm-emit-eom-blurb
-@findex vm-emit-eom-blurb
-Prints a minibuffer message when the end of message is reached, but
-it is suppressed if the variable @code{vm-auto-next-message} is nil.
-@end deffn
-
-@deffn Command vm-emit-mime-decoding-message format &rest args
-@findex vm-emit-mime-decoding-message
-Not documented.
-@end deffn
-
 @deffn Command vm-end-of-message
 @findex vm-end-of-message
 Moves to the end of the current message, exposing and flagging it read
@@ -7707,6 +7894,8 @@ Toggle exposing and hiding message headers that are normally not visible.
 @deffn Command vm-isearch-presentation
 @findex vm-isearch-presentation
 Switches to the Presentation buffer and starts isearch.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-move-to-next-button count
@@ -7719,6 +7908,8 @@ If there is no next button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-move-to-previous-button count
@@ -7731,6 +7922,8 @@ If there is no previous button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-next-button count
@@ -7996,6 +8189,27 @@ This is done using the @code{longlines} library, which must be installed
 for the variable to have effect.
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-emit-eom-blurb
+@findex vm-emit-eom-blurb
+Prints a minibuffer message when the end of message is reached, but
+it is suppressed if the variable @code{vm-auto-next-message} is nil.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-emit-mime-decoding-message format &rest args
+@findex vm-emit-mime-decoding-message
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Replying and composing, Reference for S/MIME, Reference for Reading a message, Reference
 @appendixsec Replying and composing
 @cindex Replying and composing
@@ -8093,18 +8307,6 @@ and has not been replied so far.
 See the variable @code{vm-handle-return-receipt-mode} for customization.
 @end deffn
 
-@deffn Command vm-mail-check-for-empty-subject
-@findex vm-mail-check-for-empty-subject
-Check if the subject line is empty and issue an error if so.
-@end deffn
-
-@deffn Command vm-mail-check-recipients
-@findex vm-mail-check-recipients
-Check if the recipients are specified correctly.
-Actually it checks only if there are any missing commas or the like in the
-headers.
-@end deffn
-
 @deffn Command vm-mail-mode-citation-clean-up
 @findex vm-mail-mode-citation-clean-up
 Remove doubly-cited text and extra lines in a mail message.
@@ -8114,17 +8316,23 @@ Remove doubly-cited text and extra lines in a mail message.
 @findex vm-mail-mode-hide-headers
 Hides and protects headers listed in @code{vm-mail-mode-hidden-headers}.
 With a prefix arg, call @code{vm-mail-mode-show-headers} instead.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-mode-show-headers
 @findex vm-mail-mode-show-headers
 Display any hidden headers in a composition buffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-send
 @findex vm-mail-send
 Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-send-and-exit &rest _ignored
@@ -8133,16 +8341,8 @@ Send message and maybe delete the composition buffer.
 The value of @code{vm-keep-sent-messages} determines whether the composition buffer
 is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to.
-@end deffn
 
-@deffn Command vm-mail-subject-cleanup
-@findex vm-mail-subject-cleanup
-Do some subject line clean up.
-- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
-- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
-
-You might add this function to @code{vm-mail-mode-hook} in order to clean up the
-Subject header.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-to-mailto-url url
@@ -8233,6 +8433,8 @@ Like vm-resend-message, but run in a newly created frame.
 Extract the original text from a bounced message and resend it.
 You will be placed in a Mail mode buffer with the extracted message and
 you can change the recipient address before resending the message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-send-digest &optional prefix mlist
@@ -8789,6 +8991,40 @@ library, which must be installed for the variable to have
 effect.
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-mail-check-for-empty-subject
+@findex vm-mail-check-for-empty-subject
+Check if the subject line is empty and issue an error if so.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-mail-check-recipients
+@findex vm-mail-check-recipients
+Check if the recipients are specified correctly.
+Actually it checks only if there are any missing commas or the like in the
+headers.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-mail-subject-cleanup
+@findex vm-mail-subject-cleanup
+Do some subject line clean up.
+- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
+- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
+
+You might add this function to @code{vm-mail-mode-hook} in order to clean up the
+Subject header.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for S/MIME, Reference for Saving and forwarding, Reference for Replying and composing, Reference
 @appendixsec S/MIME
 @cindex S/MIME
@@ -8893,6 +9129,8 @@ output of the command.
 Runs a shell command with contents from the current message as input.
 This function is like @code{vm-pipe-messages-to-command}, but will not display the
 output of the command, but return it as a string.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-print-message &optional count
@@ -9067,16 +9305,22 @@ expression which is evaluated
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
 a warning.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-get-token &optional token
 @findex vm-serial-get-token
 Return value of vm-serial TOKEN.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-insert-token token
 @findex vm-serial-insert-token
 Reads a valid token, inserts it at point and expands it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-send-mail &optional non-interactive done
@@ -9088,17 +9332,23 @@ it is, or you may edit it before sending or you may skip it.
 
 If called with a prefix argument or NON-INTERACTIVE set to non nil, no
 questions will bother you!
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-send-mail-and-exit &optional non-interactive
 @findex vm-serial-send-mail-and-exit
 Like @code{vm-serial-send-mail} but kills the buffer after sending all.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-set-token &optional token newvalue doc
 @findex vm-serial-set-token
 Set vm-serial TOKEN to NEWVALUE with DOC.
 You may remove a token by specifying just the TOKEN as argument.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-yank-mail &optional mail no-expand
@@ -9117,6 +9367,8 @@ editing point.
 I try to be clever when to delete the existing buffer contents and when to
 expand the tokens, however if this does not satisfy you please report it to
 me.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -9546,6 +9798,8 @@ mandatory.
 @deffn Command vm-headers-summary-other-frame &optional display
 @findex vm-headers-summary-other-frame
 Like vm-summarize, but run in a newly created frame.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-summarize &optional display raise
@@ -9567,6 +9821,8 @@ Trace this message while summary lines are being built.
 A debugging aid: @code{vm-summary-debug} enters the debugger for a message on
 this list, and only when @code{vm-debug} is set, so tracing a message costs
 nothing until then.  Prints the list of messages being traced.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-toggle-thread
@@ -10130,102 +10386,9 @@ signals: no folder, no message, and a folder buffer that has been killed
 all give nil.
 @end deffn
 
-@deffn Command vm-toolbar-compose-command &optional to subject
-@findex vm-toolbar-compose-command
-Send a mail message from within VM, or from without.
-Optional argument TO is a string that should contain a comma separated
-recipient list.
-@end deffn
-
-@deffn Command vm-toolbar-decode-mime-command &optional state
-@findex vm-toolbar-decode-mime-command
-Decode the MIME objects in the current message.
-
-The first time this command is run on a message, decoding is done.
-The second time, buttons for all the objects are displayed instead.
-The third time, the raw, undecoded data is displayed.
-
-The optional argument STATE can specify which decode state to display:
-@code{decoded}, @code{button}, or @code{undecoded}.
-
-If decoding, the decoded objects might be displayed immediately, or
-buttons might be displayed that you need to activate to view the
-object.  See the documentation for the variables
-
-@example
-    vm-mime-auto-displayed-content-types
-    vm-mime-auto-displayed-content-type-exceptions
-    vm-mime-internal-content-types
-    vm-mime-internal-content-type-exceptions
-    vm-mime-external-content-types-alist
-
-@end example
-to see how to control whether you see buttons or objects.
-
-If the variable vm-mime-display-function is set, then its value
-is called as a function with no arguments, and none of the
-actions mentioned in the preceding paragraphs are taken.  At the
-time of the call, the current buffer will be the presentation
-buffer for the folder and a copy of the current message will be
-in the buffer.  The function is expected to make the message
-@code{MIME presentable} to the user in whatever manner it sees fit.
-@end deffn
-
 @deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
 @findex vm-toolbar-delete/undelete-message
 Not documented.
-@end deffn
-
-@deffn Command vm-toolbar-file-command folder &optional count mlist quiet
-@findex vm-toolbar-file-command
-Save the current message to another FOLDER, queried via the
-mini-buffer.  The FOLDER may be a local file system folder or an
-IMAP folder.  You can specify a preference by setting the
-variable @code{vm-imap-save-to-server}.
-
-Prefix arg COUNT means save this message and the next COUNT-1
-messages.  A negative COUNT means save this message and the
-previous COUNT-1 messages.
-
-When invoked on marked messages (via @code{vm-next-command-uses-marks}),       
-all marked messages in the current folder are saved; other messages are
-ignored.  If applied to collapsed threads in summary and thread operations are
-enabled via @code{vm-enable-thread-operations} then all messages in the
-thread are saved.
-@end deffn
-
-@deffn Command vm-toolbar-followup-command count
-@findex vm-toolbar-followup-command
-Reply to all recipients of the current message.
-See the documentation for the function vm-reply for details.
-@end deffn
-
-@deffn Command vm-toolbar-forward-command &optional plain mlist
-@findex vm-toolbar-forward-command
-Forward the current message to one or more recipients.
-You will be placed in a Mail mode buffer as you would with a
-reply, but you must fill in the "To:" header and perhaps the
-"Subject:" header manually.
-
-See @code{vm-forward-message-plain} for forwarding messages in plain text.
-@end deffn
-
-@deffn Command vm-toolbar-getmail-command &optional arg
-@findex vm-toolbar-getmail-command
-Move any new mail that has arrived in any of the spool files for the
-current folder into the folder.  New mail is appended to the disk
-and buffer copies of the folder.
-
-Prefix arg means to gather mail from a user specified folder, instead of
-the usual spool files.  The file name will be read from the minibuffer.
-Unlike when getting mail from a spool file, the source file is left
-undisturbed after its messages have been copied.
-
-When applied to a virtual folder, this command runs itself on
-each of the underlying real folders associated with this virtual
-folder.  A prefix argument has no effect when this command is
-applied to virtual folder; mail is always gathered from the spool
-files.
 @end deffn
 
 @deffn Command vm-toolbar-helper-command
@@ -10234,90 +10397,6 @@ Run whatever command @code{vm-toolbar-helper-command} currently holds.
 The toolbar’s helper button changes with the context: what it does is
 decided by reassigning this variable before the button is drawn, rather
 than by having a button per command.
-@end deffn
-
-@deffn Command vm-toolbar-next-command &optional count retry signal-errors
-@findex vm-toolbar-next-command
-Go forward one message and preview it.
-With prefix arg (optional first argument) COUNT, go forward COUNT
-messages.  A negative COUNT means go backward.  If the absolute
-value of COUNT is greater than 1, then the values of the variables
-vm-skip-deleted-messages and vm-skip-read-messages are ignored.
-
-When invoked on marked messages (via @code{vm-next-command-uses-marks})
-this command "sees" marked messages as it moves.
-@end deffn
-
-@deffn Command vm-toolbar-previous-command &optional count retry signal-errors
-@findex vm-toolbar-previous-command
-Go back one message and preview it.
-With prefix arg COUNT, go backward COUNT messages.  A negative COUNT
-means go forward.  If the absolute value of COUNT > 1 the values of the
-variables vm-skip-deleted-messages and vm-skip-read-messages are
-ignored.
-@end deffn
-
-@deffn Command vm-toolbar-print-command &optional count
-@findex vm-toolbar-print-command
-Print the current message
-Prefix arg N means print the current message and the next N - 1 messages.
-Prefix arg -N means print the current message and the previous N - 1 messages.
-
-The variable @code{vm-print-command} controls what command is run to
-print the message, and @code{vm-print-command-switches} is a list of switches
-to pass to the command.
-
-When invoked on marked messages (via @code{vm-next-command-uses-marks}),
-each marked message is printed, one message per vm-print-command
-invocation.  If applied to collapsed threads in summary and thread
-operations are enabled via @code{vm-enable-thread-operations} then all messages
-in the thread are printed.
-
-Output, if any, is displayed.  The message is not altered.
-@end deffn
-
-@deffn Command vm-toolbar-quit-command &optional no-expunge no-change
-@findex vm-toolbar-quit-command
-Quit visiting the current folder, saving changes.  If the folder is
-being visited read-only then changes are not saved.  This behavior
-can be customized using @code{vm-preserve-read-only-folders-on-disk}.
-
-If the customization variable @code{vm-expunge-before-quit} is set to
-  non-nil value then deleted messages are expunged.
-
-Giving a prefix argument overrides the variable and no expunge is
-done.
-
-When called internally, the optional argument NO-EXPUNGE says
-that the deleted messages should not be expunged (irrespective of
-the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
-changes should be discarded.
-@end deffn
-
-@deffn Command vm-toolbar-reply-command count
-@findex vm-toolbar-reply-command
-Reply to all recipients of the current message and include text from
-the message.  See the documentation for the function vm-reply for details.
-@end deffn
-
-@deffn Command vm-toolbar-visit-command folder &optional read-only &rest rest
-@findex vm-toolbar-visit-command
-Visit a mail file.
-VM will parse and present its messages to you in the usual way.
-
-First arg FOLDER specifies the mail file to visit.  When this
-command is called interactively the file name is read from the
-minibuffer.
-
-Prefix arg or optional second arg READ-ONLY non-nil indicates
-that the folder should be considered read only.  No attribute
-changes, messages additions or deletions will be allowed in the
-visited folder.
-
-The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little initial
-processing as possible.  No summary generation, no moving of the
-message-pointer, no retrieval of new mail.
 @end deffn
 
 @appendixsubsec User options
@@ -10424,6 +10503,213 @@ Default value:
 @end example
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a mouse menu, a keymap
+entry or a hook rather than typed by name.  Nothing stops you
+calling one.
+
+@deffn Command vm-toolbar-compose-command &optional to subject
+@findex vm-toolbar-compose-command
+Send a mail message from within VM, or from without.
+Optional argument TO is a string that should contain a comma separated
+recipient list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-decode-mime-command &optional state
+@findex vm-toolbar-decode-mime-command
+Decode the MIME objects in the current message.
+
+The first time this command is run on a message, decoding is done.
+The second time, buttons for all the objects are displayed instead.
+The third time, the raw, undecoded data is displayed.
+
+The optional argument STATE can specify which decode state to display:
+@code{decoded}, @code{button}, or @code{undecoded}.
+
+If decoding, the decoded objects might be displayed immediately, or
+buttons might be displayed that you need to activate to view the
+object.  See the documentation for the variables
+
+@example
+    vm-mime-auto-displayed-content-types
+    vm-mime-auto-displayed-content-type-exceptions
+    vm-mime-internal-content-types
+    vm-mime-internal-content-type-exceptions
+    vm-mime-external-content-types-alist
+
+@end example
+to see how to control whether you see buttons or objects.
+
+If the variable vm-mime-display-function is set, then its value
+is called as a function with no arguments, and none of the
+actions mentioned in the preceding paragraphs are taken.  At the
+time of the call, the current buffer will be the presentation
+buffer for the folder and a copy of the current message will be
+in the buffer.  The function is expected to make the message
+@code{MIME presentable} to the user in whatever manner it sees fit.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-file-command folder &optional count mlist quiet
+@findex vm-toolbar-file-command
+Save the current message to another FOLDER, queried via the
+mini-buffer.  The FOLDER may be a local file system folder or an
+IMAP folder.  You can specify a preference by setting the
+variable @code{vm-imap-save-to-server}.
+
+Prefix arg COUNT means save this message and the next COUNT-1
+messages.  A negative COUNT means save this message and the
+previous COUNT-1 messages.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks}),       
+all marked messages in the current folder are saved; other messages are
+ignored.  If applied to collapsed threads in summary and thread operations are
+enabled via @code{vm-enable-thread-operations} then all messages in the
+thread are saved.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-followup-command count
+@findex vm-toolbar-followup-command
+Reply to all recipients of the current message.
+See the documentation for the function vm-reply for details.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-forward-command &optional plain mlist
+@findex vm-toolbar-forward-command
+Forward the current message to one or more recipients.
+You will be placed in a Mail mode buffer as you would with a
+reply, but you must fill in the "To:" header and perhaps the
+"Subject:" header manually.
+
+See @code{vm-forward-message-plain} for forwarding messages in plain text.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-getmail-command &optional arg
+@findex vm-toolbar-getmail-command
+Move any new mail that has arrived in any of the spool files for the
+current folder into the folder.  New mail is appended to the disk
+and buffer copies of the folder.
+
+Prefix arg means to gather mail from a user specified folder, instead of
+the usual spool files.  The file name will be read from the minibuffer.
+Unlike when getting mail from a spool file, the source file is left
+undisturbed after its messages have been copied.
+
+When applied to a virtual folder, this command runs itself on
+each of the underlying real folders associated with this virtual
+folder.  A prefix argument has no effect when this command is
+applied to virtual folder; mail is always gathered from the spool
+files.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-next-command &optional count retry signal-errors
+@findex vm-toolbar-next-command
+Go forward one message and preview it.
+With prefix arg (optional first argument) COUNT, go forward COUNT
+messages.  A negative COUNT means go backward.  If the absolute
+value of COUNT is greater than 1, then the values of the variables
+vm-skip-deleted-messages and vm-skip-read-messages are ignored.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks})
+this command "sees" marked messages as it moves.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-previous-command &optional count retry signal-errors
+@findex vm-toolbar-previous-command
+Go back one message and preview it.
+With prefix arg COUNT, go backward COUNT messages.  A negative COUNT
+means go forward.  If the absolute value of COUNT > 1 the values of the
+variables vm-skip-deleted-messages and vm-skip-read-messages are
+ignored.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-print-command &optional count
+@findex vm-toolbar-print-command
+Print the current message
+Prefix arg N means print the current message and the next N - 1 messages.
+Prefix arg -N means print the current message and the previous N - 1 messages.
+
+The variable @code{vm-print-command} controls what command is run to
+print the message, and @code{vm-print-command-switches} is a list of switches
+to pass to the command.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks}),
+each marked message is printed, one message per vm-print-command
+invocation.  If applied to collapsed threads in summary and thread
+operations are enabled via @code{vm-enable-thread-operations} then all messages
+in the thread are printed.
+
+Output, if any, is displayed.  The message is not altered.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-quit-command &optional no-expunge no-change
+@findex vm-toolbar-quit-command
+Quit visiting the current folder, saving changes.  If the folder is
+being visited read-only then changes are not saved.  This behavior
+can be customized using @code{vm-preserve-read-only-folders-on-disk}.
+
+If the customization variable @code{vm-expunge-before-quit} is set to
+  non-nil value then deleted messages are expunged.
+
+Giving a prefix argument overrides the variable and no expunge is
+done.
+
+When called internally, the optional argument NO-EXPUNGE says
+that the deleted messages should not be expunged (irrespective of
+the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
+changes should be discarded.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-reply-command count
+@findex vm-toolbar-reply-command
+Reply to all recipients of the current message and include text from
+the message.  See the documentation for the function vm-reply for details.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-visit-command folder &optional read-only &rest rest
+@findex vm-toolbar-visit-command
+Visit a mail file.
+VM will parse and present its messages to you in the usual way.
+
+First arg FOLDER specifies the mail file to visit.  When this
+command is called interactively the file name is read from the
+minibuffer.
+
+Prefix arg or optional second arg READ-ONLY non-nil indicates
+that the folder should be considered read only.  No attribute
+changes, messages additions or deletions will be allowed in the
+visited folder.
+
+The optional third arg JUST-VISIT (not available interactively)
+says that the folder should be visited with as little initial
+processing as possible.  No summary generation, no moving of the
+message-pointer, no retrieval of new mail.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Threading, Reference for Undo, Reference for The toolbar, Reference
 @appendixsec Threading
 @cindex Threading
@@ -10473,6 +10759,8 @@ specifier) will be visible.
 Trace this message by Message-ID while threads are being built.
 A debugging aid, with @code{vm-trace-message-subject}: the threading code walks
 these lists to decide when to stop and report.  Prints the list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-trace-message-subject
@@ -10480,6 +10768,8 @@ these lists to decide when to stop and report.  Prints the list.
 Trace this message by subject while threads are being built.
 The subject is the sortable one, so it matches the way threading groups
 messages by subject.  See @code{vm-trace-message-id}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @node Reference for Undo, Reference for Url, Reference for Threading, Reference
@@ -11469,6 +11759,8 @@ which is normally read from the minibuffer.  See @code{vm-vs-interactive}
 for the list of selectors.
 
 Prefix arg means the new virtual folder should be visited read only.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-create-search-folder-other-frame selector &optional arg read-only name bookmark
@@ -11679,6 +11971,8 @@ Default value: @code{t}
 @findex vm-w3m-safe-toggle-inline-images
 Toggle displaying of all images in the presentation buffer.
 If the prefix arg is given, all images are considered to be safe.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -11733,6 +12027,8 @@ The action will be read from the minibuffer.
 @findex vm-iconify-frame
 Iconify the current frame.
 Run the hooks in vm-iconify-frame-hook before doing so.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-save-window-configuration tag
@@ -11759,6 +12055,8 @@ window configurations.
 @deffn Command vm-window-help
 @findex vm-window-help
 Show the window configuration commands and their keys in the echo area.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options

@@ -1479,6 +1479,7 @@ current message is selected as the recipient of the new composition."
       (goto-char (point-min))
       (mail-position-on-field "Subject"))))
 
+;;;###autoload
 (defun vm-edit-init-file ()
   "Edit the `vm-init-file'."
   (interactive)

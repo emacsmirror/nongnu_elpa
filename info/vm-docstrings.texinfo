@@ -882,6 +882,8 @@ C-c # e         vm-epg-encrypt
 C-c # k         vm-epg-attach-public-key
 C-c # s         vm-epg-sign
 @end example
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -890,6 +892,8 @@ C-c # s         vm-epg-sign
 @deffn Command vm-epg-compose-mode-menu arg1
 @findex vm-epg-compose-mode-menu
 PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -927,6 +931,8 @@ inline rather than attached as a MIME part.
 Prompt for a PGP action and return it.
 The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
 choice, and @code{q} aborts sending with an error.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1109,6 +1115,8 @@ put something like
        (add-hook 'vm-mail-send-hook #'vm-pgg-ask-hook t)
 
 into your VM init file.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1117,6 +1125,8 @@ into your VM init file.
 @deffn Command vm-pgg-attach-public-key
 @findex vm-pgg-attach-public-key
 Attach your public key to a composition.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1125,6 +1135,8 @@ Attach your public key to a composition.
 @deffn Command vm-pgg-cleartext-decrypt
 @findex vm-pgg-cleartext-decrypt
 Decrypt the contents of the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1133,6 +1145,8 @@ Decrypt the contents of the current message.
 @deffn Command vm-pgg-cleartext-encrypt sign
 @findex vm-pgg-cleartext-encrypt
 Encrypt the composition as cleartext and with a prefix also SIGN it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1141,6 +1155,8 @@ Encrypt the composition as cleartext and with a prefix also SIGN it.
 @deffn Command vm-pgg-cleartext-sign
 @findex vm-pgg-cleartext-sign
 Sign the message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1149,6 +1165,8 @@ Sign the message.
 @deffn Command vm-pgg-cleartext-verify
 @findex vm-pgg-cleartext-verify
 Verify the signature in the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1159,6 +1177,8 @@ Verify the signature in the current message.
 Minor mode for interfacing with cryptographic functions.
 
 Switch mode on/off according to ARG.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1167,6 +1187,8 @@ Switch mode on/off according to ARG.
 @deffn Command vm-pgg-compose-mode-menu arg1
 @findex vm-pgg-compose-mode-menu
 PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1175,6 +1197,8 @@ PGP/MIME compose mode menu.
 @deffn Command vm-pgg-encrypt &optional sign
 @findex vm-pgg-encrypt
 Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1183,6 +1207,8 @@ Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
 @deffn Command vm-pgg-prompt-for-action
 @findex vm-pgg-prompt-for-action
 Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1205,6 +1231,8 @@ set @code{vm-mime-8bit-text-transfer-encoding} to something different than 8bit 
 
 The transfer encoding done by @code{vm-pgg-sign} can be controlled by the variable
 @code{vm-pgg-sign-text-transfer-encoding}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1213,6 +1241,8 @@ The transfer encoding done by @code{vm-pgg-sign} can be controlled by the variab
 @deffn Command vm-pgg-sign-and-encrypt
 @findex vm-pgg-sign-and-encrypt
 Sign and encrypt the composition as PGP/MIME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1221,6 +1251,8 @@ Sign and encrypt the composition as PGP/MIME.
 @deffn Command vm-pgg-snarf-keys
 @findex vm-pgg-snarf-keys
 Snarf keys from the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1476,6 +1508,8 @@ New, unread and deleted are counted separately, and a folder with nothing
 in it says so.  This is the line the mode line summarises, printed on
 demand.  The totals are recomputed only when the folder has changed since
 they were last worked out.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1712,6 +1746,8 @@ and the folder is visited afresh with the access method it had, so an
 IMAP or POP folder comes back connected rather than as a plain file.
 
 Also available as @code{vm-revert-folder}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3854,6 +3890,8 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3866,6 +3904,8 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3879,6 +3919,8 @@ counts of messages in them.  The account must be one declared in
 
 With a prefix argument, it lists only the folders with new messages in
 them.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3891,6 +3933,8 @@ Argument SOURCE and DEST are read from the minibuffer if called
 interactively.  Non-interactive callers must provide full IMAP
 maildrop specifications for SOURCE and DEST as described in the
 documentation for @code{vm-spool-files}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3935,6 +3979,8 @@ This is useful for saving offline work on the cache folder.
 @findex vm-imap-unset-body-retrieve
 Unset the body-to-be-retrieved flag of all the messages.  May
   be needed if the folder has become corrupted somehow.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -3944,6 +3990,8 @@ Unset the body-to-be-retrieved flag of all the messages.  May
 @findex vm-imap-unset-byte-counts
 Unset the byte counts of all the messages, so that the size of the
 downloaded bodies will be displayed.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -4288,6 +4336,8 @@ which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
 match.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -4443,6 +4493,434 @@ are also included.
 Delete the contents of the MIME object at point.
 The MIME object is replaced by a text/plain object that briefly
 describes what was deleted.
+@end deffn
+
+@end macro
+
+@macro vmdocvmlistmimepartstructure
+@deffn Command vm-list-mime-part-structure &optional verbose
+@findex vm-list-mime-part-structure
+List mime part structure of the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeattachbuffer
+@deffn Command vm-mime-attach-buffer buffer type &optional charset description
+@findex vm-mime-attach-buffer
+Attach a buffer to a VM composition buffer to be sent along with
+the message.
+
+The buffer contents are not inserted into the composition
+buffer and MIME encoded until you execute @code{vm-mail-send} or
+@code{vm-mail-send-and-exit}.  A visible tag indicating the existence
+of the attachment is placed in the composition buffer.  You
+can move the attachment around or remove it entirely with
+normal text editing commands.  If you remove the attachment
+tag, the attachment will not be sent.
+
+First argument, BUFFER, is the buffer or name of the buffer to
+attach.  Second argument, TYPE, is the MIME Content-Type of the
+file.  Optional third argument CHARSET is the character set of
+the attached document.  This argument is only used for text
+types, and it is ignored for other types.  Optional fourth
+argument DESCRIPTION should be a one line description of the
+file.  Nil means include no description.
+
+When called interactively all arguments are read from the
+minibuffer.
+
+This command is for attaching files that do not have a MIME
+header section at the top.  For files with MIME headers, you
+should use @code{vm-attach-mime-file} to attach such a file.  VM
+will extract the content type information from the headers in
+this case and not prompt you for it in the minibuffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeattachfile
+@deffn Command vm-mime-attach-file file type &optional charset description _no-suggested-filename
+@findex vm-mime-attach-file
+Attach a file to a VM composition buffer to be sent along with the message.
+The file is not inserted into the buffer and MIME encoded until
+you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
+indicating the existence of the attachment is placed in the
+composition buffer.  You can move the attachment around or remove
+it entirely with normal text editing commands.  If you remove the
+attachment tag, the attachment will not be sent.
+
+First argument, FILE, is the name of the file to attach.  Second
+argument, TYPE, is the MIME Content-Type of the file.  Optional
+third argument CHARSET is the character set of the attached
+document.  This argument is only used for text types, and it is
+ignored for other types.  Optional fourth argument DESCRIPTION
+should be a one line description of the file.  Nil means include
+no description.  Optional fifth argument NO-SUGGESTED-FILENAME non-nil
+means that VM should not add a filename to the Content-Disposition
+header created for the object.
+
+When called interactively all arguments are read from the
+minibuffer.
+
+This command is for attaching files that do not have a MIME
+header section at the top.  For files with MIME headers, you
+should use @code{vm-attach-mime-file} to attach such a file.  VM
+will extract the content type information from the headers in
+this case and not prompt you for it in the minibuffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeattachmessage
+@deffn Command vm-mime-attach-message message &optional description
+@findex vm-mime-attach-message
+Attach a message from a VM folder to the current VM
+composition.
+
+The message is not inserted into the buffer and MIME encoded until
+you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
+indicating the existence of the attachment is placed in the
+composition buffer.  You can move the attachment around or remove
+it entirely with normal text editing commands.  If you remove the
+attachment tag, the attachment will not be sent.
+
+First argument, MESSAGE, is either a VM message struct or a list
+of message structs.  When called interactively a message number is read
+from the minibuffer.  The message will come from the parent
+folder of this composition.  If the composition has no parent,
+the name of a folder will be read from the minibuffer before the
+message number is read.
+
+If this command is invoked with a prefix argument, the name of a
+folder is read and that folder is used instead of the parent
+folder of the composition.
+
+If this command is invoked on marked message (via
+@code{vm-next-command-uses-marks}) the marked messages in the selected
+folder will be attached as a MIME message digest.    If
+applied to collapsed threads in summary and thread operations are
+enabled via @code{vm-enable-thread-operations} then all messages in the
+thread are attached.
+
+Optional second argument DESCRIPTION is a one-line description of
+the message being attached.  This is also read from the
+minibuffer if the command is run interactively.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeattachmessagetocomposition
+@deffn Command vm-mime-attach-message-to-composition composition &optional description
+@findex vm-mime-attach-message-to-composition
+Attach the current message from the current VM folder to a VM
+composition.
+
+The message is not inserted into the buffer and MIME encoded until
+you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
+indicating the existence of the attachment is placed in the
+composition buffer.  You can move the attachment around or remove
+it entirely with normal text editing commands.  If you remove the
+attachment tag, the attachment will not be sent.
+
+First argument COMPOSITION is the buffer into which the object
+will be inserted.  When this function is called interactively
+COMPOSITION’s name will be read from the minibuffer.
+
+If this command is invoked on marked message (via
+@code{vm-next-command-uses-marks}) the marked messages in the selected
+folder will be attached as a MIME message digest.    If
+applied to collapsed threads in summary and thread operations are
+enabled via @code{vm-enable-thread-operations} then all messages in the
+thread are attached.
+
+Optional second argument DESCRIPTION is a one-line description of
+the message being attached.  This is also read from the
+minibuffer if the command is run interactively.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeattachmimefile
+@deffn Command vm-mime-attach-mime-file file type
+@findex vm-mime-attach-mime-file
+Attach a MIME encoded file to a VM composition buffer to be sent
+along with the message.
+
+The file is not inserted into the buffer until you execute
+@code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag indicating
+the existence of the attachment is placed in the composition
+buffer.  You can move the attachment around or remove it entirely
+with normal text editing commands.  If you remove the attachment
+tag, the attachment will not be sent.
+
+The first argument, FILE, is the name of the file to attach.
+When called interactively the FILE argument is read from the
+minibuffer.
+
+The second argument, TYPE, is the MIME Content-Type of the object.
+
+This command is for attaching files that have a MIME
+header section at the top.  For files without MIME headers, you
+should use @code{vm-attach-file} to attach the file.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeautosaveallattachments
+@deffn Command vm-mime-auto-save-all-attachments &optional count
+@findex vm-mime-auto-save-all-attachments
+Save all attachments to a subdirectory.
+Root directory for saving is @code{vm-mime-attachment-save-directory}.
+
+You might add this to @code{vm-select-new-message-hook} in order to automatically
+save attachments.
+
+    (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimechangecontentdisposition
+@deffn Command vm-mime-change-content-disposition
+@findex vm-mime-change-content-disposition
+Change the disposition of the attachment at point in this composition.
+Reads @code{inline}, @code{attachment} or @code{unspecified}.  The disposition tells the
+recipient’s mail reader whether the part is meant to be shown as part of
+the message or offered as a file to save; @code{unspecified} sends no
+Content-Disposition header and leaves the choice to them.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeconverttoattachmentbuttons
+@deffn Command vm-mime-convert-to-attachment-buttons
+@findex vm-mime-convert-to-attachment-buttons
+Replace all mime buttons in the current buffer by attachment buttons.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimeencodecomposition
+@deffn Command vm-mime-encode-composition &optional attachments-only
+@findex vm-mime-encode-composition
+MIME encode the current mail composition buffer.
+
+This function chooses the MIME character set(s) to use, and transforms the
+message content from the Emacs-internal encoding to the corresponding
+octets in that MIME character set.
+
+It then applies some transfer encoding to the message. For details of the
+transfer encodings available, see the documentation for
+@code{vm-mime-8bit-text-transfer-encoding.}
+
+Finally, it creates the headers that are necessary to identify the message
+as one that uses MIME.
+
+Under MULE, it explicitly sets @code{buffer-file-coding-system} to a binary
+ (no-transformation) coding system, to avoid further transformation of the
+message content when it’s passed to the MTA (that is, the mail transfer
+agent; under Unix, normally sendmail.)
+
+Attachment tags added to the buffer with @code{vm-attach-file} are expanded
+and the appropriate content-type and boundary markup information is added.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimelistpartstructure
+@deffn Command vm-mime-list-part-structure &optional verbose
+@findex vm-mime-list-part-structure
+List mime part structure of the current message.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimepreviewcomposition
+@deffn Command vm-mime-preview-composition
+@findex vm-mime-preview-composition
+Show how the current composition buffer might be displayed
+in a MIME-aware mail reader.  VM copies and encodes the current
+mail composition buffer and displays it as a mail folder.
+Type @code{q} to quit this temp folder and return to composing your
+message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapattachtocomposition
+@deffn Command vm-mime-reader-map-attach-to-composition
+@findex vm-mime-reader-map-attach-to-composition
+Attach the MIME object at point to a message being composed.  The
+buffer for message composition is queried from the minibuffer.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapconvertthendisplay
+@deffn Command vm-mime-reader-map-convert-then-display
+@findex vm-mime-reader-map-convert-then-display
+Convert the MIME object at point to text and display it.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapdisplayobjectastype
+@deffn Command vm-mime-reader-map-display-object-as-type
+@findex vm-mime-reader-map-display-object-as-type
+Display the MIME object at point as some other type.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapdisplayusingdefault
+@deffn Command vm-mime-reader-map-display-using-default
+@findex vm-mime-reader-map-display-using-default
+Display the MIME object at point using the @code{default} face.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapdisplayusingexternalviewer
+@deffn Command vm-mime-reader-map-display-using-external-viewer
+@findex vm-mime-reader-map-display-using-external-viewer
+Display the MIME object at point with an external viewer.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermappipetocommand
+@deffn Command vm-mime-reader-map-pipe-to-command
+@findex vm-mime-reader-map-pipe-to-command
+Pipe the MIME object at point to a shell command.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermappipetocommanddiscardoutput
+@deffn Command vm-mime-reader-map-pipe-to-command-discard-output
+@findex vm-mime-reader-map-pipe-to-command-discard-output
+Pipe the MIME object at point to a shell command.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermappipetoprinter
+@deffn Command vm-mime-reader-map-pipe-to-printer
+@findex vm-mime-reader-map-pipe-to-printer
+Print the MIME object at point.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapsavefile
+@deffn Command vm-mime-reader-map-save-file
+@findex vm-mime-reader-map-save-file
+Write the MIME object at point to a file.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimereadermapsavemessage
+@deffn Command vm-mime-reader-map-save-message
+@findex vm-mime-reader-map-save-message
+Save the MIME object at point to a folder.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimerenameattachment
+@deffn Command vm-mime-rename-attachment
+@findex vm-mime-rename-attachment
+Give the attachment at point a different file name.
+The name is the one the recipient sees, and the one their mailer will
+suggest when they save it; the file the attachment was read from is not
+touched.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmimerundisplayfunctionatpoint
+@deffn Command vm-mime-run-display-function-at-point &optional function
+@findex vm-mime-run-display-function-at-point
+Run the @code{vm-mime-function} for the MIME button at point.
+If optional argument FUNCTION is given, run it instead.
+					          USR, 2011-03-07
+@end deffn
+
+@end macro
+
+@macro vmdocvmnukealternativetexthtml
+@deffn Command vm-nuke-alternative-text/html &optional count mlist
+@findex vm-nuke-alternative-text/html
+Removes the text/html part of all multipart/alternative message parts.
+
+This is a destructive operation and cannot be undone!
+@end deffn
+
+@end macro
+
+@macro vmdocvmsaveallattachments
+@deffn Command vm-save-all-attachments &optional count directory
+@findex vm-save-all-attachments
+Save all attachments in the next COUNT messages or marked
+messages.  For the purpose of this function, an "attachment" is
+a mime part part which has "attachment" as its disposition or
+simply has an associated filename.  Any mime types that match
+@code{vm-mime-saveable-types} but not @code{vm-mime-saveable-type-exceptions}
+are also included.
+
+The attachments are saved to the specified DIRECTORY.  The
+variables @code{vm-mime-all-attachments-directory} or
+@code{vm-mime-attachment-save-directory} can be used to set the
+default location.  When directory does not exist it will be
+created.
+@end deffn
+
+@end macro
+
+@macro vmdocvmsaveattachments
+@deffn Command vm-save-attachments &optional count
+@findex vm-save-attachments
+Save all attachments in the next COUNT messages or marked
+messages.  For the purpose of this function, an "attachment" is
+a mime part part which has "attachment" as its disposition or
+simply has an associated filename.  Any mime types that match
+@code{vm-mime-saveable-types} but not @code{vm-mime-saveable-type-exceptions}
+are also included.
+
+The attachments are saved in file names input from the
+minibuffer.  (This is the main difference from
+@code{vm-save-all-attachments}.) 
+
+The variables @code{vm-mime-all-attachments-directory} or
+@code{vm-mime-attachment-save-directory} can be used to set the
+default location.  When directory does not exist it will be
+confirmed before creating a new directory.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmtogglebestmime
+@deffn Command vm-toggle-best-mime
+@findex vm-toggle-best-mime
+Toggle between best-internal and best mime decoding modes. (Alley Soughton)
 @end deffn
 
 @end macro
@@ -4606,14 +5084,8 @@ l e             vm-add-existing-message-labels
 
 
 Customize VM by setting variables and store them in the @code{vm-init-file}.
-@end deffn
 
-@end macro
-
-@macro vmdocvmlistmimepartstructure
-@deffn Command vm-list-mime-part-structure &optional verbose
-@findex vm-list-mime-part-structure
-List mime part structure of the current message.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -4622,229 +5094,8 @@ List mime part structure of the current message.
 @deffn Command vm-mime-Q-decode-region start end
 @findex vm-mime-Q-decode-region
 Not documented.
-@end deffn
 
-@end macro
-
-@macro vmdocvmmimeattachbuffer
-@deffn Command vm-mime-attach-buffer buffer type &optional charset description
-@findex vm-mime-attach-buffer
-Attach a buffer to a VM composition buffer to be sent along with
-the message.
-
-The buffer contents are not inserted into the composition
-buffer and MIME encoded until you execute @code{vm-mail-send} or
-@code{vm-mail-send-and-exit}.  A visible tag indicating the existence
-of the attachment is placed in the composition buffer.  You
-can move the attachment around or remove it entirely with
-normal text editing commands.  If you remove the attachment
-tag, the attachment will not be sent.
-
-First argument, BUFFER, is the buffer or name of the buffer to
-attach.  Second argument, TYPE, is the MIME Content-Type of the
-file.  Optional third argument CHARSET is the character set of
-the attached document.  This argument is only used for text
-types, and it is ignored for other types.  Optional fourth
-argument DESCRIPTION should be a one line description of the
-file.  Nil means include no description.
-
-When called interactively all arguments are read from the
-minibuffer.
-
-This command is for attaching files that do not have a MIME
-header section at the top.  For files with MIME headers, you
-should use @code{vm-attach-mime-file} to attach such a file.  VM
-will extract the content type information from the headers in
-this case and not prompt you for it in the minibuffer.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeattachfile
-@deffn Command vm-mime-attach-file file type &optional charset description _no-suggested-filename
-@findex vm-mime-attach-file
-Attach a file to a VM composition buffer to be sent along with the message.
-The file is not inserted into the buffer and MIME encoded until
-you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
-indicating the existence of the attachment is placed in the
-composition buffer.  You can move the attachment around or remove
-it entirely with normal text editing commands.  If you remove the
-attachment tag, the attachment will not be sent.
-
-First argument, FILE, is the name of the file to attach.  Second
-argument, TYPE, is the MIME Content-Type of the file.  Optional
-third argument CHARSET is the character set of the attached
-document.  This argument is only used for text types, and it is
-ignored for other types.  Optional fourth argument DESCRIPTION
-should be a one line description of the file.  Nil means include
-no description.  Optional fifth argument NO-SUGGESTED-FILENAME non-nil
-means that VM should not add a filename to the Content-Disposition
-header created for the object.
-
-When called interactively all arguments are read from the
-minibuffer.
-
-This command is for attaching files that do not have a MIME
-header section at the top.  For files with MIME headers, you
-should use @code{vm-attach-mime-file} to attach such a file.  VM
-will extract the content type information from the headers in
-this case and not prompt you for it in the minibuffer.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeattachmessage
-@deffn Command vm-mime-attach-message message &optional description
-@findex vm-mime-attach-message
-Attach a message from a VM folder to the current VM
-composition.
-
-The message is not inserted into the buffer and MIME encoded until
-you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
-indicating the existence of the attachment is placed in the
-composition buffer.  You can move the attachment around or remove
-it entirely with normal text editing commands.  If you remove the
-attachment tag, the attachment will not be sent.
-
-First argument, MESSAGE, is either a VM message struct or a list
-of message structs.  When called interactively a message number is read
-from the minibuffer.  The message will come from the parent
-folder of this composition.  If the composition has no parent,
-the name of a folder will be read from the minibuffer before the
-message number is read.
-
-If this command is invoked with a prefix argument, the name of a
-folder is read and that folder is used instead of the parent
-folder of the composition.
-
-If this command is invoked on marked message (via
-@code{vm-next-command-uses-marks}) the marked messages in the selected
-folder will be attached as a MIME message digest.    If
-applied to collapsed threads in summary and thread operations are
-enabled via @code{vm-enable-thread-operations} then all messages in the
-thread are attached.
-
-Optional second argument DESCRIPTION is a one-line description of
-the message being attached.  This is also read from the
-minibuffer if the command is run interactively.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeattachmessagetocomposition
-@deffn Command vm-mime-attach-message-to-composition composition &optional description
-@findex vm-mime-attach-message-to-composition
-Attach the current message from the current VM folder to a VM
-composition.
-
-The message is not inserted into the buffer and MIME encoded until
-you execute @code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag
-indicating the existence of the attachment is placed in the
-composition buffer.  You can move the attachment around or remove
-it entirely with normal text editing commands.  If you remove the
-attachment tag, the attachment will not be sent.
-
-First argument COMPOSITION is the buffer into which the object
-will be inserted.  When this function is called interactively
-COMPOSITION’s name will be read from the minibuffer.
-
-If this command is invoked on marked message (via
-@code{vm-next-command-uses-marks}) the marked messages in the selected
-folder will be attached as a MIME message digest.    If
-applied to collapsed threads in summary and thread operations are
-enabled via @code{vm-enable-thread-operations} then all messages in the
-thread are attached.
-
-Optional second argument DESCRIPTION is a one-line description of
-the message being attached.  This is also read from the
-minibuffer if the command is run interactively.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeattachmimefile
-@deffn Command vm-mime-attach-mime-file file type
-@findex vm-mime-attach-mime-file
-Attach a MIME encoded file to a VM composition buffer to be sent
-along with the message.
-
-The file is not inserted into the buffer until you execute
-@code{vm-mail-send} or @code{vm-mail-send-and-exit}.  A visible tag indicating
-the existence of the attachment is placed in the composition
-buffer.  You can move the attachment around or remove it entirely
-with normal text editing commands.  If you remove the attachment
-tag, the attachment will not be sent.
-
-The first argument, FILE, is the name of the file to attach.
-When called interactively the FILE argument is read from the
-minibuffer.
-
-The second argument, TYPE, is the MIME Content-Type of the object.
-
-This command is for attaching files that have a MIME
-header section at the top.  For files without MIME headers, you
-should use @code{vm-attach-file} to attach the file.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeautosaveallattachments
-@deffn Command vm-mime-auto-save-all-attachments &optional count
-@findex vm-mime-auto-save-all-attachments
-Save all attachments to a subdirectory.
-Root directory for saving is @code{vm-mime-attachment-save-directory}.
-
-You might add this to @code{vm-select-new-message-hook} in order to automatically
-save attachments.
-
-    (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimechangecontentdisposition
-@deffn Command vm-mime-change-content-disposition
-@findex vm-mime-change-content-disposition
-Change the disposition of the attachment at point in this composition.
-Reads @code{inline}, @code{attachment} or @code{unspecified}.  The disposition tells the
-recipient’s mail reader whether the part is meant to be shown as part of
-the message or offered as a file to save; @code{unspecified} sends no
-Content-Disposition header and leaves the choice to them.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeconverttoattachmentbuttons
-@deffn Command vm-mime-convert-to-attachment-buttons
-@findex vm-mime-convert-to-attachment-buttons
-Replace all mime buttons in the current buffer by attachment buttons.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimeencodecomposition
-@deffn Command vm-mime-encode-composition &optional attachments-only
-@findex vm-mime-encode-composition
-MIME encode the current mail composition buffer.
-
-This function chooses the MIME character set(s) to use, and transforms the
-message content from the Emacs-internal encoding to the corresponding
-octets in that MIME character set.
-
-It then applies some transfer encoding to the message. For details of the
-transfer encodings available, see the documentation for
-@code{vm-mime-8bit-text-transfer-encoding.}
-
-Finally, it creates the headers that are necessary to identify the message
-as one that uses MIME.
-
-Under MULE, it explicitly sets @code{buffer-file-coding-system} to a binary
- (no-transformation) coding system, to avoid further transformation of the
-message content when it’s passed to the MTA (that is, the mail transfer
-agent; under Unix, normally sendmail.)
-
-Attachment tags added to the buffer with @code{vm-attach-file} are expanded
-and the appropriate content-type and boundary markup information is added.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -4860,138 +5111,8 @@ recipient and author headers.
 
 Whitespace between encoded words is trimmed during decoding and thus those
 should be encoded together.
-@end deffn
 
-@end macro
-
-@macro vmdocvmmimelistpartstructure
-@deffn Command vm-mime-list-part-structure &optional verbose
-@findex vm-mime-list-part-structure
-List mime part structure of the current message.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimepreviewcomposition
-@deffn Command vm-mime-preview-composition
-@findex vm-mime-preview-composition
-Show how the current composition buffer might be displayed
-in a MIME-aware mail reader.  VM copies and encodes the current
-mail composition buffer and displays it as a mail folder.
-Type @code{q} to quit this temp folder and return to composing your
-message.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapattachtocomposition
-@deffn Command vm-mime-reader-map-attach-to-composition
-@findex vm-mime-reader-map-attach-to-composition
-Attach the MIME object at point to a message being composed.  The
-buffer for message composition is queried from the minibuffer.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapconvertthendisplay
-@deffn Command vm-mime-reader-map-convert-then-display
-@findex vm-mime-reader-map-convert-then-display
-Convert the MIME object at point to text and display it.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapdisplayobjectastype
-@deffn Command vm-mime-reader-map-display-object-as-type
-@findex vm-mime-reader-map-display-object-as-type
-Display the MIME object at point as some other type.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapdisplayusingdefault
-@deffn Command vm-mime-reader-map-display-using-default
-@findex vm-mime-reader-map-display-using-default
-Display the MIME object at point using the @code{default} face.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapdisplayusingexternalviewer
-@deffn Command vm-mime-reader-map-display-using-external-viewer
-@findex vm-mime-reader-map-display-using-external-viewer
-Display the MIME object at point with an external viewer.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermappipetocommand
-@deffn Command vm-mime-reader-map-pipe-to-command
-@findex vm-mime-reader-map-pipe-to-command
-Pipe the MIME object at point to a shell command.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermappipetocommanddiscardoutput
-@deffn Command vm-mime-reader-map-pipe-to-command-discard-output
-@findex vm-mime-reader-map-pipe-to-command-discard-output
-Pipe the MIME object at point to a shell command.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermappipetoprinter
-@deffn Command vm-mime-reader-map-pipe-to-printer
-@findex vm-mime-reader-map-pipe-to-printer
-Print the MIME object at point.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapsavefile
-@deffn Command vm-mime-reader-map-save-file
-@findex vm-mime-reader-map-save-file
-Write the MIME object at point to a file.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimereadermapsavemessage
-@deffn Command vm-mime-reader-map-save-message
-@findex vm-mime-reader-map-save-message
-Save the MIME object at point to a folder.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimerenameattachment
-@deffn Command vm-mime-rename-attachment
-@findex vm-mime-rename-attachment
-Give the attachment at point a different file name.
-The name is the one the recipient sees, and the one their mailer will
-suggest when they save it; the file the attachment was read from is not
-touched.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmimerundisplayfunctionatpoint
-@deffn Command vm-mime-run-display-function-at-point &optional function
-@findex vm-mime-run-display-function-at-point
-Run the @code{vm-mime-function} for the MIME button at point.
-If optional argument FUNCTION is given, run it instead.
-					          USR, 2011-03-07
-@end deffn
-
-@end macro
-
-@macro vmdocvmnukealternativetexthtml
-@deffn Command vm-nuke-alternative-text/html &optional count mlist
-@findex vm-nuke-alternative-text/html
-Removes the text/html part of all multipart/alternative message parts.
-
-This is a destructive operation and cannot be undone!
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -5155,55 +5276,8 @@ l e             vm-add-existing-message-labels
 
 
 Customize VM by setting variables and store them in the @code{vm-init-file}.
-@end deffn
 
-@end macro
-
-@macro vmdocvmsaveallattachments
-@deffn Command vm-save-all-attachments &optional count directory
-@findex vm-save-all-attachments
-Save all attachments in the next COUNT messages or marked
-messages.  For the purpose of this function, an "attachment" is
-a mime part part which has "attachment" as its disposition or
-simply has an associated filename.  Any mime types that match
-@code{vm-mime-saveable-types} but not @code{vm-mime-saveable-type-exceptions}
-are also included.
-
-The attachments are saved to the specified DIRECTORY.  The
-variables @code{vm-mime-all-attachments-directory} or
-@code{vm-mime-attachment-save-directory} can be used to set the
-default location.  When directory does not exist it will be
-created.
-@end deffn
-
-@end macro
-
-@macro vmdocvmsaveattachments
-@deffn Command vm-save-attachments &optional count
-@findex vm-save-attachments
-Save all attachments in the next COUNT messages or marked
-messages.  For the purpose of this function, an "attachment" is
-a mime part part which has "attachment" as its disposition or
-simply has an associated filename.  Any mime types that match
-@code{vm-mime-saveable-types} but not @code{vm-mime-saveable-type-exceptions}
-are also included.
-
-The attachments are saved in file names input from the
-minibuffer.  (This is the main difference from
-@code{vm-save-all-attachments}.) 
-
-The variables @code{vm-mime-all-attachments-directory} or
-@code{vm-mime-attachment-save-directory} can be used to set the
-default location.  When directory does not exist it will be
-confirmed before creating a new directory.
-@end deffn
-
-@end macro
-
-@macro vmdocvmtogglebestmime
-@deffn Command vm-toggle-best-mime
-@findex vm-toggle-best-mime
-Toggle between best-internal and best mime decoding modes. (Alley Soughton)
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6769,6 +6843,8 @@ Mark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6777,6 +6853,8 @@ variable @code{vm-virtual-folder-alist} for more information.
 @deffn Command vm-mark-matching-messages-with-virtual-folder name
 @findex vm-mark-matching-messages-with-virtual-folder
 Mark messages that are matched by the selectors of virtual folder NAME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6871,6 +6949,8 @@ Unmark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6879,6 +6959,8 @@ variable @code{vm-virtual-folder-alist} for more information.
 @deffn Command vm-unmark-matching-messages-with-virtual-folder name
 @findex vm-unmark-matching-messages-with-virtual-folder
 Unmark messages that are matched by the selectors of virtual folder NAME.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6959,6 +7041,8 @@ Customize VM options.
 Visit a virtual folder of every message by this one’s author.
 The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
 author filled in from the current message rather than prompted for.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6969,6 +7053,8 @@ author filled in from the current message rather than prompted for.
 Visit a virtual folder of every message with this one’s subject.
 The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
 subject filled in from the current message rather than prompted for.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6977,6 +7063,8 @@ subject filled in from the current message rather than prompted for.
 @deffn Command vm-menu-hm-create-dir parent-dir
 @findex vm-menu-hm-create-dir
 Create a subdir in PARENT-DIR.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -6985,14 +7073,8 @@ Create a subdir in PARENT-DIR.
 @deffn Command vm-menu-hm-delete-folder folder
 @findex vm-menu-hm-delete-folder
 Query deletes a folder.
-@end deffn
 
-@end macro
-
-@macro vmdocvmmenuhmmakefoldermenu
-@deffn Command vm-menu-hm-make-folder-menu
-@findex vm-menu-hm-make-folder-menu
-Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7001,80 +7083,8 @@ Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
 @deffn Command vm-menu-hm-rename-folder folder
 @findex vm-menu-hm-rename-folder
 Rename a folder.
-@end deffn
 
-@end macro
-
-@macro vmdocvmmenumailto
-@deffn Command vm-menu-mail-to
-@findex vm-menu-mail-to
-Compose a message to the author of this one.
-The menu’s way to @code{vm-mail}, with the From: header of the current message
-as the recipient.  Not a reply: no subject, no references, no citation.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupattachmentmenu
-@deffn Command vm-menu-popup-attachment-menu event
-@findex vm-menu-popup-attachment-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupcontextmenu
-@deffn Command vm-menu-popup-context-menu event
-@findex vm-menu-popup-context-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupfsfemacsmenu
-@deffn Command vm-menu-popup-fsfemacs-menu event &optional menu
-@findex vm-menu-popup-fsfemacs-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupimagemenu
-@deffn Command vm-menu-popup-image-menu event
-@findex vm-menu-popup-image-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupmailtourlbrowsermenu
-@deffn Command vm-menu-popup-mailto-url-browser-menu event
-@findex vm-menu-popup-mailto-url-browser-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupmimedisposemenu
-@deffn Command vm-menu-popup-mime-dispose-menu event
-@findex vm-menu-popup-mime-dispose-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupmodemenu
-@deffn Command vm-menu-popup-mode-menu event
-@findex vm-menu-popup-mode-menu
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenupopupurlbrowsermenu
-@deffn Command vm-menu-popup-url-browser-menu event
-@findex vm-menu-popup-url-browser-menu
-Not documented.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7084,6 +7094,8 @@ Not documented.
 @findex vm-menu-toggle-menubar
 Toggle between the VM’s dedicated menu bar and the standard Emacs
 menu bar.                                             USR, 2011-02-27
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7095,6 +7107,8 @@ Yank every message being replied to into this composition.
 The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
 this yanks all of @code{vm-reply-list} one after another, which is what a reply
 to several messages at once is replying to.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7111,6 +7125,108 @@ View the VM manual.
 @deffn Command vm-view-news
 @findex vm-view-news
 View the newest of VM=’s NEWS files.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenuhmmakefoldermenu
+@deffn Command vm-menu-hm-make-folder-menu
+@findex vm-menu-hm-make-folder-menu
+Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenumailto
+@deffn Command vm-menu-mail-to
+@findex vm-menu-mail-to
+Compose a message to the author of this one.
+The menu’s way to @code{vm-mail}, with the From: header of the current message
+as the recipient.  Not a reply: no subject, no references, no citation.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupattachmentmenu
+@deffn Command vm-menu-popup-attachment-menu event
+@findex vm-menu-popup-attachment-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupcontextmenu
+@deffn Command vm-menu-popup-context-menu event
+@findex vm-menu-popup-context-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupfsfemacsmenu
+@deffn Command vm-menu-popup-fsfemacs-menu event &optional menu
+@findex vm-menu-popup-fsfemacs-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupimagemenu
+@deffn Command vm-menu-popup-image-menu event
+@findex vm-menu-popup-image-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupmailtourlbrowsermenu
+@deffn Command vm-menu-popup-mailto-url-browser-menu event
+@findex vm-menu-popup-mailto-url-browser-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupmimedisposemenu
+@deffn Command vm-menu-popup-mime-dispose-menu event
+@findex vm-menu-popup-mime-dispose-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupmodemenu
+@deffn Command vm-menu-popup-mode-menu event
+@findex vm-menu-popup-mode-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenupopupurlbrowsermenu
+@deffn Command vm-menu-popup-url-browser-menu event
+@findex vm-menu-popup-url-browser-menu
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7136,6 +7252,8 @@ Select a message from a popup menu of the current folder’s history.
 @deffn Command vm-message-history-browse-select
 @findex vm-message-history-browse-select
 Select the message below the cursor.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7163,6 +7281,8 @@ Default value: @code{32}
 @deffn Command vm-minibuffer-complete-word &optional exiting
 @findex vm-minibuffer-complete-word
 Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7173,6 +7293,8 @@ Not documented.
 Complete the word before point and leave the minibuffer at once.
 @code{vm-minibuffer-complete-word} and then @code{exit-minibuffer}, for a prompt
 where one word is the whole answer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7185,6 +7307,8 @@ Unlike ordinary minibuffer completion, which works on the whole of the
 input, this completes one word of it -- so a prompt that takes a space
 separated list, as the label and attribute prompts do, can complete each
 item in turn.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7244,6 +7368,8 @@ Not documented.
 @deffn Command vm-goto-last-message-seen
 @findex vm-goto-last-message-seen
 Go to the message last previewed.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7589,16 +7715,8 @@ Default value: @code{120}
 @findex vm-current-key-bindings
 Install optional key bindings for VM modes, as per versions 8.2.0
 and up.
-@end deffn
 
-@end macro
-
-@macro vmdocvmdofccbeforemimeencode
-@deffn Command vm-do-fcc-before-mime-encode
-@findex vm-do-fcc-before-mime-encode
-The name says it all.
-Sometimes you may want to save a message unencoded, specifically not to waste
-storage for attachments which are stored on disk anyway.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7610,6 +7728,8 @@ Install optional key bindings for VM modes, as per version 7.19.
 
 These key bindings are considered optional.  They can be rebound by
 the users or bound to other functions in future versions of VM.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7624,6 +7744,8 @@ preferences file).
 
 The file names may be customized via the variables @code{vm-init-file} and
 @code{vm-preferences-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7633,17 +7755,6 @@ The file names may be customized via the variables @code{vm-init-file} and
 @findex vm-mail-mode-elide-reply-region
 Replace marked region or current line with @code{vm-mail-mode-elide-reply-region}.
 B and E are the beginning and end of the marked region or the current line.
-@end deffn
-
-@end macro
-
-@macro vmdocvmoptionalkey
-@deffn Command vm-optional-key
-@findex vm-optional-key
-Certain VM keys have optional bindings in VM, which differ from
-version to version.  Include "(vm-legacy-key-bindings)" in your
-@code{vm-preferences-file} in order to bind them as in version 7.19.  For
-other possibilities, see the NEWS files in the VM distribution.
 @end deffn
 
 @end macro
@@ -7689,6 +7800,8 @@ Install optional key bindings for VM modes, as per version 7.19.
 
 These key bindings are considered optional.  They can be rebound by
 the users or bound to other functions in future versions of VM.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7698,6 +7811,8 @@ the users or bound to other functions in future versions of VM.
 @findex vm-v8-key-bindings
 Install optional key bindings for VM modes, as per versions 8.2.0
 and up.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -7717,6 +7832,33 @@ Space scrolls forward, Delete scrolls backward.
 For a list of all View commands, type H or h while viewing.
 
 This command runs the normal hook @code{view-mode-hook}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmdofccbeforemimeencode
+@deffn Command vm-do-fcc-before-mime-encode
+@findex vm-do-fcc-before-mime-encode
+The name says it all.
+Sometimes you may want to save a message unencoded, specifically not to waste
+storage for attachments which are stored on disk anyway.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmoptionalkey
+@deffn Command vm-optional-key
+@findex vm-optional-key
+Certain VM keys have optional bindings in VM, which differ from
+version to version.  Include "(vm-legacy-key-bindings)" in your
+@code{vm-preferences-file} in order to bind them as in version 7.19.  For
+other possibilities, see the NEWS files in the VM distribution.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8237,6 +8379,8 @@ Call @code{vm-pcrisis-no-automorph} to disable it for the current buffer.
 @deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
 @findex vm-pcrisis-backward-tab-header-or-tab-stop
 Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8248,6 +8392,8 @@ Build a list of the actions to run.
 These are the true conditions mapped to actions.  Duplicates will be
 eliminated.  You may run it in a composition buffer in order to see what
 actions will be run.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8257,6 +8403,8 @@ actions will be run.
 @findex vm-pcrisis-build-true-conditions-list
 Build list of true conditions and store it in the variable 
 @code{vm-pcrisis-true-conditions}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8265,6 +8413,8 @@ Build list of true conditions and store it in the variable
 @deffn Command vm-pcrisis-fix-auto-profiles-file
 @findex vm-pcrisis-fix-auto-profiles-file
 Change @code{vm-pcrisis-auto-profiles-file} to the format used by v0.82+.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8273,6 +8423,8 @@ Change @code{vm-pcrisis-auto-profiles-file} to the format used by v0.82+.
 @deffn Command vm-pcrisis-load-auto-profiles
 @findex vm-pcrisis-load-auto-profiles
 Initialise @code{vm-pcrisis-auto-profiles} from @code{vm-pcrisis-auto-profiles-file}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8284,6 +8436,8 @@ Migrate the profiles stored in @code{vm-pcrisis-auto-profiles-file} to the BBDB.
 
 This will automatically create records if they do not exist and add the new
 field @code{vmpc-profile} to the records which is a sexp not meant to be edited.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8350,6 +8504,8 @@ PROMPT argument and call this function interactively in the composition buffer.
 @findex vm-pcrisis-read-actions
 Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
 The special action "none" will result in an empty action list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8370,6 +8526,8 @@ completion.
 Run the argument actions, or the actions stored in @code{vm-pcrisis-actions-to-run}.
 If verbose is supplied, it should be a STRING, indicating the name of a
 buffer to which to write diagnostic output.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8384,6 +8542,8 @@ If BACKWARD is specified and non-nil, moves to previous useful header
 field, whether point is in the body or the headers.
 "Useful header fields" are currently, in order, "To" and
 "Subject".
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8403,6 +8563,8 @@ current composition, then call this function.
 @findex vm-pcrisis-true-conditions
 Return a list of all true conditions.
 Run this function in order to test/check your conditions.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -8690,6 +8852,8 @@ Ask for continuing of postponed messages if there are some.
 @deffn Command vm-delete-postponed-message
 @findex vm-delete-postponed-message
 Delete the source message belonging to the continued composition.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9254,23 +9418,6 @@ Moves to the beginning of the current message.
 
 @end macro
 
-@macro vmdocvmemiteomblurb
-@deffn Command vm-emit-eom-blurb
-@findex vm-emit-eom-blurb
-Prints a minibuffer message when the end of message is reached, but
-it is suppressed if the variable @code{vm-auto-next-message} is nil.
-@end deffn
-
-@end macro
-
-@macro vmdocvmemitmimedecodingmessage
-@deffn Command vm-emit-mime-decoding-message format &rest args
-@findex vm-emit-mime-decoding-message
-Not documented.
-@end deffn
-
-@end macro
-
 @macro vmdocvmendofmessage
 @deffn Command vm-end-of-message
 @findex vm-end-of-message
@@ -9308,6 +9455,8 @@ Toggle exposing and hiding message headers that are normally not visible.
 @deffn Command vm-isearch-presentation
 @findex vm-isearch-presentation
 Switches to the Presentation buffer and starts isearch.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9323,6 +9472,8 @@ If there is no next button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9338,6 +9489,8 @@ If there is no previous button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9448,6 +9601,27 @@ Toggle display of shrunken headers.
 @deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
 @findex vm-shrunken-headers-toggle-this-mouse
 Toggle display of shrunken headers.
+@end deffn
+
+@end macro
+
+@macro vmdocvmemiteomblurb
+@deffn Command vm-emit-eom-blurb
+@findex vm-emit-eom-blurb
+Prints a minibuffer message when the end of message is reached, but
+it is suppressed if the variable @code{vm-auto-next-message} is nil.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmemitmimedecodingmessage
+@deffn Command vm-emit-mime-decoding-message format &rest args
+@findex vm-emit-mime-decoding-message
+Not documented.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9808,24 +9982,6 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 
 @end macro
 
-@macro vmdocvmmailcheckforemptysubject
-@deffn Command vm-mail-check-for-empty-subject
-@findex vm-mail-check-for-empty-subject
-Check if the subject line is empty and issue an error if so.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmailcheckrecipients
-@deffn Command vm-mail-check-recipients
-@findex vm-mail-check-recipients
-Check if the recipients are specified correctly.
-Actually it checks only if there are any missing commas or the like in the
-headers.
-@end deffn
-
-@end macro
-
 @macro vmdocvmmailmodecitationcleanup
 @deffn Command vm-mail-mode-citation-clean-up
 @findex vm-mail-mode-citation-clean-up
@@ -9839,6 +9995,8 @@ Remove doubly-cited text and extra lines in a mail message.
 @findex vm-mail-mode-hide-headers
 Hides and protects headers listed in @code{vm-mail-mode-hidden-headers}.
 With a prefix arg, call @code{vm-mail-mode-show-headers} instead.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9847,6 +10005,8 @@ With a prefix arg, call @code{vm-mail-mode-show-headers} instead.
 @deffn Command vm-mail-mode-show-headers
 @findex vm-mail-mode-show-headers
 Display any hidden headers in a composition buffer.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9856,6 +10016,8 @@ Display any hidden headers in a composition buffer.
 @findex vm-mail-send
 Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -9867,19 +10029,8 @@ Send message and maybe delete the composition buffer.
 The value of @code{vm-keep-sent-messages} determines whether the composition buffer
 is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to.
-@end deffn
 
-@end macro
-
-@macro vmdocvmmailsubjectcleanup
-@deffn Command vm-mail-subject-cleanup
-@findex vm-mail-subject-cleanup
-Do some subject line clean up.
-- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
-- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
-
-You might add this function to @code{vm-mail-mode-hook} in order to clean up the
-Subject header.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -10003,6 +10154,8 @@ Like vm-resend-message, but run in a newly created frame.
 Extract the original text from a bounced message and resend it.
 You will be placed in a Mail mode buffer with the extracted message and
 you can change the recipient address before resending the message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -10119,6 +10272,43 @@ than the one that spawned the current Mail mode buffer.  The name of the
 folder is read from the minibuffer.
 
 Don’t call this function from a program.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmailcheckforemptysubject
+@deffn Command vm-mail-check-for-empty-subject
+@findex vm-mail-check-for-empty-subject
+Check if the subject line is empty and issue an error if so.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmailcheckrecipients
+@deffn Command vm-mail-check-recipients
+@findex vm-mail-check-recipients
+Check if the recipients are specified correctly.
+Actually it checks only if there are any missing commas or the like in the
+headers.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmailsubjectcleanup
+@deffn Command vm-mail-subject-cleanup
+@findex vm-mail-subject-cleanup
+Do some subject line clean up.
+- Replace subject prefixes according to @code{vm-mail-subject-prefix-replacements}.
+- Add a number after replies is @code{vm-mail-subject-number-reply} is t.
+
+You might add this function to @code{vm-mail-mode-hook} in order to clean up the
+Subject header.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -10820,6 +11010,8 @@ output of the command.
 Runs a shell command with contents from the current message as input.
 This function is like @code{vm-pipe-messages-to-command}, but will not display the
 output of the command, but return it as a string.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11007,6 +11199,8 @@ expression which is evaluated
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
 a warning.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11015,6 +11209,8 @@ a warning.
 @deffn Command vm-serial-get-token &optional token
 @findex vm-serial-get-token
 Return value of vm-serial TOKEN.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11023,6 +11219,8 @@ Return value of vm-serial TOKEN.
 @deffn Command vm-serial-insert-token token
 @findex vm-serial-insert-token
 Reads a valid token, inserts it at point and expands it.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11037,6 +11235,8 @@ it is, or you may edit it before sending or you may skip it.
 
 If called with a prefix argument or NON-INTERACTIVE set to non nil, no
 questions will bother you!
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11045,6 +11245,8 @@ questions will bother you!
 @deffn Command vm-serial-send-mail-and-exit &optional non-interactive
 @findex vm-serial-send-mail-and-exit
 Like @code{vm-serial-send-mail} but kills the buffer after sending all.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11054,6 +11256,8 @@ Like @code{vm-serial-send-mail} but kills the buffer after sending all.
 @findex vm-serial-set-token
 Set vm-serial TOKEN to NEWVALUE with DOC.
 You may remove a token by specifying just the TOKEN as argument.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11075,6 +11279,8 @@ editing point.
 I try to be clever when to delete the existing buffer contents and when to
 expand the tokens, however if this does not satisfy you please report it to
 me.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11548,6 +11754,8 @@ mandatory.
 @deffn Command vm-headers-summary-other-frame &optional display
 @findex vm-headers-summary-other-frame
 Like vm-summarize, but run in a newly created frame.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -11578,6 +11786,8 @@ Trace this message while summary lines are being built.
 A debugging aid: @code{vm-summary-debug} enters the debugger for a message on
 this list, and only when @code{vm-debug} is set, so tracing a message costs
 nothing until then.  Prints the list of messages being traced.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12270,12 +12480,33 @@ all give nil.
 
 @end macro
 
+@macro vmdocvmtoolbardeleteundeletemessage
+@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
+@findex vm-toolbar-delete/undelete-message
+Not documented.
+@end deffn
+
+@end macro
+
+@macro vmdocvmtoolbarhelpercommand
+@deffn Command vm-toolbar-helper-command
+@findex vm-toolbar-helper-command
+Run whatever command @code{vm-toolbar-helper-command} currently holds.
+The toolbar’s helper button changes with the context: what it does is
+decided by reassigning this variable before the button is drawn, rather
+than by having a button per command.
+@end deffn
+
+@end macro
+
 @macro vmdocvmtoolbarcomposecommand
 @deffn Command vm-toolbar-compose-command &optional to subject
 @findex vm-toolbar-compose-command
 Send a mail message from within VM, or from without.
 Optional argument TO is a string that should contain a comma separated
 recipient list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12313,14 +12544,8 @@ time of the call, the current buffer will be the presentation
 buffer for the folder and a copy of the current message will be
 in the buffer.  The function is expected to make the message
 @code{MIME presentable} to the user in whatever manner it sees fit.
-@end deffn
 
-@end macro
-
-@macro vmdocvmtoolbardeleteundeletemessage
-@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
-@findex vm-toolbar-delete/undelete-message
-Not documented.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12342,6 +12567,8 @@ all marked messages in the current folder are saved; other messages are
 ignored.  If applied to collapsed threads in summary and thread operations are
 enabled via @code{vm-enable-thread-operations} then all messages in the
 thread are saved.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12351,6 +12578,8 @@ thread are saved.
 @findex vm-toolbar-followup-command
 Reply to all recipients of the current message.
 See the documentation for the function vm-reply for details.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12364,6 +12593,8 @@ reply, but you must fill in the "To:" header and perhaps the
 "Subject:" header manually.
 
 See @code{vm-forward-message-plain} for forwarding messages in plain text.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12385,17 +12616,8 @@ each of the underlying real folders associated with this virtual
 folder.  A prefix argument has no effect when this command is
 applied to virtual folder; mail is always gathered from the spool
 files.
-@end deffn
 
-@end macro
-
-@macro vmdocvmtoolbarhelpercommand
-@deffn Command vm-toolbar-helper-command
-@findex vm-toolbar-helper-command
-Run whatever command @code{vm-toolbar-helper-command} currently holds.
-The toolbar’s helper button changes with the context: what it does is
-decided by reassigning this variable before the button is drawn, rather
-than by having a button per command.
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12411,6 +12633,8 @@ vm-skip-deleted-messages and vm-skip-read-messages are ignored.
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks})
 this command "sees" marked messages as it moves.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12423,6 +12647,8 @@ With prefix arg COUNT, go backward COUNT messages.  A negative COUNT
 means go forward.  If the absolute value of COUNT > 1 the values of the
 variables vm-skip-deleted-messages and vm-skip-read-messages are
 ignored.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12445,6 +12671,8 @@ operations are enabled via @code{vm-enable-thread-operations} then all messages
 in the thread are printed.
 
 Output, if any, is displayed.  The message is not altered.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12466,6 +12694,8 @@ When called internally, the optional argument NO-EXPUNGE says
 that the deleted messages should not be expunged (irrespective of
 the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
 changes should be discarded.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12475,6 +12705,8 @@ changes should be discarded.
 @findex vm-toolbar-reply-command
 Reply to all recipients of the current message and include text from
 the message.  See the documentation for the function vm-reply for details.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12498,6 +12730,8 @@ The optional third arg JUST-VISIT (not available interactively)
 says that the folder should be visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12684,6 +12918,8 @@ specifier) will be visible.
 Trace this message by Message-ID while threads are being built.
 A debugging aid, with @code{vm-trace-message-subject}: the threading code walks
 these lists to decide when to stop and report.  Prints the list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -12694,6 +12930,8 @@ these lists to decide when to stop and report.  Prints the list.
 Trace this message by subject while threads are being built.
 The subject is the sortable one, so it matches the way threading groups
 messages by subject.  See @code{vm-trace-message-id}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -13871,6 +14109,8 @@ which is normally read from the minibuffer.  See @code{vm-vs-interactive}
 for the list of selectors.
 
 Prefix arg means the new virtual folder should be visited read only.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -14127,6 +14367,8 @@ Default value: @code{t}
 @findex vm-w3m-safe-toggle-inline-images
 Toggle displaying of all images in the presentation buffer.
 If the prefix arg is given, all images are considered to be safe.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -14188,6 +14430,8 @@ The action will be read from the minibuffer.
 @findex vm-iconify-frame
 Iconify the current frame.
 Run the hooks in vm-iconify-frame-hook before doing so.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -14220,6 +14464,8 @@ window configurations.
 @deffn Command vm-window-help
 @findex vm-window-help
 Show the window configuration commands and their keys in the echo area.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
