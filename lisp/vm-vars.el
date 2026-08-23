@@ -7132,6 +7132,16 @@ and refuses the whole STORE with them, so one unknown keyword used to stop
 comes back refused on its own is remembered here and not sent again for the rest
 of the session.")
 (make-variable-buffer-local 'vm-imap-refused-flags)
+
+(defvar vm-imap-dropped-flags nil
+  "Keywords this IMAP server took and did not keep, in the process buffer.
+A server may accept a `STORE' of a keyword, answer OK, and not store it: RFC
+3501 lets it ignore a flag that is not in the mailbox's PERMANENTFLAGS, and
+Gmail does exactly that with every keyword, which is what a VM label is on the
+wire.  The label is then set here and absent there, with nothing said at any
+point (issue #601).  A keyword seen to vanish is remembered here so that the
+complaint is made once per session rather than once per message.")
+(make-variable-buffer-local 'vm-imap-dropped-flags)
 (defvar vm-reply-list nil
   "Buffer local variable in Composition buffers that holds the set of
   messages to which this composition is a reply.")
