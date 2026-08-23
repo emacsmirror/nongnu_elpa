@@ -487,20 +487,65 @@ of action."
 	    (call-interactively 'vm-expand-thread))
 	  )))))
 
+(defun vm-summary-strayed-cursor ()
+  "Where the reader has moved the summary cursor, if off the summary pointer.
+A message, or `end\=' for the end of the buffer -- which is where
+\\[end-of-buffer] lands, past the last summary line, and where there is no
+message to name.
+
+Nil where the cursor is on the summary pointer, which is where VM put it: a
+rebuild setting the pointer again then carries the cursor along, and that is
+what moving through a folder looks like.
+
+Anything else is the reader having gone somewhere of their own accord, which a
+rebuild is not to undo.  Messages arriving during a fetch rebuild the summary,
+and every bunch that landed dragged the cursor back to the selected message,
+so a reader who pressed \\[end-of-buffer] while a fetch ran could not stay at
+the end of it."
+  (when vm-summary-buffer
+    (with-current-buffer vm-summary-buffer
+      (let ((here (vm-summary-message-at-point)))
+	(cond ((null vm-summary-pointer) nil)
+	      ((null here) (and (eobp) 'end))
+	      ((eq here vm-summary-pointer) nil)
+	      (t here))))))
+
+(defun vm-summary-restore-cursor (where)
+  "Put the summary cursor back to WHERE, as `vm-summary-strayed-cursor\=' had it.
+Called after a rebuild, so a message\='s summary line is the one just written
+and its marker is the new one.  `end\=' is the end of the buffer as it now
+stands, which is where a reader who asked for the end of the summary wants to
+be when more of it has arrived.  A message the rebuild removed is left alone."
+  (when (and where vm-summary-buffer)
+    (let ((w (vm-get-visible-buffer-window vm-summary-buffer)))
+      (with-current-buffer vm-summary-buffer
+	(cond ((eq where 'end)
+	       (goto-char (point-max)))
+	      ((and (vm-su-start-of where)
+		    (marker-buffer (vm-su-start-of where)))
+	       (goto-char (vm-su-start-of where))
+	       (forward-line 0)))
+	(when w (set-window-point w (point)))))))
+
 (defun vm-do-needed-summary-rebuild ()
   "Rebuild the summary lines of all the messages starting at
 `vm-summary-redo-start-point'.  Also, reset the summary pointer
 to the current message.  Do the latter anyway if
 `vm-need-summary-pointer-update' is non-NIL.  All this, only if
-the Summary buffer exists. "
+the Summary buffer exists.
+
+A cursor the reader has moved off the summary pointer is put back afterwards:
+see `vm-summary-strayed-cursor'."
   (if (and vm-summary-redo-start-point vm-summary-buffer)
-      (progn
+      (let ((strayed (vm-summary-strayed-cursor)))
 	(vm-copy-local-variables vm-summary-buffer 'vm-summary-show-threads)
 	(vm-do-summary (and (consp vm-summary-redo-start-point)
 			    vm-summary-redo-start-point))
 	(setq vm-summary-redo-start-point nil)
 	(when vm-message-pointer
 	  (vm-set-summary-pointer (car vm-message-pointer)))
+	(when strayed
+	  (vm-summary-restore-cursor strayed))
 	(setq vm-need-summary-pointer-update nil))
     (when (and vm-need-summary-pointer-update
 	       vm-summary-buffer
