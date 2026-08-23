@@ -1395,6 +1395,52 @@ arguments, so nothing is prepended to those either."
       (should (equal called '("/usr/bin/convert" "-resize" "50%")))
       (should (equal (vm-imagemagick-convert-shell-command) "/usr/bin/convert")))))
 
+;;; vm-load-features: warning about what is not there
+
+(defmacro vm-misc-test--loading (bindings &rest body)
+  "Run BODY with what `message' was told bound to `said', newest last.
+BINDINGS are let bindings on top of that."
+  (declare (indent 1) (debug t))
+  `(let ((said nil) ,@bindings)
+     (cl-letf (((symbol-function 'message)
+                (lambda (format &rest args)
+                  (setq said (append said (list (apply #'format format args)))))))
+       ,@body)
+     said))
+
+(ert-deftest vm-misc-test-load-features-is-quiet-in-batch ()
+  "A batch Emacs is not warned about a feature that is not there.
+The warning is for a reader who asked for a feature and is not getting it, and
+a batch Emacs has nobody to read it: eighteen lines of it came out of `make',
+where four WARNINGs in the middle of a build read as a broken build."
+  (let ((said (vm-misc-test--loading ((noninteractive t))
+                (vm-load-features '(vm-test-no-such-feature)))))
+    (should-not said)))
+
+(ert-deftest vm-misc-test-load-features-warns-a-reader-who-is-there ()
+  "Outside batch it still says so, which is who the warning is for."
+  (let ((said (vm-misc-test--loading ((noninteractive nil))
+                (vm-load-features '(vm-test-no-such-feature)))))
+    (should (equal (length said) 2))
+    (should (string-match-p "Could not load feature vm-test-no-such-feature"
+                            (car said)))
+    (should (string-match-p "may not work correctly" (cadr said)))))
+
+(ert-deftest vm-misc-test-load-features-honours-silent ()
+  "SILENT still silences it where there is a reader, which is what the call
+sites pass while a file is being compiled."
+  (let ((said (vm-misc-test--loading ((noninteractive nil))
+                (vm-load-features '(vm-test-no-such-feature) t))))
+    (should-not said)))
+
+(ert-deftest vm-misc-test-load-features-answers-what-loaded ()
+  "The return value is the features that did load, warning or no warning."
+  (should-not (let ((noninteractive t))
+                (vm-load-features '(vm-test-no-such-feature))))
+  (should (equal (let ((noninteractive t))
+                   (vm-load-features '(subr-x vm-test-no-such-feature)))
+                 '(subr-x))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
