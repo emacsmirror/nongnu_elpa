@@ -4768,6 +4768,73 @@ and the buffer is not modified, so running it is never a decision."
       (should (equal stamp (file-attribute-modification-time
                             (file-attributes file)))))))
 
+(defun vm-folder-test--From_-message-with-a-length ()
+  "One message carrying a Content-Length that fits, under no particular name."
+  (vm-folder-test--mboxcl2-message))
+
+(ert-deftest vm-folder-test-check-folder-reads-the-contents-not-the-name ()
+  "A folder carrying a fitting length on every message is reported as mboxcl2
+whatever it is called.  The reader takes the type from the name, so this is
+the disagreement that leaves a folder read as a type it is not -- and the
+check is the only thing that says so."
+  (vm-folder-test--checking (file "imap-cache-d0c3b3a9"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should report)
+    (should (string-match-p "Type: *From_" report))
+    (should (string-match-p "The name says: *nothing" report))
+    (should (string-match-p "The contents say: *mboxcl2" report))
+    (should (string-match-p "every one of 2 messages" report))))
+
+(ert-deftest vm-folder-test-check-folder-names-the-rename-and-the-conversion ()
+  "The report says what to do about it: rename the file, or convert it.
+Which is what the warning at visit time leaves to the reader without saying
+how to decide."
+  (vm-folder-test--checking (file "imap-cache-d0c3b3a9"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should (string-match-p "imap-cache-d0c3b3a9\\.mboxcl2" report))
+    (should (string-match-p "vm-change-folder-type" report))))
+
+(ert-deftest vm-folder-test-check-folder-does-not-cry-mboxcl2-over-a-few ()
+  "A From_ folder where only some messages carry a length is left alone.
+Mail arrives carrying the header and VM gives one to every message it
+rewrites, so a few in a folder are no evidence at all -- and a check that
+said mboxcl2 on those would be wrong about most From_ folders."
+  (vm-folder-test--checking (file "plain"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                                          "From: bob@example.com\nSubject: two\n\nBody.\n\n"))
+    (should-not report)
+    (should (string-match-p "sound" said))))
+
+(ert-deftest vm-folder-test-check-folder-counts-the-lengths-it-found ()
+  "The counts are reported where they are not conclusive, since a folder with
+most of a length on most of its messages is the case a reader has to judge."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message 999)))
+    (should report)
+    (should (string-match-p "2 of 2 messages carry a length, 1 of those fit"
+                            report))))
+
+(ert-deftest vm-folder-test-check-folder-says-nothing-carries-a-length ()
+  "A From_ folder with no lengths at all says so, rather than saying nothing."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (should report)
+    (should (string-match-p "no message carries a length" report))))
+
+(ert-deftest vm-folder-test-check-folder-leaves-a-named-mboxcl2-alone ()
+  "A folder named mboxcl2 and read as mboxcl2 is not told its contents agree
+with its name: there is no disagreement to report, so it stays one line."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should-not report)
+    (should (string-match-p "sound" said))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
