@@ -25,6 +25,13 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     literally and replaces `vm-folder-type-by-name-alist`
     (emacs-vm/vm#741).
 
+    `.mbox` is From_, which is what everything outside VM means by an mbox
+    file (emacs-vm/vm#750).  From_ is never put into a name that has not got
+    it, since it is the type a folder has when its name says nothing: `INBOX`
+    converted to From_ is still `INBOX`, and a folder you called `sent.mbox`
+    keeps that name.  Not `.mboxcl`: VM has no mboxcl type, and mboxcl quotes
+    `From ` lines in bodies where mboxcl2 does not.
+
   * An mboxcl2 folder is kept sound.  Every message VM writes into one carries
     a `Content-Length`, which is how the end of a message is found there, and
     a message that has none is refused rather than guessed at;
