@@ -316,8 +316,43 @@ defining file would put all of them in one section."
                 (not (member file vm-reference-excluded-files)))
            (file-name-sans-extension file)))))
 
+(defconst vm-reference-callbacks
+  '(;; toolbar buttons
+    vm-toolbar-compose-command vm-toolbar-decode-mime-command
+    vm-toolbar-file-command vm-toolbar-followup-command
+    vm-toolbar-forward-command vm-toolbar-getmail-command
+    vm-toolbar-next-command vm-toolbar-previous-command
+    vm-toolbar-print-command vm-toolbar-quit-command
+    vm-toolbar-reply-command vm-toolbar-visit-command
+    ;; mouse and menu
+    vm-menu-popup-attachment-menu vm-menu-popup-context-menu
+    vm-menu-popup-fsfemacs-menu vm-menu-popup-image-menu
+    vm-menu-popup-mailto-url-browser-menu vm-menu-popup-mime-dispose-menu
+    vm-menu-popup-mode-menu vm-menu-popup-url-browser-menu
+    vm-menu-hm-make-folder-menu vm-menu-mail-to
+    ;; keymap entries in the minibuffer
+    vm-minibuffer-complete-word vm-minibuffer-complete-word-and-exit
+    vm-minibuffer-completion-help
+    ;; modes of VM's own buffers
+    vm-fetch-mode vm-presentation-mode
+    ;; run from a hook, or from VM itself
+    vm-do-fcc-before-mime-encode vm-emit-eom-blurb
+    vm-emit-mime-decoding-message vm-mail-check-for-empty-subject
+    vm-mail-check-recipients vm-mail-subject-cleanup
+    vm-mime-Q-decode-region vm-mime-encode-headers
+    ;; the stub bound to a key that has no binding in this key set
+    vm-optional-key)
+  "Commands VM calls for itself rather than ones a reader types.
+A toolbar button, a mouse menu, a keymap entry, a mode of one of VM\='s own
+buffers, or a function written into a hook.  They are `interactive\=' because
+something has to be able to invoke them, and they are listed in the reference
+under their own heading rather than among the commands, so that a reader
+looking for something to type is not offered a dozen toolbar handlers
+(emacs-vm/vm#715).  Nothing stops a reader calling one.")
+
 (defun vm-reference-kind (symbol)
-  (cond ((commandp symbol) 'command)
+  (cond ((memq symbol vm-reference-callbacks) 'callback)
+        ((commandp symbol) 'command)
         ((custom-variable-p symbol) 'option)))
 
 (defun vm-reference-classify (symbol option-areas by-title)
@@ -336,7 +371,7 @@ defining file would put all of them in one section."
         #'string<))
 
 (defun vm-reference-collect ()
-  "Return an alist of (TITLE COMMANDS OPTIONS), sorted by title."
+  "Return an alist of (TITLE COMMANDS OPTIONS CALLBACKS), sorted by title."
   (let ((by-title (make-hash-table :test 'equal))
         (option-areas (vm-reference-option-areas))
         (sections nil))
@@ -345,7 +380,8 @@ defining file would put all of them in one section."
     (maphash (lambda (title entries)
                (push (list title
                            (vm-reference-of-kind entries 'command)
-                           (vm-reference-of-kind entries 'option))
+                           (vm-reference-of-kind entries 'option)
+                           (vm-reference-of-kind entries 'callback))
                      sections))
              by-title)
     (sort sections (lambda (a b) (string< (car a) (car b))))))
@@ -364,6 +400,26 @@ defining file would put all of them in one section."
         (match-string 1 name)
       name)))
 
+(defvar vm-reference-autoloaded nil
+  "Every command `lisp/vm-autoloads.el\=' autoloads, or nil before it is read.")
+
+(defun vm-reference-autoloaded-p (symbol)
+  "Whether SYMBOL is autoloaded, according to the generated loaddefs.
+Read from the file rather than asked of the symbol: by the time the appendix
+is generated the whole of VM is loaded, so every command looks available and
+nothing would be marked.  Derived rather than listed, so that autoloading a
+command is all it takes for the appendix to stop saying otherwise."
+  (unless vm-reference-autoloaded
+    (setq vm-reference-autoloaded (make-hash-table :test 'eq))
+    (let ((file (locate-library "vm-autoloads.el")))
+      (when file
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward "(autoload '\\([^ )]+\\)" nil t)
+            (puthash (intern (match-string 1)) t vm-reference-autoloaded))))))
+  (gethash symbol vm-reference-autoloaded))
+
 (defun vm-reference-insert-command (symbol)
   (let ((args (help-function-arglist symbol t))
         (doc (vm-reference-command-documentation symbol)))
@@ -376,6 +432,9 @@ defining file would put all of them in one section."
     (insert (if doc
                 (concat (vm-reference-docstring doc) "\n")
               "Not documented.\n"))
+    (unless (vm-reference-autoloaded-p symbol)
+      (insert "\n@emph{Not autoloaded}: VM has to be loaded before"
+              " @kbd{M-x} offers this one.\n"))
     (insert "@end deffn\n\n")))
 
 (defun vm-reference-escape-controls (string)
@@ -504,7 +563,8 @@ nil under either invented environment, and two nils agree."
 (defun vm-reference-insert-section (section previous next)
   (let* ((title (car section))
          (commands (nth 1 section))
-         (options (nth 2 section)))
+         (options (nth 2 section))
+         (callbacks (nth 3 section)))
     (insert (format "@node %s, %s, %s, Reference\n"
                     (vm-reference-node-name title)
                     (if next (vm-reference-node-name next) "")
@@ -516,7 +576,13 @@ nil under either invented environment, and two nils agree."
       (mapc #'vm-reference-insert-command commands))
     (when options
       (insert "@appendixsubsec User options\n\n")
-      (mapc #'vm-reference-insert-option options))))
+      (mapc #'vm-reference-insert-option options))
+    (when callbacks
+      (insert "@appendixsubsec Called by VM\n\n")
+      (insert "These are invoked by a toolbar button, a mouse menu, a keymap\n"
+              "entry or a hook rather than typed by name.  Nothing stops you\n"
+              "calling one.\n\n")
+      (mapc #'vm-reference-insert-command callbacks))))
 
 (defun vm-reference-insert-sections (sections)
   "Insert every section in SECTIONS, chaining the nodes together."
@@ -532,7 +598,7 @@ nil under either invented environment, and two nils agree."
   "Write the reference appendix to FILE."
   (vm-reference-load-everything)
   (let ((sections (vm-reference-collect))
-        (commands 0) (options 0))
+        (commands 0) (options 0) (callbacks 0))
     (with-temp-buffer
       (insert "@c This file is generated by info/gen-reference.el -- do not edit.\n")
       (insert "@c Every entry here comes from a docstring in lisp/.\n\n")
@@ -542,15 +608,27 @@ nil under either invented environment, and two nils agree."
       (insert "Every VM command and user option, as the code describes it.\n"
               "This appendix is generated from the docstrings when the manual is\n"
               "built, so it says what the code says; the chapters above explain\n"
-              "what to do with it.\n\n")
+              "what to do with it.\n\n"
+              "Each section lists what you can type, then the options that\n"
+              "govern it, then what VM invokes for itself: a toolbar button, a\n"
+              "mouse menu, a keymap entry or a hook function.  The last are\n"
+              "here because they can be called, not because a reader normally\n"
+              "would.\n\n"
+              "An entry marked @emph{not autoloaded} needs VM loaded before\n"
+              "@kbd{M-x} will offer it, which for a command that only makes\n"
+              "sense inside a folder is no hardship.  The mark is worked out\n"
+              "when the manual is built, so it says what is so rather than\n"
+              "what was so.\n\n")
       (vm-reference-insert-menu sections)
       (vm-reference-insert-sections sections)
       (dolist (section sections)
         (setq commands (+ commands (length (nth 1 section)))
-              options (+ options (length (nth 2 section)))))
+              options (+ options (length (nth 2 section)))
+              callbacks (+ callbacks (length (nth 3 section)))))
       (write-region (point-min) (point-max) file nil 'quiet))
-    (message "gen-reference: %d commands, %d user options, %d sections -> %s"
-             commands options (length sections) file)))
+    (message (concat "gen-reference: %d commands, %d user options,"
+                     " %d called by VM, %d sections -> %s")
+             commands options callbacks (length sections) file)))
 
 (defun vm-reference-batch ()
   "Write the reference appendix to the file named on the command line."
@@ -602,6 +680,9 @@ the place for."
       (dolist (section sections)
         (dolist (command (nth 1 section))
           (vm-reference-insert-macro command #'vm-reference-insert-command)
+          (setq count (1+ count)))
+        (dolist (callback (nth 3 section))
+          (vm-reference-insert-macro callback #'vm-reference-insert-command)
           (setq count (1+ count)))
         (dolist (option (nth 2 section))
           (vm-reference-insert-macro option #'vm-reference-insert-option)
