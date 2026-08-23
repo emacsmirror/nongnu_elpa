@@ -328,7 +328,7 @@ Signal an error if the command exits unsuccessfully."
     (t (char-to-string key))))
 
 (defun sapling--header-line ()
-  "Return the status buffer header line."
+  "Return the status buffer header line, truncated to fit the window."
   (let* ((prefix '(("g" "refresh" sapling-refresh)
                    ("c" "commit" sapling-commit)
                    ("a" "amend" sapling-amend)
@@ -344,11 +344,15 @@ Signal an error if the command exits unsuccessfully."
                       cmd)
                 menu-items)
           (push cmd seen))))
-    (concat "Sapling: "
-            (mapconcat (lambda (item)
-                         (format "%s %s" (car item) (cadr item)))
-                       (append prefix (nreverse menu-items))
-                       ", "))))
+    (let ((full (mapconcat (lambda (item)
+                             (format "%s %s" (car item) (cadr item)))
+                           (append prefix (nreverse menu-items))
+                           " ")))
+      (truncate-string-to-width
+       full
+       (max 10 (window-text-width))
+       nil nil "..."))))
+
 
 (defvar sapling-mode-map
   (let ((map (make-sparse-keymap)))
@@ -405,7 +409,7 @@ Signal an error if the command exits unsuccessfully."
   (setq-local buffer-read-only t)
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function #'sapling-refresh)
-  (setq-local header-line-format (sapling--header-line)))
+  (setq-local header-line-format '(:eval (sapling--header-line))))
 
 ;;;###autoload
 (defun sapling-status ()
