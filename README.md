@@ -94,8 +94,9 @@ customize `sapling-program`:
 | `a` | amend current commit |
 | `d` | diff (marked files, file at point, or all changes) |
 | `=` / `C-x v =` | diff, like Emacs `vc-diff` |
-| `l` | graph log |
-| `b` | smartlog |
+| `l` | smartlog |
+| `L` | graph log |
+| `b` | smartlog (alias) |
 | `x` | absorb (`C-u x` dry-run) |
 | `r` | rebase onto revision |
 | `R` | continue rebase |
