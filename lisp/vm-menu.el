@@ -1363,7 +1363,7 @@ newest entries are in the highest-numbered one."
       (setq news (vm-newest-news-file (car dirs))
 	    dirs (cdr dirs)))
     (unless news
-      (error "No NEWS-<n>.md found beside VM; install the documentation, or read it in the repository"))
+      (error "No NEWS file installed with VM; read it at https://gitlab.com/emacs-vm/vm/"))
     (vm-view-file-other-frame news)))
 
 (defun vm-view-manual ()
