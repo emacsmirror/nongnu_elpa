@@ -6071,6 +6071,126 @@ rather than the buffer -- see `vm-change-folder-type-of-file'."
 		    (file-name-nondirectory buffer-file-name))
 	       (buffer-name)))))
 
+(defun vm-folder-claimed-content-length (m)
+  "The octet count M\='s own `Content-Length\=' header claims, or nil if it has
+none.  What the header says, not what the body measures: the two disagreeing
+is the fault worth finding."
+  (save-excursion
+    (goto-char (vm-headers-of m))
+    (let ((case-fold-search t))
+      (when (re-search-forward
+	     (concat "^" (regexp-quote vm-content-length-header) "[ \t]*\\([0-9]+\\)")
+	     (vm-text-of m) t)
+	(string-to-number (match-string 1))))))
+
+(defun vm-folder-body-octets-without-trailing-newlines (m)
+  "The octets of M\='s body, not counting newlines at the end of it.
+`vm-find-trailing-message-separator\=' skips any number of newlines past the
+count, on the grounds that some mailers do not count the last one, so a length
+short by them is one the reader accepts and this must not complain about."
+  (let ((end (vm-text-end-of m)))
+    (save-excursion
+      (goto-char end)
+      (skip-chars-backward "\n" (vm-text-of m))
+      (vm-message-body-octets (vm-text-of m) (point)))))
+
+(defun vm-folder-length-fault (m number)
+  "What is wrong with M\='s `Content-Length\=', as a line, or nil if nothing is.
+NUMBER is the message\='s position in the folder, for the report.
+
+A length is right when it counts the body, and accepted when it counts the
+body without the newlines at the end of it, since that is what the reader
+accepts.  Anything else is a length that does not describe the message."
+  (let ((claimed (vm-folder-claimed-content-length m))
+	(actual (vm-message-body-octets (vm-text-of m) (vm-text-end-of m)))
+	(least (vm-folder-body-octets-without-trailing-newlines m)))
+    (cond ((null claimed)
+	   (format "message %d has no Content-Length; its body is %d octets"
+		   number actual))
+	  ((or (= claimed actual) (and (>= claimed least) (<= claimed actual)))
+	   nil)
+	  (t
+	   (format "message %d says Content-Length %d and its body is %d octets"
+		   number claimed actual)))))
+
+(defun vm-folder-length-faults ()
+  "Every message in this folder whose `Content-Length\=' is wrong or missing.
+A list of lines, empty for a sound folder.  Nil for a folder of any type that
+carries no such header, which has nothing to be wrong."
+  (when (eq vm-folder-type 'mboxcl2)
+    (let ((number 0)
+	  (faults nil))
+      (dolist (m vm-message-list (nreverse faults))
+	(setq number (1+ number))
+	(let ((fault (vm-folder-length-fault m number)))
+	  (when fault (push fault faults)))))))
+
+(defun vm-check-folder-report (faults reader held)
+  "Say what `vm-check-folder\=' found.
+FAULTS is what the lengths said, READER how many messages walking the
+separators finds and HELD how many the folder is holding.  A sound folder is
+one line in the echo area; anything else gets a buffer, since a list of
+messages is not something to read there."
+  (if (and (null faults) (equal reader held))
+      (vm-inform 5 "%s: %s, %d messages, sound"
+		 (buffer-name) vm-folder-type held)
+    (let ((name (buffer-name)))
+      (with-output-to-temp-buffer "*VM folder check*"
+	(princ (format "%s\n\n" name))
+	(princ (format "Type:          %s\n" vm-folder-type))
+	(princ (format "The name says: %s\n"
+		       (or (vm-folder-type-for-name (buffer-file-name))
+			   "nothing")))
+	(princ (format "The default is %s\n\n" vm-default-folder-type))
+	(unless (equal reader held)
+	  (princ (format (concat "The folder holds %d messages and walking the"
+				 " separators finds %d.\n\n")
+			 held reader)))
+	(when faults
+	  (princ (format "%d message%s with a length the body does not match:\n"
+			 (length faults) (if (cdr faults) "s" "")))
+	  (dolist (fault faults) (princ (format "  %s\n" fault)))
+	  (princ (concat "\nTo repair: M-x vm-change-folder-type mboxcl2,"
+			 " which recomputes every length.\n")))))))
+
+;;;###autoload
+(defun vm-check-folder ()
+  "Report this folder\='s type and check that it is sound, writing nothing.
+
+Says what type the folder is, what its name says it is and what the default
+is, how many messages it holds against how many the reader finds by walking
+the separators, and for an mboxcl2 folder whether every message\='s
+`Content-Length\=' matches its body.
+
+A wrong length is the fault this is for, because it is the one that gives no
+other sign.  A missing one is refused when the folder is visited, but a
+length that is merely wrong opens without complaint: the reader falls back on
+searching for the next separator when the count does not land on one, so VM
+reads the folder correctly while anything that believes the header -- which is
+what the format is for -- takes the wrong bytes.
+
+Nothing is written.  `vm-change-folder-type\=' is the repair: converting a
+folder to the type it already is recomputes every length."
+  (interactive)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-virtual-folder)
+  (when (or (null vm-folder-type) (eq vm-folder-type 'unknown))
+    (error (concat "%s has no folder type VM recognizes, so there is nothing"
+		   " to check")
+	   (buffer-name)))
+  (save-excursion
+    (save-restriction
+      (widen)
+      ;; Not strictly, while counting: `vm-count-messages-in-buffer' reads with
+      ;; the reader, and the reader refuses a message with no Content-Length --
+      ;; which is one of the things being reported on.  Refusing to count the
+      ;; folder that most needs counting is no use to anybody, and nothing
+      ;; global is left switched off afterwards.
+      (let ((vm-mboxcl2-strict nil))
+	(vm-check-folder-report (vm-folder-length-faults)
+				(vm-count-messages-in-buffer)
+				(length vm-message-list))))))
+
 ;;;###autoload
 (defun vm-change-folder-type (type &optional file)
   "Change folder type to TYPE.
