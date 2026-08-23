@@ -4650,6 +4650,124 @@ one that does not, and answers the name itself for a type no extension names."
   (let ((vm-folder-type-by-extension-alist nil))
     (should (equal (vm-folder-name-for-type "/m/inbox" 'mboxcl2) "/m/inbox"))))
 
+
+;;; vm-check-folder: what the folder is, and whether it is sound
+
+(defconst vm-folder-test--check-body "Body line.\n"
+  "The body of the messages the vm-check-folder tests use.")
+
+(defun vm-folder-test--mboxcl2-message (&optional length)
+  "One mboxcl2 message, its Content-Length LENGTH or the right one."
+  (format (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                  "From: alice@example.com\nSubject: one\n"
+                  "Content-Length: %d\n\n%s\n")
+          (or length (length vm-folder-test--check-body))
+          vm-folder-test--check-body))
+
+(defmacro vm-folder-test--checking (spec &rest body)
+  "Visit the folder SPEC names, then run BODY with the check's output bound.
+SPEC is (VAR NAME CONTENT).  BODY sees `said', what the echo area was told,
+and `report', the text of the report buffer or nil where there was none."
+  (declare (indent 1) (debug t))
+  (let ((var (nth 0 spec)) (name (nth 1 spec)) (content (nth 2 spec)))
+    `(vm-folder-test-with-file (,var ,name ,content)
+       (let ((vm-mboxcl2-strict nil))
+         (cl-letf (((symbol-function 'vm-warn) #'ignore))
+           (vm-visit-folder ,var)))
+       (let (said report)
+         (cl-letf (((symbol-function 'vm-inform)
+                    (lambda (_level format &rest args)
+                      (setq said (apply #'format format args)))))
+           (vm-check-folder))
+         (when (get-buffer "*VM folder check*")
+           (with-current-buffer "*VM folder check*"
+             (setq report (buffer-string)))
+           (kill-buffer "*VM folder check*"))
+         ,@body))))
+
+(ert-deftest vm-folder-test-check-folder-passes-a-sound-folder ()
+  "A folder whose lengths are right is one line in the echo area, no buffer.
+It has to be quiet when there is nothing to say, or nobody will run it."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should-not report)
+    (should (string-match-p "mboxcl2" said))
+    (should (string-match-p "2 messages" said))
+    (should (string-match-p "sound" said))))
+
+(ert-deftest vm-folder-test-check-folder-finds-a-wrong-length ()
+  "A length that does not describe the message is named, with both numbers.
+This is the fault the command exists for: the folder opens, because the reader
+falls back on searching for the next separator, so nothing else says so."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message 999)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should report)
+    (should (string-match-p "message 1 says Content-Length 999" report))
+    (should (string-match-p "vm-change-folder-type mboxcl2" report))
+    ;; and the sound one is not complained about
+    (should-not (string-match-p "message 2" report))))
+
+(ert-deftest vm-folder-test-check-folder-finds-a-missing-length ()
+  "A message with no Content-Length in an mboxcl2 folder is named too.
+Visiting such a folder is refused unless `vm-mboxcl2-strict' is nil, so this
+is what a reader sees after turning that off to get in."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (should report)
+    (should (string-match-p "message 1 has no Content-Length" report))))
+
+(ert-deftest vm-folder-test-check-folder-allows-an-uncounted-newline ()
+  "A length short by the newlines at the end of the body is accepted.
+`vm-find-trailing-message-separator' skips any number of them past the count,
+because some mailers do not count the last one, so the check must not call
+what the reader accepts a fault."
+  (let ((short (1- (length vm-folder-test--check-body))))
+    (vm-folder-test--checking (file "sent.mboxcl2"
+                                    (vm-folder-test--mboxcl2-message short))
+      (should-not report)
+      (should (string-match-p "sound" said)))))
+
+(ert-deftest vm-folder-test-check-folder-has-nothing-to-check-in-From_ ()
+  "A From_ folder carries no lengths, so there is nothing to be wrong.
+The type is still reported, which is half of what the command is for."
+  (vm-folder-test--checking (file "plain"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (should-not report)
+    (should (string-match-p "From_" said))))
+
+(ert-deftest vm-folder-test-check-folder-reports-the-type-and-the-name ()
+  "The report says what the folder is, what its name says, and the default,
+since a folder read as something its name does not claim is the thing a
+reader is trying to find out about."
+  (vm-folder-test--checking (file "sent.mboxcl2"
+                                  (vm-folder-test--mboxcl2-message 999))
+    (should (string-match-p "Type: *mboxcl2" report))
+    (should (string-match-p "The name says: *mboxcl2" report))
+    (should (string-match-p "The default is From_" report))))
+
+(ert-deftest vm-folder-test-check-folder-writes-nothing ()
+  "The command reports and does not repair: the folder on disk is untouched
+and the buffer is not modified, so running it is never a decision."
+  (vm-folder-test-with-file (file "sent.mboxcl2"
+                                  (vm-folder-test--mboxcl2-message 999))
+    (let ((before (with-temp-buffer (insert-file-contents file) (buffer-string)))
+          (stamp (file-attribute-modification-time (file-attributes file))))
+      (let ((vm-mboxcl2-strict nil))
+        (cl-letf (((symbol-function 'vm-warn) #'ignore))
+          (vm-visit-folder file)))
+      (cl-letf (((symbol-function 'vm-inform) #'ignore))
+        (vm-check-folder))
+      (when (get-buffer "*VM folder check*") (kill-buffer "*VM folder check*"))
+      (should-not (buffer-modified-p))
+      (should (equal before (with-temp-buffer (insert-file-contents file)
+                                             (buffer-string))))
+      (should (equal stamp (file-attribute-modification-time
+                            (file-attributes file)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

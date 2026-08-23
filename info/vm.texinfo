@@ -1086,6 +1086,30 @@ with the name to rename it to.
 Note that a cache file is not the same thing as a local @acronym{IMAP} server
 holding a copy of a remote mailbox.  @xref{IMAP Cache Server}.
 
+@subheading Checking a folder
+
+@findex vm-check-folder
+@code{vm-check-folder} reports what the folder you are in is and whether it is
+sound, and writes nothing.  It says what type VM reads it as, what its name
+says it is and what @code{vm-default-folder-type} is, how many messages the
+folder holds against how many the reader finds by walking the separators, and
+for an mboxcl2 folder whether every message's @code{Content-Length} matches
+its body.  A sound folder is one line in the echo area; anything else gets a
+report naming each message at fault.
+
+A wrong length is what the command exists for, because it is the only one of
+these faults that gives no other sign.  A missing length is refused when the
+folder is visited, and a folder VM cannot parse fails loudly, but a length
+that is merely wrong opens without complaint: the reader falls back on
+searching for the next separator when the count does not land on one, so VM
+reads the folder correctly while anything that believes the header --- which
+is what the format is for --- takes the wrong bytes.
+
+A length short by the newlines at the end of a body is not a fault.  The
+reader skips any number of them past the count, because some mailers do not
+count the last one, so a folder they wrote is sound as far as VM is
+concerned.
+
 @subheading Converting a folder
 
 @findex vm-change-folder-type
@@ -1094,6 +1118,51 @@ argument it asks for a file and converts that instead, without visiting it,
 which is the only way in when a folder cannot be read.  It is a good idea to
 keep all your mail folders in a single format in order to avoid
 incompatibilities.
+
+@subheading Converting to and from plain mbox
+
+@cindex converting to mbox
+@cindex mbox, converting to
+Plain mbox is VM's @code{From_} type: no @code{Content-Length} headers, the
+end of a message found by the next line beginning ``From ''.  It is what other
+Unix mail programs mean by mbox, and what to convert to before handing a
+folder to one of them.
+
+To convert the folder you are reading:
+
+@enumerate
+@item
+@kbd{M-x vm-change-folder-type @key{RET} From_ @key{RET}}
+@item
+Answer the question about the file left behind.  Converting
+@file{sent.mboxcl2} writes @file{sent}, and @file{sent.mboxcl2} is then
+offered for deletion; the folder as it was is kept in a backup file whichever
+you answer.
+@item
+@kbd{M-x vm-check-folder} to see that the result is what you meant.
+@end enumerate
+
+@noindent
+To convert a folder you are not reading, or one VM will not open, give the
+command a prefix argument and it asks for the file:
+@kbd{C-u M-x vm-change-folder-type @key{RET} From_ @key{RET}}.
+
+Going the other way is the same command with @code{mboxcl2}, and it is worth
+knowing what it costs: every body is measured and a header added, so the
+folder is rewritten entirely, and a mailer that does not understand
+@code{Content-Length} will still read it, since an mboxcl2 folder is a From_
+folder with an extra header.  What such a mailer will not do is keep the
+header right when it writes, which is how a folder ends up with lengths that
+lie.  @code{vm-check-folder} is how you find out.
+
+@quotation Note
+Converting to @code{From_} does not put back what mboxo quoting took out.  A
+body line that began ``From '' was rewritten to ``>From '' when it was first
+written into an mbox folder, and nothing can tell that apart from a line the
+author wrote as ``>From ''.  Converting away from mboxcl2 and back does not
+lose anything further, but neither does it recover what an earlier mbox writer
+already changed.
+@end quotation
 
 The name moves with the type, since the name is what states the type: a
 folder converted to mboxcl2 is written as @file{@var{name}.mboxcl2}, one
