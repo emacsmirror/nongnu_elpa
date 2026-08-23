@@ -110,6 +110,11 @@ customize `sapling-program`:
 | `e` | metaedit current commit message |
 | `o` | show current commit |
 | `J` | journal |
+| `f` | fold commits |
+| `h` / `H` | hide / unhide a commit |
+| `C-c g` | graft a commit |
+| `C-c u` | undo last local command |
+| `C-c R` | redo last undo |
 | `F` | pull |
 | `P` | push |
 | `q` | quit window |

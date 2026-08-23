@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
-;; Version: 0.2.1
+;; Version: 0.2.2
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
@@ -324,6 +324,12 @@ Signal an error if the command exits unsuccessfully."
     (define-key map (kbd "e")   #'sapling-metaedit)
     (define-key map (kbd "o")   #'sapling-show)
     (define-key map (kbd "J")   #'sapling-journal)
+    (define-key map (kbd "f")   #'sapling-fold)
+    (define-key map (kbd "h")   #'sapling-hide)
+    (define-key map (kbd "H")   #'sapling-unhide)
+    (define-key map (kbd "C-c g") #'sapling-graft)
+    (define-key map (kbd "C-c u") #'sapling-undo)
+    (define-key map (kbd "C-c R") #'sapling-redo)
     map)
   "Keymap for `sapling-mode'.")
 
