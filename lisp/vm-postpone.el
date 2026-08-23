@@ -744,7 +744,13 @@ Optional argument DONT-KILL is positive, then do not kill source message."
 (defun vm-continue-what-message-composing ()
   "Decide whether to compose a new message or continue a draft.
 This checks if the postponed folder contains drafts.
-Drafts in other folders are not recognized!"
+Drafts in other folders are not recognized!
+
+One of `force-continue\=', `continue\=', `visit\=', `none\=', `declined\=' or `new\='.
+`declined\=' is drafts being there and not being continued -- the question
+answered no, or `vm-continue-what-message\=' nil -- as against `new\=', which is
+there being none.  The two were one value, and the caller told a reader who
+had just declined the question that there were no drafts."
   (save-excursion
     (vm-session-initialization)
     
@@ -795,13 +801,13 @@ Drafts in other folders are not recognized!"
       ;; decide what to do
       (setq action 
             (cond ((eq vm-continue-what-message nil)
-                   'new)
+                   (if (eq action 'visit) 'declined 'new))
                   ((eq vm-continue-what-message 'ask)
                    (if (equal action 'visit)
                        (if (y-or-n-p
                             "Continue composition of postponed messages? ")
                            'visit
-                         'new)
+                         'declined)
                      action))
                   ((eq vm-continue-what-message 'continue)
                    action)
@@ -841,9 +847,14 @@ configuration."
                     (funcall mail)))
                  ((= (length vm-message-list) 1)
                   (vm-continue-postponed-message))))
-          ((and vm-zero-drafts-start-compose (equal action 'new))
+          ((and vm-zero-drafts-start-compose (memq action '(new declined)))
            (let ((this-command mail))
              (funcall mail)))
+          ((eq action 'declined)
+           ;; The drafts are there and the reader said not now, so there is
+           ;; nothing to do and nothing to say.  Saying there are none is
+           ;; what this used to do, right after asking about them.
+           nil)
           (t
            (message "There are no known drafts.")))))
 
