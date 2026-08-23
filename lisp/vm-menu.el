@@ -1330,6 +1330,7 @@ separate dedicated menu bar, depending on the value of
 		 (define-key vm-mode-menu-map [rootmenu vm vm-menubar-folder]
 		   (cons "Folder" vm-menu-fsfemacs-folder-menu))))))))
 
+;;;###autoload
 (defun vm-customize ()
   "Customize VM options."
   (interactive)
@@ -1351,6 +1352,7 @@ newest entries are in the highest-numbered one."
 		       (> (vm-news-file-number a)
 			  (vm-news-file-number b)))))))
 
+;;;###autoload
 (defun vm-view-news ()
   "View the newest of VM\='s NEWS files."
   (interactive)
@@ -1366,6 +1368,7 @@ newest entries are in the highest-numbered one."
       (error "No NEWS file installed with VM; read it at https://gitlab.com/emacs-vm/vm/"))
     (vm-view-file-other-frame news)))
 
+;;;###autoload
 (defun vm-view-manual ()
   "View the VM manual."
   (interactive)
