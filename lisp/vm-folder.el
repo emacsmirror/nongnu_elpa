@@ -1126,14 +1126,34 @@ same way the reader does, so a folder it cannot parse signals here."
 	(vm-skip-past-trailing-message-separator))
       n)))
 
+(defvar vm-folder-progress-interval 100
+  "How many messages between one progress message and the next.
+A folder that takes long enough to want reporting on holds thousands, so a
+message per message would be the echo area doing more work than the job.
+Bound down in the tests, which do not have thousands of messages to spare.")
+
+(defun vm-folder-say-progress (what n &optional total)
+  "Say that N of TOTAL messages of WHAT are done, every so often.
+TOTAL is omitted where it is not yet known -- a folder has to be walked before
+it can be counted, which is itself the slow part on a folder of any size."
+  (when (zerop (% n vm-folder-progress-interval))
+    (if total
+	(vm-inform 5 "%s... %d of %d" what n total)
+      (vm-inform 5 "%s... %d" what n))))
+
 (defun vm-convert-folder-type (old-type new-type)
   "Convert buffer from OLD-TYPE to NEW-TYPE.
 OLD-TYPE and NEW-TYPE should be symbols returned from vm-get-folder-type.
 This should be called on non-live buffers like crash boxes.
-This will confuse VM if called on a folder buffer in vm-mode."
+This will confuse VM if called on a folder buffer in vm-mode.
+
+Says how far it has got as it goes: this is what the on-disk repair spends its
+time in, and it used to say nothing at all while doing it (emacs-vm/vm#748)."
   (let ((vm-folder-type old-type)
 	(pos-list nil)
-	beg end)
+	(found 0)
+	(done 0)
+	total beg end)
     (goto-char (point-min))
     (vm-skip-past-folder-header)
     (while (vm-find-leading-message-separator)
@@ -1143,8 +1163,11 @@ This will confuse VM if called on a folder buffer in vm-mode."
       (vm-find-trailing-message-separator)
       (setq pos-list (cons (point-marker) pos-list))
       (vm-skip-past-trailing-message-separator)
-      (setq pos-list (cons (point-marker) pos-list)))
+      (setq pos-list (cons (point-marker) pos-list))
+      (setq found (1+ found))
+      (vm-folder-say-progress "Finding the messages" found))
     (setq pos-list (nreverse pos-list))
+    (setq total found)
     (goto-char (point-min))
     (vm-convert-folder-header old-type new-type)
     (while pos-list
@@ -1169,7 +1192,10 @@ This will confuse VM if called on a folder buffer in vm-mode."
       (delete-region (car pos-list) (car (cdr pos-list)))
       (goto-char beg)
       (vm-munge-message-separators new-type beg end)
-      (setq pos-list (cdr (cdr pos-list))))))
+      (setq pos-list (cdr (cdr pos-list)))
+      (setq done (1+ done))
+      (vm-folder-say-progress "Converting" done total))
+    (vm-inform 5 "Converting... %d messages, done" total)))
 
 (defun vm-convert-folder-header (old-type new-type)
   "Convert the folder header form OLD-TYPE to NEW-TYPE.
@@ -6013,17 +6039,28 @@ in a backup file, named as Emacs would name one when saving a buffer."
 	     (file-name-nondirectory file)))
     (with-temp-buffer
       (set-buffer-multibyte nil)
+      ;; Each of these walks or copies the whole folder, which on a gigabyte
+      ;; cache is a minute at a time, so each says it is starting: a silence
+      ;; that long is indistinguishable from a hung Emacs (emacs-vm/vm#748).
+      (vm-inform 5 "Reading %s..." (file-name-nondirectory file))
       (insert-file-contents-literally file)
       ;; A hash of the folder rather than a copy of it: an IMAP cache folder
       ;; runs to a gigabyte, and `buffer-string' here and again at the end
       ;; would ask for two more of them.
+      (vm-inform 5 "Reading %s... %d bytes, checksumming"
+		 (file-name-nondirectory file) (buffer-size))
       (setq original (buffer-hash))
       (let ((vm-folder-type old)
 	    (vm-mboxcl2-strict nil))
+	(vm-inform 5 "Counting the messages in %s..."
+		   (file-name-nondirectory file))
 	(setq before (vm-count-messages-in-buffer))
+	(vm-inform 5 "Converting %s from %s to %s, %d messages..."
+		   (file-name-nondirectory file) old type before)
 	(vm-convert-folder-type old type))
       ;; strict this time: what would be written has to read back as what it
       ;; now says it is, or the file is left as it was
+      (vm-inform 5 "Checking that the result reads back as %s..." type)
       (let ((vm-folder-type type))
 	(setq after (vm-count-messages-in-buffer)))
       (cond ((/= before after)
@@ -6035,7 +6072,11 @@ in a backup file, named as Emacs would name one when saving a buffer."
 			(file-name-nondirectory file) type after))
 	    ((equal (vm-folder-name-for-type file type) file)
 	     (let ((backup (vm-folder-backup-name file)))
+	       (vm-inform 5 "Backing %s up as %s..."
+			  (file-name-nondirectory file)
+			  (file-name-nondirectory backup))
 	       (copy-file file backup t)
+	       (vm-inform 5 "Writing %s..." (file-name-nondirectory file))
 	       (write-region (point-min) (point-max) file nil 'quiet)
 	       (vm-inform 5 "%s converted from %s to %s, %d messages; was %s"
 			  (file-name-nondirectory file) old type after
@@ -6051,7 +6092,11 @@ in a backup file, named as Emacs would name one when saving a buffer."
 		 (error (concat "%s is a folder already; move it aside, or"
 				" rename this one by hand")
 			(abbreviate-file-name new-file)))
+	       (vm-inform 5 "Backing %s up as %s..."
+			  (file-name-nondirectory file)
+			  (file-name-nondirectory backup))
 	       (copy-file file backup t)
+	       (vm-inform 5 "Writing %s..." (file-name-nondirectory new-file))
 	       (write-region (point-min) (point-max) new-file nil 'quiet)
 	       (vm-inform 5 "%s converted from %s to %s as %s, %d messages"
 			  (file-name-nondirectory file) old type
@@ -6367,8 +6412,7 @@ error, and the on-disk conversion is what such a folder wants."
 	;; no interruptions
 	(inhibit-quit t)
 	(n 0)
-	;; Just for laughs, make the update interval vary.
-	(modulus (+ (% (vm-abs (random)) 11) 5))
+	(total (length vm-message-list))
 	text-end) ;; opoint
     (save-excursion
       (save-restriction
@@ -6404,8 +6448,7 @@ error, and the on-disk conversion is what such a folder wants."
 	 ;; much and the summary regeneration would make this
 	 ;; process slower.
 	 (setq mp (cdr mp) n (1+ n))
-	 (if (zerop (% n modulus))
-	     (vm-inform 5 "Converting... %d" n))))))
+	 (vm-folder-say-progress "Converting" n total)))))
   (vm-clear-modification-flag-undos)
   (intern (buffer-name) vm-buffers-needing-display-update)
   (vm-update-summary-and-mode-line)
