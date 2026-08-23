@@ -1805,7 +1805,15 @@ buttons are possible under the current windowing system."
 (defun vm-load-features (feature-list &optional silent)
   "Try to load those features listed in FEATURE_LIST.
 If SILENT is t, do not display warnings for unloadable features.
-Return the list of loaded features."
+Return the list of loaded features.
+
+Silent in a batch Emacs whatever SILENT says.  The warning is for a reader who
+asked for a feature and is not getting it, and a batch Emacs has nobody to
+read it: eighteen lines of it came out of `make\=', where four WARNINGs in the
+middle of a build read as a broken build (emacs-vm/vm#485, emacs-vm/vm#753).
+Building the manual loads every module to read its docstrings, which is where
+they were coming from -- SILENT is `byte-compile-current-file\=' at every call
+site, and that is nil when a file is loaded rather than compiled."
   (setq feature-list
         (mapcar (lambda (f)
                   (condition-case nil
@@ -1814,10 +1822,9 @@ Return the list of loaded features."
                     (error
                      (if (load (format "%s" f) t)
                          f
-                       (when (not silent)
+                       (unless (or silent noninteractive)
                          (message "WARNING: Could not load feature %S." f)
-                         (message "WARNING: Related functions may not work correctly!")
-			 )
+                         (message "WARNING: Related functions may not work correctly!"))
                        nil))))
                 feature-list))
   (delete nil feature-list))
