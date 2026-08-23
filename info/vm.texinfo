@@ -406,6 +406,38 @@ directories that VM needs to use for its operation and the external
 applications that VM can invoke.  You can reload this file by typing
 @code{M-x vm-load-init-file} from within VM.
 
+@cindex key bindings, where to put them
+@cindex global-set-key, in the init file
+@quotation Warning
+That is the first time VM is started, not the first time Emacs is started.
+Anything in @code{vm-init-file} that has to be in effect @emph{before} VM runs
+cannot go there, because until VM has run once the file has not been read.
+
+A global key binding is the case that catches people.  A
+@code{global-set-key} in @code{vm-init-file} does nothing until something else
+has already started VM, and until then the key does whatever Emacs had it
+doing.  Bound to @code{vm-continue-what-message-other-window}, say,
+@kbd{C-x m} stays @code{compose-mail} and starts a new message, which looks
+like VM ignoring the drafts it was asked about.  Every press after the first
+is right, which makes it a puzzling thing to debug.
+
+Put such bindings in your Emacs init file instead.  VM's commands are
+autoloaded, so binding one before VM is loaded is fine: pressing the key loads
+VM, which then reads @code{vm-init-file}.
+
+A binding in one of VM's own keymaps does belong in @code{vm-init-file}: the
+map has to exist before anything can be defined in it, which is exactly what
+being read after VM has started buys you.
+
+@example
+;; in the Emacs init file: works from the first keystroke
+(global-set-key "\C-xm" 'vm-continue-what-message-other-window)
+
+;; in vm-init-file: vm-mode-map exists by the time this is read
+(define-key vm-mode-map "m" 'vm-continue-what-message)
+@end example
+@end quotation
+
 @vindex vm-preferences-file
 @cindex .vm.preferences
 @cindex preferences settings
