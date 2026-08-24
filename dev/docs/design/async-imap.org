@@ -838,6 +838,29 @@ thousand messages:
 Uncompiled it looks exactly like the blocking implementation this replaces, so
 VM says so once a session (=vm-imap-net-check-compiled=).
 
+*** Measuring what is left of the pauses
+
+=dev/tools/vm-fetch-latency.el= times a fetch by the step, a step being one
+=vm-net--resume= call, which is how long Emacs is stopped. It reports the
+longest steps, the collection inside each, what the fetch allocated, and with
+=-functions= the longest single call of every VM function.
+=dev/tools/fill-imap-mailbox.py= makes a mailbox big enough to measure
+against; a dozen messages have no pauses at all.
+
+: make
+: ./dev/tools/fill-imap-mailbox.py vmtest/latency 6500
+: emacs -batch -Q -L lisp -l dev/tools/vm-fetch-latency.el \
+:   imap:127.0.0.1:143:vmtest/latency:login:vmtest1:vm-lives
+
+What it says as of 2026-08-24, on 6500 messages of 1.9KB: 6.8s wall, 1977
+steps, and every step over 0.1s is a garbage collection -- the worst 0.639s,
+of which 0.638s is collecting. Nine collections take 1.96s of the fetch. The
+fetch allocates 64.8M conses and 323M vector words for 13MB of mail, most of
+it in the token reader, and that is what forces them.
+
+So the pauses left are not scheduling and no further yielding answers them:
+see emacs-vm/vm#742.
+
 ** Existing examples elsewhere
 
 - nnimap.el in Gnus: sequence-numbered commands, still partly blocking.
