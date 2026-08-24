@@ -1240,6 +1240,8 @@
               #'hermes-chat-interrupt))
   (should (eq (keymap-lookup hermes-chat-actions-map "m")
               #'hermes-chat-switch-model))
+  (should (eq (keymap-lookup hermes-chat-actions-map "e")
+              #'hermes-chat-set-reasoning))
   (should (eq (keymap-lookup hermes-chat-actions-map "n")
               #'hermes-chat))
   (should (eq (keymap-lookup hermes-chat-actions-map "H")
@@ -1256,15 +1258,17 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Turn" "Input" "Session" "Workspace" "System")))
+                   '("Turn" "Input" "Session" "Runtime" "Workspace" "System")))
     (should (equal (mapcar (lambda (row)
                              (mapcar (lambda (group)
                                        (plist-get group :name))
                                      row))
                            rows)
-                   '(("Turn" "Input" "Session" "Workspace" "System"))))
-    (dolist (group groups)
-      (should (= (length (plist-get group :entries)) 4)))
+                   '(("Turn" "Input" "Session" "Runtime" "Workspace" "System"))))
+    (should (equal (mapcar (lambda (group)
+                             (length (plist-get group :entries)))
+                           groups)
+                   '(4 4 3 3 4 3)))
     (let ((directory-entry
            (cl-find "w" entries :key (lambda (entry)
                                        (plist-get entry :key))
@@ -1276,6 +1280,14 @@
       (should (cl-find key entries :key (lambda (entry)
                                          (plist-get entry :key))
                        :test #'equal)))))
+
+(ert-deftest hermes-chat-set-reasoning-before-session-stores-override ()
+  "A fresh buffer stores reasoning effort without opening a session."
+  (hermes-test-with-chat-buffer
+   (hermes-chat-set-reasoning "high")
+   (should (equal hermes-chat--dashboard-create-reasoning-effort "high"))
+   (should-not hermes-chat--dashboard-client)
+   (should (string-match-p "applies to next session" (buffer-string)))))
 
 (ert-deftest hermes-chat-catalog-candidates-extracts-names ()
   "Catalog candidates extract bare command names and descriptions."

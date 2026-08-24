@@ -42,8 +42,13 @@
 
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
+(defvar hermes-chat--dashboard-create-reasoning-effort)
 (defvar hermes-chat--lifecycle-generation)
 (defvar hermes-chat--runtime-flags)
+
+(defconst hermes-chat--reasoning-efforts
+  '("none" "minimal" "low" "medium" "high" "xhigh" "max" "ultra")
+  "Reasoning effort values accepted by the Hermes dashboard.")
 
 (defvar-local hermes-chat--commands-cache nil
   "Cached slash command catalog as an alist of (NAME . DESCRIPTION).")
@@ -328,6 +333,29 @@ accepted explicit spelling of the default session scope."
           (lambda (message)
             (hermes-chat--in-buffer buffer
               (hermes-chat--command-rejection context message)))))))))
+
+(defun hermes-chat--read-reasoning-effort ()
+  "Read a Hermes reasoning effort level with completion."
+  (completing-read
+   "Reasoning effort: " hermes-chat--reasoning-efforts nil t nil nil
+   (or hermes-chat--dashboard-create-reasoning-effort
+       (plist-get hermes-chat--runtime-flags :reasoning-effort)
+       "medium")))
+
+(defun hermes-chat-set-reasoning (&optional effort)
+  "Set reasoning EFFORT for this session or its first turn.
+In a fresh chat, store the choice locally and apply it after `session.create'
+but before the first prompt.  A live chat uses the owned session command path."
+  (interactive (list (hermes-chat--read-reasoning-effort)))
+  (unless (member effort hermes-chat--reasoning-efforts)
+    (user-error "Unsupported reasoning effort: %s" effort))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before changing reasoning"))
+  (if (hermes-chat--dashboard-session-attached-p)
+      (hermes-chat--dashboard-set-reasoning effort)
+    (setq hermes-chat--dashboard-create-reasoning-effort effort)
+    (hermes-chat--insert-local-status
+     (format "Reasoning set to %s (applies to next session)" effort) 'ready)))
 
 (defun hermes-chat--slash-model-name (arg)
   "Return the model token from `/model' ARG for status display."

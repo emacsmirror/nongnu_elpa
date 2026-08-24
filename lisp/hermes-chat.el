@@ -1727,9 +1727,12 @@ result into the transient status text shown in the transcript."
   "r" ("Refresh commands" hermes-chat-refresh-commands)
   :group "Session"
   "n" ("New chat" hermes-chat)
-  "m" ("Switch model" hermes-chat-switch-model)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
+  :group "Runtime"
+  "m" ("Switch model" hermes-chat-switch-model)
+  "e" ("Set reasoning" hermes-chat-set-reasoning)
+  "K" ("Connect provider" hermes-chat-connect-provider)
   :group "Workspace"
   "w" ("Set directory" hermes-chat-set-directory
        :inapt-if #'hermes-chat--active-turn-p)
@@ -1737,7 +1740,6 @@ result into the transient status text shown in the transcript."
   "S" ("Sessions" hermes-list-sessions)
   "P" ("Queue side panel" hermes-chat-queue-panel)
   :group "System"
-  "K" ("Connect provider" hermes-chat-connect-provider)
   "x" ("Reconnect socket" hermes-dashboard-reconnect)
   "u" ("Token usage" hermes-chat-show-usage)
   "t" ("Session status" hermes-chat-show-status))
