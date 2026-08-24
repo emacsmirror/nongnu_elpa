@@ -97,6 +97,8 @@ number and the prompt that launched it.")
 (defvar hermes-chat--dashboard-last-start-idle-count)
 (defvar hermes-chat--unsettled-submit-context)
 (defvar hermes-chat--prepared-submit-assistant-id)
+(defvar hermes-chat--create-override-owner)
+(defvar hermes-chat--create-overrides-retry-session-id)
 (defvar hermes-dashboard-transport-request-owner)
 
 (defconst hermes-chat--terminal-clear-fields
@@ -1238,14 +1240,18 @@ GENERATION scopes asynchronous create-time overrides."
     (hermes-chat--dashboard-restore-inflight-turn client))
    (resume-p
     (setq hermes-chat--dashboard-detached-assistant-id nil)
-    (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
+    (hermes-chat--dashboard-apply-retry-overrides
+     client
+     (lambda ()
+       (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
+     generation reject))
    (t
     (setq hermes-chat--dashboard-detached-assistant-id nil)
     (hermes-chat--dashboard-apply-create-overrides
      client (lambda ()
               (hermes-chat--dashboard-submit-prompt
                client prompt resolve reject))
-     generation))))
+     generation reject))))
 
 (defun hermes-chat--dashboard-session-resolver
     (buffer client prompt &optional resume-p resolve reject queued-p)
@@ -1295,43 +1301,90 @@ must not receive them."
   (setq hermes-chat--dashboard-create-model nil
         hermes-chat--dashboard-create-provider nil
         hermes-chat--dashboard-create-reasoning-effort nil
-        hermes-chat--dashboard-create-fast-p nil))
+        hermes-chat--dashboard-create-fast-p nil
+        hermes-chat--create-overrides-retry-session-id nil))
+
+(defun hermes-chat--create-override-submit-inhibit-reason ()
+  "Return the submission guard while create-time overrides are being applied."
+  (and hermes-chat--create-override-owner
+       "Pre-session runtime configuration is in progress"))
+
+(defun hermes-chat--clear-create-override-owner ()
+  "Release any create-time override operation owned by this buffer."
+  (setq hermes-chat--create-override-owner nil))
+
+(defun hermes-chat--dashboard-create-config-promise
+    (client cell session-id)
+  "Return a promise applying CELL to CLIENT's SESSION-ID."
+  (hermes-dashboard-transport-call-fn
+   #'hermes-dashboard-transport-config-set
+   client (car cell) (cdr cell) :session-id session-id))
+
+(defun hermes-chat--dashboard-fail-create-overrides
+    (owner session-id message abort)
+  "Release OWNER, preserve SESSION-ID overrides, and report MESSAGE via ABORT."
+  (when (eq owner hermes-chat--create-override-owner)
+    (setq hermes-chat--create-override-owner nil
+          hermes-chat--create-overrides-retry-session-id session-id)
+    (let ((message (format "Pre-session override failed: %s" message)))
+      (if abort (funcall abort message)
+        (hermes-chat--command-error message)))))
+
+(defun hermes-chat--dashboard-step-create-overrides
+    (owner buffer client cells session-id generation continue abort)
+  "Apply CELLS to CLIENT's SESSION-ID for BUFFER at GENERATION under OWNER.
+Call CONTINUE on success or ABORT on failure."
+  (hermes-chat--in-buffer buffer
+    (cond
+     ((not (eq owner hermes-chat--create-override-owner)) nil)
+     ((not (hermes-chat--dashboard-context-current-p
+            client generation session-id))
+      (hermes-chat--dashboard-fail-create-overrides
+       owner session-id "session changed before it settled" abort))
+     ((null cells)
+      (hermes-chat--dashboard-clear-create-overrides)
+      (setq hermes-chat--create-override-owner nil)
+      (funcall continue))
+     (t
+      (condition-case err
+          (hermes--promise-then
+           (hermes-chat--dashboard-create-config-promise
+            client (car cells) session-id)
+           (lambda (_result)
+             (hermes-chat--dashboard-step-create-overrides
+              owner buffer client (cdr cells) session-id generation continue abort))
+           (lambda (message)
+             (hermes-chat--in-buffer buffer
+               (hermes-chat--dashboard-fail-create-overrides
+                owner session-id message abort))))
+        ((error quit)
+         (hermes-chat--dashboard-fail-create-overrides
+          owner session-id (error-message-string err) abort)))))))
 
 (defun hermes-chat--dashboard-apply-create-overrides
-    (client continue &optional generation)
-  "Apply pending create-time overrides to CLIENT's fresh session, then CONTINUE.
-Each override is sent as a `config.set' scoped to the session recorded in
-the current buffer.  CONTINUE runs in this buffer once every request has
-settled, so a following `prompt.submit' cannot race the model switch; a
-failed override is reported as a chat error without blocking CONTINUE.
-GENERATION prevents a cleared buffer from receiving late results."
-  (let ((cells (hermes-chat--dashboard-create-config-cells))
-        (buffer (current-buffer))
-        (session-id hermes-chat--dashboard-active-session-id))
-    (hermes-chat--dashboard-clear-create-overrides)
+    (client continue &optional generation abort)
+  "Apply pending create-time overrides to CLIENT in order, then CONTINUE.
+GENERATION and an exact local owner reject stale results.  ABORT receives a
+failure; overrides remain pending until the whole batch succeeds."
+  (let ((cells (hermes-chat--dashboard-create-config-cells)))
     (if (null cells)
         (funcall continue)
-      (hermes--promise-then
-       (hermes--promise-all
-        (mapcar (lambda (cell)
-                  (hermes-dashboard-transport-call-fn
-                   #'hermes-dashboard-transport-config-set
-                   client (car cell) (cdr cell) :session-id session-id))
-                cells))
-       (lambda (_values)
-         (hermes-chat--in-buffer buffer
-           (when (and generation
-                      (hermes-chat--dashboard-context-current-p
-                       client generation session-id))
-             (funcall continue))))
-       (lambda (message)
-         (hermes-chat--in-buffer buffer
-           (when (and generation
-                      (hermes-chat--dashboard-context-current-p
-                       client generation session-id))
-             (hermes-chat--command-error
-              (format "Pre-session override failed: %s" message))
-             (funcall continue))))))))
+      (let ((owner (gensym "hermes-create-overrides-")))
+        (setq hermes-chat--create-override-owner owner)
+        (hermes-chat--dashboard-step-create-overrides
+         owner (current-buffer) client cells
+         hermes-chat--dashboard-active-session-id generation continue abort)))))
+
+(defun hermes-chat--dashboard-apply-retry-overrides
+    (client continue generation abort)
+  "Apply CLIENT overrides at GENERATION to their retry session, else CONTINUE.
+ABORT receives a failure."
+  (if (equal hermes-chat--create-overrides-retry-session-id
+             hermes-chat--dashboard-active-session-id)
+      (hermes-chat--dashboard-apply-create-overrides
+       client continue generation abort)
+    (hermes-chat--dashboard-clear-create-overrides)
+    (funcall continue)))
 
 (defun hermes-chat--dashboard-ensure-session
     (client prompt buffer &optional resolve reject queued-p)
@@ -1341,7 +1394,11 @@ prompt request result or a session bootstrap error.  QUEUED-P identifies a
 local FIFO submission."
   (cond
    ((hermes-chat--dashboard-session-attached-p)
-    (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
+    (hermes-chat--dashboard-apply-retry-overrides
+     client
+     (lambda ()
+       (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
+     hermes-chat--lifecycle-generation reject))
    (hermes-chat--session-id
     (hermes-dashboard-transport-session-resume
      client hermes-chat--session-id
@@ -1569,10 +1626,12 @@ With explicit DIRECTORY, pass its gateway-native spelling to the backend."
         client (hermes-chat--current-working-directory))))))
 
 (defun hermes-chat--dashboard-action-resolver
-    (buffer client action generation &optional create-p)
+    (buffer client action generation &optional create-p reject resume-p)
   "Return a resolver to record CLIENT's session in BUFFER, then call ACTION.
 With CREATE-P non-nil the resolver handles a fresh `session.create' result,
-so pending create-time runtime overrides are applied before ACTION."
+so pending create-time runtime overrides are applied before ACTION.  RESUME-P
+applies only retry-owned overrides and otherwise discards them.  REJECT receives
+an override failure."
   (lambda (result)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--dashboard-context-current-p client generation)
@@ -1581,10 +1640,15 @@ so pending create-time runtime overrides are applied before ACTION."
           (hermes-chat--dashboard-restore-inflight-turn client)
           (hermes-chat--dashboard-bind-stream-callback
            client hermes-chat--pending-assistant-id))
-        (if create-p
-            (hermes-chat--dashboard-apply-create-overrides
-             client (lambda () (funcall action client)) generation)
-          (funcall action client))))))
+        (cond
+         (create-p
+          (hermes-chat--dashboard-apply-create-overrides
+           client (lambda () (funcall action client)) generation reject))
+         (resume-p
+          (hermes-chat--dashboard-apply-retry-overrides
+           client (lambda () (funcall action client)) generation reject))
+         (t
+          (funcall action client)))))))
 
 (defun hermes-chat--dashboard-create-title ()
   "Return the canonical title for a fresh dashboard session."
@@ -1612,14 +1676,15 @@ When dashboard session bootstrap fails, call REJECT with the error message."
   (let ((generation hermes-chat--lifecycle-generation))
     (cond
      ((hermes-chat--dashboard-session-attached-p)
-      (funcall action client))
+      (hermes-chat--dashboard-apply-retry-overrides
+       client (lambda () (funcall action client)) generation reject))
      (hermes-chat--session-id
       (hermes-dashboard-transport-session-resume
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)
        :profile hermes-chat--profile
        :resolve (hermes-chat--dashboard-action-resolver
-                 buffer client action generation)
+                 buffer client action generation nil reject t)
        :reject (hermes-chat--dashboard-action-rejecter
                 buffer client generation reject)))
      (t
@@ -1629,7 +1694,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
        :title (hermes-chat--dashboard-create-title)
        :cwd (hermes-chat--current-working-directory)
        :resolve (hermes-chat--dashboard-action-resolver
-                 buffer client action generation t)
+                 buffer client action generation t reject)
        :reject (hermes-chat--dashboard-action-rejecter
                 buffer client generation reject))))))
 
@@ -1865,6 +1930,9 @@ is not advanced here; an unrecorded result falls back to its current value."
      :buffer (current-buffer) :category "hermes.chat.background"
      :urgency 'normal)))
 
+(hermes-chat-register-submit-inhibit-function
+ #'hermes-chat--create-override-submit-inhibit-reason)
+(hermes-chat-register-cleanup-function #'hermes-chat--clear-create-override-owner)
 
 (provide 'hermes-chat-dashboard)
 ;;; hermes-chat-dashboard.el ends here

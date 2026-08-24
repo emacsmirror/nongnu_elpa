@@ -137,6 +137,10 @@ their own session with their own runtime.")
   "Buffer-local reasoning effort applied after the next `session.create'.")
 (defvar-local hermes-chat--dashboard-create-fast-p nil
   "Buffer-local fast/service-tier flag applied after the next `session.create'.")
+(defvar-local hermes-chat--create-override-owner nil
+  "Identity owning application of pending create-time runtime overrides.")
+(defvar-local hermes-chat--create-overrides-retry-session-id nil
+  "Session id owning unapplied create-time runtime overrides, or nil.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn and transcript reset so stale async callbacks become obsolete.
@@ -479,6 +483,8 @@ text-property changes in the undo list."
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-detached-assistant-id nil
           hermes-chat--dashboard-running-p nil
+          hermes-chat--create-override-owner nil
+          hermes-chat--create-overrides-retry-session-id nil
           hermes-chat--dashboard-stream-assistant-id nil
           hermes-chat--dashboard-suppress-stream-p nil
           hermes-chat--dashboard-idle-count 0
@@ -519,6 +525,8 @@ text-property changes in the undo list."
         hermes-chat--queued-submit-id nil
         hermes-chat--process nil
         hermes-chat--dashboard-running-p nil
+        hermes-chat--create-override-owner nil
+        hermes-chat--create-overrides-retry-session-id nil
         hermes-chat--dashboard-stream-assistant-id nil
         hermes-chat--dashboard-interim-assistant-id nil
         hermes-chat--dashboard-suppress-stream-p nil

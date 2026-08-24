@@ -270,6 +270,7 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not hermes-chat--dashboard-create-model)
          (should-not hermes-chat--dashboard-create-provider))))))
 
+
 (ert-deftest hermes-chat-dashboard-create-uses-chat-working-directory ()
   "A fresh session starts in its gateway working directory."
   (let ((client (hermes-test--dashboard-client)) create-cwd)
@@ -561,11 +562,33 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not hermes-chat--dashboard-create-reasoning-effort)
          (should-not hermes-chat--dashboard-create-fast-p))))))
 
-(ert-deftest hermes-chat-dashboard-resume-does-not-send-create-runtime-overrides ()
-  "Resuming a stored session does not forward create-time runtime overrides."
+(ert-deftest hermes-chat-dashboard-sync-override-failure-settles-origin ()
+  "Synchronous model and non-model failures release exact override ownership."
+  (dolist (spec '((model error) (reasoning quit)))
+    (let ((client (hermes-test--dashboard-client)) rejected)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+                 (lambda (&rest _) (signal (cadr spec) nil))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-session-ready-p t
+               hermes-chat--dashboard-active-session-id "sid-old")
+         (pcase (car spec)
+           ('model (setq hermes-chat--dashboard-create-model "gpt"))
+           ('reasoning
+            (setq hermes-chat--dashboard-create-reasoning-effort "high")))
+         (hermes-chat--dashboard-apply-create-overrides
+          client (lambda () (ert-fail "failure must not continue"))
+          hermes-chat--lifecycle-generation (lambda (message) (setq rejected message)))
+         (should rejected)
+         (should-not hermes-chat--create-override-owner)
+         (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+         (should (hermes-chat--dashboard-create-config-cells)))))))
+
+(ert-deftest hermes-chat-dashboard-resume-discards-unowned-create-overrides ()
+  "A stored session never receives create overrides without retry provenance."
   :tags '(shared-socket-isolation)
   (let ((client (hermes-test--dashboard-client))
-        resume-model resume-provider resume-reasoning resume-fast)
+        resume-model resume-provider resume-reasoning resume-fast configs action)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _) (error "CLI fallback should not run")))
               ((symbol-function 'hermes-dashboard-transport-start)
@@ -579,6 +602,10 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-live")
                             (resumed . "sid-stored")))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq configs (1+ (or configs 0)))
+                 (funcall (plist-get args :resolve) '((key . "unexpected")))))
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
                (lambda (&rest _) 'prompt-request)))
       (let ((hermes-transport-send-function #'hermes-transport-send))
@@ -593,7 +620,59 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not resume-model)
          (should-not resume-provider)
          (should-not resume-reasoning)
-         (should-not resume-fast))))))
+         (should-not resume-fast)
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq action t)))
+         (should action)
+         (should-not configs)
+         (should-not (hermes-chat--dashboard-create-config-cells)))
+        (setq action nil configs nil)
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--session-id "sid-stored"
+               hermes-chat--dashboard-client client
+               hermes-chat--dashboard-create-model "gpt-5"
+               hermes-chat--dashboard-create-reasoning-effort "high"
+               hermes-chat--dashboard-create-fast-p t)
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq action t)))
+         (should action)
+         (setq action nil)
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq action t)))
+         (should action)
+         (should-not configs)
+         (should-not (hermes-chat--dashboard-create-config-cells)))))))
+
+(ert-deftest hermes-chat-dashboard-stale-non-model-override-stays-session-bound ()
+  "Late reasoning and fast results settle without mutating their successor."
+  (dolist (cell '((reasoning . "high") ("fast" . "fast")))
+    (let ((client (hermes-test--dashboard-client)) resolve continued aborted action requests)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+                 (lambda (_client key _value &rest args)
+                   (push (list key (plist-get args :session-id)) requests)
+                   (unless resolve (setq resolve (plist-get args :resolve))))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-session-ready-p t
+               hermes-chat--dashboard-active-session-id "sid-old")
+         (pcase (car cell)
+           ('reasoning
+            (setq hermes-chat--dashboard-create-reasoning-effort (cdr cell)))
+           ("fast" (setq hermes-chat--dashboard-create-fast-p t)))
+         (hermes-chat--dashboard-apply-create-overrides
+          client (lambda () (setq continued t))
+          hermes-chat--lifecycle-generation (lambda (message) (setq aborted message)))
+         (setq hermes-chat--dashboard-active-session-id "sid-new")
+         (funcall resolve '((key . "stale")))
+         (should-not continued)
+         (should aborted)
+         (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq action t)))
+         (should action)
+         (should (= (length requests) 1))
+         (should-not (hermes-chat--dashboard-create-config-cells))
+         (should-not hermes-chat--create-overrides-retry-session-id))))))
 
 (ert-deftest hermes-chat-dashboard-reconnected-keeps-each-buffer-detached ()
   "A shared reconnect leaves each buffer's durable session lazy."
