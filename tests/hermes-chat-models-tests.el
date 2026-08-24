@@ -141,6 +141,101 @@
        (should-not set-confirm)
        (should (string-match-p "Model set to beta" (buffer-string)))))))
 
+(ert-deftest hermes-chat-switch-model-before-session-uses-cache-without-connecting ()
+  "A warm catalog lets a fresh buffer choose its first model offline."
+  (let ((payload '((providers . (((slug . "p1") (authenticated . t)
+                                  (models . ("beta")))))))
+        connected)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+               (lambda (&optional _client) payload))
+              ((symbol-function 'hermes-chat--dashboard-control-client)
+               (lambda () (setq connected t)))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt coll &rest _) (car coll))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat-switch-model)
+       (should-not connected)
+       (should (equal hermes-chat--dashboard-create-model "beta"))
+       (should (equal hermes-chat--dashboard-create-provider "p1"))))))
+
+(ert-deftest hermes-chat-switch-model-before-session-fetches-without-creating-session ()
+  "A cold catalog may connect its socket but must not create the chat session."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+               (lambda (&optional _client) nil))
+              ((symbol-function 'hermes-chat--dashboard-control-client)
+               (lambda () client))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (seen-client &rest args)
+                 (should (eq seen-client client))
+                 (funcall (plist-get args :resolve)
+                          '((providers . (((slug . "p1") (authenticated . t)
+                                           (models . ("beta")))))))))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (&rest _args) (ert-fail "must not create a session")))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) "p1 · beta")))
+      (hermes-test-with-chat-buffer
+       (hermes-chat-switch-model)
+       (should (equal hermes-chat--dashboard-create-model "beta"))))))
+
+(ert-deftest hermes-chat-live-model-switch-clears-model-only-retry ()
+  "A successful live switch clears obsolete model-only retry state."
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "sid-live"
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-create-model "old-model"
+           hermes-chat--dashboard-create-provider "old-provider"
+           hermes-chat--create-overrides-retry-session-id "sid-live")
+     (hermes-chat--model-set-result
+      (current-buffer) client '(:model "new-model") '((key . "model")) nil
+      (hermes-chat--model-switch-context))
+     (should-not hermes-chat--dashboard-create-model)
+     (should-not hermes-chat--dashboard-create-provider)
+     (should-not hermes-chat--create-overrides-retry-session-id))))
+
+(ert-deftest hermes-chat-live-model-switch-preserves-other-create-retries ()
+  "A live model switch leaves reasoning and fast retry provenance intact."
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "sid-live"
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-create-model "old-model"
+           hermes-chat--dashboard-create-provider "old-provider"
+           hermes-chat--dashboard-create-reasoning-effort "high"
+           hermes-chat--dashboard-create-fast-p t
+           hermes-chat--create-overrides-retry-session-id "sid-live")
+     (hermes-chat--model-set-result
+      (current-buffer) client '(:model "new-model") '((key . "model")) nil
+      (hermes-chat--model-switch-context))
+     (should-not hermes-chat--dashboard-create-model)
+     (should-not hermes-chat--dashboard-create-provider)
+     (should (equal hermes-chat--dashboard-create-reasoning-effort "high"))
+     (should hermes-chat--dashboard-create-fast-p)
+     (should (equal hermes-chat--create-overrides-retry-session-id "sid-live")))))
+
+(ert-deftest hermes-chat-stale-live-model-result-keeps-successor-overrides ()
+  "A stale live-switch result cannot clear a successor session's pending state."
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "sid-old"
+           hermes-chat--dashboard-session-ready-p t)
+     (let ((context (hermes-chat--model-switch-context)))
+       (setq hermes-chat--dashboard-active-session-id "sid-new"
+             hermes-chat--dashboard-create-model "successor-model"
+             hermes-chat--dashboard-create-provider "successor-provider"
+             hermes-chat--create-overrides-retry-session-id "sid-new")
+       (hermes-chat--model-set-result
+        (current-buffer) client '(:model "old-result") '((key . "model")) nil
+        context)
+       (should (equal hermes-chat--dashboard-create-model "successor-model"))
+       (should (equal hermes-chat--dashboard-create-provider "successor-provider"))
+       (should (equal hermes-chat--create-overrides-retry-session-id "sid-new"))))))
+
 (ert-deftest hermes-chat-switch-model-confirms-expensive-choice ()
   "Expensive model confirmation retries config.set with confirmation enabled."
   (let ((calls 0)

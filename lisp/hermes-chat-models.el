@@ -175,6 +175,14 @@ identity is part of the selection."
     (or (plist-get candidate :model)
         (hermes-chat--model-config-value candidate))))
 
+(defun hermes-chat--clear-pending-model-override ()
+  "Clear a retrying create-time model after a successful live switch."
+  (setq hermes-chat--dashboard-create-model nil
+        hermes-chat--dashboard-create-provider nil)
+  (unless (or hermes-chat--dashboard-create-reasoning-effort
+              hermes-chat--dashboard-create-fast-p)
+    (setq hermes-chat--create-overrides-retry-session-id nil)))
+
 (defun hermes-chat--model-switch-context ()
   "Return the current chat identity for an asynchronous model switch."
   (list :buffer (current-buffer)
@@ -250,6 +258,8 @@ confirmation prompt."
                 (hermes-chat--apply-model buffer client candidate t context)
               (hermes-chat--insert-local-status
                "Model switch cancelled" 'ready)))
+        (when (hermes-chat--dashboard-session-attached-p)
+          (hermes-chat--clear-pending-model-override))
         (hermes-chat--insert-local-status
          (format "Model set to %s"
                  (hermes-chat--model-display-name candidate))
@@ -260,7 +270,11 @@ confirmation prompt."
   (if (not (hermes-chat--model-switch-current-p context))
       (message "Hermes: model switch is stale or the chat is busy")
     (when (buffer-live-p buffer)
-      (let* ((candidates (hermes-chat--model-candidates result))
+      (let* ((candidates
+              (cl-remove-if-not
+               (lambda (candidate)
+                 (or client (plist-get (cdr candidate) :authenticated)))
+               (hermes-chat--model-candidates result)))
              (labels (mapcar #'car candidates)))
         (if (null candidates)
             (message "Hermes: no models available to switch to")
@@ -291,17 +305,9 @@ confirmation prompt."
                      (if (equal auth-type "oauth") "OAuth"
                        (or auth-type "external"))))))))))))))
 
-(defun hermes-chat-switch-model (&optional refresh)
-  "Switch the model used by the current Hermes chat session.
-The model list is served from the shared cache; with a prefix argument REFRESH,
-refetch it from the dashboard instead."
-  (interactive "P")
-  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-    (user-error "Connect this chat (send a message) before switching models"))
-  (when (hermes-chat--active-turn-p)
-    (user-error "Interrupt the active turn before switching models"))
+(defun hermes-chat--request-model-switch (client refresh)
+  "Fetch model choices through CLIENT, bypassing the cache when REFRESH is non-nil."
   (let ((buffer (current-buffer))
-        (client hermes-chat--dashboard-client)
         (context (hermes-chat--model-switch-context)))
     (hermes-dashboard-transport-model-options-cached
      client
@@ -314,6 +320,26 @@ refetch it from the dashboard instead."
                (hermes-chat--in-buffer buffer
                  (when (hermes-chat--model-switch-current-p context)
                    (hermes-chat--command-error message)))))))
+
+(defun hermes-chat-switch-model (&optional refresh)
+  "Switch the model used by the current Hermes chat session.
+The model list is served from the shared cache; with a prefix argument REFRESH,
+refetch it from the dashboard instead.  Before the first session, a cached pick
+is stored locally without connecting; a cold or refreshed catalog may open the
+shared dashboard socket but does not create a session."
+  (interactive "P")
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before switching models"))
+  (let ((client (and (hermes-chat--dashboard-client-live-p
+                      hermes-chat--dashboard-client)
+                     hermes-chat--dashboard-client))
+        (cached (and (not refresh)
+                     (hermes-dashboard-transport-cached-model-options))))
+    (if cached
+        (hermes-chat--prompt-and-set-model
+         (current-buffer) client cached (hermes-chat--model-switch-context))
+      (hermes-chat--request-model-switch
+       (or client (hermes-chat--dashboard-control-client)) refresh))))
 
 ;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
 ;; which requires this file, so it is loaded lazily inside the commands below to
