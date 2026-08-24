@@ -316,42 +316,24 @@ defining file would put all of them in one section."
                 (not (member file vm-reference-excluded-files)))
            (file-name-sans-extension file)))))
 
-(defconst vm-reference-callbacks
-  '(;; toolbar buttons
-    vm-toolbar-compose-command vm-toolbar-decode-mime-command
-    vm-toolbar-file-command vm-toolbar-followup-command
-    vm-toolbar-forward-command vm-toolbar-getmail-command
-    vm-toolbar-next-command vm-toolbar-previous-command
-    vm-toolbar-print-command vm-toolbar-quit-command
-    vm-toolbar-reply-command vm-toolbar-visit-command
-    ;; mouse and menu
-    vm-menu-popup-attachment-menu vm-menu-popup-context-menu
-    vm-menu-popup-fsfemacs-menu vm-menu-popup-image-menu
-    vm-menu-popup-mailto-url-browser-menu vm-menu-popup-mime-dispose-menu
-    vm-menu-popup-mode-menu vm-menu-popup-url-browser-menu
-    vm-menu-hm-make-folder-menu vm-menu-mail-to
-    ;; keymap entries in the minibuffer
-    vm-minibuffer-complete-word vm-minibuffer-complete-word-and-exit
-    vm-minibuffer-completion-help
-    ;; modes of VM's own buffers
-    vm-fetch-mode vm-presentation-mode
-    ;; run from a hook, or from VM itself
-    vm-do-fcc-before-mime-encode vm-emit-eom-blurb
-    vm-emit-mime-decoding-message vm-mail-check-for-empty-subject
-    vm-mail-check-recipients vm-mail-subject-cleanup
-    vm-mime-Q-decode-region vm-mime-encode-headers
-    ;; the stub bound to a key that has no binding in this key set
-    vm-optional-key)
-  "Commands VM calls for itself rather than ones a reader types.
-A toolbar button, a mouse menu, a keymap entry, a mode of one of VM\='s own
-buffers, or a function written into a hook.  They are `interactive\=' because
-something has to be able to invoke them, and they are listed in the reference
-under their own heading rather than among the commands, so that a reader
-looking for something to type is not offered a dozen toolbar handlers
-(emacs-vm/vm#715).  Nothing stops a reader calling one.")
+(defun vm-reference-callback-p (symbol)
+  "Whether VM invokes SYMBOL for itself rather than a reader typing it.
+A toolbar button, a menu entry, a mouse binding, a keymap entry, a mode of
+one of VM\='s own buffers, or a function written into a hook or an option.
+Such a function is `interactive\=' because something has to be able to invoke
+it, and the appendix lists it under its own heading rather than among the
+commands, so that a reader looking for something to type is not offered a
+dozen toolbar handlers (emacs-vm/vm#715).  Nothing stops a reader calling
+one.
+
+The mark is `vm-called-by-vm\=', put beside the definition in lisp/ rather
+than kept in a list here: a list away from the code is a list that goes out
+of date, and the definition is where whoever adds a toolbar handler is
+looking."
+  (get symbol 'vm-called-by-vm))
 
 (defun vm-reference-kind (symbol)
-  (cond ((memq symbol vm-reference-callbacks) 'callback)
+  (cond ((vm-reference-callback-p symbol) 'callback)
         ((commandp symbol) 'command)
         ((custom-variable-p symbol) 'option)))
 
@@ -579,9 +561,9 @@ nil under either invented environment, and two nils agree."
       (mapc #'vm-reference-insert-option options))
     (when callbacks
       (insert "@appendixsubsec Called by VM\n\n")
-      (insert "These are invoked by a toolbar button, a mouse menu, a keymap\n"
-              "entry or a hook rather than typed by name.  Nothing stops you\n"
-              "calling one.\n\n")
+      (insert "These are invoked by a toolbar button, a menu entry, a mouse\n"
+              "binding, a keymap entry or a hook rather than typed by name.\n"
+              "Nothing stops you calling one.\n\n")
       (mapc #'vm-reference-insert-command callbacks))))
 
 (defun vm-reference-insert-sections (sections)
@@ -611,9 +593,10 @@ nil under either invented environment, and two nils agree."
               "what to do with it.\n\n"
               "Each section lists what you can type, then the options that\n"
               "govern it, then what VM invokes for itself: a toolbar button, a\n"
-              "mouse menu, a keymap entry or a hook function.  The last are\n"
-              "here because they can be called, not because a reader normally\n"
-              "would.\n\n"
+              "menu entry, a mouse binding, a keymap entry or a hook function.\n"
+              "The last are here because they can be called, not because a\n"
+              "reader normally would, and which ones they are is marked in the\n"
+              "code beside each definition.\n\n"
               "An entry marked @emph{not autoloaded} needs VM loaded before\n"
               "@kbd{M-x} will offer it, which for a command that only makes\n"
               "sense inside a folder is no hardship.  The mark is worked out\n"

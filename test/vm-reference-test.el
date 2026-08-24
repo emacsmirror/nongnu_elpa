@@ -340,6 +340,79 @@ vm-rfaddons.el was deleted in one release."
         (push symbol missing)))
     (should (equal nil (sort missing #'string<)))))
 
+;;; What VM invokes for itself
+
+(defconst vm-reference-test--callback-prefixes
+  '("vm-toolbar-" "vm-menu-" "vm-mouse-" "vm-minibuffer-")
+  "Name prefixes every one of whose commands VM invokes for itself.
+A toolbar handler, a menu entry, a mouse binding, a minibuffer key: none of
+them is typed by name, and each is marked `vm-called-by-vm' beside its
+definition so that the appendix lists it apart from the commands.")
+
+(defun vm-reference-test--defined-commands (file)
+  "Every command FILE defines at top level whose name says VM invokes it."
+  (let ((names nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward "^(defun \\(vm-[^ ()\n]+\\)" nil t)
+        (let ((symbol (intern (match-string 1))))
+          (when (and (commandp symbol)
+                     (seq-some (lambda (prefix)
+                                 (string-prefix-p prefix (symbol-name symbol)))
+                               vm-reference-test--callback-prefixes))
+            (push symbol names)))))
+    (nreverse names)))
+
+(defun vm-reference-test--unmarked-in (file)
+  "The commands FILE defines and does not mark `vm-called-by-vm'."
+  (let ((text (with-temp-buffer (insert-file-contents file) (buffer-string))))
+    (seq-remove (lambda (symbol)
+                  (string-match-p (regexp-quote
+                                   (format "(put '%s 'vm-called-by-vm t)" symbol))
+                                  text))
+                (vm-reference-test--defined-commands file))))
+
+(ert-deftest vm-reference-test-what-is-marked-called-by-vm-is-a-command ()
+  "Nothing carries the mark but a command.
+The mark moves an entry out of the appendix\='s command list, so putting one
+on a function that is not `interactive\=' at all hides nothing and means the
+mark is wrong."
+  (vm-reference-load-everything)
+  (let ((wrong nil))
+    (mapatoms (lambda (symbol)
+                (when (and (get symbol 'vm-called-by-vm)
+                           (not (commandp symbol)))
+                  (push symbol wrong))))
+    (should (equal nil (sort wrong #'string<)))))
+
+(ert-deftest vm-reference-test-every-callback-by-name-is-marked ()
+  "A command named for the toolbar, a menu, the mouse or the minibuffer
+carries the mark, beside its own definition.
+
+The appendix listed 431 commands as though a reader might type any of them,
+a dozen toolbar handlers among them (emacs-vm/vm#715).  This is what stops
+the next handler joining them: a new `vm-toolbar-\=' command with no
+`(put ... \='vm-called-by-vm t)\=' after it fails here.  Read from the files
+rather than from the running Emacs, since a menu `easy-menu-define\=' builds
+when VM installs its menus is a command that no file defines."
+  (vm-reference-load-everything)
+  (let ((unmarked nil))
+    (let ((lisp (expand-file-name "../lisp" vm-test-dir)))
+      (dolist (name (vm-reference-module-files lisp))
+        (setq unmarked (append unmarked (vm-reference-test--unmarked-in
+                                         (expand-file-name name lisp))))))
+    (should (equal nil unmarked))))
+
+(ert-deftest vm-reference-test-a-marked-command-is-classified-as-one ()
+  "The generator files a marked command under the callbacks, not the commands.
+`vm-reference-kind' is what the appendix asks, and the mark is read from the
+code rather than from a list in the generator."
+  (vm-reference-load-everything)
+  (should (eq (vm-reference-kind 'vm-toolbar-next-command) 'callback))
+  (should (eq (vm-reference-kind 'vm-menu-popup-context-menu) 'callback))
+  (should (eq (vm-reference-kind 'vm-next-message) 'command)))
+
 (defconst vm-reference-test--documented-by-hand
   '(vm-customize vm-view-manual vm-view-news vm-edit-init-file
     vm-list-mime-part-structure vm-attach-files-in-directory

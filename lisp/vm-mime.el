@@ -457,6 +457,7 @@ The symbol `none' means they do not.  Encoded words need it, and so does raw
   (let ((buffer-read-only nil))
     (subst-char-in-region start end ?_ (string-to-char " ") t)
     (quoted-printable-decode-region start end)))
+(put 'vm-mime-Q-decode-region 'vm-called-by-vm t)
 
 (fset 'vm-mime-B-decode-region 'vm-mime-base64-decode-region)
 
@@ -1723,8 +1724,10 @@ The STORAGE specification is given in the same format as for
   t)
 
 (defalias 'vm-fetch-mode 'vm-mode)
+(put 'vm-fetch-mode 'vm-called-by-vm t)
 (put 'vm-fetch-mode 'mode-class 'special)
 (defalias 'vm-presentation-mode 'vm-mode)
+(put 'vm-presentation-mode 'vm-called-by-vm t)
 (put 'vm-presentation-mode 'mode-class 'special)
 
 (defvar buffer-file-coding-system)
@@ -7265,6 +7268,7 @@ should be encoded together."
          (narrow-to-region start end)
          (vm-mime-encode-words))
         (goto-char end)))))
+(put 'vm-mime-encode-headers 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mime-encode-composition (&optional attachments-only)

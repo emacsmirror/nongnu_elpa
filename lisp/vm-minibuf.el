@@ -141,6 +141,7 @@
        (t
 	(and (not exiting)
 	     (vm-minibuffer-completion-message "[No match]")))))))
+(put 'vm-minibuffer-complete-word 'vm-called-by-vm t)
 
 (defun vm-minibuffer-complete-word-and-exit ()
   "Complete the word before point and leave the minibuffer at once.
@@ -149,6 +150,7 @@ where one word is the whole answer."
   (interactive)
   (vm-minibuffer-complete-word t)
   (exit-minibuffer))
+(put 'vm-minibuffer-complete-word-and-exit 'vm-called-by-vm t)
 
 (defun vm-minibuffer-completion-message (string &optional seconds)
   "Briefly display STRING to the right of the current minibuffer input.
@@ -291,6 +293,7 @@ item in turn."
     (if c-list
 	(vm-minibuffer-show-completions c-list)
       (vm-minibuffer-completion-message " [No match]"))))
+(put 'vm-minibuffer-completion-help 'vm-called-by-vm t)
 
 (defun vm-keyboard-read-string (prompt completion-list &optional multi-word)
   (let ((minibuffer-local-map (copy-keymap minibuffer-local-map))
