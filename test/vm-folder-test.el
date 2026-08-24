@@ -5017,6 +5017,69 @@ to From_, rather than losing the extension it was given."
   (should (equal (vm-folder-name-for-type "/mail/sent.mbox" 'mboxcl2)
                  "/mail/sent.mboxcl2")))
 
+;;; Fetching a message the folder was once given and no longer holds (#751)
+;;
+;; `vm-imap-get-synchronization-data' fetches such a message only when it is
+;; asked for `full', and until now nothing asked: every caller passed t or
+;; nil, so the branch was dead and a folder whose cache had lost messages
+;; could not be refilled.
+
+(defun vm-folder-test--retrieves-asked-for (full)
+  "What `vm-get-spooled-mail' asks an IMAP folder for, given FULL."
+  (let (asked)
+    (cl-letf (((symbol-function 'vm-imap-synchronize-folder)
+               (lambda (&rest arguments)
+                 (setq asked (plist-get arguments :do-retrieves)))))
+      (vm-get-spooled-mail nil full))
+    asked))
+
+(ert-deftest vm-folder-test-a-full-fetch-asks-for-the-messages-already-recorded ()
+  "`vm-get-spooled-mail' passes `full' when it is asked to, and t otherwise.
+`full' is what reaches the branch in `vm-imap-get-synchronization-data' that
+fetches a message the folder was given once and no longer holds, rather than
+putting its UID on the remote-expunge list."
+  (vm-test-with-folder (vm-folder-test--write-folder-content 1)
+    (setq vm-folder-access-method 'imap)
+    (dolist (sync-on-get '(t nil))
+      (let ((vm-imap-sync-on-get sync-on-get)
+            (vm-block-new-mail nil))
+        (should (eq (vm-folder-test--retrieves-asked-for nil) t))
+        (should (eq (vm-folder-test--retrieves-asked-for t) 'full))))))
+
+(defmacro vm-folder-test--getting-new-mail (spec &rest body)
+  "Run BODY in a folder with `vm-get-spooled-mail' recording how it was asked.
+SPEC is (ASKED-VAR), bound to a function of no arguments answering with the
+list of FULL arguments the calls were given, newest last."
+  (declare (indent 1) (debug t))
+  `(vm-folder-test--with-state-folder
+     (let ((calls nil))
+       (cl-letf (((symbol-function 'vm-get-spooled-mail)
+                  (lambda (&optional _interactive full)
+                    (setq calls (append calls (list full)))
+                    nil)))
+         (cl-flet ((,(car spec) () calls))
+           ,@body)))))
+
+(ert-deftest vm-folder-test-two-prefix-arguments-fetch-what-was-retrieved-before ()
+  "`C-u C-u M-x vm-get-new-mail' asks for a full fetch, and a plain call does
+not.  One prefix argument still means gathering from a folder the reader
+names, so the second is what says this."
+  (vm-folder-test--getting-new-mail (asked)
+    (vm-get-new-mail nil)
+    (should (equal (asked) '(nil)))
+    (vm-get-new-mail '(16))
+    (should (equal (asked) '(nil t)))))
+
+(ert-deftest vm-folder-test-one-prefix-argument-still-gathers-from-a-folder ()
+  "The single prefix argument is untouched: it reads a folder name and
+gathers from it rather than fetching anything from a spool file."
+  (vm-folder-test--getting-new-mail (asked)
+    (cl-letf (((symbol-function 'read-file-name)
+               (lambda (&rest _) (error "asked for a folder to gather from"))))
+      (let ((err (should-error (vm-get-new-mail '(4)) :type 'error)))
+        (should (string-match-p "gather from" (error-message-string err)))))
+    (should (equal (asked) nil))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

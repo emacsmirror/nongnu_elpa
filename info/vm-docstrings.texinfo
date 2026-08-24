@@ -1586,6 +1586,13 @@ the usual spool files.  The file name will be read from the minibuffer.
 Unlike when getting mail from a spool file, the source file is left
 undisturbed after its messages have been copied.
 
+Two prefix args (C-u C-u) mean to fetch everything an IMAP mailbox
+has and this folder has not, including the messages @code{vm-imap-retrieved-messages}
+records as fetched once already.  That record is what stops a message deleted
+here on purpose from coming back, so this is not the way to read mail day to
+day; it is how to refill a folder whose cache lost messages the record still
+names.  It gathers from no other folder, and other access methods ignore it.
+
 When applied to a virtual folder, this command runs itself on
 each of the underlying real folders associated with this virtual
 folder.  A prefix argument has no effect when this command is
@@ -12655,6 +12662,13 @@ Prefix arg means to gather mail from a user specified folder, instead of
 the usual spool files.  The file name will be read from the minibuffer.
 Unlike when getting mail from a spool file, the source file is left
 undisturbed after its messages have been copied.
+
+Two prefix args (C-u C-u) mean to fetch everything an IMAP mailbox
+has and this folder has not, including the messages @code{vm-imap-retrieved-messages}
+records as fetched once already.  That record is what stops a message deleted
+here on purpose from coming back, so this is not the way to read mail day to
+day; it is how to refill a folder whose cache lost messages the record still
+names.  It gathers from no other folder, and other access methods ignore it.
 
 When applied to a virtual folder, this command runs itself on
 each of the underlying real folders associated with this virtual
