@@ -264,11 +264,13 @@ it is suppressed if the variable `vm-auto-next-message' is nil."
 		   "End of message %s from %.50s...")
 		 (vm-number-of (car vm-message-pointer))
 		 (vm-summary-sprintf "%F" (car vm-message-pointer))))))
+(put 'vm-emit-eom-blurb 'vm-called-by-vm t)
 
 (defun vm-emit-mime-decoding-message (format &rest args)
   (interactive)
   (when vm-emit-messages-for-mime-decoding
     (apply 'message (concat "%s: " format) (buffer-name vm-mail-buffer) args)))
+(put 'vm-emit-mime-decoding-message 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-scroll-backward (&optional arg)
@@ -869,6 +871,7 @@ preview or the full message, governed by the the variables
   (mouse-set-point event)
   (end-of-line)
   (vm-shrunken-headers-toggle-this))
+(put 'vm-shrunken-headers-toggle-this-mouse 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-shrunken-headers-toggle-this-widget (widget &rest _event)

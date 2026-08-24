@@ -295,6 +295,7 @@ text that is largely non-ASCII."
     "----"
     ["Sign (inline PGP)"    vm-epg-cleartext-sign t]
     ["Encrypt (inline PGP)" vm-epg-cleartext-encrypt t]))
+(put 'vm-epg-compose-mode-menu 'vm-called-by-vm t)
 
 (defvar vm-epg-compose-mode nil
   "Non-nil when `vm-epg-compose-mode' is active in this buffer.
@@ -1879,6 +1880,7 @@ choice, and `q' aborts sending with an error."
       (message "No action selected."))
     (setq vm-epg-prompt-last-action action)
     action))
+(put 'vm-epg-prompt-for-action 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-epg-ask-hook ()
