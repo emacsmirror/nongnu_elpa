@@ -371,12 +371,14 @@ than against a buffer a test invented."
                (kill-buffer buffer))))
          (delete-directory cache t)))))
 
-(defun vm-imap-net-test--get-mail (mock &optional seconds)
-  "Fetch new mail into the current folder and answer with what came back."
+(defun vm-imap-net-test--get-mail (mock &optional seconds full)
+  "Fetch new mail into the current folder and answer with what came back.
+FULL asks for the messages the folder was given once and no longer holds."
   (let ((answer 'not-called)
         (folder (current-buffer)))
     (vm-imap-net-get-mail (vm-imap-mock-spec mock)
-                          (lambda (result) (setq answer result)))
+                          (lambda (result) (setq answer result))
+                          nil full)
     (let ((deadline (+ (float-time) (or seconds 10))))
       (while (and (eq answer 'not-called) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
@@ -3093,6 +3095,51 @@ target a stranger; a UID the mailbox no longer has matches nothing."
     (let ((flags (vm-imap-net-test--mark-read-after-a-shift driven)))
       ;; UID 1 is gone; UID 2 is the one that was marked, UID 3 untouched
       (should (equal flags '((2 "\\seen") (3)))))))
+
+
+;;; Fetching what the folder was given once and no longer holds (#751)
+
+(ert-deftest vm-imap-net-test-a-full-fetch-brings-back-what-the-record-names ()
+  "A message the record names and the folder has not got is fetched again
+only when it is asked for.
+
+`vm-imap-retrieved-messages' is what stops a message deleted here from
+arriving again, and the same record leaves a folder short when the cache lost
+the message some other way -- a partial restore.  Two prefix arguments to
+`vm-get-new-mail' say so, and reach the plan as FULL-RETRIEVE."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (equal (vm-imap-net-test--get-mail mock) 1))
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+    ;; the folder is told it fetched the second message once already, which
+    ;; is what its own `X-VM-IMAP-Retrieved' header says after a cache that
+    ;; had it was restored from a backup that had not
+    (setq vm-imap-retrieved-messages
+          (list (list "2" (vm-folder-imap-uid-validity)
+                      (vm-imapdrop-sans-password (vm-imap-mock-spec mock))
+                      'uid)))
+    ;; so an ordinary fetch passes it over and the folder stays short
+    (should (equal (vm-imap-net-test--get-mail mock) 0))
+    (should (equal (length vm-message-list) 1))
+    ;; and asking for it brings it
+    (should (equal (vm-imap-net-test--get-mail mock 10 t) 1))
+    (should (equal (length vm-message-list) 2))
+    (should (string-match-p "The second body"
+                            (vm-imap-net-test--body-of (cadr vm-message-list))))))
+
+(ert-deftest vm-imap-net-test-two-prefix-arguments-reach-the-driver ()
+  "`vm-get-spooled-mail' hands its FULL to the driver rather than dropping it
+on the way: the asynchronous path is what an IMAP folder takes, so a fetch
+that ignored it would leave the command doing nothing at all."
+  (let (asked)
+    (vm-imap-net-test--visiting (mock)
+      (cl-letf (((symbol-function 'vm-imap-net-get-mail)
+                 (lambda (_source _callback &optional _may-ask full-retrieve)
+                   (setq asked (cons full-retrieve asked))
+                   nil)))
+        (vm-get-spooled-mail nil nil)
+        (vm-get-spooled-mail nil t))
+      (should (equal (nreverse asked) '(nil t))))))
 
 (provide 'vm-imap-net-test)
 
