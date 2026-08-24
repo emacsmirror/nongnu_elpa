@@ -379,6 +379,14 @@ another file from which to gather messages instead of the usual spool
 files.  In this case the source folder is copied but no messages are
 deleted from it as they would be for a spool file.
 
+Two prefix arguments (@kbd{C-u C-u g}) mean something else again, and only
+for an @acronym{IMAP} folder: fetch every message the mailbox has and this
+folder has not, including the ones VM has recorded as retrieved once
+already.  That record is what stops a message you deleted here from coming
+back, so this is not for reading mail day to day; it is how to refill a
+cache folder that has lost messages some other way.
+@xref{@acronym{IMAP} Synchronization}.
+
 @cindex primary inbox
 @cindex spool file
 By default your primary inbox has your system mailbox associated with
@@ -1808,6 +1816,14 @@ the attributes and labels in the cache folder based on the server data,
 (iii) expunging messages in the cache folder that have been expunged on the
 server, and finally, (iv) retrieving any new messages on the server.
 @vmdocvmimapsynconget
+
+VM remembers the @acronym{UID} of every message it has retrieved, in the
+cache folder's own @code{X-VM-IMAP-Retrieved} header, and step (iv) passes
+over a message that record already names.  That is what makes deleting a
+message here stick, rather than the message arriving again with the next
+@kbd{g}.  A cache that has lost messages the record still names -- one
+restored from a partial backup, say -- is short of them for the same reason;
+@kbd{C-u C-u g} is what asks for those.
 
 @findex vm-save-folder
 The cache folder and the folder on the @acronym{IMAP} server are also

@@ -5367,27 +5367,34 @@ folder is then left alone until a check succeeds again; set
 	  (setq triples (cdr triples)))
 	mail-waiting ))))
 
-(defun vm-get-spooled-mail (&optional interactive)
+(defun vm-get-spooled-mail (&optional interactive full)
   "Get new mail for the current folder from its spool file.
 The optional argument INTERACTIVE says whether the function can make
 interactive queries to the user.  The possible values are t,
-`password-only', and nil."
+`password-only', and nil.
+
+FULL asks an IMAP mailbox for every message the folder has not got, rather
+than only for those `vm-imap-retrieved-messages' has no record of.  It is
+what refills a folder whose cache lost messages the record still names; see
+`vm-get-new-mail'.  Other access methods have nothing to be full about and
+ignore it."
   (if vm-block-new-mail
       (error "Can't get new mail until you save this folder."))
   (cond ((eq vm-folder-access-method 'pop)
-	 (vm-pop-synchronize-folder :interactive interactive 
+	 (vm-pop-synchronize-folder :interactive interactive
 				    :do-retrieves t))
 	((eq vm-folder-access-method 'imap)
-	 (or (vm-imap-net-get-spooled-mail interactive)
-	     (if vm-imap-sync-on-get
-		 (progn
-		   (vm-imap-synchronize-folder :interactive interactive
-					       :do-local-expunges t
-					       :do-retrieves t
-					       :save-attributes t
-					       :retrieve-attributes t))
-	       (vm-imap-synchronize-folder :interactive interactive
-					   :do-retrieves t))))
+	 (let ((do-retrieves (if full 'full t)))
+	   (or (vm-imap-net-get-spooled-mail interactive)
+	       (if vm-imap-sync-on-get
+		   (progn
+		     (vm-imap-synchronize-folder :interactive interactive
+						 :do-local-expunges t
+						 :do-retrieves do-retrieves
+						 :save-attributes t
+						 :retrieve-attributes t))
+		 (vm-imap-synchronize-folder :interactive interactive
+					     :do-retrieves do-retrieves)))))
 	(t (vm-get-spooled-mail-normal interactive))))
 
 (defun vm-spooled-mail-arrived (crash safe-maildrop)
@@ -5661,6 +5668,14 @@ the usual spool files.  The file name will be read from the minibuffer.
 Unlike when getting mail from a spool file, the source file is left
 undisturbed after its messages have been copied.
 
+Two prefix args (\\[universal-argument] \\[universal-argument]) mean to fetch \
+everything an IMAP mailbox
+has and this folder has not, including the messages `vm-imap-retrieved-messages'
+records as fetched once already.  That record is what stops a message deleted
+here on purpose from coming back, so this is not the way to read mail day to
+day; it is how to refill a folder whose cache lost messages the record still
+names.  It gathers from no other folder, and other access methods ignore it.
+
 When applied to a virtual folder, this command runs itself on
 each of the underlying real folders associated with this virtual
 folder.  A prefix argument has no effect when this command is
@@ -5670,7 +5685,8 @@ files."
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-folder-read-only)
   (let* ((folder (buffer-name))
-	 (description (if (consp (car (vm-spool-files))) 
+	 (full (equal arg '(16)))
+	 (description (if (consp (car (vm-spool-files)))
 					; folder-specific spool files
 			  (format "new mail for %s" (buffer-name))
 			(format "new mail")))
@@ -5679,10 +5695,10 @@ files."
 	   (vm-virtual-get-new-mail))
 	  ((not (eq major-mode 'vm-mode))
 	   (error "Can't get mail for a non-VM folder buffer"))
-	  ((null arg)
+	  ((or (null arg) full)
 	   ;; This is redundant now.  USR, 2011-12-26
 	   (vm-inform 5 "%s: Checking for %s..." folder description)
-	   (if (vm-get-spooled-mail t)
+	   (if (vm-get-spooled-mail t full)
 	       (progn
 		 ;; say this NOW, before the non-previewers read
 		 ;; a message, alter the new message count and

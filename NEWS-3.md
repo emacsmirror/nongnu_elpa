@@ -20,6 +20,14 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     and say so: saving or copying a message whose body is still on the server,
     and completing a folder name.  `C-g` works in both.
 
+  * `C-u C-u g` (`vm-get-new-mail` with two prefix arguments) fetches every
+    message an IMAP mailbox has and the folder has not, including those VM
+    has recorded as retrieved once already.  The record is what stops a
+    message deleted here from coming back; this is how to refill a cache
+    folder that lost messages some other way, which nothing could ask for
+    before (emacs-vm/vm#751).  One prefix argument still gathers from a
+    folder the reader names.
+
   * VM reads and writes mboxcl2, the mbox variant that keeps a
     `Content-Length` header and stores a message exactly as it arrived
     (emacs-vm/vm#466).  A fallout: the folder type is now called `mboxcl2`
