@@ -1138,6 +1138,7 @@ VM had just offered to visit."
     (vm-postpone-test--write-drafts dir)
     (let (said)
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-mail) #'ignore)
                 ((symbol-function 'message)
                  (lambda (format &rest args)
                    (setq said (apply #'format format args)))))
@@ -1183,6 +1184,60 @@ not put."
   (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
     (vm-postpone-test--write-drafts dir)
     (should (eq (vm-continue-what-message-composing) 'visit))))
+
+(ert-deftest vm-postpone-test-declining-starts-a-new-message ()
+  "Answering no composes: the drafts were offered and refused, and the key
+that offered them is the compose key.  It used to do nothing at all, which
+made \\[vm-continue-what-message] a dead keystroke for anyone with a draft on
+disk -- the manual binds the other-window command to \\`C-x m\\', where doing
+nothing loses `compose-mail' as well."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir)
+    (let (composed)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-mail)
+                 (lambda (&rest _) (setq composed t))))
+        (vm-continue-what-message))
+      (should composed))))
+
+(ert-deftest vm-postpone-test-declining-in-another-window-uses-that-window ()
+  "`vm-continue-what-message-other-window' composes in the other window.
+WHERE picks the command by name, so a decline has to reach
+`vm-mail-other-window' and not `vm-mail'."
+  (vm-postpone-test--deciding ()
+    (vm-postpone-test--write-drafts dir)
+    (let (composed)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-mail)
+                 (lambda (&rest _) (setq composed 'here)))
+                ((symbol-function 'vm-mail-other-window)
+                 (lambda (&rest _) (setq composed 'other-window))))
+        (vm-continue-what-message-other-window))
+      (should (eq composed 'other-window)))))
+
+(ert-deftest vm-postpone-test-never-continuing-composes-instead ()
+  "`vm-continue-what-message' nil declines every time, so it composes every
+time: the drafts are never continued and are left where they are."
+  (vm-postpone-test--deciding ((vm-continue-what-message nil))
+    (vm-postpone-test--write-drafts dir)
+    (let (composed)
+      (cl-letf (((symbol-function 'vm-mail)
+                 (lambda (&rest _) (setq composed t))))
+        (vm-continue-what-message))
+      (should composed))))
+
+(ert-deftest vm-postpone-test-declining-leaves-the-drafts-alone ()
+  "Composing on a decline writes nothing to the drafts folder: the draft
+that was refused is still there to be continued later."
+  (vm-postpone-test--deciding ()
+    (let ((file (vm-postpone-test--write-drafts dir)))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'vm-mail) #'ignore))
+        (vm-continue-what-message))
+      (should (equal (with-temp-buffer
+                       (insert-file-contents file)
+                       (buffer-string))
+                     vm-postpone-test--draft)))))
 
 (provide 'vm-postpone-test)
 

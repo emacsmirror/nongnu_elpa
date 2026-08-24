@@ -822,6 +822,11 @@ had just declined the question that there were no drafts."
 With a prefix arg, call `vm-continue-postponed-message', i.e. continue the
 currently selected message.
 
+Declining the offer of the drafts folder starts a new message instead, as
+does `vm-continue-what-message' nil with drafts on disk: the drafts stay
+where they are.  With no drafts anywhere, a new message is started only
+when `vm-zero-drafts-start-compose' is t.
+
 See `vm-continue-what-message' and `vm-zero-drafts-start-compose' for
 configuration."
   (interactive)
@@ -848,14 +853,14 @@ configuration."
                     (funcall mail)))
                  ((= (length vm-message-list) 1)
                   (vm-continue-postponed-message))))
-          ((and vm-zero-drafts-start-compose (memq action '(new declined)))
+          ((or (eq action 'declined)
+               (and vm-zero-drafts-start-compose (eq action 'new)))
+           ;; Declining the drafts is not declining to write: the key that
+           ;; offered them is the key you press to compose, so it composes.
+           ;; Doing nothing made it a dead key -- the drafts folder was
+           ;; offered, refused, and that was the whole of the keystroke.
            (let ((this-command mail))
              (funcall mail)))
-          ((eq action 'declined)
-           ;; The drafts are there and the reader said not now, so there is
-           ;; nothing to do and nothing to say.  Saying there are none is
-           ;; what this used to do, right after asking about them.
-           nil)
           (t
            (message "There are no known drafts.")))))
 
