@@ -378,11 +378,13 @@ from the minibuffer."
 	'identity t)))))
   (vm-set-window-configuration tag))
 
+;;;###autoload
 (defun vm-window-help ()
   "Show the window configuration commands and their keys in the echo area."
   (interactive)
   (vm-inform 0 "WS = save configuration, WD = delete configuration, WW = apply configuration"))
 
+;;;###autoload
 (defun vm-iconify-frame ()
   "Iconify the current frame.
 Run the hooks in vm-iconify-frame-hook before doing so."

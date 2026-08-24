@@ -841,8 +841,6 @@ C-c # e         vm-epg-encrypt
 C-c # k         vm-epg-attach-public-key
 C-c # s         vm-epg-sign
 @end example
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-epg-encrypt &optional sign
@@ -1390,8 +1388,6 @@ folder to the type it already is recomputes every length.
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
 Show the line @code{vm-totals-blurb} answers, and answer with it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-folder-cache-file &optional buffer
@@ -1581,8 +1577,6 @@ and the folder is visited afresh with the access method it had, so an
 IMAP or POP folder comes back connected rather than as a plain file.
 
 Also available as @code{vm-revert-folder}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-save-and-expunge-folder &optional prefix
@@ -3354,8 +3348,6 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-delete-folder folder
@@ -3365,8 +3357,6 @@ First argument FOLDER is read from the minibuffer if called
 interactively.  Non-interactive callers must provide an IMAP
 maildrop specification for the folder as described in the
 documentation for @code{vm-spool-files}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-list-folders account &optional filter-new
@@ -3377,8 +3367,6 @@ counts of messages in them.  The account must be one declared in
 
 With a prefix argument, it lists only the folders with new messages in
 them.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-rename-folder source dest
@@ -3388,8 +3376,6 @@ Argument SOURCE and DEST are read from the minibuffer if called
 interactively.  Non-interactive callers must provide full IMAP
 maildrop specifications for SOURCE and DEST as described in the
 documentation for @code{vm-spool-files}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-start-bug-report
@@ -3422,16 +3408,12 @@ This is useful for saving offline work on the cache folder.
 @findex vm-imap-unset-body-retrieve
 Unset the body-to-be-retrieved flag of all the messages.  May
   be needed if the folder has become corrupted somehow.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-imap-unset-byte-counts
 @findex vm-imap-unset-byte-counts
 Unset the byte counts of all the messages, so that the size of the
 downloaded bodies will be displayed.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-list-imap-folders account &optional filter-new
@@ -3900,8 +3882,6 @@ header section at the top.  For files with MIME headers, you
 should use @code{vm-attach-mime-file} to attach such a file.  VM
 will extract the content type information from the headers in
 this case and not prompt you for it in the minibuffer.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-file file type &optional charset description _no-suggested-filename
@@ -3932,8 +3912,6 @@ header section at the top.  For files with MIME headers, you
 should use @code{vm-attach-mime-file} to attach such a file.  VM
 will extract the content type information from the headers in
 this case and not prompt you for it in the minibuffer.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-message message &optional description
@@ -3969,8 +3947,6 @@ thread are attached.
 Optional second argument DESCRIPTION is a one-line description of
 the message being attached.  This is also read from the
 minibuffer if the command is run interactively.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-message-to-composition composition &optional description
@@ -3999,8 +3975,6 @@ thread are attached.
 Optional second argument DESCRIPTION is a one-line description of
 the message being attached.  This is also read from the
 minibuffer if the command is run interactively.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-mime-file file type
@@ -4024,8 +3998,6 @@ The second argument, TYPE, is the MIME Content-Type of the object.
 This command is for attaching files that have a MIME
 header section at the top.  For files without MIME headers, you
 should use @code{vm-attach-file} to attach the file.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-auto-save-all-attachments &optional count
@@ -4089,8 +4061,6 @@ in a MIME-aware mail reader.  VM copies and encodes the current
 mail composition buffer and displays it as a mail folder.
 Type @code{q} to quit this temp folder and return to composing your
 message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-reader-map-attach-to-composition
@@ -4199,8 +4169,6 @@ The variables @code{vm-mime-all-attachments-directory} or
 @code{vm-mime-attachment-save-directory} can be used to set the
 default location.  When directory does not exist it will be
 confirmed before creating a new directory.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-toggle-best-mime
@@ -5899,15 +5867,11 @@ Mark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mark-matching-messages-with-virtual-folder name
 @findex vm-mark-matching-messages-with-virtual-folder
 Mark messages that are matched by the selectors of virtual folder NAME.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mark-message count
@@ -5972,15 +5936,11 @@ Unmark messages matching a virtual selector.
 You can use any of the virtual folder selectors, except for the
 @code{and}, @code{or} and @code{not} selectors.  See the documentation for the
 variable @code{vm-virtual-folder-alist} for more information.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-unmark-matching-messages-with-virtual-folder name
 @findex vm-unmark-matching-messages-with-virtual-folder
 Unmark messages that are matched by the selectors of virtual folder NAME.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-unmark-message count
@@ -6314,8 +6274,6 @@ Not documented.
 @deffn Command vm-goto-last-message-seen
 @findex vm-goto-last-message-seen
 Go to the message last previewed.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-goto-message n
@@ -6675,8 +6633,6 @@ Space scrolls forward, Delete scrolls backward.
 For a list of all View commands, type H or h while viewing.
 
 This command runs the normal hook @code{view-mode-hook}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -7127,30 +7083,22 @@ Build a list of the actions to run.
 These are the true conditions mapped to actions.  Duplicates will be
 eliminated.  You may run it in a composition buffer in order to see what
 actions will be run.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-build-true-conditions-list
 @findex vm-pcrisis-build-true-conditions-list
 Build list of true conditions and store it in the variable 
 @code{vm-pcrisis-true-conditions}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-fix-auto-profiles-file
 @findex vm-pcrisis-fix-auto-profiles-file
 Change @code{vm-pcrisis-auto-profiles-file} to the format used by v0.82+.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-load-auto-profiles
 @findex vm-pcrisis-load-auto-profiles
 Initialise @code{vm-pcrisis-auto-profiles} from @code{vm-pcrisis-auto-profiles-file}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-migrate-profiles-to-BBDB
@@ -7159,8 +7107,6 @@ Migrate the profiles stored in @code{vm-pcrisis-auto-profiles-file} to the BBDB.
 
 This will automatically create records if they do not exist and add the new
 field @code{vmpc-profile} to the records which is a sexp not meant to be edited.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-mode &optional arg
@@ -7226,8 +7172,6 @@ completion.
 Run the argument actions, or the actions stored in @code{vm-pcrisis-actions-to-run}.
 If verbose is supplied, it should be a STRING, indicating the name of a
 buffer to which to write diagnostic output.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-pcrisis-toggle-no-automorph
@@ -7241,8 +7185,6 @@ current composition, then call this function.
 @findex vm-pcrisis-true-conditions
 Return a list of all true conditions.
 Run this function in order to test/check your conditions.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -7473,6 +7415,11 @@ Continue compositions or postponed messages if there are some.
 
 With a prefix arg, call @code{vm-continue-postponed-message}, i.e. continue the
 currently selected message.
+
+Declining the offer of the drafts folder starts a new message instead, as
+does @code{vm-continue-what-message} nil with drafts on disk: the drafts stay
+where they are.  With no drafts anywhere, a new message is started only
+when @code{vm-zero-drafts-start-compose} is t.
 
 See @code{vm-continue-what-message} and @code{vm-zero-drafts-start-compose} for
 configuration.
@@ -7980,8 +7927,6 @@ If there is no next button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-move-to-previous-button count
@@ -7994,8 +7939,6 @@ If there is no previous button, an error is signaled and point is not moved.
 A button is a highlighted region of text where pressing RETURN
 will produce an action.  If the message is being previewed, it is
 exposed and marked as read.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-next-button count
@@ -8381,23 +8324,17 @@ Remove doubly-cited text and extra lines in a mail message.
 @findex vm-mail-mode-hide-headers
 Hides and protects headers listed in @code{vm-mail-mode-hidden-headers}.
 With a prefix arg, call @code{vm-mail-mode-show-headers} instead.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-mode-show-headers
 @findex vm-mail-mode-show-headers
 Display any hidden headers in a composition buffer.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-send
 @findex vm-mail-send
 Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-send-and-exit &rest _ignored
@@ -8406,8 +8343,6 @@ Send message and maybe delete the composition buffer.
 The value of @code{vm-keep-sent-messages} determines whether the composition buffer
 is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-to-mailto-url url
@@ -8498,8 +8433,6 @@ Like vm-resend-message, but run in a newly created frame.
 Extract the original text from a bounced message and resend it.
 You will be placed in a Mail mode buffer with the extracted message and
 you can change the recipient address before resending the message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-send-digest &optional prefix mlist
@@ -9201,8 +9134,6 @@ output of the command.
 Runs a shell command with contents from the current message as input.
 This function is like @code{vm-pipe-messages-to-command}, but will not display the
 output of the command, but return it as a string.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-print-message &optional count
@@ -9377,22 +9308,16 @@ expression which is evaluated
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
 a warning.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-get-token &optional token
 @findex vm-serial-get-token
 Return value of vm-serial TOKEN.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-insert-token token
 @findex vm-serial-insert-token
 Reads a valid token, inserts it at point and expands it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-send-mail &optional non-interactive done
@@ -9404,23 +9329,17 @@ it is, or you may edit it before sending or you may skip it.
 
 If called with a prefix argument or NON-INTERACTIVE set to non nil, no
 questions will bother you!
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-send-mail-and-exit &optional non-interactive
 @findex vm-serial-send-mail-and-exit
 Like @code{vm-serial-send-mail} but kills the buffer after sending all.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-set-token &optional token newvalue doc
 @findex vm-serial-set-token
 Set vm-serial TOKEN to NEWVALUE with DOC.
 You may remove a token by specifying just the TOKEN as argument.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-serial-yank-mail &optional mail no-expand
@@ -9439,8 +9358,6 @@ editing point.
 I try to be clever when to delete the existing buffer contents and when to
 expand the tokens, however if this does not satisfy you please report it to
 me.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -9870,8 +9787,6 @@ mandatory.
 @deffn Command vm-headers-summary-other-frame &optional display
 @findex vm-headers-summary-other-frame
 Like vm-summarize, but run in a newly created frame.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-summarize &optional display raise
@@ -9893,8 +9808,6 @@ Trace this message while summary lines are being built.
 A debugging aid: @code{vm-summary-debug} enters the debugger for a message on
 this list, and only when @code{vm-debug} is set, so tracing a message costs
 nothing until then.  Prints the list of messages being traced.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-toggle-thread
@@ -10836,8 +10749,6 @@ specifier) will be visible.
 Trace this message by Message-ID while threads are being built.
 A debugging aid, with @code{vm-trace-message-subject}: the threading code walks
 these lists to decide when to stop and report.  Prints the list.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-trace-message-subject
@@ -10845,8 +10756,6 @@ these lists to decide when to stop and report.  Prints the list.
 Trace this message by subject while threads are being built.
 The subject is the sortable one, so it matches the way threading groups
 messages by subject.  See @code{vm-trace-message-id}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @node Reference for Undo, Reference for Url, Reference for Threading, Reference
@@ -11836,8 +11745,6 @@ which is normally read from the minibuffer.  See @code{vm-vs-interactive}
 for the list of selectors.
 
 Prefix arg means the new virtual folder should be visited read only.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-create-search-folder-other-frame selector &optional arg read-only name bookmark
@@ -12048,8 +11955,6 @@ Default value: @code{t}
 @findex vm-w3m-safe-toggle-inline-images
 Toggle displaying of all images in the presentation buffer.
 If the prefix arg is given, all images are considered to be safe.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options
@@ -12104,8 +12009,6 @@ The action will be read from the minibuffer.
 @findex vm-iconify-frame
 Iconify the current frame.
 Run the hooks in vm-iconify-frame-hook before doing so.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-save-window-configuration tag
@@ -12132,8 +12035,6 @@ window configurations.
 @deffn Command vm-window-help
 @findex vm-window-help
 Show the window configuration commands and their keys in the echo area.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @appendixsubsec User options

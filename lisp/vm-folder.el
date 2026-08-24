@@ -2347,6 +2347,7 @@ its own and once inside the line that followed it."
 		(nth 3 vm-totals)
 		(nth 4 vm-totals))))))
 
+;;;###autoload
 (defun vm-emit-totals-blurb ()
   "Show the line `vm-totals-blurb' answers, and answer with it."
   (interactive)
@@ -4784,6 +4785,7 @@ Also available as `vm-revert-folder'."
     (setq vm-folder-access-method access-method)
     (vm (current-buffer) :access-method access-method :reload 'reload)))
 
+;;;###autoload (autoload 'vm-revert-folder "vm-folder" nil t)
 (defalias 'vm-revert-folder 'vm-revert-buffer)
 
 (defun vm-recover-folder-file-name ()

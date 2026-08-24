@@ -648,6 +648,7 @@ specified by `vm-included-text-headers' and
 	       (setq alternatives (1- alternatives))
 	       (setq parts (cdr parts))))))))
 
+;;;###autoload
 (defun vm-mail-send-and-exit (&rest _ignored)
   "Send message and maybe delete the composition buffer.
 The value of `vm-keep-sent-messages' determines whether the composition buffer
@@ -828,6 +829,7 @@ This function is a variant of `vm-get-header-contents'."
 (defvar coding-system-for-write)
 (defvar mail-send-nonascii)
 
+;;;###autoload
 (defun vm-mail-send ()
   "Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate."
@@ -1517,6 +1519,7 @@ you can change the recipient address before resending the message."
   (run-hooks 'vm-resend-bounced-message-hook)
   (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
+;;;###autoload (autoload 'vm-retry-bounced-message "vm-reply" nil t)
 (defalias 'vm-retry-bounced-message 'vm-resend-bounced-message)
 
 ;;;###autoload
@@ -2354,6 +2357,7 @@ message."
   (remove-hook 'mail-send-hook 'mime-editor/maybe-translate))
 
 
+;;;###autoload
 (defun vm-mail-mode-show-headers ()
   "Display any hidden headers in a composition buffer."
   (interactive)
@@ -2364,6 +2368,7 @@ message."
 
 (make-variable-buffer-local 'line-move-ignore-invisible)
 
+;;;###autoload
 (defun vm-mail-mode-hide-headers ()
   "Hides and protects headers listed in `vm-mail-mode-hidden-headers'.
 With a prefix arg, call `vm-mail-mode-show-headers' instead."
