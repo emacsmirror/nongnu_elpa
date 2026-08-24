@@ -3714,8 +3714,6 @@ which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
 match.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-attach-message message &optional description
@@ -3858,8 +3856,6 @@ describes what was deleted.
 @deffn Command vm-list-mime-part-structure &optional verbose
 @findex vm-list-mime-part-structure
 List mime part structure of the current message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mime-attach-buffer buffer type &optional charset description
@@ -7460,8 +7456,6 @@ Ask for continuing of postponed messages if there are some.
 @deffn Command vm-delete-postponed-message
 @findex vm-delete-postponed-message
 Delete the source message belonging to the continued composition.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-mail-auto-fcc
@@ -7939,8 +7933,6 @@ Toggle exposing and hiding message headers that are normally not visible.
 @deffn Command vm-isearch-presentation
 @findex vm-isearch-presentation
 Switches to the Presentation buffer and starts isearch.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-move-to-next-button count

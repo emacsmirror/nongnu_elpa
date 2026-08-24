@@ -232,6 +232,11 @@ a folder on a remote mail server.
 If you type @kbd{?} in a VM folder buffer you will get some help, i.e.
 @code{vm-help} is called.
 
+@findex vm-view-manual
+@findex vm-view-news
+@kbd{M-x vm-view-manual} opens this manual, and @kbd{M-x vm-view-news} the
+newest of VM's NEWS files, which is where a release says what changed.
+
 @findex vm-scroll-forward
 @findex vm-scroll-backward
 @kindex SPC
@@ -2672,6 +2677,13 @@ fill column that VM uses is controlled by
 @code{fill-column}, this variable is not buffer-local by default.
 
 
+@findex vm-isearch-presentation
+@cindex searching within a message
+@kbd{M-x vm-isearch-presentation} searches the message you are reading: it
+selects the presentation buffer, where the text VM displays actually lives,
+and starts an incremental search there.  An @kbd{C-s} typed in the summary
+would search the summary lines instead.
+
 @node @acronym{MIME} Messages,, Paging, Reading Messages
 @section Reading @acronym{MIME} Messages
 
@@ -2870,6 +2882,16 @@ usually a faster operation of VM.
 @vmdocvmsaveallattachments
 
 @vmdocvmdeleteallattachments
+
+@findex vm-list-mime-part-structure
+@cindex @acronym{MIME} structure
+@kbd{M-x vm-list-mime-part-structure} shows how the message you are reading
+is put together: a buffer of its own holding one line per @acronym{MIME}
+part, indented as the parts are nested, each giving the part's type and
+whatever it has of an id, a description and a disposition.  With a prefix
+argument the whole layout structure is printed instead, which is for
+debugging VM rather than for reading mail.  @code{vm-mime-list-part-structure}
+is the same command under its other name.
 
 @node Internal display, @acronym{HTML} display, Attachments, @acronym{MIME} Messages
 @subsection Internal display of @acronym{MIME} attachments
@@ -3931,6 +3953,12 @@ those attachments to your message composition by using the @kbd{$ a}
 (@xref{Operating on @acronym{MIME} attachments}.)  This operation is also
 available on the pop-up menu for attachments.
 
+@findex vm-attach-files-in-directory
+@kbd{M-x vm-attach-files-in-directory} attaches a whole directory's worth at
+once.  It asks for the directory and for a regexp, and attaches every file
+whose name matches; an empty regexp attaches all of them.  With a prefix
+argument the regexp is matched literally.
+
 In all these cases, you will be prompted for the message composition
 buffer to which you would like to attach the objects.  The default is
 the latest message you have been composing, as indicated by the Emacs
@@ -4598,6 +4626,15 @@ When you continue composition of a postponed message and send it, its
 previous draft is still retained in the postponed folder. To expunge such
 drafts automatically set @code{vm-auto-expunge-postponed-folder} to @code{t}
 in your VM configuration file.
+
+@findex vm-delete-postponed-message
+That happens through @code{vm-delete-postponed-message}, which a continued
+composition puts on its own @code{mail-send-hook}: it marks the draft the
+composition came from deleted, and expunges it where
+@code{vm-auto-expunge-postponed-folder} says to.  Typed by hand in a
+continued composition, @kbd{M-x vm-delete-postponed-message} does the same
+thing there and then, which is how to be rid of a draft you have decided
+against without sending anything.
 
 @node Multiple Email Addresses, Selecting Messages, Sending Messages, Top
 @chapter Multiple Email Addresses (Personality Crisis)
@@ -7596,6 +7633,11 @@ not both.
 without restarting Emacs.  With a prefix argument it reads @file{~/.vm} and
 skips @file{~/.vm.preferences}, which is the quick way to find out whether a
 preference is what broke something.
+
+@findex vm-edit-init-file
+@findex vm-customize
+@kbd{M-x vm-edit-init-file} visits @code{vm-init-file} in another frame, and
+@kbd{M-x vm-customize} opens VM's own Customize group.
 
 @node Folder Settings,, Where Settings Go, Customizing VM
 @section Settings that apply to one folder

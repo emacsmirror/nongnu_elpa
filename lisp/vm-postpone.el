@@ -505,6 +505,7 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
   (run-hooks 'vm-reply-hook))
 
 ;;-----------------------------------------------------------------------------
+;;;###autoload
 (defun vm-delete-postponed-message ()
   "Delete the source message belonging to the continued composition."
   (interactive)

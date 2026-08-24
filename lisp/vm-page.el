@@ -1300,6 +1300,7 @@ exposed and marked as read."
       (goto-char old-point)
       (error "No more buttons"))))
 
+;;;###autoload
 (defun vm-isearch-presentation ()
   "Switches to the Presentation buffer and starts isearch."
   (interactive)
