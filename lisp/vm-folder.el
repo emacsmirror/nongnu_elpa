@@ -5385,7 +5385,7 @@ ignore it."
 				    :do-retrieves t))
 	((eq vm-folder-access-method 'imap)
 	 (let ((do-retrieves (if full 'full t)))
-	   (or (vm-imap-net-get-spooled-mail interactive)
+	   (or (vm-imap-net-get-spooled-mail interactive full)
 	       (if vm-imap-sync-on-get
 		   (progn
 		     (vm-imap-synchronize-folder :interactive interactive

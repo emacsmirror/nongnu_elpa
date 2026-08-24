@@ -920,11 +920,15 @@ every lookup walked one."
     (vm-set-folder-imap-uid-obarray uids)
     (vm-set-folder-imap-flags-obarray flags)))
 
-(defun vm-imap-net-plan (data count)
+(defun vm-imap-net-plan (data count &optional full-retrieve)
   "Work out what has to be fetched, and answer with (RETRIEVE-LIST BUNCHES).
 The current buffer is the folder.  RETRIEVE-LIST is (UID SEQUENCE-NUMBER
 HEADERS-ONLY) per message, in the order the messages will arrive; BUNCHES is
-what to ask the server for, `vm-imap-message-bunch-size\\=' at a time."
+what to ask the server for, `vm-imap-message-bunch-size\\=' at a time.
+
+FULL-RETRIEVE asks for the messages `vm-imap-retrieved-messages\\=' records as
+fetched once already and the folder no longer holds, which are passed over
+otherwise.  Two prefix arguments to `vm-get-new-mail\\=' ask for it."
   (vm-imap-net-install-message-data data count)
   (if (null data)
       ;; Nothing on the server, so nothing to fetch -- and everything here
@@ -936,7 +940,7 @@ what to ask the server for, `vm-imap-message-bunch-size\\=' at a time."
       ;; driver does not set, and the session died of it.
       (list nil nil (vm-imap-net-messages-not-on-the-server)
 	    (vm-imap-net-stale-messages) nil)
-    (vm-imap-net-plan-1 data count)))
+    (vm-imap-net-plan-1 data count full-retrieve)))
 
 (defun vm-imap-net-messages-not-on-the-server ()
   "The folder's messages that came from this mailbox, none of them being there.
@@ -974,10 +978,11 @@ visiting an IMAP folder brought in no messages."
   `(let ((vm-buffer-types (cons 'folder vm-buffer-types)))
      ,@body))
 
-(defun vm-imap-net-plan-1 (data count)
+(defun vm-imap-net-plan-1 (data count &optional full-retrieve)
   "The plan for a mailbox that holds something.  See `vm-imap-net-plan'."
   (ignore data count)
-  (let* ((sync (vm-imap-net-as-folder (vm-imap-get-synchronization-data t)))
+  (let* ((sync (vm-imap-net-as-folder
+		(vm-imap-get-synchronization-data (if full-retrieve 'full t))))
 	 (headers-only (or (eq vm-enable-external-messages t)
 			   (memq 'imap vm-enable-external-messages)))
 	 (limit (or vm-imap-max-message-size most-positive-fixnum))
@@ -1238,7 +1243,8 @@ the choice is taken and the label says which messages it was taken for."
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
 (iter-defun vm-imap-net-get-new-mail (folder mailbox user password
-					     &optional attributes all-flags full)
+					     &optional attributes all-flags full
+					     full-retrieve)
   "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
 The messages arrive a bunch at a time, are collected in a buffer of their own,
 and go into FOLDER in one piece as each bunch is taken into the message list.
@@ -1251,7 +1257,11 @@ ATTRIBUTES gives the folder's own messages the flags the server has for them,
 ALL-FLAGS sends every message's flags rather than only those that changed, and
 FULL deletes on the server what the folder no longer holds.  Without them this
 is `vm-get-new-mail\=': what has arrived, and what the folder has asked to be
-expunged."
+expunged.
+
+FULL-RETRIEVE is the other direction, and no part of a synchronisation: fetch
+what the folder was given once and no longer holds, rather than passing it
+over.  Two prefix arguments to `vm-get-new-mail\=' ask for it."
   ;; The bunch buffer is made here and killed in the cleanup below, not at the
   ;; end of the body: an abandoned session or any error on the way -- the
   ;; refused UIDVALIDITY a few lines down is the first of them -- never reaches
@@ -1307,7 +1317,8 @@ expunged."
     			 nil
     		       (let ((vm-imap-net-counting (list folder "listing" count)))
     			 (iter-yield-from (vm-imap-net-message-data 1 count)))))
-	  (setq plan (with-current-buffer folder (vm-imap-net-plan data count)))
+	  (setq plan (with-current-buffer folder
+		       (vm-imap-net-plan data count full-retrieve)))
 	  (let ((retrieve-list (nth 0 plan))
     		(bunches (nth 1 plan)))
 	    (when retrieve-list
@@ -2607,7 +2618,7 @@ is `later\='."
 	    (vm-imap-net-say-why-not folder reason)
 	    nil))))))))
 
-(defun vm-imap-net-get-mail (source callback &optional may-ask)
+(defun vm-imap-net-get-mail (source callback &optional may-ask full-retrieve)
   "Fetch into the current folder what SOURCE has that it has not, and
 tell CALLBACK.
 
@@ -2615,6 +2626,9 @@ CALLBACK is called in the folder buffer with the number of messages
 fetched, or with the error that stopped the session.  Nothing waits: the
 whole of it happens in the process filter, and the folder is left usable
 while it does.
+
+FULL-RETRIEVE asks for the messages the folder was given once and no longer
+holds; see `vm-imap-net-plan\\='.
 
 Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
 is a caller\\='s cue to use the blocking implementation."
@@ -2637,7 +2651,9 @@ is a caller\\='s cue to use the blocking implementation."
     (vm-imap-net-take-session session
 			      (vm-imap-net-get-new-mail folder (nth 1 opened)
 							(nth 2 opened)
-							(nth 3 opened)))))
+							(nth 3 opened)
+							nil nil nil
+							full-retrieve))))
 
 (declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
 (declare-function vm-inform "vm-misc" (level &rest args))
@@ -2718,11 +2734,13 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
 	  (vm-imap-net-say-why-not folder reason)
 	  nil))))))
 
-(defun vm-imap-net-get-spooled-mail (&optional interactive)
+(defun vm-imap-net-get-spooled-mail (&optional interactive full)
   "Start fetching this IMAP folder's new mail, and answer with whether it did.
 
 INTERACTIVE says a reader is there, and is what allows a password to be
-asked for; it is `vm-get-spooled-mail\='s own argument.
+asked for; it is `vm-get-spooled-mail\='s own argument.  So is FULL: fetch
+what the folder was given once and no longer holds, which is what two prefix
+arguments to `vm-get-new-mail\=' ask for.
 
 Nil means this maildrop is one that cannot be opened without waiting -- one
 whose password nobody knows and nobody can be asked for -- and the caller is
@@ -2753,7 +2771,8 @@ messages."
 			   (t
 			    (vm-net-inform 5 "%s: no new mail"
 				       (buffer-name folder)))))
-		   (eq interactive t)))
+		   (eq interactive t)
+		   full))
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)
