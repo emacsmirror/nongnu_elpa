@@ -179,6 +179,16 @@
        (hermes-chat-switch-model)
        (should (equal hermes-chat--dashboard-create-model "beta"))))))
 
+(ert-deftest hermes-chat-model-before-session-projects-selection-to-header ()
+  "A draft model choice is visible before the first session exists."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--apply-model
+    (current-buffer) nil '(:model "gpt-5.6" :provider "openai-codex") nil)
+   (should (equal hermes-chat--model "gpt-5.6"))
+   (should (equal (substring-no-properties
+                   (hermes-chat--header-model-segment))
+                  "gpt-5.6"))))
+
 (ert-deftest hermes-chat-live-model-switch-clears-model-only-retry ()
   "A successful live switch clears obsolete model-only retry state."
   (let ((client (hermes-test--dashboard-client)))

@@ -1289,8 +1289,72 @@
   (hermes-test-with-chat-buffer
    (hermes-chat-set-reasoning "high")
    (should (equal hermes-chat--dashboard-create-reasoning-effort "high"))
+   (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
+                  "high"))
    (should-not hermes-chat--dashboard-client)
    (should (string-match-p "applies to next session" (buffer-string)))))
+
+(ert-deftest hermes-chat-loads-cached-profile-model-for-fresh-draft ()
+  "A fresh draft projects the selected profile's configured model."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-profile-list)
+             (lambda (&optional _client)
+               '((profiles . (((name . "default") (is_default . t)
+                                (model . "gpt-default"))
+                               ((name . "coder") (model . "gpt-coder"))))))))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--profile "coder")
+     (hermes-chat--restore-draft-runtime)
+     (should (equal hermes-chat--model "gpt-coder")))))
+
+(ert-deftest hermes-chat-draft-model-cache-does-not-clobber-selection ()
+  "Cached profile metadata cannot replace an explicit draft model choice."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-profile-list)
+             (lambda (&optional _client)
+               '((profiles . (((name . "coder") (model . "default"))))))))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--profile "coder"
+           hermes-chat--dashboard-create-model "chosen"
+           hermes-chat--model "chosen")
+     (hermes-chat--restore-draft-runtime)
+     (should (equal hermes-chat--model "chosen")))))
+
+(ert-deftest hermes-chat-new-and-cleared-buffers-load-profile-model ()
+  "New buffers and `/clear' restore the selected profile's configured model."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-profile-list)
+             (lambda (&optional _client)
+               '((profiles . (((name . "coder") (model . "gpt-coder"))))))))
+    (let ((buffer (hermes-chat--new-buffer "coder")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (equal hermes-chat--model "gpt-coder"))
+            (setq hermes-chat--model "stale")
+            (hermes-chat--reset-transcript)
+            (should (equal hermes-chat--model "gpt-coder")))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-clear-reprojects-pending-draft-runtime ()
+  "`/clear' keeps surviving create overrides visible and ready for creation."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-profile-list)
+             (lambda (&optional _client)
+               '((profiles . (((name . "default")
+                                (model . "profile-default"))))))))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-create-model "grok-4.6"
+           hermes-chat--dashboard-create-provider "xai-oauth"
+           hermes-chat--dashboard-create-reasoning-effort "high"
+           hermes-chat--dashboard-create-fast-p t
+           hermes-chat--model "grok-4.6"
+           hermes-chat--runtime-flags '(:reasoning-effort "high" :fast t))
+     (hermes-chat--reset-transcript)
+     (should (equal hermes-chat--model "grok-4.6"))
+     (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
+                    "high"))
+     (should (eq (plist-get hermes-chat--runtime-flags :fast) t))
+     (let ((params (hermes-chat--dashboard-create-params)))
+       (should (equal (plist-get params :model) "grok-4.6"))
+       (should (equal (plist-get params :provider) "xai-oauth"))
+       (should (equal (plist-get params :reasoning-effort) "high"))
+       (should (eq (plist-get params :fast) t))))))
 
 (ert-deftest hermes-chat-catalog-candidates-extracts-names ()
   "Catalog candidates extract bare command names and descriptions."

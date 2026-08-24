@@ -232,6 +232,8 @@ through `config.set' right after the next session is created."
               hermes-chat--dashboard-create-provider
               (and (not (stringp candidate))
                    (plist-get candidate :provider)))
+        (setq hermes-chat--model hermes-chat--dashboard-create-model)
+        (force-mode-line-update)
         (hermes-chat--insert-local-status
          (format "Model set to %s (applies to next session)"
                  (hermes-chat--model-display-name candidate))

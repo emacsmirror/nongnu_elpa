@@ -37,6 +37,21 @@
               ("session.resume" (session_id . "stored")
                (source . "emacs")))))))
 
+(ert-deftest hermes-dashboard-rpc-session-create-sends-runtime-choices ()
+  "Session creation serializes customized model, provider, reasoning, and tier."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (setq request (cons method params)))))
+      (hermes-dashboard-transport-session-create
+       'client :model "grok-4.6" :provider "xai-oauth"
+       :reasoning-effort "high" :fast t))
+    (should
+     (equal request
+            '("session.create" (model . "grok-4.6")
+              (provider . "xai-oauth") (reasoning_effort . "high")
+              (fast . t) (source . "emacs"))))))
+
 (ert-deftest hermes-dashboard-rpc-session-cwd-set-sends-session-and-directory ()
   "Changing a session directory sends its live session id and cwd."
   (let (request)

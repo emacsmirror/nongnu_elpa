@@ -353,7 +353,10 @@ but before the first prompt.  A live chat uses the owned session command path."
     (user-error "Interrupt the active turn before changing reasoning"))
   (if (hermes-chat--dashboard-session-attached-p)
       (hermes-chat--dashboard-set-reasoning effort)
-    (setq hermes-chat--dashboard-create-reasoning-effort effort)
+    (setq hermes-chat--dashboard-create-reasoning-effort effort
+          hermes-chat--runtime-flags
+          (plist-put hermes-chat--runtime-flags :reasoning-effort effort))
+    (force-mode-line-update)
     (hermes-chat--insert-local-status
      (format "Reasoning set to %s (applies to next session)" effort) 'ready)))
 

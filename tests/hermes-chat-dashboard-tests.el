@@ -246,10 +246,8 @@
         (when (buffer-live-p buf-a) (kill-buffer buf-a))
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
-(ert-deftest hermes-chat-dashboard-create-applies-model-override-via-config-set ()
-  "A pre-session model/provider pick applies via `config.set' after create.
-The `session.create' request must not carry the override parameters (the
-handler ignores them); the `config.set' must precede `prompt.submit'."
+(ert-deftest hermes-chat-dashboard-create-seeds-runtime-before-config-gate ()
+  "Fresh creation seeds customized runtime before the post-create gate."
   :tags '(shared-socket-isolation)
   (let ((client (hermes-test--dashboard-client))
         create-args config-calls order)
@@ -273,16 +271,44 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (setq hermes-chat--dashboard-create-model "gpt-5"
-               hermes-chat--dashboard-create-provider "openai")
+               hermes-chat--dashboard-create-provider "openai"
+               hermes-chat--dashboard-create-reasoning-effort "high")
          (insert "hi")
          (hermes-chat-send)
-         (should-not (plist-member create-args :model))
-         (should-not (plist-member create-args :provider))
+         (should (equal (plist-get create-args :model) "gpt-5"))
+         (should (equal (plist-get create-args :provider) "openai"))
+         (should (equal (plist-get create-args :reasoning-effort) "high"))
          (should (equal config-calls
-                        '(("model" "gpt-5 --provider openai" "sid-new"))))
-         (should (equal (reverse order) '(config submit)))
+                        '(("reasoning" "high" "sid-new")
+                          ("model" "gpt-5 --provider openai" "sid-new"))))
+         (should (equal (reverse order) '(config config submit)))
          (should-not hermes-chat--dashboard-create-model)
          (should-not hermes-chat--dashboard-create-provider))))))
+
+(ert-deftest hermes-chat-dashboard-first-build-uses-draft-model ()
+  "The deferred agent build snapshots the draft model during `session.create'."
+  (let ((client (hermes-test--dashboard-client)) built-model prompt-model)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq built-model (or (plist-get args :model) "profile-default"))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-new")))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key _value &rest args)
+                 (funcall (plist-get args :resolve) `((key . ,key)))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _args) (setq prompt-model built-model))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-create-model "grok-4.6"
+               hermes-chat--dashboard-create-provider "xai-oauth")
+         (insert "hello")
+         (hermes-chat-send)
+         (should (equal prompt-model "grok-4.6")))))))
 
 
 (ert-deftest hermes-chat-dashboard-create-confirms-model-before-first-prompt ()
@@ -322,9 +348,12 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
 (ert-deftest hermes-chat-dashboard-control-decline-retries-on-next-action ()
   "A control-action decline preserves the model for an owned retry."
   (let ((client (hermes-test--dashboard-client))
-        (answers '(nil t)) action rejected calls)
+        (answers '(nil t)) action rejected calls create-model)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-create)
-               #'hermes-test--resolve-new-dashboard-session)
+               (lambda (_client &rest args)
+                 (setq create-model (plist-get args :model))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-new")))))
               ((symbol-function 'yes-or-no-p)
                (lambda (&rest _) (pop answers)))
               ((symbol-function 'hermes-dashboard-transport-config-set)
@@ -339,6 +368,7 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
         (lambda (message) (setq rejected message)))
        (should-not action)
        (should rejected)
+       (should (equal create-model "gpt-expensive"))
        (should hermes-chat--dashboard-create-model)
        (hermes-chat--dashboard-ensure-session-action
         client (current-buffer) (lambda (_client) (setq action t)))
@@ -702,8 +732,8 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
    (setq hermes-chat--dashboard-running-p t)
    (should-error (hermes-chat-set-directory "/tmp/") :type 'user-error)))
 
-(ert-deftest hermes-chat-dashboard-create-applies-reasoning-fast-via-config-set ()
-  "Pre-session reasoning/fast picks apply via `config.set' after create."
+(ert-deftest hermes-chat-dashboard-create-seeds-reasoning-fast-before-config-set ()
+  "Pre-session reasoning and fast picks seed creation before their config gate."
   :tags '(shared-socket-isolation)
   (let ((client (hermes-test--dashboard-client))
         create-args config-calls)
@@ -729,8 +759,8 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
                hermes-chat--dashboard-create-fast-p t)
          (insert "hi")
          (hermes-chat-send)
-         (should-not (plist-member create-args :reasoning-effort))
-         (should-not (plist-member create-args :fast))
+         (should (equal (plist-get create-args :reasoning-effort) "high"))
+         (should (eq (plist-get create-args :fast) t))
          (should (equal (reverse config-calls)
                         '(("reasoning" "high" "sid-new")
                           ("fast" "fast" "sid-new"))))

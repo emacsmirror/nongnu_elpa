@@ -83,11 +83,10 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, and CWD become request parameters.  The request
-identifies its source as `emacs'; runtime overrides such as the model are
-applied to the fresh session through `config.set'.  RESOLVE and REJECT receive
-the asynchronous result or error."
-  :keys (cols messages title profile cwd)
+COLS, MESSAGES, TITLE, PROFILE, CWD, and optional runtime choices become request
+parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
+receive the asynchronous result or error."
+  :keys (cols messages title profile cwd model provider reasoning-effort fast)
   :params ((source . "emacs")))
 
 (hermes-dashboard-transport-define-rpc

@@ -1281,10 +1281,9 @@ local FIFO submission."
 (defun hermes-chat--dashboard-create-config-cells ()
   "Return pending (KEY . VALUE) `config.set' cells for this buffer.
 The cells carry the `hermes-chat--dashboard-create-*' runtime overrides
-picked before the session existed.  The `session.create' handler ignores
-runtime override parameters, so the overrides are applied to the fresh
-session through `config.set'; `session.resume' owns its stored runtime and
-must not receive them."
+picked before the session existed.  They gate the first prompt through the
+session-scoped mutation path after also seeding the fresh build at creation;
+`session.resume' owns its stored runtime and must not receive them."
   (append
    (and hermes-chat--dashboard-create-model
         (list (cons "model"
@@ -1295,6 +1294,21 @@ must not receive them."
         (list (cons "reasoning" hermes-chat--dashboard-create-reasoning-effort)))
    (and hermes-chat--dashboard-create-fast-p
         (list (cons "fast" "fast")))))
+
+(defun hermes-chat--dashboard-create-params ()
+  "Return fresh-session parameters from this buffer's metadata and runtime."
+  (append
+   (list :cols (hermes-chat--dashboard-cols)
+         :title (hermes-chat--dashboard-create-title)
+         :profile hermes-chat--profile
+         :cwd (hermes-chat--current-working-directory))
+   (and hermes-chat--dashboard-create-model
+        (list :model hermes-chat--dashboard-create-model
+              :provider hermes-chat--dashboard-create-provider))
+   (and hermes-chat--dashboard-create-reasoning-effort
+        (list :reasoning-effort
+              hermes-chat--dashboard-create-reasoning-effort))
+   (and hermes-chat--dashboard-create-fast-p (list :fast t))))
 
 (defun hermes-chat--dashboard-clear-create-overrides ()
   "Reset this buffer's create-time runtime override variables."
@@ -1460,15 +1474,13 @@ local FIFO submission."
                buffer client prompt t resolve reject queued-p)
      :reject reject))
    (t
-    (hermes-dashboard-transport-session-create
-     client
-     :cols (hermes-chat--dashboard-cols)
-     :title (hermes-chat--dashboard-create-title)
-     :profile hermes-chat--profile
-     :cwd (hermes-chat--current-working-directory)
-     :resolve (hermes-chat--dashboard-session-resolver
-               buffer client prompt nil resolve reject queued-p)
-     :reject reject))))
+    (apply
+     #'hermes-dashboard-transport-session-create client
+     (append
+      (hermes-chat--dashboard-create-params)
+      (list :resolve (hermes-chat--dashboard-session-resolver
+                      buffer client prompt nil resolve reject queued-p)
+            :reject reject))))))
 
 (defun hermes-chat--dashboard-event-for-session-p (event)
   "Return non-nil when EVENT belongs to this buffer's live dashboard session."
@@ -1740,15 +1752,14 @@ When dashboard session bootstrap fails, call REJECT with the error message."
        :reject (hermes-chat--dashboard-action-rejecter
                 buffer client generation reject)))
      (t
-      (hermes-dashboard-transport-session-create
-       client
-       :cols (hermes-chat--dashboard-cols)
-       :title (hermes-chat--dashboard-create-title)
-       :cwd (hermes-chat--current-working-directory)
-       :resolve (hermes-chat--dashboard-action-resolver
-                 buffer client action generation t reject)
-       :reject (hermes-chat--dashboard-action-rejecter
-                buffer client generation reject))))))
+      (apply
+       #'hermes-dashboard-transport-session-create client
+       (append
+        (hermes-chat--dashboard-create-params)
+        (list :resolve (hermes-chat--dashboard-action-resolver
+                        buffer client action generation t reject)
+              :reject (hermes-chat--dashboard-action-rejecter
+                       buffer client generation reject))))))))
 
 (defun hermes-chat--with-dashboard-session (content buffer action &optional reject)
   "Ensure a live dashboard session for BUFFER, then call ACTION with the client.

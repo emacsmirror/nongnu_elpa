@@ -1243,6 +1243,7 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--invalidate-transport-state)
     (hermes-chat--stop-dashboard-client)
     (hermes-chat--setup-buffer)
+    (hermes-chat--restore-draft-runtime)
     (when outermost
       (hermes-chat--drain-reset-clarify-owners
        hermes-chat--reset-clarify-owner-sink))))
@@ -1275,6 +1276,7 @@ entry point funnels through."
       (setq hermes-chat--working-directory directory
             hermes-instance instance
             hermes-chat--profile profile)
+      (hermes-chat--restore-draft-runtime)
       (when title
         (setq hermes-chat--title title
               hermes-chat--title-manual-p t))
@@ -1306,6 +1308,38 @@ entry point funnels through."
     (cond
      ((and provider model) (format "%s/%s" provider model))
      (model model))))
+
+(defun hermes-chat--draft-profile-row (payload)
+  "Return this draft's selected profile row from dashboard PAYLOAD."
+  (let ((name (or hermes-chat--profile "default")))
+    (cl-find-if
+     (lambda (profile)
+       (or (equal (hermes-chat--profile-name profile) name)
+           (and (equal name "default")
+                (hermes-chat--profile-default-p profile))))
+     (hermes-transport--get payload 'profiles))))
+
+(defun hermes-chat--restore-draft-runtime ()
+  "Restore pending or profile runtime state in this fresh draft's header."
+  (let* ((instance (hermes-instance-resolve))
+         (hermes-dashboard-transport-url (hermes-instance-url instance))
+         (profile-model
+          (unless hermes-chat--dashboard-create-model
+            (when-let* ((payload
+                         (hermes-dashboard-transport-cached-profile-list))
+                        (profile (hermes-chat--draft-profile-row payload)))
+              (hermes-transport--scalar-string
+               (hermes-transport--get profile 'model))))))
+    (setq hermes-chat--model
+          (or hermes-chat--dashboard-create-model profile-model))
+    (when hermes-chat--dashboard-create-reasoning-effort
+      (setq hermes-chat--runtime-flags
+            (plist-put hermes-chat--runtime-flags :reasoning-effort
+                       hermes-chat--dashboard-create-reasoning-effort)))
+    (when hermes-chat--dashboard-create-fast-p
+      (setq hermes-chat--runtime-flags
+            (plist-put hermes-chat--runtime-flags :fast t)))
+    (force-mode-line-update)))
 
 (defun hermes-chat--profile-less-p (left right)
   "Return non-nil when LEFT dashboard profile should sort before RIGHT."
