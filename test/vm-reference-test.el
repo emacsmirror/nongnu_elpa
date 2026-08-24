@@ -340,6 +340,26 @@ vm-rfaddons.el was deleted in one release."
         (push symbol missing)))
     (should (equal nil (sort missing #'string<)))))
 
+(defconst vm-reference-test--documented-by-hand
+  '(vm-customize vm-view-manual vm-view-news vm-edit-init-file
+    vm-list-mime-part-structure vm-attach-files-in-directory
+    vm-delete-postponed-message vm-isearch-presentation)
+  "Commands given a manual entry under emacs-vm/vm#715.
+The list grows as the rest of that issue is cleared.  It is here so that a
+command cannot quietly lose its entry again: 222 of them were undocumented
+when it was counted, and nothing had noticed them going.")
+
+(ert-deftest vm-reference-test-commands-documented-by-hand-stay-documented ()
+  "Every command in `vm-reference-test--documented-by-hand' is still indexed.
+The other direction from `vm-reference-test-documented-commands-are-autoloaded':
+that one keeps the manual\='s commands reachable, this one keeps the reachable
+commands in the manual."
+  (let ((indexed (vm-reference-test--manual-symbols))
+        (missing nil))
+    (dolist (command vm-reference-test--documented-by-hand)
+      (unless (memq command indexed) (push command missing)))
+    (should (equal nil (sort missing #'string<)))))
+
 (ert-deftest vm-reference-test-the-manual-does-not-name-the-unreleased-version ()
   "The manual does not date a change to the version this tree will become.
 The number is not settled until the release is made, and dating changes to it
