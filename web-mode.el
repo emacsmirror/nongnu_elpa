@@ -44,7 +44,7 @@
 
 (defcustom web-mode-block-padding 0
   "Multi-line block (php, ruby, java, python, asp, etc.) left padding.
-   -1 to have to code aligned on the column 0."
+   -1 to have the code aligned on the column 0."
   :type '(choice (integer :tags "Number of spaces")
           (const :tags "No indent" nil))
   :group 'web-mode)
@@ -55,13 +55,15 @@
           (const :tags "No indent" nil))
   :group 'web-mode)
 
-(defcustom web-mode-script-padding web-mode-part-padding
+(defcustom web-mode-script-padding
+  (if (and (boundp 'web-mode-part-padding) web-mode-part-padding) 1)
   "Script element left padding."
   :type '(choice (integer :tags "Number of spaces")
           (const :tags "No indent" nil))
   :group 'web-mode)
 
-(defcustom web-mode-style-padding web-mode-part-padding
+(defcustom web-mode-style-padding
+  (if (and (boundp 'web-mode-part-padding) web-mode-part-padding) 1)
   "Style element left padding."
   :type '(choice (integer :tags "Number of spaces")
           (const :tags "No indent" nil))
@@ -74,7 +76,7 @@
   :group 'web-mode)
 ;;;###autoload
 (put 'web-mode-attr-indent-offset
-     'safe-local-variable #'(lambda (v) (or (integerp v) (booleanp v))))
+     'safe-local-variable #'(lambda (v) (or (integerp v) (null v))))
 
 (defcustom web-mode-attr-value-indent-offset nil
   "Html attribute value indentation level."
@@ -83,7 +85,7 @@
   :group 'web-mode)
 ;;;###autoload
 (put 'web-mode-attr-value-indent-offset
-     'safe-local-variable #'(lambda (v) (or (integerp v) (booleanp v))))
+     'safe-local-variable #'(lambda (v) (or (integerp v) (null v))))
 
 (defcustom web-mode-markup-indent-offset
   (if (and (boundp 'standard-indent) standard-indent) standard-indent 2)
@@ -344,13 +346,13 @@ by a li open tag is valid)."
 (defcustom web-mode-jsx-depth-faces
   nil
   ;;'(web-mode-jsx-depth-1-face web-mode-jsx-depth-2-face web-mode-jsx-depth-3-face web-mode-jsx-depth-4-face web-mode-jsx-depth-5-face)
-  "Each jsx depth has is own face."
+  "Each jsx depth has its own face."
   :type '(repeat face)
   :group 'web-mode)
 
 (defcustom web-mode-commands-like-expand-region
   '(web-mode-mark-and-expand er/expand-region mc/mark-next-like-this mc/mark-previous-like-this)
-  "Add commmand here if you have some wrapper function for er/expand-region"
+  "Add command here if you have some wrapper function for er/expand-region"
   :type '(repeat function)
   :group 'web-mode)
 
@@ -456,11 +458,6 @@ For example,
   "Face for preprocessor commands."
   :group 'web-mode-faces)
 
-(defface web-mode-preprocessor-face
-    '((t :inherit font-lock-preprocessor-face))
-  "Face for preprocessor."
-  :group 'web-mode-faces)
-
 (defface web-mode-block-delimiter-face
     '((t :inherit font-lock-preprocessor-face))
   "Face for block delimiters."
@@ -468,7 +465,7 @@ For example,
 
 (defface web-mode-block-control-face
     '((t :inherit font-lock-preprocessor-face))
-  "Face for preprocessor."
+  "Face for block control statements."
   :group 'web-mode-faces)
 
 (defface web-mode-builtin-face
@@ -777,7 +774,7 @@ For example,
 (defface web-mode-inlay-face
     '((((class color) (min-colors 88) (background dark))  :background "Black")
       (((class color) (min-colors 88) (background light)) :background "LightYellow1")
-      (((class color) (min-colors 16) (background dark))  :background "Brey18")
+      (((class color) (min-colors 16) (background dark))  :background "Grey18")
       (((class color) (min-colors 16) (background light)) :background "LightYellow1")
       (((class color) (min-colors 8))                     :background "Black")
       (((type tty) (class mono))                          :inverse-video t)
@@ -824,12 +821,12 @@ Must be used in conjunction with web-mode-enable-block-face."
 
 (defface web-mode-italic-face
     '((t :slant italic))
-  "bold face."
+  "italic face."
   :group 'web-mode-faces)
 
 (defface web-mode-underline-face
     '((t :underline t))
-  "bold face."
+  "underline face."
   :group 'web-mode-faces)
 
 (defface web-mode-current-element-highlight-face
