@@ -861,6 +861,11 @@ configuration."
            ;; offered, refused, and that was the whole of the keystroke.
            (let ((this-command mail))
              (funcall mail)))
+          ((eq action 'none)
+           ;; The drafts folder is on screen and the reader has been asked
+           ;; to pick one, with the cursor moved to that window.  Saying
+           ;; there are none over the top of that is what this used to do.
+           nil)
           (t
            (message "There are no known drafts.")))))
 
