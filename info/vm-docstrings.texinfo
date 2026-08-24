@@ -8874,6 +8874,11 @@ Continue compositions or postponed messages if there are some.
 With a prefix arg, call @code{vm-continue-postponed-message}, i.e. continue the
 currently selected message.
 
+Declining the offer of the drafts folder starts a new message instead, as
+does @code{vm-continue-what-message} nil with drafts on disk: the drafts stay
+where they are.  With no drafts anywhere, a new message is started only
+when @code{vm-zero-drafts-start-compose} is t.
+
 See @code{vm-continue-what-message} and @code{vm-zero-drafts-start-compose} for
 configuration.
 @end deffn

@@ -8,6 +8,16 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * Declining `vm-continue-what-message`'s offer of the drafts folder starts
+    a new message, where it used to do nothing at all (emacs-vm/vm#755).  The
+    command is the key you press to write mail -- the manual binds
+    `vm-continue-what-message-other-window` to `C-x m` in place of
+    `compose-mail` -- and answering no to the drafts it found left you with
+    no composition and no drafts folder either.  The drafts are untouched and
+    still there to continue.  `vm-continue-what-message` nil, never continue,
+    composes for the same reason.  `vm-zero-drafts-start-compose` still
+    decides what happens when there are no drafts anywhere.
+
   * `C-u C-u g` (`vm-get-new-mail` with two prefix arguments) fetches every
     message an IMAP mailbox has and the folder has not, including those VM
     has recorded as retrieved once already.  The record is what stops a
