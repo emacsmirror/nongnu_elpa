@@ -2,7 +2,7 @@
 
 ;; Copyright 2011-2026 François-Xavier Bois
 
-;; Version: 17.3.24
+;; Version: 17.3.25
 ;; Author: François-Xavier Bois
 ;; Maintainer: François-Xavier Bois <fxbois@gmail.com>
 ;; Package-Requires: ((emacs "24.3.1"))
@@ -23,7 +23,7 @@
 
 ;;---- CONSTS ------------------------------------------------------------------
 
-(defconst web-mode-version "17.3.24"
+(defconst web-mode-version "17.3.25"
   "Web Mode version.")
 
 ;;---- GROUPS ------------------------------------------------------------------
@@ -2032,7 +2032,7 @@ shouldn't be moved back.)")
    '("@\\([[:alnum:]_]+\\)\\_>" 0 'web-mode-keyword-face)
    '("\\([[:alnum:]]+\\)[`]" 0 'web-mode-preprocessor-face)
    (cons (concat "\\_<\\(function\\*\\)\\_>") '(1 'web-mode-keyword-face))
-   (cons (concat "\\([ \t}{(]\\|^\\)\\(" web-mode-javascript-keywords "\\)\\_>") '(2 'web-mode-keyword-face))
+   (cons (concat "\\([ \t}{(\\[]\\|^\\)\\(" web-mode-javascript-keywords "\\)\\_>") '(2 'web-mode-keyword-face))
    (cons (concat "\\_<\\(" web-mode-javascript-constants "\\)\\_>") '(0 'web-mode-constant-face))
    '("\\_<\\([$]\\)(" 1 'web-mode-type-face)
    '("\\_<\\(new\\|instanceof\\|class\\|extends\\|import\\) \\([[:alnum:]_.]+\\)\\_>" 2 'web-mode-type-face)
@@ -2763,24 +2763,24 @@ another auto-completion with different ac-sources (e.g. ac-php)")
 (eval-and-compile
 
   ;; compatibility with emacs < 23
-  (defun web-mode-string-match-p (regexp string &optional start)
-    "Same as `string-match' except it does not change the match data."
-    (save-match-data
-      (string-match regexp string start)))
+  ;; (defun web-mode-string-match-p (regexp string &optional start)
+  ;;   "Same as `string-match' except it does not change the match data."
+  ;;   (save-match-data
+  ;;     (string-match regexp string start)))
 
-  (unless (fboundp 'string-match-p)
-    (fset 'string-match-p (symbol-function 'web-mode-string-match-p)))
+  ;; (unless (fboundp 'string-match-p)
+  ;;   (fset 'string-match-p (symbol-function 'web-mode-string-match-p)))
 
   ;; compatibility with emacs < 23.3
-  (if (fboundp 'with-silent-modifications)
-      (defalias 'web-mode-with-silent-modifications 'with-silent-modifications)
-      (defmacro web-mode-with-silent-modifications (&rest body)
-        `(let ((old-modified-p (buffer-modified-p))
-               (inhibit-modification-hooks t)
-               (buffer-undo-list t))
-           (unwind-protect
-                ,@body
-             (restore-buffer-modified-p old-modified-p)))))
+  ;; (if (fboundp 'with-silent-modifications)
+  ;;     (defalias 'web-mode-with-silent-modifications 'with-silent-modifications)
+  ;;     (defmacro web-mode-with-silent-modifications (&rest body)
+  ;;       `(let ((old-modified-p (buffer-modified-p))
+  ;;              (inhibit-modification-hooks t)
+  ;;              (buffer-undo-list t))
+  ;;          (unwind-protect
+  ;;               ,@body
+  ;;            (restore-buffer-modified-p old-modified-p)))))
 
   ;; compatibility with emacs < 24.3
   (defun web-mode-buffer-narrowed-p ()
@@ -3354,7 +3354,7 @@ Also return non-nil if it is the command `self-insert-command' is remapped to."
   ;;(message "scan-region: beg(%d) end(%d) content-type(%S)" beg end content-type)
   (setq web-mode-scan-beg beg
         web-mode-scan-end end)
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (save-excursion
      (save-restriction
        (save-match-data
@@ -4941,7 +4941,7 @@ Also return non-nil if it is the command `self-insert-command' is remapped to."
     ))
 
 (defun web-mode-block-controls-get (pos)
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (let ((controls nil))
      (cond
        ((null (get-text-property pos 'block-side))
@@ -6729,7 +6729,7 @@ Also return non-nil if it is the command `self-insert-command' is remapped to."
     ;;(web-mode-skip-fontification
     ;; nil)
     (t
-     (web-mode-with-silent-modifications
+     (with-silent-modifications
       (save-excursion
         (save-restriction
           (save-match-data
@@ -8296,7 +8296,7 @@ Also return non-nil if it is the command `self-insert-command' is remapped to."
   "Toggle folding on an html element or a control block."
   (interactive)
   (web-mode-scan)
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (save-excursion
      (if pos (goto-char pos))
      (let (beg-inside beg-outside end-inside end-outside overlay overlays)
@@ -11416,7 +11416,7 @@ Prompt user if TAG-NAME isn't provided."
 (defun web-mode-toggle-comments ()
   "Toggle comments visbility."
   (interactive)
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (save-excursion
      (if web-mode-comments-invisible
          (remove-overlays))
@@ -15014,7 +15014,7 @@ Prompt user if TAG-NAME isn't provided."
   nil)
 
 (defun web-mode-on-exit ()
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (put-text-property (point-min) (point-max) 'invisible nil)
    (remove-overlays)
    (remove-hook 'change-major-mode-hook 'web-mode-on-exit t)
@@ -15055,7 +15055,7 @@ extended to support more filetypes by customizing
 (defun web-mode-reload ()
   "Reload web-mode."
   (interactive)
-  (web-mode-with-silent-modifications
+  (with-silent-modifications
    (put-text-property (point-min) (point-max) 'invisible nil)
    (remove-overlays)
    (setq font-lock-unfontify-region-function 'font-lock-default-unfontify-region)
