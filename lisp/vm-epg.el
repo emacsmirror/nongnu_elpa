@@ -303,6 +303,7 @@ Its key bindings and PGP/MIME menu are then available.")
 
 (make-variable-buffer-local 'vm-epg-compose-mode)
 
+;;;###autoload
 (defun vm-epg-compose-mode (&optional arg)
   "Minor mode for composing PGP/MIME messages with EPG.
 

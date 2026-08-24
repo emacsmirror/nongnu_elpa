@@ -1246,6 +1246,7 @@ exposed and marked as read."
       (vm-move-to-xxxx-button (vm-abs count) (>= count 0))
     (if vm-honor-page-delimiters
 	(vm-narrow-to-page))))
+;;;###autoload (autoload 'vm-move-to-next-button "vm-page" nil t)
 (defalias 'vm-move-to-next-button 'vm-next-button)
 
 ;;;###autoload
@@ -1274,6 +1275,7 @@ exposed and marked as read."
       (vm-move-to-xxxx-button (vm-abs count) (< count 0))
     (if vm-honor-page-delimiters
 	(vm-narrow-to-page))))
+;;;###autoload (autoload 'vm-move-to-previous-button "vm-page" nil t)
 (defalias 'vm-move-to-previous-button 'vm-previous-button)
 
 (defun vm-move-to-xxxx-button (count next)

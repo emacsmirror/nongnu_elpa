@@ -331,6 +331,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload (autoload 'vm-create-search-folder "vm-virtual" nil t)
 (defalias 'vm-create-search-folder 'vm-create-virtual-folder)
 
 ;;;###autoload

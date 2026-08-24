@@ -4701,6 +4701,7 @@ documentation for `vm-spool-files'."
       (vm-buffer-type:exit)
       ;;-------------------
       )))
+;;;###autoload (autoload 'vm-imap-create-folder "vm-imap" nil t)
 (defalias 'vm-imap-create-folder 'vm-create-imap-folder)
 
 ;;;###autoload
@@ -4751,6 +4752,7 @@ documentation for `vm-spool-files'."
       (vm-buffer-type:exit)
       ;;-------------------
       )))
+;;;###autoload (autoload 'vm-imap-delete-folder "vm-imap" nil t)
 (defalias 'vm-imap-delete-folder 'vm-delete-imap-folder)
 
 ;;;###autoload
@@ -4810,6 +4812,7 @@ documentation for `vm-spool-files'."
 		 (memq (process-status process) '(open run)))
 	(vm-imap-end-session process))
       )))
+;;;###autoload (autoload 'vm-imap-rename-folder "vm-imap" nil t)
 (defalias 'vm-imap-rename-folder 'vm-rename-imap-folder)
 
 ;;;###autoload
@@ -4888,6 +4891,7 @@ them."
      buffer)
     ))
 
+;;;###autoload (autoload 'vm-imap-list-folders "vm-imap" nil t)
 (defalias 'vm-imap-list-folders 'vm-list-imap-folders)
 
 (defun vm-imap-get-mailbox-status (process mailbox)
@@ -5136,6 +5140,7 @@ order to capture the trace of IMAP sessions during the occurrence."
   (vm-set-body-to-be-retrieved-of m nil)
   (vm-set-body-to-be-discarded-of m nil))
 
+;;;###autoload
 (defun vm-imap-unset-body-retrieve ()
   "Unset the body-to-be-retrieved flag of all the messages.  May
   be needed if the folder has become corrupted somehow."
@@ -5151,6 +5156,7 @@ order to capture the trace of IMAP sessions during the occurrence."
 	    (length vm-message-list))
    ))
 
+;;;###autoload
 (defun vm-imap-unset-byte-counts ()
   "Unset the byte counts of all the messages, so that the size of the
 downloaded bodies will be displayed."

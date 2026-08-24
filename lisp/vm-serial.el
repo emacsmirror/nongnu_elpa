@@ -404,6 +404,7 @@ buffer containing the original message.")
 ;;-----------------------------------------------------------------------------
 (defvar vm-serial-token-history nil)
 
+;;;###autoload
 (defun vm-serial-set-token (&optional token newvalue doc)
   "Set vm-serial TOKEN to NEWVALUE with DOC.
 You may remove a token by specifying just the TOKEN as argument."
@@ -440,6 +441,7 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
                          (caddr token-value))
     (setq token-list (cdr token-list)))))
 
+;;;###autoload
 (defun vm-serial-get-token (&optional token)
   "Return value of vm-serial TOKEN."
   (interactive (list (completing-read 
@@ -586,6 +588,7 @@ is no serial mail buffer and if there was no yank-mail before!"
 (defvar vm-serial-yank-mail-choice nil)
 (make-variable-buffer-local 'vm-serial-yank-mail-choice)
 
+;;;###autoload
 (defun vm-serial-yank-mail (&optional mail no-expand)
   "Yank the template associated with MAIL.
 
@@ -666,6 +669,7 @@ me."
           (t
            (eval value)))))
 
+;;;###autoload
 (defun vm-serial-expand-tokens (&optional rstart rend)
   "Expand all tokens within the current mail.
 This means we search for the `vm-serial-cookie' and if it is followed by a
@@ -723,6 +727,7 @@ a warning."
 
 (defvar vm-serial-insert-token-history nil)
 
+;;;###autoload
 (defun vm-serial-insert-token (token)
   "Reads a valid token, inserts it at point and expands it."
   (interactive (list
@@ -762,6 +767,7 @@ a warning."
     (eval (list 'vm-increment variable))))
 
 
+;;;###autoload
 (defun vm-serial-send-mail-and-exit (&optional non-interactive)
   "Like `vm-serial-send-mail' but kills the buffer after sending all."
   (interactive "P")
@@ -769,6 +775,7 @@ a warning."
   (setq vm-serial-send-mail-exit t)
   (vm-serial-send-mail non-interactive))
 
+;;;###autoload
 (defun vm-serial-send-mail (&optional non-interactive done)
   "Send an expanded mail to each recipient listed in the To-header.
 This will create a new buffer for expanding the tokens and user interaction.

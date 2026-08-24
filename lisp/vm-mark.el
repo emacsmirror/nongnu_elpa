@@ -228,6 +228,7 @@ variable `vm-virtual-folder-alist' for more information."
        (vm-read-virtual-selector "Mark messages: "))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-by-selector t selector arg))
+;;;###autoload (autoload 'vm-mark-matching-messages "vm-mark" nil t)
 (defalias 'vm-mark-matching-messages 'vm-mark-messages-by-selector)
 
 ;;;###autoload
@@ -244,6 +245,7 @@ variable `vm-virtual-folder-alist' for more information."
        (vm-read-virtual-selector "Unmark messages: "))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-by-selector nil selector arg))
+;;;###autoload (autoload 'vm-unmark-matching-messages "vm-mark" nil t)
 (defalias 'vm-unmark-matching-messages 'vm-unmark-messages-by-selector)
 
 ;;;###autoload
@@ -411,6 +413,7 @@ variable `vm-virtual-folder-alist' for more information."
        vm-virtual-folder-alist nil t))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-with-virtual-folder t name))
+;;;###autoload (autoload 'vm-mark-matching-messages-with-virtual-folder "vm-mark" nil t)
 (defalias 'vm-mark-matching-messages-with-virtual-folder 
   'vm-mark-messages-by-virtual-folder)
 
@@ -428,6 +431,7 @@ variable `vm-virtual-folder-alist' for more information."
        vm-virtual-folder-alist nil t))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-with-virtual-folder nil name))
+;;;###autoload (autoload 'vm-unmark-matching-messages-with-virtual-folder "vm-mark" nil t)
 (defalias 'vm-unmark-matching-messages-with-virtual-folder
   'vm-unmark-messages-by-virtual-folder)
 

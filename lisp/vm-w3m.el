@@ -176,6 +176,7 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
             ;; inlined by emacs-w3m.
             '(text-rendered-by-emacs-w3m t)))))
 
+;;;###autoload
 (defun vm-w3m-safe-toggle-inline-images (&optional arg)
   "Toggle displaying of all images in the presentation buffer.
 If the prefix arg is given, all images are considered to be safe."

@@ -982,6 +982,7 @@ parameter POS means insert the pre-signature at position POS if
      (nth 4 tim) (nth 3 tim) (nth 5 tim))))
 
 
+;;;###autoload
 (defun vm-pcrisis-load-auto-profiles ()
   "Initialise `vm-pcrisis-auto-profiles' from `vm-pcrisis-auto-profiles-file'."
   (interactive)
@@ -1027,6 +1028,7 @@ parameter POS means insert the pre-signature at position POS if
                     vm-pcrisis-auto-profiles-file nil 'quietly)
       (kill-buffer (current-buffer)))))
     
+;;;###autoload
 (defun vm-pcrisis-fix-auto-profiles-file ()
   "Change `vm-pcrisis-auto-profiles-file' to the format used by v0.82+."
   (interactive)
@@ -1041,6 +1043,7 @@ parameter POS means insert the pre-signature at position POS if
   (setq vm-pcrisis-auto-profiles ()))
 
 
+;;;###autoload
 (defun vm-pcrisis-migrate-profiles-to-BBDB ()
   "Migrate the profiles stored in `vm-pcrisis-auto-profiles-file' to the BBDB.
 
@@ -1458,6 +1461,7 @@ means the body of the message being replied to."
 ;; Support functions for the advices:
 ;; -------------------------------------------------------------------
 
+;;;###autoload
 (defun vm-pcrisis-true-conditions ()
   "Return a list of all true conditions.
 Run this function in order to test/check your conditions."
@@ -1486,6 +1490,7 @@ Run this function in order to test/check your conditions."
     (message "VMPC true conditions: %S" vm-pcrisis-true-conditions)
     vm-pcrisis-true-conditions))
 
+;;;###autoload
 (defun vm-pcrisis-build-true-conditions-list ()
   "Build list of true conditions and store it in the variable 
 `vm-pcrisis-true-conditions'."
@@ -1498,6 +1503,7 @@ Run this function in order to test/check your conditions."
    vm-pcrisis-conditions)
   (setq vm-pcrisis-true-conditions (reverse vm-pcrisis-true-conditions)))
 
+;;;###autoload
 (defun vm-pcrisis-build-actions-to-run-list ()
   "Build a list of the actions to run.
 These are the true conditions mapped to actions.  Duplicates will be
@@ -1554,6 +1560,7 @@ completion."
             vm-pcrisis-actions)))
 
 
+;;;###autoload
 (defun vm-pcrisis-run-actions (&optional actions verbose)
   "Run the argument actions, or the actions stored in `vm-pcrisis-actions-to-run'.
 If verbose is supplied, it should be a STRING, indicating the name of a

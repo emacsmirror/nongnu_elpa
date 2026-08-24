@@ -840,6 +840,7 @@ arguments after the command finished."
       (vm-pipe-command-exit-handler process command discard-output))
     buffer))
 
+;;;###autoload
 (defun vm-pipe-messages-to-command-to-string (command &optional prefixarg)
   "Runs a shell command with contents from the current message as input.
 This function is like `vm-pipe-messages-to-command', but will not display the

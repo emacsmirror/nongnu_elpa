@@ -2317,6 +2317,7 @@ Supports version 4 format of attribute storage, for backward compatibility."
 			    vm-unread-count
 			    vm-deleted-count)))))
 
+;;;###autoload
 (defun vm-emit-totals-blurb ()
   "Say how many messages the folder holds, and how many are in each state.
 New, unread and deleted are counted separately, and a folder with nothing
@@ -4751,6 +4752,7 @@ Also available as `vm-revert-folder'."
     (setq vm-folder-access-method access-method)
     (vm (current-buffer) :access-method access-method :reload 'reload)))
 
+;;;###autoload (autoload 'vm-revert-folder "vm-folder" nil t)
 (defalias 'vm-revert-folder 'vm-revert-buffer)
 
 (defun vm-recover-folder-file-name ()

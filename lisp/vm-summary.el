@@ -44,6 +44,7 @@
 (defvar scrollbar-height)		; defined for XEmacs
 
 
+;;;###autoload
 (defun vm-summary-trace-message ()
   "Trace this message while summary lines are being built.
 A debugging aid: `vm-summary-debug\' enters the debugger for a message on
@@ -214,6 +215,7 @@ mandatory."
   (vm-summarize display)
   (if (vm-multiple-frames-possible-p)
       (vm-set-hooks-for-frame-deletion)))
+;;;###autoload (autoload 'vm-headers-summary-other-frame "vm-summary" nil t)
 (defalias 'vm-headers-summary-other-frame 'vm-summarize-other-frame)
 
 (defun vm-do-summary (&optional start-point)
