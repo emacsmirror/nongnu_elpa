@@ -72,6 +72,7 @@ mouse is clicked.  See Info node `(VM) Using the Mouse'."
 	   (call-interactively 'vm-scroll-forward)))
 	((memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode))
 	 (vm-mouse-popup-or-select event))))
+(put 'vm-mouse-button-2 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mouse-button-3 (event)
@@ -99,6 +100,7 @@ Mouse'."
 	       (vm-menu-popup-context-menu event))
 	      ((eq major-mode 'mail-mode)
 	       (vm-menu-popup-context-menu event))))))
+(put 'vm-mouse-button-3 'vm-called-by-vm t)
 
 (defun vm-mouse-3-help (_object)
   nil
@@ -164,6 +166,7 @@ Mouse'."
 		 ((setq e (vm-extent-at (point) 'vm-mime-function))
 		  (funcall (vm-extent-property e 'vm-mime-function) e))
 		 (t (vm-menu-popup-context-menu event)))))))
+(put 'vm-mouse-popup-or-select 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mouse-send-url-at-event (event)
@@ -176,6 +179,7 @@ Mouse'."
 	 (set-buffer (window-buffer (posn-window (event-start event))))
 	 (goto-char (posn-point (event-start event)))
 	 (vm-mouse-send-url-at-position (posn-point (event-start event))))))
+(put 'vm-mouse-send-url-at-event 'vm-called-by-vm t)
 
 (defun vm-mouse-send-url-at-position (pos &optional browser)
   (save-restriction
@@ -584,6 +588,7 @@ HISTORY argument is ignored."
   (if normal-exit
       (throw 'exit nil)
     (throw 'exit t)))
+(put 'vm-mouse-read-file-name-quit-handler 'vm-called-by-vm t)
 
 (defvar vm-mouse-read-string-prompt)
 (defvar vm-mouse-read-string-completion-list)
@@ -688,6 +693,7 @@ HISTORY argument is ignored."
   (if normal-exit
       (throw 'exit nil)
     (throw 'exit t)))
+(put 'vm-mouse-read-string-quit-handler 'vm-called-by-vm t)
 
 (provide 'vm-mouse)
 ;;; vm-mouse.el ends here

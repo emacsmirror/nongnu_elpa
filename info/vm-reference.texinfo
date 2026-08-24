@@ -12,9 +12,10 @@ what to do with it.
 
 Each section lists what you can type, then the options that
 govern it, then what VM invokes for itself: a toolbar button, a
-mouse menu, a keymap entry or a hook function.  The last are
-here because they can be called, not because a reader normally
-would.
+menu entry, a mouse binding, a keymap entry or a hook function.
+The last are here because they can be called, not because a
+reader normally would, and which ones they are is marked in the
+code beside each definition.
 
 An entry marked @emph{not autoloaded} needs VM loaded before
 @kbd{M-x} will offer it, which for a command that only makes
@@ -844,13 +845,6 @@ C-c # s         vm-epg-sign
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
-@deffn Command vm-epg-compose-mode-menu arg1
-@findex vm-epg-compose-mode-menu
-PGP/MIME compose mode menu.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
 @deffn Command vm-epg-encrypt &optional sign
 @findex vm-epg-encrypt
 Encrypt the composition as PGP/MIME, a multipart/encrypted message.
@@ -870,15 +864,6 @@ encryption.
 Insert a public key as ASCII armor into the composition at point.
 The key is selected as for @code{vm-epg-attach-public-key}, but is inserted
 inline rather than attached as a MIME part.
-@end deffn
-
-@deffn Command vm-epg-prompt-for-action
-@findex vm-epg-prompt-for-action
-Prompt for a PGP action and return it.
-The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
-choice, and @code{q} aborts sending with an error.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @deffn Command vm-epg-sign
@@ -1010,6 +995,28 @@ text that is largely non-ASCII.
 Default value: @code{quoted-printable}
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-epg-compose-mode-menu arg1
+@findex vm-epg-compose-mode-menu
+PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-epg-prompt-for-action
+@findex vm-epg-prompt-for-action
+Prompt for a PGP action and return it.
+The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
+choice, and @code{q} aborts sending with an error.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Encryption with PGG (deprecated), Reference for External, Reference for Encryption with EasyPG, Reference
 @appendixsec Encryption with PGG (deprecated)
 @cindex Encryption with PGG (deprecated)
@@ -1081,23 +1088,9 @@ Switch mode on/off according to ARG.
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
-@deffn Command vm-pgg-compose-mode-menu arg1
-@findex vm-pgg-compose-mode-menu
-PGP/MIME compose mode menu.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
 @deffn Command vm-pgg-encrypt &optional sign
 @findex vm-pgg-encrypt
 Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-prompt-for-action
-@findex vm-pgg-prompt-for-action
-Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -1189,6 +1182,26 @@ See @code{vm-pgg-sign} for details.
 
 Default value: @code{quoted-printable}
 @end defopt
+
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-pgg-compose-mode-menu arg1
+@findex vm-pgg-compose-mode-menu
+PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-pgg-prompt-for-action
+@findex vm-pgg-prompt-for-action
+Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
 
 @node Reference for External, Reference for Faces, Reference for Encryption with PGG (deprecated), Reference
 @appendixsec External
@@ -5510,9 +5523,9 @@ Default value: @code{ask}
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
 
 @deffn Command vm-fetch-mode &optional read-only
 @findex vm-fetch-mode
@@ -6022,6 +6035,22 @@ Unmark all messages in the thread tree rooted at the current message.
 Customize VM options.
 @end deffn
 
+@deffn Command vm-view-manual
+@findex vm-view-manual
+View the VM manual.
+@end deffn
+
+@deffn Command vm-view-news
+@findex vm-view-news
+View the newest of VM=’s NEWS files.
+@end deffn
+
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
 @deffn Command vm-menu-create-author-virtual-folder
 @findex vm-menu-create-author-virtual-folder
 Visit a virtual folder of every message by this one’s author.
@@ -6054,50 +6083,16 @@ Query deletes a folder.
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
-@deffn Command vm-menu-hm-rename-folder folder
-@findex vm-menu-hm-rename-folder
-Rename a folder.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-menu-toggle-menubar &optional buffer
-@findex vm-menu-toggle-menubar
-Toggle between the VM’s dedicated menu bar and the standard Emacs
-menu bar.                                             USR, 2011-02-27
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-menu-yank-original
-@findex vm-menu-yank-original
-Yank every message being replied to into this composition.
-The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
-this yanks all of @code{vm-reply-list} one after another, which is what a reply
-to several messages at once is replying to.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-view-manual
-@findex vm-view-manual
-View the VM manual.
-@end deffn
-
-@deffn Command vm-view-news
-@findex vm-view-news
-View the newest of VM=’s NEWS files.
-@end deffn
-
-@appendixsubsec Called by VM
-
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
-
 @deffn Command vm-menu-hm-make-folder-menu
 @findex vm-menu-hm-make-folder-menu
 Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-hm-rename-folder folder
+@findex vm-menu-hm-rename-folder
+Rename a folder.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -6167,6 +6162,24 @@ Not documented.
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
+@deffn Command vm-menu-toggle-menubar &optional buffer
+@findex vm-menu-toggle-menubar
+Toggle between the VM’s dedicated menu bar and the standard Emacs
+menu bar.                                             USR, 2011-02-27
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-menu-yank-original
+@findex vm-menu-yank-original
+Yank every message being replied to into this composition.
+The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
+this yanks all of @code{vm-reply-list} one after another, which is what a reply
+to several messages at once is replying to.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Message History, Reference for Minibuf, Reference for Menus, Reference
 @appendixsec Message History
 @cindex Message History
@@ -6184,13 +6197,6 @@ With prefix ARG, select the ARG’th previous message.
 Select a message from a popup menu of the current folder’s history.
 @end deffn
 
-@deffn Command vm-message-history-browse-select
-@findex vm-message-history-browse-select
-Select the message below the cursor.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
 @deffn Command vm-message-history-forward &optional arg
 @findex vm-message-history-forward
 Select the next message in the current folder’s history.
@@ -6206,15 +6212,28 @@ The number of read or previewed messages in each folder’s history.
 Default value: @code{32}
 @end defopt
 
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-message-history-browse-select
+@findex vm-message-history-browse-select
+Select the message below the cursor.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
 @node Reference for Minibuf, Reference for Mouse, Reference for Message History, Reference
 @appendixsec Minibuf
 @cindex Minibuf
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
 
 @deffn Command vm-minibuffer-complete-word &optional exiting
 @findex vm-minibuffer-complete-word
@@ -6247,7 +6266,11 @@ item in turn.
 @appendixsec Mouse
 @cindex Mouse
 
-@appendixsubsec Commands
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
 
 @deffn Command vm-mouse-button-2 event
 @findex vm-mouse-button-2
@@ -6444,11 +6467,6 @@ Scan the current VM folder for new messages and popup a summary frame.
 Put focus on the folder frame and select the appropriate message.
 @end deffn
 
-@deffn Command vm-biff-select-message-mouse event
-@findex vm-biff-select-message-mouse
-Not documented.
-@end deffn
-
 @appendixsubsec User options
 
 @defopt vm-biff-FvwmCommand-path
@@ -6545,6 +6563,17 @@ Width of the popup-frame.
 
 Default value: @code{120}
 @end defopt
+
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-biff-select-message-mouse event
+@findex vm-biff-select-message-mouse
+Not documented.
+@end deffn
 
 @node Reference for Other settings, Reference for POP, Reference for New mail notification, Reference
 @appendixsec Other settings
@@ -6955,9 +6984,9 @@ header line in email messages,
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
 
 @deffn Command vm-do-fcc-before-mime-encode
 @findex vm-do-fcc-before-mime-encode
@@ -7092,13 +7121,6 @@ changed; pre-signatures added; functions called.
 Call @code{vm-pcrisis-no-automorph} to disable it for the current buffer.
 @end deffn
 
-@deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
-@findex vm-pcrisis-backward-tab-header-or-tab-stop
-Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
 @deffn Command vm-pcrisis-build-actions-to-run-list
 @findex vm-pcrisis-build-actions-to-run-list
 Build a list of the actions to run.
@@ -7192,14 +7214,6 @@ profiles.  If you want to change the profile only explicitly, then omit the
 PROMPT argument and call this function interactively in the composition buffer.
 @end deffn
 
-@deffn Command vm-pcrisis-read-actions prompt &optional default
-@findex vm-pcrisis-read-actions
-Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
-The special action "none" will result in an empty action list.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
 @deffn Command vm-pcrisis-run-action &optional action-regexp
 @findex vm-pcrisis-run-action
 Run all actions with names matching the ACTION-REGEXP.
@@ -7212,19 +7226,6 @@ completion.
 Run the argument actions, or the actions stored in @code{vm-pcrisis-actions-to-run}.
 If verbose is supplied, it should be a STRING, indicating the name of a
 buffer to which to write diagnostic output.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
-@findex vm-pcrisis-tab-header-or-tab-stop
-If in a mail header field, moves to next useful header or body.
-When moving to the message body, calls the @code{vm-pcrisis-automorph} function.
-If within the message body, runs @code{tab-to-tab-stop}.
-If BACKWARD is specified and non-nil, moves to previous useful header
-field, whether point is in the body or the headers.
-"Useful header fields" are currently, in order, "To" and
-"Subject".
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -7405,6 +7406,40 @@ A list of condition-action rules used during reply.
 An alist associating conditions with actions from @code{vm-pcrisis-actions}
 when resending.
 @end defopt
+
+@appendixsubsec Called by VM
+
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
+@findex vm-pcrisis-backward-tab-header-or-tab-stop
+Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-pcrisis-read-actions prompt &optional default
+@findex vm-pcrisis-read-actions
+Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
+The special action "none" will result in an empty action list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
+@findex vm-pcrisis-tab-header-or-tab-stop
+If in a mail header field, moves to next useful header or body.
+When moving to the message body, calls the @code{vm-pcrisis-automorph} function.
+If within the message body, runs @code{tab-to-tab-stop}.
+If BACKWARD is specified and non-nil, moves to previous useful header
+field, whether point is in the body or the headers.
+"Useful header fields" are currently, in order, "To" and
+"Subject".
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
 
 @node Reference for Postponed compositions, Reference for Printing, Reference for Personality Crisis, Reference
 @appendixsec Postponed compositions
@@ -8038,11 +8073,6 @@ Toggle display of shrunken headers.
 Toggle display of shrunken headers.
 @end deffn
 
-@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
-@findex vm-shrunken-headers-toggle-this-mouse
-Toggle display of shrunken headers.
-@end deffn
-
 @appendixsubsec User options
 
 @defopt vm-assimilate-new-messages-sorted
@@ -8228,9 +8258,9 @@ for the variable to have effect.
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
 
 @deffn Command vm-emit-eom-blurb
 @findex vm-emit-eom-blurb
@@ -8245,6 +8275,11 @@ it is suppressed if the variable @code{vm-auto-next-message} is nil.
 Not documented.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
+@findex vm-shrunken-headers-toggle-this-mouse
+Toggle display of shrunken headers.
 @end deffn
 
 @node Reference for Replying and composing, Reference for S/MIME, Reference for Reading a message, Reference
@@ -8335,13 +8370,6 @@ See @code{vm-forward-message} for other forms of forwarding.
 @deffn Command vm-forward-message-plain-other-frame
 @findex vm-forward-message-plain-other-frame
 Like vm-forward-message-plain, but run in a newly created frame.
-@end deffn
-
-@deffn Command vm-handle-return-receipt
-@findex vm-handle-return-receipt
-Generate a reply to the current message if it requests a return receipt
-and has not been replied so far.
-See the variable @code{vm-handle-return-receipt-mode} for customization.
 @end deffn
 
 @deffn Command vm-mail-mode-citation-clean-up
@@ -9030,9 +9058,16 @@ effect.
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-handle-return-receipt
+@findex vm-handle-return-receipt
+Generate a reply to the current message if it requests a return receipt
+and has not been replied so far.
+See the variable @code{vm-handle-return-receipt-mode} for customization.
+@end deffn
 
 @deffn Command vm-mail-check-for-empty-subject
 @findex vm-mail-check-for-empty-subject
@@ -10406,36 +10441,6 @@ Default value: @code{t}
 @appendixsec The toolbar
 @cindex The toolbar
 
-@appendixsubsec Commands
-
-@deffn Command vm-toolbar-autofile-message
-@findex vm-toolbar-autofile-message
-Save this message to the folder @code{vm-auto-folder-alist} chooses for it.
-The toolbar’s autofile button.  Signals if no entry in that list matches
-the message, rather than prompting for a folder.
-@end deffn
-
-@deffn Command vm-toolbar-can-autofile-p
-@findex vm-toolbar-can-autofile-p
-Return the folder the current message would be auto-filed to, or nil.
-What decides whether the toolbar’s autofile button is enabled.  Never
-signals: no folder, no message, and a folder buffer that has been killed
-all give nil.
-@end deffn
-
-@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
-@findex vm-toolbar-delete/undelete-message
-Not documented.
-@end deffn
-
-@deffn Command vm-toolbar-helper-command
-@findex vm-toolbar-helper-command
-Run whatever command @code{vm-toolbar-helper-command} currently holds.
-The toolbar’s helper button changes with the context: what it does is
-decided by reassigning this variable before the button is drawn, rather
-than by having a button per command.
-@end deffn
-
 @appendixsubsec User options
 
 @defopt vm-popup-menu-on-mouse-3
@@ -10542,9 +10547,24 @@ Default value:
 
 @appendixsubsec Called by VM
 
-These are invoked by a toolbar button, a mouse menu, a keymap
-entry or a hook rather than typed by name.  Nothing stops you
-calling one.
+These are invoked by a toolbar button, a menu entry, a mouse
+binding, a keymap entry or a hook rather than typed by name.
+Nothing stops you calling one.
+
+@deffn Command vm-toolbar-autofile-message
+@findex vm-toolbar-autofile-message
+Save this message to the folder @code{vm-auto-folder-alist} chooses for it.
+The toolbar’s autofile button.  Signals if no entry in that list matches
+the message, rather than prompting for a folder.
+@end deffn
+
+@deffn Command vm-toolbar-can-autofile-p
+@findex vm-toolbar-can-autofile-p
+Return the folder the current message would be auto-filed to, or nil.
+What decides whether the toolbar’s autofile button is enabled.  Never
+signals: no folder, no message, and a folder buffer that has been killed
+all give nil.
+@end deffn
 
 @deffn Command vm-toolbar-compose-command &optional to subject
 @findex vm-toolbar-compose-command
@@ -10589,6 +10609,11 @@ in the buffer.  The function is expected to make the message
 @code{MIME presentable} to the user in whatever manner it sees fit.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
+@findex vm-toolbar-delete/undelete-message
+Not documented.
 @end deffn
 
 @deffn Command vm-toolbar-file-command folder &optional count mlist quiet
@@ -10656,6 +10681,14 @@ applied to virtual folder; mail is always gathered from the spool
 files.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@deffn Command vm-toolbar-helper-command
+@findex vm-toolbar-helper-command
+Run whatever command @code{vm-toolbar-helper-command} currently holds.
+The toolbar’s helper button changes with the context: what it does is
+decided by reassigning this variable before the button is drawn, rather
+than by having a button per command.
 @end deffn
 
 @deffn Command vm-toolbar-next-command &optional count retry signal-errors

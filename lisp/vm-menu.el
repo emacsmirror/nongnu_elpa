@@ -756,6 +756,7 @@ to several messages at once is replying to."
 	(vm-yank-message (car mlist))
 	(goto-char (point-max))
 	(setq mlist (cdr mlist))))))
+(put 'vm-menu-yank-original 'vm-called-by-vm t)
 
 (defun vm-menu-can-send-mail-p ()
   (save-match-data
@@ -779,6 +780,7 @@ subject filled in from the current message rather than prompted for."
   (vm-create-virtual-folder 'sortable-subject (regexp-quote
 	 			       (vm-so-sortable-subject
 	 				(car vm-message-pointer)))))
+(put 'vm-menu-create-subject-virtual-folder 'vm-called-by-vm t)
 
 (defun vm-menu-create-author-virtual-folder ()
   "Visit a virtual folder of every message by this one\'s author.
@@ -789,6 +791,7 @@ author filled in from the current message rather than prompted for."
   (setq this-command 'vm-create-virtual-folder)
   (vm-create-virtual-folder 'author (regexp-quote
 				     (vm-su-from (car vm-message-pointer)))))
+(put 'vm-menu-create-author-virtual-folder 'vm-called-by-vm t)
 
 (defun vm-menu-mail-to ()
   "Compose a message to the author of this one.
@@ -798,6 +801,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-mail)
   (vm-mail (vm-get-header-contents (car vm-message-pointer) "From:")))
+(put 'vm-menu-mail-to 'vm-called-by-vm t)
 
 
 (defun vm-menu--global-menubar ()
@@ -968,6 +972,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	 (set-buffer (window-buffer (posn-window (event-start event))))
 	 (goto-char (posn-point (event-start event)))
 	 (vm-menu-popup-fsfemacs-menu event))))
+(put 'vm-menu-popup-mode-menu 'vm-called-by-vm t)
 
 (defvar vm-menu-fsfemacs-attachment-menu)
 (defun vm-menu-popup-context-menu (event)
@@ -1002,6 +1007,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 		      (vm-menu-popup-mime-dispose-menu event)))
 	       (setq o-list (cdr o-list)))
 	     (and (not found) (vm-menu-popup-fsfemacs-menu event)))))))
+(put 'vm-menu-popup-context-menu 'vm-called-by-vm t)
 
 ;; to quiet the byte-compiler
 (defvar vm-menu-fsfemacs-url-browser-menu)
@@ -1029,6 +1035,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((and (not (featurep 'xemacs)) vm-use-menus)
 	 (vm-menu-popup-fsfemacs-menu
 	  event vm-menu-fsfemacs-url-browser-menu))))
+(put 'vm-menu-popup-url-browser-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-mailto-url-browser-menu (event)
   (interactive "e")
@@ -1038,6 +1045,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((and (not (featurep 'xemacs)) vm-use-menus)
 	 (vm-menu-popup-fsfemacs-menu
 	  event vm-menu-fsfemacs-mailto-url-browser-menu))))
+(put 'vm-menu-popup-mailto-url-browser-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-mime-dispose-menu (event)
   (interactive "e")
@@ -1047,6 +1055,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((and (not (featurep 'xemacs)) vm-use-menus)
 	 (vm-menu-popup-fsfemacs-menu
 	  event vm-menu-fsfemacs-mime-dispose-menu))))
+(put 'vm-menu-popup-mime-dispose-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-attachment-menu (event)
   (interactive "e")
@@ -1056,6 +1065,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((and (not (featurep 'xemacs)) vm-use-menus)
 	 (vm-menu-popup-fsfemacs-menu
 	  event vm-menu-fsfemacs-attachment-menu))))
+(put 'vm-menu-popup-attachment-menu 'vm-called-by-vm t)
 
 (defvar vm-menu-fsfemacs-image-menu)
 (defun vm-menu-popup-image-menu (event)
@@ -1066,6 +1076,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((and (not (featurep 'xemacs)) vm-use-menus)
 	 (vm-menu-popup-fsfemacs-menu
 	  event vm-menu-fsfemacs-image-menu))))
+(put 'vm-menu-popup-image-menu 'vm-called-by-vm t)
 
 ;; to quiet the byte-compiler
 (defvar vm-menu-fsfemacs-mail-menu)
@@ -1088,6 +1099,7 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	   (call-interactively this-command))
 	  (t
 	   (call-interactively command)))))
+(put 'vm-menu-popup-fsfemacs-menu 'vm-called-by-vm t)
 
 (defun vm-menu-mode-menu ()
   (if (featurep 'xemacs)
@@ -1162,6 +1174,7 @@ menu bar.                                             USR, 2011-02-27"
 	     (make-sparse-keymap "Menu"))
 	   (vm-menu-fsfemacs-add-vm-menu))
 	 (vm-menu-set-menubar-dirty-flag))))
+(put 'vm-menu-toggle-menubar 'vm-called-by-vm t)
 
 (defun vm-menu-install-menubar ()
   "Install the dedicated menu bar of VM.              USR, 2011-02-27"
@@ -1400,6 +1413,7 @@ newest entries are in the highest-numbered one."
     (vm-menu-hm-make-folder-menu)
     (vm-menu-hm-install-menu)
     ))
+(put 'vm-menu-hm-delete-folder 'vm-called-by-vm t)
 	
 
 (defun vm-menu-hm-rename-folder (folder)
@@ -1420,6 +1434,7 @@ newest entries are in the highest-numbered one."
   (vm-menu-hm-make-folder-menu)
   (vm-menu-hm-install-menu)
   )
+(put 'vm-menu-hm-rename-folder 'vm-called-by-vm t)
 
 
 (defun vm-menu-hm-create-dir (parent-dir)
@@ -1436,6 +1451,7 @@ newest entries are in the highest-numbered one."
   (vm-menu-hm-make-folder-menu)
   (vm-menu-hm-install-menu)
   )
+(put 'vm-menu-hm-create-dir 'vm-called-by-vm t)
 
 
 (defun vm-menu-hm-make-folder-menu ()
@@ -1500,6 +1516,7 @@ newest entries are in the highest-numbered one."
 		      ))))
   (vm-inform 5 "Building folders menu... done")
   (vm-menu-hm-install-menu))
+(put 'vm-menu-hm-make-folder-menu 'vm-called-by-vm t)
 
 (defun vm-menu-hm-install-menu ()
   (cond ((featurep 'xemacs)

@@ -888,16 +888,6 @@ C-c # s         vm-epg-sign
 
 @end macro
 
-@macro vmdocvmepgcomposemodemenu
-@deffn Command vm-epg-compose-mode-menu arg1
-@findex vm-epg-compose-mode-menu
-PGP/MIME compose mode menu.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmepgencrypt
 @deffn Command vm-epg-encrypt &optional sign
 @findex vm-epg-encrypt
@@ -921,18 +911,6 @@ encryption.
 Insert a public key as ASCII armor into the composition at point.
 The key is selected as for @code{vm-epg-attach-public-key}, but is inserted
 inline rather than attached as a MIME part.
-@end deffn
-
-@end macro
-
-@macro vmdocvmepgpromptforaction
-@deffn Command vm-epg-prompt-for-action
-@findex vm-epg-prompt-for-action
-Prompt for a PGP action and return it.
-The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
-choice, and @code{q} aborts sending with an error.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -977,6 +955,28 @@ This treats the whole message body as key material, so it is meant for
 messages that are an inline PGP public key block.  Keys arriving as an
 application/pgp-keys MIME part are handled by
 @code{vm-mime-display-internal-application/pgp-keys} instead.
+@end deffn
+
+@end macro
+
+@macro vmdocvmepgcomposemodemenu
+@deffn Command vm-epg-compose-mode-menu arg1
+@findex vm-epg-compose-mode-menu
+PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmepgpromptforaction
+@deffn Command vm-epg-prompt-for-action
+@findex vm-epg-prompt-for-action
+Prompt for a PGP action and return it.
+The choices come from @code{vm-epg-prompt-action-alist}; RET repeats the previous
+choice, and @code{q} aborts sending with an error.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
 @end macro
@@ -1183,30 +1183,10 @@ Switch mode on/off according to ARG.
 
 @end macro
 
-@macro vmdocvmpggcomposemodemenu
-@deffn Command vm-pgg-compose-mode-menu arg1
-@findex vm-pgg-compose-mode-menu
-PGP/MIME compose mode menu.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmpggencrypt
 @deffn Command vm-pgg-encrypt &optional sign
 @findex vm-pgg-encrypt
 Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmpggpromptforaction
-@deffn Command vm-pgg-prompt-for-action
-@findex vm-pgg-prompt-for-action
-Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -1251,6 +1231,26 @@ Sign and encrypt the composition as PGP/MIME.
 @deffn Command vm-pgg-snarf-keys
 @findex vm-pgg-snarf-keys
 Snarf keys from the current message.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmpggcomposemodemenu
+@deffn Command vm-pgg-compose-mode-menu arg1
+@findex vm-pgg-compose-mode-menu
+PGP/MIME compose mode menu.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmpggpromptforaction
+@deffn Command vm-pgg-prompt-for-action
+@findex vm-pgg-prompt-for-action
+Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -7079,6 +7079,22 @@ Customize VM options.
 
 @end macro
 
+@macro vmdocvmviewmanual
+@deffn Command vm-view-manual
+@findex vm-view-manual
+View the VM manual.
+@end deffn
+
+@end macro
+
+@macro vmdocvmviewnews
+@deffn Command vm-view-news
+@findex vm-view-news
+View the newest of VM=’s NEWS files.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmenucreateauthorvirtualfolder
 @deffn Command vm-menu-create-author-virtual-folder
 @findex vm-menu-create-author-virtual-folder
@@ -7123,60 +7139,20 @@ Query deletes a folder.
 
 @end macro
 
-@macro vmdocvmmenuhmrenamefolder
-@deffn Command vm-menu-hm-rename-folder folder
-@findex vm-menu-hm-rename-folder
-Rename a folder.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenutogglemenubar
-@deffn Command vm-menu-toggle-menubar &optional buffer
-@findex vm-menu-toggle-menubar
-Toggle between the VM’s dedicated menu bar and the standard Emacs
-menu bar.                                             USR, 2011-02-27
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmenuyankoriginal
-@deffn Command vm-menu-yank-original
-@findex vm-menu-yank-original
-Yank every message being replied to into this composition.
-The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
-this yanks all of @code{vm-reply-list} one after another, which is what a reply
-to several messages at once is replying to.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmviewmanual
-@deffn Command vm-view-manual
-@findex vm-view-manual
-View the VM manual.
-@end deffn
-
-@end macro
-
-@macro vmdocvmviewnews
-@deffn Command vm-view-news
-@findex vm-view-news
-View the newest of VM=’s NEWS files.
-@end deffn
-
-@end macro
-
 @macro vmdocvmmenuhmmakefoldermenu
 @deffn Command vm-menu-hm-make-folder-menu
 @findex vm-menu-hm-make-folder-menu
 Makes a menu with the mail folders of the directory @code{vm-folder-directory}.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenuhmrenamefolder
+@deffn Command vm-menu-hm-rename-folder folder
+@findex vm-menu-hm-rename-folder
+Rename a folder.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -7275,6 +7251,30 @@ Not documented.
 
 @end macro
 
+@macro vmdocvmmenutogglemenubar
+@deffn Command vm-menu-toggle-menubar &optional buffer
+@findex vm-menu-toggle-menubar
+Toggle between the VM’s dedicated menu bar and the standard Emacs
+menu bar.                                             USR, 2011-02-27
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmmenuyankoriginal
+@deffn Command vm-menu-yank-original
+@findex vm-menu-yank-original
+Yank every message being replied to into this composition.
+The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
+this yanks all of @code{vm-reply-list} one after another, which is what a reply
+to several messages at once is replying to.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmessagehistorybackward
 @deffn Command vm-message-history-backward &optional arg
 @findex vm-message-history-backward
@@ -7292,21 +7292,21 @@ Select a message from a popup menu of the current folder’s history.
 
 @end macro
 
+@macro vmdocvmmessagehistoryforward
+@deffn Command vm-message-history-forward &optional arg
+@findex vm-message-history-forward
+Select the next message in the current folder’s history.
+With prefix ARG, select the ARG’th next message.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmessagehistorybrowseselect
 @deffn Command vm-message-history-browse-select
 @findex vm-message-history-browse-select
 Select the message below the cursor.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmmessagehistoryforward
-@deffn Command vm-message-history-forward &optional arg
-@findex vm-message-history-forward
-Select the next message in the current folder’s history.
-With prefix ARG, select the ARG’th next message.
 @end deffn
 
 @end macro
@@ -8419,16 +8419,6 @@ Call @code{vm-pcrisis-no-automorph} to disable it for the current buffer.
 
 @end macro
 
-@macro vmdocvmpcrisisbackwardtabheaderortabstop
-@deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
-@findex vm-pcrisis-backward-tab-header-or-tab-stop
-Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmpcrisisbuildactionstorunlist
 @deffn Command vm-pcrisis-build-actions-to-run-list
 @findex vm-pcrisis-build-actions-to-run-list
@@ -8543,17 +8533,6 @@ PROMPT argument and call this function interactively in the composition buffer.
 
 @end macro
 
-@macro vmdocvmpcrisisreadactions
-@deffn Command vm-pcrisis-read-actions prompt &optional default
-@findex vm-pcrisis-read-actions
-Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
-The special action "none" will result in an empty action list.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmpcrisisrunaction
 @deffn Command vm-pcrisis-run-action &optional action-regexp
 @findex vm-pcrisis-run-action
@@ -8576,22 +8555,6 @@ buffer to which to write diagnostic output.
 
 @end macro
 
-@macro vmdocvmpcrisistabheaderortabstop
-@deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
-@findex vm-pcrisis-tab-header-or-tab-stop
-If in a mail header field, moves to next useful header or body.
-When moving to the message body, calls the @code{vm-pcrisis-automorph} function.
-If within the message body, runs @code{tab-to-tab-stop}.
-If BACKWARD is specified and non-nil, moves to previous useful header
-field, whether point is in the body or the headers.
-"Useful header fields" are currently, in order, "To" and
-"Subject".
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmpcrisistogglenoautomorph
 @deffn Command vm-pcrisis-toggle-no-automorph
 @findex vm-pcrisis-toggle-no-automorph
@@ -8607,6 +8570,43 @@ current composition, then call this function.
 @findex vm-pcrisis-true-conditions
 Return a list of all true conditions.
 Run this function in order to test/check your conditions.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmpcrisisbackwardtabheaderortabstop
+@deffn Command vm-pcrisis-backward-tab-header-or-tab-stop
+@findex vm-pcrisis-backward-tab-header-or-tab-stop
+Wrapper for @code{vm-pcrisis-tab-header-or-tab-stop} with BACKWARD set.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmpcrisisreadactions
+@deffn Command vm-pcrisis-read-actions prompt &optional default
+@findex vm-pcrisis-read-actions
+Read a list of actions to run and store it in @code{vm-pcrisis-actions-to-run}.
+The special action "none" will result in an empty action list.
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmpcrisistabheaderortabstop
+@deffn Command vm-pcrisis-tab-header-or-tab-stop &optional backward
+@findex vm-pcrisis-tab-header-or-tab-stop
+If in a mail header field, moves to next useful header or body.
+When moving to the message body, calls the @code{vm-pcrisis-automorph} function.
+If within the message body, runs @code{tab-to-tab-stop}.
+If BACKWARD is specified and non-nil, moves to previous useful header
+field, whether point is in the body or the headers.
+"Useful header fields" are currently, in order, "To" and
+"Subject".
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -9637,14 +9637,6 @@ Toggle display of shrunken headers.
 
 @end macro
 
-@macro vmdocvmshrunkenheaderstogglethismouse
-@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
-@findex vm-shrunken-headers-toggle-this-mouse
-Toggle display of shrunken headers.
-@end deffn
-
-@end macro
-
 @macro vmdocvmemiteomblurb
 @deffn Command vm-emit-eom-blurb
 @findex vm-emit-eom-blurb
@@ -9662,6 +9654,14 @@ it is suppressed if the variable @code{vm-auto-next-message} is nil.
 Not documented.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmshrunkenheaderstogglethismouse
+@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
+@findex vm-shrunken-headers-toggle-this-mouse
+Toggle display of shrunken headers.
 @end deffn
 
 @end macro
@@ -10012,16 +10012,6 @@ Like vm-forward-message-plain, but run in a newly created frame.
 
 @end macro
 
-@macro vmdocvmhandlereturnreceipt
-@deffn Command vm-handle-return-receipt
-@findex vm-handle-return-receipt
-Generate a reply to the current message if it requests a return receipt
-and has not been replied so far.
-See the variable @code{vm-handle-return-receipt-mode} for customization.
-@end deffn
-
-@end macro
-
 @macro vmdocvmmailmodecitationcleanup
 @deffn Command vm-mail-mode-citation-clean-up
 @findex vm-mail-mode-citation-clean-up
@@ -10312,6 +10302,16 @@ than the one that spawned the current Mail mode buffer.  The name of the
 folder is read from the minibuffer.
 
 Don’t call this function from a program.
+@end deffn
+
+@end macro
+
+@macro vmdocvmhandlereturnreceipt
+@deffn Command vm-handle-return-receipt
+@findex vm-handle-return-receipt
+Generate a reply to the current message if it requests a return receipt
+and has not been replied so far.
+See the variable @code{vm-handle-return-receipt-mode} for customization.
 @end deffn
 
 @end macro
@@ -12520,25 +12520,6 @@ all give nil.
 
 @end macro
 
-@macro vmdocvmtoolbardeleteundeletemessage
-@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
-@findex vm-toolbar-delete/undelete-message
-Not documented.
-@end deffn
-
-@end macro
-
-@macro vmdocvmtoolbarhelpercommand
-@deffn Command vm-toolbar-helper-command
-@findex vm-toolbar-helper-command
-Run whatever command @code{vm-toolbar-helper-command} currently holds.
-The toolbar’s helper button changes with the context: what it does is
-decided by reassigning this variable before the button is drawn, rather
-than by having a button per command.
-@end deffn
-
-@end macro
-
 @macro vmdocvmtoolbarcomposecommand
 @deffn Command vm-toolbar-compose-command &optional to subject
 @findex vm-toolbar-compose-command
@@ -12586,6 +12567,14 @@ in the buffer.  The function is expected to make the message
 @code{MIME presentable} to the user in whatever manner it sees fit.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmtoolbardeleteundeletemessage
+@deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
+@findex vm-toolbar-delete/undelete-message
+Not documented.
 @end deffn
 
 @end macro
@@ -12665,6 +12654,17 @@ applied to virtual folder; mail is always gathered from the spool
 files.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
+@macro vmdocvmtoolbarhelpercommand
+@deffn Command vm-toolbar-helper-command
+@findex vm-toolbar-helper-command
+Run whatever command @code{vm-toolbar-helper-command} currently holds.
+The toolbar’s helper button changes with the context: what it does is
+decided by reassigning this variable before the button is drawn, rather
+than by having a button per command.
 @end deffn
 
 @end macro

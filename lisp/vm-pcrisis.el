@@ -363,11 +363,13 @@ field, whether point is in the body or the headers.
 	  )
       (tab-to-tab-stop)
       )))
+(put 'vm-pcrisis-tab-header-or-tab-stop 'vm-called-by-vm t)
 
 (defun vm-pcrisis-backward-tab-header-or-tab-stop ()
   "*Wrapper for `vm-pcrisis-tab-header-or-tab-stop' with BACKWARD set."
   (interactive)
   (vm-pcrisis-tab-header-or-tab-stop t))
+(put 'vm-pcrisis-backward-tab-header-or-tab-stop 'vm-called-by-vm t)
 
 
 ;; -------------------------------------------------------------------
@@ -1200,6 +1202,7 @@ The special action \"none\" will result in an empty action list."
       (setq vm-pcrisis-actions-to-run actions)
       (message "VMPC actions to run: %S" actions))
     actions))
+(put 'vm-pcrisis-read-actions 'vm-called-by-vm t)
 
 (define-obsolete-variable-alias 'vmpc-prompt-for-profile-headers
   'vm-pcrisis-prompt-for-profile-headers "8.3.3")

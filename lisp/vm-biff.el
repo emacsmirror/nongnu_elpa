@@ -312,6 +312,7 @@ folder selectors work."
   (interactive "e")
   (mouse-set-point event)
   (vm-biff-select-message))
+(put 'vm-biff-select-message-mouse 'vm-called-by-vm t)
 
 (defcustom vm-biff-FvwmCommand-path "/usr/bin/FvwmCommand"
   "Full qualified path to FvwmCommand."

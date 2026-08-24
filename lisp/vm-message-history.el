@@ -173,6 +173,7 @@ With prefix ARG, select the ARG'th next message."
     (vm-display nil nil '(vm-goto-message-last-seen)
                 '(vm-goto-message-last-seen))
     (vm-message-history-browse)))
+(put 'vm-message-history-browse-select 'vm-called-by-vm t)
 
 (defvar vm-message-history-browse-mode-map
   (let ((map (make-sparse-keymap)))

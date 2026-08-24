@@ -61,6 +61,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-next-icon nil)
 (or (fboundp 'vm-toolbar-next-command)
     (defalias 'vm-toolbar-next-command 'vm-next-message))
+(put 'vm-toolbar-next-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-previous-button
   [vm-toolbar-previous-icon
@@ -75,6 +76,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-previous-icon nil)
 (or (fboundp 'vm-toolbar-previous-command)
     (defalias 'vm-toolbar-previous-command 'vm-previous-message))
+(put 'vm-toolbar-previous-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-autofile-button
   [vm-toolbar-autofile-icon
@@ -94,6 +96,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-file-icon nil)
 (or (fboundp 'vm-toolbar-file-command)
     (defalias 'vm-toolbar-file-command 'vm-save-message))
+(put 'vm-toolbar-file-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-getmail-button
   [vm-toolbar-getmail-icon vm-toolbar-getmail-command
@@ -107,6 +110,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-getmail-icon nil)
 (or (fboundp 'vm-toolbar-getmail-command)
     (defalias 'vm-toolbar-getmail-command 'vm-get-new-mail))
+(put 'vm-toolbar-getmail-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-print-button
   [vm-toolbar-print-icon
@@ -121,6 +125,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-print-icon nil)
 (or (fboundp 'vm-toolbar-print-command)
     (defalias 'vm-toolbar-print-command 'vm-print-message))
+(put 'vm-toolbar-print-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-visit-button
   [vm-toolbar-visit-icon vm-toolbar-visit-command t
@@ -133,6 +138,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-visit-icon nil)
 (or (fboundp 'vm-toolbar-visit-command)
     (defalias 'vm-toolbar-visit-command 'vm-visit-folder))
+(put 'vm-toolbar-visit-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-reply-button
   [vm-toolbar-reply-icon
@@ -147,6 +153,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-reply-icon nil)
 (or (fboundp 'vm-toolbar-reply-command)
     (defalias 'vm-toolbar-reply-command 'vm-followup-include-text))
+(put 'vm-toolbar-reply-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-forward-button
   [vm-toolbar-forward-icon
@@ -161,6 +168,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-forward-icon nil)
 (or (fboundp 'vm-toolbar-forward-command)
     (defalias 'vm-toolbar-forward-command 'vm-forward-message))
+(put 'vm-toolbar-forward-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-followup-button
   [vm-toolbar-followup-icon
@@ -175,6 +183,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-followup-icon nil)
 (or (fboundp 'vm-toolbar-followup-command)
     (defalias 'vm-toolbar-followup-command 'vm-followup))
+(put 'vm-toolbar-followup-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-compose-button
   [vm-toolbar-compose-icon vm-toolbar-compose-command t
@@ -187,6 +196,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-compose-icon nil)
 (or (fboundp 'vm-toolbar-compose-command)
     (defalias 'vm-toolbar-compose-command 'vm-mail))
+(put 'vm-toolbar-compose-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-decode-mime-button
   [vm-toolbar-decode-mime-icon vm-toolbar-decode-mime-command
@@ -205,6 +215,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-decode-mime-icon nil)
 (or (fboundp 'vm-toolbar-decode-mime-command)
     (defalias 'vm-toolbar-decode-mime-command 'vm-decode-mime-message))
+(put 'vm-toolbar-decode-mime-command 'vm-called-by-vm t)
 
 ;; The values of these two are used by the FSF Emacs toolbar
 ;; code.  The values don't matter as long as they are different
@@ -254,6 +265,7 @@ than by having a button per command."
   (interactive)
   (setq this-command vm-toolbar-helper-command)
   (call-interactively vm-toolbar-helper-command))
+(put 'vm-toolbar-helper-command 'vm-called-by-vm t)
 
 (defconst vm-toolbar-quit-button
   [vm-toolbar-quit-icon vm-toolbar-quit-command
@@ -267,6 +279,7 @@ s-expression like this one in your .vm file:
 (defvar vm-toolbar-quit-icon nil)
 (or (fboundp 'vm-toolbar-quit-command)
     (defalias 'vm-toolbar-quit-command 'vm-quit))
+(put 'vm-toolbar-quit-command 'vm-called-by-vm t)
 
 (defun vm-toolbar-any-messages-p ()
   (condition-case nil
@@ -286,6 +299,7 @@ s-expression like this one in your .vm file:
     (if (vm-deleted-flag (car vm-message-pointer))
 	(call-interactively 'vm-undelete-message)
       (call-interactively 'vm-delete-message))))
+(put 'vm-toolbar-delete/undelete-message 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-toolbar-can-autofile-p ()
@@ -301,6 +315,7 @@ all give nil."
 	(and vm-message-pointer
 	     (vm-auto-select-folder vm-message-pointer)))
     (error nil)))
+(put 'vm-toolbar-can-autofile-p 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-toolbar-autofile-message ()
@@ -318,6 +333,7 @@ the message, rather than prompting for a folder."
 	  (vm-inform 5 "Message saved to %s" file))
       (error "No match for message in vm-auto-folder-alist."))))
 
+(put 'vm-toolbar-autofile-message 'vm-called-by-vm t)
 (defun vm-toolbar-can-recover-p ()
   (condition-case nil
       (save-excursion

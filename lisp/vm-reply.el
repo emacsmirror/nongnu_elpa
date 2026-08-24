@@ -1142,6 +1142,7 @@ Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway."
   (interactive)
   (vm-do-fcc-in-composition))
+(put 'vm-do-fcc-before-mime-encode 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mail-mode-get-header-contents (header-name-regexp)
@@ -2473,6 +2474,7 @@ Subject header."
             (goto-char (match-end 0))
             (skip-chars-backward ": \t")
             (insert (format "[%d]" count))))))))
+(put 'vm-mail-subject-cleanup 'vm-called-by-vm t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2540,6 +2542,7 @@ headers."
     ;; for format string" instead of saying what is wrong.
     (if errors
         (error "%s" errors))))
+(put 'vm-mail-check-recipients 'vm-called-by-vm t)
 
 
 (defun vm-mail-check-for-empty-subject ()
@@ -2552,6 +2555,7 @@ headers."
             (error "Empty subject header")
           (mail-position-on-field "Subject")
           (insert (read-string "Subject: "))))))
+(put 'vm-mail-check-for-empty-subject 'vm-called-by-vm t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2708,6 +2712,7 @@ See the variable `vm-handle-return-receipt-mode' for customization."
             (vm-mail-send-and-exit nil))
         )
       )))
+(put 'vm-handle-return-receipt 'vm-called-by-vm t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -278,6 +278,7 @@ See `vm-pgg-sign' for details."
    "----"
    ["Attach Public Key" vm-pgg-attach-public-key t]
    ["Insert Public Key" pgg-insert-key t]))
+(put 'vm-pgg-compose-mode-menu 'vm-called-by-vm t)
 
 (defvar vm-pgg-compose-mode nil
   "None-nil means PGP/MIME composition mode key bindings and menu are available.")
@@ -1255,6 +1256,7 @@ The transfer encoding done by `vm-pgg-sign' can be controlled by the variable
       (message "No action selected."))
     (setq vm-pgg-prompt-last-action action)
     action))
+(put 'vm-pgg-prompt-for-action 'vm-called-by-vm t)
 
 ;;; ###autoload
 (defun vm-pgg-ask-hook ()

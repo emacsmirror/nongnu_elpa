@@ -6207,6 +6207,7 @@ version to version.  Include \"(vm-legacy-key-bindings)\" in your
 other possibilities, see the NEWS files in the VM distribution."
   (interactive)
   (error "This key has an optional binding in VM.  Do C-h k for help."))
+(put 'vm-optional-key 'vm-called-by-vm t)
 
 (defcustom vm-summary-enable-thread-folding nil
   "*If non-nil, enables folding of threads in VM summary
