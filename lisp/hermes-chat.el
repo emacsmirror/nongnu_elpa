@@ -1183,11 +1183,26 @@ session key is preserved, so the conversation can still be resumed."
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
 
+(defun hermes-chat--dashboard-client-active-turn-p (client)
+  "Return non-nil when a chat sharing CLIENT has an active turn."
+  (cl-some
+   (lambda (buffer)
+     (with-current-buffer buffer
+       (and (derived-mode-p 'hermes-chat-mode)
+            (eq hermes-chat--dashboard-client client)
+            (hermes-chat--active-turn-p))))
+   (buffer-list)))
+
 ;;;###autoload
 (defun hermes-dashboard-reconnect ()
-  "Signal that dashboard reconnect is temporarily unavailable."
+  "Reconnect this chat's shared dashboard socket when every owner is idle."
   (interactive)
-  (user-error "Hermes dashboard reconnect is temporarily unavailable"))
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "This chat has no live dashboard client to reconnect"))
+  (when (hermes-chat--dashboard-client-active-turn-p
+         hermes-chat--dashboard-client)
+    (user-error "Interrupt every active turn sharing this dashboard first"))
+  (hermes-dashboard-transport-reconnect hermes-chat--dashboard-client))
 
 ;;;###autoload
 (defalias 'hermes-reconnect #'hermes-dashboard-reconnect)

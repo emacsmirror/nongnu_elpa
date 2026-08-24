@@ -1037,7 +1037,10 @@
          (should-not resumed)
          (should (equal hermes-chat--session-id "stored-idle"))
          (should-not hermes-chat--dashboard-active-session-id)
-         (should-not hermes-chat--dashboard-session-ready-p))))))
+         (should-not hermes-chat--dashboard-session-ready-p)
+         (should (eq (plist-get hermes-chat--status-state :status) 'ready))
+         (should (string-match-p "Dashboard socket reconnected"
+                                 (buffer-string))))))))
 
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
@@ -5344,18 +5347,98 @@
   (hermes-test-with-chat-buffer
    (should-error (hermes-chat-disconnect) :type 'user-error)))
 
-(ert-deftest hermes-chat-dashboard-reconnect-fails-before-transport ()
-  "`hermes-dashboard-reconnect' is disabled without touching transport."
+(ert-deftest hermes-chat-dashboard-reconnect-requires-live-client ()
+  "Manual reconnect rejects a chat without a live dashboard client."
+  (hermes-test-with-chat-buffer
+   (let ((error (should-error (hermes-dashboard-reconnect) :type 'user-error)))
+     (should (string-match-p "live dashboard" (error-message-string error))))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-restarts-exact-client ()
+  "Manual reconnect restarts the exact client without losing local chat state."
   (let ((client (make-hermes-dashboard-transport-client
-                 :websocket 'ws
-                 :refcount 1))
+                 :websocket 'ws :refcount 1))
         called)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
-               (lambda (&rest _args) (setq called t))))
+               (lambda (seen &rest _)
+                 (setq called seen))))
       (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client)
-       (should-error (hermes-dashboard-reconnect) :type 'user-error)
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--session-id "stored"
+             hermes-chat--dashboard-active-session-id "sid-live"
+             hermes-chat--queued-messages '((:content "queued")))
+       (insert "draft")
+       (hermes-dashboard-reconnect)
+       (should (eq called client))
+       (should (equal hermes-chat--session-id "stored"))
+       (should (equal hermes-chat--dashboard-active-session-id "sid-live"))
+       (should (equal (hermes-chat-input-string) "draft"))
+       (should (equal hermes-chat--queued-messages '((:content "queued"))))))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-refuses-current-active-turn ()
+  "Manual reconnect refuses to disrupt the invoking chat's active turn."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'ws :refcount 1))
+        called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (&rest _) (setq called t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-running-p t)
+       (let ((error (should-error (hermes-dashboard-reconnect) :type 'user-error)))
+         (should (string-match-p "active turn" (error-message-string error))))
        (should-not called)))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-refuses-shared-active-turn ()
+  "Manual reconnect refuses while another chat sharing the client is active."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'ws :refcount 2))
+        caller peer called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (&rest _) (setq called t))))
+      (unwind-protect
+          (progn
+            (setq caller (generate-new-buffer (hermes-test--chat-buffer-name))
+                  peer (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer caller
+              (hermes-chat-mode)
+              (setq hermes-chat--dashboard-client client))
+            (with-current-buffer peer
+              (hermes-chat-mode)
+              (setq hermes-chat--dashboard-client client
+                    hermes-chat--dashboard-running-p t))
+            (with-current-buffer caller
+              (let ((error (should-error
+                            (hermes-dashboard-reconnect) :type 'user-error)))
+                (should (string-match-p "active turn"
+                                        (error-message-string error)))))
+            (should-not called))
+        (when (buffer-live-p caller) (kill-buffer caller))
+        (when (buffer-live-p peer) (kill-buffer peer))))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-ignores-unrelated-active-turn ()
+  "An active chat on another client does not block manual reconnect."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'ws-a :refcount 1))
+        (other-client (make-hermes-dashboard-transport-client
+                       :websocket 'ws-b :refcount 1))
+        caller peer called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (seen &rest _) (setq called seen))))
+      (unwind-protect
+          (progn
+            (setq caller (generate-new-buffer (hermes-test--chat-buffer-name))
+                  peer (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer caller
+              (hermes-chat-mode)
+              (setq hermes-chat--dashboard-client client))
+            (with-current-buffer peer
+              (hermes-chat-mode)
+              (setq hermes-chat--dashboard-client other-client
+                    hermes-chat--dashboard-running-p t))
+            (with-current-buffer caller (hermes-dashboard-reconnect))
+            (should (eq called client)))
+        (when (buffer-live-p caller) (kill-buffer caller))
+        (when (buffer-live-p peer) (kill-buffer peer))))))
 
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
   "Resuming a session keeps its durable id and owning profile."
