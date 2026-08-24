@@ -1239,6 +1239,23 @@ that was refused is still there to be continued later."
                        (buffer-string))
                      vm-postpone-test--draft)))))
 
+(ert-deftest vm-postpone-test-the-drafts-on-screen-are-not-said-to-be-missing ()
+  "The drafts folder on screen asks for a draft and says nothing else.
+It said \"Please select a draft!\" and then \"There are no known drafts.\" over
+the top of it, of the very drafts the reader was being asked to pick from."
+  (vm-postpone-test--deciding ()
+    (let ((buffer (vm-postpone-test--open-drafts dir))
+          (said nil))
+      (unwind-protect
+          (save-window-excursion
+            (set-window-buffer (selected-window) buffer)
+            (cl-letf (((symbol-function 'message)
+                       (lambda (format &rest args)
+                         (push (apply #'format format args) said))))
+              (vm-continue-what-message))
+            (should (equal (nreverse said) (list "Please select a draft!"))))
+        (kill-buffer buffer)))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
