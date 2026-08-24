@@ -816,7 +816,7 @@
 
  ;; (prescient		:url "https://github.com/radian-software/prescient.el")
 
- (project-store         :url "https://github.com/jian-lin/project-store")
+ (project-nix-store         :url "https://github.com/jian-lin/project-nix-store")
  
  (projectile		:url "https://github.com/bbatsov/projectile"
   :ignored-files ("LICENSE" "doc" "test")
