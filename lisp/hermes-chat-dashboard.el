@@ -1304,6 +1304,13 @@ must not receive them."
         hermes-chat--dashboard-create-fast-p nil
         hermes-chat--create-overrides-retry-session-id nil))
 
+(defun hermes-chat--dashboard-create-owner-current-p
+    (owner client generation session-id)
+  "Return non-nil when OWNER controls CLIENT's SESSION-ID batch at GENERATION."
+  (and (eq owner hermes-chat--create-override-owner)
+       (hermes-chat--dashboard-context-current-p
+        client generation session-id)))
+
 (defun hermes-chat--create-override-submit-inhibit-reason ()
   "Return the submission guard while create-time overrides are being applied."
   (and hermes-chat--create-override-owner
@@ -1313,12 +1320,57 @@ must not receive them."
   "Release any create-time override operation owned by this buffer."
   (setq hermes-chat--create-override-owner nil))
 
+(defun hermes-chat--dashboard-handle-create-model-result
+    (promise owner buffer client value session-id generation confirmed result)
+  "Settle OWNER's create-model PROMISE from RESULT under exact identity."
+  (hermes-chat--in-buffer buffer
+    (cond
+     ((not (hermes-chat--dashboard-create-owner-current-p
+            owner client generation session-id))
+      (hermes--promise-reject promise "Model switch was superseded"))
+     ((hermes-transport--get result 'confirm_required)
+      (if confirmed
+          (hermes--promise-reject promise "Model switch still requires confirmation")
+        (condition-case nil
+            (if (yes-or-no-p
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get result 'confirm_message))
+                     "Confirm switching to this model? "))
+                (hermes-chat--dashboard-request-create-model
+                 promise owner buffer client value session-id generation t)
+              (hermes--promise-reject promise "Model switch cancelled"))
+          (quit (hermes--promise-reject promise "Model switch cancelled")))))
+     (t (hermes--promise-resolve promise result)))))
+
+(defun hermes-chat--dashboard-request-create-model
+    (promise owner buffer client value session-id generation &optional confirmed)
+  "Set model VALUE through CLIENT and settle OWNER's PROMISE."
+  (condition-case err
+      (if (not (hermes-chat--dashboard-create-owner-current-p
+                owner client generation session-id))
+          (hermes--promise-reject promise "Model switch was superseded")
+        (hermes-dashboard-transport-config-set
+         client "model" value :session-id session-id
+         :confirm-expensive-model confirmed
+         :resolve
+         (lambda (result)
+           (hermes-chat--dashboard-handle-create-model-result
+            promise owner buffer client value session-id generation confirmed result))
+         :reject (lambda (message) (hermes--promise-reject promise message))))
+    ((error quit)
+     (hermes--promise-reject promise (error-message-string err)))))
+
 (defun hermes-chat--dashboard-create-config-promise
-    (client cell session-id)
-  "Return a promise applying CELL to CLIENT's SESSION-ID."
-  (hermes-dashboard-transport-call-fn
-   #'hermes-dashboard-transport-config-set
-   client (car cell) (cdr cell) :session-id session-id))
+    (owner client cell session-id generation)
+  "Return OWNER's promise applying CELL to CLIENT's SESSION-ID at GENERATION."
+  (if (equal (car cell) "model")
+      (let ((promise (hermes--promise-make)))
+        (hermes-chat--dashboard-request-create-model
+         promise owner (current-buffer) client (cdr cell) session-id generation)
+        promise)
+    (hermes-dashboard-transport-call-fn
+     #'hermes-dashboard-transport-config-set
+     client (car cell) (cdr cell) :session-id session-id)))
 
 (defun hermes-chat--dashboard-fail-create-overrides
     (owner session-id message abort)
@@ -1349,7 +1401,7 @@ Call CONTINUE on success or ABORT on failure."
       (condition-case err
           (hermes--promise-then
            (hermes-chat--dashboard-create-config-promise
-            client (car cells) session-id)
+            owner client (car cells) session-id generation)
            (lambda (_result)
              (hermes-chat--dashboard-step-create-overrides
               owner buffer client (cdr cells) session-id generation continue abort))

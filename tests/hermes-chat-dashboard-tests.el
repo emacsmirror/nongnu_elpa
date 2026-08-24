@@ -14,6 +14,20 @@
 
 ;;; Shared-socket runtime isolation
 
+(defun hermes-test--resolve-new-dashboard-session (_client &rest args)
+  "Resolve ARGS as a fresh dashboard session."
+  (funcall (plist-get args :resolve) '((session_id . "sid-new"))))
+
+(defun hermes-test--confirming-config-set (record)
+  "Return a `config.set' stub that calls RECORD and requires confirmation."
+  (lambda (_client key value &rest args)
+    (funcall record key value args)
+    (funcall (plist-get args :resolve)
+             (cond
+              ((not (equal key "model")) `((key . ,key)))
+              ((plist-get args :confirm-expensive-model) '((key . "model")))
+              (t '((confirm_required . t) (confirm_message . "Expensive model")))))))
+
 (ert-deftest hermes-chat-dashboard-acquires-client-for-buffer-instance ()
   "Each chat acquires its dashboard client under its pinned instance URL."
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
@@ -270,6 +284,167 @@ handler ignores them); the `config.set' must precede `prompt.submit'."
          (should-not hermes-chat--dashboard-create-model)
          (should-not hermes-chat--dashboard-create-provider))))))
 
+
+(ert-deftest hermes-chat-dashboard-create-confirms-model-before-first-prompt ()
+  "An expensive pre-session model is confirmed before `prompt.submit'."
+  (let ((client (hermes-test--dashboard-client)) calls order)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               #'hermes-test--resolve-new-dashboard-session)
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (hermes-test--confirming-config-set
+                (lambda (key value args)
+                  (push (list key value (plist-get args :session-id)
+                              (plist-get args :confirm-expensive-model)) calls)
+                  (push 'config order))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) (push 'submit order))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-create-model "gpt-expensive"
+               hermes-chat--dashboard-create-provider "openai"
+               hermes-chat--dashboard-create-reasoning-effort "high"
+               hermes-chat--dashboard-create-fast-p t)
+         (insert "hi")
+         (hermes-chat-send)
+         (should (equal (reverse calls)
+                        '(("model" "gpt-expensive --provider openai" "sid-new" nil)
+                          ("model" "gpt-expensive --provider openai" "sid-new" t)
+                          ("reasoning" "high" "sid-new" nil)
+                          ("fast" "fast" "sid-new" nil))))
+         (should (equal (reverse order)
+                        '(config config config config submit))))))))
+
+(ert-deftest hermes-chat-dashboard-control-decline-retries-on-next-action ()
+  "A control-action decline preserves the model for an owned retry."
+  (let ((client (hermes-test--dashboard-client))
+        (answers '(nil t)) action rejected calls)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-create)
+               #'hermes-test--resolve-new-dashboard-session)
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _) (pop answers)))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (hermes-test--confirming-config-set
+                (lambda (_key _value args)
+                  (push (plist-get args :confirm-expensive-model) calls)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-create-model "gpt-expensive")
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) (lambda (_client) (setq action t))
+        (lambda (message) (setq rejected message)))
+       (should-not action)
+       (should rejected)
+       (should hermes-chat--dashboard-create-model)
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) (lambda (_client) (setq action t)))
+       (should action)
+       (should (equal (reverse calls) '(nil nil t)))
+       (should-not hermes-chat--dashboard-create-model)))))
+
+(ert-deftest hermes-chat-dashboard-stale-model-result-does-not-prompt ()
+  "A model result for a replaced session rejects without prompting."
+  (let ((client (hermes-test--dashboard-client)) resolve prompted continued rejected)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _) (setq prompted t) t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--dashboard-create-model "gpt-expensive")
+       (hermes-chat--dashboard-apply-create-overrides
+        client (lambda () (setq continued t))
+        hermes-chat--lifecycle-generation (lambda (message) (setq rejected message)))
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve '((confirm_required . t)))
+       (should-not prompted)
+       (should-not continued)
+       (should rejected)
+       (should-not hermes-chat--create-override-owner)
+       (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+       (should hermes-chat--dashboard-create-model)))))
+
+(ert-deftest hermes-chat-dashboard-model-confirmation-revalidates-after-prompt ()
+  "Replacing the session during confirmation prevents the confirmed retry."
+  (let ((client (hermes-test--dashboard-client)) calls continued rejected)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq calls (1+ (or calls 0)))
+                 (funcall (plist-get args :resolve) '((confirm_required . t)))))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _)
+                 (setq hermes-chat--dashboard-active-session-id "sid-new")
+                 t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--dashboard-create-model "gpt-expensive")
+       (hermes-chat--dashboard-apply-create-overrides
+        client (lambda () (setq continued t))
+        hermes-chat--lifecycle-generation (lambda (message) (setq rejected message)))
+       (should (= calls 1))
+       (should-not continued)
+       (should rejected)
+       (should-not hermes-chat--create-override-owner)
+       (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+       (should hermes-chat--dashboard-create-model)))))
+
+(ert-deftest hermes-chat-dashboard-repeated-model-confirmation-rejects ()
+  "A confirmed retry that still requires confirmation rejects without continuing."
+  (let ((client (hermes-test--dashboard-client)) calls continued rejected)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq calls (1+ (or calls 0)))
+                 (funcall (plist-get args :resolve) '((confirm_required . t)))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--dashboard-create-model "gpt-expensive")
+       (hermes-chat--dashboard-apply-create-overrides
+        client (lambda () (setq continued t))
+        hermes-chat--lifecycle-generation (lambda (message) (setq rejected message)))
+       (should (= calls 2))
+       (should-not continued)
+       (should rejected)
+       (should-not hermes-chat--create-override-owner)
+       (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+       (should hermes-chat--dashboard-create-model)))))
+
+(ert-deftest hermes-chat-dashboard-confirmed-retry-sync-failure-settles-origin ()
+  "A synchronous confirmed-retry error or quit releases exact ownership."
+  (dolist (signal '(error quit))
+    (let ((client (hermes-test--dashboard-client)) calls resolve rejected)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+                 (lambda (_client _key _value &rest args)
+                   (setq calls (1+ (or calls 0)))
+                   (if (= calls 1)
+                       (setq resolve (plist-get args :resolve))
+                     (signal signal nil))))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-session-ready-p t
+               hermes-chat--dashboard-active-session-id "sid-old"
+               hermes-chat--dashboard-create-model "gpt-expensive")
+         (hermes-chat--dashboard-apply-create-overrides
+          client (lambda () (ert-fail "failure must not continue"))
+          hermes-chat--lifecycle-generation (lambda (message) (setq rejected message)))
+         (funcall resolve '((confirm_required . t)))
+         (should (= calls 2))
+         (should rejected)
+         (should-not hermes-chat--create-override-owner)
+         (should (equal hermes-chat--create-overrides-retry-session-id "sid-old"))
+         (should hermes-chat--dashboard-create-model))))))
 
 (ert-deftest hermes-chat-dashboard-create-uses-chat-working-directory ()
   "A fresh session starts in its gateway working directory."
