@@ -390,6 +390,181 @@
 		   (list :stanza features) #'ignore)))
     (should (eq (car result) :starttls))))
 
+(ert-deftest jabber-conn-test-starttls-requires-tls-namespace ()
+  "A local-name collision must not impose STARTTLS on plaintext policy."
+  (let* ((features
+	  '(features nil
+		     (starttls ((xmlns . "urn:example:not-tls")))))
+	 (result
+	  (funcall (jabber-test-conn--state-handler :connected)
+		   'fake-fsm '(:connection-type network :encrypted nil)
+		   (list :stanza features) #'ignore)))
+    (should-not (eq (car result) :starttls))))
+
+(ert-deftest jabber-conn-test-starttls-policy-survives-stripped-feature ()
+  "Configured STARTTLS policy must attempt TLS without an advertisement."
+  (let* ((features
+	  '(features nil
+		     (mechanisms
+		      ((xmlns . "urn:ietf:params:xml:ns:xmpp-sasl")))))
+	 (result
+	  (funcall (jabber-test-conn--state-handler :connected)
+		   'fake-fsm '(:connection-type starttls :encrypted nil)
+		   (list :stanza features) #'ignore)))
+    (should (eq (car result) :starttls))))
+
+(ert-deftest jabber-conn-test-starttls-required-overrides-plaintext-policy ()
+  "A server-required TLS feature must be negotiated before SASL."
+  (let* ((features
+	  `(features nil
+		     (starttls ((xmlns . ,jabber-tls-xmlns))
+			       (required nil))))
+	 (result
+	  (funcall (jabber-test-conn--state-handler :connected)
+		   'fake-fsm '(:connection-type network :encrypted nil)
+		   (list :stanza features) #'ignore)))
+    (should (eq (car result) :starttls))))
+
+(ert-deftest jabber-conn-test-starttls-required-validates-child-namespace ()
+  "Required is recognized only in the inherited or explicit TLS namespace."
+  (let ((inherited
+	 `(features nil
+		    (starttls ((xmlns . ,jabber-tls-xmlns))
+			      (required nil))))
+	(explicit
+	 `(features nil
+		    (starttls ((xmlns . ,jabber-tls-xmlns))
+			      (required ((xmlns . ,jabber-tls-xmlns))))))
+	(wrong
+	 `(features nil
+		    (starttls ((xmlns . ,jabber-tls-xmlns))
+			      (required ((xmlns . "urn:example:not-tls")))))))
+    (should (jabber-conn--starttls-required-p inherited))
+    (should (jabber-conn--starttls-required-p explicit))
+    (should-not (jabber-conn--starttls-required-p wrong))))
+
+(ert-deftest jabber-conn-test-starttls-rejects-premature-stream-start ()
+  "A stream restart before TLS succeeds must fail closed."
+  (let* ((state-data '(:connection connection :server "example.com"))
+	 (result
+	  (funcall (jabber-test-conn--state-handler :starttls)
+		   'fake-fsm state-data
+		   '(:stream-start "premature" "1.0") #'ignore)))
+    (should-not (car result))
+    (should-not (plist-get (cadr result) :encrypted))
+    (should (string-match-p
+	     "Unexpected stream restart during STARTTLS"
+	     (plist-get (cadr result) :disconnection-reason)))))
+
+(ert-deftest jabber-conn-test-starttls-rejects-stale-features ()
+  "Pre-TLS features must not be accepted as a STARTTLS response."
+  (let* ((state-data '(:connection connection :server "example.com"))
+	 (fsm (make-symbol "jabber-test-starttls"))
+	 (features
+	  `(features nil
+		     (starttls ((xmlns . ,jabber-tls-xmlns))
+			       (required nil))))
+	 result)
+    (put fsm :state-data state-data)
+    (setq result
+	  (funcall (jabber-test-conn--state-handler :starttls)
+		   fsm state-data (list :stanza features) #'ignore))
+    (should-not (car result))
+    (should-not (plist-get (cadr result) :encrypted))
+    (should (string-match-p
+	     "Unexpected STARTTLS response"
+	     (plist-get (cadr result) :disconnection-reason)))))
+
+(ert-deftest jabber-conn-test-starttls-rejects-wrong-response-namespace ()
+  "A proceed element outside the TLS namespace must fail closed."
+  (let* ((state-data '(:connection connection :server "example.com"))
+	 (fsm (make-symbol "jabber-test-starttls"))
+	 (proceed '(proceed ((xmlns . "urn:example:not-tls"))))
+	 result)
+    (put fsm :state-data state-data)
+    (setq result
+	  (funcall (jabber-test-conn--state-handler :starttls)
+		   fsm state-data (list :stanza proceed) #'ignore))
+    (should-not (car result))
+    (should-not (plist-get (cadr result) :encrypted))
+    (should (string-match-p
+	     "Unexpected STARTTLS response"
+	     (plist-get (cadr result) :disconnection-reason)))))
+
+(ert-deftest jabber-conn-test-starttls-rejects-queued-pre-restart-features ()
+  "Queued pre-TLS features must not cross a successful TLS restart."
+  (let ((features
+	 `(features nil
+		    (starttls ((xmlns . ,jabber-tls-xmlns))
+			      (required nil))))
+	(connection (make-symbol "jabber-test-connection"))
+	sasl-called)
+    (cl-letf (((symbol-function 'jabber-network-connect) #'ignore)
+	      ((symbol-function 'jabber-send-stream-header) #'ignore)
+	      ((symbol-function 'jabber-starttls-initiate) #'ignore)
+	      ((symbol-function 'gnutls-negotiate)
+	       (lambda (&rest _) connection))
+	      ((symbol-function 'jabber-sasl-start-auth)
+	       (lambda (&rest _)
+		 (setq sasl-called t))))
+      (let ((fsm (start-jabber-connection
+		  "romeo" "example.com" "emacs"
+		  nil "secret" nil nil 'starttls)))
+	(fsm-send-sync fsm (list :connected connection nil))
+	(fsm-send-sync fsm '(:stream-start "before-tls" "1.0"))
+	(fsm-send-sync fsm (list :stanza features))
+	(fsm-send-sync
+	 fsm `(:stanza (proceed ((xmlns . ,jabber-tls-xmlns)))))
+	(fsm-send-sync fsm (list :stanza features))
+	(should-not (get fsm :state))
+	(should-not sasl-called)
+	(should (string-match-p
+		 "before the restarted stream header"
+		 (plist-get (fsm-get-state-data fsm) :disconnection-reason)))))))
+
+(ert-deftest jabber-conn-test-starttls-restarts-with-fresh-features ()
+  "A successful TLS restart authenticates from post-TLS features only."
+  (let* ((pre-tls-features
+	  `(features nil
+		     (starttls ((xmlns . ,jabber-tls-xmlns))
+			       (required nil))))
+	 (post-tls-features
+	  '(features nil
+		     (mechanisms
+		      ((xmlns . "urn:ietf:params:xml:ns:xmpp-sasl"))
+		      (mechanism nil "PLAIN"))))
+	 (connection (make-symbol "jabber-test-connection"))
+	 negotiated-features
+	 tls-called)
+    (cl-letf (((symbol-function 'jabber-network-connect) #'ignore)
+	      ((symbol-function 'jabber-send-stream-header) #'ignore)
+	      ((symbol-function 'jabber-starttls-initiate) #'ignore)
+	      ((symbol-function 'gnutls-negotiate)
+	       (lambda (&rest _)
+		 (setq tls-called t)
+		 connection))
+	      ((symbol-function 'jabber-sasl-start-auth)
+	       (lambda (_fsm features)
+		 (setq negotiated-features features)
+		 '(sasl-state))))
+      (let ((fsm (start-jabber-connection
+		  "romeo" "example.com" "emacs"
+		  nil "secret" nil nil 'starttls)))
+	(fsm-send-sync fsm (list :connected connection nil))
+	(fsm-send-sync fsm '(:stream-start "before-tls" "1.0"))
+	(fsm-send-sync fsm (list :stanza pre-tls-features))
+	(should (eq (get fsm :state) :starttls))
+	(fsm-send-sync
+	 fsm `(:stanza (proceed ((xmlns . ,jabber-tls-xmlns)))))
+	(should tls-called)
+	(should (eq (get fsm :state) :connected))
+	(should (plist-get (fsm-get-state-data fsm) :encrypted))
+	(fsm-send-sync fsm '(:stream-start "after-tls" "1.0"))
+	(fsm-send-sync fsm (list :stanza post-tls-features))
+	(should (eq (get fsm :state) :sasl-auth))
+	(should (eq negotiated-features post-tls-features))
+	(should-not (eq negotiated-features pre-tls-features))))))
+
 (ert-deftest jabber-conn-test-configured-proxy-reconnects-to-starttls ()
   "A configured proxy survives an FSM reconnect and reaches STARTTLS."
   (let* ((proxy '(:type socks5 :host "127.0.0.1" :port 9050))
@@ -436,6 +611,7 @@
               (funcall (process-filter proc) proc (unibyte-string 5 0))
               (funcall (process-filter proc) proc
                        (unibyte-string 5 0 0 1 127 0 0 1 0 0))
+              (fsm-send-sync fsm '(:stream-start "reconnected" "1.0"))
               (fsm-send-sync
                fsm
                `(:stanza

@@ -437,6 +437,24 @@ When PROXY is non-nil, establish SOCKS5 before reporting success."
   (jabber-send-sexp fsm
 		    `(starttls ((xmlns . ,jabber-tls-xmlns)))))
 
+(defun jabber-conn--tls-element-p (xml-data name)
+  "Return non-nil if XML-DATA is the TLS element NAME."
+  (and (eq (jabber-xml-node-name xml-data) name)
+       (equal (jabber-xml-get-xmlns xml-data) jabber-tls-xmlns)))
+
+(defun jabber-conn--starttls-required-p (stream-features)
+  "Return non-nil if STREAM-FEATURES requires STARTTLS."
+  (when-let* ((starttls
+	       (cl-find-if
+		(lambda (child)
+		  (jabber-conn--tls-element-p child 'starttls))
+		(jabber-xml-get-children stream-features 'starttls))))
+    (cl-some
+     (lambda (required)
+       (let ((xmlns (jabber-xml-get-xmlns required)))
+	 (or (null xmlns) (equal xmlns jabber-tls-xmlns))))
+     (jabber-xml-get-children starttls 'required))))
+
 (defun jabber-starttls-process-input (fsm xml-data)
   "Process result of starttls request on FSM.
 On failure, signal an error.
@@ -444,7 +462,7 @@ On failure, signal an error.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   (cond
-   ((eq (car xml-data) 'proceed)
+   ((jabber-conn--tls-element-p xml-data 'proceed)
     (let* ((state-data (fsm-get-state-data fsm))
 	   (connection (plist-get state-data :connection))
 	   (hostname (plist-get state-data :server))
@@ -454,8 +472,11 @@ obtained from `xml-parse-region'."
        :hostname hostname
        :verify-hostname-error verifyp
        :verify-error verifyp)))
-   ((eq (car xml-data) 'failure)
-    (error "Command rejected by server"))))
+   ((jabber-conn--tls-element-p xml-data 'failure)
+    (error "Command rejected by server"))
+   (t
+    (error "Unexpected STARTTLS response: %s"
+	   (jabber-xml-node-name xml-data)))))
 
 (define-obsolete-variable-alias '*jabber-virtual-server-function*
   'jabber-virtual-server-function "0.11.0")

@@ -438,7 +438,7 @@ override the defaults from `jabber-account-list'."
 
 		    ;; Next thing happening is the server sending its own <stream:stream> start tag.
 
-		    (list state-data nil))
+		    (list (plist-put state-data :awaiting-stream-start t) nil))
 
 (define-state jabber-connection :connected
 	      (fsm state-data event _callback)
@@ -457,6 +457,8 @@ override the defaults from `jabber-account-list'."
 		       (stream-version (car (cddr event))))
 		   (setq state-data
 			 (plist-put state-data :session-id session-id))
+		   (setq state-data
+			 (plist-put state-data :awaiting-stream-start nil))
 		   ;; the stream feature is only sent if the initiating entity has
 		   ;; sent 1.0 in the stream header. if sasl is not supported then
 		   ;; we don't send 1.0 in the header and therefore we shouldn't wait
@@ -480,13 +482,19 @@ override the defaults from `jabber-account-list'."
 		(:stanza
 		 (let ((stanza (cadr event)))
 		   (cond
+		    ((plist-get state-data :awaiting-stream-start)
+		     (list nil
+			   (plist-put
+			    state-data :disconnection-reason
+			    "Received stanza before the restarted stream header")))
 		    ;; At this stage, we only expect a stream:features stanza.
 		    ((not (eq (jabber-xml-node-name stanza) 'features))
 		     (list nil (plist-put state-data
 					  :disconnection-reason
 					  (format "Unexpected stanza %s" stanza))))
-		    ((and (jabber-xml-get-children stanza 'starttls)
-			  (eq (plist-get state-data :connection-type) 'starttls)
+		    ((and (or
+			   (eq (plist-get state-data :connection-type) 'starttls)
+			   (jabber-conn--starttls-required-p stanza))
 			  ;; XEP-0368: STARTTLS MUST NOT be used over direct TLS.
 			  (not (plist-get state-data :encrypted)))
 		     (list :starttls state-data))
@@ -520,6 +528,12 @@ override the defaults from `jabber-account-list'."
 
 		(:sentinel
 		 (jabber-fsm-handle-sentinel state-data event))
+
+		(:stream-start
+		 (list nil
+		       (plist-put
+			state-data :disconnection-reason
+			"Unexpected stream restart during STARTTLS")))
 
 		(:stanza
 		 (condition-case e
