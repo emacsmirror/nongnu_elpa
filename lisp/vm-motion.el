@@ -92,6 +92,7 @@ given."
       (vm-record-and-change-message-pointer 
        vm-message-pointer vm-last-message-pointer
        :present t)))
+;;;###autoload (autoload 'vm-goto-last-message-seen "vm-motion" nil t)
 (defalias 'vm-goto-last-message-seen 'vm-goto-message-last-seen)
 
 ;;;###autoload

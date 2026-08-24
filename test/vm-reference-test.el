@@ -301,6 +301,43 @@ neither."
                  (seq-difference (vm-reference-test--unautoloaded-commands)
                                  vm-reference-test--not-commands))))
 
+(defconst vm-reference-test--no-cookie-files
+  '("vm-vars.el"                        ; every VM file requires it, and an
+                                        ; autoloaded default that reads
+                                        ; another variable broke startup
+                                        ; (emacs-vm/vm#608)
+    "vm-pgg.el")                        ; deprecated in favour of vm-epg
+                                        ; (emacs-vm/vm#375): reaching its
+                                        ; commands before VM is loaded is not
+                                        ; something to make easier
+  "Files whose commands are deliberately not autoloaded, and why.")
+
+(ert-deftest vm-reference-test-every-command-a-reader-types-is-autoloaded ()
+  "Every command the appendix lists is reachable before VM is loaded.
+The other direction from the test above, which asks it of the commands the
+manual names by hand.  84 interactive functions were neither autoloaded nor
+documented (emacs-vm/vm#715); the ones VM invokes for itself now say so with
+`vm-called-by-vm\=' and are listed apart, and what is left is what a reader
+types, which `M-x' has to find.
+
+The exemptions are by file, in `vm-reference-test--no-cookie-files\=', so a
+new command in any other file has to carry a cookie."
+  (vm-reference-load-everything)
+  (let* ((lisp (expand-file-name "../lisp" vm-test-dir))
+         (modules (vm-reference-module-files lisp))
+         (missing nil))
+    (dolist (section (vm-reference-collect))
+      (dolist (command (nth 1 section))
+        ;; only what a module defines: a menu `easy-menu-define' builds when
+        ;; VM installs its menus is a command whose definition is wherever
+        ;; the installing happened, and there is nowhere to put a cookie
+        (let ((file (vm-reference-defining-file command)))
+          (when (and (member file modules)
+                     (not (member file vm-reference-test--no-cookie-files))
+                     (not (vm-reference-autoloaded-p command)))
+            (push command missing)))))
+    (should (equal nil (sort missing #'string<)))))
+
 ;;; The manual against the code
 
 (defconst vm-reference-test--manual

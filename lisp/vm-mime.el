@@ -5216,6 +5216,7 @@ created."
 	  (vm-inform 5 "No attachments saved")))))
 
 
+;;;###autoload
 (defun vm-save-attachments (&optional count)
   "Save all attachments in the next COUNT messages or marked
 messages.  For the purpose of this function, an \"attachment\" is
@@ -6052,6 +6053,7 @@ this case and not prompt you for it in the minibuffer."
     (setq description (vm-mime-scrub-description description)))
   (vm-attach-object file :type type :params charset 
 			 :description description :mimed nil))
+;;;###autoload (autoload 'vm-mime-attach-file "vm-mime" nil t)
 (defalias 'vm-mime-attach-file 'vm-attach-file)
 
 ;;;###autoload
@@ -6106,6 +6108,7 @@ should use `vm-attach-file' to attach the file."
     (error "You don't have permission to read %s" file))
   (vm-attach-object file :type type :params nil 
 			 :description nil :mimed t))
+;;;###autoload (autoload 'vm-mime-attach-mime-file "vm-mime" nil t)
 (defalias 'vm-mime-attach-mime-file 'vm-attach-mime-file)
 
 ;;;###autoload
@@ -6177,6 +6180,7 @@ this case and not prompt you for it in the minibuffer."
     (setq description (vm-mime-scrub-description description)))
   (vm-attach-object buffer :type type :params charset
 			 :description description :mimed nil))
+;;;###autoload (autoload 'vm-mime-attach-buffer "vm-mime" nil t)
 (defalias 'vm-mime-attach-buffer 'vm-attach-buffer)
 
 
@@ -6283,6 +6287,7 @@ minibuffer if the command is run interactively."
 	(t
 	 (vm-attach-message-digest-internal message description))))
 
+;;;###autoload (autoload 'vm-mime-attach-message "vm-mime" nil t)
 (defalias 'vm-mime-attach-message 'vm-attach-message)
 
 (defun vm-attach-message-internal (message description)
@@ -6413,6 +6418,7 @@ minibuffer if the command is run interactively."
     (if (null (cdr mlist))		; single message
 	(vm-attach-message-internal (car mlist) description)
       (vm-attach-message-digest-internal mlist description)))))
+;;;###autoload (autoload 'vm-mime-attach-message-to-composition "vm-mime" nil t)
 (defalias 'vm-mime-attach-message-to-composition
   'vm-attach-message-to-composition)
 		      
@@ -7810,6 +7816,7 @@ WHOLE-MESSAGE is true then nil is returned."
       (nreverse buffers))))
 
 ;; moved to vm-reply.el, not MIME-specific.
+;;;###autoload (autoload 'vm-mime-preview-composition "vm-mime" nil t)
 (defalias 'vm-mime-preview-composition 'vm-preview-composition)
 
 (defun vm-mime-composite-type-p (type)

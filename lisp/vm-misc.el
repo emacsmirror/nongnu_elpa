@@ -679,6 +679,7 @@ LIST2 satisfying PRED and return the position"
 	  (throw 'fail nil)))
       t)))
 
+;;;###autoload (autoload 'vm-view-file-other-frame "vm-misc" nil t)
 (defalias 'vm-view-file-other-frame
   (if (fboundp 'view-file-other-frame) ;XEmacs doesn't have it yet!
       #'view-file-other-frame
