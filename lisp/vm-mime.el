@@ -8058,6 +8058,7 @@ end of the path."
         (vm-mime-map-layout-parts m function (car parts) (cons layout path))
         (setq parts (cdr parts))))))
 
+;;;###autoload
 (defun vm-list-mime-part-structure (&optional verbose)
   "List mime part structure of the current message."
   (interactive "P")
@@ -8340,6 +8341,7 @@ buffer."
 ;;; Attachment commands, from vm-rfaddons.el (issue #606)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
 (defun vm-attach-files-in-directory (directory &optional regexp)
   "Attach all files in DIRECTORY matching REGEXP.
 The optional argument MATCH might specify a regexp matching all files
