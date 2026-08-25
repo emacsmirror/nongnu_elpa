@@ -1046,9 +1046,6 @@ TS is a timestamp from the server, if any."
       ;; enable playing of videos when point is on byline:
       'attachments (mastodon-tl--get-attachments-for-byline toot)
       'edited edited-time
-      'edit-history (when edited-time
-                      (mastodon-toot--get-toot-edits
-                       (alist-get 'id base-maybe)))
       'byline       t))))
 
 
