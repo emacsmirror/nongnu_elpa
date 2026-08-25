@@ -3398,10 +3398,16 @@ Changes made to the buffer are uploaded to the server first before
 downloading the server data.
 Deleted messages are not expunged.
 
-Prefix argument FULL says that all the attribute changes and
-expunges made to the cache folder should be written to the server
-even if those changes were not made in the current VM session.
-This is useful for saving offline work on the cache folder.
+Prefix argument FULL says to write every message’s attributes to the server,
+rather than only those of the messages whose attributes changed in this
+session, and to fetch a message the cache no longer holds rather than leaving
+it alone.  This is useful for saving offline work on the cache folder, whose
+expunges are sent whether FULL is given or not: VM records them as the reader
+makes them.
+
+FULL used to delete on the server every message the mailbox had and the cache
+did not.  A damaged cache says the same thing as a reader who expunged, so
+that destroyed mail nobody asked it to (emacs-vm/vm#752).
 @end deffn
 
 @deffn Command vm-imap-unset-body-retrieve

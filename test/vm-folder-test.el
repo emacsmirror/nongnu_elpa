@@ -5071,7 +5071,7 @@ tried first and this is its fallback."
   "`vm-get-spooled-mail' passes `full' when it is asked to, and t otherwise.
 `full' is what reaches the branch in `vm-imap-get-synchronization-data' that
 fetches a message the folder was given once and no longer holds, rather than
-putting its UID on the remote-expunge list."
+passing it over."
   (vm-test-with-folder (vm-folder-test--write-folder-content 1)
     (setq vm-folder-access-method 'imap)
     (dolist (sync-on-get '(t nil))

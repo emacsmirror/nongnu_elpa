@@ -707,6 +707,46 @@ the wrong message."
       (should (equal (vm-folder-imap-uid-message-flags "17") '("\\Seen")))
       (should-not (vm-folder-imap-uid-msn "18")))))
 
+(ert-deftest vm-imap-test-synchronize-asks-only-for-the-queued-expunges ()
+  "`vm-imap-synchronize' asks for the expunges the reader made, prefix or not.
+
+The prefix argument used to ask for `all', which meant \"delete on the server
+every message the mailbox has and the cache has not\".  A cache that had been
+truncated or read as the wrong type says the same thing as a reader who
+expunged, so that destroyed mail with no confirmation (emacs-vm/vm#752).  What
+the prefix means now is every message's flags rather than only the changed
+ones.
+
+The driver is refused so that the blocking path is the one measured; on an
+IMAP folder `vm-imap-net-synchronize' is tried first."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+Message-ID: <test1@example.com>
+
+Body
+"
+    (setq vm-folder-access-method 'imap)
+    ;; `vm-select-folder-buffer-and-validate' is a defsubst, so it is inlined
+    ;; into the compiled command and cannot be stubbed; it asks for the mode
+    (setq major-mode 'vm-mode)
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'vm-imap-net-synchronize) (lambda (&rest _) nil))
+                ((symbol-function 'vm-establish-new-folder-imap-session)
+                 (lambda (&rest _) t))
+                ((symbol-function 'vm-imap-retrieve-uid-and-flags-data)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'vm-imap-save-attributes) (lambda (&rest _) nil))
+                ((symbol-function 'vm-update-summary-and-mode-line)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'vm-imap-synchronize-folder)
+                 (lambda (&rest arguments)
+                   (push (plist-get arguments :do-remote-expunges) asked))))
+        (vm-imap-synchronize nil)
+        (vm-imap-synchronize t))
+      (should (equal asked '(t t))))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here

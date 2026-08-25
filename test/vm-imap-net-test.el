@@ -798,7 +798,7 @@ This is the `retrieve-attributes' half, which a plain fetch does not do."
 
 (ert-deftest vm-imap-net-test-a-full-synchronize-sends-every-flag ()
   "A full synchronisation looks at every message's flags, not only at those
-marked as changed, and deletes on the server what the folder no longer holds.
+marked as changed.
 
 The case it is for: a flag that differs from the server's and whose
 modification flag has been lost, which nothing else would ever send."
@@ -810,21 +810,40 @@ modification flag has been lost, which nothing else would ever send."
       ;; read here, and nothing says so: a plain synchronisation would pass
       ;; over this message
       (vm-set-attribute-modflag-of message nil))
-    ;; and the second is expunged here and not there
+    (vm-imap-mock-forget-commands mock)
+    (should (eq (vm-imap-net-synchronize t t) t))
+    (should (vm-imap-net-wait nil 10))
+    (should (member "\\seen" (mapcar #'downcase
+                                     (vm-imap-mock-flags mock "INBOX" 1))))))
+
+(ert-deftest vm-imap-net-test-a-full-synchronize-keeps-what-the-cache-lacks ()
+  "A full synchronisation does not delete mail the cache merely does not hold.
+
+It used to: every UID the mailbox had and the cache had not was deleted on the
+server, with no confirmation and no floor.  A cache truncated, restored from a
+partial backup or read as the wrong type says exactly what a reader who
+expunged says, and puts the whole mailbox on that list (emacs-vm/vm#752).
+
+Server deletions come from `vm-imap-messages-to-expunge\=', which
+`vm-expunge-folder\=' fills as the reader expunges; here it is emptied first, so
+what the folder has lost is all the synchronise could go on."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (should (equal (length vm-message-list) 2))
     (let ((message (nth 1 vm-message-list)))
       (vm-set-deleted-flag message t)
       (vm-expunge-folder :quiet t :just-these-messages (list message)))
+    (should (equal (length vm-message-list) 1))
     (setq vm-imap-messages-to-expunge nil)   ; as if it had never been recorded
     (vm-imap-mock-forget-commands mock)
     (should (eq (vm-imap-net-synchronize t t) t))
     (should (vm-imap-net-wait nil 10))
-    ;; the unmarked change went up
-    (should (member "\\seen" (mapcar #'downcase
-                                     (vm-imap-mock-flags mock "INBOX" 1))))
-    ;; and the message the folder dropped is gone from the mailbox
-    (should (vm-imap-mock-received-p mock "UID STORE"))
-    (should (vm-imap-mock-received-p mock "EXPUNGE"))
-    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))))
+    ;; both are still on the server, and nothing was even marked for deletion
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (should-not (vm-imap-mock-received-p mock "EXPUNGE"))
+    ;; and it is not fetched back either: the folder asked for a full
+    ;; synchronise, not a full retrieve
+    (should (equal (length vm-message-list) 1))))
 
 (ert-deftest vm-imap-net-test-a-mailbox-is-created-without-waiting ()
   "`vm-create-imap-folder' sends CREATE through the driver and returns.
@@ -2980,7 +2999,7 @@ The fetch is not abandoned over it -- the other messages are new mail."
       (let ((uid (vm-imap-uid-of (car vm-message-list))))
         (cl-letf (((symbol-function 'vm-imap-get-synchronization-data)
                    (lambda (&rest _)
-                     (list (list (cons uid 1)) nil nil nil))))
+                     (list (list (cons uid 1)) nil nil))))
           (cl-letf (((symbol-function 'vm-warn)
                      (lambda (_level _seconds &rest args)
                        (push (apply #'format args) said))))
@@ -3002,7 +3021,7 @@ The fetch is not abandoned over it -- the other messages are new mail."
       (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
       (cl-letf (((symbol-function 'vm-imap-get-synchronization-data)
                  (lambda (&rest _)
-                   (list (list (cons "1" 1) (cons "1" 1)) nil nil nil)))
+                   (list (list (cons "1" 1) (cons "1" 1)) nil nil)))
                 ((symbol-function 'vm-warn)
                  (lambda (_level _seconds &rest args)
                    (push (apply #'format args) said))))
