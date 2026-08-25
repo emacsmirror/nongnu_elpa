@@ -3795,7 +3795,9 @@ expunges and which the folder carries in its `X-VM-IMAP-To-Expunge' header."
       (when do-local-expunges
 	(vm-inform 6 "%s: Expunging messages in cache... "
 		   folder-name)
-	(vm-expunge-folder :quiet t :just-these-messages local-expunge-list)
+	;; gone from the server, so nothing to tell the server about
+	(vm-expunge-folder :quiet t :just-these-messages local-expunge-list
+			   :not-on-the-server t)
 	(if (and (eq interactive t) stale-list)
 	    (if (y-or-n-p 
 		 (format 

@@ -371,11 +371,53 @@ unmarked messages are not hashed or considered for deletion."
     (vm-update-summary-and-mode-line)
     del-count))
 
+(defun vm-expunge-note-for-the-server (message)
+  "Queue MESSAGE\\='s deletion for its mailbox, if the mailbox can act on it.
+The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
+
+Only a UID under the mailbox\\='s own UIDVALIDITY is queued.  A message with no
+UID never came from the server; one whose UIDVALIDITY is not the mailbox\\='s
+names nothing there now, and `vm-imap-expunge-remote-messages\\=' would refuse
+it and say so, which tells the reader about something they can do nothing
+about.  A validity that goes stale after the queue is written is a different
+matter and is still refused at that point: the mailbox can be recreated while
+a deletion waits for a session (emacs-vm/vm#757)."
+  (when (and (vm-imap-uid-of message)
+	     (equal (vm-imap-uid-validity-of message)
+		    (vm-folder-imap-uid-validity)))
+    (setq vm-imap-messages-to-expunge
+	  (cons (cons (vm-imap-uid-of message)
+		      (vm-imap-uid-validity-of message))
+		vm-imap-messages-to-expunge))))
+
+(defun vm-expunge-note-retrieved (message)
+  "Remember MESSAGE\\='s UID as one this folder has had, once.
+The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
+So that a later synchronise does not fetch it again.
+
+The UID went on the list when the message arrived, so this is usually a
+message the list already names: it is the key that says so, the UID and its
+UIDVALIDITY, and not the whole entry -- the entry made on arrival holds the
+maildrop without its password and this one holds it as the folder has it.
+Comparing entries grew one duplicate per expunge, in a list written into the
+folder\\='s `X-VM-IMAP-Retrieved\\=' header on every save (emacs-vm/vm#757)."
+  (let ((uid (vm-imap-uid-of message))
+	(validity (vm-imap-uid-validity-of message)))
+    (when (and uid validity
+	       (null (vm-find vm-imap-retrieved-messages
+			      (lambda (entry)
+				(and (equal (car entry) uid)
+				     (equal (cadr entry) validity))))))
+      (setq vm-imap-retrieved-messages
+	    (cons (list uid validity (vm-folder-imap-maildrop-spec) 'uid)
+		  vm-imap-retrieved-messages)))))
+
 ;;;###autoload
 (cl-defun vm-expunge-folder (&key (quiet nil)
 				((:just-these-messages message-list)
 				 nil	; default value
-				 just-these-messages))
+				 just-these-messages)
+				(not-on-the-server nil))
   "Expunge messages with the `deleted' attribute.
 For normal folders this means that the deleted messages are
 removed from the message list and the message contents are
@@ -388,7 +430,13 @@ message lists and the message contents are removed from real folders.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only messages both marked and deleted are expunged, other messages are
-ignored."
+ignored.
+
+NOT-ON-THE-SERVER says these messages are being expunged because the server no
+longer has them, so their deletion is not queued for it.  A synchronise passes
+it for the messages it found gone; without it the queue collected UIDs that no
+longer exist there, which is a no-op at best and a NO from some servers
+(emacs-vm/vm#757)."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-folder-read-only)
@@ -457,19 +505,9 @@ ignored."
 					 'uidl)
 				   vm-pop-retrieved-messages)))
 		      ((eq vm-folder-access-method 'imap)
-		       (setq vm-imap-messages-to-expunge
-			     (cons (cons
-				    (vm-imap-uid-of real-m)
-				    (vm-imap-uid-validity-of real-m))
-				   vm-imap-messages-to-expunge))
-		       (when (and (vm-imap-uid-of real-m)
-				  (vm-imap-uid-validity-of real-m))
-			 (setq vm-imap-retrieved-messages
-			       (cons (list (vm-imap-uid-of real-m)
-					   (vm-imap-uid-validity-of real-m)
-					   (vm-folder-imap-maildrop-spec)
-					   'uid)
-				     vm-imap-retrieved-messages)))))
+		       (unless not-on-the-server
+			 (vm-expunge-note-for-the-server real-m))
+		       (vm-expunge-note-retrieved real-m)))
 		(vm-increment vm-modification-counter)
 		(save-restriction
 		 (widen)
