@@ -922,6 +922,109 @@ Body 2
       (should (= 1 (vm-test-message-count)))
       (should (> vm-message-list-generation generation)))))
 
+;;; What an expunge tells the server (emacs-vm/vm#757)
+
+(defconst vm-delete-test--two-messages
+  "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Message 1
+Message-ID: <test1@example.com>
+
+Body 1
+
+From sender@example.com Mon Jan  2 00:00:00 2024
+From: sender@example.com
+Subject: Message 2
+Message-ID: <test2@example.com>
+
+Body 2
+"
+  "A two-message folder, for the expunge tests below.")
+
+(defmacro vm-delete-test--in-an-imap-cache (&rest body)
+  "Run BODY in a folder that is an IMAP cache of validity \"100\".
+Its messages carry UIDs 1 upwards, as messages read out of a cache do."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-delete-test--two-messages
+     ;; `vm-select-folder-buffer-and-validate' is a defsubst, so the compiled
+     ;; command has it inlined and it cannot be stubbed; it asks for the mode
+     (setq major-mode 'vm-mode)
+     (setq vm-folder-access-method 'imap
+           vm-folder-access-data (make-vector vm-folder-imap-access-data-length
+                                              nil))
+     (aset vm-folder-access-data 0 "imap:localhost:143:INBOX:login:reader:*")
+     (aset vm-folder-access-data 2 "100")
+     (let ((uid 0))
+       (dolist (message vm-message-list)
+         (vm-set-imap-uid-of message (number-to-string (setq uid (1+ uid))))
+         (vm-set-imap-uid-validity-of message "100")))
+     ,@body))
+
+(defun vm-delete-test--expunge-the-first (&rest arguments)
+  "Expunge the folder's first message, passing ARGUMENTS to the expunge."
+  (let ((message (vm-test-first-message)))
+    (vm-set-deleted-flag message t)
+    (apply #'vm-expunge-folder :quiet t :just-these-messages (list message)
+           arguments)))
+
+(ert-deftest vm-delete-test-an-expunge-queues-the-uid-for-the-server ()
+  "The ordinary case: what the reader expunged is queued for its mailbox."
+  (vm-delete-test--in-an-imap-cache
+    (vm-delete-test--expunge-the-first)
+    (should (equal vm-imap-messages-to-expunge '(("1" . "100"))))))
+
+(ert-deftest vm-delete-test-a-message-with-no-uid-is-not-queued ()
+  "A message that never came from the server is not queued for deletion there.
+The queue used to collect (nil . nil) for one, which is a UID no mailbox has."
+  (vm-delete-test--in-an-imap-cache
+    (let ((message (vm-test-first-message)))
+      (vm-set-imap-uid-of message nil)
+      (vm-set-imap-uid-validity-of message nil))
+    (vm-delete-test--expunge-the-first)
+    (should-not vm-imap-messages-to-expunge)))
+
+(ert-deftest vm-delete-test-a-stale-uid-is-not-queued ()
+  "A UID under another UIDVALIDITY names nothing in the mailbox now.
+`vm-imap-expunge-remote-messages' refuses those and says so, which tells the
+reader about something they can do nothing about."
+  (vm-delete-test--in-an-imap-cache
+    (vm-set-imap-uid-validity-of (vm-test-first-message) "99")
+    (vm-delete-test--expunge-the-first)
+    (should-not vm-imap-messages-to-expunge)))
+
+(ert-deftest vm-delete-test-what-the-server-has-lost-is-not-queued ()
+  "A message expunged because the server no longer has it is not queued for it.
+That is what a synchronise's local expunge is, and STORE and EXPUNGE on a UID
+that is not there is a no-op at best; some servers answer NO."
+  (vm-delete-test--in-an-imap-cache
+    (vm-delete-test--expunge-the-first :not-on-the-server t)
+    (should-not vm-imap-messages-to-expunge)
+    ;; and it is still expunged here
+    (should (= 1 (vm-test-message-count)))))
+
+(ert-deftest vm-delete-test-an-expunge-records-the-uid-once ()
+  "The UID of an expunged message is recorded as retrieved once, not again.
+
+It was recorded when the message arrived, and that entry names the maildrop
+without its password, so comparing whole entries saw no match and the list
+grew one duplicate per expunge -- in a list written into the folder header on
+every save."
+  (vm-delete-test--in-an-imap-cache
+    ;; as the arrival recorded it: the maildrop without its password
+    (setq vm-imap-retrieved-messages
+          (list (list "1" "100" "imap:localhost:143:INBOX:login:reader" 'uid)))
+    (vm-delete-test--expunge-the-first)
+    (should (equal (length vm-imap-retrieved-messages) 1))))
+
+(ert-deftest vm-delete-test-an-expunge-records-a-uid-that-was-not-recorded ()
+  "A UID no entry names is recorded, so a later synchronise leaves it alone."
+  (vm-delete-test--in-an-imap-cache
+    (setq vm-imap-retrieved-messages nil)
+    (vm-delete-test--expunge-the-first)
+    (should (equal (length vm-imap-retrieved-messages) 1))
+    (should (equal (car (car vm-imap-retrieved-messages)) "1"))
+    (should (equal (cadr (car vm-imap-retrieved-messages)) "100"))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here

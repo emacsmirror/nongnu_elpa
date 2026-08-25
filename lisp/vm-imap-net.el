@@ -1322,7 +1322,9 @@ labelled rather than removed: the blocking path asks whether to expunge
 those, and there is nobody to ask from inside a filter, so the safe half of
 the choice is taken and the label says which messages it was taken for."
   (when local-expunge-list
-    (vm-expunge-folder :quiet t :just-these-messages local-expunge-list))
+    ;; gone from the server, so nothing to tell the server about
+    (vm-expunge-folder :quiet t :just-these-messages local-expunge-list
+		       :not-on-the-server t))
   (dolist (message stale-list)
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
