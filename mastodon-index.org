@@ -298,7 +298,7 @@
 |            | mastodon-views-view-instance-description-brief   | View brief details of the instance the current post's author is on.            |
 |            | mastodon-views-view-list-timeline                | Prompt for a list and view its timeline.                                       |
 | g, X       | mastodon-views-view-lists                        | Show the user's lists in a new buffer.                                         |
-|            | mastodon-views-view-own-collection               | Prompt for a collection of yours and view it.                                  |
+| `          | mastodon-views-view-own-collection               | Prompt for a collection of yours and view it.                                  |
 |            | mastodon-views-view-own-instance                 | View details of your own instance.                                             |
 |            | mastodon-views-view-own-instance-brief           | View brief details of your own instance.                                       |
 |            | mastodon-views-view-profile-collection           | Prompt for a user profile collection and view it.                              |
