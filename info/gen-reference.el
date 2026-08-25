@@ -337,12 +337,35 @@ looking."
         ((commandp symbol) 'command)
         ((custom-variable-p symbol) 'option)))
 
+(defun vm-reference-ours-p (symbol)
+  "Whether SYMBOL is VM\='s to document.
+Almost every one of VM\='s names starts with vm, and asking only that left the
+two BBDB commands in vm-avirtual.el out of the appendix altogether:
+`bbdb/vm-set-virtual-folder-alist\=' and its by-mail-alias twin
+(emacs-vm/vm#715).  So a name that merely mentions vm is asked the real
+question, which is where the definition is.
+
+The name is asked first because `symbol-file\=' is not free and the answer is
+no for every command in Emacs, and because it is asked at all: vm-vars.el
+carries `(defvar pop-up-frames nil)\=' so the compiler knows the name, which
+puts that file last in the variable\='s `load-history\=' entry and would file an
+Emacs option in VM\='s appendix."
+  (let ((name (symbol-name symbol)))
+    (or (string-prefix-p "vm" name)
+        (and (string-match-p "vm" name)
+             (let ((file (vm-reference-defining-file symbol)))
+               (and file (member file (vm-reference-modules))))))))
+
 (defun vm-reference-classify (symbol option-areas by-title)
-  "File SYMBOL under its section title in BY-TITLE, if it belongs there."
-  (when (and (string-prefix-p "vm" (symbol-name symbol))
-             (not (vm-reference-obsolete-p symbol)))
+  "File SYMBOL under its section title in BY-TITLE, if it belongs there.
+What kind of thing SYMBOL is comes first because it is the cheap question:
+`vm-reference-ours-p\=' reads `symbol-file\=' for a name that is not vm-
+prefixed, and asking that of every atom in Emacs made the sweep 0.07s into
+3.1s.  Of the tens of thousands of atoms only a few thousand are commands or
+user options at all."
+  (unless (vm-reference-obsolete-p symbol)
     (let ((kind (vm-reference-kind symbol)))
-      (when kind
+      (when (and kind (vm-reference-ours-p symbol))
         (let ((area (vm-reference-area symbol kind option-areas)))
           (when area
             (let ((title (vm-reference-area-title area)))
@@ -351,6 +374,17 @@ looking."
 (defun vm-reference-of-kind (entries kind)
   (sort (mapcar #'cdr (cl-remove-if-not (lambda (e) (eq (car e) kind)) entries))
         #'string<))
+
+(defvar vm-reference-modules-cache nil
+  "The module file names, read once: `vm-reference-ours-p\=' asks per symbol.")
+
+(defun vm-reference-modules ()
+  "The VM modules the build lists, as file names."
+  (or vm-reference-modules-cache
+      (setq vm-reference-modules-cache
+            (vm-reference-module-files
+             (file-name-directory (or (locate-library "vm-vars")
+                                      (error "VM is not on `load-path\='")))))))
 
 (defun vm-reference-collect ()
   "Return an alist of (TITLE COMMANDS OPTIONS CALLBACKS), sorted by title."

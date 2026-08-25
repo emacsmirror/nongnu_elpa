@@ -1353,6 +1353,7 @@ with the same name."
 (declare-function bbdb-records "ext:bbdb" ())
 (declare-function bbdb-save "ext:bbdb" (&optional prompt noisy))
 
+;;;###autoload
 (defun bbdb/vm-set-virtual-folder-alist ()
   "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
 For each record that has a `vm-virtual' attribute, add or modify the
@@ -1409,6 +1410,7 @@ The element gets added to the `element-name' sublist of the
                        (regexp :tag "Alias")
                        (string :tag "Folder Name"))))
 
+;;;###autoload
 (defun bbdb/vm-set-virtual-folder-alist-by-mail-alias ()
   "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
 For each record check wheather its alias is in the variable 
