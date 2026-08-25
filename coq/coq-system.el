@@ -23,6 +23,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'proof)
 (require 'coq-mode)                     ;for coq-prog-name
 
@@ -653,7 +654,37 @@ ALREADYOPEN is t if buffer already existed."
 				  (find-file-noselect projectfile t t))))
 	  (list projectbuffer projectbufferalreadyopen))))))
 
-(defconst coq--project-file-separator "[\r\t\n[:space:]]+")
+;; The syntax of project files is that of `rocq makefile'; see "The grammar of
+;; _RocqProject" in the Rocq reference manual and lib/coqProject_file.ml.
+
+(defconst coq--project-file-token-regexp
+  "[ \t\n\r]+\\|#.*$\\|\"\\(?1:[^\"]*\\)\"\\|\\(?1:[^ \t\n\r#\"][^ \t\n\r#]*\\)\\|\\(?2:\"\\)"
+  "Regexp matching one blank, comment or token of a project file.
+Group 1 holds the token, group 2 an unterminated string.")
+
+(defconst coq--arg-value-token-regexp "\\(?:[^ ']+\\|'[^']*'?\\)+"
+  "Regexp matching one argument, quotes included, in a -arg value.")
+
+(defun coq--project-file-tokenize (contents)
+  "Split CONTENTS of a project file into tokens.
+A double quote at the start of a token protects blanks and \"#\" up to
+the next double quote; there is no escape character."
+  (let ((pos 0) (tokens nil))
+    (while (string-match coq--project-file-token-regexp contents pos)
+      (setq pos (match-end 0))
+      (when (match-beginning 2) (error "Unterminated string in project file"))
+      (when (match-beginning 1) (push (match-string 1 contents) tokens)))
+    (nreverse tokens)))
+
+(defun coq--split-arg-value (value)
+  "Split VALUE, the argument of a -arg option, into coqtop arguments."
+  (when (cl-oddp (cl-count ?' value))
+    (error "Unpaired single quote in -arg value: %S" value))
+  (let ((pos 0) (args nil))
+    (while (string-match coq--arg-value-token-regexp value pos)
+      (setq pos (match-end 0))
+      (push (replace-regexp-in-string "'" "" (match-string 0 value) t t) args))
+    (nreverse args)))
 
 (defconst coq--makefile-switch-arities
   '(("-R" . 2)
@@ -678,7 +709,7 @@ If ARITY is nil, return SWITCH."
 (defun coq--read-options-from-project-file (contents)
   "Read options from CONTENTS of _CoqProject.
 Returns a mixed list of option-value pairs and strings."
-  (let ((raw-args (split-string-and-unquote contents coq--project-file-separator))
+  (let ((raw-args (coq--project-file-tokenize contents))
         (options nil))
     (while raw-args
       (let* ((switch (pop raw-args))
@@ -699,11 +730,7 @@ coqtop.  But -arg \"\\='a b\\='\" means to pass a and b together."
         ((or "-byte" "-op")
          (push opt args))
         (`("-arg" ,concatenated-args)
-	 (if (and (string-prefix-p "'" concatenated-args) (string-suffix-p "'" concatenated-args))
-	     (setq args (append args (list (substring concatenated-args 1 -1))))
-           (setq args
-		 (append args
-			 (split-string-and-unquote concatenated-args coq--project-file-separator)))))))
+         (setq args (append args (coq--split-arg-value concatenated-args))))))
     args))
 
 (defun coq--extract-load-path-1 (option base-directory)

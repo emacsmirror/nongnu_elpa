@@ -4473,9 +4473,13 @@ Detail}. For the example above, Proof General will start
 @code{coqtop -emacs -foo3 -R foo bar -I foo2} (remark:
 @code{-emacs} is always added to the options).
 
-@emph{NOTE:} @code{-arg} must be followed by one and only one option
-to pass to coqtop/coqc, use several @code{-arg} to issue several
-options. One per line (limitation of Proof General).
+@emph{NOTE:} @code{-arg} must be followed by exactly one token, which may
+denote several options: it is split on spaces, unless single quotes
+prevent it, and the quotes are then removed. So @code{-arg "-set 'Default
+Goal Selector=!'"} passes @code{-set} and @code{Default Goal Selector=!}.
+There is no escape character. See Rocq Documentation, section
+@coqrefman{practical-tools/utilities.html#quoting-arguments-to-rocq-c,
+Quoting arguments to rocq c}.
 
 For backward compatibility, one can also configure the load path
 with the option @code{coq-load-path}, but this is not compatible
