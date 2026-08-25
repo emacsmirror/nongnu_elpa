@@ -7054,8 +7054,16 @@ When the @acronym{IMAP} server is connected again, you should run @kbd{C-u
 M-x vm-imap-synchronize}, i.e., call it with a @emph{prefix argument}.  This
 causes @emph{all} the message attributes and labels to be written to the
 server, since it may not be known which of them have actually changed during
-the offline operation.  Similarly, @emph{all} the messages that may have
-been expunged in the cache folder are expunged on the server.
+the offline operation.
+
+The messages you expunged while offline are expunged on the server whether you
+give the prefix argument or not: VM records each one as you expunge it and
+keeps the record in the folder, so it survives a session that could not reach
+the server.  A prefix argument used to mean something more than that --- every
+message the mailbox had and the cache did not was deleted on the server --- and
+a cache that had been truncated, restored from a partial backup or read under
+the wrong folder type looked exactly like a folder you had expunged, so the
+mail went with no confirmation.
 
 @anchor{@acronym{UIDVALIDITY}}
 @unnumberedsec @acronym{UIDVALIDITY}

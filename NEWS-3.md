@@ -8,6 +8,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `C-u M-x vm-imap-synchronize` no longer deletes mail on the server.  It
+    used to delete every message the mailbox had and the cache folder did not,
+    with no confirmation and no report of how many (emacs-vm/vm#752).  That is
+    what a reader who expunged messages offline looks like, but it is also what
+    a cache looks like after being truncated, restored from a partial backup or
+    read under the wrong folder type, and in those cases the whole mailbox went.
+    The expunges you make are sent either way: VM records each one as you make
+    it and keeps the record in the folder, so it survives a session that could
+    not reach the server.  The prefix argument keeps its other meaning, which is
+    to send every message's flags rather than only those that changed.
+
   * Declining `vm-continue-what-message`'s offer of the drafts folder starts
     a new message, where it used to do nothing at all (emacs-vm/vm#755).  The
     command is the key you press to write mail -- the manual binds

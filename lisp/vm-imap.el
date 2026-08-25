@@ -3570,7 +3570,7 @@ operation of the server to minimize I/O."
 ;; vm-fetch-imap-message: (vm-message) -> void
 ;; vm-imap-synchronize-folder:
 ;;	(&optional :interactive interactive & 
-;;                 :do-remote-expunges nil|t|'all & 
+;;                 :do-remote-expunges bool & 
 ;;                 :do-local-expunges bool & 
 ;;                 :do-retrieves bool &
 ;;                 :save-attributes nil|t|'all & 
@@ -3580,7 +3580,6 @@ operation of the server to minimize I/O."
 ;;
 ;; vm-imap-get-synchronization-data: (&optional bool) -> 
 ;;		(retrieve-list: (uid . int) list &
-;;		 remote-expunge-list: (uid . uidvalidity) list &
 ;;		 local-expunge-list: vm-message list & 
 ;;		 stale-list: vm-message list)
 ;;
@@ -3595,10 +3594,6 @@ RETRIEVE-LIST: A list of pairs consisting of UID's and message
   sequence numbers of the messages that are not present in the
   local cache and not retrieved previously, and, hence, need to be
   retrieved now.
-REMOTE-EXPUNGE-LIST: A list of pairs consisting of UID's and
-  UIDVALIDITY's of the messages that are not present in the local
-  cache (but we have reason to believe that they have been retrieved
-  previously) and, hence, need to be expunged on the server. 
 LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
   local cache which are not present on the server and, hence, need
   to expunged locally.
@@ -3606,7 +3601,16 @@ STALE-LIST: A list of message descriptors for messages in the
   local cache whose UIDVALIDITY values are stale.
 If the argument DO-RETRIEVES is `full', then all the messages that
 are not presently in cache are retrieved.  Otherwise, the
-messages previously retrieved are ignored."
+messages previously retrieved are ignored.
+
+A message the server has, that the cache does not, and that was fetched once
+is neither retrieved nor deleted unless DO-RETRIEVES says `full'.  There used
+to be a fourth component naming those for deletion on the server, and a full
+synchronise deleted them: what put a message on that list was as often a
+damaged cache as a reader expunging it, and a truncated cache put the whole
+mailbox on it (emacs-vm/vm#752).  Server deletions come from
+`vm-imap-messages-to-expunge', which `vm-expunge-folder' fills as the reader
+expunges and which the folder carries in its `X-VM-IMAP-To-Expunge' header."
 
   ;; Comments by USR
   ;; - Originally, messages with stale UIDVALIDITY values were
@@ -3623,7 +3627,7 @@ messages previously retrieved are ignored."
 	there ;; flags
 	(uid-validity (vm-folder-imap-uid-validity))
 	(do-full-retrieve (eq do-retrieves 'full))
-	retrieve-list remote-expunge-list local-expunge-list stale-list uid
+	retrieve-list local-expunge-list stale-list uid
 	mp retrieved-entry)
     (vm-imap-retrieve-uid-and-flags-data)
     (setq there (vm-folder-imap-uid-obarray))
@@ -3654,18 +3658,19 @@ messages previously retrieved are ignored."
 			  (lambda (entry)
 			    (and (equal (car entry) uid)
 				 (equal (cadr entry) uid-validity)))))
-	   (if (or do-full-retrieve (null retrieved-entry)) ; already retrieved
-	       (setq retrieve-list 
-		     (cons (cons uid (symbol-value sym)) retrieve-list))
-	     (setq remote-expunge-list
-		   (cons (cons uid uid-validity)
-			 remote-expunge-list))))))
+	   ;; A message fetched once and no longer in the cache is left alone:
+	   ;; fetched again when asked for a full retrieve, and otherwise
+	   ;; neither fetched nor deleted.  It used to be queued for deletion
+	   ;; on the server, which is what emacs-vm/vm#752 was.
+	   (when (or do-full-retrieve (null retrieved-entry))
+	     (setq retrieve-list
+		   (cons (cons uid (symbol-value sym)) retrieve-list))))))
      there)
     (setq retrieve-list 
 	  (sort retrieve-list 
 		(lambda (**pair1 **pair2)
 		  (< (cdr **pair1) (cdr **pair2)))))	  
-    (list retrieve-list remote-expunge-list local-expunge-list stale-list)))
+    (list retrieve-list local-expunge-list stale-list)))
 
 (defun vm-imap-server-error (msg &rest args)
   (if (eq vm-imap-connection-mode 'online)
@@ -3684,9 +3689,10 @@ messages previously retrieved are ignored."
    INTERACTIVE says whether the function was invoked interactively,
    e.g., as vm-get-spooled-mail.  The possible values are t,
    `password-only', and nil.
-   DO-REMOTE-EXPUNGES indicates whether the server mail box should be
-   expunged.  If it is `all', then all messages not present in the cache folder
-   are expunged.
+   DO-REMOTE-EXPUNGES indicates whether the deletions the reader has made
+   should be sent to the server.  What is sent is `vm-imap-messages-to-expunge',
+   which is what the reader expunged; a message merely missing from the cache
+   is not one of them (emacs-vm/vm#752).
    DO-LOCAL-EXPUNGES indicates whether the cache buffer should be
    expunged.
    DO-RETRIEVES indicates if new messages that are not already in the
@@ -3729,9 +3735,8 @@ messages previously retrieved are ignored."
 	   new-messages
 	   (sync-data (vm-imap-get-synchronization-data do-retrieves))
 	   (retrieve-list (nth 0 sync-data))
-	   (remote-expunge-list (nth 1 sync-data))
-	   (local-expunge-list (nth 2 sync-data))
-	   (stale-list (nth 3 sync-data)))
+	   (local-expunge-list (nth 1 sync-data))
+	   (stale-list (nth 2 sync-data)))
       (when save-attributes
 	(let ((mp vm-message-list)
 	      (errors 0))
@@ -3805,10 +3810,16 @@ messages previously retrieved are ignored."
 	      ))
 	(vm-inform 6 "%s: Expunging messages in cache... done" folder-name))
 
-      (when (and do-remote-expunges
-		 (if (eq do-remote-expunges 'all)
-		     (setq vm-imap-messages-to-expunge remote-expunge-list)
-		   vm-imap-messages-to-expunge))
+      ;; What the reader expunged, and nothing else.  A full synchronise used
+      ;; to replace this queue with every UID the mailbox had and the cache did
+      ;; not, and delete those on the server: a cache that had been truncated,
+      ;; restored from a partial backup or read as the wrong type put the whole
+      ;; mailbox on that list, and the mail went with no confirmation
+      ;; (emacs-vm/vm#752).  `vm-expunge-folder' queues every expunge here as
+      ;; the reader makes it, and the folder carries the queue in its
+      ;; `X-VM-IMAP-To-Expunge\=' header, so offline work -- what the prefix
+      ;; argument is for -- is already recorded without the diff.
+      (when (and do-remote-expunges vm-imap-messages-to-expunge)
 	(vm-imap-expunge-remote-messages))
       ;; Not clear that one should end the session right away.  We
       ;; will keep it around for use with headers-only messages.
@@ -4409,10 +4420,16 @@ Changes made to the buffer are uploaded to the server first before
 downloading the server data.
 Deleted messages are not expunged.
 
-Prefix argument FULL says that all the attribute changes and
-expunges made to the cache folder should be written to the server
-even if those changes were not made in the current VM session.
-This is useful for saving offline work on the cache folder."
+Prefix argument FULL says to write every message's attributes to the server,
+rather than only those of the messages whose attributes changed in this
+session, and to fetch a message the cache no longer holds rather than leaving
+it alone.  This is useful for saving offline work on the cache folder, whose
+expunges are sent whether FULL is given or not: VM records them as the reader
+makes them.
+
+FULL used to delete on the server every message the mailbox had and the cache
+did not.  A damaged cache says the same thing as a reader who expunged, so
+that destroyed mail nobody asked it to (emacs-vm/vm#752)."
   (interactive "P")
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   ;;--------------------------
@@ -4430,7 +4447,7 @@ This is useful for saving offline work on the cache folder."
       (vm-imap-retrieve-uid-and-flags-data)
       (vm-imap-save-attributes :all-flags full)
       (vm-imap-synchronize-folder :interactive t 
-				  :do-remote-expunges (if full 'all t) 
+				  :do-remote-expunges t 
 				  :do-local-expunges t 
 				  :do-retrieves t
 				  :retrieve-attributes t)

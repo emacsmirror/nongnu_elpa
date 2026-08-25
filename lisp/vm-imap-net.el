@@ -928,7 +928,13 @@ what to ask the server for, `vm-imap-message-bunch-size\\=' at a time.
 
 FULL-RETRIEVE asks for the messages `vm-imap-retrieved-messages\\=' records as
 fetched once already and the folder no longer holds, which are passed over
-otherwise.  Two prefix arguments to `vm-get-new-mail\\=' ask for it."
+otherwise.  Two prefix arguments to `vm-get-new-mail\\=' ask for it.
+
+A full synchronise used to delete those on the server instead of leaving them
+alone.  A cache that had been truncated or read as the wrong type says the
+same thing as a reader who expunged, so that destroyed mail nobody asked it
+to; server deletions come only from `vm-imap-messages-to-expunge\\=' now,
+which is what the reader expunged (emacs-vm/vm#752)."
   (vm-imap-net-install-message-data data count)
   (if (null data)
       ;; Nothing on the server, so nothing to fetch -- and everything here
@@ -939,7 +945,7 @@ otherwise.  Two prefix arguments to `vm-get-new-mail\\=' ask for it."
       ;; It asked through `vm-folder-imap-process', which a session on the
       ;; driver does not set, and the session died of it.
       (list nil nil (vm-imap-net-messages-not-on-the-server)
-	    (vm-imap-net-stale-messages) nil)
+	    (vm-imap-net-stale-messages))
     (vm-imap-net-plan-1 data count full-retrieve)))
 
 (defun vm-imap-net-messages-not-on-the-server ()
@@ -997,9 +1003,8 @@ visiting an IMAP folder brought in no messages."
     (setq retrieve-list (vm-imap-net-only-new-uids retrieve-list))
     (list retrieve-list
 	  (vm-imap-bunch-retrieve-list (mapcar #'cdr retrieve-list))
-	  (nth 2 sync)
-	  (nth 3 sync)
-	  (nth 1 sync))))
+	  (nth 1 sync)
+	  (nth 2 sync))))
 
 (defvar vm-imap-net-held-uids nil
   "The table `vm-imap-net-uids-held\\=' answers with, or nil for none yet.
@@ -1322,7 +1327,7 @@ the choice is taken and the label says which messages it was taken for."
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
 (iter-defun vm-imap-net-get-new-mail (folder mailbox user password
-					     &optional attributes all-flags full
+					     &optional attributes all-flags
 					     full-retrieve)
   "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
 The messages arrive a bunch at a time, are collected in a buffer of their own,
@@ -1331,12 +1336,17 @@ The folder therefore never holds a message the list does not know about: a save
 landing in the middle of a bunch wrote one to the cache file, and after a crash
 there the next fetch had no UID for it and brought it again.
 
-The three options are what a synchronisation asks for on top of a fetch:
+The two options are what a synchronisation asks for on top of a fetch:
 ATTRIBUTES gives the folder's own messages the flags the server has for them,
-ALL-FLAGS sends every message's flags rather than only those that changed, and
-FULL deletes on the server what the folder no longer holds.  Without them this
-is `vm-get-new-mail\=': what has arrived, and what the folder has asked to be
-expunged.
+and ALL-FLAGS sends every message's flags rather than only those that changed.
+Without them this is `vm-get-new-mail\\=': what has arrived, and what the folder
+has asked to be expunged.
+
+There was a third, FULL, which deleted on the server what the folder no longer
+holds.  It is gone: what the reader expunged is in
+`vm-imap-messages-to-expunge\\=' and goes up either way, and the difference
+between mailbox and cache is as often a damaged cache as an expunge
+(emacs-vm/vm#752).
 
 FULL-RETRIEVE is the other direction, and no part of a synchronisation: fetch
 what the folder was given once and no longer holds, rather than passing it
@@ -1415,12 +1425,6 @@ over.  Two prefix arguments to `vm-get-new-mail\=' ask for it."
 		(vm-net-inform 6 "%s: %d message%s took the server's flags"
 			   (buffer-name folder) touched
 			   (if (= touched 1) "" "s"))))
-	    (when full
-	      ;; a full synchronisation makes the mailbox match the folder, so
-	      ;; what the folder no longer holds is deleted there too
-	      (with-current-buffer folder
-		(setq vm-imap-messages-to-expunge
-		      (append vm-imap-messages-to-expunge (nth 4 plan)))))
 	    (dolist (bunch bunches)
     	      (let* ((range (car bunch))
     		     (headers-only (cadr bunch))
@@ -2731,7 +2735,7 @@ is a caller\\='s cue to use the blocking implementation."
 			      (vm-imap-net-get-new-mail folder (nth 1 opened)
 							(nth 2 opened)
 							(nth 3 opened)
-							nil nil nil
+							nil nil
 							full-retrieve))))
 
 (declare-function vm-folder-imap-maildrop-spec "vm-folder" ())
@@ -2769,8 +2773,12 @@ looks exactly like one it took until the blocking path announces itself."
 Everything `vm-imap-synchronize\=' does, on the driver: the folder's flags go
 up, the mailbox's come down, what has arrived is fetched, what the server no
 longer has is expunged here, and what the folder has expunged is expunged
-there.  FULL also sends every message's flags rather than only those that
-changed, and deletes on the server what the folder no longer holds.
+there -- whether FULL is given or not, VM having recorded those expunges as
+the reader made them.  FULL sends every message's flags rather than only those
+that changed.
+
+It used to delete on the server what the folder no longer holds, which a
+damaged cache turned into losing mail (emacs-vm/vm#752).
 
 Nil means the maildrop cannot be opened without waiting and the caller is to
 do it the blocking way; `later\=' that a session is running and this one goes
@@ -2806,7 +2814,7 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
 	     (vm-imap-net-take-session session
 			   (vm-imap-net-get-new-mail
 			    folder (nth 1 opened) (nth 2 opened) (nth 3 opened)
-			    'attributes full full))
+			    'attributes full))
 	     (vm-net-inform 6 "%s: synchronising without waiting" name)
 	     t)
 	 (vm-imap-net-unsupported
