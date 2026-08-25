@@ -952,7 +952,10 @@ Its messages carry UIDs 1 upwards, as messages read out of a cache do."
      (setq vm-folder-access-method 'imap
            vm-folder-access-data (make-vector vm-folder-imap-access-data-length
                                               nil))
-     (aset vm-folder-access-data 0 "imap:localhost:143:INBOX:login:reader:*")
+     ;; a password in the spec, as a configured maildrop has: what is
+     ;; recorded has to name the maildrop without it
+     (aset vm-folder-access-data 0
+           "imap:localhost:143:INBOX:login:reader:secret")
      (aset vm-folder-access-data 2 "100")
      (let ((uid 0))
        (dolist (message vm-message-list)
@@ -1024,6 +1027,86 @@ every save."
     (should (equal (length vm-imap-retrieved-messages) 1))
     (should (equal (car (car vm-imap-retrieved-messages)) "1"))
     (should (equal (cadr (car vm-imap-retrieved-messages)) "100"))))
+
+;;; What an expunge tells a POP maildrop (emacs-vm/vm#758)
+
+(defmacro vm-delete-test--in-a-pop-folder (&rest body)
+  "Run BODY in a folder whose access method is `pop\=', its messages given UIDLs.
+The maildrop spec carries a password, as a configured one does: what is
+recorded has to name the maildrop without it."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-delete-test--two-messages
+     ;; `vm-select-folder-buffer-and-validate' is a defsubst, so the compiled
+     ;; command has it inlined and it cannot be stubbed; it asks for the mode
+     (setq major-mode 'vm-mode)
+     (setq vm-folder-access-method 'pop
+           vm-folder-access-data (make-vector vm-folder-pop-access-data-length
+                                              nil))
+     (aset vm-folder-access-data 0 "pop:localhost:110:pass:reader:secret")
+     (let ((n 0))
+       (dolist (message vm-message-list)
+         (vm-set-pop-uidl-of message (format "uidl-%d" (setq n (1+ n))))))
+     ,@body))
+
+(ert-deftest vm-delete-test-a-pop-expunge-queues-the-uidl ()
+  "The ordinary case: what the reader expunged is queued for its maildrop."
+  (vm-delete-test--in-a-pop-folder
+    (vm-delete-test--expunge-the-first)
+    (should (equal vm-pop-messages-to-expunge '("uidl-1")))))
+
+(ert-deftest vm-delete-test-a-message-with-no-uidl-is-not-queued ()
+  "A message that never came from a maildrop is not queued for deletion there.
+The queue used to collect nil for one, which names no message at all."
+  (vm-delete-test--in-a-pop-folder
+    (vm-set-pop-uidl-of (vm-test-first-message) nil)
+    (vm-delete-test--expunge-the-first)
+    (should-not vm-pop-messages-to-expunge)))
+
+(ert-deftest vm-delete-test-what-the-maildrop-has-lost-is-not-queued ()
+  "A message expunged because the maildrop no longer has it is not queued.
+That is what `vm-pop-synchronize-folder's local expunge is, and DELE on a
+message that is not there is a no-op at best."
+  (vm-delete-test--in-a-pop-folder
+    (vm-delete-test--expunge-the-first :not-on-the-server t)
+    (should-not vm-pop-messages-to-expunge)
+    ;; and it is still expunged here
+    (should (= 1 (vm-test-message-count)))))
+
+(ert-deftest vm-delete-test-a-pop-expunge-records-the-uidl-once ()
+  "The UIDL of an expunged message is recorded once, not again.
+The entry made when the message arrived names the maildrop without its
+password, and this one used to name it with, so nothing matched and the list
+grew a duplicate per expunge."
+  (vm-delete-test--in-a-pop-folder
+    (setq vm-pop-retrieved-messages
+          (list (list "uidl-1" "pop:localhost:110:pass:reader:*" 'uidl)))
+    (vm-delete-test--expunge-the-first)
+    (should (equal (length vm-pop-retrieved-messages) 1))))
+
+(ert-deftest vm-delete-test-a-pop-expunge-records-the-maildrop-without-a-password ()
+  "What is recorded names the maildrop the way every check compares it.
+`vm-pop-net-unretrieved' asks whether an entry's maildrop is the one it is
+looking at, `vm-popdrop-sans-password' of it, so an entry naming the maildrop
+with its password is one no check can match."
+  (vm-delete-test--in-a-pop-folder
+    (setq vm-pop-retrieved-messages nil)
+    (vm-delete-test--expunge-the-first)
+    (should (equal vm-pop-retrieved-messages
+                   (list (list "uidl-1" "pop:localhost:110:pass:reader:*"
+                               'uidl))))))
+
+(ert-deftest vm-delete-test-an-imap-expunge-records-the-maildrop-without-a-password ()
+  "The same on the IMAP side, which `vm-imap-check-mail' compares that way.
+`vm-imap-get-synchronization-data' keys on the UID and its UIDVALIDITY, so a
+folder never noticed; the maildrop-as-spool check does."
+  (vm-delete-test--in-an-imap-cache
+    (setq vm-imap-retrieved-messages nil)
+    (vm-delete-test--expunge-the-first)
+    (should (equal (nth 2 (car vm-imap-retrieved-messages))
+                   "imap:localhost:143:INBOX:login:reader:*"))
+    ;; and not the spec the folder was visited with, password and all
+    (should-not (equal (nth 2 (car vm-imap-retrieved-messages))
+                       (vm-folder-imap-maildrop-spec)))))
 
 (provide 'vm-delete-test)
 

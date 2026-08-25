@@ -1203,7 +1203,9 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 	       (setq mp (cdr mp)
 		     r-list (cdr r-list))))))
       (if do-local-expunges
-	  (vm-expunge-folder :quiet t :just-these-messages local-expunge-list))
+	  ;; gone from the maildrop, so nothing to tell the maildrop about
+	  (vm-expunge-folder :quiet t :just-these-messages local-expunge-list
+			     :not-on-the-server t))
       (if (and do-remote-expunges
 	       vm-pop-messages-to-expunge)
 	  (let ((process (vm-folder-pop-process)))
