@@ -122,12 +122,6 @@ themselves.
 | ~Control~ ~z~       | ~undo-only~      |
 | ~Control~ ~y~       | ~undo-redo~      |
 
-* Keyboard-based keymaps
-Keymaps designed for different keyboards, mostly based on the default
-keymap.
-
-/WIP/
-
 * Editor-based keymaps
 Keymaps based on various editors, designed for beginners coming from
 those editors.
@@ -135,4 +129,58 @@ those editors.
 *Note: None of these are complete emulations, and most take certain
 liberties.*
 
-/WIP/
+** standard-keys-vscode-like-keymap
+A VSCode-like keymap theme.
+| key                     | command                                       |
+|-------------------------+-----------------------------------------------|
+| ~Control~ ~x~               | ~standard-keys-cut-region-or-line~              |
+| ~Control ~c~               | ~standard-keys-copy-region-or-line~             |
+| ~Control~ ~Shift~ ~k~         | ~kill-line~                                     |
+| ~Control~ ~RETURN~          | Insert new line after cursor                  |
+| ~Control~ ~Shift~ ~RETURN~    | ~standard-keys-newline-and-indent-before-point~ |
+| ~Control~ ~]~               | ~indent-according-to-mode~                      |
+| ~Alt/Meta~ ~↑~             | Move line up                                  |
+| ~Alt/Meta~ ~↓~             | Move line down                                |
+| ~Control~ ~SPC~             | ~completion-at-point~                           |
+| ~Control~ ~Shift~ ~SPC~       | Display documentation at point                |
+| ~Control~ ~d~               | ~duplicate-line~                                |
+| ~Control~ ~/~               | ~comment-line~                                  |
+| ~Control~ ~Shift~ ~/~         | ~comment-box~                                   |
+| ~Control~ ~K ~f~             | ~indent-region~                                 |
+| ~Alt/Meta~ ~/~              | ~doctor~ (No Copilot)                           |
+| ~Control~ ~E~ ~w~             | ~toggle-word-wrap~                              |
+| ~Control~ ~R~ ~w~             | ~whitespace-mode~                               |
+| ~Control~ ~f~               | ~isearch-forward~                               |
+| ~Control~ ~h~               | ~query-replace~                                 |
+| ~Control~ ~Shift~ ~f~         | ~project-find-regexp~                           |
+| ~Control~ ~Shift~ ~h~         | ~project-query-replace-regexp~                  |
+| ~F8~                      | ~flymake-goto-next-error~                       |
+| ~Shift~ ~F8~                | ~flymake-goto-prev-error~                       |
+| ~Control~ ~.~               | ~eglot-code-actions~                            |
+| ~Alt/Meta~ ~RET~            | ~eglot-code-actions~                            |
+| ~Control~ ~G~               | ~goto-line~                                     |
+| ~F12~                     | ~xref-find-definitions~                         |
+| ~Shift~ ~F12~               | ~xref-find-references~                          |
+| ~Control~ ~-~               | ~forward-sexp~                                  |
+| ~Control~ ~Shift~ ~-~         | ~backward-sexp~                                 |
+| ~Control~ ~K~ ~k~             | ~bookmark-set~                                  |
+| ~Control~ ~K ~n~             | ~bookmark-jump~                                 |
+| ~Control~ ~K ~p~             | ~bookmark-jump~                                 |
+| ~Control~ ~K ~l~             | ~bookmark-delete-all~                           |
+| ~Control~ ~Shift~ ~p~         | ~execute-extended-command~                      |
+| ~F1~                      | ~execute-extended-command~                      |
+| ~Control~ ~n~               | ~standard-keys-create-new-buffer~               |
+| ~Control~ ~o~               | ~find-file~                                     |
+| ~Control~ ~v~               | ~yank~                                          |
+| ~Control~ ~z~               | ~undo-only~                                     |
+| ~Control~ ~y~               | ~undo-redo~                                     |
+| ~Control~ ~Shift~ ~z~         | ~undo-redo~                                     |
+| ~Control~ ~s~               | ~save-buffer~                                   |
+| ~Control~ ~Shift~ ~s~         | ~write-file~                                    |
+| ~Control~ ~K~ ~s~             | ~project-save-some-buffers~                     |
+| ~Control~ ~Alt/Meta~ ~PgUp~   | ~tab-line-switch-to-prev-tab~                   |
+| ~Control~ ~Alt/Meta~ ~PgDown~ | ~tab-line-switch-to-next-tab~                   |
+| ~Control~ ~F4~              | ~kill-current-buffer~                           |
+| ~Shift~ ~M~ ~RET~             | ~toggle-frame-fullscreen~                       |
+| ~Alt/Meta~ ~g~ ~M~            | ~vc-dir-root~                                   |
+| ~Control~ ~Alt/Meta~ ~F3~     | ~vc-switch-branch~                              |

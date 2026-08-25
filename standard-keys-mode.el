@@ -274,18 +274,19 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
                (use-region-p)))
 
 
-;;;; Keymaps
+;;;; Keymaps theme
 
 ;; Probably this should be moved
 ;; to another file if gets too long.
 
 ;;; Mode keymaps
 (defvar-keymap standard-keys-default-keymap
-  :doc "Default keymap used in `standard-keys-map-style'."
+  :doc "Default keymap theme used in `standard-keys-map-style'."
   "C-o"   #'find-file
   "C-S-o" #'revert-buffer
   "C-w"   #'kill-current-buffer
   "C-q"   #'save-buffers-kill-terminal
+
   ;; C-c and C-x remapping
   "C-e" standard-keys-C-x-dynamic-prefix
   "C-d" standard-keys-C-c-dynamic-prefix
@@ -320,7 +321,7 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   "<escape>" #'standard-keys-keyboard-quit)
 
 (defvar-keymap standard-keys-minimal-keymap
-  :doc "Minimal and basic CUA-like keymap for `standard-keys-map-style'.
+  :doc "Minimal and basic CUA-like keymap theme.
 This keymap is intended to be a minimal CUA, binding only a few
 keybindings, and remaping `C-x' and `C-c' to `Control Shift x' and
 `Control Shift c'."
@@ -335,8 +336,8 @@ keybindings, and remaping `C-x' and `C-c' to `Control Shift x' and
   "C-y" #'undo-redo)
 
 (defvar-keymap standard-keys-ergoemacs-like-keymap
-  :doc "`Ergoemacs QWERTY US layout'-like keymap for `standard-keys-map-style'.
-*This is not a complete emulation*, it just provides some basic
+  :doc "`Ergoemacs QWERTY US layout' keymap theme.
+*This is not a complete emulation*, this just provides some basic
 keybindings from ergoemacs."
   ;; Meta (+ Shift) keys
   "M-4" #'split-window-right
@@ -398,6 +399,77 @@ keybindings from ergoemacs."
   "C-S-s" #'write-file
   "C-S-f" #'occur
   "C-S-n" #'make-frame-command)
+
+(defvar-keymap standard-keys-vscode-like-keymap
+  :doc "VSCode-like keymap theme.
+*This is not a complete emulation*, this takes some liberties to the
+ original keybindings."
+  ;; Code editing
+  "C-x" #'standard-keys-cut-region-or-line
+  "C-c" #'standard-keys-copy-region-or-line
+  "C-S-k" #'kill-line
+  "C-RET" (lambda ()
+            (interactive)
+            (save-excursion
+              (call-interactively #'newline)))
+  "C-S-RET" #'standard-keys-newline-and-indent-before-point
+  "C-]" #'indent-according-to-mode
+  "M-<up>" (lambda ()
+             (interactive)
+             (transpose-lines 1)
+             (previous-line 2))
+  "M-<down>" (lambda ()
+               (interactive)
+               (next-line 1)
+               (transpose-lines 1)
+               (previous-line 2))
+  "C-SPC" #'completion-at-point
+  "C-S-SPC" #'eldoc
+  "C-d"   #'duplicate-line
+  "C-/"   #'comment-line
+  "C-S-/" #'comment-box ; FIXME: The original keybinding toggles block comments
+  "C-K f" #'indent-region
+  "M-/"   #'doctor ; Better than copilot ;^)
+  "C-E w" #'toggle-word-wrap
+  "C-R w" #'whitespace-mode
+  ;; Search and replace
+  "C-f" #'isearch-forward
+  "C-h" #'query-replace
+  "C-S-f" #'project-find-regexp ; (?)
+  "C-S-h" #'project-query-replace-regexp ; (?)
+  "<f8>"  #'flymake-goto-next-error
+  "S-<f8>" #'flymake-goto-prev-error
+  "C-."   #'eglot-code-actions
+  "M-RET" #'eglot-code-actions
+  ;; Navigation
+  "C-p" #'project-find-file ; (?)
+  "C-G" #'goto-line
+  "<f12>"   #'xref-find-definitions
+  "S-<f12>" #'xref-find-references
+  "C--"   #'forward-sexp
+  "C-S--" #'backward-sexp
+  "C-K k" #'bookmark-set ; This does not toggle the bookmark at point
+  "C-K n" #'bookmark-jump
+  "C-K p" #'bookmark-jump
+  "C-K l" #'bookmark-delete-all
+  "C-S-p" #'execute-extended-command
+  "<f1>"  #'execute-extended-command
+  ;; File management
+  "C-n" #'standard-keys-create-new-buffer
+  "C-o" #'find-file
+  "C-v" #'yank
+  "C-z" #'undo-only
+  "C-y" #'undo-redo
+  "C-S-z" #'undo-redo
+  "C-s"   #'save-buffer
+  "C-S-s" #'write-file
+  "C-K s" #'project-save-some-buffers
+  "C-M-<prior>" #'tab-line-switch-to-prev-tab
+  "C-M-<next>"  #'tab-line-switch-to-next-tab
+  "C-<f4>" #'kill-current-buffer
+  ;; VC
+  "M-g M"    #'vc-dir-root
+  "C-M-<f3>" #'vc-switch-branch)
 
 
 ;;;; Minor mode definition
