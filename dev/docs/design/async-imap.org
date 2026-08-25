@@ -861,6 +861,33 @@ it in the token reader, and that is what forces them.
 So the pauses left are not scheduling and no further yielding answers them:
 see emacs-vm/vm#742.
 
+*** The UIDs the folder already holds
+
+A fetch asks =vm-imap-net-uid-held-p= for every message that arrives, so that
+a message the folder gained while its own fetch was in flight is not written
+twice. That built a table of the whole folder's UIDs per call: 6500 tables of
+up to 6500 entries, 21 million =puthash= calls, 0.946s of CPU over 6500 calls
+on the mailbox above, one of them taking 0.550s inside a single step.
+
+=vm-imap-net-uids-held= now keeps the table and extends it. Messages appended
+since the last call are the only ones read, which over a fetch is one walk of
+the mailbox: the same measurement is 0.004s. Wall time went 7.2s to 5.4s and
+collections 10 to 9, one run each.
+
+Two things keep the answer live, which is what the per-bunch snapshot reverted
+in !505 did not:
+
+- =vm-message-list-generation= counts what an append-only reader cannot
+  follow. Every site that rewrites the list or takes a message out of it
+  increments it, and the table is then filled again from nothing.
+- Both fetch paths append messages and give them their UIDs afterwards, so the
+  table can read a message that has none yet. The asynchronous path tells the
+  table each UID as it sets it (=vm-imap-net-note-held-message=) and the
+  blocking one forgets the table afterwards (=vm-imap-net-forget-held-uids=).
+
+Allocation is not what this saves: the counters barely move, hash table
+storage not being Lisp vectors in Emacs 30.
+
 ** Existing examples elsewhere
 
 - nnimap.el in Gnus: sequence-numbered commands, still partly blocking.

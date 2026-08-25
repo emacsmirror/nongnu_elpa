@@ -568,7 +568,10 @@ ignored."
 	(and (cdr curr)
 	     (vm-set-reverse-link-of (car (cdr curr)) prev)))
       (vm-mark-folder-modified-p (current-buffer))
-      (vm-increment vm-modification-counter))))
+      (vm-increment vm-modification-counter)
+      ;; a message left the list, so whoever was following its conses has to
+      ;; look again: see `vm-message-list-generation'
+      (vm-increment vm-message-list-generation))))
 
 (provide 'vm-delete)
 ;;; vm-delete.el ends here

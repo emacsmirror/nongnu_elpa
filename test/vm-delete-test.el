@@ -897,6 +897,31 @@ starts at, so a range that is already mixed comes out uniform."
     (should (equal '(nil nil nil nil nil)
                    (vm-delete-test--flags #'vm-flagged-flag)))))
 
+(ert-deftest vm-delete-test-expunge-moves-the-message-list-generation ()
+  "Expunging a message moves `vm-message-list-generation\='.
+Anything following the list by its conses is told that way that a message has
+gone and its cons may be the one that left.  `vm-imap-net-uids-held\=' follows
+it so, a fetch asking it once per arriving message."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Message 1
+Message-ID: <test1@example.com>
+
+Body 1
+
+From sender@example.com Mon Jan  2 00:00:00 2024
+From: sender@example.com
+Subject: Message 2
+Message-ID: <test2@example.com>
+
+Body 2
+"
+    (let ((generation vm-message-list-generation))
+      (vm-expunge-message (vm-test-first-message))
+      (should (= 1 (vm-test-message-count)))
+      (should (> vm-message-list-generation generation)))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here

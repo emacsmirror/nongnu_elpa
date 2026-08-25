@@ -288,6 +288,7 @@ all the real folder buffers involved."
 	      (vm-set-numbering-redo-start-point new-message-list))
 	  (vm-set-summary-redo-start-point t)
 	  (vm-set-numbering-redo-start-point t)
+	  (vm-increment vm-message-list-generation)
 	  (setq vm-message-list new-message-list))
 	new-message-list ))))
 
@@ -1401,6 +1402,7 @@ real or virtual)."
 			   (vm-reverse-link-of (car vm-message-pointer))))))
 	       ;; expunge the virtual messages associated with
 	       ;; real messages that are going away.
+	       (vm-increment vm-message-list-generation)
 	       (setq vm-message-list
 		     (vm-delete (function
 				 (lambda (m)

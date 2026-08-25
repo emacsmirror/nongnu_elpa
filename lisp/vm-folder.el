@@ -2707,6 +2707,7 @@ notice and refuse, as it does for any other stale UID."
     ;; lock out interrupts while the message list is in
     ;; an inconsistent state.
     (let ((inhibit-quit t))
+      (vm-increment vm-message-list-generation)
       (setq vm-message-list (delq nil (append v mp))
 	    vm-message-order-changed nil
 	    vm-message-order-header-present t
@@ -3677,6 +3678,7 @@ good, with nothing said -- issue #556."
 		(setq imap-to-expunge (and (>= index-version 2)
 					   (read work-buffer)))
 
+		(vm-increment vm-message-list-generation)
 		(setq vm-message-list m-list
 		      vm-folder-type folder-type
 		      vm-pop-retrieved-messages pop-retrieved
@@ -6054,6 +6056,10 @@ folder-access-data should be preserved."
    vm-undo-record-pointer nil
    vm-virtual-buffers (vm-link-to-virtual-buffers)
    vm-folder-type (vm-get-folder-type))
+  ;; the list was emptied above, and this counter is not reset with it: a
+  ;; reader of the folder this buffer held before has to see the number move,
+  ;; and one set back to zero would look to it like nothing had happened
+  (vm-increment vm-message-list-generation)
   (when (not reload)
     (cond ((eq access-method 'pop)
 	   (setq vm-folder-access-method 'pop)

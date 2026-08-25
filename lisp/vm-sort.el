@@ -75,6 +75,7 @@ the folder undisturbed."
       (setq ovmp-prev (vm-reverse-link-of (car ovmp)))
       ;; lock out interrupts to preserve message list integrity.
       (let ((inhibit-quit t))
+	(vm-increment vm-message-list-generation)
 	(if ovmp-prev
 	    (progn
 	      (setcdr ovmp-prev (cdr ovmp))
@@ -518,6 +519,7 @@ folder in the order in which the messages arrived."
       (setq vm-ml-sort-keys ml-keys)
       (intern (buffer-name) vm-buffers-needing-display-update)
       (cond (order-did-change
+	     (vm-increment vm-message-list-generation)
 	     (setq vm-message-list new-message-list)
 	     (vm-reverse-link-messages)
 	     (if vm-message-pointer
