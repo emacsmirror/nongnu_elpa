@@ -22,8 +22,9 @@
 ;; `vm-imap-net-uid-held-p' was found; the step report on its own is what says
 ;; whether a pause is VM working or Emacs collecting.
 ;;
-;; It must be run against a compiled tree.  Generators interpreted are two
-;; orders of magnitude slower and every measurement taken from one is wrong.
+;; It must be run against a compiled tree.  The parse runs once per token and
+;; the generators around it rebuild their closures per call interpreted, so a
+;; measurement taken from source is of the interpreter and nothing else.
 
 ;;; Code:
 
@@ -108,7 +109,7 @@ from one it merely happens to be running during."
 
 (defun vm-fetch-latency--require-compiled ()
   "Refuse to measure an uncompiled tree."
-  (let ((reader (symbol-function 'vm-imap-net-read-object)))
+  (let ((reader (symbol-function 'vm-imap-net-parse-object)))
     (unless (or (byte-code-function-p reader)
 		(and (fboundp 'subr-native-elisp-p)
 		     (subr-native-elisp-p reader)))

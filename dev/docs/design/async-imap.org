@@ -36,6 +36,12 @@ What it costs: about 1.5 microseconds a yield, so the parser yields when it
 wants input and not per token; and an iterator nobody closes runs no cleanup,
 so every path that abandons a session calls =iter-close=.
 
+The token parse is no longer one of these. A generator costs its allocation
+per instantiation as well as per yield, and one per token is 340,000 of them
+to fetch 6500 messages where 2,000 reads ever wait: see "The parse is not a
+generator" below. The generators that remain are the ones that wait -- a
+command, a fetch, a session -- and they are where the yields always were.
+
 *** develop-async
 
 =develop-async= is the integration branch for this work.  It is on
@@ -859,7 +865,7 @@ fetch allocates 64.8M conses and 323M vector words for 13MB of mail, most of
 it in the token reader, and that is what forces them.
 
 So the pauses left are not scheduling and no further yielding answers them:
-see emacs-vm/vm#742.
+see emacs-vm/vm#742. What answered them was the allocation itself, below.
 
 *** The UIDs the folder already holds
 
@@ -887,6 +893,53 @@ in !505 did not:
 
 Allocation is not what this saves: the counters barely move, hash table
 storage not being Lisp vectors in Emacs 30.
+
+*** The parse is not a generator
+
+Every token was read by a generator of its own, =vm-imap-net-read-object=
+descending into =read-group=, =read-literal=, =read-quoted= and =read-atom=
+through =iter-yield-from=. Counted over a fetch of 6500 messages: 340,000
+generator instantiations, and 2,011 waits. So 99.4% of the parse paid for the
+machinery of waiting and never waited.
+
+What that machinery costs, per response line, against the same tokens parsed
+by the blocking =vm-imap-read-response=:
+
+| reader                     | conses | vector words |
+|----------------------------+--------+--------------|
+| blocking, plain functions  |     84 |          112 |
+| driven, a generator a token |  3,775 |       23,279 |
+
+323M vector words to bring in 13MB of mail, which is what the collections
+were.
+
+So the parse is plain functions -- =vm-imap-net-parse-object= and the four
+below it -- and it throws =vm-imap-net-need= with a request when the buffer
+does not hold the whole of what it is reading. The macro
+=vm-imap-net-read-a-response= yields that request in whatever generator it is
+expanded in and parses the line again from its beginning. Nothing is
+resumable and nothing has to be: a line is re-parsed about 2,000 times in a
+fetch of 6500 messages, and 190,000 token reads become plain calls.
+
+The parse must be idempotent for that to work, and it is: a token is
+(KIND START END) into the process buffer, and the buffer keeps what has
+arrived. A literal asks for the position its octets end at rather than for
+the buffer to grow, so a body arriving in a thousand chunks is one wait and
+one re-parse.
+
+Measured on the same 6500-message mailbox, before and after, one run each:
+
+| | before | after |
+|---|---|---|
+| wall | 5.4s | 2.2s |
+| worst step | 0.618s | 0.022s |
+| collections in the steps | 9, 1.47s | 4, 0.05s |
+| conses | 56.0M | 5.1M |
+| vector words | 323.1M | 4.3M |
+| a response line | 3,775 conses, 23,279 words | 42 conses, 0 words |
+
+The worst stutter a reader sees is 22ms, which is not a stutter. What is left
+of the fetch is the mail itself.
 
 ** Existing examples elsewhere
 

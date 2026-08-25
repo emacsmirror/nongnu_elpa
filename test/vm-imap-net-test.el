@@ -1481,8 +1481,8 @@ hand and feeds them through the driver."
   (let ((done nil)
         response)
     (while (not done)
-      (setq response (iter-yield-from
-                      (vm-imap-net-read-response-and-verify "FETCH")))
+      (setq response (vm-imap-net-verify-response
+                      (vm-imap-net-read-a-response) "FETCH"))
       (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
              (apply store (vm-imap-net-fetch-message-text response)))
             ((vm-imap-response-matches response 'VM 'OK)
@@ -2930,7 +2930,7 @@ is that big."
   "Read N response lines through the driver's reader."
   (let ((i 0))
     (while (< i n)
-      (iter-yield-from (vm-imap-net-read-response))
+      (vm-imap-net-read-a-response)
       (setq i (1+ i)))))
 
 (ert-deftest vm-imap-net-test-running-from-source-is-said-once ()
@@ -2947,7 +2947,7 @@ asynchronous path blocks."
     (cl-letf (((symbol-function 'vm-warn)
                (lambda (_level _seconds &rest args)
                  (push (apply #'format args) said)))
-              ((symbol-function 'vm-imap-net-read-object)
+              ((symbol-function 'vm-imap-net-parse-object)
                ;; an interpreted closure, which is what loading from source
                ;; leaves behind
                (eval '(lambda () nil) t)))
@@ -2961,7 +2961,7 @@ asynchronous path blocks."
       (cl-letf (((symbol-function 'vm-warn)
                  (lambda (&rest _) (setq quiet 'spoke))))
         (vm-imap-net-check-compiled)
-        (when (byte-code-function-p (symbol-function 'vm-imap-net-read-object))
+        (when (byte-code-function-p (symbol-function 'vm-imap-net-parse-object))
           (should-not quiet))))))
 
 (ert-deftest vm-imap-net-test-a-uid-the-folder-has-is-not-fetched-again ()
@@ -3282,6 +3282,82 @@ anything or not.  The table is there because the plan built it."
     (should (equal (vm-imap-net-test--get-mail mock) 1))
     (should vm-imap-net-held-uids)
     (should (gethash "1" vm-imap-net-held-uids))))
+
+(ert-deftest vm-imap-net-test-a-partly-arrived-line-asks-for-more ()
+  "A response line that is not all here answers with a request, and moves
+nothing: the parse starts again from the beginning of the line once the
+request is satisfied, so there is nothing to resume and no state to keep."
+  (with-temp-buffer
+    (vm-imap-net-init)
+    (insert "* 1 FETCH (UID 7 FLA")
+    (let ((read-point vm-imap-net-read-point)
+          (answer (vm-imap-net-parse-response)))
+      (should (functionp answer))
+      (should-not (funcall answer))
+      (should (equal vm-imap-net-read-point read-point))
+      ;; the rest of it arrives
+      (goto-char (point-max))
+      (insert "GS (\\Seen))\r\n")
+      (should (funcall answer))
+      (let ((tokens (vm-imap-net-parse-response)))
+        (should (vm-imap-response-matches tokens '* 'atom 'FETCH 'list))
+        (should (> vm-imap-net-read-point read-point))))))
+
+(ert-deftest vm-imap-net-test-a-split-literal-is-waited-for-once ()
+  "A literal's octets are waited for by position, not by whatever arrives.
+The count comes before the octets, so the wait knows where they end: a body
+arriving in a thousand chunks is one wait and one parse, where a wait for the
+buffer merely growing would be a thousand of each."
+  (with-temp-buffer
+    (vm-imap-net-init)
+    (insert "* 1 FETCH (UID 7 BODY[] {20}\r\n12345")
+    (let ((answer (vm-imap-net-parse-response)))
+      (should (functionp answer))
+      (should-not (funcall answer))
+      ;; more of it, and still not enough: the buffer growing is not the
+      ;; question being asked
+      (goto-char (point-max))
+      (insert "67890")
+      (should-not (funcall answer))
+      (goto-char (point-max))
+      (insert "1234567890")
+      (should (funcall answer)))))
+
+(ert-deftest vm-imap-net-test-a-response-line-costs-almost-nothing ()
+  "Reading a response line allocates a little and not a lot.
+
+Every token used to be read by a generator of its own: 340,000 of them to
+fetch 6500 messages, of which 2,000 reads ever waited for anything, and a
+response line cost 3775 conses and 23,279 vector words where parsing the
+tokens costs 84 and 112.  That allocation was what the garbage collections in
+a fetch were -- 323M vector words for 13MB of mail, nine collections and a
+worst pause of 0.618s (issue #742).
+
+Bounds rather than figures, and loose ones: a hundred vector words and two
+hundred conses a line, against the twenty-three thousand and the three
+thousand seven hundred that were there.  Allocation and not time, because a
+count does not depend on how busy the machine is."
+  (let* ((lines 200)
+         (text (with-temp-buffer
+                 (dotimes (i lines)
+                   (insert (format "* %d FETCH (UID %d RFC822.SIZE %d FLAGS (\\Seen))\r\n"
+                                   (1+ i) (1+ i) (+ 500 i))))
+                 (buffer-string))))
+    (with-temp-buffer
+      (insert text)
+      (vm-imap-net-init)
+      (setq vm-imap-current-tag "vm1")
+      (garbage-collect)
+      (let ((before (memory-use-counts))
+            (iterator (vm-imap-net-test--read-lines lines)))
+        (condition-case nil
+            (while t (iter-next iterator))
+          (iter-end-of-sequence nil))
+        (let* ((after (memory-use-counts))
+               (conses (- (nth 0 after) (nth 0 before)))
+               (words (- (nth 2 after) (nth 2 before))))
+          (should (< words (* 100 lines)))
+          (should (< conses (* 200 lines))))))))
 
 (provide 'vm-imap-net-test)
 
