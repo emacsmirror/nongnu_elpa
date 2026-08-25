@@ -663,7 +663,7 @@ Calls `mastodon-tl--get-buffer-type', which see."
     (emojify-mode t)
     (when mastodon-toot--enable-custom-instance-emoji
       (mastodon-toot-enable-custom-emoji)))
-  (mastodon-profile--fetch-server-account-settings)
+  (mastodon-profile--fetch-server-account-settings :noforce)
   (when (and mastodon-tl--highlight-current-toot
              (fboundp #'cursor-face-highlight-mode))
     (cursor-face-highlight-mode)) ; 29.1
