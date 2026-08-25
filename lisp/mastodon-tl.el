@@ -4032,14 +4032,19 @@ NO-BYLINE means just insert toot body, used for announcements."
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
-    (funcall
-     (if headers
-         #'mastodon-http--get-response-async
-       #'mastodon-http--get-json-async)
-     url params nil ;; not silent
-     'mastodon-tl--init*
-     buffer endpoint update-function headers params hide-replies
-     instance no-byline)))
+    (when mastodon-inspect-profile-requests
+      (setq url-debug t))
+    (prog1
+        (funcall
+         (if headers
+             #'mastodon-http--get-response-async
+           #'mastodon-http--get-json-async)
+         url params nil ;; not silent
+         'mastodon-tl--init*
+         buffer endpoint update-function headers params hide-replies
+         instance no-byline)
+      (when mastodon-inspect-profile-requests
+        (mastodon-inspect-requests endpoint)))))
 
 (defun mastodon-tl--init*
     (response buffer endpoint update-function &optional headers

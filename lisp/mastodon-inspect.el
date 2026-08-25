@@ -45,6 +45,11 @@
   :prefix "mastodon-inspect-"
   :group 'external)
 
+(defcustom mastodon-inspect-profile-requests nil
+  "Whether to profile requests info.
+Parses outpout of `url-debug' to list what requests a given timeline
+entails.")
+
 (defun mastodon-inspect--dump-json-in-buffer (name json)
   "Buffer NAME is opened and JSON in printed into it."
   (switch-to-buffer-other-window name)
@@ -118,12 +123,23 @@
   (setq mastodon-inspect--search-query-accounts-result
         (append ; convert vector to list
          (mastodon-http--get-search-json
-         (format "%s/api/v1/accounts/search" mastodon-instance-url)
-         query)
+          (format "%s/api/v1/accounts/search" mastodon-instance-url)
+          query)
          nil))
   (setq mastodon-inspect--single-account-json
-      (car mastodon-inspect--search-query-accounts-result)))
+        (car mastodon-inspect--search-query-accounts-result)))
 
+(defun mastodon-inspect-requests (&optional endpoint)
+  (with-current-buffer "*URL-DEBUG*"
+    (let* ((list (split-string (buffer-string) "\n"))
+           (cull (cl-remove-if-not
+                  (lambda (x)
+                    (member (car (split-string x))
+                            '("GET" "PUT" "POST" "PATCH" "DELETE")))
+                  list)))
+      (message "Endpoint: %s\n%s"
+               (or endpoint "")
+               (mapconcat #'identity cull "\n")))))
 
 (provide 'mastodon-inspect)
 ;;; mastodon-inspect.el ends here
