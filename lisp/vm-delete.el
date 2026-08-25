@@ -371,7 +371,38 @@ unmarked messages are not hashed or considered for deletion."
     (vm-update-summary-and-mode-line)
     del-count))
 
-(defun vm-expunge-note-for-the-server (message)
+(defun vm-expunge-queue-pop-deletion (message)
+  "Queue MESSAGE\\='s deletion for its maildrop, if the maildrop can act on it.
+The current buffer is MESSAGE\\='s folder, and its access method is `pop\\='.
+
+Only a message with a UIDL.  Without one the maildrop was never asked for it
+by name and there is nothing there to delete, and the queue collected nil
+for it (emacs-vm/vm#758)."
+  (when (vm-pop-uidl-of message)
+    (setq vm-pop-messages-to-expunge
+	  (cons (vm-pop-uidl-of message) vm-pop-messages-to-expunge))))
+
+(defun vm-expunge-record-pop-uidl (message)
+  "Remember MESSAGE\\='s UIDL as one this folder has had, once.
+The current buffer is MESSAGE\\='s folder, and its access method is `pop\\='.
+So that a later check or fetch does not bring it again.
+
+The maildrop is named without its password, which is how the entry made when
+the message arrived names it (`vm-pop-net-note-retrieved\\=') and what every
+check compares against (`vm-pop-net-unretrieved\\='): recorded with the
+password in it, as this did, the entry matched nothing and was a duplicate of
+one that does (emacs-vm/vm#758)."
+  (let ((uidl (vm-pop-uidl-of message))
+	(maildrop (vm-popdrop-sans-password (vm-folder-pop-maildrop-spec))))
+    (when (and uidl
+	       (null (vm-find vm-pop-retrieved-messages
+			      (lambda (entry)
+				(and (equal (car entry) uidl)
+				     (equal (nth 1 entry) maildrop))))))
+      (setq vm-pop-retrieved-messages
+	    (cons (list uidl maildrop 'uidl) vm-pop-retrieved-messages)))))
+
+(defun vm-expunge-queue-imap-deletion (message)
   "Queue MESSAGE\\='s deletion for its mailbox, if the mailbox can act on it.
 The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
 
@@ -390,7 +421,7 @@ a deletion waits for a session (emacs-vm/vm#757)."
 		      (vm-imap-uid-validity-of message))
 		vm-imap-messages-to-expunge))))
 
-(defun vm-expunge-note-retrieved (message)
+(defun vm-expunge-record-imap-uid (message)
   "Remember MESSAGE\\='s UID as one this folder has had, once.
 The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
 So that a later synchronise does not fetch it again.
@@ -409,7 +440,10 @@ folder\\='s `X-VM-IMAP-Retrieved\\=' header on every save (emacs-vm/vm#757)."
 				(and (equal (car entry) uid)
 				     (equal (cadr entry) validity))))))
       (setq vm-imap-retrieved-messages
-	    (cons (list uid validity (vm-folder-imap-maildrop-spec) 'uid)
+	    (cons (list uid validity
+			(vm-imapdrop-sans-password
+			 (vm-folder-imap-maildrop-spec))
+			'uid)
 		  vm-imap-retrieved-messages)))))
 
 ;;;###autoload
@@ -496,18 +530,13 @@ longer exist there, which is a no-op at best and a NO from some servers
 	    (let ((real-m (vm-real-message-of (car mp))))
 	      (with-current-buffer (vm-buffer-of real-m)
 		(cond ((eq vm-folder-access-method 'pop)
-		       (setq vm-pop-messages-to-expunge
-			     (cons (vm-pop-uidl-of real-m)
-				   vm-pop-messages-to-expunge))
-		       (setq vm-pop-retrieved-messages
-			     (cons (list (vm-pop-uidl-of real-m)
-					 (vm-folder-pop-maildrop-spec)
-					 'uidl)
-				   vm-pop-retrieved-messages)))
+		       (unless not-on-the-server
+			 (vm-expunge-queue-pop-deletion real-m))
+		       (vm-expunge-record-pop-uidl real-m))
 		      ((eq vm-folder-access-method 'imap)
 		       (unless not-on-the-server
-			 (vm-expunge-note-for-the-server real-m))
-		       (vm-expunge-note-retrieved real-m)))
+			 (vm-expunge-queue-imap-deletion real-m))
+		       (vm-expunge-record-imap-uid real-m)))
 		(vm-increment vm-modification-counter)
 		(save-restriction
 		 (widen)
