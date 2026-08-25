@@ -120,8 +120,17 @@ to be overridden."
 A leading space make the buffer hidden."
   :type 'string)
 
-(defvar eldoc-mouse-mode-map (make-sparse-keymap)
-  "The keymap of `eldoc-mouse-mode'.")
+(defvar eldoc-mouse-mode-map
+  (let ((map (make-sparse-keymap)))
+    ;; Suppress undefined key bells when hovering over UI elements
+    (define-key map [tab-bar mouse-movement] #'ignore)
+    (define-key map [tool-bar mouse-movement] #'ignore)
+    (define-key map [mode-line mouse-movement] #'ignore)
+    (define-key map [header-line mouse-movement] #'ignore)
+    (define-key map [left-fringe mouse-movement] #'ignore)
+    (define-key map [right-fringe mouse-movement] #'ignore)
+    map)
+  "Keymap for `eldoc-mouse-mode'.")
 
 (defvar eldoc-mouse--mouse-timer nil
   "Idle timer for mouse hover eldoc.")
