@@ -7,7 +7,7 @@
 ;; Package-Requires: ((emacs "29.1"))
 ;; Homepage: https://github.com/DevelopmentCool2449/standard-keys-mode
 ;; Keywords: emulations, convenience
-;; Version: 1.0.0
+;; Version: 1.0.1
 
 ;; This file is part of GNU Emacs.
 
