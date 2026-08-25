@@ -166,8 +166,9 @@ You need to install it yourself for this to work. See
 https://github.com/rainstormstudio/nerd-icons.el.
 Nerd icons have the benefit of being a consistent icon kit.
 They have the possible disadvantage of being monochrome.
-If you change this customize, you need to either restart emacs, or
-re-evaluate `mastodon-tl--symbols' (navigate to it then call `eval-defun' (C-M-x))."
+If you change this customize, you need to either restart Emacs, or
+re-evaluate `mastodon-tl--symbols' (navigate to it then call
+`eval-defun' (C-M-x))."
   :type 'boolean)
 
 (require 'nerd-icons nil :noerror)
