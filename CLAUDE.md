@@ -185,6 +185,13 @@ It was developed on `develop-async`, which was merged in on 2026-08-25 and
 deleted; there is no integration branch any more, and async work is cut from
 `central/develop` like everything else.
 
+**Do not start another integration branch.** Nobody was testing
+`develop-async`, and the maintainer's reason for ending it is that one branch
+is easier: whoever tests `develop` tests everything together, where a long
+running branch gets the new work exercised apart from the rest of the tree and
+needs `develop` merged into it for ever to stay honest. A large conversion goes
+to `develop` in the same one-branch-per-issue steps as anything else.
+
 - The decision it was built under is **non-blocking only**: no synchronous
   driver and no dual mode, so every converted path is asynchronous. The
   blocking implementation is still in the tree and serves what the driver
