@@ -35,6 +35,14 @@
 ;;                    what a real interrupted download looks like
 ;;   :lie-about-size  report a wrong octet count in RFC822.SIZE
 ;;   :slow-greeting   wait before greeting, for timeout tests
+;;   :reorder-fetch   answer a FETCH of several messages backwards, which a
+;;                    server may do: the responses carry UIDs and the client
+;;                    is expected to tell them apart by those, not by order
+;;   :drop-after-fetch  N; close the connection after N FETCH responses, which
+;;                    is a download interrupted between messages
+;;   :preauth         greet with PREAUTH: the connection arrives authenticated,
+;;                    which is what a session over ssh or through a helper
+;;                    program looks like
 ;;   :extra-fetch-items  add items to every FETCH response that VM did not ask
 ;;                    for -- MODSEQ and INTERNALDATE, which RFC 3501 7.4.2
 ;;                    allows a server to send unasked
@@ -64,8 +72,8 @@
   (log nil)
   ;; faults
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
-  no-uidplus capabilities extra-fetch-items unsolicited-flags
-  drops-keywords
+  no-uidplus capabilities preauth reorder-fetch drop-after-fetch
+  extra-fetch-items unsolicited-flags drops-keywords
   authenticated)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
@@ -133,10 +141,26 @@ would be indistinguishable from the copy having gone somewhere it should not."
   "Every command line MOCK received, tags and all, in order."
   (vm-imap-mock-log mock))
 
+(defun vm-imap-mock-forget-commands (mock)
+  "Forget what MOCK has received, so what follows is asked about on its own.
+For a test that has already done something over the wire -- a visit, a fetch
+-- and asks what the next operation sent."
+  (setf (vm-imap-mock-log mock) nil))
+
 (defun vm-imap-mock-received-p (mock regexp)
   "Whether MOCK received a command matching REGEXP."
   (cl-some (lambda (line) (string-match-p regexp line))
 	   (vm-imap-mock-log mock)))
+
+(defun vm-imap-mock-set-flags (mock mailbox uid flags)
+  "Give the message with UID in MAILBOX the FLAGS, as another client would.
+For the synchronisation tests: what VM is to notice is a change the server
+knows about and VM does not."
+  (let ((message (cl-find uid (vm-imap-mock-messages mock mailbox)
+			  :key #'vm-imap-mock-message-uid)))
+    (unless message
+      (error "No message with UID %s in %s" uid mailbox))
+    (setf (vm-imap-mock-message-flags message) flags)))
 
 (defun vm-imap-mock-flags (mock mailbox uid)
   "The flags of the message with UID in MAILBOX on MOCK."
@@ -323,17 +347,27 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 		       (vm-imap-mock--uid-range mock spec)
 		     (mapcar (lambda (n) (nth (1- n) messages))
 			     (vm-imap-mock--number-range spec (length messages))))))
-      (dolist (message wanted)
-	(when (process-live-p process)
-	  (vm-imap-mock--fetch-one mock process
-				   (1+ (cl-position message messages))
-				   message items)))
-      (when (process-live-p process)
-	;; somebody else changed a message's flags while this ran, which a
-	;; server reports whenever it next has the chance: RFC 3501 7.4.1
-	(when (and (vm-imap-mock-unsolicited-flags mock) messages)
-	  (vm-imap-mock--send process "* 1 FETCH (FLAGS (\\Seen))\r\n"))
-	(vm-imap-mock--send process (format "%s OK FETCH completed\r\n" tag))))))
+      (when (vm-imap-mock-reorder-fetch mock)
+	(setq wanted (reverse wanted)))
+      (let ((sent 0)
+	    (limit (vm-imap-mock-drop-after-fetch mock)))
+	(catch 'dropped
+	  (dolist (message wanted)
+	    (when (process-live-p process)
+	      (vm-imap-mock--fetch-one mock process
+				       (1+ (cl-position message messages))
+				       message items)
+	      (setq sent (1+ sent))
+	      (when (and limit (>= sent limit))
+		(delete-process process)
+		(throw 'dropped t))))
+	  (when (process-live-p process)
+	    ;; somebody else changed a message's flags while this ran, which a
+	    ;; server reports whenever it next has the chance: RFC 3501 7.4.1
+	    (when (and (vm-imap-mock-unsolicited-flags mock) messages)
+	      (vm-imap-mock--send process "* 1 FETCH (FLAGS (\\Seen))\r\n"))
+	    (vm-imap-mock--send process
+				(format "%s OK FETCH completed\r\n" tag))))))))
 
 (defun vm-imap-mock--store (mock process tag spec sign flags by-uid silent)
   "Answer a STORE or UID STORE, setting FLAGS on the messages SPEC covers."
@@ -633,19 +667,23 @@ not ask about the live process."
   (let ((mock (process-get server 'vm-imap-mock)))
     (process-put client 'vm-imap-mock mock)
     (process-put client 'vm-imap-mock-pending "")
-    (setf (vm-imap-mock-authenticated mock) nil)
+    (setf (vm-imap-mock-authenticated mock) (and (vm-imap-mock-preauth mock) t))
     (set-process-coding-system client 'binary 'binary)
     (set-process-filter client #'vm-imap-mock--filter)
     (vm-imap-mock--connection-buffer-away client)
     (when (vm-imap-mock-slow-greeting mock)
       (sleep-for (vm-imap-mock-slow-greeting mock)))
-    (vm-imap-mock--send client "* OK vm-imap-mock ready\r\n")))
+    (vm-imap-mock--send client
+			(if (vm-imap-mock-preauth mock)
+			    "* PREAUTH vm-imap-mock ready\r\n"
+			  "* OK vm-imap-mock ready\r\n"))))
 
 (cl-defun vm-imap-mock-start (&key (user "vmtest") (password "secret")
 				   (mailbox "INBOX") messages
 				   refuse bad drop-on truncate-fetch
 				   lie-about-size slow-greeting no-uidplus
-				   capabilities extra-fetch-items
+				   capabilities preauth reorder-fetch
+				   drop-after-fetch extra-fetch-items
 				   unsolicited-flags drops-keywords)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
@@ -661,6 +699,9 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:slow-greeting slow-greeting
 		:no-uidplus no-uidplus
 		:capabilities capabilities
+		:preauth preauth
+		:reorder-fetch reorder-fetch
+		:drop-after-fetch drop-after-fetch
 		:extra-fetch-items extra-fetch-items
 		:unsolicited-flags unsolicited-flags
 		:drops-keywords drops-keywords))

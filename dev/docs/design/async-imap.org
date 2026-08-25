@@ -3,6 +3,58 @@
 All line references were verified against the tree at the time of writing.
 Where a claim is not verified, it says so.
 
+** Decisions taken
+
+*** Non-blocking only
+
+The network layer becomes asynchronous and stays that way.  There is no
+synchronous driver, no dual mode, no per-command choice.  Option 2 below
+described one CPS path with two drivers, and the driver that blocks is not
+being built: a mode that is never exercised is a mode that rots, and keeping
+it would mean every question in the rest of this document has to be answered
+twice.
+
+What that costs: the conversion cannot be shipped a piece at a time behind a
+default that keeps today's behaviour.  Every converted path is asynchronous
+from the moment it lands.  That is why the work happens on a branch of its
+own rather than on develop.
+
+*** Generators, not hand-written CPS
+
+The parser is written with =iter-defun= (option 3).  The spike answered every
+question that stood in its way: =unwind-protect= and =condition-case= survive a
+yield, =iter-yield-from= carries a nested parse back, and the driver feeds the
+parser by passing a value to =iter-next=.  See "The generator spike" below for
+what was run and what it cost.
+
+What that buys is the hardest part of the conversion for almost nothing:
+vm-imap-read-object keeps its recursive shape, with =iter-yield= where it waits
+and =iter-yield-from= where it recurses, instead of being turned inside out
+into a reified stack of parser frames.
+
+What it costs: about 1.5 microseconds a yield, so the parser yields when it
+wants input and not per token; and an iterator nobody closes runs no cleanup,
+so every path that abandons a session calls =iter-close=.
+
+The token parse is no longer one of these. A generator costs its allocation
+per instantiation as well as per yield, and one per token is 340,000 of them
+to fetch 6500 messages where 2,000 reads ever wait: see "The parse is not a
+generator" below. The generators that remain are the ones that wait -- a
+command, a fetch, a session -- and they are where the yields always were.
+
+*** develop-async
+
+=develop-async= is the integration branch for this work.  It is on
+=emacs-vm/vm= so that others can test it.
+
+- Branches for individual steps are cut from =develop-async= and their merge
+  requests target =develop-async=, not =develop=.
+- =develop= is merged into =develop-async= regularly, so the branch does not
+  drift.  Merge, never rebase: the branch is published and other people have
+  it checked out.
+- =develop-async= reaches =develop= when the whole conversion is done and the
+  test suite passes against the mock servers and a live dovecot.
+
 ** Problem Statement
 
 - VM blocks Emacs for the whole of every IMAP and POP network operation.
@@ -395,9 +447,15 @@ All-or-nothing within one call chain:
 
 ** Can blocking remain an option?
 
-Yes, and it should. But only in one direction: async underneath, synchronous
-on top. The reverse is not available, because a blocking primitive cannot be
-made to yield.
+It could have; it will not.  See "Decisions taken" above: the answer below was
+written before that decision and is kept because the reasoning about what is
+and is not possible still holds, and because option 2's shape -- one CPS path,
+a state object, a poll function the two protocols share -- is what is being
+built.  What is dropped is its synchronous driver.
+
+The one-directional point stands: async underneath, synchronous on top is
+available, and the reverse is not, because a blocking primitive cannot be made
+to yield.
 
 *** Option 1: two code paths, sync and async twins
 
@@ -459,9 +517,50 @@ made to yield.
 - An iter-defun cannot be called from an ordinary function, so the same
   explicit driver boundary as option 2 is needed, and the same two drivers sit
   on it.
-- Unverified: whether generator.el's CPS transform copes with the whole of
-  vm-imap-read-object, in particular unwind-protect inside an iter-defun. This
-  needs a spike before the option is chosen.
+- Verified by the spike below: generator.el copes with everything
+  vm-imap-read-object needs.
+
+*** The generator spike, and what it answered
+
+Run against Emacs 30.2 in batch.  Each of these was a question that decided
+whether option 3 is available at all.
+
+- =unwind-protect= around =iter-yield= compiles and runs, and the cleanup runs
+  when the iterator finishes.  This was the blocking question.
+- =iter-close= on an iterator abandoned half way runs the cleanup.  Dropping
+  the last reference and garbage-collecting instead does *not*: the cleanup is
+  silently skipped.  So a converted session has to be closed explicitly, and
+  "what does an interrupted POP session do about pending DELEs" is answered by
+  whoever owns the iterator, not by the garbage collector.
+- =condition-case= spanning a yield catches an error signalled after the
+  resume, and the handler's value becomes the iterator's return value.
+- =iter-yield-from= returns the sub-iterator's return value, which is what a
+  recursive descent parser needs: vm-imap-read-object's 8 self-calls become
+  =iter-yield-from= and still yield a parse tree.
+- The value passed to =iter-next= becomes the value of the =iter-yield= that
+  suspended the iterator.  That is the shape of "here is more input, carry
+  on", so the driver hands the parser what arrived rather than the parser
+  reaching for it.
+- Cost: 20,000 yields took 0.031s against 0.005s for the same loop without
+  them, so roughly 1.5 microseconds a yield, six times a plain call.  That is
+  affordable if the parser yields when it needs *input*, as it does today at
+  four places, and is not if it yields per token.
+
+Two more, found while writing the POP protocol with generators:
+
+- =(condition-case nil FORM (my-error nil))= inside an =iter-defun= answers
+  with the *error object*, not nil.  A named variable, or a handler body that
+  is not nil, behaves as it does outside a generator.  It cost an afternoon
+  once; write handlers with an explicit value.
+- A marker used as the read point is moved by =set-marker=, so a substring
+  taken afterwards from "the marker" is empty.  Take =marker-position= first.
+  The blocking code has the same hazard and avoids it by accident, reading
+  before it moves.
+
+The one thing to hold on to: nothing runs a cleanup for an iterator nobody
+closes.  Today an =unwind-protect= in a blocking read runs whatever happens,
+including on C-g; under generators it runs when the driver says so.  Every
+driver path that abandons a session must call =iter-close=.
 
 *** Option 4: threads
 
@@ -639,23 +738,208 @@ Cleanest source, at the cost of a dependency.
 Built on the same generators as option 3, so it buys syntax rather than
 capability. https://github.com/skeeto/emacs-aio
 
+** What has been converted
+
+As of !412 to !457 on =develop-async=, no path that reads or writes mail opens
+a session that waits.  The blocking implementation is still there, and what it
+serves is a maildrop the driver declines: one whose password VM has not been
+told and nobody may be asked for, since there is nobody to ask from inside a
+filter.
+
+| path                                   | where                            |
+|----------------------------------------+----------------------------------|
+| the IMAP reader, all four waits        | lisp/vm-imap-net.el              |
+| session, SELECT, the bulk FETCH        | lisp/vm-imap-net.el              |
+| new mail into a folder                 | vm-imap-net-get-new-mail         |
+| synchronising a folder                 | vm-imap-net-synchronize          |
+| bodies kept on the server              | vm-imap-net-load-bodies          |
+| flags up, expunges both ways           | vm-imap-net-save-flags etc.      |
+| saving and quitting a folder           | vm-imap-net-send-changes         |
+| save and copy to a mailbox             | vm-imap-net-save-to-folder       |
+| filing a composition (Fcc, IMAP-FCC)   | vm-imap-net-append-text          |
+| CREATE, DELETE, RENAME                 | vm-imap-net-mailbox-command      |
+| listing an account's folders           | vm-imap-net-list-folders         |
+| the names completion needs             | vm-imap-net-mailbox-names        |
+| expunging a maildrop, pruning its list | vm-imap-net-expunge-maildrops    |
+| a maildrop used as a spool file        | vm-imap-net-move-mail            |
+| the POP mail check, fetch, crash box   | lisp/vm-pop-net.el               |
+| a POP folder, and saving it            | vm-pop-net-get-folder-mail       |
+| expunging a POP maildrop               | vm-pop-net-expunge-retrieved     |
+| ssh tunnels, stunnel, preauth, TLS     | vm-net-tunnel, vm-net-pipe       |
+
+Two places still wait on purpose, and both are the caller's own doing:
+
+- Completion.  TAB has to answer with the names it has, so
+  =vm-imap-net-mailbox-names= runs a session on the driver and waits for it.
+  One connection, read by the asynchronous code, and =accept-process-output=
+  leaves C-g working.  What is asked for once is cached.
+- A body a caller must have in hand -- saving a message, copying it -- is
+  fetched the blocking way rather than left to arrive later.  A message
+  written without its body is worse than a wait.  Presentation, which can
+  wait for it, takes the driver: =:may-arrive-later=.
+
+*** What the folder does about two sessions
+
+A folder writes what a session tells it to, so two sessions writing one folder
+would interleave their messages, flags and expunges in one buffer and one
+cache file.  The rule is one session per folder:
+
+- every start goes through =vm-imap-net-take-session=, which is what
+  =vm-imap-net-busy-p= reads;
+- work asked for while a session runs is queued on the folder
+  (=vm-imap-net-when-free=) and run when that one ends, and answers =later= so
+  that no caller falls back to the blocking path, which would open the second
+  connection this is avoiding;
+- queued work reads the folder again when it runs rather than using what was
+  true when it was asked for: a body queued for a message since expunged is
+  dropped, an expunge list is re-read;
+- the paths that still block -- =vm-establish-new-folder-imap-session= and its
+  POP counterpart -- wait for the folder's own session first, and refuse
+  rather than proceed if it is still running.
+
+*** What the driver does about a session that stops
+
+One timer watches every waiting session's deadline
+(=vm-net--watchdog=, four times a second while anything is waiting) rather
+than one timer per session per read.  Losing a timer took away the only thing
+that would ever report a stall; see emacs-vm/vm#717, where a session sat 8.8
+seconds into a three-second timeout with its own timer unrun.  Arming checks
+=timer-list= rather than the variable holding the timer.
+
+A session is also resumed for as long as what it asks for is already in the
+buffer: the filter polls with the request the generator is about to replace,
+so an answer that arrives while the generator runs would otherwise be waited
+for after it had come.
+
 ** Migration path
 
-1. The staged items above, each on its own: the duplicated POP UIDL loop,
-   distinct IMAP tags, per-session vm-buffer-types, the sleep-for pauses. POP
-   read timeouts are done (issue #639).
-2. Spike generator.el against vm-imap-read-object, including unwind-protect
-   inside iter-defun. Decide option 2 or option 3 on the result.
-3. Build the state object and the two drivers. Cover them with the mock
-   servers, using the fault injections for the abandoned-continuation cases.
-4. Convert POP first: 23 call sites, 6 frames, no recursion. Ship it with the
-   synchronous driver as the default so nothing changes for users.
-5. Convert IMAP session setup, then vm-imap-select-mailbox, then the fetch
-   path, each behind the same driver choice.
-6. Switch the default driver to asynchronous only after the mock suite passes
-   both ways.
-7. Remove the synchronous driver only if it earns removal. Under option 2 it
-   is small enough to keep indefinitely.
+Steps 1 to 5 are done; each was its own merge request into =develop-async=.
+
+1. Done: the staged items, none of them asynchronous and each mergeable to
+   =develop= on its own -- the duplicated POP UIDL loop, distinct IMAP tags,
+   the sleep-for pauses, POP read timeouts (issue #639).
+2. Done: the generator spike, and with it the decision to write the parser
+   with iter-defun.  See "Decisions taken" and "The generator spike".
+3. Done: the session object and the filter driver (lisp/vm-net.el), covered by
+   the mock servers and their fault injections.
+4. Done: POP.
+5. Done: IMAP, session setup through to the commands listed above.
+6. To do: a soak by somebody reading their own mail on it.  The suite is green
+   against the mock servers and against the live dovecot here; what that does
+   not cover is a mailbox of six thousand messages on gmail for a week.
+
+What is no longer in this path: shipping each converted piece behind a
+synchronous default.  There is no such default now, so a converted piece is
+tested by running it, not by leaving it switched off.
+
+*** Build it before judging it
+
+A generator run interpreted rebuilds its closure on every call, and the IMAP
+reader is called once per token.  Against a mock server, a fresh fetch of a
+thousand messages:
+
+: byte-compiled   0.8s wall, worst pause 0.19s
+: from source     173s wall, worst pause 58s
+
+Uncompiled it looks exactly like the blocking implementation this replaces, so
+VM says so once a session (=vm-imap-net-check-compiled=).
+
+*** Measuring what is left of the pauses
+
+=dev/tools/vm-fetch-latency.el= times a fetch by the step, a step being one
+=vm-net--resume= call, which is how long Emacs is stopped. It reports the
+longest steps, the collection inside each, what the fetch allocated, and with
+=-functions= the longest single call of every VM function.
+=dev/tools/fill-imap-mailbox.py= makes a mailbox big enough to measure
+against; a dozen messages have no pauses at all.
+
+: make
+: ./dev/tools/fill-imap-mailbox.py vmtest/latency 6500
+: emacs -batch -Q -L lisp -l dev/tools/vm-fetch-latency.el \
+:   imap:127.0.0.1:143:vmtest/latency:login:vmtest1:vm-lives
+
+What it says as of 2026-08-24, on 6500 messages of 1.9KB: 6.8s wall, 1977
+steps, and every step over 0.1s is a garbage collection -- the worst 0.639s,
+of which 0.638s is collecting. Nine collections take 1.96s of the fetch. The
+fetch allocates 64.8M conses and 323M vector words for 13MB of mail, most of
+it in the token reader, and that is what forces them.
+
+So the pauses left are not scheduling and no further yielding answers them:
+see emacs-vm/vm#742. What answered them was the allocation itself, below.
+
+*** The UIDs the folder already holds
+
+A fetch asks =vm-imap-net-uid-held-p= for every message that arrives, so that
+a message the folder gained while its own fetch was in flight is not written
+twice. That built a table of the whole folder's UIDs per call: 6500 tables of
+up to 6500 entries, 21 million =puthash= calls, 0.946s of CPU over 6500 calls
+on the mailbox above, one of them taking 0.550s inside a single step.
+
+=vm-imap-net-uids-held= now keeps the table and extends it. Messages appended
+since the last call are the only ones read, which over a fetch is one walk of
+the mailbox: the same measurement is 0.004s. Wall time went 7.2s to 5.4s and
+collections 10 to 9, one run each.
+
+Two things keep the answer live, which is what the per-bunch snapshot reverted
+in !505 did not:
+
+- =vm-message-list-generation= counts what an append-only reader cannot
+  follow. Every site that rewrites the list or takes a message out of it
+  increments it, and the table is then filled again from nothing.
+- Both fetch paths append messages and give them their UIDs afterwards, so the
+  table can read a message that has none yet. The asynchronous path tells the
+  table each UID as it sets it (=vm-imap-net-note-held-message=) and the
+  blocking one forgets the table afterwards (=vm-imap-net-forget-held-uids=).
+
+Allocation is not what this saves: the counters barely move, hash table
+storage not being Lisp vectors in Emacs 30.
+
+*** The parse is not a generator
+
+Every token was read by a generator of its own, =vm-imap-net-read-object=
+descending into =read-group=, =read-literal=, =read-quoted= and =read-atom=
+through =iter-yield-from=. Counted over a fetch of 6500 messages: 340,000
+generator instantiations, and 2,011 waits. So 99.4% of the parse paid for the
+machinery of waiting and never waited.
+
+What that machinery costs, per response line, against the same tokens parsed
+by the blocking =vm-imap-read-response=:
+
+| reader                     | conses | vector words |
+|----------------------------+--------+--------------|
+| blocking, plain functions  |     84 |          112 |
+| driven, a generator a token |  3,775 |       23,279 |
+
+323M vector words to bring in 13MB of mail, which is what the collections
+were.
+
+So the parse is plain functions -- =vm-imap-net-parse-object= and the four
+below it -- and it throws =vm-imap-net-need= with a request when the buffer
+does not hold the whole of what it is reading. The macro
+=vm-imap-net-read-a-response= yields that request in whatever generator it is
+expanded in and parses the line again from its beginning. Nothing is
+resumable and nothing has to be: a line is re-parsed about 2,000 times in a
+fetch of 6500 messages, and 190,000 token reads become plain calls.
+
+The parse must be idempotent for that to work, and it is: a token is
+(KIND START END) into the process buffer, and the buffer keeps what has
+arrived. A literal asks for the position its octets end at rather than for
+the buffer to grow, so a body arriving in a thousand chunks is one wait and
+one re-parse.
+
+Measured on the same 6500-message mailbox, before and after, one run each:
+
+| | before | after |
+|---|---|---|
+| wall | 5.4s | 2.2s |
+| worst step | 0.618s | 0.022s |
+| collections in the steps | 9, 1.47s | 4, 0.05s |
+| conses | 56.0M | 5.1M |
+| vector words | 323.1M | 4.3M |
+| a response line | 3,775 conses, 23,279 words | 42 conses, 0 words |
+
+The worst stutter a reader sees is 22ms, which is not a stutter. What is left
+of the fetch is the mail itself.
 
 ** Existing examples elsewhere
 
@@ -665,11 +949,10 @@ capability. https://github.com/skeeto/emacs-aio
 
 ** Open questions
 
-- Does generator.el's transform handle unwind-protect inside iter-defun well
-  enough for vm-imap-read-object? Unverified, and it decides between option 2
-  and option 3.
-- What does an interrupted POP session do about pending DELEs? Whether an
-  abandoned continuation reaches QUIT decides between losing deletes and
+- What does an interrupted POP session do about pending DELEs?  Under
+  generators this is decided by whether the driver closes the iterator, not by
+  the garbage collector: see the spike above.  Whether an abandoned
+  continuation reaches QUIT decides between losing deletes and
   losing mail. Needs a test against test/vm-pop-mock.el rather than an
   argument. The mock's silent-on fault aimed at RETR or DELE is one way to
   provoke it; not tried.
@@ -677,7 +960,12 @@ capability. https://github.com/skeeto/emacs-aio
   (lisp/vm-vars.el:7289) and they are the only check on the invariants an
   interleaving would break.
 - Can vm-buffer-types be made per-session without disturbing the 95 sites that
-  use the four buffer-type macros in vm-imap.el? Not investigated.
+  use the four buffer-type macros in vm-imap.el?  Partly investigated
+  (issue #705).  Counting pushes against pops per function found two that took
+  a frame they never pushed, now fixed; the rest balance.  The stack itself is
+  dynamic-extent state that has to survive a resume, so it belongs in the
+  session state object rather than in a global -- which means it is not a
+  separate piece of work but part of building that object.
 
 ** References
 

@@ -18,6 +18,18 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     composes for the same reason.  `vm-zero-drafts-start-compose` still
     decides what happens when there are no drafts anywhere.
 
+  * IMAP and POP no longer stop Emacs.  Fetching mail, loading a body, sending
+    flag changes, expunging, saving, quitting, synchronising, filing an `FCC:`
+    copy and listing mailboxes all happen while you carry on reading
+    (emacs-vm/vm#473).  The folder is not locked while they do: read it, move
+    about it, delete, mark, label and expunge as usual, and work that needs
+    the server runs when the session now running has finished, one session to
+    a folder.  New mail arrives a bunch at a time, so a large mailbox fills in
+    while you read it.  The mode line says what the folder is doing and how
+    far it has got, in the face `vm-net-session-face`.  Two things still wait
+    and say so: saving or copying a message whose body is still on the server,
+    and completing a folder name.  `C-g` works in both.
+
   * `C-u C-u g` (`vm-get-new-mail` with two prefix arguments) fetches every
     message an IMAP mailbox has and the folder has not, including those VM
     has recorded as retrieved once already.  The record is what stops a

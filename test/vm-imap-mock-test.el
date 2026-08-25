@@ -38,12 +38,19 @@
 SPEC is (MOCK-VAR PROCESS-VAR &rest ARGS), ARGS going to `vm-imap-mock-start'.
 BODY runs with the process buffer current, which is where VM's own IMAP
 functions read their responses from -- called anywhere else they read an
-empty buffer and time out."
+empty buffer and time out.
+
+`vm-buffer-types\=' says `process\=' while BODY runs, because that is what a real
+caller has done by the time it gets here: VM pushes the type on its way into a
+connection, and the functions BODY calls assert it.  Without it these tests
+fail with VM's assertions checked -- `test-runner --assert\=' -- which is a test
+setting up a state no caller is in rather than anything wrong with VM."
   (declare (indent 1) (debug t))
   `(vm-imap-mock-with (,(car spec) ,@(cddr spec))
      (let* ((vm-imap-server-timeout 10)
             (,(cadr spec) (vm-imap-make-session (vm-imap-mock-spec ,(car spec))
-                                                nil :purpose "test")))
+                                                nil :purpose "test"))
+            (vm-buffer-types (cons 'process vm-buffer-types)))
        (unwind-protect
            (with-current-buffer (process-buffer ,(cadr spec))
              ,@body)
@@ -67,6 +74,9 @@ would otherwise land in the user's home."
             (before (buffer-list)))
        (unwind-protect
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
+                  ;; visiting starts the fetch and returns without waiting for
+                  ;; it, so what waits for the mail is whoever wants the mail
+                  (vm-imap-net-wait nil 10)
                   ,@body)
          (dolist (buffer (buffer-list))
            (unless (memq buffer before)
@@ -291,8 +301,11 @@ with a shorter list is worth knowing."
 
 (ert-deftest vm-imap-mock-test-a-truncated-fetch-is-an-error ()
   "A download the server cuts off short is an error, not half a message.
-The connection goes with it, so what VM says is that it is not connected --
-the point being that the folder does not end up holding the fragment."
+The point is that the folder does not end up holding the fragment.
+
+Visiting no longer signals it: the fetch happens after the visit has
+returned, so the failure is a warning when it happens rather than an error
+where the command was typed."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice)
                            :truncate-fetch t)
     (let* ((cache (make-temp-file "vm-imap-mock-cache" t))
@@ -300,9 +313,16 @@ the point being that the folder does not end up holding the fragment."
            (vm-imap-server-timeout 10)
            (vm-frame-per-folder nil)
            (vm-mutable-frame-configuration nil)
+           (warned nil)
            (before (buffer-list)))
       (unwind-protect
-          (should-error (vm-visit-imap-folder (vm-imap-mock-spec mock)))
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_l _secs &rest args)
+                       (push (apply #'format args) warned))))
+            (vm-visit-imap-folder (vm-imap-mock-spec mock))
+            (vm-imap-net-wait nil 10)
+            (should (null vm-message-list))
+            (should warned))
         (dolist (buffer (buffer-list))
           (unless (memq buffer before)
             (when (buffer-live-p buffer)
@@ -383,6 +403,7 @@ list is what tells it not to fetch them again, and what
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))
     (should (equal (length vm-imap-retrieved-messages) 2))
@@ -395,8 +416,10 @@ so the messages are not fetched again and the folder does not grow."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-message-list) 2))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-message-list) 2))))
 
 (ert-deftest vm-imap-mock-test-expunging-what-has-been-retrieved ()
@@ -406,14 +429,50 @@ and closes the mailbox, which is what expunges them."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       (vm-expunge-imap-messages))
-    (should (equal (vm-imap-mock-messages mock "INBOX") nil))
+    ;; the expunge goes through the driver, so it lands after the command
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null (vm-imap-mock-messages mock "INBOX")))))
     (should (vm-imap-mock-received-p mock "STORE .*\\\\Deleted"))
     ;; the local folder still has them: this deletes from the server only
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
+
+(ert-deftest vm-imap-mock-test-expunging-forgets-only-what-was-deleted ()
+  "What the server deleted is forgotten and what it did not is kept.
+
+An expunge that fails half way through must leave the rest to be offered
+again rather than forgetting messages that are still on the server."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    ;; the server refuses the STORE, so nothing is deleted and nothing is
+    ;; forgotten
+    (setf (vm-imap-mock-refuse mock) "STORE")
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (let ((said (vm-imap-mock-test--warnings
+                    (vm-expunge-imap-messages)
+                    (vm-imap-mock-test--wait-until
+                     (lambda () vm-imap-mock-test--said)))))
+        (should said)))
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    ;; and with the server willing, both go and both are forgotten
+    (setf (vm-imap-mock-refuse mock) nil)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    ;; not yet: the command returned before the server was even asked, which
+    ;; is what it no longer waits for
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null (vm-imap-mock-messages mock "INBOX")))))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (null vm-imap-retrieved-messages))))))
 
 (ert-deftest vm-imap-mock-test-expunging-nothing-retrieved-touches-nothing ()
   "With nothing retrieved there is nothing to delete, and the server keeps
@@ -446,6 +505,8 @@ back is the UID FETCH the server sees."
       (should (vm-body-to-be-retrieved-of message))
       (should (equal (vm-imap-mock-test--body-of message) ""))
       (vm-load-message 1)
+      ;; the load goes through the driver, so the body lands after it returns
+      (should (vm-imap-net-wait nil 10))
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
                               (vm-imap-mock-test--body-of message)))
@@ -459,6 +520,7 @@ which is what to do with a message whose copy here has gone wrong."
     (let ((vm-enable-external-messages '(imap))
           (message (car vm-message-list)))
       (vm-refresh-message)
+      (should (vm-imap-net-wait nil 10))
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
                               (vm-imap-mock-test--body-of message)))
@@ -484,6 +546,7 @@ the two halves its docstring promises, in that order."
     (vm-set-deleted-flag (car vm-message-list) t)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
     (vm-imap-synchronize)
+    (vm-imap-net-wait nil 10)
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))
     (should (vm-imap-mock-test--has-flag mock "INBOX" 1 "\\Deleted"))
@@ -533,12 +596,16 @@ is taken off the server behind VM's back, and the list comes back to one."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (should (equal (length vm-imap-retrieved-messages) 2))
     (setf (vm-imap-mock-message-expunged
            (car (vm-imap-mock-messages mock "INBOX")))
           t)
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
-    (should (equal (length vm-imap-retrieved-messages) 1))
+    ;; the asking goes through the driver, so the pruning happens when the
+    ;; server has answered rather than before this returns
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (equal (length vm-imap-retrieved-messages) 1))))
     ;; the local messages are untouched: this prunes a memo, not the mail
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
@@ -548,7 +615,12 @@ is taken off the server behind VM's back, and the list comes back to one."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
     (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock))
+    ;; nothing is forgotten, before or after the answer
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (vm-imap-mock-test--wait-until
+     (lambda () (vm-imap-mock-received-p mock "LOGOUT")))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
 ;;; Making, renaming and deleting mailboxes on the server
@@ -562,6 +634,32 @@ a spec naming INBOX gives the name back in capitals."
           (vm-imap-mock-port mock) mailbox
           (vm-imap-mock-user mock) (vm-imap-mock-password mock)))
 
+(defun vm-imap-mock-test--wait-until (predicate &optional seconds)
+  "Wait until PREDICATE answers non-nil, up to SECONDS, and answer with it.
+The mailbox commands go through the driver: they return before the server has
+done what they asked, so a test that reads the mailbox back waits for it."
+  (let ((deadline (+ (float-time) (or seconds 10))))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (funcall predicate)))
+
+(defmacro vm-imap-mock-test--warnings (&rest body)
+  "Run BODY and answer with the warnings VM gave, newest last.
+A command that goes through the driver reports a refusal when the answer
+arrives, so what a failure leaves behind is a warning and not a signal."
+  (declare (indent 0) (debug t))
+  `(let ((vm-imap-mock-test--said nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _seconds &rest args)
+                  (setq vm-imap-mock-test--said
+                        (append vm-imap-mock-test--said
+                                (list (apply #'format args)))))))
+       ,@body)
+     vm-imap-mock-test--said))
+
+(defvar vm-imap-mock-test--said nil
+  "Where `vm-imap-mock-test--warnings' collects what VM warned about.")
+
 (ert-deftest vm-imap-mock-test-creating-a-mailbox ()
   "`vm-create-imap-folder' makes the mailbox its spec names, and the server
 has it afterwards."
@@ -569,16 +667,22 @@ has it afterwards."
     (let ((vm-imap-server-timeout 10))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX")))
       (vm-create-imap-folder (vm-imap-mock-test--spec-for mock "Later"))
-      (should (member "Later" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda () (member "Later" (vm-imap-mock-mailbox-names mock)))))
       (should (vm-imap-mock-received-p mock "CREATE")))))
 
 (ert-deftest vm-imap-mock-test-creating-a-mailbox-that-exists ()
   "Making a mailbox that is already there is refused by the server, and VM
 says so rather than reporting success."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
-    (let ((vm-imap-server-timeout 10))
-      (should-error (vm-create-imap-folder
-                     (vm-imap-mock-test--spec-for mock "INBOX"))))))
+    (let* ((vm-imap-server-timeout 10)
+           (said (vm-imap-mock-test--warnings
+                   (vm-create-imap-folder
+                    (vm-imap-mock-test--spec-for mock "INBOX"))
+                   (vm-imap-mock-test--wait-until
+                    (lambda () vm-imap-mock-test--said)))))
+      (should said)
+      (should (string-match-p "CREATE failed" (car said))))))
 
 (ert-deftest vm-imap-mock-test-renaming-a-mailbox ()
   "`vm-rename-imap-folder' renames it on the server, and what was in it is
@@ -588,7 +692,8 @@ still in it under the new name."
       (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
       (vm-rename-imap-folder (vm-imap-mock-test--spec-for mock "Archive")
                              (vm-imap-mock-test--spec-for mock "Old"))
-      (should (member "Old" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda () (member "Old" (vm-imap-mock-mailbox-names mock)))))
       (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
       (should (equal (length (vm-imap-mock-messages mock "Old")) 1))
       (should (vm-imap-mock-received-p mock "RENAME")))))
@@ -600,7 +705,9 @@ still in it under the new name."
       (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
         (vm-delete-imap-folder (vm-imap-mock-test--spec-for mock "Archive")))
-      (should-not (member "Archive" (vm-imap-mock-mailbox-names mock)))
+      (should (vm-imap-mock-test--wait-until
+               (lambda ()
+                 (not (member "Archive" (vm-imap-mock-mailbox-names mock))))))
       (should (member "INBOX" (vm-imap-mock-mailbox-names mock)))
       (should (vm-imap-mock-received-p mock "DELETE")))))
 
@@ -611,8 +718,13 @@ The mock answers NO, which is what a server does, and VM has to notice."
                            :refuse "DELETE")
     (let ((vm-imap-server-timeout 10))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
-        (should-error (vm-delete-imap-folder
-                       (vm-imap-mock-test--spec-for mock "Nowhere"))))
+        (let ((said (vm-imap-mock-test--warnings
+                      (vm-delete-imap-folder
+                       (vm-imap-mock-test--spec-for mock "Nowhere"))
+                      (vm-imap-mock-test--wait-until
+                       (lambda () vm-imap-mock-test--said)))))
+          (should said)
+          (should (string-match-p "DELETE failed" (car said)))))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX"))))))
 
 ;;; Saving a message to an IMAP folder
@@ -681,6 +793,7 @@ not exist yet is how the first one is made."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                      '("badgers")))
       (should (vm-imap-mock-received-p mock "APPEND"))
@@ -699,6 +812,7 @@ folder that was saved to and not the one before it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should (equal vm-last-save-imap-folder target)))))
 
 (ert-deftest vm-imap-mock-test-saving-without-a-count-saves-one-message ()
@@ -707,6 +821,7 @@ from the prefix argument, and defaulting it to nothing would save the whole
 folder or none of it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (vm-imap-net-wait nil 10)
     (should (equal (length (vm-imap-mock-messages mock "Saved")) 1))))
 
 (ert-deftest vm-imap-mock-test-saving-a-count-of-two-saves-both ()
@@ -714,6 +829,7 @@ folder or none of it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Saved") 2)
+    (vm-imap-net-wait nil 10)
     (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                    '("badgers" "otters")))
     ;; one session for the lot, not one per message: a server counts
@@ -731,6 +847,7 @@ they also pass is not a second opinion about which."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Saved") 1 (cdr vm-message-list))
+    (vm-imap-net-wait nil 10)
     (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                    '("otters")))))
 
@@ -741,9 +858,11 @@ to empty is not a small mistake."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
       (vm-save-message-to-imap-folder target)
+      (vm-imap-net-wait nil 10)
       (should-not (vm-deleted-flag (car vm-message-list)))
       (let ((vm-delete-after-saving t))
-        (vm-save-message-to-imap-folder target))
+        (vm-save-message-to-imap-folder target)
+        (vm-imap-net-wait nil 10))
       (should (vm-deleted-flag (car vm-message-list)))
       (should-not (vm-deleted-flag (nth 1 vm-message-list))))))
 
@@ -753,6 +872,7 @@ for a command that is over, and a server counts them (dovecot's
 `mail_max_userip_connections')."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder (vm-imap-mock-test--spec-for mock "Saved"))
+    (vm-imap-net-wait nil 10)
     (should (vm-imap-mock-test--wait-for mock "LOGOUT"))))
 
 (ert-deftest vm-imap-mock-test-saving-on-the-same-server-copies ()
@@ -766,6 +886,7 @@ down here at all."
       (vm-imap-mock-add-mailbox mock "Saved")
       (vm-save-message-to-imap-folder
        (vm-imap-mock-test--spec-for mock "Saved"))
+      (vm-imap-net-wait nil 10)
       (should (equal (vm-imap-mock-test--saved-subjects mock "Saved")
                      '("badgers")))
       (should (vm-imap-mock-received-p mock "UID COPY"))
@@ -787,6 +908,7 @@ user did not ask for and cannot see."
           (vm-last-save-imap-folder nil))
       (vm-save-message-to-imap-folder
        (vm-imap-mock-test--spec-for mock "Nowhere"))
+      (vm-imap-net-wait nil 10)
       (should (member "Nowhere" (vm-imap-mock-mailbox-names mock)))
       (should (equal (vm-imap-mock-test--saved-subjects mock "Nowhere")
                      '("badgers")))
@@ -804,11 +926,13 @@ verbosity ordinary progress is reported at."
                    (when (string-match-p "saved to" fmt)
                      (push (cons level (apply #'format fmt args)) said)))))
         (vm-save-message-to-imap-folder target)
+        (vm-imap-net-wait nil 10)
         (should (equal (length said) 1))
         (should (equal (car (car said)) 5))
         (should (string-match-p "\\`1 message saved to " (cdr (car said))))
         (setq said nil)
         (vm-save-message-to-imap-folder target 2)
+        (vm-imap-net-wait nil 10)
         (should (string-match-p "\\`2 messages saved to " (cdr (car said))))))))
 
 (ert-deftest vm-imap-mock-test-creating-a-mailbox-leaves-the-parents-alone ()
@@ -821,6 +945,7 @@ the server make the parents."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (vm-save-message-to-imap-folder
      (vm-imap-mock-test--spec-for mock "Parent/Child"))
+    (vm-imap-net-wait nil 10)
     (should (member "Parent/Child" (vm-imap-mock-mailbox-names mock)))
     (should (equal (vm-imap-mock-test--saved-subjects mock "Parent/Child")
                    '("badgers")))
@@ -911,6 +1036,7 @@ its unwind-protect, so it too came back a frame short."
       ;; what vm-quit leaves behind for the next session to act on
       (setq vm-imap-messages-to-expunge (list (cons uid validity)))
       (vm-imap-expunge-remote-messages)
+      (vm-imap-net-wait nil 10)
       (should (equal (length vm-buffer-types) before))
       ;; and the message really went, so this is the expunge path and not an
       ;; early return that never reached the stack at all
@@ -962,6 +1088,43 @@ strictly."
       ;; two lengths in a row, each landing on the next message
       (should (vm-folder-looks-like-mboxcl2-p)))))
 
+;;; what a background fetch says while it runs (issue #473)
+
+(defmacro vm-imap-mock-test--shown (&rest body)
+  "Run BODY and answer with the messages VM showed, oldest first.
+What `vm-inform' put in the echo area, so a message above `vm-verbosity' --
+logged and not shown -- does not appear here, which is the difference being
+tested."
+  (declare (indent 0) (debug t))
+  `(let ((shown nil))
+     (cl-letf (((symbol-function 'vm-emit-message)
+                (lambda (level text)
+                  (when (<= level vm-verbosity)
+                    (setq shown (append shown (list text)))
+                    text))))
+       ,@body)
+     shown))
+
+(ert-deftest vm-imap-mock-test-a-fetch-says-the-start-and-the-end-only ()
+  "A fetch running in the background does not talk over the echo area.
+Whoever is using Emacs while it runs is the reason it runs in the background,
+and a line per bunch of messages is in the way of them.  The count is in the
+mode line, live, and every line is in the log.
+
+So: the list is being read, the messages are being retrieved, and what
+arrived.  Nothing per bunch, and the totals once rather than twice -- they
+were printed on their own and again inside the line that followed."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (let* ((said (vm-imap-mock-test--shown
+                   (vm-imap-net-synchronize t)
+                   (vm-imap-net-wait nil 10)))
+           (progress (seq-filter (lambda (s) (string-match-p "of [0-9]+ messages retrieved" s))
+                                 said))
+           (totals (seq-filter (lambda (s) (string-match-p "new, [0-9]+ unread" s))
+                               said)))
+      (should-not progress)
+      (should (>= 1 (length totals))))))
 
 ;;; A keyword the server takes and does not keep (issue #601)
 

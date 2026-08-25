@@ -1002,9 +1002,12 @@ The saved messages are flagged as `filed'."
       (setq mlist 
 	    (vm-select-operable-messages count (vm-interactive-p) "Save")))
     (setq mailbox (nth 3 target-spec-list))
+    (when (vm-imap-net-save-messages-to-folder folder mlist count)
+      ;; on its way, and this returns before it lands
+      (setq mlist nil))
     (unwind-protect
 	(save-excursion
-	  (vm-inform 5 "Saving messages...")
+	  (when mlist (vm-inform 5 "Saving messages..."))
 	  (setq ml mlist)
 	  (while ml
 	    (setq m (vm-real-message-of (car ml)))
@@ -1049,10 +1052,11 @@ The saved messages are flagged as `filed'."
 	    (vm-inform 6 "Saving messages... %s" save-count)
 	    (setq ml (cdr ml))))
       (when process (vm-imap-end-session process))
-      (vm-inform 5 "%d message%s saved to %s"
-	       save-count (if (/= 1 save-count) "s" "")
-	       (or (vm-imap-folder-for-spec folder)
-		   (vm-safe-imapdrop-string folder)))
+      (when (> save-count 0)
+	(vm-inform 5 "%d message%s saved to %s"
+		   save-count (if (/= 1 save-count) "s" "")
+		   (or (vm-imap-folder-for-spec folder)
+		       (vm-safe-imapdrop-string folder))))
       (vm-update-summary-and-mode-line)
       (setq vm-last-save-imap-folder folder))
     ;; We call delete-message again even though the deleted-flags have

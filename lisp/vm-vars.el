@@ -6448,6 +6448,19 @@ may include some messages that are really on disk.")
 (make-variable-buffer-local 'vm-totals)
 (defvar vm-modification-counter 0)
 (make-variable-buffer-local 'vm-modification-counter)
+(defvar vm-message-list-generation 0
+  "How many times `vm-message-list\\=' stopped being an extension of itself.
+Incremented wherever the list is rewritten or a message is taken out of it,
+and deliberately not where one is appended: appending leaves every cons that
+was there where it was, so whoever holds the last cons can walk forward from
+it and see what has arrived, and needs to start again only when this number
+moves.  `vm-imap-net-uids-held\\=' reads it that way, a fetch asking it once
+per arriving message.
+
+A site that changes the list and does not increment this is a bug in that
+site.  Incrementing where an append would have done is not: it costs whoever
+is following the list one walk of it.")
+(make-variable-buffer-local 'vm-message-list-generation)
 (defvar vm-flushed-modification-counter nil)
 (make-variable-buffer-local 'vm-flushed-modification-counter)
 (defvar vm-tempfile-counter 0)
@@ -6946,6 +6959,13 @@ append a space to words that complete unambiguously.")
     "VM comes with ABSOLUTELY NO WARRANTY; type \\[vm-show-no-warranty] for full details"))
 (defconst vm-startup-message-displayed nil)
 ;; for the mode line
+(defvar vm-ml-session nil
+  "What this folder is doing with its server, for the mode line.
+A string such as \" IMAP fetch\", or nil when the folder is not talking to
+anything.  Set by the driver in lisp/vm-net.el and copied into the folder's
+summary and presentation buffers, so that all three say the same thing.")
+(make-variable-buffer-local 'vm-ml-session)
+
 (defconst vm-mode-line-format-robf
   '("- " 
     (vm-compositions-exist ("" vm-ml-composition-buffer-count " / "))
@@ -6962,6 +6982,7 @@ append a space to words that complete unambiguously.")
       (vm-folder-type
        " (unrecognized folder type)"
        " (no messages)")))
+    (vm-ml-session ("" vm-ml-session))
     (vm-message-list
      (" %[ " vm-ml-message-attributes-alist
       (vm-ml-labels ("; " vm-ml-labels)) " %] ")
@@ -6984,6 +7005,7 @@ append a space to words that complete unambiguously.")
        "   (unrecognized folder type)"
        "   (no messages)")))
     (vm-spooled-mail-waiting " Mail")
+    (vm-ml-session ("" vm-ml-session))
     (vm-message-list
      ("  %[ " vm-ml-message-attributes-alist
       (vm-ml-labels ("; " vm-ml-labels)) " %]    ")

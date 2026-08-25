@@ -722,7 +722,11 @@ preview or the full message, governed by the the variables
      (when vm-external-fetch-message-for-presentation
        (when (vm-body-to-be-retrieved-of (car vm-message-pointer))
 	 (let ((mm (vm-real-message-of (car vm-message-pointer))))
-	   (vm-retrieve-real-message-body mm :fetch t :register t))))
+	   ;; the body may arrive after this returns: presentation is where
+	   ;; that is what the reader wants -- the message now, its body when
+	   ;; the server answers -- and the fetch shows it again then
+	   (vm-retrieve-real-message-body mm :fetch t :register t
+					  :may-arrive-later t))))
      ;; 1b. create a virtual copy if in a virtual folder
      (when vm-real-buffers
        (vm-make-virtual-copy (car vm-message-pointer)))

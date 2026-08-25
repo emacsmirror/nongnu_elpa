@@ -55,6 +55,11 @@
 (declare-function vm-imap-end-session "vm-imap"
 		  (process &optional imap-buffer keep-buffer))
 (declare-function vm-imap-synchronize-folder "vm-imap" t)
+(declare-function vm-net-error-p "vm-net" (value))
+(declare-function vm-imap-net-send-changes "vm-imap-net" ())
+(declare-function vm-imap-net-stop "vm-imap-net" ())
+(declare-function vm-pop-net-stop "vm-pop-net" ())
+(declare-function vm-pop-net-send-changes "vm-pop-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
 (declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
@@ -547,6 +552,7 @@ on its presentation buffer, if any."
 				   'vm-ml-sort-keys
 				   'vm-ml-labels
 				   'vm-spooled-mail-waiting
+				   'vm-ml-session
 				   'vm-message-list)
 	  (vm-reset-buffer-modified-p modified vm-summary-buffer)))
   (if (and vm-presentation-buffer (buffer-name vm-presentation-buffer))
@@ -572,6 +578,7 @@ on its presentation buffer, if any."
 				 'vm-virtual-mirror
 				 'vm-ml-labels
 				 'vm-spooled-mail-waiting
+				 'vm-ml-session
 				 'vm-message-list)
 	(vm-reset-buffer-modified-p modified vm-presentation-buffer)))
   (vm-force-mode-line-update))
@@ -2317,27 +2324,36 @@ Supports version 4 format of attribute storage, for backward compatibility."
 			    vm-unread-count
 			    vm-deleted-count)))))
 
-;;;###autoload
-(defun vm-emit-totals-blurb ()
-  "Say how many messages the folder holds, and how many are in each state.
-New, unread and deleted are counted separately, and a folder with nothing
-in it says so.  This is the line the mode line summarises, printed on
-demand.  The totals are recomputed only when the folder has changed since
-they were last worked out."
-  (interactive)
+(defun vm-totals-blurb ()
+  "How many messages the folder holds, and how many are in each state.
+New, unread and deleted are counted separately, and a folder with nothing in
+it says so.  This is the line the mode line summarises.  The totals are
+recomputed only when the folder has changed since they were last worked out.
+
+Answers the line without showing it, for a caller that puts it in a message
+of its own: showing it here as well printed the same counts twice, once on
+its own and once inside the line that followed it."
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
     (let ((folder (buffer-name)))
       (if (not (equal (nth 0 vm-totals) vm-modification-counter))
 	  (vm-compute-totals))
       (if (equal (nth 1 vm-totals) 0)
-	  (vm-inform 5 "%s: No messages." folder)
-	(vm-inform 5 "%s: %d message%s, %d new, %d unread, %d deleted"
-		   folder
-		   (nth 1 vm-totals) (if (= (nth 1 vm-totals) 1) "" "s")
-		   (nth 2 vm-totals)
-		   (nth 3 vm-totals)
-		   (nth 4 vm-totals))))))
+	  (format "%s: No messages." folder)
+	(format "%s: %d message%s, %d new, %d unread, %d deleted"
+		folder
+		(nth 1 vm-totals) (if (= (nth 1 vm-totals) 1) "" "s")
+		(nth 2 vm-totals)
+		(nth 3 vm-totals)
+		(nth 4 vm-totals))))))
+
+;;;###autoload
+(defun vm-emit-totals-blurb ()
+  "Show the line `vm-totals-blurb' answers, and answer with it."
+  (interactive)
+  (let ((blurb (vm-totals-blurb)))
+    (vm-inform 5 "%s" blurb)
+    blurb))
 
 (defun vm-convert-v4-attributes (data)
   (list (apply 'vector
@@ -2691,6 +2707,7 @@ notice and refuse, as it does for any other stale UID."
     ;; lock out interrupts while the message list is in
     ;; an inconsistent state.
     (let ((inhibit-quit t))
+      (vm-increment vm-message-list-generation)
       (setq vm-message-list (delq nil (append v mp))
 	    vm-message-order-changed nil
 	    vm-message-order-header-present t
@@ -3661,6 +3678,7 @@ good, with nothing said -- issue #556."
 		(setq imap-to-expunge (and (>= index-version 2)
 					   (read work-buffer)))
 
+		(vm-increment vm-message-list-generation)
 		(setq vm-message-list m-list
 		      vm-folder-type folder-type
 		      vm-pop-retrieved-messages pop-retrieved
@@ -4155,7 +4173,12 @@ changes should be discarded."
     ;;    their virtual copies.
     (vm-virtual-quit no-expunge no-change)
 
-    ;; 6. Kill the folder along with its buffers and processes
+    ;; 6. Kill the folder along with its buffers and processes.
+    ;;    What it is doing without waiting stops first: the buffer is about to
+    ;;    go, and a session that went on writing into it would be writing into
+    ;;    nothing.  Nothing is lost that is not still on the server.
+    (vm-imap-net-stop)
+    (vm-pop-net-stop)
     (cond ((and (eq vm-folder-access-method 'pop)
 		(setq process (vm-folder-pop-process)))
 	   (vm-pop-end-session process))
@@ -4551,16 +4574,28 @@ folder."
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
 	  (cond ((eq vm-folder-access-method 'pop)
-		 (vm-pop-synchronize-folder :interactive t 
-					    :do-remote-expunges t 
-					    :do-local-expunges t 
-					    :do-retrieves nil))
+		 ;; as for IMAP below: the deletions go without waiting, and
+		 ;; what the server no longer has is the next fetch's business
+		 (unless (vm-pop-net-send-changes)
+		   (vm-pop-synchronize-folder :interactive t
+					      :do-remote-expunges t
+					      :do-local-expunges t
+					      :do-retrieves nil)))
 		((eq vm-folder-access-method 'imap)
-		 (vm-imap-synchronize-folder :interactive t 
-					     :do-remote-expunges t 
-					     :do-local-expunges t 
-					     :do-retrieves nil
-					     :save-attributes t)))
+		 ;; What the save owes the server goes without waiting: the
+		 ;; flags that changed and the deletions asked for.  The
+		 ;; blocking synchronisation also worked out what the server
+		 ;; had expunged, which means downloading the flags of every
+		 ;; message in the mailbox -- nineteen seconds on a folder of
+		 ;; six thousand, with Emacs held still, on every quit.  The
+		 ;; next fetch and `vm-imap-synchronize' both work that out
+		 ;; anyway.
+		 (unless (vm-imap-net-send-changes)
+		   (vm-imap-synchronize-folder :interactive t
+					       :do-remote-expunges t
+					       :do-local-expunges t
+					       :do-retrieves nil
+					       :save-attributes t))))
 	  (vm-discard-fetched-messages)
           ;; remove the message summary file of Thunderbird and force
 	  ;; it to rebuild it.  Expect error if Thunderbird is active.
@@ -5167,6 +5202,79 @@ implementation than the expected one damages mail -- so this asks instead."
 (defun vm-movemail-specific-spool-file-p (file)
   (string-match "^po:[^:]+$" file))
 
+;; The non-blocking POP layer, which the mail check uses.  Required here
+;; rather than declared: the check runs from a timer, and a timer is a poor
+;; place to discover that a file has not been loaded.
+(require 'vm-pop-net)
+(require 'vm-imap-net)
+
+(defvar vm-mail-check-answers nil
+  "What the last check of each of this folder's maildrops said.
+An alist of maildrop to t or nil.  A check that does not wait cannot answer
+in the round that started it, so its answer is kept here and counted by the
+rounds after it (emacs-vm/vm#473).")
+(make-variable-buffer-local 'vm-mail-check-answers)
+
+(defvar vm-mail-checks-outstanding nil
+  "The maildrops of this folder with a check still to answer.
+One check at a time for each: the timer fires every
+`vm-mail-check-interval\=' seconds, and a server slower than that would
+otherwise be asked again before it had answered the first time.")
+(make-variable-buffer-local 'vm-mail-checks-outstanding)
+
+(defun vm-mail-waiting-p (maildrop)
+  "What the last check of MAILDROP said, for this folder."
+  (cdr (assoc maildrop vm-mail-check-answers)))
+
+(defun vm-note-mail-waiting (buffer maildrop answer)
+  "Record in BUFFER what a check of MAILDROP found, and show it.
+
+ANSWER is t, nil, or the error that stopped the check -- an error leaves
+the last answer standing rather than reporting no mail, which is what a
+folder would show while a server was down.
+
+Called from a process filter, so it takes the buffer it was given: the one
+that is current belongs to whoever was typing."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq vm-mail-checks-outstanding
+	    (delete maildrop vm-mail-checks-outstanding))
+      (unless (and answer (not (eq answer t)))
+	(setf (alist-get maildrop vm-mail-check-answers nil nil #'equal)
+	      answer)
+	(let ((waiting (and (rassq t vm-mail-check-answers) t)))
+	  (unless (eq waiting vm-spooled-mail-waiting)
+	    (setq vm-spooled-mail-waiting waiting)
+	    (intern (buffer-name) vm-buffers-needing-display-update)
+	    (run-hooks 'vm-spooled-mail-waiting-hook)
+	    (vm-update-summary-and-mode-line)))))))
+
+(defun vm-start-mail-check (maildrop)
+  "Ask MAILDROP whether it has mail, and carry on without the answer.
+
+Not while this folder is fetching: the check would open a second connection
+to a maildrop VM is in the middle of reading, and a POP server holds one
+session at a time -- the second is refused, or worse, taken and the first
+one's view of the maildrop is stale.  The fetch will say what arrived
+anyway, which is what the check was going to ask."
+  (unless (or (member maildrop vm-mail-checks-outstanding)
+	      (vm-pop-net-busy-p)
+	      (vm-imap-net-busy-p))
+    (let ((buffer (current-buffer)))
+      (setq vm-mail-checks-outstanding
+	    (cons maildrop vm-mail-checks-outstanding))
+      (condition-case err
+	  (funcall (if (vm-imap-folder-spec-p maildrop)
+		       #'vm-imap-net-check-mail
+		     #'vm-pop-net-check-mail)
+		   maildrop
+		   (lambda (answer)
+		     (vm-note-mail-waiting buffer maildrop answer)))
+	(error
+	 (setq vm-mail-checks-outstanding
+	       (delete maildrop vm-mail-checks-outstanding))
+	 (signal (car err) (cdr err)))))))
+
 (defvar vm-mail-check-failed nil
   "Whether the last check of this folder's server for new mail failed.
 The periodic check runs every `vm-mail-check-interval\=' seconds, so a
@@ -5201,11 +5309,13 @@ folder is then left alone until a check succeeds again; set
       nil
     (if (and vm-folder-access-method this-buffer-only)
 	(cond ((eq vm-folder-access-method 'pop)
-	       (vm-check-folder-for-mail interactive
-					 #'vm-pop-folder-check-mail))
+	       (or (vm-pop-net-folder-check-mail)
+		   (vm-check-folder-for-mail interactive
+					     #'vm-pop-folder-check-mail)))
 	      ((eq vm-folder-access-method 'imap)
-	       (vm-check-folder-for-mail interactive
-					 #'vm-imap-folder-check-mail)))
+	       (or (vm-imap-net-folder-check-mail)
+		   (vm-check-folder-for-mail interactive
+					     #'vm-imap-folder-check-mail))))
       (let ((triples (vm-compute-spool-files (not this-buffer-only)))
 	    ;; since we could accept-process-output here (POP code),
 	    ;; a timer process might try to start retrieving mail
@@ -5234,16 +5344,30 @@ folder is then left alone until a check succeeds again; set
 			  ((vm-pop-folder-spec-p maildrop)
 			   (setq meth 'vm-pop-check-mail))
 			  (t (setq meth 'vm-spool-check-mail)))
-		    (if (not interactive)
-			;; allow no error to be signaled
-			(condition-case nil
-			    (setq mail-waiting
-				  (or mail-waiting
-				      (funcall meth maildrop)))
-			  (error nil))
+		    (cond
+		     ;; A maildrop VM can ask without waiting is asked without
+		     ;; waiting: the check is started here and its answer
+		     ;; arrives at `vm-note-mail-waiting'.  What this round
+		     ;; contributes is the answer the last one got
+		     ;; (emacs-vm/vm#473).
+		     ((or (and (eq meth 'vm-pop-check-mail)
+			       (vm-pop-net-checkable-p maildrop))
+			  (and (eq meth 'vm-imap-check-mail)
+			       (vm-imap-net-checkable-p maildrop)))
+		      (vm-start-mail-check maildrop)
+		      (setq mail-waiting
+			    (or mail-waiting (vm-mail-waiting-p maildrop))))
+		     ((not interactive)
+		      ;; allow no error to be signaled
+		      (condition-case nil
+			  (setq mail-waiting
+				(or mail-waiting
+				    (funcall meth maildrop)))
+			(error nil)))
+		     (t
 		      (setq mail-waiting
 			    (or mail-waiting
-				(funcall meth maildrop)))))))
+				(funcall meth maildrop))))))))
 	  (setq triples (cdr triples)))
 	mail-waiting ))))
 
@@ -5265,16 +5389,71 @@ ignore it."
 				    :do-retrieves t))
 	((eq vm-folder-access-method 'imap)
 	 (let ((do-retrieves (if full 'full t)))
-	   (if vm-imap-sync-on-get
-	       (progn
+	   (or (vm-imap-net-get-spooled-mail interactive full)
+	       (if vm-imap-sync-on-get
+		   (progn
+		     (vm-imap-synchronize-folder :interactive interactive
+						 :do-local-expunges t
+						 :do-retrieves do-retrieves
+						 :save-attributes t
+						 :retrieve-attributes t))
 		 (vm-imap-synchronize-folder :interactive interactive
-					     :do-local-expunges t
-					     :do-retrieves do-retrieves
-					     :save-attributes t
-					     :retrieve-attributes t))
-	     (vm-imap-synchronize-folder :interactive interactive
-					 :do-retrieves do-retrieves))))
+					     :do-retrieves do-retrieves)))))
 	(t (vm-get-spooled-mail-normal interactive))))
+
+(defun vm-spooled-mail-arrived (crash safe-maildrop)
+  "Take what a session wrote into CRASH into this folder.
+The tail of the spool loop, run when the mail lands rather than when the
+command was typed: gobble the crash box, take the messages into the message
+list, and say where they came from."
+  (when (vm-gobble-crash-box crash)
+    (setq vm-spooled-mail-waiting nil)
+    (intern (buffer-name) vm-buffers-needing-display-update)
+    (condition-case errmsg
+	(run-hooks 'vm-retrieved-spooled-mail-hook)
+      (t (vm-warn 0 2 (concat "Ignoring error while running "
+			      "vm-retrieved-spooled-mail-hook. %S")
+		  errmsg)))
+    (vm-assimilate-new-messages :read-attributes nil)
+    ;; and one of them is made current, as `vm-get-new-mail' does after the
+    ;; blocking fetch: a folder that was empty has no current message until
+    ;; this runs, and every command that works on the current message takes
+    ;; `(car vm-message-pointer)' and gets nil
+    (if (vm-thoughtfully-select-message)
+	(vm-present-current-message)
+      (vm-update-summary-and-mode-line))
+    (vm-inform 5 "Got mail from %s." safe-maildrop)
+    t))
+
+(defun vm-start-spooled-mail (retrieval-function maildrop crash safe-maildrop)
+  "Start fetching MAILDROP into CRASH without waiting, if that can be done.
+Answers with whether it started.  Nil means this maildrop is one that has to
+be fetched the blocking way, and the caller does that.
+
+SAFE-MAILDROP is the name to show; RETRIEVAL-FUNCTION says which protocol it
+is, being what the blocking path would have called."
+  (let ((folder (current-buffer))
+	(starter (cond ((eq retrieval-function 'vm-imap-move-mail)
+			#'vm-imap-net-move-mail)
+		       ((eq retrieval-function 'vm-pop-move-mail)
+			#'vm-pop-net-get-mail))))
+    (and starter
+	 (condition-case nil
+	     (progn
+	       (funcall starter maildrop crash
+			(lambda (result)
+			  (cond
+			   ((vm-net-error-p result)
+			    (vm-warn 0 2 "%s: %s" safe-maildrop
+				     (error-message-string result)))
+			   ((and (numberp result) (> result 0))
+			    (with-current-buffer folder
+			      (vm-spooled-mail-arrived crash safe-maildrop)))
+			   (t
+			    (vm-inform 5 "No mail from %s." safe-maildrop)))))
+	       t)
+	   (vm-imap-net-unsupported nil)
+	   (vm-pop-net-unsupported nil)))))
 
 (defun vm-get-spooled-mail-normal (&optional interactive)
   (if vm-global-block-new-mail
@@ -5337,7 +5516,11 @@ ignore it."
 		(setq maildrop 
 		      (expand-file-name maildrop 
 					vm-folder-directory)))
-	      (when (if got-mail
+	      (when (if (vm-start-spooled-mail retrieval-function maildrop
+					       crash safe-maildrop)
+			;; on its way; the crash box is gobbled when it lands
+			nil
+		      (if got-mail
 			;; don't allow errors to be signaled unless no
 			;; mail has been appended to the incore
 			;; copy of the folder.  otherwise the
@@ -5362,7 +5545,7 @@ ignore it."
 				;; not, so return t just to be
 				;; safe.
 				t ))
-		      (funcall retrieval-function maildrop crash))
+		      (funcall retrieval-function maildrop crash)))
 		(when (vm-gobble-crash-box crash)
 		  (setq got-mail t)
 		  (vm-inform 5 "Got mail from %s."
@@ -5873,6 +6056,10 @@ folder-access-data should be preserved."
    vm-undo-record-pointer nil
    vm-virtual-buffers (vm-link-to-virtual-buffers)
    vm-folder-type (vm-get-folder-type))
+  ;; the list was emptied above, and this counter is not reset with it: a
+  ;; reader of the folder this buffer held before has to see the number move,
+  ;; and one set back to zero would look to it like nothing had happened
+  (vm-increment vm-message-list-generation)
   (when (not reload)
     (cond ((eq access-method 'pop)
 	   (setq vm-folder-access-method 'pop)
@@ -6730,6 +6917,13 @@ thread are loaded."
     (unwind-protect
 	(save-excursion
 	  (vm-inform 8 "Retrieving message body...")
+	  ;; IMAP bodies go through the driver where the maildrop allows it:
+	  ;; one command for all of them, and nothing waits for the answer.
+	  (let ((wanted (vm-imap-messages-to-fetch mlist)))
+	    (when (and wanted (vm-imap-net-load-message-bodies wanted))
+	      (setq mlist (seq-remove
+			   (lambda (m) (memq (vm-real-message-of m) wanted))
+			   mlist))))
 	  ;; More than one body to fetch from the same IMAP folder is one
 	  ;; command, not one each (issue #185).
 	  (let ((bunch (vm-messages-to-fetch-together mlist)))
@@ -6837,8 +7031,8 @@ thread are retrieved."
       )))
 
 (cl-defun vm-retrieve-real-message-body (mm &key
-					  (fetch nil) (register nil) 
-					  (fail nil))
+					  (fetch nil) (register nil)
+					  (fail nil) (may-arrive-later nil))
   "Retrieve the body of a real message MM from its external
 source and insert it into the Folder buffer.  
 
@@ -6862,12 +7056,25 @@ Gives an error if unable to retrieve message."
 	     (modified (buffer-modified-p))
 	     (fetch-result nil))
 	 (vm-make-room-for-message-body mm)
-	 ;; Remember that this does I/O and accept-process-output,
-	 ;; allowing concurrent threads to run!!!  USR, 2010-07-11
+	 ;; MAY-ARRIVE-LATER goes through the driver, where the maildrop allows
+	 ;; it: nothing waits, and a body wanted while a fetch is running is
+	 ;; fetched when that one ends rather than by a second session writing
+	 ;; this same folder.  The message is shown without its body for now and
+	 ;; the fetch's own callback shows it again when it lands.
+	 ;;
+	 ;; Without it the body has to be here when this returns -- the caller
+	 ;; is saving the message, or copying it -- and a message whose body
+	 ;; has not arrived would be written without one.  That path blocks, and
+	 ;; waits for the folder's own session first rather than opening a
+	 ;; second one.
 	 (condition-case err
 	     (setq fetch-result
-		   (apply (intern (format "vm-fetch-%s-message" fetch-method))
-			  mm nil))
+		   (if (and may-arrive-later
+			    (eq fetch-method 'imap)
+			    (vm-imap-net-load-message-bodies (list mm)))
+		       nil
+		     (apply (intern (format "vm-fetch-%s-message" fetch-method))
+			    mm nil)))
 	   (error 
 	    (if fail
 		(error "Unable to load message; %s"
@@ -6896,6 +7103,23 @@ a mixed list gets.  Issue #185."
 	 (reals (delete-dups (mapcar #'vm-real-message-of wanted)))
 	 (buffers (delete-dups (mapcar #'vm-buffer-of reals))))
     (and (cdr reals)			; more than one
+	 (null (cdr buffers))		; all in the same folder
+	 reals)))
+
+(defun vm-imap-messages-to-fetch (mlist)
+  "The messages of MLIST whose bodies are to be fetched from one IMAP folder.
+Like `vm-messages-to-fetch-together\=', but a single message counts: the
+driver sends one command either way, and there is no round trip to save by
+treating one differently from four."
+  (let* ((wanted (seq-filter
+		  (lambda (m)
+		    (let ((mm (vm-real-message-of m)))
+		      (and (vm-body-to-be-retrieved-of mm)
+			   (eq (vm-message-access-method-of mm) 'imap))))
+		  mlist))
+	 (reals (delete-dups (mapcar #'vm-real-message-of wanted)))
+	 (buffers (delete-dups (mapcar #'vm-buffer-of reals))))
+    (and reals
 	 (null (cdr buffers))		; all in the same folder
 	 reals)))
 

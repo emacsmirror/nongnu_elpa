@@ -525,6 +525,7 @@ exactly where someone is reading the output and wondering what went wrong."
     (vm-summary-redo-start-point . nil)
     (vm-folder-read-only . nil)
     (vm-modification-counter . 0)
+    (vm-message-list-generation . 0)
     (vm-messages-not-on-disk . 0)
     (vm-totals . nil)
     (vm-thread-obarray . nil)
@@ -796,7 +797,13 @@ cost more than the tests do."
 A folder buffer outlives its test just as readily as a variable does, and it
 carries a whole folder's worth of buffer-local state plus a name that the next
 test's `get-buffer' will find.  Session buffers are the common case, since VM
-keeps them for reuse and the variable holding them has just been wound back."
+keeps them for reuse and the variable holding them has just been wound back.
+
+Liveness is asked again after the process goes: deleting one runs its
+sentinel, and a sentinel may kill buffers -- an asynchronous session tidies up
+its own when its connection dies, and that buffer is usually further down this
+very list.  Asking once left `set-buffer' with a killed buffer, which took
+down the whole run rather than the one test."
   (dolist (buffer (buffer-list))
     (unless (memq buffer buffers)
       (when (buffer-live-p buffer)
@@ -805,7 +812,8 @@ keeps them for reuse and the variable holding them has just been wound back."
             ;; Killing a buffer whose process is still live asks for
             ;; confirmation, and a question in batch reads stdin.
             (set-process-query-on-exit-flag process nil)
-            (ignore-errors (delete-process process))))
+            (ignore-errors (delete-process process)))))
+      (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (set-buffer-modified-p nil)
           ;; `vm-postpone' offers to save a composition as a draft from
@@ -826,6 +834,16 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
     (cancel-timer vm-update-composition-buffer-name-timer)
     (setq vm-update-composition-buffer-name-timer nil)))
 
+(defun vm-test-no-reader-here (&rest _)
+  "Refuse to ask for a password, which is what batch has to do.
+
+`read-passwd' in a batch Emacs waits on standard input for ever: a test that
+reached a password prompt did not fail, it hung, and took the whole run with
+it -- an hour of a suite for one test asking a question nobody was there to
+answer.  A test that means to be asked binds this away with `cl-letf' and
+answers for itself."
+  (error "No reader here to give a password to"))
+
 (defun vm-test-run-test-isolated (run-test test)
   "Run TEST through RUN-TEST, then undo its effect on global state."
   (if (not vm-test-isolate-global-state)
@@ -833,7 +851,8 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
     (let ((state (vm-test-snapshot-global-state))
           (buffers (buffer-list)))
       (unwind-protect
-          (funcall run-test test)
+          (cl-letf (((symbol-function 'read-passwd) #'vm-test-no-reader-here))
+            (funcall run-test test))
         (vm-test-cancel-composition-timer)
         (vm-test-restore-global-state state)
         (vm-test-kill-new-buffers buffers)))))

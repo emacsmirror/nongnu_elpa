@@ -1535,11 +1535,7 @@ folder to the type it already is recomputes every length.
 @macro vmdocvmemittotalsblurb
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
-Say how many messages the folder holds, and how many are in each state.
-New, unread and deleted are counted separately, and a folder with nothing
-in it says so.  This is the line the mode line summarises, printed on
-demand.  The totals are recomputed only when the folder has changed since
-they were last worked out.
+Show the line @code{vm-totals-blurb} answers, and answer with it.
 @end deffn
 
 @end macro

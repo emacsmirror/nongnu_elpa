@@ -779,6 +779,7 @@ virtual folder of all messages."
           (and (cdr curr)
                (vm-set-reverse-link-of (car (cdr curr)) prev)))
         ;; CURR is out of the list, so its message is out of the folder.
+        (vm-increment vm-message-list-generation)
         (vm-virtual-deregister-message (car curr)))
       (setq mp (cdr mp)))
 

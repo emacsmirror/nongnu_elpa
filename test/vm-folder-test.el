@@ -1455,6 +1455,28 @@ mail."
       (should (string-match-p "#538" text))               ; and the caveat
       (should (string-match-p (regexp-quote exec-directory) text)))))
 
+(ert-deftest vm-folder-test-arriving-spooled-mail-makes-a-message-current ()
+  "Mail arriving into an empty folder leaves it with a current message.
+
+`vm-get-new-mail' selects one after the blocking fetch; the asynchronous path
+does not go through it, so the folder was left with messages in its list and
+nothing in `vm-message-pointer', and the next command that worked on the
+current message failed with \"Wrong type argument: arrayp, nil\"."
+  (vm-test-with-real-folder (0)
+    (should (null vm-message-list))
+    (should (null vm-message-pointer))
+    (let ((crash (expand-file-name "crash" dir)))
+      (with-temp-file crash
+        (insert "From alice@example.com  Mon Jan  1 00:00:00 2024\n"
+                "From: Alice <alice@example.com>\n"
+                "Subject: hello\n"
+                "\n"
+                "Body.\n\n"))
+      (should (vm-spooled-mail-arrived crash "spool"))
+      (should (equal (length vm-message-list) 1))
+      (should vm-message-pointer)
+      (should (equal (vm-su-subject (car vm-message-pointer)) "hello")))))
+
 (ert-deftest vm-folder-test-movemail-copies-the-spool-unaltered ()
   "The movemail VM defaults to copies a spool file byte for byte.
 The property the default is chosen for, checked against the mbox from #538: a
@@ -4450,12 +4472,19 @@ regexp that matched nothing used to be."
 (defmacro vm-folder-test--with-a-failing-check (method function &rest body)
   "Run BODY in a folder buffer of METHOD whose server check always fails.
 FUNCTION is the blocking check that METHOD reaches, stubbed to signal the
-error a maildrop with no password gives."
+error a maildrop with no password gives.
+
+The checks that do not wait are stubbed to answer nil, which is what they
+answer for a maildrop VM holds no password for -- `vm-imap-net-checkable-p\='
+refuses one -- and is what sends the check down to FUNCTION.  Stubbed by
+name so that this reads the same on a branch where they do not exist."
   (declare (indent 2) (debug t))
   `(with-temp-buffer
      (setq vm-folder-access-method ,method)
      (let ((vm-global-block-new-mail nil))
-       (cl-letf (((symbol-function ,function)
+       (cl-letf (((symbol-function 'vm-imap-net-folder-check-mail) #'ignore)
+                 ((symbol-function 'vm-pop-net-folder-check-mail) #'ignore)
+                 ((symbol-function ,function)
                   (lambda (&rest _)
                     (error "Need password for gmail:INBOX for checkmail"))))
          ,@body))))
@@ -5025,11 +5054,16 @@ to From_, rather than losing the extension it was given."
 ;; could not be refilled.
 
 (defun vm-folder-test--retrieves-asked-for (full)
-  "What `vm-get-spooled-mail' asks an IMAP folder for, given FULL."
+  "What `vm-get-spooled-mail' asks an IMAP folder for, given FULL.
+The driver is refused where there is one, so what is measured is the blocking
+call either way: on the asynchronous branch `vm-imap-net-get-spooled-mail' is
+tried first and this is its fallback."
   (let (asked)
     (cl-letf (((symbol-function 'vm-imap-synchronize-folder)
                (lambda (&rest arguments)
-                 (setq asked (plist-get arguments :do-retrieves)))))
+                 (setq asked (plist-get arguments :do-retrieves))))
+              ((symbol-function 'vm-imap-net-get-spooled-mail)
+               (lambda (&rest _) nil)))
       (vm-get-spooled-mail nil full))
     asked))
 

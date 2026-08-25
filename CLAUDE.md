@@ -178,6 +178,27 @@ git push -o merge_request.create \
          -u origin issue-NNN-brief-description
 ```
 
+### The async branch
+
+`develop-async` on `central` is the integration branch for the asynchronous
+IMAP and POP work (emacs-vm/vm#473). It is pushed so that others can test it.
+
+- Work on that conversion is cut from `central/develop-async` and its merge
+  requests target `develop-async`.
+- **The branch stays separate from `develop` for a while.** It is not to be
+  merged the other way, and no schedule for that is assumed.
+- **Merge `develop` into `develop-async` whenever `develop` moves**, and never
+  rebase it. The branch is published and other people have it checked out. Do
+  the merge as part of whatever put the commit on `develop`, rather than
+  leaving the two to drift: the async branch is what people are testing, and
+  a fix they cannot see is a fix they will report again.
+- The decision on that branch is **non-blocking only**: no synchronous driver
+  and no dual mode, so every converted path is asynchronous from the moment it
+  lands. `dev/docs/design/async-imap.org` has the reasoning and the order of
+  work.
+- Anything that is not itself asynchronous — the staged clean-ups the design
+  doc lists — goes to `develop` as usual, and reaches the branch by the merge.
+
 - **Cut branches from `central/develop`, never from a local integration branch.**
   A local branch that has other topic branches merged into it silently stacks
   them into the next MR; GitLab then takes the MR title and description from

@@ -334,6 +334,9 @@ relevant POP servers to remove the messages."
 	(vm-global-block-new-mail t)
 	(vm-pop-ok-to-ask t)
 	popdrop uidl-alist data mp match)
+    ;; Through the driver where the maildrops allow it, as the IMAP one is: a
+    ;; session per maildrop, and Emacs held for all of them.
+    (unless (vm-pop-net-expunge-retrieved)
     (unwind-protect
 	(save-excursion
 	  (setq vm-pop-retrieved-messages
@@ -431,7 +434,7 @@ relevant POP servers to remove the messages."
 		     (if (= delete-count 1) "" "s"))))
       (and process (vm-pop-end-session process)))
     (setq vm-pop-retrieved-messages
-	  (delq nil vm-pop-retrieved-messages))))
+	  (delq nil vm-pop-retrieved-messages)))))
 
 (defun vm-pop-make-session (source interactive &optional retry)
   "Create a new POP session for the POP mail box SOURCE.
@@ -1018,6 +1021,15 @@ popdrop
   (set-marker end nil))
 
 (defun vm-establish-new-folder-pop-session (&optional interactive)
+  "Kill and restart the blocking POP session for the current folder.
+Waits first for whatever this folder is running without waiting: two sessions
+writing one folder would interleave their messages, and a POP server serves
+one session at a time anyway."
+  (when (vm-pop-net-busy-p)
+    (vm-inform 6 "%s: waiting for the session already running" (buffer-name))
+    (unless (vm-pop-net-wait nil (or vm-pop-server-timeout 60))
+      (error "%s: a session is still running; try again when it has finished"
+	     (buffer-name))))
   (let ((process (vm-folder-pop-process))
 	)
     (if (processp process)
@@ -1122,6 +1134,9 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 
   (if (and do-retrieves vm-block-new-mail)
       (error "Can't get new mail until you save this folder."))
+  (if (and do-retrieves (vm-pop-net-get-folder-mail))
+      ;; on its way, and this returns before it lands
+      t
   (if (or vm-global-block-new-mail
 	  (null (vm-establish-new-folder-pop-session interactive)))
       nil
@@ -1208,7 +1223,7 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 	    (setq vm-pop-messages-to-expunge
 		  (mapcar (function (lambda (x) (car x)))
 			  vm-pop-retrieved-messages))))
-      got-some)))
+      got-some))))
 
 ;;;###autoload
 (defun vm-pop-folder-check-mail (&optional interactive)
