@@ -308,21 +308,29 @@
 * mastodon custom variables index
  
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Custom variable" "Description") :exports results
-  (let (rows)
-    (mapatoms
-     (lambda (symbol)
-       (when (and (string-match "^mastodon"
-                                (symbol-name symbol))
-                  (custom-variable-p symbol))
-         (let* ((doc (car (split-string
-                           (or (get (indirect-variable symbol)
-                                    'variable-documentation)
-                               (get symbol 'variable-documentation)
-                               "")
-                           "\n"))))
-           (push `(,symbol ,doc) rows)
-           rows))))
-    (sort rows (lambda (x y) (string-lessp (car x) (car y)))))
+  (defun var-get-doc (symbol)
+    (or (get (indirect-variable symbol)
+             'variable-documentation)
+        (get symbol 'variable-documentation)
+        ""))
+
+  (defun var-doc (symbol)
+    (let ((str (var-get-doc symbol)))
+      (car (split-string str "\n"))))
+
+  (defun do-vars ()
+    (let (rows)
+      (mapatoms
+       (lambda (symbol)
+         (when (and (string-match "^mastodon"
+                                  (symbol-name symbol))
+                    (custom-variable-p symbol))
+           (let* ((doc (var-doc symbol)))
+             (push `(,symbol ,doc) rows)
+             rows))))
+      (sort rows (lambda (x y) (string-lessp (car x) (car y))))))
+
+  (do-vars)
 #+end_src
 
 #+RESULTS:
@@ -366,6 +374,7 @@
 | mastodon-tl--tags-groups                           | A list containing lists of up to four tags each.                             |
 | mastodon-tl--timeline-posts-count                  | Number of posts to display when loading a timeline.                          |
 | mastodon-tl-position-after-update                  | Defines where `point' should be located after a timeline update.             |
+| mastodon-tl-use-nerd-icons                         | Whether to use nerd icons for icons/symbols.                                 |
 | mastodon-toot--attachment-height                   | Height of the attached images preview in the toot draft buffer.              |
 | mastodon-toot--completion-style-for-mentions       | The company completion style to use for mentions.                            |
 | mastodon-toot--default-media-directory             | The default directory when prompting for a media file to upload.             |
