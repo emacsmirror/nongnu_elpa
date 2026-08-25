@@ -3141,6 +3141,148 @@ that ignored it would leave the command doing nothing at all."
         (vm-get-spooled-mail nil t))
       (should (equal (nreverse asked) '(nil t))))))
 
+;;; The table of UIDs the folder already holds
+
+(defun vm-imap-net-test--message-holding (uid validity)
+  "A message carrying UID under VALIDITY, as one read from a folder does."
+  (let ((message (vm-make-message)))
+    (vm-test-init-message-data message)
+    (vm-set-imap-uid-of message uid)
+    (vm-set-imap-uid-validity-of message validity)
+    message))
+
+(defun vm-imap-net-test--append-held (uid)
+  "Put a message for UID at the end of the folder's list, as an arrival is put.
+Appending and not rewriting, which is the case the held-UID table follows
+without being filled again."
+  (let ((message (vm-imap-net-test--message-holding uid "7")))
+    (if vm-message-list
+        (setcdr (vm-last vm-message-list) (list message))
+      (setq vm-message-list (list message)))
+    message))
+
+(defmacro vm-imap-net-test--in-a-folder-holding (uids &rest body)
+  "Run BODY in a buffer that is an IMAP folder holding UIDS, validity \"7\"."
+  (declare (indent 1) (debug t))
+  `(with-temp-buffer
+     (vm-test-init-folder-variables)
+     (setq vm-folder-access-method 'imap
+           vm-folder-access-data (make-vector vm-folder-imap-access-data-length
+                                              nil))
+     (aset vm-folder-access-data 2 "7")
+     (dolist (uid ,uids)
+       (vm-imap-net-test--append-held uid))
+     ,@body))
+
+(ert-deftest vm-imap-net-test-the-held-uid-table-follows-an-append ()
+  "A message appended to the folder is held, and the table is not built again.
+
+A fetch does not block, so the reader can save a message into the folder while
+the fetch for that same UID is in flight; the answer has to see it or the
+message is written twice."
+  (vm-imap-net-test--in-a-folder-holding '("1")
+    (should (vm-imap-net-uid-held-p "1"))
+    (should-not (vm-imap-net-uid-held-p "2"))
+    (let ((table (vm-imap-net-uids-held)))
+      (vm-imap-net-test--append-held "2")
+      (should (vm-imap-net-uid-held-p "2"))
+      ;; the same table, extended: nothing moved the generation
+      (should (eq table (vm-imap-net-uids-held))))))
+
+(ert-deftest vm-imap-net-test-the-held-uid-table-is-built-again-when-one-leaves ()
+  "A message taken out of the folder is no longer held.
+Removing one moves `vm-message-list-generation\\=', which is what says the
+table can no longer be extended and has to be filled from nothing."
+  (vm-imap-net-test--in-a-folder-holding '("1" "2")
+    (let ((table (vm-imap-net-uids-held)))
+      (should (vm-imap-net-uid-held-p "1"))
+      ;; as an expunge does it: the message is spliced out and the generation
+      ;; moves
+      (setq vm-message-list (cdr vm-message-list))
+      (vm-increment vm-message-list-generation)
+      (should-not (vm-imap-net-uid-held-p "1"))
+      (should (vm-imap-net-uid-held-p "2"))
+      (should-not (eq table (vm-imap-net-uids-held))))))
+
+(ert-deftest vm-imap-net-test-the-held-uid-table-drops-another-validity ()
+  "UIDs of one UIDVALIDITY are not the folder's UIDs under the next.
+A mailbox that has changed its validity has renumbered every message, so the
+table is filled again and the old UIDs are gone from it."
+  (vm-imap-net-test--in-a-folder-holding '("1")
+    (should (vm-imap-net-uid-held-p "1"))
+    (aset vm-folder-access-data 2 "8")
+    (should-not (vm-imap-net-uid-held-p "1"))))
+
+(ert-deftest vm-imap-net-test-the-held-uid-table-reads-each-message-once ()
+  "Asking per arriving message reads each of the folder's messages once.
+The check ran once per message and built the whole table each time, which is
+quadratic in the mailbox: 6501 tables of up to 6505 entries and 0.95s of a
+6.8s fetch, on the folder in issue #742."
+  (let* ((reads 0)
+         (note (symbol-function 'vm-imap-net-note-held-uid)))
+    (cl-letf (((symbol-function 'vm-imap-net-note-held-uid)
+               (lambda (message)
+                 (setq reads (1+ reads))
+                 (funcall note message))))
+      (vm-imap-net-test--in-a-folder-holding '("1" "2" "3")
+        (should-not (vm-imap-net-uid-held-p "4"))
+        (should (equal reads 3))
+        ;; a bunch arrives, and the next question reads only what it added
+        (vm-imap-net-test--append-held "4")
+        (should (vm-imap-net-uid-held-p "4"))
+        (should (equal reads 4))
+        ;; and a question with nothing new to see reads nothing
+        (should-not (vm-imap-net-uid-held-p "5"))
+        (should (equal reads 4))
+        (vm-imap-net-test--append-held "5")
+        (vm-imap-net-test--append-held "6")
+        (should (vm-imap-net-uid-held-p "6"))
+        ;; six messages read for four questions; building the table each time
+        ;; would have read seventeen
+        (should (equal reads 6))))))
+
+(ert-deftest vm-imap-net-test-a-uid-given-after-the-list-is-not-missed ()
+  "A message put into the list before it had a UID is held once it has one.
+Both fetch paths append the messages and then give them their UIDs, so the
+table can read a message that has none yet; the UID has to reach it anyway, or
+the next fetch asks for a message the folder holds and writes it twice."
+  (vm-imap-net-test--in-a-folder-holding '("1")
+    ;; the table reads the list, and this message has nothing to give it
+    (let ((late (vm-imap-net-test--message-holding nil nil)))
+      (should-not (vm-imap-net-uid-held-p "2"))
+      (setcdr (vm-last vm-message-list) (list late))
+      (should-not (vm-imap-net-uid-held-p "2"))
+      ;; and now it is what a fetch has just written
+      (vm-set-imap-uid-of late "2")
+      (vm-set-imap-uid-validity-of late "7")
+      (vm-imap-net-note-held-message late)
+      (should (vm-imap-net-uid-held-p "2")))))
+
+(ert-deftest vm-imap-net-test-forgetting-the-held-uids-reads-the-list-again ()
+  "Forgetting the table makes the next question read the whole list again.
+What the blocking fetch does, having appended messages and given them their
+UIDs without asking the table anything."
+  (vm-imap-net-test--in-a-folder-holding '("1")
+    (let ((late (vm-imap-net-test--message-holding nil nil)))
+      (setcdr (vm-last vm-message-list) (list late))
+      (should-not (vm-imap-net-uid-held-p "2"))
+      (vm-set-imap-uid-of late "2")
+      (vm-set-imap-uid-validity-of late "7")
+      (vm-imap-net-forget-held-uids)
+      (should (vm-imap-net-uid-held-p "2"))
+      (should (vm-imap-net-uid-held-p "1")))))
+
+(ert-deftest vm-imap-net-test-a-fetch-tells-the-held-uid-table-what-it-wrote ()
+  "A fetch puts what it wrote into the held-UID table as it goes.
+Read straight out of the table, without asking `vm-imap-net-uids-held\=' --
+which would walk the list and find the message whether the fetch had said
+anything or not.  The table is there because the plan built it."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (equal (vm-imap-net-test--get-mail mock) 1))
+    (should vm-imap-net-held-uids)
+    (should (gethash "1" vm-imap-net-held-uids))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

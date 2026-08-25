@@ -892,6 +892,7 @@ with: the connection arrived authenticated."
 (defvar vm-folder-type)
 (defvar vm-default-folder-type)
 (defvar vm-message-list)
+(defvar vm-message-list-generation)
 (defvar vm-spooled-mail-waiting)
 (defvar vm-buffers-needing-display-update)
 (defvar vm-modification-counter)
@@ -1001,16 +1002,92 @@ visiting an IMAP folder brought in no messages."
 	  (nth 3 sync)
 	  (nth 1 sync))))
 
+(defvar vm-imap-net-held-uids nil
+  "The table `vm-imap-net-uids-held\\=' answers with, or nil for none yet.
+Buffer-local to the folder.")
+(make-variable-buffer-local 'vm-imap-net-held-uids)
+
+(defvar vm-imap-net-held-validity nil
+  "The UIDVALIDITY `vm-imap-net-held-uids\\=' was filled for.
+A UID means nothing without it, so a mailbox that has changed its validity
+has none of the UIDs in that table.")
+(make-variable-buffer-local 'vm-imap-net-held-validity)
+
+(defvar vm-imap-net-held-generation nil
+  "The `vm-message-list-generation\\=' `vm-imap-net-held-uids\\=' was filled at.")
+(make-variable-buffer-local 'vm-imap-net-held-generation)
+
+(defvar vm-imap-net-held-tail nil
+  "The last cons of `vm-message-list\\=' `vm-imap-net-held-uids\\=' has read.
+What follows it is what has arrived since, and is all that has to be read to
+bring the table up to date.")
+(make-variable-buffer-local 'vm-imap-net-held-tail)
+
 (defun vm-imap-net-uids-held ()
   "The UIDs this folder holds for the mailbox it is looking at.
-The current buffer is the folder."
-  (let ((validity (vm-folder-imap-uid-validity))
-	(held (make-hash-table :test 'equal)))
-    (dolist (message vm-message-list)
-      (let ((uid (vm-imap-uid-of message)))
-	(when (and uid (equal (vm-imap-uid-validity-of message) validity))
-	  (puthash uid t held))))
-    held))
+The current buffer is the folder.
+
+Kept from one call to the next rather than built again, because a fetch asks
+once for every message that arrives: on the 6505-message mailbox of issue #742
+building it each time was 6501 tables of up to 6505 entries, 21 million
+`puthash\\=' calls and 0.95s of a 6.8s fetch.
+
+What it costs instead is one walk of the messages appended since the last
+call, which over a whole fetch is one walk of the mailbox.  A folder that has
+had a message taken out of it, or its list rewritten, moves
+`vm-message-list-generation\\=' and the table is filled again from nothing --
+so the answer follows a message put into the folder by anyone, which is what
+the fetch needs: it does not block, so the reader can save a message into the
+folder from elsewhere while its own fetch for that message is in flight."
+  (let ((validity (vm-folder-imap-uid-validity)))
+    (unless (and vm-imap-net-held-uids
+		 (eq vm-imap-net-held-generation vm-message-list-generation)
+		 (equal vm-imap-net-held-validity validity))
+      (setq vm-imap-net-held-uids (make-hash-table :test 'equal)
+	    vm-imap-net-held-generation vm-message-list-generation
+	    vm-imap-net-held-validity validity
+	    vm-imap-net-held-tail nil))
+    (vm-imap-net-read-held-uids)
+    vm-imap-net-held-uids))
+
+(defun vm-imap-net-read-held-uids ()
+  "Read into `vm-imap-net-held-uids\\=' the messages it has not read yet.
+Those are the ones after `vm-imap-net-held-tail\\=', which the table's
+generation says are appended and not a list rewritten underneath it."
+  (let ((mp (if vm-imap-net-held-tail
+		(cdr vm-imap-net-held-tail)
+	      vm-message-list)))
+    (while mp
+      (vm-imap-net-note-held-uid (car mp))
+      (setq vm-imap-net-held-tail mp
+	    mp (cdr mp)))))
+
+(defun vm-imap-net-note-held-uid (message)
+  "Put MESSAGE's UID into `vm-imap-net-held-uids\\=', if it has one to put.
+A message with no UID, or one from a mailbox of another validity, is not a
+message this folder holds for the mailbox being read."
+  (let ((uid (vm-imap-uid-of message)))
+    (when (and uid (equal (vm-imap-uid-validity-of message)
+			  vm-imap-net-held-validity))
+      (puthash uid t vm-imap-net-held-uids))))
+
+(defun vm-imap-net-note-held-message (message)
+  "Tell the held-UID table, if there is one, that this folder holds MESSAGE.
+The table is filled by reading `vm-message-list\\=', so a message put into the
+list before it was given its UID is invisible to it -- and a UID the table has
+not got is one the folder fetches and writes a second time.  A caller that
+gives a message its UID after putting it in the list says so here, or forgets
+the table with `vm-imap-net-forget-held-uids\\='."
+  (when vm-imap-net-held-uids
+    (vm-imap-net-note-held-uid message)))
+
+(defun vm-imap-net-forget-held-uids ()
+  "Forget the held-UID table, so that the next question fills it again.
+For a caller that changes what the folder holds and is not the one asking per
+arriving message, where filling it again is one walk of the folder and costs
+nothing."
+  (setq vm-imap-net-held-uids nil
+	vm-imap-net-held-tail nil))
 
 (defun vm-imap-net-uid-held-p (uid)
   "Whether this folder already holds UID, for the mailbox it is looking at.
@@ -1171,6 +1248,9 @@ supposed to remove, arriving from the other side."
 	  (vm-set-body-to-be-discarded-of message nil))
 	(vm-set-imap-uid-of message uid)
 	(vm-set-imap-uid-validity-of message uid-validity)
+	;; the message was appended before it had a UID, so the table cannot
+	;; have read one from it
+	(vm-imap-net-note-held-message message)
 	(vm-set-byte-count-of message (vm-folder-imap-uid-message-size uid))
 	(vm-imap-update-message-flags
 	 message (vm-folder-imap-uid-message-flags uid) t)

@@ -525,6 +525,7 @@ exactly where someone is reading the output and wondering what went wrong."
     (vm-summary-redo-start-point . nil)
     (vm-folder-read-only . nil)
     (vm-modification-counter . 0)
+    (vm-message-list-generation . 0)
     (vm-messages-not-on-disk . 0)
     (vm-totals . nil)
     (vm-thread-obarray . nil)

@@ -31,6 +31,7 @@
 (require 'sendmail)
 (require 'utf7)
 (declare-function vm-net-error-p "vm-net" (value))
+(declare-function vm-imap-net-forget-held-uids "vm-imap-net" ())
 (eval-when-compile (require 'cl-lib))
 
 (declare-function vm-session-initialization 
@@ -3940,6 +3941,9 @@ headers-only form."
 	 (vm-set-stuff-flag-of (car mp) t)
 	 (setq mp (cdr mp)
 	       r-list (cdr r-list)))
+       ;; these messages were appended before they had UIDs, so a held-UID
+       ;; table read while that was going on has none of them
+       (vm-imap-net-forget-held-uids)
        (when vm-arrived-message-hook
 	 (mapc (lambda (m)
 		 (vm-run-hook-on-message 'vm-arrived-message-hook m))
