@@ -89,6 +89,10 @@
 (autoload 'mastodon-views--end-of-table "mastodon-views")
 (autoload 'mastodon-tl--buttonify-link "mastodon-tl")
 (autoload 'mastodon-tl-read-handle-annotated "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action "mastodon-tl")
+(autoload 'mastodon-tl-next-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
