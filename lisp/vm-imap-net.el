@@ -82,98 +82,88 @@ has accepted can be remembered under it.")
 
 ;;; Reading
 
-(iter-defun vm-imap-net-read-object (&optional skip-eol)
-  "Read one token and answer with it, yielding until it is all here.
+(defun vm-imap-net-parse-token ()
+  "Parse the token at point, whatever it is, and answer with it.
+Throws `vm-imap-net-need\\=' with a request when the buffer does not hold the
+whole of it -- too little in it to tell what is coming, the octets of a
+literal, the closing quote of a quoted string, the terminator of an atom:
+the four places `vm-imap-read-object\\=' calls `accept-process-output\\='."
+  (cond
+   ((< (- (point-max) (point)) 2)
+    (throw 'vm-imap-net-need (vm-net-request-growth)))
+   ((looking-at "\r\n")
+    (forward-char 2)
+    '(end-of-line))
+   ((looking-at "\n")
+    (vm-net-warn 0
+	     "missing CR before LF - IMAP connection may have a problem")
+    (forward-char 1)
+    '(end-of-line))
+   ((looking-at "\\[")
+    (forward-char 1)
+    (vm-imap-net-parse-group 'vector))
+   ((looking-at "\\]")
+    (forward-char 1)
+    '(close-bracket))
+   ((looking-at "(")
+    (forward-char 1)
+    (vm-imap-net-parse-group 'list))
+   ((looking-at ")")
+    (forward-char 1)
+    '(close-paren))
+   ((looking-at "{")
+    (forward-char 1)
+    (vm-imap-net-parse-literal))
+   ((looking-at "}")
+    (forward-char 1)
+    '(close-brace))
+   ((looking-at "\042")
+    (forward-char 1)
+    (vm-imap-net-parse-quoted))
+   ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
+   ;; 8-bit characters despite the RFC 2060 prohibition
+   ((and (looking-at "[\000-\040\177]")
+	 (= vm-imap-tolerant-of-bad-imap 0))
+    (vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
+   (t
+    (vm-imap-net-parse-atom))))
 
-SKIP-EOL means an end-of-line is a token like any other rather than the end
-of the read, which is what the bracketed and parenthesised lists want.
-
-The waits are where `vm-imap-read-object\=' calls `accept-process-output\=':
-too little in the buffer to tell what is coming, the octets of a literal, the
-closing quote of a quoted string, and the terminator of an atom.
-
-No `unwind-protect\=' here, deliberately.  A generator pays for one on every
-resume -- `generator.el\=' re-establishes it each time round -- and this is
-the hottest generator VM has: 100 milliseconds a response line, against 25
-microseconds for the blocking reader, and 82 seconds of CPU to fetch 400
-messages from a server on this machine.  The read point is set where the read
-ends instead.  It does not matter what it says after an error: the session is
-over, and the next one has a buffer of its own."
-  (let ((done nil)
-	(token nil))
-    (while (not done)
+(defun vm-imap-net-parse-object (&optional skip-eol)
+  "Parse one token and answer with it.
+SKIP-EOL means a line ending inside this read is nothing rather than the end
+of it, which is what the bracketed and parenthesised lists want: a literal in
+one of them puts its octets on the next line."
+  (let ((token nil))
+    (while (null token)
       (skip-chars-forward " \t")
-      (cond
-       ((< (- (point-max) (point)) 2)
-	(let ((opoint (point)))
-	  (iter-yield (vm-net-request-growth))
-	  (goto-char opoint)))
-       ((looking-at "\r\n")
-	(forward-char 2)
-	(setq token '(end-of-line) done (not skip-eol)))
-       ((looking-at "\n")
-	(vm-net-warn 0
-		 "missing CR before LF - IMAP connection may have a problem")
-	(forward-char 1)
-	(setq token '(end-of-line) done (not skip-eol)))
-       ((looking-at "\\[")
-	(forward-char 1)
-	(setq token (iter-yield-from (vm-imap-net-read-group 'vector))
-	      done t))
-       ((looking-at "\\]")
-	(forward-char 1)
-	(setq token '(close-bracket) done t))
-       ((looking-at "(")
-	(forward-char 1)
-	(setq token (iter-yield-from (vm-imap-net-read-group 'list))
-	      done t))
-       ((looking-at ")")
-	(forward-char 1)
-	(setq token '(close-paren) done t))
-       ((looking-at "{")
-	(forward-char 1)
-	(setq token (iter-yield-from (vm-imap-net-read-literal))
-	      done t))
-       ((looking-at "}")
-	(forward-char 1)
-	(setq token '(close-brace) done t))
-       ((looking-at "\042")
-	(forward-char 1)
-	(setq token (iter-yield-from (vm-imap-net-read-quoted))
-	      done t))
-       ;; should be "[\000-\040\177-\377]", but Microsoft Exchange emits
-       ;; 8-bit characters despite the RFC 2060 prohibition
-       ((and (looking-at "[\000-\040\177]")
-	     (= vm-imap-tolerant-of-bad-imap 0))
-	(vm-imap-protocol-error "illegal char (%d)" (char-after (point))))
-       (t
-	(setq token (iter-yield-from (vm-imap-net-read-atom))
-	      done t))))
-    (setq vm-imap-net-read-point (point))
+      (setq token (vm-imap-net-parse-token))
+      (when (and skip-eol (eq (car token) 'end-of-line))
+	(setq token nil)))
     token))
 
-(iter-defun vm-imap-net-read-group (kind)
-  "Read tokens until this group's closing bracket, and answer with the group.
-KIND is `vector' for one opened with [ and `list' for one opened with (."
+(defun vm-imap-net-parse-group (kind)
+  "Parse tokens until this group's closing bracket, and answer with the group.
+KIND is `vector\\=' for one opened with [ and `list\\=' for one opened with (."
   (let* ((closer (if (eq kind 'vector) 'close-bracket 'close-paren))
 	 (wrong (if (eq kind 'vector) 'close-paren 'close-bracket))
 	 (group (list kind))
 	 (tail group)
-	 (object (iter-yield-from (vm-imap-net-read-object t))))
+	 (object (vm-imap-net-parse-object t)))
     (while (not (eq (car object) closer))
       (when (eq (car object) wrong)
 	(vm-imap-protocol-error "unexpected %s"
 				(if (eq wrong 'close-paren) ")" "]")))
       (setcdr tail (list object))
       (setq tail (cdr tail))
-      (setq object (iter-yield-from (vm-imap-net-read-object t))))
+      (setq object (vm-imap-net-parse-object t)))
     group))
 
-(iter-defun vm-imap-net-read-literal ()
-  "Read a {n} literal, the { having been read, and answer with its string.
-Waits for the whole of it in one go: the request is the position the octets
-end at, so a body arriving in a thousand chunks resumes this once."
-  (let ((object (iter-yield-from (vm-imap-net-read-object)))
+(defun vm-imap-net-parse-literal ()
+  "Parse a {n} literal, the { having been read, and answer with its string.
+Asks for the whole of it in one go: the request is the position the octets end
+at, so a body arriving in a thousand chunks is waited for once and parsed
+once."
+  (let ((object (vm-imap-net-parse-object))
 	(octets nil)
 	(start nil))
     (unless (and (eq (car object) 'atom)
@@ -184,69 +174,93 @@ end at, so a body arriving in a thousand chunks resumes this once."
       (vm-imap-protocol-error "number expected after {"))
     (setq octets (string-to-number
 		  (buffer-substring (nth 1 object) (nth 2 object))))
-    (setq object (iter-yield-from (vm-imap-net-read-object)))
-    (unless (eq (car object) 'close-brace)
+    (unless (eq (car (vm-imap-net-parse-object)) 'close-brace)
       (vm-imap-protocol-error "} expected"))
-    (setq object (iter-yield-from (vm-imap-net-read-object)))
-    (unless (eq (car object) 'end-of-line)
+    (unless (eq (car (vm-imap-net-parse-object)) 'end-of-line)
       (vm-imap-protocol-error "CRLF expected"))
     (setq start (point))
-    (while (< (- (point-max) start) octets)
-      (iter-yield (vm-net-request-position (+ start octets))))
+    (when (< (- (point-max) start) octets)
+      (throw 'vm-imap-net-need (vm-net-request-position (+ start octets))))
     (goto-char (+ start octets))
     (list 'string start (point))))
 
-(iter-defun vm-imap-net-read-quoted ()
-  "Read a quoted string, the opening quote having been read."
+(defun vm-imap-net-parse-quoted ()
+  "Parse a quoted string, the opening quote having been read."
   (let ((start (point))
-	(done nil)
 	(end nil))
-    (while (not done)
-      (skip-chars-forward "^\042")
-      (setq end (point))
-      (if (looking-at "\042")
-	  (progn (setq done t)
-		 (forward-char 1))
-	(iter-yield (vm-net-request-growth))
-	(goto-char end)))
+    (skip-chars-forward "^\042")
+    (setq end (point))
+    (unless (looking-at "\042")
+      (throw 'vm-imap-net-need (vm-net-request-growth)))
+    (forward-char 1)
     (list 'string start end)))
 
-(iter-defun vm-imap-net-read-atom ()
-  "Read an atom, up to the first character that cannot be part of one."
+(defun vm-imap-net-parse-atom ()
+  "Parse an atom, up to the first character that cannot be part of one."
   ;; 8-bit characters should be non-word characters here, but Microsoft
   ;; Exchange puts them in atoms
   (let ((start (point))
-	(not-word-chars "^\000-\040\177()[]{}")
-	(not-word-regexp "[][\000-\040\177(){}]")
-	(done nil)
 	(end nil))
-    (while (not done)
-      (skip-chars-forward not-word-chars)
-      (setq end (point))
-      (if (looking-at not-word-regexp)
-	  (setq done t)
-	(iter-yield (vm-net-request-growth))
-	(goto-char end)))
+    (skip-chars-forward "^\000-\040\177()[]{}")
+    (setq end (point))
+    (unless (looking-at "[][\000-\040\177(){}]")
+      (throw 'vm-imap-net-need (vm-net-request-growth)))
     (list 'atom start end)))
 
-(iter-defun vm-imap-net-read-response ()
-  "Read one line of response and answer with its tokens.
-An ill-formed line answers with an empty list, as the blocking reader does."
-  (let ((tokens nil)
-	(tail nil)
-	(object nil)
-	(done nil))
+(defun vm-imap-net-parse-response ()
+  "One whole response line as its tokens, or the request the parse wants.
+An ill-formed line answers with an empty list, as the blocking reader does.
+
+A list of tokens means the line was all here and the read point is past it.
+A request -- a function, which tokens never are -- means it was not: nothing
+has moved, and parsing again once the driver has satisfied the request starts
+the line from its beginning."
+  (catch 'vm-imap-net-need
     (goto-char vm-imap-net-read-point)
-    (while (not done)
-      (setq object (iter-yield-from (vm-imap-net-read-object)))
-      (if (eq (car object) 'end-of-line)
-	  (setq done t)
+    (let ((tokens nil)
+	  (tail nil)
+	  (object (vm-imap-net-parse-object)))
+      (while (not (eq (car object) 'end-of-line))
 	(if (null tokens)
 	    (setq tokens (list object)
 		  tail tokens)
 	  (setcdr tail (list object))
-	  (setq tail (cdr tail)))))
-    tokens))
+	  (setq tail (cdr tail)))
+	(setq object (vm-imap-net-parse-object)))
+      (setq vm-imap-net-read-point (point))
+      tokens)))
+
+(defmacro vm-imap-net-read-a-response ()
+  "The tokens of the next response line, waited for.
+Goes inside a generator and nowhere else: `iter-yield\\=' is what waits, and
+a plain function cannot yield, which is the whole reason this is a macro.
+
+One generator then reads a command\\='s worth of responses.  A generator per
+token, which is what this replaces, cost 3775 conses and 23,279 vector words
+a response line where parsing the same tokens costs 84 and 112: 340,000
+generators to fetch 6500 messages, of which only 2,000 reads ever waited for
+anything, and 323M vector words of allocation to bring in 13MB of mail.  That
+allocation was what the garbage collections in a fetch were (issue #742)."
+  '(let ((parsed (vm-imap-net-parse-response)))
+     (while (functionp parsed)
+       (iter-yield parsed)
+       (setq parsed (vm-imap-net-parse-response)))
+     parsed))
+
+(defun vm-imap-net-verify-response (response &optional description)
+  "Answer with RESPONSE, signalling if the server said NO, BAD or BYE.
+DESCRIPTION names the command, for the error message."
+  (when response
+    (when (or (vm-imap-response-matches response 'VM 'NO)
+	      (vm-imap-response-matches response 'VM 'BAD))
+      (vm-imap-normal-error
+       "server says - %s"
+       (vm-imap-net-error-message (cadr (cadr response)))))
+    (when (vm-imap-response-matches response '* 'BYE)
+      (vm-imap-normal-error "server disconnected%s"
+			    (if description
+				(format " during %s" description) ""))))
+  response)
 
 (defun vm-imap-net-error-message (position)
   "The server's error text in the process buffer, starting at POSITION."
@@ -256,22 +270,6 @@ An ill-formed line answers with an empty list, as the blocking reader does."
 		      (if (search-forward "\r\n" (point-max) t)
 			  (- (point) 2)
 			(point-max)))))
-
-(iter-defun vm-imap-net-read-response-and-verify (&optional description)
-  "Read one response and answer with it, signalling on NO, BAD or BYE.
-DESCRIPTION names the command, for the error message."
-  (let ((response (iter-yield-from (vm-imap-net-read-response))))
-    (when response
-      (when (or (vm-imap-response-matches response 'VM 'NO)
-		(vm-imap-response-matches response 'VM 'BAD))
-	(vm-imap-normal-error
-	 "server says - %s"
-	 (vm-imap-net-error-message (cadr (cadr response)))))
-      (when (vm-imap-response-matches response '* 'BYE)
-	(vm-imap-normal-error "server disconnected%s"
-			      (if description
-				  (format " during %s" description) ""))))
-    response))
 
 ;;; Sending
 
@@ -320,9 +318,9 @@ order."
 	(worked (float-time))
 	response)
     (while (not done)
-      (setq response
-	    (iter-yield-from (vm-imap-net-read-response-and-verify
-			      (or description command))))
+      (setq response (vm-imap-net-verify-response
+		      (vm-imap-net-read-a-response)
+		      (or description command)))
       (push response lines)
       (setq counted (1+ counted))
       ;; Yield with nothing to wait for, so that this is interruptible.  A
@@ -371,7 +369,7 @@ than dropping it."
   "Read the server's greeting.
 Answers t for OK, `preauth' for PREAUTH, and nil for anything else, which is
 what `vm-imap-read-greeting' answers."
-  (let ((response (iter-yield-from (vm-imap-net-read-response))))
+  (let ((response (vm-imap-net-read-a-response)))
     (cond ((vm-imap-response-matches response '* 'OK) t)
 	  ((vm-imap-response-matches response '* 'PREAUTH) 'preauth)
 	  (t nil))))
@@ -554,8 +552,8 @@ read, which is what keeps a mailbox of any size out of memory."
 	(count 0)
 	response)
     (while (not done)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "FETCH")))
+      (setq response (vm-imap-net-verify-response
+		      (vm-imap-net-read-a-response) "FETCH"))
       (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
 	     (let ((message (vm-imap-net-fetch-message-text response)))
 	       ;; nil for a FETCH the server sent to report a message's flags
@@ -692,15 +690,16 @@ backends, and the cache can hold a `*\=' that means nothing yet."
 (defun vm-imap-net-check-compiled ()
   "Say once that this file is not compiled, if it is not.
 
-Generators are expensive to run interpreted: every call rebuilds its closure
-through `cconv-make-interpreted-closure\=', and the reader is called once per
-token.  Measured on a mock server, fetching a thousand messages takes 0.8
-seconds compiled and three minutes from source, with Emacs held for tens of
-seconds at a time -- which looks exactly like the blocking implementation this
-replaces.  A reader testing an uncompiled tree would draw the wrong
-conclusion, so VM says so rather than being slow silently."
+The parse is called once per token -- 190,000 times to fetch 6500 messages --
+and the generators it runs inside rebuild their closures on every call from
+source, through `cconv-make-interpreted-closure\='.  Measured on a mock
+server, fetching a thousand messages takes 0.8 seconds compiled and three
+minutes from source, with Emacs held for tens of seconds at a time -- which
+looks exactly like the blocking implementation this replaces.  A reader
+testing an uncompiled tree would draw the wrong conclusion, so VM says so
+rather than being slow silently."
   (unless (or vm-imap-net-said-it-is-uncompiled
-	      (let ((reader (symbol-function 'vm-imap-net-read-object)))
+	      (let ((reader (symbol-function 'vm-imap-net-parse-object)))
 		(or (byte-code-function-p reader)
 		    (and (fboundp 'subr-native-elisp-p)
 			 (subr-native-elisp-p reader)))))
@@ -1852,8 +1851,8 @@ in any order (issue #185)."
     (let ((done nil)
 	  response)
       (while (not done)
-	(setq response (iter-yield-from
-			(vm-imap-net-read-response-and-verify "UID FETCH")))
+	(setq response (vm-imap-net-verify-response
+			(vm-imap-net-read-a-response) "UID FETCH"))
 	(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
 	       (let* ((message (vm-imap-net-fetch-message-text response))
 		      (uid (nth 0 message)))
@@ -2017,8 +2016,8 @@ speak."
   (let ((ready nil)
 	response)
     (while (not ready)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "APPEND")))
+      (setq response (vm-imap-net-verify-response
+		      (vm-imap-net-read-a-response) "APPEND"))
       (when (vm-imap-response-matches response '+)
 	(setq ready t))))
   (let ((process (get-buffer-process (current-buffer))))
@@ -2029,8 +2028,8 @@ speak."
   (let ((done nil)
 	response)
     (while (not done)
-      (setq response (iter-yield-from
-		      (vm-imap-net-read-response-and-verify "APPEND data")))
+      (setq response (vm-imap-net-verify-response
+		      (vm-imap-net-read-a-response) "APPEND data"))
       (when (vm-imap-response-matches response 'VM 'OK)
 	(setq done t))))
   t)
