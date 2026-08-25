@@ -1,10 +1,10 @@
-;;; sapling.el --- Magit-like interface for Sapling  -*- lexical-binding: t; -*-
+;;; sapling.el --- Fast interface for Sapling  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Assisted-by: Deepseek:deepseek-v4-pro default
-;; Version: 0.2.2
+;; Version: 0.2.3
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
@@ -26,7 +26,7 @@
 
 ;;; Commentary:
 
-;; A fast, Magit-inspired interface for the Sapling SCM (`sl').
+;; A fast interface for the Sapling SCM (`sl').
 ;;
 ;; The status buffer is the main entry point:
 ;;
