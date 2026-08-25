@@ -160,35 +160,75 @@ nil."
   "Whether to show toot stats (faves, boosts, replies counts)."
   :type 'boolean)
 
+(defcustom mastodon-tl-use-nerd-icons nil
+  "Whether to use nerd icons for icons/symbols.
+You need to install it yourself for this to work. See
+https://github.com/rainstormstudio/nerd-icons.el.
+Nerd icons have the benefit of being a consistent icon kit.
+They have the possible disadvantage of being monochrome.
+If you change this customize, you need to either restart Emacs, or
+re-evaluate `mastodon-tl--symbols' (navigate to it then call
+`eval-defun' (C-M-x))."
+  :type 'boolean)
+
+(require 'nerd-icons nil :noerror)
+
 (defcustom mastodon-tl--symbols
-  `((reply                 . ("💬" . "R"))
-    (boost                 . ("🔁" . "B"))
-    (reblog                . ("🔁" . "B")) ;; server compat
-    (favourite             . ("⭐" . "F"))
-    (bookmark              . ("🔖" . "K"))
-    (media                 . ("📹" . "[media]"))
-    (verified              . ("✓" . "V"))
-    (locked                . ("🔒" . "[locked]"))
-    (private               . ("🔒" . "[followers]"))
-    (mention               . ("@"  . "[mention]"))
-    (direct                . ("✉" . "[direct]"))
-    (edited                . ("✍" . "[edited]"))
-    (update                . ("✍" . "[edited]")) ;; server compat
-    (status                . ("🔔" . "[posted]"))
-    (replied               . ("⬇" . "↓"))
-    (reply-bar             . ("┃" . "|"))
-    (poll                  . ("📊" . "[poll]"))
-    (follow                . ("👤" . "+"))
-    (follow_request        . ("👤" . "+"))
-    (severed_relationships . ("🔗" . "//"))
-    (moderation_warning    . ("⚠" . "!!"))
-    (bot                   . ("🤖" . "[bot]"))
-    (quote                 . (,(propertize "“" 'face
-                                           '(t :inherit success :weight bold
-                                               :height 1.8))))
-    (quoted_update         . ("✍" . "[edited]"))
-    (added_to_collection   . ("⊆"  . "[coll]"))
-    (collection_update     . ("⊆"  . "[coll]")))
+  (if mastodon-tl-use-nerd-icons
+      `((reply                 . (,(nerd-icons-mdicon "nf-md-message_reply_text_outline")   . "R"))
+        (boost                 . (,(nerd-icons-mdicon "nf-md-share_variant_outline")      . "B"))
+        (reblog                . (,(nerd-icons-mdicon "nf-md-share_variant_outline")      . "B"))
+        (favourite             . (,(nerd-icons-mdicon "nf-md-heart_outline")              . "F"))
+        (bookmark              . (,(nerd-icons-mdicon "nf-md-bookmark_outline")           . "K"))
+        (media                 . (,(nerd-icons-mdicon "nf-md-image_outline")              . "[media]"))
+        (verified              . (,(nerd-icons-mdicon "nf-md-check_outline")              . "V"))
+        (locked                . (,(nerd-icons-mdicon "nf-md-lock_outline")               . "[locked]"))
+        (private               . (,(nerd-icons-mdicon "nf-md-lock_outline")               . "[followers]"))
+        (mention               . (,(nerd-icons-mdicon "nf-md-at")                         . "[mention]"))
+        (direct                . (,(nerd-icons-mdicon "nf-md-mailbox_open_outline")       . "[direct]"))
+        (edited                . (,(nerd-icons-mdicon "nf-md-pencil_outline")             . "[edited]"))
+        (update                . (,(nerd-icons-mdicon "nf-md-pencil_outline")             . "[edited]"))
+        (status                . (,(nerd-icons-mdicon "nf-md-post_outline")               . "[posted]"))
+        (replied               . (,(nerd-icons-mdicon "nf-md-arrow_down_bold_outline")    . "↓"))
+        (reply-bar             . (,(nerd-icons-mdicon "nf-md-tally_mark_1")               . "|"))
+        (poll                  . (,(nerd-icons-mdicon "nf-md-vote_outline")               . "[poll]"))
+        (follow                . (,(nerd-icons-mdicon "nf-md-connection")                 . "+"))
+        (follow_request        . (,(nerd-icons-mdicon "nf-md-connection")                 . "+"))
+        (severed_relationships . (,(nerd-icons-mdicon "nf-md-link_variant")               . "//"))
+        (moderation_warning    . (,(nerd-icons-mdicon "nf-md-alert_outline")              . "!!"))
+        (bot                   . (,(nerd-icons-mdicon "nf-md-robot_outline")              . "[bot]"))
+        (quote                 . (,(nerd-icons-mdicon "nf-md-comma_circle_outline")       . "[quote]"))
+        (quoted_update         . (,(nerd-icons-mdicon "nf-md-pencil_outline")             . "[edited]"))
+        (added_to_collection   . (,(nerd-icons-mdicon "nf-md-contain")                    . "[coll]"))
+        (collection_update     . (,(nerd-icons-mdicon "nf-md-contain")                  . "[coll]")))
+    `((reply                 . ("💬" . "R"))
+      (boost                 . ("🔁" . "B"))
+      (reblog                . ("🔁" . "B")) ;; server compat
+      (favourite             . ("⭐" . "F"))
+      (bookmark              . ("🔖" . "K"))
+      (media                 . ("📹" . "[media]"))
+      (verified              . ("✓" . "V"))
+      (locked                . ("🔒" . "[locked]"))
+      (private               . ("🔒" . "[followers]"))
+      (mention               . ("@"  . "[mention]"))
+      (direct                . ("✉" . "[direct]"))
+      (edited                . ("✍" . "[edited]"))
+      (update                . ("✍" . "[edited]")) ;; server compat
+      (status                . ("🔔" . "[posted]"))
+      (replied               . ("⬇" . "↓"))
+      (reply-bar             . ("┃" . "|"))
+      (poll                  . ("📊" . "[poll]"))
+      (follow                . ("👤" . "+"))
+      (follow_request        . ("👤" . "+"))
+      (severed_relationships . ("🔗" . "//"))
+      (moderation_warning    . ("⚠" . "!!"))
+      (bot                   . ("🤖" . "[bot]"))
+      (quote                 . (,(propertize "“" 'face
+                                             '(t :inherit success :weight bold
+                                                 :height 1.8))))
+      (quoted_update         . ("✍" . "[edited]"))
+      (added_to_collection   . ("⊆"  . "[coll]"))
+      (collection_update     . ("⊆"  . "[coll]"))))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
@@ -829,18 +869,22 @@ If it is a boost, return \\='$username boosted'."
                      'face 'mastodon-boosted-face
                      'continued-thread t
                      'help-echo "Browse thread"))
-          (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
-                 (name (or (alist-get 'display_name acc)
-                           (alist-get 'username acc))))
-            (concat (mastodon-tl--symbol 'reply)
-                    (mastodon-tl--buttonify-link
-                     " in reply to "
-                     'face 'mastodon-boosted-face
-                     'continued-thread t
-                     'help-echo "Browse thread")
-                    (propertize name
-                                'face 'mastodon-display-name-face)
-                    "\n")))))
+          (let-alist (mastodon-tl--acc-by-id reply-acc-id)
+            (let ((name (or .display_name .username)))
+              (concat (mastodon-tl--symbol 'reply)
+                      (mastodon-tl--buttonify-link
+                       " in reply to "
+                       'face 'mastodon-boosted-face
+                       'continued-thread t
+                       'help-echo "Browse thread")
+                      (mastodon-tl--buttonify-link name
+                                        'face 'mastodon-display-name-face
+                                        'keymap mastodon-tl--link-keymap
+                                        'mastodon-tab-stop 'user-handle
+                                        'shr-url .url
+                                        'mastodon-handle (concat "@" .acct)
+                                        'mouse-face 'highlight)
+                      "\n"))))))
      (t ""))))
 
 (defun mastodon-tl-continued-thread-load ()
@@ -861,7 +905,9 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                            ((string= letter (or "🔖" "K"))
                             "bookmarked"))))
     (format "(%s) "
-            (propertize letter 'face 'mastodon-boost-fave-face
+            (propertize letter 'face (if mastodon-tl-use-nerd-icons
+                                         'mastodon-success-nerd-icons-face
+                                       'mastodon-boost-fave-face)
                         ;; emojify breaks this for 🔖:
                         'help-echo (format "You have %s this status."
                                            ;; FIXME: this is often nil
@@ -1001,9 +1047,6 @@ TS is a timestamp from the server, if any."
       ;; enable playing of videos when point is on byline:
       'attachments (mastodon-tl--get-attachments-for-byline toot)
       'edited edited-time
-      'edit-history (when edited-time
-                      (mastodon-toot--get-toot-edits
-                       (alist-get 'id base-maybe)))
       'byline       t))))
 
 
@@ -1948,9 +1991,13 @@ See https://docs.joinmastodon.org/entities/Quote/#state for details.")
 (defun mastodon-tl--quote-symbol-str ()
   "Return a propertized quote symbol, \"."
   ;; quote symbol hack:
-  (propertize "“" 'face
-              '( :inherit success :weight bold
-                 :height 1.8)))
+  (propertize (mastodon-tl--symbol 'quote)
+              ;; "“"
+              'face
+              (if mastodon-tl-use-nerd-icons 'mastodon-success-nerd-icons-face
+                '( :inherit success
+                   :weight bold
+                   :height 1.8))))
 
 (defun mastodon-tl--insert-quoted (data toot)
   "Propertize quoted status DATA for insertion.
@@ -2357,41 +2404,62 @@ To disable showing the stats, customize
                                    'favourites-count .favourites_count))
            (boosts-prop (propertize (format "%s" .reblogs_count)
                                     'boosts-count .reblogs_count))
-           (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
-           (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
-           (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
+           (faves (format "%s " faves-prop))
+           (boosts (format "%s " boosts-prop))
+           (replies (format "%s " .replies_count))
            (quotes  (when .quotes_count
-                      (format "%s %s"
+                      (format "%s "
                               (propertize (number-to-string .quotes_count)
-                                          'face 'mastodon-toot-docs-face)
-                              (propertize (mastodon-tl--symbol 'quote)
-                                          'face '(:inherit success :box t)))))
+                                          'face 'mastodon-toot-docs-face))))
            (stats (concat
                    (propertize faves
                                'favourited-p (eq t .favourited)
                                'favourites-field t
                                'help-echo (format "%s favourites" .favourites_count)
                                'face 'mastodon-toot-docs-face)
+                   (propertize (format "%s" (mastodon-tl--symbol 'favourite))
+                               'favourited-p (eq t .favourited)
+                               'help-echo (format "%s favourites" .favourites_count)
+                               'face (if mastodon-tl-use-nerd-icons
+                                         'mastodon-toot-nerd-icons-face
+                                       'mastodon-toot-docs-face))
                    (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize boosts
                                'boosted-p (eq t .reblogged)
                                'boosts-field t
                                'help-echo (format "%s boosts" .reblogs_count)
                                'face 'mastodon-toot-docs-face)
+                   (propertize (format "%s" (mastodon-tl--symbol 'boost))
+                               'boosted-p (eq t .reblogged)
+                               'help-echo (format "%s boosts" .reblogs_count)
+                               'face (if mastodon-tl-use-nerd-icons
+                                         'mastodon-toot-nerd-icons-face
+                                       'mastodon-toot-docs-face))
                    (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize replies
                                'replies-field t
                                'replies-count .replies_count
                                'help-echo (format "%s replies" .replies_count)
                                'face 'mastodon-toot-docs-face)
+                   (propertize (format "%s" (mastodon-tl--symbol 'reply))
+                               'help-echo (format "%s replies" .replies_count)
+                               'face (if mastodon-tl-use-nerd-icons
+                                         'mastodon-toot-nerd-icons-face
+                                       'mastodon-toot-docs-face))
                    (propertize " | " 'face 'mastodon-toot-docs-face)
                    (when .quotes_count
-                     (propertize quotes
-                                 'quotes-field t
-                                 'quotes-count .quotes_count
-                                 'help-echo (format "%s quotes" .quotes_count)
-                                 ;; 'face 'mastodon-toot-docs-face
-                                 ))))
+                     (concat
+                      (propertize quotes
+                                  'quotes-field t
+                                  'quotes-count .quotes_count
+                                  'help-echo (format "%s quotes" .quotes_count)
+                                  ;; 'face 'mastodon-toot-docs-face
+                                  )
+                      (propertize (format "%s" (mastodon-tl--symbol 'quote))
+                                  'help-echo (format "%s quotes" .quotes_count)
+                                  'face (if mastodon-tl-use-nerd-icons
+                                            'mastodon-toot-nerd-icons-face
+                                          '(:inherit success :box t)))))))
            (right-spacing
             (propertize " "
                         'display

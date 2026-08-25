@@ -401,7 +401,9 @@ JSON is added to the string as its item-json."
          (propertize
           (format "(%s) "
                   (propertize marker
-                              'face 'success))
+                              'face (if mastodon-tl-use-nerd-icons
+                                        'mastodon-success-nerd-icons-face
+                                      'success)))
           'cursor-face 'mastodon-cursor-highlight-face
           'item-json json)))) ;; for (un)folding items
     (when at-byline-p
@@ -1054,9 +1056,9 @@ instance to edit a toot."
 (defun mastodon-toot-view-toot-edits ()
   "View editing history of the toot at point in a popup buffer."
   (interactive)
-  (let ((id (mastodon-tl--property 'base-item-id))
-        (history (mastodon-tl--property 'edit-history)) ;; at byline
-        (buf "*mastodon-toot-edits*"))
+  (let* ((id (mastodon-tl--property 'base-item-id))
+         (history (mastodon-toot--get-toot-edits id))
+         (buf "*mastodon-toot-edits*"))
     (if (not history)
         (user-error "No editing history for this toot")
       (with-mastodon-buffer buf #'special-mode :other-window

@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianh@disroot.org>
 ;; Maintainer: Marty Hiatt <martianh@disroot.org>
-;; Version: 2.1.0
+;; Version: 2.1.1
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -408,6 +408,16 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
   `((t :inherit highlight :extend t))
   "Face for `mastodon-tl--highlight-current-toot'.")
 
+(defface mastodon-toot-nerd-icons-face
+  '((t ( :inherit mastodon-toot-docs-face
+         :family "Symbols Nerd Font Mono")))
+  "Face for Nerd Icons symbols for toot stats.")
+
+(defface mastodon-success-nerd-icons-face
+  '((t ( :inherit success
+         :family "Symbols Nerd Font Mono")))
+  "Face for Nerd Icons success symbols in the toot byline.")
+
 ;;;###autoload
 (defun mastodon ()
   "Connect client to `mastodon-instance-url' instance.
@@ -600,7 +610,10 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/[[:alpha:]_]+$" query)
           (string-match "^/u/[[:alpha:]_]+$" query)
           (string-match "^/c/[[:alnum:]_]+$" query)
-          (string-match "^/post/[[:digit:]]+$" query)
+          ;; a lemmy post must NOT open in mastodon.el lest we get stuck in
+          ;; a self-loading circle and can't load the URL in the lemmy
+          ;; post itself:
+          ;; (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
