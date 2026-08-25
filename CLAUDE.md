@@ -178,26 +178,23 @@ git push -o merge_request.create \
          -u origin issue-NNN-brief-description
 ```
 
-### The async branch
+### The async work
 
-`develop-async` on `central` is the integration branch for the asynchronous
-IMAP and POP work (emacs-vm/vm#473). It is pushed so that others can test it.
+The asynchronous IMAP and POP conversion (emacs-vm/vm#473) is on `develop`.
+It was developed on `develop-async`, which was merged in on 2026-08-25 and
+deleted; there is no integration branch any more, and async work is cut from
+`central/develop` like everything else.
 
-- Work on that conversion is cut from `central/develop-async` and its merge
-  requests target `develop-async`.
-- **The branch stays separate from `develop` for a while.** It is not to be
-  merged the other way, and no schedule for that is assumed.
-- **Merge `develop` into `develop-async` whenever `develop` moves**, and never
-  rebase it. The branch is published and other people have it checked out. Do
-  the merge as part of whatever put the commit on `develop`, rather than
-  leaving the two to drift: the async branch is what people are testing, and
-  a fix they cannot see is a fix they will report again.
-- The decision on that branch is **non-blocking only**: no synchronous driver
-  and no dual mode, so every converted path is asynchronous from the moment it
-  lands. `dev/docs/design/async-imap.org` has the reasoning and the order of
-  work.
-- Anything that is not itself asynchronous — the staged clean-ups the design
-  doc lists — goes to `develop` as usual, and reaches the branch by the merge.
+- The decision it was built under is **non-blocking only**: no synchronous
+  driver and no dual mode, so every converted path is asynchronous. The
+  blocking implementation is still in the tree and serves what the driver
+  declines — a maildrop whose password VM has not been told, since nobody can
+  be asked from inside a process filter.
+- `dev/docs/design/async-imap.org` has the reasoning, the table of what was
+  converted, and the two places that still wait on purpose.
+- A pause a reader can feel is a bug in this code and is measured, not
+  guessed: `dev/tools/vm-fetch-latency.el` times a fetch by the step and
+  `dev/tools/fill-imap-mailbox.py` makes a mailbox big enough to show one.
 
 - **Cut branches from `central/develop`, never from a local integration branch.**
   A local branch that has other topic branches merged into it silently stacks
@@ -260,20 +257,20 @@ read without opening every one.
 - `Analyzed` — investigated and commented on, but left open. Use it whenever
   findings are posted without the issue being closed, so a reader can tell an
   answered issue from an untouched one.
-- `Pending` — the work is done and sitting on `develop` or `develop-async`,
-  ready to reach `main`. That is all it means. How the issue closes is a
-  separate question, answered by `Close by hand`.
+- `Pending` — the work is done and sitting on `develop`, ready to reach
+  `main`. That is all it means. How the issue closes is a separate question,
+  answered by `Close by hand`.
 
-  **Both branches count.** `develop-async` is the integration branch for the
-  asynchronous IMAP and POP work, and a fix that lives only there is as pending
-  as one on `develop`. Deriving the set from `main..develop` alone missed nine
-  async issues. The set is derivable from the `Closes #NNN` /
-  `Re #NNN` trailers of both ranges:
+  The set is derivable from the `Closes #NNN` / `Re #NNN` trailers of one
+  range:
 
   ```sh
   git log central/main..central/develop
-  git log central/develop..central/develop-async
   ```
+
+  It used to take two, `develop-async` being an integration branch of its own,
+  and deriving it from `main..develop` alone missed nine async issues. That
+  branch is merged and gone, so one range is now the whole of it.
 
   **A `Re #NNN` trailer is no bar to `Pending`.** A fix often lands under
   another issue's number, and three pending issues have no trailer of their own

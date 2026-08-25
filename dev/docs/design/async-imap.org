@@ -42,18 +42,20 @@ to fetch 6500 messages where 2,000 reads ever wait: see "The parse is not a
 generator" below. The generators that remain are the ones that wait -- a
 command, a fetch, a session -- and they are where the yields always were.
 
-*** develop-async
+*** develop-async, while it lasted
 
-=develop-async= is the integration branch for this work.  It is on
-=emacs-vm/vm= so that others can test it.
+=develop-async= was the integration branch for this work, on =emacs-vm/vm= so
+that others could test it.  It was merged into =develop= on 2026-08-25 and
+deleted; what follows describes how it was run.
 
-- Branches for individual steps are cut from =develop-async= and their merge
-  requests target =develop-async=, not =develop=.
-- =develop= is merged into =develop-async= regularly, so the branch does not
-  drift.  Merge, never rebase: the branch is published and other people have
+- Branches for individual steps were cut from =develop-async= and their merge
+  requests targeted it, not =develop=.
+- =develop= was merged into =develop-async= whenever it moved, so the branch
+  did not drift.  Merged, never rebased: it was published and other people had
   it checked out.
-- =develop-async= reaches =develop= when the whole conversion is done and the
-  test suite passes against the mock servers and a live dovecot.
+- It reached =develop= when the conversion was done and the suite passed
+  against the mock servers and a live dovecot, which is what happened: 206
+  commits, and the merge was a fast-forward of =develop=.
 
 ** Problem Statement
 
