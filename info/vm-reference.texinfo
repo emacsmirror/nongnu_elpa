@@ -11407,6 +11407,38 @@ Consider this variable experimental; it may not be supported forever.
 
 @appendixsubsec Commands
 
+@deffn Command bbdb/vm-set-virtual-folder-alist
+@findex bbdb/vm-set-virtual-folder-alist
+Create a @code{vm-virtual-folder-alist} according to the records in the bbdb.
+For each record that has a @code{vm-virtual} attribute, add or modify the
+corresponding BBDB-VM-VIRTUAL element of the @code{vm-virtual-folder-alist}.
+
+@example
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+@end example
+The element gets added to the @code{element-name} sublist of the
+@code{vm-virtual-folder-alist}.
+@end deffn
+
+@deffn Command bbdb/vm-set-virtual-folder-alist-by-mail-alias
+@findex bbdb/vm-set-virtual-folder-alist-by-mail-alias
+Create a @code{vm-virtual-folder-alist} according to the records in the bbdb.
+For each record check wheather its alias is in the variable 
+@code{bbdb/vm-virtual-folder-alist-by-mail-alias-alist} and then
+add/modify the corresponding VM-VIRTUAL element of the
+@code{vm-virtual-folder-alist}. 
+
+@example
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+@end example
+The element gets added to the @code{element-name} sublist of the
+@code{vm-virtual-folder-alist}.
+@end deffn
+
 @deffn Command vm-add-spam-word word
 @findex vm-add-spam-word
 Add a new WORD to the list of spam words.
@@ -11540,6 +11572,11 @@ thread are added.
 @end deffn
 
 @appendixsubsec User options
+
+@defopt bbdb/vm-virtual-folder-alist-by-mail-alias-alist
+@vindex bbdb/vm-virtual-folder-alist-by-mail-alias-alist
+A list of (ALIAS . FOLDER-NAME) pairs, which map an alias to a folder.
+@end defopt
 
 @defopt vm-virtual-auto-delete-message-expunge
 @vindex vm-virtual-auto-delete-message-expunge

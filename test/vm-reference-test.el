@@ -656,6 +656,38 @@ was in the manual until `vm-reference-argument-name' started stripping it
       (goto-char (point-min))
       (should-not (re-search-forward "--cl-[a-z-]+--" nil t)))))
 
+(ert-deftest vm-reference-test-the-appendix-lists-every-command ()
+  "Every command a VM module defines is in the appendix.
+
+222 interactive commands were in no part of the manual (emacs-vm/vm#715), and
+what answers that is the generated appendix rather than a chapter entry
+written by hand for each: it says what the code says.  So the appendix has to
+be complete, and the sweep that fills it asked for a name beginning with vm --
+which left `bbdb/vm-set-virtual-folder-alist' and its by-mail-alias twin out
+of the manual entirely.
+
+This asks the question the other way round, from the files the build lists
+rather than from the names, so a command called anything at all has to be
+there.  A command VM invokes for itself counts: those are listed under their
+own heading, not among the ones to type."
+  (vm-reference-load-everything)
+  (let ((modules (vm-reference-modules))
+        (listed (make-hash-table :test 'eq))
+        (missing nil))
+    (dolist (section (vm-reference-collect))
+      (dolist (kind '(1 2 3))
+        (dolist (symbol (nth kind section))
+          (puthash symbol t listed))))
+    (mapatoms
+     (lambda (symbol)
+       (when (and (commandp symbol)
+                  (not (gethash symbol listed))
+                  (not (vm-reference-obsolete-p symbol)))
+         (let ((file (vm-reference-defining-file symbol)))
+           (when (and file (member file modules))
+             (push symbol missing))))))
+    (should (equal nil (sort missing #'string<)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
