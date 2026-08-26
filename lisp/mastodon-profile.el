@@ -94,6 +94,7 @@
 (autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
 (autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
 (autoload 'mastodon-inspect-profile-requests "mastodon-inspect")
+(autoload 'mastodon-search-propertize-tag "mastodon-search")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -104,6 +105,7 @@
 (defvar mastodon-tl--timeline-posts-count)
 (defvar mastodon-group-notifications)
 (defvar mastodon-inspect-profile-requests)
+(defvar mastodon-display-featured-tags-on-profiles)
 
 (defvar-local mastodon-profile--account nil
   "The data for the account being described in the current profile buffer.")
@@ -816,6 +818,19 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
            (cl-loop for x in str-list
                     collect (+ 2 (length x)))))))))
 
+(defun mastodon-profile--insert-featured-tags (tags)
+  "Insert featured TAGS.
+Insert function for `mastodon-profile--pretty-table'."
+  (let ((names (mastodon-tl--map-alist 'name tags)))
+    (mastodon-profile--pretty-table
+     (lambda ()
+       (insert
+        (mapconcat (lambda (x)
+                     (mastodon-search-propertize-tag x))
+                   names " | ")))
+     ;; 3+ for padding + #:
+     (+ 3 (apply #'max (mapcar #'length names))))))
+
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
              &optional no-reblogs headers no-replies only-media tag max-id
@@ -863,7 +878,8 @@ SKIP-PINNED means don't display pinned toots."
                            (cdr response))))
            (fields (mastodon-profile--fields-get account))
            (pinned (mastodon-profile--get-statuses-pinned account))
-           (relationships (mastodon-profile--relationships-get .id)))
+           (relationships (mastodon-profile--relationships-get .id))
+           (featured-tags (mastodon-profile--get-featured-tags .id)))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-profile-mode)
         (setq mastodon-profile--account account)
@@ -906,9 +922,12 @@ SKIP-PINNED means don't display pinned toots."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                                           .followers_count .following_count)
+                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
+          (when (and featured-tags
+                     mastodon-display-featured-tags-on-profiles)
+            (mastodon-profile--insert-featured-tags featured-tags))
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
