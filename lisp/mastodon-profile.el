@@ -792,8 +792,8 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
       (let* ((followsp
               (mastodon-profile--follows-p
                (list .requested_by .following .followed_by .blocked_by)))
-             (rels (mastodon-profile--relationships-get .id))
-             (langs-filtered (when-let* ((langs (alist-get 'languages rels)))
+             ;; (rels (mastodon-profile--relationships-get .id)) ;; same as relationships var?
+             (langs-filtered (when-let* ((langs .languages))
                                (concat " ("
                                        (mapconcat #'identity langs " ")
                                        ")")))
