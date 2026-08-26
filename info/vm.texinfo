@@ -1711,12 +1711,12 @@ your password does not orphan it.
 
 @cindex asynchronous operation
 @cindex mode line, server activity
-VM does not stop while it talks to a server.  Fetching mail, loading a
-message body, sending your flag changes, expunging, saving, quitting,
-synchronising, filing a copy of a message you send: all of them go on in the
-background, and Emacs answers you throughout.  What you see of it is in the
-mode line of the folder, its summary and its presentation buffer, which say
-what the folder is doing:
+VM's @acronym{IMAP} and @acronym{POP} operations are asynchronous: they do not
+block Emacs.  Fetching mail, loading a message body, sending your flag
+changes, expunging, saving, quitting, synchronising, filing a copy of a
+message you send: all of them go on in the background, and Emacs answers you
+throughout.  What you see of it is in the mode line of the folder, its summary
+and its presentation buffer, which say what the folder is doing:
 
 @example
 VM: inbox   3 (of 412)   fetching 24/340 +1 
