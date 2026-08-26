@@ -611,6 +611,61 @@ and with the maildrop's password in the header: the entries were built from
       (should (equal (vm-pop-mock-live-messages mock) '(2)))
       (should-not vm-pop-messages-to-expunge))))
 
+(ert-deftest vm-pop-mock-test-a-refused-server-expunge-is-offered-again ()
+  "REGRESSION: a maildrop that refuses a DELE is reported, and what it would
+not delete stays queued for next time.
+
+Issue #760.  The loop skipped the rest of a maildrop by throwing to a `catch'
+that the handler had already left, so a refused DELE came out as
+\(no-catch replay t): the warning was printed, and then the error took the
+count and the trouble report with it and reached the caller, which for a save
+is `vm-pop-synchronize-folder'."
+  (vm-pop-mock-test--visiting
+      (mock :messages (list vm-pop-mock-test--message-1)
+            :refuse "\\`DELE")
+    (vm-pop-mock-test--with-a-local-expunge mock
+      (let ((warnings nil))
+        (cl-letf (((symbol-function 'vm-warn)
+                   (lambda (_level _seconds &rest args)
+                     (push (apply #'format args) warnings)))
+                  ((symbol-function 'display-buffer) #'ignore))
+          (vm-pop-synchronize-folder :do-remote-expunges t))
+        (should (cl-find-if (lambda (w)
+                              (string-match-p "DELE 1 failed" w))
+                            warnings)))
+      (should (vm-pop-mock-received-p mock "\\`DELE 1"))
+      ;; the message is still there, and still owed to the maildrop
+      (should (equal (vm-pop-mock-live-messages mock) '(1)))
+      (should (equal vm-pop-messages-to-expunge (list "uid1")))
+      (should (equal vm-pop-retrieved-messages retrieved)))))
+
+(ert-deftest vm-pop-mock-test-an-expunge-without-uidl-keeps-its-queue ()
+  "A maildrop that answers UIDL with -ERR is left alone and keeps its queue:
+without UIDL there is no telling which message is which, and deleting the
+wrong one is worse than deleting none.
+
+Issue #760 for the UIDL half, which threw to the same absent `catch'.  The
+warning names the maildrop and no longer a message number, there being no one
+message to name: it used to print whatever the last DELE was, or nil."
+  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1)
+                          :no-uidl t)
+    (let* ((vm-pop-server-timeout 10)
+           (spec (vm-pop-mock-spec mock))
+           (entries (list (list "uid1" spec 'uidl)))
+           (warnings nil)
+           left)
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (_level _seconds &rest args)
+                   (push (apply #'format args) warnings)))
+                ((symbol-function 'display-buffer) #'ignore))
+        (setq left (vm-pop-expunge-entries entries)))
+      (should (equal left entries))
+      (should-not (vm-pop-mock-received-p mock "\\`DELE"))
+      (should (cl-find-if (lambda (w) (string-match-p "UIDL failed on" w))
+                          warnings))
+      (should-not (cl-find-if (lambda (w) (string-match-p "UIDL nil" w))
+                              warnings)))))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here
