@@ -133,7 +133,8 @@ entails.")
   "Marker in *URL-DEBUG* buffer.")
 
 (defun mastodon-inspect-profile-requests ()
-  ""
+  "Enable `url-debug' and call `mastodon-inspect-requests'.
+Function to insert into timeline and other view loading functions."
   (setq url-debug t)
   (when (get-buffer "*URL-DEBUG*")
     ;; before the new request: list previous set:
@@ -143,10 +144,19 @@ entails.")
       (erase-buffer))))
 
 (defun mastodon-inspect-requests (&optional endpoint)
+  "Collect recent url.el requests into a buffer.
+Filters *URL-DEBUG* for requests, dumps them into *masto-requests*.
+Note that for simplicity's sake in handling async requests, we collect
+all the requests made until just before the page being loaded, and since
+the last one.
+ENDPOINT is a string, to create a heading for a group of
+requests."
+  ;; FIXME: this will collect any requests made, including those of other
+  ;; packages. To filter URL-DEBUG by host, we would need to split-string
+  ;; its buffer-string on "http -> Request is:", then split each result on
+  ;; \n, then check the line with string-prefix-p "Host:"
   (with-current-buffer "*URL-DEBUG*"
-    (let* ((list (split-string
-                  (buffer-string)
-                  "\n"))
+    (let* ((list (split-string (buffer-string) "\n"))
            (cull (cl-remove-if-not
                   (lambda (x)
                     (member (car (split-string x))
@@ -156,7 +166,7 @@ entails.")
           (get-buffer-create "*masto-requests*")
         (goto-char (point-max))
         (insert
-         (format "\n\nEndpoint: %s\n%s"
+         (format "\n\n***\nCalls *before* hitting endpoint: %s\n%s"
                  (or endpoint "")
                  (mapconcat #'identity cull "\n")))))))
 
