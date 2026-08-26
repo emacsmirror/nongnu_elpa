@@ -2894,6 +2894,8 @@ programmatically and not crash into
   ;; this function's var must not be id as the above macro binds id and
   ;; even if we provide the arg (e.g. url-lookup), the macro definition
   ;; overrides it, making the optional arg unusable!
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests "thread"))
   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
          (type
           (if (and (mastodon-tl--buffer-type-eq 'notifications)
