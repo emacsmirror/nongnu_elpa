@@ -445,9 +445,10 @@ If NO-FORCE, only fetch if `mastodon-profile-account-settings' is nil."
                sk (mastodon-profile--get-source-value sk)))
             source-keys)
       ;; hack for max toot chars:
-      (mastodon-toot--get-max-toot-chars :no-toot)
+      (unless mastodon-toot--max-toot-chars
+        (mastodon-toot--get-max-toot-chars :no-toot))
       (mastodon-profile--update-preference-plist 'max_toot_chars
-                                                 mastodon-toot--max-toot-chars)
+                                 mastodon-toot--max-toot-chars)
       ;; TODO: remove now redundant vars, replace with fetchers from the plist
       (setq mastodon-toot--visibility (mastodon-profile--get-pref 'privacy)
             mastodon-toot--content-nsfw (mastodon-profile--get-pref 'sensitive))
