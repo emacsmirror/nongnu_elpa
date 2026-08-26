@@ -663,6 +663,12 @@ Calls `mastodon-tl--get-buffer-type', which see."
     (emojify-mode t)
     (when mastodon-toot--enable-custom-instance-emoji
       (mastodon-toot-enable-custom-emoji)))
+  ;; FIXME: this perhaps means we never update account settings:
+  ;; i guess there is a trade-off between performance and accuracy here.
+  ;; we'd like to avoid making the request for every buffer load, but if
+  ;; we close mastodon.el, and re-open (perhaps using another client to
+  ;; change settings in the meantime, `mastodon-profile-account-settings' will
+  ;; still be non-nil, so this will not update?)
   (mastodon-profile--fetch-server-account-settings :noforce)
   (when (and mastodon-tl--highlight-current-toot
              (fboundp #'cursor-face-highlight-mode))
