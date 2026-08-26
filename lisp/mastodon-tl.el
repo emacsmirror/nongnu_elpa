@@ -1386,6 +1386,9 @@ Used for hitting RET on a given link."
                         (mastodon-url-lookup (get-text-property pos 'shr-url)))
                        (t
                         (error "Unable to find account"))))))))
+          ((eq link-type 'featured-hashtag)
+           (mastodon-profile-open-statuses-tagged
+            (get-text-property pos 'mastodon-tag)))
           ((eq link-type 'shr-url)
            (mastodon-url-lookup (get-text-property pos 'shr-url)))
           ((eq link-type 'read-more)

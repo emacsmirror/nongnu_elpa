@@ -818,6 +818,17 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
            (cl-loop for x in str-list
                     collect (+ 2 (length x)))))))))
 
+(defun mastodon-profile--propertize-featured-tag (str)
+  "Propertize tag STR, a tag sans hash, as a featured hashtag.
+Featured hashtags link to the user's posts containing it."
+  (propertize (concat "#" str)
+              'mouse-face 'highlight
+              'mastodon-tag str
+              'mastodon-tab-stop 'featured-hashtag
+              'item-type 'tag ; for next/prev nav
+              'help-echo (concat "Browse featured tag #" str)
+              'keymap mastodon-tl--link-keymap))
+
 (defun mastodon-profile--insert-featured-tags (tags)
   "Insert featured TAGS.
 Insert function for `mastodon-profile--pretty-table'."
@@ -828,7 +839,7 @@ Insert function for `mastodon-profile--pretty-table'."
        (insert
         (mapconcat
          (lambda (row)
-           (mapconcat #'mastodon-search-propertize-tag
+           (mapconcat #'mastodon-profile--propertize-featured-tag
                       row " | "))
          names-rows
          "\n")))

@@ -329,7 +329,7 @@ If NOTE is non-nil, include user's profile note. This is also
   (let ((tags-list (mapcar #'mastodon-search--get-hashtag-info tags)))
     (mastodon-search--print-tags-list tags-list)))
 
-(defun mastodon-search-propertize-tag (str &optional nobox)
+(defun mastodon-search-propertize-tag (str)
   "Propertize tag STR, a tag sans hash."
   (propertize (concat "#" str)
               'face '(:box t)
