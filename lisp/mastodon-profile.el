@@ -825,6 +825,8 @@ ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
 MAX-ID is a flag to include the max_id pagination parameter.
 SKIP-PINNED means don't display pinned toots."
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests))
   (let-alist account
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
@@ -901,7 +903,7 @@ SKIP-PINNED means don't display pinned toots."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                           .followers_count .following_count)
+                                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
           (mastodon-media--inline-images (point-min) (point))

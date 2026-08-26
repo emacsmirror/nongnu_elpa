@@ -129,17 +129,36 @@ entails.")
   (setq mastodon-inspect--single-account-json
         (car mastodon-inspect--search-query-accounts-result)))
 
+(defvar mastodon-inspect-url-debug-marker nil
+  "Marker in *URL-DEBUG* buffer.")
+
+(defun mastodon-inspect-profile-requests ()
+  ""
+  (setq url-debug t)
+  (when (get-buffer "*URL-DEBUG*")
+    ;; before the new request: list previous set:
+    (mastodon-inspect-requests "TL more")
+    (with-current-buffer "*URL-DEBUG*"
+      ;; then delete previous set:
+      (erase-buffer))))
+
 (defun mastodon-inspect-requests (&optional endpoint)
   (with-current-buffer "*URL-DEBUG*"
-    (let* ((list (split-string (buffer-string) "\n"))
+    (let* ((list (split-string
+                  (buffer-string)
+                  "\n"))
            (cull (cl-remove-if-not
                   (lambda (x)
                     (member (car (split-string x))
                             '("GET" "PUT" "POST" "PATCH" "DELETE")))
                   list)))
-      (message "Endpoint: %s\n%s"
-               (or endpoint "")
-               (mapconcat #'identity cull "\n")))))
+      (with-current-buffer
+          (get-buffer-create "*masto-requests*")
+        (goto-char (point-max))
+        (insert
+         (format "\n\nEndpoint: %s\n%s"
+                 (or endpoint "")
+                 (mapconcat #'identity cull "\n")))))))
 
 (provide 'mastodon-inspect)
 ;;; mastodon-inspect.el ends here

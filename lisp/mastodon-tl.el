@@ -3715,6 +3715,8 @@ and profile pages when showing followers or accounts followed."
 (defun mastodon-tl--more ()
   "Append older toots to timeline, asynchronously."
   (message "Loading...")
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests))
   (if (mastodon-tl--use-link-header-p)
       ;; link-header paginate:
       ;; can't build a URL with --more-json-async, endpoint/id:
@@ -4033,18 +4035,15 @@ NO-BYLINE means just insert toot body, used for announcements."
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
     (when mastodon-inspect-profile-requests
-      (setq url-debug t))
-    (prog1
-        (funcall
-         (if headers
-             #'mastodon-http--get-response-async
-           #'mastodon-http--get-json-async)
-         url params nil ;; not silent
-         'mastodon-tl--init*
-         buffer endpoint update-function headers params hide-replies
-         instance no-byline)
-      (when mastodon-inspect-profile-requests
-        (mastodon-inspect-requests endpoint)))))
+      (mastodon-inspect-profile-requests))
+    (funcall
+     (if headers
+         #'mastodon-http--get-response-async
+       #'mastodon-http--get-json-async)
+     url params nil ;; not silent
+     'mastodon-tl--init*
+     buffer endpoint update-function headers params hide-replies
+     instance no-byline)))
 
 (defun mastodon-tl--init*
     (response buffer endpoint update-function &optional headers
@@ -4096,6 +4095,8 @@ BINDING-STR is a string explaining any bindins in the view, it can have
 formatting for `substitute-command-keys'.
 ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests))
   (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
                           "types[]" (list note-type))))
