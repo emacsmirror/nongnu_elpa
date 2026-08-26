@@ -132,13 +132,13 @@ entails.")
 (defvar mastodon-inspect-url-debug-marker nil
   "Marker in *URL-DEBUG* buffer.")
 
-(defun mastodon-inspect-profile-requests ()
+(defun mastodon-inspect-profile-requests (&optional endpoint)
   "Enable `url-debug' and call `mastodon-inspect-requests'.
 Function to insert into timeline and other view loading functions."
   (setq url-debug t)
   (when (get-buffer "*URL-DEBUG*")
     ;; before the new request: list previous set:
-    (mastodon-inspect-requests "TL more")
+    (mastodon-inspect-requests endpoint)
     (with-current-buffer "*URL-DEBUG*"
       ;; then delete previous set:
       (erase-buffer))))

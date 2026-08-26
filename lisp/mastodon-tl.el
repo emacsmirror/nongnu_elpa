@@ -3724,7 +3724,7 @@ and profile pages when showing followers or accounts followed."
   "Append older toots to timeline, asynchronously."
   (message "Loading...")
   (when mastodon-inspect-profile-requests
-    (mastodon-inspect-profile-requests))
+    (mastodon-inspect-profile-requests "TL more"))
   (if (mastodon-tl--use-link-header-p)
       ;; link-header paginate:
       ;; can't build a URL with --more-json-async, endpoint/id:
@@ -4043,7 +4043,7 @@ NO-BYLINE means just insert toot body, used for announcements."
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
     (when mastodon-inspect-profile-requests
-      (mastodon-inspect-profile-requests))
+      (mastodon-inspect-profile-requests endpoint))
     (funcall
      (if headers
          #'mastodon-http--get-response-async
@@ -4104,7 +4104,7 @@ formatting for `substitute-command-keys'.
 ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
   (when mastodon-inspect-profile-requests
-    (mastodon-inspect-profile-requests))
+    (mastodon-inspect-profile-requests endpoint))
   (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
                           "types[]" (list note-type))))
