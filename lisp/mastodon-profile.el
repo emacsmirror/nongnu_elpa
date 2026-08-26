@@ -93,6 +93,7 @@
 (autoload 'mastodon-tl-next-tab-item "mastodon-tl")
 (autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
 (autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
+(autoload 'mastodon-search-propertize-tag "mastodon-search")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -818,14 +819,14 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
   "Insert featured TAGS.
 Insert function for `mastodon-profile--pretty-table'."
   (let ((names (mastodon-tl--map-alist 'name tags)))
-    (mastodon-profile--pretty-table (lambda ()
-                      (insert
-                       ;; TODO: propertize tag as link:
-                       (mapconcat (lambda (x)
-                                    (concat "#" x))
-                                  names " | ")))
-                    ;; 3+ for padding + #:
-                    (+ 3 (apply #'max (mapcar #'length names))))))
+    (mastodon-profile--pretty-table
+     (lambda ()
+       (insert
+        (mapconcat (lambda (x)
+                     (mastodon-search-propertize-tag x))
+                   names " | ")))
+     ;; 3+ for padding + #:
+     (+ 3 (apply #'max (mapcar #'length names))))))
 
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
