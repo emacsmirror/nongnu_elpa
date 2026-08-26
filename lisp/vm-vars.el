@@ -7168,6 +7168,13 @@ wire.  The label is then set here and absent there, with nothing said at any
 point (issue #601).  A keyword seen to vanish is remembered here so that the
 complaint is made once per session rather than once per message.")
 (make-variable-buffer-local 'vm-imap-dropped-flags)
+
+(defvar vm-imap-keywords-carried nil
+  "Whether this mailbox carries IMAP keywords, in the folder buffer.
+A cons of the flags obarray the answer was worked out from and the answer, so
+that a new obarray -- a new look at the mailbox -- is worked out again.  See
+`vm-imap-mailbox-carries-keywords-p\=', which is the only thing that reads it.")
+(make-variable-buffer-local 'vm-imap-keywords-carried)
 (defvar vm-reply-list nil
   "Buffer local variable in Composition buffers that holds the set of
   messages to which this composition is a reply.")

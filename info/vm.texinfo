@@ -1865,11 +1865,14 @@ mailbox of that name, not a flag.
 
 @item @acronym{IMAP} keywords are not labels.
 A VM label is an @acronym{IMAP} keyword on the wire.  Gmail accepts a
-@code{STORE} of an arbitrary keyword, answers success, and does not keep it.
-The label is simply gone by the next session, with no error at any point ---
-which is why labels set in VM against Gmail appear to work and then vanish.
-Nothing VM can do at the protocol level fixes this: the server took the
-change and discarded it.
+@code{STORE} of an arbitrary keyword, answers success, and does not keep it,
+with no error at any point.  VM notices and says so once per session, and
+keeps the label in the folder.  It used to be erased in the same breath: the
+flags read back from the server replaced the folder's labels with what the
+server had, which was nothing, so setting a label against Gmail looked like a
+command that did nothing.  A label now stays where you set it and goes no
+further --- no other client sees it, and it is lost with the folder's cache
+file.  Nothing VM can do at the protocol level puts it on the server.
 
 @item @code{\Deleted} does not delete.
 Setting the flag marks nothing for removal in the usual sense.  What deletes

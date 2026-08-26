@@ -1,0 +1,160 @@
+* Gmail labels, and where VM's own labels can live
+
+Design notes for https://gitlab.com/emacs-vm/vm/-/work_items/601, Work around
+Gmail's partial IMAP: labels set in VM do not stick.  The read-back half is
+fixed; the store half is undecided, and this file is what the options are and
+what each one costs.
+
+** What Gmail does
+
+- A label is a mailbox.  A message with two labels is in two mailboxes, All
+  Mail holds every message once, and applying a label is a UID COPY.
+- IMAP keywords are not labels.  Gmail takes a STORE of an arbitrary keyword,
+  answers OK, and keeps nothing.  No error at any point.
+- \Deleted does not delete.  EXPUNGE from All Mail, or a move to
+  [Gmail]/Trash, does.
+- Gmail advertises X-GM-EXT-1, whose X-GM-LABELS does the mapping properly,
+  along with X-GM-MSGID, X-GM-THRID and X-GM-RAW search.
+
+** What VM does
+
+- A VM label is a bare IMAP keyword on the wire.  vm-imap-save-attributes
+  builds the wanted flags from vm-decoded-labels-of and vm-imap-store-flags
+  sends them as STORE +FLAGS.SILENT.
+- The read-back, vm-imap-update-message-flags, gives each message exactly the
+  keywords the server reported.  Both the blocking retrieve-attributes step
+  and the driver's vm-imap-net-take-server-flags go through it.
+
+** What has landed
+
+- The complaint, commit 52d9a585, 2026-08-23: vm-imap-note-dropped-flags
+  warns once per session that the server accepted a keyword and discarded it,
+  naming the label.  The manual says so under Gmail.  Before it, the loss was
+  silent.
+- The authority fix, this file's own commit: the read-back no longer erases a
+  label the server never carried.  vm-imap-mailbox-carries-keywords-p answers
+  whether any message in the mailbox carries a keyword at all; where none
+  does, the server's flag list is not a statement about labels and the
+  folder's labels stay as they are.  Without it a label was set here, dropped
+  there, and then erased here by the copy that came back, which is why setting
+  a label on Gmail looked like a no-op.
+
+Why not PERMANENTFLAGS, which is the protocol's own answer: a server may leave
+a keyword out of it and store the keyword anyway, or advertise \* and keep
+nothing.  Whether Gmail advertises \* has not been checked against a live
+account; if it does not, PERMANENTFLAGS is the better signal and should
+replace the heuristic.
+
+What the heuristic costs: on a mailbox where no message carries a keyword, a
+label removed in another client lingers until some message there has one.
+What the other answer cost was the reader's labels.
+
+** The constraint on any store
+
+A store local to one computer is not a fix.  A reader uses a laptop and a
+desktop, and labels set on one have to be visible on the other; a local file,
+a sidecar beside the IMAP cache, or a row in a local database is a cache, not
+an answer.  Only a store the server holds qualifies.
+
+** Options for the store
+
+*** X-GM-LABELS, spoken directly
+
+- FETCH X-GM-LABELS to read, UID STORE ±X-GM-LABELS to write, gated on
+  vm-imap-capability 'X-GM-EXT-1, which is one call and already there.
+- The only option where a label set in VM appears in Gmail's own interface and
+  on the reader's phone, which is what the request means.
+- Wants: modified UTF-7 for label names, quoting, nesting with /, and a
+  mapping for Gmail's own \Inbox \Starred \Important \Sent \Draft \Trash
+  \Spam onto VM's flags rather than onto labels.
+- Recommended as the first real fix.
+
+*** UID COPY into a mailbox named for the label
+
+- The same effect without the extension: creating a label means creating a
+  mailbox, removing one means finding the message there and expunging it.
+- Worse than X-GM-LABELS on Gmail, which always advertises the extension.
+  Only interesting for some other server that models labels as mailboxes.
+
+*** A message in the mailbox holding the labels
+
+- The labels live in their own IMAP mailbox, say VM/State, as ordinary
+  messages keyed by Message-ID.  Gmail shows that mailbox as a label.
+- Append-only rather than one rewritten message: each save APPENDs the
+  changes, and VM compacts them when they pass some count.  Two machines then
+  merge, where a single state message is last writer wins.
+- Reading is a UID SEARCH HEADER on a VM header at folder open, applied after
+  the flag read-back.
+- Works on any server that drops keywords, not only Gmail.
+- Costs: invisible to Gmail's interface and to every other client, and the
+  mailbox is VM litter a reader may delete without knowing what it was.
+- Keep in reserve for servers with no extension to speak.
+
+*** A file on the reader's machine
+
+- Cheapest to build and the store is the easy half, but it fails the
+  constraint above: one machine only.
+- Worth keeping in mind only as the other backend of whatever store the
+  mailbox option needs, not as a fix.
+
+*** A file in Google Drive
+
+- Rejected.  It buys what the mailbox message buys and costs much more: OAuth2
+  with a registered Google client, a token store and refresh, and an HTTP and
+  JSON layer VM does not have.  A reader who reaches Gmail with an app
+  password has none of it set up.
+- And no other mail client can read the result, so it does not even have the
+  interoperability the mailbox option lacks.
+
+*** The flags Gmail does keep
+
+- \Seen, \Answered, \Flagged, \Draft and \Deleted are honoured, \Flagged being
+  Starred.  Mapping a VM label named starred or flagged onto \Flagged is
+  nearly free and gives one label a real round trip.
+- Small, and the only cheap win here.
+
+*** A local cache server, with the sync tool doing the mapping
+
+- Blocked, not pending.  VM speaks keywords to dovecot, where they persist,
+  and the sync tool maps them to labels on the way out.
+- isync feature request 15 asks for X-GM-LABELS and has been open since
+  2021-05-05 with no push support: https://sourceforge.net/p/isync/feature-requests/15/
+  The maintainer ties it to regular IMAP keyword support, "on the TODO
+  forever", calls reading the extended flags per file "basically unusable
+  without a header cache", and doubts labels and keywords belong together.
+- offlineimap carries labels one way with synclabels = yes, as an X-Keywords
+  header, which is not a keyword either.
+- A variant that needs no sync tool: VM talks to the local dovecot for mail
+  and to Gmail directly for X-GM-LABELS.  Two connections and two credentials
+  for one folder, so only for a reader already running the cache.
+
+** How this meets SQLite3 folders
+
+https://gitlab.com/emacs-vm/vm/-/work_items/761 proposes SQLite3 as a folder
+format.  It bears on the local half of this and not on the sharing half.
+
+- What it would help: a real place for per-message and per-mailbox state that
+  has no header today, with transactions instead of rewriting a header block
+  on every save.  X-GM-MSGID and X-GM-THRID, whether a mailbox carries
+  keywords, and a journal of label changes waiting to go up are all of that
+  kind.  Today the choices are a new X-VM-IMAP-* header in the folder or a
+  session variable that forgets on restart, which is why the fix above is a
+  heuristic rather than a remembered fact.
+- What it does not do: share anything between machines.  Copying or syncing a
+  live SQLite file between a laptop and a desktop is not a substitute for a
+  store the server holds, and it is worse than a plain file at it.
+- So the two are orthogonal.  SQLite makes the local half cheap and reliable;
+  the sharing half still needs X-GM-LABELS or a message in the mailbox.
+- One caution if labels ever live in a folder database: the authority question
+  does not go away.  Whatever holds the labels, something still has to decide
+  whether the server's flag list may erase them, and that is the rule above.
+
+** Open questions
+
+- Does Gmail advertise \* in PERMANENTFLAGS?  Needs a live account.  If not,
+  it replaces the heuristic in vm-imap-mailbox-carries-keywords-p.
+- How does a reader say which VM labels are to become Gmail labels, and what
+  happens to a label whose name Gmail will not take?
+- What happens on a mailbox that carries keywords for some messages and drops
+  others, which is Exchange rather than Gmail: the per-mailbox answer is too
+  coarse for it, and a remembered per-keyword answer is what would cover it.

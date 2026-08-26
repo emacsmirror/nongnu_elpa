@@ -1212,6 +1212,46 @@ carrying a keyword asks, because a keyword is what a server may discard."
                              (string-match-p "+FLAGS (important)" line)))
                       (vm-imap-mock-log mock)))))
 
+(ert-deftest vm-imap-mock-test-a-label-survives-a-server-that-keeps-no-keyword ()
+  "REGRESSION: a synchronise against a server that keeps no keyword leaves the
+folder's labels alone.
+
+Issue #601.  The read-back gave each message exactly the keywords the server
+reported, so against Gmail -- which takes a STORE of a keyword, answers OK and
+keeps nothing -- the step that followed the save erased every label the save
+had just failed to store.  The label was set here, absent there, and then
+absent here too, which is why it looked as though setting it had done nothing."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice)
+            :drops-keywords t)
+    (let ((message (car vm-message-list)))
+      (vm-set-decoded-labels-of message (list "important"))
+      (vm-set-decoded-label-string-of message nil)
+      (vm-imap-mock-test--warnings
+        (vm-imap-synchronize)
+        (vm-imap-net-wait nil 10))
+      (should (equal (vm-decoded-labels-of message) (list "important")))
+      ;; the server really did not keep it: that is the case being covered,
+      ;; not a mock that quietly stored the keyword after all
+      (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1))))))
+
+(ert-deftest vm-imap-mock-test-a-server-that-keeps-keywords-still-removes-a-label ()
+  "A server that carries keywords is still believed when it does not report
+one: the label goes, which is how a label removed in another client reaches
+this folder.
+
+The other side of #601.  What decides it is whether any message in the mailbox
+carries a keyword at all, so a mailbox with one keeps its say over the rest."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (let ((message (car vm-message-list)))
+      (vm-imap-mock-set-flags mock "INBOX" 1 (list "important"))
+      (vm-set-decoded-labels-of message (list "important" "urgent"))
+      (vm-set-decoded-label-string-of message nil)
+      (vm-imap-synchronize)
+      (vm-imap-net-wait nil 10)
+      (should (equal (vm-decoded-labels-of message) (list "important"))))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

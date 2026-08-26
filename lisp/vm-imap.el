@@ -3064,6 +3064,50 @@ fetches flags in addition to uid's and stores them in obarrays."
       ;;-------------------
       )))
 
+(defun vm-imap-mailbox-holds-a-keyword-p (flags-obarray)
+  "Whether any message in FLAGS-OBARRAY carries an IMAP keyword.
+FLAGS-OBARRAY is the folder\='s flags obarray, whose value for each UID is the
+message\='s size followed by its flags."
+  (catch 'found
+    (mapatoms (lambda (symbol)
+		(when (seq-some #'vm-imap-keyword-p (cdr (symbol-value symbol)))
+		  (throw 'found t)))
+	      flags-obarray)
+    nil))
+
+(defun vm-imap-mailbox-carries-keywords-p ()
+  "Whether this mailbox holds IMAP keywords at all, as far as VM has looked.
+
+A VM label is an IMAP keyword on the wire, and the read-back takes the
+server\='s flag list for the whole truth: a keyword it does not report is a
+label the reader has removed somewhere else.  Gmail keeps no keyword at all
+(emacs-vm/vm#601), so the read-back that follows a save erased every label the
+save had just failed to store, leaving the reader\='s labels nowhere.
+
+The answer is whether any message in the mailbox carries a keyword.  Nothing
+in the protocol answers it: a server may leave a keyword out of PERMANENTFLAGS
+and store it anyway, or advertise `\\*\=' and keep nothing, which is what Gmail
+does.  A mailbox where no message has one is a mailbox whose flag list says
+nothing about labels, and the labels are left as the folder has them.
+
+Being wrong here costs a label that lingers one sync too long, on a mailbox
+where no message carries a keyword and another client removed the last one.
+Being wrong the other way costs the reader the labels they set.
+
+The answer is worked out once per look at the mailbox and kept in
+`vm-imap-keywords-carried\='; the current buffer is the folder."
+  (let ((flags-obarray (vm-folder-imap-flags-obarray)))
+    (cond
+     ;; nothing has been fetched, so there is nothing to go on: answer as VM
+     ;; did before this existed
+     ((null flags-obarray) t)
+     ((eq (car-safe vm-imap-keywords-carried) flags-obarray)
+      (cdr vm-imap-keywords-carried))
+     (t
+      (let ((carried (vm-imap-mailbox-holds-a-keyword-p flags-obarray)))
+	(setq vm-imap-keywords-carried (cons flags-obarray carried))
+	carried)))))
+
 (defun vm-imap-update-message-flags (m flags &optional norecord)
   "Update the flags of the message M in the folder to imap flags FLAGS.
 Optional argument NORECORD says whether this fact should not be
@@ -3138,12 +3182,18 @@ recorded in the undo stack."
 	    (vm-set-flagged-flag m nil norecord)))
     (setq labels (sort (vm-decoded-labels-of m) 'string-lessp))
     (setq seen-labels (sort seen-labels 'string-lessp))
-    (if (equal labels seen-labels)
-	t
+    (cond
+     ((equal labels seen-labels) t)
+     ;; A mailbox that carries no keyword anywhere has said nothing about this
+     ;; message's labels, so they stay as the folder has them.  Gmail carries
+     ;; none: taking its flag list for the whole truth is what erased a label
+     ;; a moment after it was set (emacs-vm/vm#601).
+     ((and (null seen-labels) (not (vm-imap-mailbox-carries-keywords-p))) t)
+     (t
       (vm-set-decoded-labels-of m seen-labels)
       (vm-set-decoded-label-string-of m nil)
       (vm-mark-for-summary-update m)
-      (vm-set-stuff-flag-of m t))
+      (vm-set-stuff-flag-of m t)))
     ))
 
 (defun vm-imap-flag-list-string (flags)
