@@ -869,22 +869,30 @@ If it is a boost, return \\='$username boosted'."
                      'face 'mastodon-boosted-face
                      'continued-thread t
                      'help-echo "Browse thread"))
-          (let-alist (mastodon-tl--acc-by-id reply-acc-id)
-            (let ((name (or .display_name .username)))
-              (concat (mastodon-tl--symbol 'reply)
-                      (mastodon-tl--buttonify-link
-                       " in reply to "
-                       'face 'mastodon-boosted-face
-                       'continued-thread t
-                       'help-echo "Browse thread")
-                      (mastodon-tl--buttonify-link name
-                                        'face 'mastodon-display-name-face
-                                        'keymap mastodon-tl--link-keymap
-                                        'mastodon-tab-stop 'user-handle
-                                        'shr-url .url
-                                        'mastodon-handle (concat "@" .acct)
-                                        'mouse-face 'highlight)
-                      "\n"))))))
+          ;; try to extract reply account data from mentions:
+          (let ((mention (car
+                          (member-if
+                           (lambda (x)
+                             (string= reply-acc-id (alist-get 'id x)))
+                           (alist-get 'mentions toot)))))
+            (let-alist (or mention
+                           ;; if not, fetch account by id:
+                           (mastodon-tl--acc-by-id reply-acc-id))
+              (let ((name (or .display_name .username)))
+                (concat (mastodon-tl--symbol 'reply)
+                        (mastodon-tl--buttonify-link
+                         " in reply to "
+                         'face 'mastodon-boosted-face
+                         'continued-thread t
+                         'help-echo "Browse thread")
+                        (mastodon-tl--buttonify-link name
+                                          'face 'mastodon-display-name-face
+                                          'keymap mastodon-tl--link-keymap
+                                          'mastodon-tab-stop 'user-handle
+                                          'shr-url .url
+                                          'mastodon-handle (concat "@" .acct)
+                                          'mouse-face 'highlight)
+                        "\n")))))))
      (t ""))))
 
 (defun mastodon-tl-continued-thread-load ()
