@@ -316,17 +316,19 @@ a POP server, find its cache file on the file system"
 	      (not (equal 0 (car response))))))
       (and process (vm-pop-end-session process nil vm-pop-ok-to-ask)))))
 
-;;;###autoload
-(defun vm-expunge-pop-messages ()
-  "Deletes all messages from POP mailbox that have already been retrieved
-into the current folder.  VM sends POP DELE commands to all the
-relevant POP servers to remove the messages."
-  (interactive)
-  (vm-follow-summary-cursor)
-  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-  (vm-error-if-virtual-folder)
-  (if (and (vm-interactive-p) (eq vm-folder-access-method 'pop))
-      (error "This command is not meant for POP folders.  Use the normal folder expunge instead."))
+(defun vm-pop-expunge-entries (entries)
+  "Delete from their maildrops the messages ENTRIES names, waiting for each.
+ENTRIES is in `vm-pop-retrieved-messages\\=' shape, a list of (UIDL MAILDROP
+`uidl\\='), and is left as it was found: one session per maildrop, and Emacs
+held for all of them.
+
+Answers with the entries the maildrops still have: what a maildrop refused,
+and the rest of that maildrop, which is skipped after a failure.  The caller
+says what to delete and is told what is left, so nothing here reads or writes
+the folder's own record of what it has fetched -- `vm-pop-synchronize-folder\\='
+used to pass its expunge queue in by overwriting that record, which is written
+into the folder's `X-VM-POP-Retrieved\\=' header on every save
+(emacs-vm/vm#759)."
   (let ((process nil)
 	(source nil)
 	(trouble nil)
@@ -334,23 +336,16 @@ relevant POP servers to remove the messages."
 	(vm-global-block-new-mail t)
 	(vm-pop-ok-to-ask t)
 	popdrop uidl-alist data mp match)
-    ;; Through the driver where the maildrops allow it, as the IMAP one is: a
-    ;; session per maildrop, and Emacs held for all of them.
-    (unless (vm-pop-net-expunge-retrieved)
+    (setq entries
+	  (sort (delq nil (copy-sequence entries))
+		(function (lambda (a b)
+			    (cond ((string-lessp (nth 1 a) (nth 1 b)) t)
+				  ((string-lessp (nth 1 b) (nth 1 a)) nil)
+				  ((string-lessp (car a) (car b)) t)
+				  (t nil))))))
     (unwind-protect
 	(save-excursion
-	  (setq vm-pop-retrieved-messages
-		(delq nil vm-pop-retrieved-messages))
-	  (setq vm-pop-retrieved-messages
-		(sort vm-pop-retrieved-messages
-		      (function (lambda (a b)
-				  (cond ((string-lessp (nth 1 a) (nth 1 b)) t)
-					((string-lessp (nth 1 b)
-						       (nth 1 a))
-					 nil)
-					((string-lessp (car a) (car b)) t)
-					(t nil))))))
-	  (setq mp vm-pop-retrieved-messages)
+	  (setq mp entries)
 	  (while mp
 	    (condition-case nil
 		(catch 'replay
@@ -433,8 +428,24 @@ relevant POP servers to remove the messages."
 		     (if (zerop delete-count) "No" delete-count)
 		     (if (= delete-count 1) "" "s"))))
       (and process (vm-pop-end-session process)))
+    (delq nil entries)))
+
+;;;###autoload
+(defun vm-expunge-pop-messages ()
+  "Deletes all messages from POP mailbox that have already been retrieved
+into the current folder.  VM sends POP DELE commands to all the
+relevant POP servers to remove the messages."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-virtual-folder)
+  (if (and (vm-interactive-p) (eq vm-folder-access-method 'pop))
+      (error "This command is not meant for POP folders.  Use the normal folder expunge instead."))
+  ;; Through the driver where the maildrops allow it, as the IMAP one is: a
+  ;; session per maildrop, and Emacs held for all of them.
+  (unless (vm-pop-net-expunge-retrieved)
     (setq vm-pop-retrieved-messages
-	  (delq nil vm-pop-retrieved-messages)))))
+	  (vm-pop-expunge-entries vm-pop-retrieved-messages))))
 
 (defun vm-pop-make-session (source interactive &optional retry)
   "Create a new POP session for the POP mail box SOURCE.
@@ -1210,21 +1221,25 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
 	       vm-pop-messages-to-expunge)
 	  (let ((process (vm-folder-pop-process)))
 	    ;; POP servers usually allow only one remote accessor
-	    ;; at a time vm-expunge-pop-messages will set up its
-	    ;; own connection so we get out of its way by closing
-	    ;; our connection.
+	    ;; at a time and the expunge sets up its own connection,
+	    ;; so we get out of its way by closing our connection.
 	    (if (and (processp process)
 		     (memq (process-status process) '(open run)))
 		(vm-pop-end-session process))
-	    (setq vm-pop-retrieved-messages
-		  (mapcar (function (lambda (x) (list x popdrop 'uidl)))
-			  vm-pop-messages-to-expunge))
-	    (vm-expunge-pop-messages)
-	    ;; Any messages that could not be expunged will be
-	    ;; remembered for future
+	    ;; The queue is what to delete, and what comes back is what the
+	    ;; maildrop still has, offered again next time.  This used to hand
+	    ;; the queue to `vm-expunge-pop-messages' through
+	    ;; `vm-pop-retrieved-messages', which left the folder's record of
+	    ;; what it had fetched holding the expunge queue instead -- so the
+	    ;; folder fetched that mail again, and saved a maildrop
+	    ;; specification with the password in it into its own
+	    ;; `X-VM-POP-Retrieved' header (emacs-vm/vm#759).
 	    (setq vm-pop-messages-to-expunge
 		  (mapcar (function (lambda (x) (car x)))
-			  vm-pop-retrieved-messages))))
+			  (vm-pop-expunge-entries
+			   (mapcar (function
+				    (lambda (x) (list x popdrop 'uidl)))
+				   vm-pop-messages-to-expunge))))))
       got-some))))
 
 ;;;###autoload
