@@ -919,10 +919,11 @@ SKIP-PINNED means don't display pinned toots."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                                           .followers_count .following_count)
+                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
-          (mastodon-profile--insert-featured-tags featured-tags)
+          (when featured-tags
+            (mastodon-profile--insert-featured-tags featured-tags))
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
