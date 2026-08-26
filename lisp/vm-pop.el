@@ -397,17 +397,24 @@ into the folder's `X-VM-POP-Retrieved\\=' header on every save
 		0 2 "DELE %s failed on %s, skipping rest of mailbox..."
 		(car match) popdrop)
 	       (setq trouble (cons popdrop trouble))
+	       ;; walking `mp' past the rest of this maildrop is the skip, and
+	       ;; the `while' loop goes on to the next maildrop by itself.  A
+	       ;; `throw' to `replay' here reached no `catch': a handler runs
+	       ;; after the protected form it guards has been unwound, so the
+	       ;; refusal came out as (no-catch replay t) and the trouble
+	       ;; report below was never reached (emacs-vm/vm#760)
 	       (while (equal (nth 1 (car mp)) source)
-		 (setq mp (cdr mp)))
-	       (throw 'replay t))
+		 (setq mp (cdr mp))))
 	      (vm-uidl-failed
+	       ;; UIDL asks about the whole maildrop, so there is no message
+	       ;; number to name here; it used to print the one from whatever
+	       ;; the last DELE was, or nil
 	       (vm-warn 
-		0 2 "UIDL %s failed on %s, skipping this mailbox..."
-		(car match) popdrop)
+		0 2 "UIDL failed on %s, skipping this mailbox..."
+		popdrop)
 	       (setq trouble (cons popdrop trouble))
 	       (while (equal (nth 1 (car mp)) source)
-		 (setq mp (cdr mp)))
-	       (throw 'replay t))))
+		 (setq mp (cdr mp))))))
 	  (if trouble
 	      (progn
 		(set-buffer (get-buffer-create "*POP Expunge Trouble*"))
