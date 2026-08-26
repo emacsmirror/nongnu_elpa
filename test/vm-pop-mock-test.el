@@ -573,6 +573,44 @@ answer arrives rather than before the question is asked."
     ;; nothing new: the folder holds what the maildrop holds
     (should-not vm-spooled-mail-waiting)))
 
+(defmacro vm-pop-mock-test--with-a-local-expunge (mock &rest body)
+  "Run BODY in a visited mock folder that has expunged \"uid1\" locally.
+That leaves the UIDL queued for the maildrop and recorded as one this folder
+has had, which is what `vm-expunge-queue-pop-deletion' and
+`vm-expunge-record-pop-uidl' do, and it is the state a save then owes the
+server."
+  (declare (indent 1) (debug t))
+  `(let* ((spec (vm-popdrop-sans-password (vm-pop-mock-spec ,mock)))
+          (retrieved (list (list "uid1" spec 'uidl))))
+     (setq vm-pop-retrieved-messages (copy-tree retrieved))
+     (setq vm-pop-messages-to-expunge (list "uid1"))
+     ,@body))
+
+(ert-deftest vm-pop-mock-test-a-server-expunge-keeps-the-record-of-what-was-fetched ()
+  "REGRESSION: expunging on the server leaves the folder's record of what it
+fetched alone.
+
+Issue #759.  `vm-pop-synchronize-folder' passed its expunge queue to
+`vm-expunge-pop-messages' by overwriting `vm-pop-retrieved-messages', which
+is the list that stops a message being fetched twice and is written into the
+folder's `X-VM-POP-Retrieved' header on every save.  The folder came out of a
+save remembering the queue instead, ready to fetch again what it already had,
+and with the maildrop's password in the header: the entries were built from
+`vm-folder-pop-maildrop-spec', which carries it."
+  (vm-pop-mock-test--visiting
+      (mock :messages (list vm-pop-mock-test--message-1
+                            vm-pop-mock-test--message-2))
+    (vm-pop-mock-test--with-a-local-expunge mock
+      (vm-pop-synchronize-folder :do-remote-expunges t)
+      ;; the record of what the folder has had is as it was
+      (should (equal vm-pop-retrieved-messages retrieved))
+      (should-not (cl-find-if (lambda (entry)
+                                (string-match-p "secret" (nth 1 entry)))
+                              vm-pop-retrieved-messages))
+      ;; and the maildrop was told about the one message the queue named
+      (should (equal (vm-pop-mock-live-messages mock) '(2)))
+      (should-not vm-pop-messages-to-expunge))))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here
