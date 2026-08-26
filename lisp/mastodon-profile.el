@@ -103,6 +103,7 @@
 (defvar mastodon-toot--content-nsfw)
 (defvar mastodon-tl--timeline-posts-count)
 (defvar mastodon-group-notifications)
+(defvar mastodon-display-featured-tags-on-profiles)
 
 (defvar-local mastodon-profile--account nil
   "The data for the account being described in the current profile buffer.")
@@ -922,7 +923,8 @@ SKIP-PINNED means don't display pinned toots."
                            .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
-          (when featured-tags
+          (when (and featured-tags
+                     mastodon-display-featured-tags-on-profiles)
             (mastodon-profile--insert-featured-tags featured-tags))
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description

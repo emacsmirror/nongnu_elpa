@@ -250,6 +250,11 @@ alerts."
                   collect (list 'const :tag (plist-get (cdr x) :title)
                                 :value (car x)))))))
 
+(defcustom mastodon-display-featured-tags-on-profiles t
+  "Whether to display featured tags on user profiles.
+Adds an extra request to profile viewing, so is optional."
+  :type '(boolean))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)
