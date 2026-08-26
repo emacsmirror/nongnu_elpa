@@ -89,6 +89,10 @@
 (autoload 'mastodon-views--end-of-table "mastodon-views")
 (autoload 'mastodon-tl--buttonify-link "mastodon-tl")
 (autoload 'mastodon-tl-read-handle-annotated "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action "mastodon-tl")
+(autoload 'mastodon-tl-next-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -441,9 +445,10 @@ If NO-FORCE, only fetch if `mastodon-profile-account-settings' is nil."
                sk (mastodon-profile--get-source-value sk)))
             source-keys)
       ;; hack for max toot chars:
-      (mastodon-toot--get-max-toot-chars :no-toot)
+      (unless mastodon-toot--max-toot-chars
+        (mastodon-toot--get-max-toot-chars :no-toot))
       (mastodon-profile--update-preference-plist 'max_toot_chars
-                                                 mastodon-toot--max-toot-chars)
+                                 mastodon-toot--max-toot-chars)
       ;; TODO: remove now redundant vars, replace with fetchers from the plist
       (setq mastodon-toot--visibility (mastodon-profile--get-pref 'privacy)
             mastodon-toot--content-nsfw (mastodon-profile--get-pref 'sensitive))
@@ -787,8 +792,8 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
       (let* ((followsp
               (mastodon-profile--follows-p
                (list .requested_by .following .followed_by .blocked_by)))
-             (rels (mastodon-profile--relationships-get .id))
-             (langs-filtered (when-let* ((langs (alist-get 'languages rels)))
+             ;; (rels (mastodon-profile--relationships-get .id)) ;; same as relationships var?
+             (langs-filtered (when-let* ((langs .languages))
                                (concat " ("
                                        (mapconcat #'identity langs " ")
                                        ")")))
@@ -834,6 +839,8 @@ ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
 MAX-ID is a flag to include the max_id pagination parameter.
 SKIP-PINNED means don't display pinned toots."
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests))
   (let-alist account
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
@@ -911,7 +918,7 @@ SKIP-PINNED means don't display pinned toots."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                           .followers_count .following_count)
+                                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
           (mastodon-profile--insert-featured-tags featured-tags)
