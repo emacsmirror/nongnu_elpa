@@ -98,6 +98,7 @@
 (autoload 'mastodon-search--print-tags "mastodon-search")
 (autoload 'mastodon-profile-show-user "mastodon-profile")
 (autoload 'mastodon-toot--own-toot-p "mastodon-toot")
+(autoload 'mastodon-inspect-profile-requests "mastodon-tl")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
@@ -116,6 +117,7 @@
 (defvar mastodon-media--generic-broken-image-data)
 (defvar mastodon-media--sensitive-image-data)
 (defvar mastodon-media--attachments)
+(defvar mastodon-inspect-profile-requests)
 
 
 ;;; CUSTOMIZES

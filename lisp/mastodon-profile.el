@@ -93,6 +93,7 @@
 (autoload 'mastodon-tl-next-tab-item "mastodon-tl")
 (autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
 (autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
+(autoload 'mastodon-inspect-profile-requests "mastodon-inspect")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -102,6 +103,7 @@
 (defvar mastodon-toot--content-nsfw)
 (defvar mastodon-tl--timeline-posts-count)
 (defvar mastodon-group-notifications)
+(defvar mastodon-inspect-profile-requests)
 
 (defvar-local mastodon-profile--account nil
   "The data for the account being described in the current profile buffer.")
