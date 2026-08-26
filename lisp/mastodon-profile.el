@@ -821,13 +821,17 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
 (defun mastodon-profile--insert-featured-tags (tags)
   "Insert featured TAGS.
 Insert function for `mastodon-profile--pretty-table'."
-  (let ((names (mastodon-tl--map-alist 'name tags)))
+  (let* ((names (mastodon-tl--map-alist 'name tags))
+         (names-rows (seq-partition names 4)))
     (mastodon-profile--pretty-table
      (lambda ()
        (insert
-        (mapconcat (lambda (x)
-                     (mastodon-search-propertize-tag x))
-                   names " | ")))
+        (mapconcat
+         (lambda (row)
+           (mapconcat #'mastodon-search-propertize-tag
+                      row " | "))
+         names-rows
+         "\n")))
      ;; 3+ for padding + #:
      (+ 3 (apply #'max (mapcar #'length names))))))
 
