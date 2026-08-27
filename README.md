@@ -121,6 +121,7 @@ customize `sapling-program`:
 | `C-c u` | undo last local command |
 | `C-c R` | redo last undo |
 | `C-c c` | build any Sapling command from its help/options |
+| `C-c d` | toggle Sapling debug logging |
 | `F` | pull |
 | `P` | push |
 | `q` | quit window |
@@ -135,6 +136,11 @@ customize `sapling-program`:
   global value unchanged.
 - `sapling-diff-use-diff-mode` — show diffs in `diff-mode` for native red/green
   coloring (default `t`).
+- `sapling-diff-ignore-space-at-eol` — pass `--ignore-space-at-eol` to `sl diff`
+  on Windows by default, avoiding CRLF noise.
+- `sapling-debug` — log Sapling command invocations and output.
+- `sapling-debug-buffer-name` — debug log buffer name.
+- `sapling-debug-output-limit` — truncation limit for debug output.
 - `sapling-status-buffer-name`, `sapling-smartlog-buffer-name`,
   `sapling-log-buffer-name`, `sapling-diff-buffer-name`,
   `sapling-output-buffer-name` — buffer names.

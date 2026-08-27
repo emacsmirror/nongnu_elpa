@@ -107,6 +107,85 @@ This gives Emacs-native diff coloring (removed lines in red, added
 lines in green) without parsing Sapling's terminal color codes."
   :type 'boolean)
 
+(defcustom sapling-diff-ignore-space-at-eol
+  (memq system-type '(ms-dos windows-nt))
+  "When non-nil, pass `--ignore-space-at-eol' to `sl diff'.
+
+Windows text files commonly differ from Sapling's recorded content
+only by a carriage return at end of line.  This is enabled by default
+on Windows to keep those differences from flooding `sapling-diff'."
+  :type 'boolean)
+
+(defcustom sapling-debug nil
+  "When non-nil, log Sapling command invocations and output.
+
+The log is written to `sapling-debug-buffer-name'.  Use
+`sapling-toggle-debug' to toggle it interactively."
+  :type 'boolean)
+
+(defcustom sapling-debug-buffer-name "*sapling-debug*"
+  "Name of the Sapling debug log buffer."
+  :type 'string)
+
+(defcustom sapling-debug-output-limit 20000
+  "Maximum number of output characters stored per process log entry."
+  :type 'integer)
+
+(defvar sapling-debug-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map special-mode-map)
+    (define-key map (kbd "q") #'quit-window)
+    map)
+  "Keymap for `sapling-debug-mode'.")
+
+(define-derived-mode sapling-debug-mode special-mode "Sapling-Debug"
+  "Major mode for the Sapling debug log.
+\\{sapling-debug-mode-map}"
+  (setq-local buffer-read-only t)
+  (setq-local truncate-lines t))
+
+(defun sapling--debug-log (format-string &rest args)
+  "Append a formatted debug entry to `sapling-debug-buffer-name'."
+  (when sapling-debug
+    (let ((buffer (get-buffer-create sapling-debug-buffer-name)))
+      (with-current-buffer buffer
+        (unless (derived-mode-p 'sapling-debug-mode)
+          (sapling-debug-mode))
+        (let ((inhibit-read-only t)
+              (text (apply #'format format-string args)))
+          (goto-char (point-max))
+          (insert (format-time-string "[%Y-%m-%d %H:%M:%S] "))
+          (insert text)
+          (unless (bolp) (insert "
+")))))))
+
+(defun sapling--debug-log-output (label output)
+  "Log OUTPUT under LABEL, truncating to `sapling-debug-output-limit'."
+  (when sapling-debug
+    (let ((text (or output "")))
+      (when (> (length text) sapling-debug-output-limit)
+        (setq text (concat (substring text 0 sapling-debug-output-limit)
+                           "\n...truncated...")))
+      (sapling--debug-log "%s:\n%s" label text))))
+
+(defun sapling-debug ()
+  "Open the Sapling debug log buffer."
+  (interactive)
+  (let ((buffer (get-buffer-create sapling-debug-buffer-name)))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'sapling-debug-mode)
+        (sapling-debug-mode)))
+    (pop-to-buffer buffer)
+    (goto-char (point-max))))
+
+(defun sapling-toggle-debug ()
+  "Toggle Sapling command logging."
+  (interactive)
+  (setq sapling-debug (not sapling-debug))
+  (sapling--debug-log "Debug mode %s"
+                      (if sapling-debug "enabled" "disabled"))
+  (message "Sapling debug %s" (if sapling-debug "enabled" "disabled")))
+
 (defface sapling-header-face
   '((t :inherit bold))
   "Face for Sapling section headers.")
@@ -226,7 +305,8 @@ non-nil, is used as the process working directory.  When COLOR is
 non-nil, run `sl' with ANSI colors enabled."
   (let* ((default-directory (or directory sapling--repo-root default-directory))
          (buffer (generate-new-buffer (format " *sapling-%s*" (or name "process"))))
-         (process-environment (sapling--process-environment)))
+         (process-environment (sapling--process-environment))
+         (command (sapling--process-command (if color (sapling--color-args args) args))))
     ;; `w32-pipe-read-delay' is a global variable, so bindings around
     ;; `make-process' do not affect later reads.  Set it directly here.
     ;; This intentionally affects other Windows subprocess reads while
@@ -234,10 +314,12 @@ non-nil, run `sl' with ANSI colors enabled."
     (when (and (boundp 'w32-pipe-read-delay)
                sapling-w32-pipe-read-delay)
       (setq w32-pipe-read-delay sapling-w32-pipe-read-delay))
+    (sapling--debug-log "RUN: cd %S; %s" default-directory
+                        (mapconcat #'shell-quote-argument command " "))
     (make-process
      :name (concat "sapling-" (or name "process"))
      :buffer buffer
-     :command (sapling--process-command (if color (sapling--color-args args) args))
+     :command command
      ;; Decode process output with `utf-8-auto' (handles CRLF on
      ;; Windows) but encode command-line arguments with plain `utf-8'.
      ;; `utf-8-auto' on the encoding side would prepend a BOM to every
@@ -253,6 +335,9 @@ non-nil, run `sl' with ANSI colors enabled."
              (code (if (eq (process-status proc) 'exit)
                        (process-exit-status proc)
                      nil)))
+         (sapling--debug-log "EXIT %s (%s)" (or name "process")
+                             (or code "signal"))
+         (sapling--debug-log-output "OUTPUT" out)
          (when (buffer-live-p buffer)
            (kill-buffer buffer))
          (when callback
@@ -264,9 +349,13 @@ Signal an error if the command exits unsuccessfully."
   (let* ((default-directory (or directory sapling--repo-root default-directory))
          (process-environment (sapling--process-environment))
          (command (sapling--process-command args)))
+    (sapling--debug-log "RUN: cd %S; %s" default-directory
+                        (mapconcat #'shell-quote-argument command " "))
     (with-temp-buffer
       (let ((status (apply #'call-process (car command) nil (current-buffer) nil
                            (cdr command))))
+        (sapling--debug-log "EXIT sync (%s)" (or status "signal"))
+        (sapling--debug-log-output "OUTPUT" (buffer-string))
         (unless (eq status 0)
           (error "Sapling %s failed:\n%s"
                  (mapconcat #'identity args " ")
@@ -400,6 +489,7 @@ Signal an error if the command exits unsuccessfully."
     (define-key map (kbd "C-c u") #'sapling-undo)
     (define-key map (kbd "C-c R") #'sapling-redo)
     (define-key map (kbd "C-c c") #'sapling-command)
+    (define-key map (kbd "C-c d") #'sapling-toggle-debug)
     map)
   "Keymap for `sapling-mode'.")
 
@@ -881,7 +971,10 @@ called outside the status buffer."
     (unless root
       (user-error "Not inside a Sapling repository"))
     (sapling--show-output sapling-diff-buffer-name
-                     (append '("diff") files)
+                     (append '("diff")
+                             (when sapling-diff-ignore-space-at-eol
+                               '("--ignore-space-at-eol"))
+                             files)
                      "Sapling Diff"
                      root
                      :mode (if sapling-diff-use-diff-mode
@@ -1002,15 +1095,14 @@ new one."
                (when (buffer-live-p status-buffer)
                  (with-current-buffer status-buffer
                    (sapling-refresh))))
-           (progn
-             (message "sl %s failed" (if amend "amend" "commit"))
-             (when (and out (not (equal out "")))
-               (display-buffer
-                (with-current-buffer (get-buffer-create "*sapling-error*")
-                  (let ((inhibit-read-only t))
-                    (erase-buffer)
-                    (insert out))
-                  (current-buffer)))))))))))
+           (let ((action (if amend "amend" "commit"))
+                 (error-buffer (get-buffer-create "*sapling-error*")))
+             (with-current-buffer error-buffer
+               (let ((inhibit-read-only t))
+                 (erase-buffer)
+                 (insert (or out ""))))
+             (pop-to-buffer error-buffer)
+             (message "sl %s failed:\n%s" action (or out "")))))))))
 
 (defun sapling-commit-cancel ()
   "Kill the commit message buffer, canceling the commit or amend."
