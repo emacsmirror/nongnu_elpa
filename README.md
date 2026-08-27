@@ -29,6 +29,10 @@ package.
   yellow, matching colored `sl` output in a terminal.
 - A lightweight dispatch menu (`M-x sapling-menu`) with no external
   dependencies.
+- A dynamic command builder (`M-x sapling-command`, or `C-c c` in the status
+  buffer) that reads Sapling's own help text and offers the documented
+  command-line subcommands and options without constructing a heavy transient
+  UI.
 - Stack workflows: `fold`, `graft`, `hide`, `unhide`, `uncommit`, `unamend`,
   `undo`, `redo`, `next`, `previous`.
 - Working-copy workflows: `add`, `remove`, `forget`, `revert`, `clean`.
@@ -116,6 +120,7 @@ customize `sapling-program`:
 | `C-c g` | graft a commit |
 | `C-c u` | undo last local command |
 | `C-c R` | redo last undo |
+| `C-c c` | build any Sapling command from its help/options |
 | `F` | pull |
 | `P` | push |
 | `q` | quit window |

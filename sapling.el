@@ -4,7 +4,7 @@
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Assisted-by: Deepseek:deepseek-v4-pro default
-;; Version: 0.2.3
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
@@ -399,6 +399,7 @@ Signal an error if the command exits unsuccessfully."
     (define-key map (kbd "C-c g") #'sapling-graft)
     (define-key map (kbd "C-c u") #'sapling-undo)
     (define-key map (kbd "C-c R") #'sapling-redo)
+    (define-key map (kbd "C-c c") #'sapling-command)
     map)
   "Keymap for `sapling-mode'.")
 
@@ -1373,6 +1374,142 @@ An empty DIRECTORY initializes the current directory."
      (list "init" directory))
    "Sapling Init"
    default-directory))
+
+(defvar sapling-command-history nil
+  "History for `sapling-command'.")
+
+;;;###autoload
+(defun sapling-command (&optional command)
+  "Run a Sapling command selected from its documented command-line options.
+
+This builds a lightweight, `completing-read'-based command menu from
+`sl help commands' and `sl help COMMAND'.  It intentionally avoids
+the transient UI so command selection stays fast on Windows.  The
+actual Sapling process is still launched asynchronously by
+`sapling--run-async'."
+  (interactive)
+  (let* ((commands (sapling--command-entries))
+         (command (or command
+                      (completing-read "Sapling command: "
+                                       (mapcar #'car commands)
+                                       nil t nil 'sapling-command-history)))
+         (subcommands (sapling--command-subcommands command))
+         (subcommand (when subcommands
+                       (completing-read "Subcommand: " subcommands nil t)))
+         (options (sapling--command-options command))
+         (choices (mapcar (lambda (opt)
+                            (cons (sapling--option-label opt) opt))
+                          options))
+         (selected (when choices
+                     (completing-read-multiple
+                      "Options (comma/space-separated): "
+                      (mapcar #'car choices) nil t)))
+         (args nil))
+    (when subcommand
+      (push subcommand args))
+    (dolist (choice selected)
+      (let* ((cell (assoc choice choices))
+             (opt (cdr cell))
+             (short (nth 0 opt))
+             (long (nth 1 opt))
+             (value (nth 2 opt)))
+        (when opt
+          (push (or short long) args)
+          (when value
+            (push (read-string (format "%s value: " value)) args)))))
+    (sapling--run-and-show
+     (cons command (nreverse args))
+     (format "Sapling %s%s" command
+             (if subcommand (format " %s" subcommand) "")))))
+
+(defun sapling--command-entries ()
+  "Return an alist of Sapling command names and descriptions."
+  (let ((output (sapling--call-output default-directory "help" "commands"))
+        (in-commands nil)
+        entries)
+    (dolist (line (split-string output "\n" t))
+      (when (string-match-p "^Commands:$" line)
+        (setq in-commands t))
+      (when (and in-commands
+                 (string-match "^ \\([a-zA-Z][a-zA-Z0-9-]*\\)[[:space:]]\\{2,\\}\\(.*\\)$" line))
+        (push (cons (match-string 1 line)
+                    (string-trim (match-string 2 line)))
+              entries)))
+    (nreverse entries)))
+
+(defun sapling--command-subcommands (command)
+  "Return subcommand names for COMMAND, if its usage exposes them."
+  (let ((output (ignore-errors
+                  (sapling--call-output default-directory "help" command))))
+    (when (string-match "^sl [^ ]+[^\n]*<\\([^>]+\\)>" output)
+      (let ((items (split-string (match-string 1 output) "|" t)))
+        (delq nil (mapcar (lambda (item)
+                            (unless (member item '("..." ".."))
+                              item))
+                          items))))))
+
+(defun sapling--command-options (command)
+  "Return parsed options for COMMAND."
+  (let ((output (ignore-errors
+                  (sapling--call-output default-directory "help" command)))
+        (in-options nil)
+        options)
+    (dolist (line (split-string output "\n" t))
+      (cond
+       ((string-match-p "^Options\\(?:[^:]*\\)?:" line)
+        (setq in-options t))
+       ((and in-options (string-match-p "^\\((some details hidden\\|(use 'sl help\\)" line))
+        (setq in-options nil)))
+      (when in-options
+        (let ((option (sapling--parse-option-line line)))
+          (when option
+            (push option options)))))
+    (nreverse options)))
+
+(defun sapling--parse-option-line (line)
+  "Parse one Sapling option help LINE.
+Return (SHORT LONG VALUE REPEAT DESCRIPTION), or nil."
+  (let ((case-fold-search nil)
+        short long value repeat description)
+    (cond
+     ((string-match
+       "^[[:space:]]+-\\([^-[:space:]]\\)[[:space:]]+--\\([^[:space:]]+\\)[[:space:]]+\\([A-Z][A-Z0-9_-]*\\)?[[:space:]]*\\(\\[+\\]\\)?[[:space:]]*\\(.*\\)$"
+       line)
+      (setq short (concat "-" (match-string 1 line))
+            long (concat "--" (match-string 2 line))
+            value (match-string 3 line)
+            repeat (stringp (match-string 4 line))
+            description (string-trim (match-string 5 line))))
+     ((string-match
+       "^[[:space:]]+--\\([^[:space:]]+\\)[[:space:]]+\\([A-Z][A-Z0-9_-]*\\)?[[:space:]]*\\(\\[+\\]\\)?[[:space:]]*\\(.*\\)$"
+       line)
+      (setq long (concat "--" (match-string 1 line))
+            value (match-string 2 line)
+            repeat (stringp (match-string 3 line))
+            description (string-trim (match-string 4 line))))
+     ((string-match
+       "^[[:space:]]+-\\([^-[:space:]]\\)[[:space:]]+\\([A-Z][A-Z0-9_-]*\\)?[[:space:]]*\\(\\[+\\]\\)?[[:space:]]*\\(.*\\)$"
+       line)
+      (setq short (concat "-" (match-string 1 line))
+            value (match-string 2 line)
+            repeat (stringp (match-string 3 line))
+            description (string-trim (match-string 4 line)))))
+    (when (or short long)
+      (list short long value repeat description))))
+
+(defun sapling--option-label (option)
+  "Return a `completing-read' label for OPTION."
+  (let ((short (nth 0 option))
+        (long (nth 1 option))
+        (value (nth 2 option))
+        (repeat (nth 3 option))
+        (description (nth 4 option)))
+    (concat
+     (mapconcat #'identity (delq nil (list short long)) ", ")
+     (when value (concat " " value))
+     (when repeat " [+]")
+     (when (and description (not (string-empty-p description)))
+       (concat "  " description)))))
 
 ;;;###autoload
 (defun sapling-menu ()
