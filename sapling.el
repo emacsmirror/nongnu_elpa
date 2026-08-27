@@ -1590,18 +1590,17 @@ Return (SHORT LONG VALUE REPEAT DESCRIPTION), or nil."
       (list short long value repeat description))))
 
 (defun sapling--option-label (option)
-  "Return a `completing-read' label for OPTION."
+  "Return a `completing-read' label for OPTION.
+The label contains only the option syntax and any value placeholder,
+so completion never expands the Sapling help description."
   (let ((short (nth 0 option))
         (long (nth 1 option))
         (value (nth 2 option))
-        (repeat (nth 3 option))
-        (description (nth 4 option)))
+        (repeat (nth 3 option)))
     (concat
      (mapconcat #'identity (delq nil (list short long)) ", ")
      (when value (concat " " value))
-     (when repeat " [+]")
-     (when (and description (not (string-empty-p description)))
-       (concat "  " description)))))
+     (when repeat " [+]"))))
 
 ;;;###autoload
 (defun sapling-menu ()
