@@ -904,15 +904,35 @@ the signature at POS if `vm-pcrisis-sig-exerlay' is detached."
     (vm-pcrisis-forcefully-detach-exerlay vm-pcrisis-sig-exerlay)))
 
 
+(defun vm-pcrisis-report-an-unknown-signature ()
+  "Say what to set when the composition holds a signature not ours to act on.
+Personality Crisis acts on a signature whose extent it knows, and knows one it
+did not insert only when `vm-pcrisis-expect-default-signature\=' says to look
+for it.  Without that, a rule saying (vm-pcrisis-signature \"\") deleted
+nothing and said nothing, which is indistinguishable from having worked: #540
+was reported twice over, the second time by a reader who had the fix and not
+the setting."
+  (when (and (not vm-pcrisis-expect-default-signature)
+	     (save-excursion
+	       (mail-text)
+	       (re-search-forward "^-- $" nil t)))
+    (vm-warn 0 2 (concat "This composition has a signature Personality Crisis"
+			 " did not insert: set"
+			 " vm-pcrisis-expect-default-signature to act on it"))))
+
 (defun vm-pcrisis-signature (sig)
   "Remove a current signature if present, and replace it with SIG.
 If the string SIG is the name of a readable file, its contents are
 inserted as the signature; otherwise SIG is inserted literally.  If
 SIG is the empty string (\"\"), the current signature is deleted if
 present, and that's all.  A signature Personality Crisis did not insert itself
-is only known to it when `vm-pcrisis-expect-default-signature' is set."
+is only known to it when `vm-pcrisis-expect-default-signature' is set.  Where
+that is unset and the composition has one anyway, this says so rather than
+doing nothing quietly."
   (if (vm-pcrisis-composition-buffer-p 'vm-pcrisis-signature)
       (let ((pos (vm-pcrisis-exerlay-start vm-pcrisis-sig-exerlay)))
+	(unless pos
+	  (vm-pcrisis-report-an-unknown-signature))
 	(save-excursion
 	  (vm-pcrisis-delete-signature)
 	  (if (not (equal sig ""))
