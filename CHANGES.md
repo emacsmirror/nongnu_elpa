@@ -8,6 +8,8 @@
 
 *   Bug fixes:
     - `markdown-table-align` now handles fullwidth characters correctly [gh-937][]
+    - Bold, italic, and other inline constructs spanning a line break are
+      now fontified when `jit-lock` fontifies the buffer in chunks
 
 *   Improvements:
     - Tables aligned in the source stay visually aligned when markup
