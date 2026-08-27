@@ -177,6 +177,49 @@ in no test that a machine without a server could run."
     (should (string-match-p "The second body"
                             (vm-imap-mock-test--body-of (cadr vm-message-list))))))
 
+(defmacro vm-imap-mock-test--blocking (&rest body)
+  "Run BODY with the asynchronous driver declining, so the old path runs.
+`vm-get-spooled-mail' calls `vm-imap-net-get-spooled-mail' first and falls
+back to `vm-imap-synchronize-folder' when it answers nil, which is what
+happens when the driver cannot ask for something -- a password nobody can be
+prompted for inside a process filter.  That fallback is the only caller of
+`vm-imap-retrieve-messages'."
+  (declare (indent 0) (debug t))
+  `(cl-letf (((symbol-function 'vm-imap-net-get-spooled-mail)
+              (lambda (&rest _) nil)))
+     ,@body))
+
+(ert-deftest vm-imap-mock-test-a-blocking-retrieval-leaves-the-size-limit-as-set ()
+  "REGRESSION: retrieving does not write into `vm-imap-max-message-size'.
+Issue #765.  `vm-imap-retrieve-messages' set the option to most-positive-fixnum
+whenever the reader had left it nil, and did not bind it, so one retrieval
+replaced the setting for the rest of the session: the option documents nil as
+no size limit, and customize then showed a number nobody had set."
+  (let ((vm-imap-max-message-size nil))
+    (vm-imap-mock-test--visiting
+        (mock :messages (list vm-imap-mock-test--alice))
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
+      (vm-imap-mock-test--blocking
+        (vm-get-spooled-mail nil))
+      (should (equal (length vm-message-list) 2)))
+    (should-not vm-imap-max-message-size)))
+
+(ert-deftest vm-imap-mock-test-a-blocking-retrieval-still-obeys-the-limit ()
+  "The other side of it: a message over the limit is asked for headers only.
+`vm-enable-external-messages' has to name imap for the limit to mean anything.
+The blocking path decides this per bunch, and the local it now reads is the
+same value the option held."
+  (let ((vm-imap-max-message-size 10)
+        (vm-enable-external-messages '(imap)))
+    (vm-imap-mock-test--visiting
+        (mock :messages (list vm-imap-mock-test--alice))
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
+      (vm-imap-mock-forget-commands mock)
+      (vm-imap-mock-test--blocking
+        (vm-get-spooled-mail nil))
+      (should (equal (length vm-message-list) 2))
+      (should (vm-imap-mock-received-p mock "BODY.PEEK\\[HEADER\\]")))))
+
 (ert-deftest vm-imap-mock-test-an-extra-fetch-item-is-stepped-over ()
   "A server that answers with more than VM asked for still delivers the mail.
 

@@ -3896,6 +3896,9 @@ headers-only form."
 	 uid r-list r-entry range new-messages message-size
 	 statblob old-eob pos k mp pair
 	 (sizes (make-hash-table))	; message sequence number -> size
+	 ;; nil means no limit, and stays nil: writing the sentinel back into
+	 ;; the option left customize showing a number nobody set (#765).
+	 (limit (or vm-imap-max-message-size most-positive-fixnum))
 	 (headers-only (or (eq vm-enable-external-messages t)
 			  (memq 'imap vm-enable-external-messages)))
 	 (n 0))
@@ -3906,8 +3909,6 @@ headers-only form."
        (widen)
        (setq old-eob (point-max))
        (goto-char (point-max))
-       (when (null vm-imap-max-message-size)
-	 (setq vm-imap-max-message-size most-positive-fixnum))
        ;; Annotate retrieve-list with headers-only flags, keeping the sizes
        ;; the UID FETCH already told us for the status display below.
        (setq retrieve-list
@@ -3916,7 +3917,7 @@ headers-only form."
 		(let ((size (read (vm-folder-imap-uid-message-size (car pair)))))
 		  (puthash (cdr pair) size sizes)
 		  (list (car pair) (cdr pair)
-			(and (> size vm-imap-max-message-size) headers-only))))
+			(and (> size limit) headers-only))))
 	      retrieve-list))
        (setq r-list (vm-imap-bunch-retrieve-list 
 		     (mapcar (function cdr) retrieve-list)))
