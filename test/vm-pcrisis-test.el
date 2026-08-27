@@ -1168,6 +1168,40 @@ the fix is not simply deleting whatever is at the end of the buffer."
       (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
         (should (vm-pcrisis-test--holds "my signature"))))))
 
+(ert-deftest vm-pcrisis-test-signature-action-says-what-it-needs ()
+  "REGRESSION: the action says what to set when it cannot see the signature.
+Issue #540, reported twice: the second time by a reader who had the fix, a
+composition with a signature in it and a rule saying (vm-pcrisis-signature
+\"\"), and got the mail he was trying to prevent with nothing said about why."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args) (setq said (apply #'format args)))))
+      (let ((vm-pcrisis-expect-default-signature nil))
+        (vm-pcrisis-test--with-rules '((vm-pcrisis-signature ""))
+          (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
+            (should (vm-pcrisis-test--holds "my signature"))))))
+    (should said)
+    (should (string-match-p "vm-pcrisis-expect-default-signature" said))))
+
+(ert-deftest vm-pcrisis-test-signature-action-is-quiet-when-it-can-act ()
+  "Nothing is said where there is no signature, nor where the extent is known.
+A warning on a composition that has no signature at all, or one Personality
+Crisis is about to delete, would be a warning about nothing."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args) (setq said (apply #'format args)))))
+      ;; no signature in the composition
+      (let ((vm-pcrisis-expect-default-signature nil))
+        (vm-pcrisis-test--with-rules '((vm-pcrisis-signature ""))
+          (vm-pcrisis-test--with-composition (buffer)
+            (should-not said))))
+      ;; a signature, and told to expect one
+      (let ((vm-pcrisis-expect-default-signature t))
+        (vm-pcrisis-test--with-rules '((vm-pcrisis-signature ""))
+          (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
+            (should-not (vm-pcrisis-test--holds "my signature"))
+            (should-not said)))))))
+
 (ert-deftest vm-pcrisis-test-add-header-action-adds-the-header ()
   "REGRESSION: `vm-pcrisis-add-header' works as an action.
 Issue #576.  It raised whenever it was not in a composition, and Personality
