@@ -4962,15 +4962,19 @@ inserted.
 @vindex mail-signature
 Personality Crisis can only replace or delete a signature whose extent it
 knows.  A signature it inserted itself, it knows; one that Emacs put there
-because @code{mail-signature} is set, it does not, unless you tell it to expect
-one:
+because @code{mail-signature} is set, it finds by looking for the line
+@samp{-- } that separates it, which is what
+@code{vm-pcrisis-expect-default-signature} asks for and is the default.  A
+signature in quoted text is prefixed by @code{vm-included-text-prefix} and so
+is not that line.
 
 @lisp
-(setq vm-pcrisis-expect-default-signature t)
+(setq vm-pcrisis-expect-default-signature nil)
 @end lisp
 
-@noindent Without that, a rule saying @code{(vm-pcrisis-signature "")} has nothing to
-delete and leaves the signature where it is.
+@noindent turns the search off, and a rule saying
+@code{(vm-pcrisis-signature "")} then has nothing to delete and leaves the
+signature where it is.
 
 @findex vm-pcrisis-pre-signature
 @item vm-pcrisis-pre-signature

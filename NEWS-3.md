@@ -8,6 +8,16 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * Personality Crisis acts on the signature Emacs inserted, without being
+    told to expect one.  `vm-pcrisis-expect-default-signature` now defaults to
+    on, so a rule saying `(vm-pcrisis-signature "")` deletes the signature VM
+    put in the composition from `mail-signature`, and one naming a file
+    replaces it rather than adding a second (emacs-vm/vm#540).  It found only
+    a signature it had inserted itself before, and did nothing, quietly, to
+    any other.  What it looks for is a line of exactly `-- `, so a signature
+    in quoted text is not it; set the variable to nil to keep a signature
+    action away from a signature Personality Crisis did not insert.
+
   * HTML quoted in a reply is broken at 80 columns, whatever window the
     message was read in.  An HTML part has no line breaks of its own, so
     whatever converts it to text decides where its lines end: emacs-w3m used

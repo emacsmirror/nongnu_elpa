@@ -295,15 +295,22 @@ i.e. when within the composition buffer.")
 
 (define-obsolete-variable-alias 'vmpc-expect-default-signature
   'vm-pcrisis-expect-default-signature "8.3.3")
-(defcustom vm-pcrisis-expect-default-signature nil
+(defcustom vm-pcrisis-expect-default-signature t
   "Whether a signature is inserted by something other than Personality Crisis.
 Emacs inserts one when `mail-signature' is set, taking it from that variable or
 from the file `mail-signature-file' names, and VM does that as it builds a
 composition.  Personality Crisis can only act on a signature whose extent it
-knows, so `vm-pcrisis-signature' neither replaces nor deletes that one
-unless this is
-set; with it set, the signature already in a composition is found and comes
-under the same control as one Personality Crisis inserted itself."
+knows, so with this unset `vm-pcrisis-signature' neither replaces nor deletes
+that one: it looked to two readers of #540 like an action that had run and done
+nothing.  Set, which is the default, the signature already in a composition is
+found and comes under the same control as one Personality Crisis inserted
+itself.
+
+What is looked for is a line of exactly \"-- \", the separator Emacs writes,
+and the signature is everything from there to the end of the composition.  A
+signature in quoted text is prefixed by `vm-included-text-prefix' and so is not
+that line.  Unset this to keep a signature action off a signature Personality
+Crisis did not insert."
   :group 'vm-pcrisis
   :type 'boolean)
 
