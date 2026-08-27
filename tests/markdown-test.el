@@ -2765,6 +2765,21 @@ Detail: https://github.com/jrblevin/markdown-mode/issues/325"
     (should-not
      (markdown-range-property-any 1 21 'face '(markdown-bold-face)))))
 
+(ert-deftest test-markdown-font-lock/bold-across-lines-partial-fontification ()
+  "Test bold spanning a line break when fontified one line at a time.
+This is what `jit-lock' does when the construct straddles a chunk
+boundary."
+  (with-temp-buffer
+    (insert "one **bold\nspan** two\n")
+    (markdown-mode)
+    (dolist (line '(0 1))
+      (goto-char (point-min))
+      (forward-line line)
+      (font-lock-fontify-region (line-beginning-position) (line-end-position)))
+    (markdown-test-range-has-face 5 6 'markdown-markup-face)
+    (markdown-test-range-has-face 7 15 'markdown-bold-face)
+    (markdown-test-range-has-face 16 17 'markdown-markup-face)))
+
 (ert-deftest test-markdown-font-lock/no-bold-in-url ()
   "Test not matching bold in plain URL links."
   (markdown-test-string
