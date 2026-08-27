@@ -1489,9 +1489,10 @@ actual Sapling process is still launched asynchronously by
          (subcommand (when subcommands
                        (completing-read "Subcommand: " subcommands nil t)))
          (options (sapling--command-options command))
-         (choices (mapcar (lambda (opt)
-                            (cons (sapling--option-label opt) opt))
-                          options))
+         (choices (cl-loop for opt in options
+                           append (mapcar (lambda (label)
+                                            (cons label opt))
+                                          (sapling--option-labels opt))))
          (selected (when choices
                      (completing-read-multiple
                       "Options (comma/space-separated): "
@@ -1499,16 +1500,18 @@ actual Sapling process is still launched asynchronously by
          (args nil))
     (when subcommand
       (push subcommand args))
-    (dolist (choice selected)
-      (let* ((cell (assoc choice choices))
-             (opt (cdr cell))
-             (short (nth 0 opt))
-             (long (nth 1 opt))
-             (value (nth 2 opt)))
-        (when opt
-          (push (or short long) args)
-          (when value
-            (push (read-string (format "%s value: " value)) args)))))
+    (let ((seen nil))
+      (dolist (choice selected)
+        (let* ((cell (assoc choice choices))
+               (opt (cdr cell))
+               (short (nth 0 opt))
+               (long (nth 1 opt))
+               (value (nth 2 opt)))
+          (when (and opt (not (memq opt seen)))
+            (push opt seen)
+            (push (or short long) args)
+            (when value
+              (push (read-string (format "%s value: " value)) args))))))
     (sapling--run-and-show
      (cons command (nreverse args))
      (format "Sapling %s%s" command
@@ -1589,18 +1592,13 @@ Return (SHORT LONG VALUE REPEAT DESCRIPTION), or nil."
     (when (or short long)
       (list short long value repeat description))))
 
-(defun sapling--option-label (option)
-  "Return a `completing-read' label for OPTION.
-The label contains only the option syntax and any value placeholder,
-so completion never expands the Sapling help description."
-  (let ((short (nth 0 option))
-        (long (nth 1 option))
-        (value (nth 2 option))
-        (repeat (nth 3 option)))
-    (concat
-     (mapconcat #'identity (delq nil (list short long)) ", ")
-     (when value (concat " " value))
-     (when repeat " [+]"))))
+(defun sapling--option-labels (option)
+  "Return completion labels for OPTION.
+Use separate short and long labels, e.g. `-I' and `--include',
+rather than the combined `-I, --include PATTERN' string.  This
+keeps TAB completion from expanding a short option into the full
+command-line option syntax."
+  (delq nil (list (nth 0 option) (nth 1 option))))
 
 ;;;###autoload
 (defun sapling-menu ()
