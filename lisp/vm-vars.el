@@ -1278,36 +1278,40 @@ wrapping."
 		 (const :tag "Window width" window-width)
 		 (integer :tag "Fill column")))
 
-(defcustom vm-html-in-reply-column nil
-  "Column at which HTML quoted in a reply is broken into lines, or nil.
+(defconst vm-html-default-column 80
+  "The width an HTML converter is asked for when nothing else settles it.")
+
+(defcustom vm-html-in-reply-column vm-html-default-column
+  "Column at which HTML quoted in a reply is broken into lines.
 An HTML part carries no line breaks of its own: whatever converts it to
 text decides where its lines end, and asked for nothing in particular each
 converter uses a width of its own -- emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
-nil, the default, asks the converter not to break the text at all, leaving
-one line per paragraph and the wrapping to whoever reads the reply.  A
-number asks for lines of that width; 80 is conventional.
+A number asks for lines of that width, whatever window the message was read
+in; 80, the default, is conventional.  `window-width' is the old behaviour,
+the width of the window at the time.
+
+There is no setting for text that is not broken at all.  No converter takes
+such an instruction, and asking for a page wide enough that no line would
+reach the end of it means a page laid out that wide: a centred table, which
+is the shape of most HTML mail, then comes back indented by hundreds of
+columns.
 
 This governs quoted text only.  Displaying a message still fills to the
 window, which is what a window is for."
   :group 'vm-reply
-  :type '(choice (const :tag "Do not break lines" nil)
-                 (integer :tag "Break at column")))
+  :type '(choice (integer :tag "Break at column")
+                 (const :tag "Window width" window-width)))
 
 (defvar vm-html-fill-column 'window-width
   "Column at which the text/html handlers break lines.
 `window-width' means the width of the window the text is being displayed
-in.  A number is that column, and nil asks for no breaking at all.
+in, and a number is that column.
 
 Bound by the reply code to `vm-html-in-reply-column', so that quoting a
 message does not depend on how wide a window it was read in.")
-
-(defconst vm-html-no-break-column 100000
-  "Width passed to an HTML converter to ask it not to break lines.
-None of them takes an instruction to leave the text alone, so they are
-given a width nothing will reach.")
 
 (defcustom vm-paragraph-fill-column (default-value 'fill-column)
   "*Column beyond which automatic line-wrapping should happen when

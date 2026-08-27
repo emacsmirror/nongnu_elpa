@@ -2707,7 +2707,11 @@ See `vm-html-fill-column', which the reply code binds so that quoted text
 does not come out as wide as the window the message was read in."
   (cond ((eq vm-html-fill-column 'window-width)
 	 (max 20 (1- (window-width (get-buffer-window (current-buffer))))))
-	((null vm-html-fill-column) vm-html-no-break-column)
+	;; nil used to ask for a page 100000 columns wide, no converter taking
+	;; an instruction to leave the text unbroken.  A page laid out that
+	;; wide indents a centred table by hundreds of columns, and most HTML
+	;; mail is a centred table (#540), so nil is no longer offered.
+	((null vm-html-fill-column) vm-html-default-column)
 	(t vm-html-fill-column)))
 
 (defun vm-mime-display-internal-w3m-text/html (start end layout)

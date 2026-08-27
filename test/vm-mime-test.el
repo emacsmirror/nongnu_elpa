@@ -2424,8 +2424,10 @@ Issue #387, driven through `vm-mime-display-external-generic' and an elisp
 (ert-deftest vm-mime-test-html-columns-answers-each-setting ()
   "`vm-mime-html-columns' reads `vm-html-fill-column'."
   (should (equal (let ((vm-html-fill-column 80)) (vm-mime-html-columns)) 80))
+  ;; nil once meant a page 100000 columns wide (#540)
   (should (equal (let ((vm-html-fill-column nil)) (vm-mime-html-columns))
-                 vm-html-no-break-column))
+                 vm-html-default-column))
+  (should (< vm-html-default-column 200))
   (let ((window (let ((vm-html-fill-column 'window-width))
                   (vm-mime-html-columns))))
     (should (>= window 20))
@@ -2448,11 +2450,11 @@ was wanted for."
           (should (string-match-p "-cols 80" command)))
         (let ((vm-html-fill-column nil))
           (vm-mime-display-internal-lynx-text/html (point-min) (point-max) nil)
-          (should (string-match-p (format "-width=%d\\'" vm-html-no-break-column)
+          (should (string-match-p (format "-width=%d\\'" vm-html-default-column)
                                   command)))))))
 
-(ert-deftest vm-mime-test-html-is-not-broken-by-default ()
-  "A converted HTML paragraph comes out as one line unless a width is set.
+(ert-deftest vm-mime-test-html-is-broken-at-the-width-asked-for ()
+  "A converted HTML paragraph comes out at the width VM asked for.
 Run against lynx itself, since the point of the setting is what the
 converter does with it.  Skipped where lynx is not installed."
   (skip-unless (executable-find "lynx"))
@@ -2466,16 +2468,49 @@ converter does with it.  Skipped where lynx is not installed."
                     (vm-mime-display-internal-lynx-text/html
                      (point-min) (point-max) nil)
                     (split-string (string-trim (buffer-string)) "\n")))))
-      (let ((unbroken (render nil))
-            (narrow (render 80)))
-        ;; one line, and all of the text on it
-        (should (equal (length unbroken) 1))
-        (should (string-match-p "word60" (car unbroken)))
-        (should (> (length (car unbroken)) 200))
-        ;; and a width is honoured
-        (should (> (length narrow) 1))
-        (dolist (line narrow)
-          (should (<= (length line) 80)))))))
+      (dolist (column (list 80 vm-html-default-column))
+        (let ((lines (render column)))
+          (should (> (length lines) 1))
+          (should (string-match-p "word60" (car (last lines))))
+          (dolist (line lines)
+            (should (<= (length line) column))))))))
+
+(ert-deftest vm-mime-test-a-centred-table-is-not-indented-by-hundreds-of-columns ()
+  "REGRESSION: quoted HTML is converted to a page a reader\='s width, not 100000.
+Issue #540.  Asked for a width no line would reach, w3m lays the page out
+that wide and centres a centred table in it, so every line came back indented
+by some 900 columns.  Cited and filled, `vm-forward-paragraph' then read the
+indentation as the paragraph\='s prefix and the reply held one word a line.
+Skipped where w3m is not installed."
+  (skip-unless (executable-find "w3m"))
+  (let ((centred (concat "<html><body>"
+                         "<table width=\"100%\"><tr><td align=\"center\">"
+                         "<p>Mark Diekhans commented on a discussion"
+                         " on the issue:</p>"
+                         "</td></tr></table></body></html>\n")))
+    (cl-flet ((cite (column)
+                (let ((vm-html-fill-column column))
+                  (with-temp-buffer
+                    (insert centred)
+                    (vm-mime-display-internal-w3m-text/html
+                     (point-min) (point-max) (make-vector 20 nil))
+                    ;; quote it as `vm-mail-yank-default' does, and fill it as
+                    ;; a reply that fills its included text does
+                    (goto-char (point-min))
+                    (while (re-search-forward "^" nil t)
+                      (insert "> ")
+                      (forward-line 1))
+                    (let ((vm-paragraph-fill-column 70))
+                      (vm-fill-paragraphs-containing-long-lines
+                       70 (point-min) (point-max)))
+                    (split-string (string-trim (buffer-string)) "\n" t)))))
+      (let ((quoted (cite (let ((vm-html-fill-column vm-html-in-reply-column))
+                            (vm-mime-html-columns)))))
+        ;; the words of the sentence are together, not one to a line
+        (should (string-match-p "Mark Diekhans commented" (car quoted)))
+        ;; and no line is mostly the indentation w3m centred the table with
+        (dolist (line quoted)
+          (should (<= (length line) 72)))))))
 
 (ert-deftest vm-mime-test-yanking-does-not-use-the-window-width ()
   "Quoting a message hands the converter `vm-html-in-reply-column'.
@@ -2494,8 +2529,9 @@ message was read in, so the same message quoted differently in two frames."
                       (lambda (&rest _) nil)))
              (vm-yank-message-mime message (make-vector 3 nil)))))))
     (should (equal seen 80))
-    ;; and the default is to ask for no breaks at all
-    (should (equal (default-value 'vm-html-in-reply-column) nil))
+    ;; and the default is a width of its own, not the window's
+    (should (equal (default-value 'vm-html-in-reply-column)
+                   vm-html-default-column))
     ;; while display still follows the window
     (should (equal (default-value 'vm-html-fill-column) 'window-width))))
 

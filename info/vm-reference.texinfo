@@ -1334,7 +1334,7 @@ Default value: @code{vm-summary-highlight}
 
 @appendixsubsec Commands
 
-@deffn Command vm-change-folder-type type &optional file
+@deffn Command vm-change-folder-type type &optional file output
 @findex vm-change-folder-type
 Change folder type to TYPE.
 The old name @code{From_-with-Content-Length} is accepted for @code{mboxcl2}.
@@ -1353,6 +1353,13 @@ Interactively TYPE will be read from the minibuffer.
 With a prefix argument, or with FILE given, convert a folder on disk that VM
 is not visiting.  That is how to repair a folder VM will not read -- see
 @code{vm-change-folder-type-of-file}.
+
+With two prefix arguments, or with OUTPUT given, the converted folder is
+written to a file of your naming and the one converted is left as it was.
+OUTPUT wants FILE: to convert the folder you are in into a new file, save it
+and convert that.  A name that cannot hold TYPE is refused rather than
+written, here and on disk both -- a folder called out.mbox cannot hold
+mboxcl2 (emacs-vm/vm#763).
 
 The folder’s current type is offered as well as the others: converting a
 folder to what it already is rewrites every message in it, which for mboxcl2
@@ -8653,19 +8660,27 @@ wrapping.
 
 @defopt vm-html-in-reply-column
 @vindex vm-html-in-reply-column
-Column at which HTML quoted in a reply is broken into lines, or nil.
+Column at which HTML quoted in a reply is broken into lines.
 An HTML part carries no line breaks of its own: whatever converts it to
 text decides where its lines end, and asked for nothing in particular each
 converter uses a width of its own -- emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
-nil, the default, asks the converter not to break the text at all, leaving
-one line per paragraph and the wrapping to whoever reads the reply.  A
-number asks for lines of that width; 80 is conventional.
+A number asks for lines of that width, whatever window the message was read
+in; 80, the default, is conventional.  @code{window-width} is the old behaviour,
+the width of the window at the time.
+
+There is no setting for text that is not broken at all.  No converter takes
+such an instruction, and asking for a page wide enough that no line would
+reach the end of it means a page laid out that wide: a centred table, which
+is the shape of most HTML mail, then comes back indented by hundreds of
+columns.
 
 This governs quoted text only.  Displaying a message still fills to the
 window, which is what a window is for.
+
+Default value: @code{80}
 @end defopt
 
 @defopt vm-in-reply-to-format

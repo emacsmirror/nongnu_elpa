@@ -1441,6 +1441,54 @@ sites pass while a file is being compiled."
                    (vm-load-features '(subr-x vm-test-no-such-feature)))
                  '(subr-x))))
 
+
+;;; Filling a paragraph the converter indented (issue #540)
+
+(ert-deftest vm-misc-test-a-paragraph-indented-past-the-column-is-left-alone ()
+  "REGRESSION: filling leaves a paragraph whose prefix is wider than the column.
+Issue #540.  `vm-forward-paragraph' reads a paragraph\='s indentation as its
+prefix, and quoted HTML converted to a page 100000 columns wide arrived
+indented by some 900 columns.  Filling that to 70 could only put one word on
+each line, which is what the reply held."
+  (with-temp-buffer
+    (insert "> " (make-string 906 ?\s)
+            "Mark Diekhans commented on a discussion on the issue:\n")
+    (let ((vm-paragraph-fill-column 70)
+          (vm-word-wrap-paragraphs nil))
+      (vm-fill-paragraphs-containing-long-lines 70 (point-min) (point-max)))
+    (goto-char (point-min))
+    (should (looking-at (concat "> +Mark Diekhans commented")))
+    ;; one line still, rather than one word to a line
+    (should (equal (count-lines (point-min) (point-max)) 1))))
+
+(ert-deftest vm-misc-test-an-ordinary-quoted-paragraph-is-still-filled ()
+  "The other side of the guard: a prefix that leaves room is filled as before."
+  (with-temp-buffer
+    (insert "> " (mapconcat (lambda (i) (format "word%d" i))
+                            (number-sequence 1 40) " ")
+            "\n")
+    (let ((vm-paragraph-fill-column 70)
+          (vm-word-wrap-paragraphs nil))
+      (vm-fill-paragraphs-containing-long-lines 70 (point-min) (point-max)))
+    (should (> (count-lines (point-min) (point-max)) 1))
+    (goto-char (point-min))
+    (while (not (eobp))
+      (should (<= (- (line-end-position) (line-beginning-position)) 70))
+      (should (looking-at "> "))
+      (forward-line 1))))
+
+(ert-deftest vm-misc-test-fill-prefix-leaves-room-p-answers-both-ways ()
+  "`vm-fill-prefix-leaves-room-p' compares the prefix with the column."
+  (should (let ((fill-prefix nil) (fill-column 70))
+            (vm-fill-prefix-leaves-room-p)))
+  (should (let ((fill-prefix "> ") (fill-column 70))
+            (vm-fill-prefix-leaves-room-p)))
+  (should-not (let ((fill-prefix (make-string 70 ?\s)) (fill-column 70))
+                (vm-fill-prefix-leaves-room-p)))
+  (should-not (let ((fill-prefix (concat "> " (make-string 906 ?\s)))
+                    (fill-column 70))
+                (vm-fill-prefix-leaves-room-p))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

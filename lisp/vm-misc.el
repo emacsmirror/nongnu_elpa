@@ -1512,6 +1512,16 @@ Returns t if there was a line longer than `fill-column'."
       (forward-line 1))
     long-line))
 
+(defun vm-fill-prefix-leaves-room-p ()
+  "Whether `fill-prefix' leaves any room for text inside `fill-column'.
+A paragraph whose prefix is as wide as the column cannot be filled to
+anything but one word a line, which is worse than the long lines it was
+filled to be rid of.  `vm-forward-paragraph' reads a paragraph\='s
+indentation as its prefix, and an HTML converter asked for a very wide page
+indents a centred paragraph by hundreds of columns (#540)."
+  (or (null fill-prefix)
+      (< (string-width fill-prefix) fill-column)))
+
 (defun vm-fill-paragraphs-containing-long-lines (width start end)
   "Fill paragraphs spanning more than WIDTH columns in region
 START to END.  If WIDTH is `window-width', the current width of
@@ -1548,7 +1558,8 @@ filling of GNU Emacs does not work correctly here."
 	  (setq start (point))
 	  (vm-skip-empty-lines)
 	  (when (and (< (point) end)	; if no newline at the end
-		     (let ((fill-column width)) (vm-forward-paragraph)))
+		     (let ((fill-column width)) (vm-forward-paragraph))
+		     (vm-fill-prefix-leaves-room-p))
 	    (fill-region start (point))
 	    (setq filled (1+ filled))))
       

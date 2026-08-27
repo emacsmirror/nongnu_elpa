@@ -8,6 +8,15 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * HTML quoted in a reply is broken at 80 columns, whatever window the
+    message was read in.  An HTML part has no line breaks of its own, so
+    whatever converts it to text decides where its lines end: emacs-w3m used
+    the width of the window, lynx 72 columns, so the same message quoted
+    differently from one day to the next (emacs-vm/vm#369).  Set the new
+    `vm-html-in-reply-column` to another number for lines of that width, or to
+    `window-width` for what VM did before.  Displaying a message is unaffected
+    and still fills to the window.
+
   * `vm-change-folder-type` with two prefix arguments converts a folder on
     disk into a file you name, leaving the folder you converted exactly as it
     was: no backup is made, since nothing is overwritten, and nothing is
