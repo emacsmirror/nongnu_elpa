@@ -1047,11 +1047,12 @@ A primary inbox called @file{INBOX} is the case, and the answer for one is
 In a From_ folder the end of a message is the next line that begins
 ``From ''.  Nothing but the shape of the line says so, and mail contains such
 lines: a message that quotes another message, a digest, a mailing list
-footer, a base64 attachment that happens to wrap that way.  A From_ folder
-therefore has to alter the mail to protect itself, turning ``From '' in a body
-into ``>From '', and even then a line that already read ``>From '' is
-indistinguishable afterwards.  What you read back is close to what arrived
-rather than what arrived.
+footer, a base64 attachment that happens to wrap that way.  The usual answer
+is to alter the mail to protect the format, turning ``From '' in a body into
+``>From '', and even then a line that already read ``>From '' is
+indistinguishable afterwards; what you read back is close to what arrived
+rather than what arrived.  VM does not alter the mail, and tests the line
+harder instead, which has costs of its own.  @xref{VM's mbox}.
 
 An mboxcl2 folder records the length of each body instead, so the boundary is
 arithmetic rather than a guess, and no body needs altering.  Two things follow:
@@ -1073,6 +1074,81 @@ named; a wrong one is worse, because the folder opens.  @xref{Folder types}
 above for the repair.  This is why VM writes its own files -- the caches
 below -- in mboxcl2 and can be relied on to have got the lengths right, while
 a folder some other mailer wrote is only as good as that mailer.
+
+@anchor{VM's mbox}
+@subheading How VM's mbox differs from other mbox files
+
+@cindex mbox, VM's variant
+@cindex From_ folders, differences
+@cindex interoperability, mbox
+There is no standard for mbox.  RFC 4155 describes what most mailers do
+rather than requiring it, and they do not all do the same thing.  VM's From_
+folders differ from what other mailers write in three ways.  None of it
+matters while VM alone reads and writes the folder; all of it matters when
+another program reads that folder, appends to it, or wrote it in the first
+place.
+
+@table @asis
+@item VM does not quote @samp{From } lines in bodies.
+Other mailers turn a body line beginning @samp{From } into @samp{>From } so
+that it cannot be taken for a separator, and disagree among themselves about
+whether to turn it back on reading.  VM leaves the mail as it arrived, and
+separates messages by a stricter test: a separator is a line beginning
+@samp{From } that also ends in a digit, as a date does, and that is preceded
+by an empty line.
+
+The test is stricter, not exact.  A body line that begins @samp{From }, ends
+in a digit and follows an empty line is still read as a separator, and one
+message becomes two --- a quoted message or a digest is where that happens.
+Another program reading a VM folder by the loose rule finds more such splits
+than VM does, since it has only the first of the three tests.  And a folder
+written by a mailer that does quote keeps its @samp{>From } lines when VM
+reads it: VM cannot tell them from lines that arrived that way, so it leaves
+them alone rather than unquoting text that was never quoted.
+
+A message must therefore be followed by an empty line, which VM writes.  A
+program that appends to a VM folder without one leaves a message VM reads as
+part of the message before it.
+
+@item VM keeps its own state in the messages.
+@cindex X-VM-v5-Data
+Every message carries an @code{X-VM-v5-Data} header holding its attributes,
+its labels and the summary data VM caches for it, and the first message in
+the folder carries the folder's own state as well: the message order, the
+bookmark, the label list, the summary format, which headers are shown, when
+the folder was last modified, and for a cache folder what has been retrieved
+from the server and what deletions the server has not been told about yet.
+
+So the first message is not only a message.  Another program that deletes it,
+or moves it, or rewrites its headers, takes the folder's order and bookmark
+with it, and for a cache folder the record of what has been fetched and the
+deletions still owed to the server.  Losing any of them but the last two
+costs no more than the folder's order and your place in it, both of which VM
+writes again; losing the last two means mail fetched a second time, or a
+deletion the server is never told about, which is why a server cache is a
+folder to leave to VM.
+
+@item Read and unread are not where other mailers look.
+@vindex vm-berkeley-mail-compatibility
+@vindex vm-sync-thunderbird-status
+A message's attributes live in @code{X-VM-v5-Data} and nowhere else by
+default, so a mailer that reads @code{Status:} or @code{X-Status:} shows a VM
+folder as entirely unread.  @code{vm-berkeley-mail-compatibility} makes VM
+read and write @code{Status:} as BSD @command{Mail} does; it is on by default
+only on the BSDs.  Thunderbird is the exception in the other direction:
+@code{vm-sync-thunderbird-status} is @code{t} out of the box, so
+@code{X-Mozilla-Status} is kept up to date both ways.  @xref{Thunderbird
+Folders}.
+@end table
+
+@noindent
+The short of it: a From_ folder is safe to share with another program if you
+are content that read and unread will not travel, that the first message is
+carrying luggage, and that a message whose body has a @samp{From } line in it
+may be split differently at each end.  A folder VM writes for itself --- a
+cache above all --- is better left to VM, and better still written as mboxcl2,
+where the boundary is a byte count rather than a line that has to be
+recognised.
 
 @subheading How VM decides what a folder is
 
