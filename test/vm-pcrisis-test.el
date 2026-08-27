@@ -1159,10 +1159,11 @@ of the body and so could never see it, and the action found nothing to delete."
         (should (vm-pcrisis-test--holds mail-header-separator))))))
 
 (ert-deftest vm-pcrisis-test-signature-action-needs-to-be-told-to-expect-one ()
-  "Without `vm-pcrisis-expect-default-signature' the signature is left alone.
+  "Unset, `vm-pcrisis-expect-default-signature' leaves the signature alone.
 Personality Crisis acts only on a signature whose extent it knows, and this is
 how it comes to know one it did not insert.  The other side of the branch, so
-the fix is not simply deleting whatever is at the end of the buffer."
+the fix is not simply deleting whatever is at the end of the buffer.  It is
+set by default, so this is the off switch rather than the usual case."
   (let ((vm-pcrisis-expect-default-signature nil))
     (vm-pcrisis-test--with-rules '((vm-pcrisis-signature ""))
       (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
@@ -1201,6 +1202,55 @@ Crisis is about to delete, would be a warning about nothing."
           (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
             (should-not (vm-pcrisis-test--holds "my signature"))
             (should-not said)))))))
+
+(ert-deftest vm-pcrisis-test-a-default-signature-is-expected-by-default ()
+  "`vm-pcrisis-expect-default-signature' is on.
+Off, a rule saying (vm-pcrisis-signature \"\") deleted nothing and the mail went
+out with the signature on it, which is #540 twice over.  VM inserts that
+signature itself as it builds a composition, so expecting one is the ordinary
+case and having to say so was the fault."
+  (should (eq (default-value 'vm-pcrisis-expect-default-signature) t)))
+
+(ert-deftest vm-pcrisis-test-a-quoted-signature-is-not-the-compositions-own ()
+  "Expecting a default signature does not take a quoted one for it.
+The search is now run for everyone, so what it can reach matters: a signature
+in included text is prefixed by `vm-included-text-prefix\=', and the line looked
+for is exactly \"-- \".  Were it found, (vm-pcrisis-signature \"\") would delete
+the tail of the message being replied to."
+  (let ((vm-pcrisis-expect-default-signature t))
+    (with-temp-buffer
+      (insert "From: sender@example.com\nTo: someone@example.com\n"
+              "Subject: Test\n" mail-header-separator "\n"
+              "My reply.\n\n"
+              "> quoted text\n> -- \n> the sender signature\n")
+      (let ((vm-pcrisis-current-buffer 'composition)
+            (vm-pcrisis-current-state 'automorph))
+        (vm-pcrisis-create-sig-and-pre-sig-exerlays)
+        ;; nothing to act on, so nothing is deleted
+        (should-not (vm-pcrisis-exerlay-start vm-pcrisis-sig-exerlay))
+        (vm-pcrisis-signature "")
+        (should (vm-pcrisis-test--holds "> the sender signature"))
+        (should (vm-pcrisis-test--holds "My reply."))))))
+
+(ert-deftest vm-pcrisis-test-a-signature-below-quoted-text-is-the-compositions ()
+  "The signature of the composition itself is found under quoted text.
+Its \"-- \" line has no quoting on it, which is what tells the two apart."
+  (let ((vm-pcrisis-expect-default-signature t))
+    (with-temp-buffer
+      (insert "From: sender@example.com\nTo: someone@example.com\n"
+              "Subject: Test\n" mail-header-separator "\n"
+              "My reply.\n\n"
+              "> quoted text\n> -- \n> the sender signature\n"
+              "-- \nmy signature\n")
+      (let ((vm-pcrisis-current-buffer 'composition)
+            (vm-pcrisis-current-state 'automorph))
+        (vm-pcrisis-create-sig-and-pre-sig-exerlays)
+        (should (vm-pcrisis-exerlay-start vm-pcrisis-sig-exerlay))
+        (vm-pcrisis-signature "")
+        (should-not (vm-pcrisis-test--holds "my signature"))
+        ;; and the message being replied to is untouched
+        (should (vm-pcrisis-test--holds "> the sender signature"))
+        (should (vm-pcrisis-test--holds "My reply."))))))
 
 (ert-deftest vm-pcrisis-test-add-header-action-adds-the-header ()
   "REGRESSION: `vm-pcrisis-add-header' works as an action.
