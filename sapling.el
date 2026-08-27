@@ -4,7 +4,7 @@
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Assisted-by: Deepseek:deepseek-v4-pro default
-;; Version: 0.3.0
+;; Version: 0.3.1
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
