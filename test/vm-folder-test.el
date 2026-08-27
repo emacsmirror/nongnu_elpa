@@ -4060,7 +4060,9 @@ conversion and the folder has to open afterwards."
                                 (lambda (&rest _) answer)))
                        (eval (cadr (interactive-form 'vm-change-folder-type))
                              t)))))
-        (should (equal args (list 'mboxcl2 file)))
+        ;; the third is the output file, which one prefix argument does not
+        ;; ask for
+        (should (equal args (list 'mboxcl2 file nil)))
         (apply #'vm-change-folder-type args))
       (should (file-exists-p (vm-folder-backup-name file)))
       (vm-visit-folder file)
@@ -5113,6 +5115,164 @@ gathers from it rather than fetching anything from a spool file."
       (let ((err (should-error (vm-get-new-mail '(4)) :type 'error)))
         (should (string-match-p "gather from" (error-message-string err)))))
     (should (equal (asked) nil))))
+
+
+;;; Converting into a file of the reader's naming (emacs-vm/vm#763)
+
+(ert-deftest vm-folder-test-on-disk-conversion-can-write-elsewhere ()
+  "With an output file the conversion is written there and the folder
+converted is left exactly as it was: no backup, since nothing is overwritten,
+and nothing to delete afterwards."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((output (expand-file-name "repaired.mboxcl2"
+                                    (file-name-directory file))))
+      (vm-change-folder-type-of-file file 'mboxcl2 nil output)
+      (should (file-exists-p output))
+      ;; the input is byte for byte what it was, and has no backup
+      (should (equal (with-temp-buffer (insert-file-contents file)
+                                       (buffer-string))
+                     vm-folder-test--seven-and-two-short))
+      (should-not (file-exists-p (vm-folder-backup-name file)))
+      ;; and the output is a folder VM reads as what was asked for
+      (vm-visit-folder output)
+      (should (= (length vm-message-list) 3))
+      (should (eq vm-folder-type 'mboxcl2)))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-writes-a-sound-folder-elsewhere ()
+  "A folder already sound is still written to the output.  In place there is
+nothing to do and the file is left untouched; asked for a copy under another
+name, answering that there was nothing to do would leave the reader without
+one."
+  (vm-folder-test-with-file (file "sound.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (vm-change-folder-type-of-file file 'mboxcl2)
+    (let ((output (expand-file-name "copy.mboxcl2" (file-name-directory file))))
+      (vm-change-folder-type-of-file file 'mboxcl2 nil output)
+      (should (file-exists-p output))
+      (should (equal (with-temp-buffer (insert-file-contents output)
+                                       (buffer-string))
+                     (with-temp-buffer (insert-file-contents file)
+                                       (buffer-string)))))))
+
+(ert-deftest vm-folder-test-an-output-naming-the-folder-itself-is-in-place ()
+  "An output naming the folder being converted is the in-place conversion said
+another way, backup and all, rather than a refusal about a file that exists."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (vm-change-folder-type-of-file file 'mboxcl2 nil file)
+    (should (file-exists-p (vm-folder-backup-name file)))
+    (vm-visit-folder file)
+    (should (= (length vm-message-list) 3))))
+
+(ert-deftest vm-folder-test-an-output-that-exists-is-refused ()
+  "An output file that exists is not overwritten: it may be a folder."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((output (expand-file-name "taken.mboxcl2"
+                                    (file-name-directory file)))
+          (text-quoting-style 'grave))
+      (write-region "something already here\n" nil output nil 'quiet)
+      (should (string-match-p
+               "exists already"
+               (cadr (should-error
+                      (vm-change-folder-type-of-file file 'mboxcl2 nil output)))))
+      ;; and it is still what it was
+      (should (equal (with-temp-buffer (insert-file-contents output)
+                                       (buffer-string))
+                     "something already here\n")))))
+
+(ert-deftest vm-folder-test-an-output-name-that-cannot-hold-the-type-is-refused ()
+  "REGRESSION: mboxcl2 is not written under a name that says something else,
+nor under one that says nothing.
+
+Issue #763.  The name is where a folder's type is stated, so an mboxcl2 folder
+called out.mbox is one VM reads as From_ and splits wherever a body line
+begins `From ', and one called plain-name is the same.  The conversion says
+what to call it instead, and writes nothing."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((dir (file-name-directory file))
+          (text-quoting-style 'grave))
+      ;; a name that states another type
+      (let* ((wrong (expand-file-name "out.mbox" dir))
+             (message (cadr (should-error
+                             (vm-change-folder-type-of-file
+                              file 'mboxcl2 nil wrong)))))
+        (should (string-match-p "says it is From_" message))
+        (should (string-match-p "out.mboxcl2" message))
+        (should-not (file-exists-p wrong)))
+      ;; a name that states nothing
+      (let* ((bare (expand-file-name "out" dir))
+             (message (cadr (should-error
+                             (vm-change-folder-type-of-file
+                              file 'mboxcl2 nil bare)))))
+        (should (string-match-p "has to say so in its name" message))
+        (should (string-match-p "out.mboxcl2" message))
+        (should-not (file-exists-p bare))))))
+
+(ert-deftest vm-folder-test-an-output-name-for-a-nameless-type-is-taken-as-it-is ()
+  "From_ asks nothing of a name, being the type a folder has when its name
+says nothing, so an output called anything at all holds it -- and a name that
+says mboxcl2 still does not."
+  (vm-folder-test-with-file (file "folder.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((dir (file-name-directory file))
+          (text-quoting-style 'grave))
+      (vm-change-folder-type-of-file file 'mboxcl2) ; sound first
+      (let ((plain (expand-file-name "plain" dir)))
+        (vm-change-folder-type-of-file file 'From_ nil plain)
+        (should (file-exists-p plain))
+        (vm-visit-folder plain)
+        (should (eq vm-folder-type 'From_))
+        (should (= (length vm-message-list) 3)))
+      (should (string-match-p
+               "says it is mboxcl2"
+               (cadr (should-error
+                      (vm-change-folder-type-of-file
+                       file 'From_ nil (expand-file-name "no.mboxcl2" dir)))))))))
+
+(ert-deftest vm-folder-test-writing-elsewhere-needs-a-folder-on-disk ()
+  "Asked to write the conversion elsewhere with no file to convert, the
+command says to save the folder and convert that, rather than converting the
+buffer and writing it who knows where."
+  (let ((text-quoting-style 'grave))
+    (should (string-match-p
+             "needs a folder on disk"
+             (cadr (should-error
+                    (vm-change-folder-type 'mboxcl2 nil "/tmp/somewhere")))))))
+
+(ert-deftest vm-folder-test-two-prefix-arguments-ask-where-to-write ()
+  "C-u C-u M-x vm-change-folder-type asks for the folder and then for where to
+write the conversion; one prefix argument asks only for the folder."
+  (let* ((asked nil)
+         (args
+          (cl-letf (((symbol-function 'vm-read-file-name)
+                     (lambda (prompt &rest _)
+                       (push prompt asked)
+                       (if (string-match-p "Write" prompt)
+                           "/tmp/out.mboxcl2"
+                         "/tmp/in.mboxcl2")))
+                    ((symbol-function 'vm-read-string)
+                     (lambda (&rest _) "mboxcl2")))
+            (let ((current-prefix-arg '(16)))
+              (eval (cadr (interactive-form 'vm-change-folder-type)) t)))))
+    (should (equal (nth 1 args) "/tmp/in.mboxcl2"))
+    (should (equal (nth 2 args) "/tmp/out.mboxcl2"))
+    (should (= (length asked) 2)))
+  (let* ((asked nil)
+         (args
+          (cl-letf (((symbol-function 'vm-read-file-name)
+                     (lambda (prompt &rest _)
+                       (push prompt asked)
+                       "/tmp/in.mboxcl2"))
+                    ((symbol-function 'vm-read-string)
+                     (lambda (&rest _) "mboxcl2")))
+            (let ((current-prefix-arg '(4)))
+              (eval (cadr (interactive-form 'vm-change-folder-type)) t)))))
+    (should (equal (nth 1 args) "/tmp/in.mboxcl2"))
+    (should-not (nth 2 args))
+    (should (= (length asked) 1))))
 
 (provide 'vm-folder-test)
 

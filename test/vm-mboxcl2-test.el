@@ -438,8 +438,10 @@ list it puts to the user."
                 ((symbol-function 'vm-read-file-name)
                  (lambda (&rest _) (error "asked for a file with no prefix arg"))))
         (let ((current-prefix-arg nil))
+          ;; type, file, output: neither file nor output without a prefix
+          ;; argument
           (should (equal (eval (cadr (interactive-form 'vm-change-folder-type)) t)
-                         '(mboxcl2 nil)))))
+                         '(mboxcl2 nil nil)))))
       (should (member "mboxcl2" offered))
       ;; and it offers the others as it always did
       (should (member "From_" offered))
