@@ -8,6 +8,21 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `vm-change-folder-type` with two prefix arguments converts a folder on
+    disk into a file you name, leaving the folder you converted exactly as it
+    was: no backup is made, since nothing is overwritten, and nothing is
+    offered for deletion.  That is how to look at a conversion before trusting
+    it, or to repair a copy of a folder rather than the folder
+    (emacs-vm/vm#763).  One prefix argument still converts a folder on disk in
+    place, and no prefix argument the folder you are in.
+
+    A name that cannot hold the type is now refused rather than written, and
+    the command says what to call it instead: an mboxcl2 folder called
+    `out.mbox` would be read back as From_ and split wherever a body line
+    begins `From `, and one called `out` with no extension the same.  Nothing
+    is asked of a name that could not state the type anyway, `From_` being the
+    type a folder has when its name says nothing.
+
   * `C-u M-x vm-imap-synchronize` no longer deletes mail on the server.  It
     used to delete every message the mailbox had and the cache folder did not,
     with no confirmation and no report of how many (emacs-vm/vm#752).  That is

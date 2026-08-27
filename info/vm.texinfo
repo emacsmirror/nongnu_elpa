@@ -1003,7 +1003,10 @@ for a file and converts it on disk, without visiting it, which is the only
 way in when the folder cannot be read.  Converting a folder to the type it
 already claims is the repair --- every length is recomputed --- and the
 folder as it was is kept in a backup file, named as Emacs names one when
-saving a buffer.  Changing a visited folder's type keeps a backup too.
+saving a buffer.  Changing a visited folder's type keeps a backup too.  Two
+prefix arguments write the repaired folder to a file you name and leave the
+broken one alone, which is the way to compare the two before parting with
+either.
 
 A length that is wrong rather than missing needs the same repair and gives
 no sign of needing it: the folder opens, because VM falls back on searching
@@ -1252,9 +1255,24 @@ concerned.
 @findex vm-change-folder-type
 @code{vm-change-folder-type} converts the folder you are in.  With a prefix
 argument it asks for a file and converts that instead, without visiting it,
-which is the only way in when a folder cannot be read.  It is a good idea to
-keep all your mail folders in a single format in order to avoid
+which is the only way in when a folder cannot be read.  With two prefix
+arguments it asks for a file and then for where to write the conversion: the
+result goes to the file you name and the folder you converted is left exactly
+as it was, with no backup made and nothing offered for deletion, since nothing
+of it was touched.  That is the way to look at a conversion before trusting
+it, and the way to repair a copy of a folder rather than the folder.  It is a
+good idea to keep all your mail folders in a single format in order to avoid
 incompatibilities.
+
+@cindex folder type, name refused
+A name that cannot hold the type is refused rather than written, and the
+command says what to call it instead.  An mboxcl2 folder called
+@file{out.mbox} would be read back as From_ and split wherever a body line
+begins ``From '', and one called @file{out} with no extension the same, so
+neither is written.  Nothing is asked of a name that could not state the type
+anyway: @code{From_} is the type a folder has when its name says nothing, and
+a reader who has emptied @code{vm-folder-type-by-extension-alist} has said
+that names mean nothing here.
 
 @subheading Converting to and from plain mbox
 

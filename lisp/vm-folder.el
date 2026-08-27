@@ -823,6 +823,32 @@ the case for the types that have no entry, for
 	   (extension (vm-folder-extension-for-type type)))
       (if extension (concat base "." extension) base))))
 
+(defun vm-error-if-name-contradicts-type (file type)
+  "Signal unless FILE is a name a TYPE folder may be written under.
+The name is where a folder's type is stated, so writing TYPE under a name that
+says another type leaves a folder VM refuses to read, and writing mboxcl2
+under a name that says nothing leaves one read as From_ and split wherever a
+body line begins `From ' (emacs-vm/vm#763).  Neither is worth doing on the
+reader's behalf: the conversion stops and says what to call it instead.
+
+Nothing is asked of a name that no extension could state the type in: the
+types with no extension of their own, `vm-folder-type-with-no-name-of-its-own',
+and every type at all where a reader has emptied
+`vm-folder-type-by-extension-alist', which is how to say that names mean
+nothing here."
+  (let* ((type (vm-canonical-folder-type type))
+	 (stated (vm-folder-type-for-name file))
+	 (extension (vm-folder-extension-for-type type)))
+    (cond ((and stated (not (eq stated type)))
+	   (error "%s says it is %s, so it cannot hold %s; write it as %s"
+		  (file-name-nondirectory file) stated type
+		  (file-name-nondirectory (vm-folder-name-for-type file type))))
+	  ((and (null stated) extension)
+	   (error "A %s folder has to say so in its name; write it as %s"
+		  type
+		  (file-name-nondirectory
+		   (vm-folder-name-for-type file type)))))))
+
 (defun vm-folder-type-to-write (&optional file)
   "The folder type to write the current folder in.
 What the folder already is, else what FILE's name asks for, else
@@ -6216,10 +6242,17 @@ a thing to know about: VM is looking at the new one, so the old goes stale."
 			   " VM is not looking at it: it will go stale")
 	       (abbreviate-file-name old)))))
 
-(defun vm-change-folder-type-of-file (file type &optional interactive)
+(defun vm-change-folder-type-of-file (file type &optional interactive output)
   "Convert the folder FILE on disk to TYPE, without visiting it.
 INTERACTIVE says whether there is anybody to ask about deleting the file left
 behind when the name changes.
+
+OUTPUT, if given, is where the converted folder is written, and FILE is then
+left exactly as it was: no backup is made, since nothing is overwritten, and
+nothing is offered for deletion.  OUTPUT must not exist, and its name must be
+one a TYPE folder may be written under -- a folder called out.mbox cannot hold
+mboxcl2 (emacs-vm/vm#763).  OUTPUT naming FILE itself is the in-place
+conversion below.
 This is how to repair a folder VM will not read: a folder saying it is mboxcl2
 with a message that has no `Content-Length' cannot be visited, so its type
 cannot be changed in a buffer.  `vm-mboxcl2-strict' is bound to nil while the
@@ -6232,10 +6265,11 @@ recomputes every length, and that is the repair.
 The file is written only if the result reads back as TYPE, strictly, and holds
 the same number of messages; a folder already sound is not rewritten at all.
 
-Written under the name TYPE asks for, since the name is what states the type:
-sent.mboxcl2 converted to From_ is written as sent, and FILE is then offered
-for deletion.  Where the name does not change, the previous contents are kept
-in a backup file, named as Emacs would name one when saving a buffer."
+Without OUTPUT it is written under the name TYPE asks for, since the name is
+what states the type: sent.mboxcl2 converted to From_ is written as sent, and
+FILE is then offered for deletion.  Where the name does not change, the
+previous contents are kept in a backup file, named as Emacs would name one
+when saving a buffer."
   (let ((buffer (vm-get-file-buffer file)))
     (when buffer
       (when (buffer-modified-p buffer)
@@ -6253,10 +6287,24 @@ in a backup file, named as Emacs would name one when saving a buffer."
   (let ((old (vm-get-folder-type file))
 	(coding-system-for-read (vm-binary-coding-system))
 	(coding-system-for-write (vm-binary-coding-system))
+	;; nil where OUTPUT is FILE: that is the in-place conversion, said
+	;; another way
+	(destination (and output
+			  (not (equal (expand-file-name output)
+				      (expand-file-name file)))
+			  (expand-file-name output)))
 	before after original)
     (when (memq old '(nil unknown))
       (error "%s has no folder type VM recognizes, so there is nothing to convert"
 	     (file-name-nondirectory file)))
+    ;; Before the folder is read, which on a gigabyte cache is a minute: a
+    ;; name that cannot hold TYPE is refused whatever the contents turn out
+    ;; to be.
+    (when destination
+      (vm-error-if-name-contradicts-type destination type)
+      (when (file-exists-p destination)
+	(error "%s exists already; move it aside, or name another file"
+	       (abbreviate-file-name destination))))
     (with-temp-buffer
       (set-buffer-multibyte nil)
       ;; Each of these walks or copies the whole folder, which on a gigabyte
@@ -6287,10 +6335,21 @@ in a backup file, named as Emacs would name one when saving a buffer."
 	     (error (concat "Not writing %s: it holds %d messages and the"
 			    " conversion produced %d")
 		    (file-name-nondirectory file) before after))
+	    (destination
+	     ;; A folder already sound is written all the same: the reader
+	     ;; asked for a copy of it under this name, and answering that
+	     ;; there was nothing to do would leave them without one.
+	     (vm-inform 5 "Writing %s..." (file-name-nondirectory destination))
+	     (write-region (point-min) (point-max) destination nil 'quiet)
+	     (vm-inform 5 "%s converted from %s to %s as %s, %d messages; %s is unchanged"
+			(file-name-nondirectory file) old type
+			(file-name-nondirectory destination) after
+			(file-name-nondirectory file)))
 	    ((equal original (buffer-hash))
 	     (vm-inform 5 "%s is already a sound %s folder, %d messages"
 			(file-name-nondirectory file) type after))
 	    ((equal (vm-folder-name-for-type file type) file)
+	     (vm-error-if-name-contradicts-type file type)
 	     (let ((backup (vm-folder-backup-name file)))
 	       (vm-inform 5 "Backing %s up as %s..."
 			  (file-name-nondirectory file)
@@ -6308,6 +6367,7 @@ in a backup file, named as Emacs would name one when saving a buffer."
 	     ;; like backup enough until the offer is accepted.
 	     (let ((new-file (vm-folder-name-for-type file type))
 		   (backup (vm-folder-backup-name file)))
+	       (vm-error-if-name-contradicts-type new-file type)
 	       (when (file-exists-p new-file)
 		 (error (concat "%s is a folder already; move it aside, or"
 				" rename this one by hand")
@@ -6591,7 +6651,7 @@ The type is the one the reader would take, from the name, and everything
       (set-buffer-modified-p nil))))
 
 ;;;###autoload
-(defun vm-change-folder-type (type &optional file)
+(defun vm-change-folder-type (type &optional file output)
   "Change folder type to TYPE.
 The old name `From_-with-Content-Length' is accepted for `mboxcl2'.
 TYPE may be one of the following symbol values:
@@ -6608,6 +6668,13 @@ With a prefix argument, or with FILE given, convert a folder on disk that VM
 is not visiting.  That is how to repair a folder VM will not read -- see
 `vm-change-folder-type-of-file'.
 
+With two prefix arguments, or with OUTPUT given, the converted folder is
+written to a file of your naming and the one converted is left as it was.
+OUTPUT wants FILE: to convert the folder you are in into a new file, save it
+and convert that.  A name that cannot hold TYPE is refused rather than
+written, here and on disk both -- a folder called out.mbox cannot hold
+mboxcl2 (emacs-vm/vm#763).
+
 The folder's current type is offered as well as the others: converting a
 folder to what it already is rewrites every message in it, which for mboxcl2
 recomputes every `Content-Length'.  That is the repair for a folder whose
@@ -6622,27 +6689,40 @@ error, and the on-disk conversion is what such a folder wants."
    (let ((this-command this-command)
 	 (last-command last-command)
 	 (types vm-supported-folder-types)
-	 (file nil))
+	 (file nil)
+	 (output nil))
      (when current-prefix-arg
        (setq file (vm-read-file-name "Change folder type of file: "
 				     (or vm-folder-directory default-directory)
-				     nil t nil 'vm-folder-history)))
+				     nil t nil 'vm-folder-history))
+       ;; C-u C-u: convert into a file of the reader's naming and leave the
+       ;; folder converted as it was
+       (when (>= (prefix-numeric-value current-prefix-arg) 16)
+	 (setq output (vm-read-file-name
+		       (format "Write the converted folder to (leaving %s): "
+			       (file-name-nondirectory file))
+		       (file-name-directory file)
+		       nil nil nil 'vm-folder-history))))
      (save-current-buffer
        (unless file
 	 (vm-select-folder-buffer)
 	 (vm-error-if-virtual-folder))
        (list (vm-canonical-folder-type
 	      (intern (vm-read-string "Change folder to type: " types)))
-	     file))))
+	     file output))))
   ;; Both paths, and before either does anything: the old name has to reach
   ;; the conversion as the current one, and a type neither path can write is
   ;; worth saying so about before a folder is rewritten in it.
   (setq type (vm-canonical-folder-type type))
   (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
       (error "Unknown folder type: %s" type))
+  (when (and output (null file))
+    (error (concat "Writing the conversion elsewhere needs a folder on disk:"
+		   " save this one, then C-u C-u M-x vm-change-folder-type")))
   (when file
     (vm-change-folder-type-of-file (expand-file-name file) type
-				   (vm-interactive-p)))
+				   (vm-interactive-p)
+				   (and output (expand-file-name output))))
   (unless file
   (let ((asked (vm-interactive-p))
 	(old-file nil)
@@ -6659,6 +6739,8 @@ error, and the on-disk conversion is what such a folder wants."
   ;; name states the type it no longer holds, refused (emacs-vm/vm#743).
   (setq old-file buffer-file-name
 	new-file (and old-file (vm-folder-name-for-type old-file type)))
+  (when new-file
+    (vm-error-if-name-contradicts-type new-file type))
   (when (and new-file (not (equal new-file old-file)) (file-exists-p new-file))
     (error (concat "%s is a folder already; move it aside, or rename this"
 		   " folder by hand and change its type in place")
