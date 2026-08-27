@@ -11,8 +11,8 @@ jobs:
       matrix:
         emacs_version:
           - "28.2"
-          - "29.4"
           - "30.2"
+          - "31.1"
           - "snapshot"
     steps:
     - uses: purcell/setup-emacs@master
