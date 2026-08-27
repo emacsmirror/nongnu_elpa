@@ -1470,6 +1470,9 @@ An empty DIRECTORY initializes the current directory."
 (defvar sapling-command-history nil
   "History for `sapling-command'.")
 
+(defvar sapling-command-argument-history nil
+  "History for positional arguments in `sapling-command'.")
+
 ;;;###autoload
 (defun sapling-command (&optional command)
   "Run a Sapling command selected from its documented command-line options.
@@ -1512,8 +1515,13 @@ actual Sapling process is still launched asynchronously by
             (push (or short long) args)
             (when value
               (push (read-string (format "%s value: " value)) args))))))
+    (let ((arguments (read-string
+                      "Arguments (space-separated): "
+                      nil 'sapling-command-argument-history)))
+      (setq args (append (nreverse args)
+                         (split-string arguments " " t))))
     (sapling--run-and-show
-     (cons command (nreverse args))
+     (cons command args)
      (format "Sapling %s%s" command
              (if subcommand (format " %s" subcommand) "")))))
 
