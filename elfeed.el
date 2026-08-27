@@ -132,7 +132,7 @@ a performance boost over xml.el."
   "Maximum relative last update time in seconds in the header line.
 Set to `most-positive-fixnum' to always use a relative time, or 0 to
 never show a relative time."
-  :type 'boolean)
+  :type 'natnum)
 
 ;; Completion predicate for commands which should be available in all Elfeed
 ;; mode buffers.
