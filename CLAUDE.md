@@ -163,6 +163,15 @@ Gotchas found the hard way:
 - **A mutation that makes a test skip reads as a surviving mutation.** ert
   counts a skip among its expected results, so a harness watching only for
   FAILED reports the test as blind when it never ran. Count skips too.
+- **A mock IMAP test can pass without running the code it claims to test.**
+  Visiting a folder and getting mail both go through the asynchronous driver,
+  and the blocking `vm-imap-synchronize-folder` runs only where the driver
+  declines -- so nothing in `vm-imap-retrieve-messages` is reached by an
+  ordinary mock test. A regression test for that path has to make the driver
+  decline, by stubbing `vm-imap-net-get-spooled-mail` to nil, which is what
+  happens in the field when a password cannot be asked for. The first test
+  written for #765 passed against the unfixed code for exactly this reason, and
+  reverting the fix is what caught it.
 
 ## Contributing workflow
 
@@ -368,6 +377,21 @@ These files are auto-generated during build - do not edit directly:
 - `vm-load.el` (from vm-load.el.in)
 
 Edit the `.in` templates or `configure.ac` instead.
+
+`info/vm-reference.texinfo` and `info/vm-docstrings.texinfo` are generated from
+the docstrings in `lisp/` and are **committed**, because `vm.texinfo` includes
+them and makeinfo writes no manual at all when they are missing. So a changed
+docstring means regenerating them and committing the result:
+
+```bash
+make -C info vm-reference.texinfo vm-docstrings.texinfo
+```
+
+`make check-reference` compares the committed copy with what the docstrings say
+now and fails when they differ. A plain `make` rewrites them in the working
+tree, so forgetting this leaves the next person a dirty tree they did not
+cause. Only commands and user options appear there: a docstring on a plain
+function is not in the appendix and needs nothing.
 
 ### Autoloads
 
