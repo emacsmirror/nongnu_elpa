@@ -421,7 +421,8 @@ Signal an error if the command exits unsuccessfully."
     (pop-to-buffer (get-buffer-create sapling-status-buffer-name))
     (unless (derived-mode-p 'sapling-mode)
       (sapling-mode))
-    (setq sapling--repo-root root
+    (setq default-directory root
+          sapling--repo-root root
           sapling--files nil
           sapling--marked nil
           sapling--commit-info nil
@@ -432,7 +433,7 @@ Signal an error if the command exits unsuccessfully."
   "Refresh the current Sapling status buffer."
   (interactive)
   (let* ((buffer (current-buffer))
-         (root (or sapling--repo-root (sapling--find-root default-directory)))
+         (root (or (sapling--find-root default-directory) sapling--repo-root))
          (remaining 3)
          (smartlog nil)
          (files nil)
@@ -875,7 +876,7 @@ called outside the status buffer."
               (or sapling--marked
                   (let ((file (sapling-file-at-point)))
                     (and file (list file)))))))
-  (let ((root (or sapling--repo-root (sapling--find-root default-directory))))
+  (let ((root (or (sapling--find-root default-directory) sapling--repo-root)))
     (unless root
       (user-error "Not inside a Sapling repository"))
     (sapling--show-output sapling-diff-buffer-name
@@ -967,13 +968,18 @@ new one."
   (interactive)
   (let* ((buffer (current-buffer))
          (message-text (sapling--commit-message))
-         (root default-directory)
+         (status-buffer sapling--commit-status-buffer)
+         (root (or (sapling--find-root default-directory)
+                   (when (buffer-live-p status-buffer)
+                     (with-current-buffer status-buffer
+                       sapling--repo-root))))
          (files sapling--commit-files)
          (amend sapling--commit-amend)
-         (status-buffer sapling--commit-status-buffer)
          (logfile (make-temp-file "sapling-message" nil ".txt")))
     (when (equal message-text "")
       (user-error "Empty commit message"))
+    (unless root
+      (user-error "Not inside a Sapling repository"))
     (let ((coding-system-for-write 'utf-8))
       (write-region message-text nil logfile nil 'silent))
     (let ((args (append (if amend '("amend") '("commit"))
@@ -1278,7 +1284,7 @@ the file at point is used as the initial FILE."
    (let ((file (or (and (derived-mode-p 'sapling-mode) (sapling-file-at-point))
                    (read-file-name "Annotate file: "))))
      (list (read-string "Revision (empty for current): ") file)))
-  (let* ((root (or sapling--repo-root (sapling--find-root default-directory)))
+  (let* ((root (or (sapling--find-root default-directory) sapling--repo-root))
          (args (append '("annotate")
                        (and (not (string-empty-p revision))
                             (list "-r" revision))
