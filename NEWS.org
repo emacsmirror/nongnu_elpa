@@ -2,6 +2,17 @@
 
 * Unreleased
 
+* Version 0.4.0 (2026-08-29)
+
+- Added pre-session model and reasoning selection, including explicit
+  confirmation before applying expensive model switches.
+- Applied create-time runtime choices before the first prompt and kept retries
+  scoped to the exact session that owns them.
+- Restored active dashboard turns after reconnect without letting stale socket
+  callbacks mutate successor sessions.
+- Added complete batched clarification support for single-choice, multi-select,
+  and free-form questions, including partial retries and resumed sessions.
+
 * Version 0.3.3 (2026-08-22)
 
 - Aligned pipe tables in settled chat markdown so columns line up.

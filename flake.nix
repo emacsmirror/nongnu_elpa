@@ -24,7 +24,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
           lib = pkgs.lib;
-          version = "0.3.3";
+          version = "0.4.0";
 
           emacs = pkgs.emacs30-nox or pkgs.emacs;
           emacsPackages = pkgs.emacsPackagesFor emacs;
