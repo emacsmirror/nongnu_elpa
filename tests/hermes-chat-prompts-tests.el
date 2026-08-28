@@ -398,6 +398,123 @@ stays available."
           (should (< response-index later-index)))
         (should-not (gethash "req-clarify" hermes-chat--pending-prompts))))))
 
+(ert-deftest hermes-chat-answers-batch-clarify-by-question-id ()
+  "A batched clarification locks every answer before completing the prompt."
+  (let (requests)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-clarify-question-respond)
+               (lambda (_client request question answer &optional resolve _reject)
+                 (setq requests
+                       (append requests (list (list request question answer))))
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-batch")
+           (questions . [((qid . "q0") (question . "Pick one")
+                          (choices . ["First" "Second"]))
+                         ((qid . "q1") (question . "Pick several")
+                          (choices . ["Alpha" "Beta"])
+                          (multi_select . t))])))
+        (hermes-chat-respond-to-prompt
+         "req-batch" '(("q0" . "First") ("q1" "Alpha" "Beta")))
+        (should
+         (equal requests
+                '(("req-batch" "q0" "First")
+                  ("req-batch" "q1" ("Alpha" "Beta")))))
+        (should-not (gethash "req-batch" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-batch-clarify-rejects-unscoped-chat-tail ()
+  "RET cannot turn one chat-tail string into an empty batch response."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "clarify.request"
+     '((request_id . "req-batch")
+       (questions . [((qid . "q0") (question . "First question"))
+                     ((qid . "q1") (question . "Second question"))])))
+    (insert "one answer")
+    (should-error (hermes-chat-send) :type 'user-error)
+    (should (equal (hermes-chat-input-string) "one answer"))
+    (should (gethash "req-batch" hermes-chat--pending-prompts))))
+
+(ert-deftest hermes-chat-batch-clarify-reads-only-unanswered-questions ()
+  "Reconnect answers are skipped while remaining question modes stay native."
+  (let ((prompt '(:prompt-type "clarify"
+                  :answers ((q0 . "First"))
+                  :questions [((qid . "q0") (question . "Already answered"))
+                              ((qid . "q1") (question . "Pick several")
+                               (choices . ["Alpha" "Beta"])
+                               (multi_select . t))
+                              ((qid . "q2") (question . "Explain"))]))
+        reads)
+    (cl-letf (((symbol-function 'completing-read-multiple)
+               (lambda (question choices &rest _)
+                 (push (list question choices) reads)
+                 '("Alpha" "Beta")))
+              ((symbol-function 'read-string)
+               (lambda (question &rest _)
+                 (push question reads)
+                 "Because")))
+      (should
+       (equal (hermes-chat--batch-clarify-responses prompt nil)
+              '(("q1" "Alpha" "Beta") ("q2" . "Because"))))
+      (should (= (length reads) 2)))))
+
+(ert-deftest hermes-chat-batch-clarify-rejection-keeps-prompt-retryable ()
+  "A rejected later answer retries without rereading an accepted predecessor."
+  (let (requests reads)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-clarify-question-respond)
+               (lambda (_client _request question _answer &optional resolve reject)
+                 (setq requests (append requests (list question)))
+                 (if (= (length requests) 2)
+                     (funcall reject "clarify failed")
+                   (funcall resolve '((status . "ok"))))))
+              ((symbol-function 'read-string)
+               (lambda (question &rest _)
+                 (push question reads)
+                 "Retry")))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-batch")
+           (questions . [((qid . "q0") (question . "First"))
+                         ((qid . "q1") (question . "Second"))])))
+        (hermes-chat-respond-to-prompt
+         "req-batch" '(("q0" . "Accepted") ("q1" . "Rejected")))
+        (let ((prompt (gethash "req-batch" hermes-chat--pending-prompts)))
+          (should (equal (hermes-transport--get
+                          (plist-get prompt :answers) "q0")
+                         "Accepted"))
+          (should-not (plist-get prompt :response-token))
+          (should (string-match-p "Answered: Accepted" (buffer-string))))
+        (hermes-chat-respond-to-prompt "req-batch")
+        (should (equal requests '("q0" "q1" "q1")))
+        (should (equal reads '("Second: ")))))))
+
+(ert-deftest hermes-chat-stale-batch-success-cannot-mark-replacement-prompt ()
+  "A late batch success cannot write accepted answers into a successor lifecycle."
+  (let (resolve)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-clarify-question-respond)
+               (lambda (_client _request _question _answer &optional resolve-fn _reject)
+                 (setq resolve resolve-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-batch")
+           (questions . [((qid . "q0") (question . "Old"))])))
+        (hermes-chat-respond-to-prompt
+         "req-batch" '(("q0" . "Stale")))
+        (hermes-chat--reset-transcript)
+        (hermes-chat--record-prompt-request
+         '(:prompt-type "clarify" :request-id "req-batch"
+           :questions [((qid . "q0") (question . "New"))]) nil)
+        (funcall resolve '((status . "ok")))
+        (should-not
+         (plist-get (gethash "req-batch" hermes-chat--pending-prompts)
+                    :answers))))))
+
 (ert-deftest hermes-chat-send-answers-pending-clarify-from-input ()
   "RET sends chat input as the pending clarification response."
   (let (respond-request respond-answer)

@@ -383,6 +383,19 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
    client "clarify.respond" `((request_id . ,request-id) (answer . ,answer))
    resolve reject))
 
+(defun hermes-dashboard-transport-clarify-question-respond
+    (client request-id question-id answer &optional resolve reject)
+  "Send ANSWER for QUESTION-ID in clarify REQUEST-ID on CLIENT."
+  (when (listp answer)
+    (setq answer
+          (vconcat (delq nil (mapcar #'hermes-transport--scalar-string
+                                    answer)))))
+  (hermes-dashboard-transport-request
+   client "clarify.respond"
+   `((request_id . ,request-id) (question_id . ,question-id)
+     (answer . ,answer))
+   resolve reject))
+
 (defun hermes-dashboard-transport-sudo-respond
     (client request-id password &optional resolve reject)
   "Send PASSWORD for sudo REQUEST-ID on CLIENT."

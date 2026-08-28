@@ -37,6 +37,39 @@
               ("session.resume" (session_id . "stored")
                (source . "emacs")))))))
 
+(ert-deftest hermes-dashboard-rpc-clarify-question-sends-question-id ()
+  "A batched clarification answer identifies its question as a JSON array."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (setq request (cons method params)))))
+      (hermes-dashboard-transport-clarify-question-respond
+       'client "request" "q1" '("one" "two")))
+    (should
+     (equal request
+            '("clarify.respond" (request_id . "request")
+              (question_id . "q1") (answer . ["one" "two"]))))))
+
+(ert-deftest hermes-dashboard-rpc-clarify-multiselect-serializes-before-send ()
+  "Multi-select answers serialize as arrays, including an empty selection."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'fake-websocket
+                 :pending (make-hash-table :test #'equal)))
+        frames)
+    (let ((hermes-dashboard-transport-request-timeout nil)
+          (hermes-dashboard-transport-websocket-send-function
+           (lambda (_websocket frame) (push frame frames))))
+      (hermes-dashboard-transport-clarify-question-respond
+       client "request" "q1" '("one" "two"))
+      (hermes-dashboard-transport-clarify-question-respond
+       client "request" "q2" '(nil)))
+    (should (string-match-p
+             (regexp-quote "\"answer\":[\"one\",\"two\"]")
+             (cadr frames)))
+    (should (string-match-p
+             (regexp-quote "\"answer\":[]")
+             (car frames)))))
+
 (ert-deftest hermes-dashboard-rpc-session-create-sends-runtime-choices ()
   "Session creation serializes customized model, provider, reasoning, and tier."
   (let (request)
@@ -2999,6 +3032,28 @@ This is the contract that replaces hand-mirroring every event name: an invented
     (should (equal (plist-get event :request-id) "req-tr"))
     (should (equal (plist-get event :start) 0))
     (should (equal (plist-get event :count) 10))))
+
+(ert-deftest hermes-transport-normalizes-batch-clarify-request ()
+  "A batched clarify request preserves questions and locked answers."
+  (let* ((questions
+          '(((qid . "q0") (question . "Pick one")
+             (choices . ["First" "Second"]) (multi_select . :json-false))
+            ((qid . "q1") (question . "Pick several")
+             (choices . ["Alpha" "Beta"]) (multi_select . t))))
+         (answers '((q0 . "CUSTOM-LOCKED-ANSWER")))
+         (frame `((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "clarify.request")
+                             (session_id . "sid")
+                             (payload . ((request_id . "req-batch")
+                                         (questions . ,questions)
+                                         (answers . ,answers)))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (equal (plist-get event :questions) questions))
+    (should (equal (plist-get event :answers) answers))
+    (should (string-match-p "Pick one" (plist-get event :content)))
+    (should (string-match-p "Answered: CUSTOM-LOCKED-ANSWER"
+                            (plist-get event :content)))
+    (should (string-match-p "Pick several" (plist-get event :content)))))
 
 (ert-deftest hermes-transport-normalizes-terminal-read-request-no-params ()
   "A `terminal.read.request' without start/count omits those fields."

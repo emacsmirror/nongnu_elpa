@@ -1467,7 +1467,8 @@ visible while reading."
                   (hermes-chat--in-lifetime buffer lifetime
                     (hermes-chat--dashboard-record-session client result)
                     (hermes-chat--render-history
-                     (hermes-transport--get result 'messages))))
+                     (hermes-transport--get result 'messages))
+                    (hermes-chat--dashboard-restore-pending-clarify result)))
        :reject (lambda (message)
                  (hermes-chat--in-lifetime buffer lifetime
                    (hermes-chat--insert-local-status
@@ -1521,6 +1522,10 @@ durable session continues on send."
     (setq sent-p
           (cond
            (clarify-key
+            (when (hermes-chat--batch-clarify-p
+                   (gethash clarify-key hermes-chat--pending-prompts))
+              (user-error
+               "Use C-c C-a to answer the batched Hermes clarification"))
             (when (hermes-chat--prompt-response-in-flight-p clarify-key)
               (user-error "Hermes is accepting the previous prompt response"))
             (hermes-chat--delete-input-tail)

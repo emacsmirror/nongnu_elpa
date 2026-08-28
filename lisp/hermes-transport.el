@@ -720,6 +720,55 @@ The plist holds :used, :max, and :percent for the model's context window."
     ("terminal" "Terminal read requested")
     (_ (format "%s requested" prompt-type))))
 
+(defun hermes-dashboard-transport--clarify-answer-string (answer)
+  "Return display string for a locked clarification ANSWER."
+  (or (hermes-transport--scalar-string answer)
+      (and (or (vectorp answer) (listp answer))
+           (string-join
+            (delq nil (mapcar #'hermes-transport--scalar-string
+                              (append answer nil)))
+            ", "))))
+
+(defun hermes-dashboard-transport--clarify-question-content
+    (question answers index)
+  "Return display text for batch QUESTION with ANSWERS at INDEX."
+  (let* ((text (hermes-transport--scalar-string
+                (hermes-transport--get question 'question)))
+         (qid (hermes-transport--scalar-string
+               (hermes-transport--get question 'qid)))
+         (choices (hermes-transport--get question 'choices))
+         (items (and (or (vectorp choices) (listp choices))
+                     (delq nil (mapcar #'hermes-transport--scalar-string
+                                       (append choices nil)))))
+         (answered (and qid
+                        (hermes-transport--field-present-p answers qid)))
+         (answer (and answered
+                      (hermes-dashboard-transport--clarify-answer-string
+                       (hermes-transport--get answers qid)))))
+    (when text
+      (string-join
+       (append (list (format "%d. %s" index text))
+               (and answered
+                    (list (if (string-empty-p (or answer ""))
+                              "   ✓ Answered"
+                            (format "   ✓ Answered: %s" answer))))
+               (mapcar (lambda (choice) (format "   - %s" choice)) items))
+       "\n"))))
+
+(defun hermes-dashboard-transport--batch-clarify-content (payload)
+  "Return display text for PAYLOAD's batch clarification, or nil."
+  (when-let* ((questions (hermes-transport--get payload 'questions))
+              ((or (vectorp questions) (listp questions))))
+    (let ((answers (hermes-transport--get payload 'answers)))
+      (string-join
+       (delq nil
+             (cl-loop for question across (vconcat questions)
+                      for index from 1
+                      collect
+                      (hermes-dashboard-transport--clarify-question-content
+                       question answers index)))
+       "\n"))))
+
 (defun hermes-dashboard-transport--prompt-content (prompt-type payload)
   "Return redacted display content for PROMPT-TYPE and PAYLOAD."
   (let ((title (hermes-dashboard-transport--prompt-title prompt-type)))
@@ -747,12 +796,18 @@ The plist holds :used, :max, and :percent for the model's context window."
              (format "%s (start %s, count %s)" title
                      (or start "0") (or count "all"))
            title)))
+      ("clarify"
+       (or (hermes-dashboard-transport--batch-clarify-content payload)
+           (hermes-dashboard-transport--payload-text payload)
+           title))
       (_
        (or (hermes-dashboard-transport--payload-text payload) title)))))
 
 (defun hermes-dashboard-transport--copy-prompt-fields (event payload)
   "Copy safe prompt request fields from PAYLOAD into EVENT."
   (dolist (field '((question . :question) (choices . :choices)
+                   (questions . :questions) (answers . :answers)
+                   (multi_select . :multi-select)
                    (prompt . :prompt) (env_var . :env-var)
                    (command . :command) (description . :description)
                    (pattern_key . :pattern-key)

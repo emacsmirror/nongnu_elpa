@@ -881,6 +881,24 @@ shared client."
          client hermes-chat--dashboard-token active-id))
       (hermes-chat--dashboard-refresh-goal))))
 
+(defun hermes-chat--dashboard-pending-clarify-event (result)
+  "Return normalized pending clarification event from session RESULT."
+  (when-let* ((payload (hermes-transport--get result 'pending_clarify))
+              (session-id hermes-chat--dashboard-active-session-id))
+    (hermes-dashboard-transport--prompt-request-event
+     "clarify.request" `((session_id . ,session-id)) payload)))
+
+(defun hermes-chat--dashboard-restore-pending-clarify (result)
+  "Restore RESULT's pending clarification through the live event path."
+  (when-let* ((event (hermes-chat--dashboard-pending-clarify-event result))
+              (key (hermes-chat--prompt-event-key event)))
+    (let* ((existing (gethash key hermes-chat--pending-prompts))
+           (assistant-id
+            (or (plist-get existing :assistant-id)
+                hermes-chat--pending-assistant-id
+                (format "clarify-%s" key))))
+      (hermes-chat--render-dashboard-turn-event assistant-id event))))
+
 (defun hermes-chat--dashboard-result-live-turn-p (result)
   "Return non-nil when RESULT reports the resumed session is still busy."
   (or (hermes-transport--get result 'running)
@@ -1237,7 +1255,8 @@ GENERATION scopes asynchronous create-time overrides."
    ((and resume-p (hermes-chat--dashboard-result-live-turn-p result))
     (when (and queued-p reject)
       (funcall reject "session is still running"))
-    (hermes-chat--dashboard-restore-inflight-turn client))
+    (hermes-chat--dashboard-restore-inflight-turn client)
+    (hermes-chat--dashboard-restore-pending-clarify result))
    (resume-p
     (setq hermes-chat--dashboard-detached-assistant-id nil)
     (hermes-chat--dashboard-apply-retry-overrides
@@ -1703,7 +1722,8 @@ an override failure."
         (when (hermes-chat--dashboard-result-live-turn-p result)
           (hermes-chat--dashboard-restore-inflight-turn client)
           (hermes-chat--dashboard-bind-stream-callback
-           client hermes-chat--pending-assistant-id))
+           client hermes-chat--pending-assistant-id)
+          (hermes-chat--dashboard-restore-pending-clarify result))
         (cond
          (create-p
           (hermes-chat--dashboard-apply-create-overrides

@@ -281,7 +281,8 @@ number of seconds to wait before trying to prompt."
     (unless quiet
       (message "%s (%s)"
                (hermes-chat--prompt-notice-text prompt)
-               (if (equal (hermes-chat--prompt-event-type prompt) "clarify")
+               (if (and (equal (hermes-chat--prompt-event-type prompt) "clarify")
+                        (not (hermes-chat--batch-clarify-p prompt)))
                    "answer in chat with RET or C-c C-a"
                  "respond with C-c C-a")))
     (when (and (not (equal (hermes-chat--prompt-event-type prompt) "clarify"))
@@ -662,6 +663,55 @@ A nil SESSION-ID matches every prompt in the current buffer."
     (delq nil (mapcar #'hermes-chat--scalar-string
                       (if (vectorp choices) (append choices nil) choices)))))
 
+(defun hermes-chat--prompt-questions (prompt)
+  "Return PROMPT's batch clarification questions as a list, or nil."
+  (when-let* ((questions (hermes-chat--event-value prompt '(:questions)))
+              ((or (vectorp questions) (listp questions))))
+    (append questions nil)))
+
+(defun hermes-chat--batch-clarify-p (prompt)
+  "Return non-nil when PROMPT is a batched clarification."
+  (and (hermes-chat--clarify-prompt-p prompt)
+       (hermes-chat--prompt-questions prompt)))
+
+(defun hermes-chat--batch-question-choices (question)
+  "Return QUESTION's choices as strings, or nil."
+  (when-let* ((choices (hermes-transport--get question 'choices))
+              ((or (vectorp choices) (listp choices))))
+    (delq nil
+          (mapcar #'hermes-chat--scalar-string (append choices nil)))))
+
+(defun hermes-chat--read-batch-question-response (question)
+  "Read and return one batched clarification QUESTION response."
+  (let ((text (or (hermes-transport--scalar-string
+                   (hermes-transport--get question 'question))
+                  "Clarify"))
+        (choices (hermes-chat--batch-question-choices question)))
+    (cond
+     ((and choices (eq (hermes-transport--get question 'multi_select) t))
+      (completing-read-multiple (format "%s: " text) choices))
+     (choices (completing-read (format "%s: " text) choices))
+     (t (read-string (format "%s: " text))))))
+
+(defun hermes-chat--batch-clarify-responses (prompt response)
+  "Return unanswered question responses for batch PROMPT.
+RESPONSE is an optional alist keyed by question id; nil reads interactively."
+  (when (and response (not (listp response)))
+    (user-error "Batch clarification responses must be keyed by question id"))
+  (let ((answers (hermes-chat--event-value prompt '(:answers))))
+    (cl-loop for question in (hermes-chat--prompt-questions prompt)
+             for qid = (hermes-transport--scalar-string
+                        (hermes-transport--get question 'qid))
+             unless (and qid (hermes-transport--field-present-p answers qid))
+             collect
+             (let ((provided (and response (assoc qid response))))
+               (unless qid
+                 (user-error "Hermes batch clarification has no question id"))
+               (when (and response (null provided))
+                 (user-error "No response supplied for Hermes question %s" qid))
+               (cons qid (if response (cdr provided)
+                           (hermes-chat--read-batch-question-response question)))))))
+
 (defun hermes-chat--approval-choice-label (choice)
   "Return a minibuffer label for approval CHOICE."
   (pcase choice
@@ -965,6 +1015,74 @@ When PRESERVE-RESPONSE is non-nil, keep clarification RESPONSE recoverable."
         (hermes-chat--prompt-response-rejected
          context prompt response message preserve-response)))))
 
+(defun hermes-chat--batch-clarify-answer-alist (prompt)
+  "Return PROMPT's accepted batch answers as a string-keyed alist."
+  (let ((answers (hermes-chat--event-value prompt '(:answers))))
+    (cl-loop for question in (hermes-chat--prompt-questions prompt)
+             for qid = (hermes-transport--scalar-string
+                        (hermes-transport--get question 'qid))
+             when (and qid (hermes-transport--field-present-p answers qid))
+             collect (cons qid (hermes-transport--get answers qid)))))
+
+(defun hermes-chat--record-batch-clarify-answer (context qid answer)
+  "Record QID's accepted ANSWER in the batch prompt owned by CONTEXT."
+  (let* ((key (plist-get context :key))
+         (prompt (gethash key hermes-chat--pending-prompts))
+         (answers (hermes-chat--batch-clarify-answer-alist prompt))
+         (updated (cons (cons qid answer)
+                        (cl-remove qid answers :key #'car :test #'equal)))
+         (base (plist-put (copy-sequence prompt) :answers updated))
+         (content (hermes-dashboard-transport--batch-clarify-content base))
+         (next (plist-put (plist-put base :content content)
+                          :prompt-content content)))
+    (puthash key next hermes-chat--pending-prompts)
+    (when-let* ((assistant-id (plist-get next :assistant-id)))
+      (hermes-chat--upsert-transport-entry assistant-id next))))
+
+(defun hermes-chat--batch-clarify-success-callback
+    (context prompt qid answer remaining)
+  "Return callback advancing PROMPT response CONTEXT through REMAINING answers."
+  (lambda (result)
+    (hermes-chat--in-buffer (plist-get context :buffer)
+      (when (hermes-chat--prompt-response-current-p context)
+        (cond
+         ((hermes-chat--prompt-response-expired-p result)
+          (hermes-chat--prompt-response-stale context prompt))
+         (remaining
+          (hermes-chat--record-batch-clarify-answer context qid answer)
+          (hermes-chat--send-next-batch-clarify context prompt remaining))
+         (t
+          (hermes-chat--record-batch-clarify-answer context qid answer)
+          (hermes-chat--prompt-response-complete
+           context prompt nil result)))))))
+
+(defun hermes-chat--send-next-batch-clarify (context prompt responses)
+  "Send RESPONSES' next batch answer for PROMPT owned by CONTEXT."
+  (pcase-let* ((`(,qid . ,answer) (car responses))
+               (request (hermes-chat--request-prompt-id
+                         (plist-get context :key) prompt)))
+    (condition-case err
+        (hermes-dashboard-transport-clarify-question-respond
+         (plist-get context :client) request qid answer
+         (hermes-chat--batch-clarify-success-callback
+          context prompt qid answer (cdr responses))
+         (hermes-chat--prompt-reject-callback
+          context prompt answer nil))
+      (error
+       (when (hermes-chat--prompt-response-current-p context)
+         (hermes-chat--prompt-response-rejected
+          context prompt answer (error-message-string err)))))))
+
+(defun hermes-chat--send-batch-clarify-response
+    (key prompt responses owner)
+  "Send RESPONSES for batch PROMPT under KEY and OWNER."
+  (unless responses
+    (user-error "No unanswered Hermes clarification questions"))
+  (let* ((client (plist-get owner :client))
+         (context (hermes-chat--prompt-response-context
+                   client key prompt nil)))
+    (hermes-chat--send-next-batch-clarify context prompt responses)))
+
 (defun hermes-chat--approval-session-id (prompt)
   "Return the dashboard session id for approval PROMPT."
   (or (hermes-chat--event-string prompt '(:session-id :session_id))
@@ -1050,11 +1168,17 @@ clarification input recoverable when the request fails."
          (context (hermes-chat--prompt-owner-context prompt-key prompt)))
     (when (hermes-chat--prompt-response-in-flight-p prompt-key)
       (user-error "Hermes is accepting the previous prompt response"))
-    (let ((answer (or response (hermes-chat--read-prompt-response prompt))))
-      (unless (hermes-chat--prompt-owner-current-p context)
-        (user-error "Hermes prompt request is no longer current"))
-      (hermes-chat--send-prompt-response
-       prompt-key prompt answer all nil preserve-response context))))
+    (if (hermes-chat--batch-clarify-p prompt)
+        (let ((responses (hermes-chat--batch-clarify-responses prompt response)))
+          (unless (hermes-chat--prompt-owner-current-p context)
+            (user-error "Hermes prompt request is no longer current"))
+          (hermes-chat--send-batch-clarify-response
+           prompt-key prompt responses context))
+      (let ((answer (or response (hermes-chat--read-prompt-response prompt))))
+        (unless (hermes-chat--prompt-owner-current-p context)
+          (user-error "Hermes prompt request is no longer current"))
+        (hermes-chat--send-prompt-response
+         prompt-key prompt answer all nil preserve-response context)))))
 
 (defun hermes-chat-cancel-prompt (&optional key)
   "Cancel pending prompt KEY by sending the protocol's safe empty/deny value."

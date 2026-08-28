@@ -848,6 +848,66 @@
          (should-not configs)
          (should-not (hermes-chat--dashboard-create-config-cells)))))))
 
+(ert-deftest hermes-chat-dashboard-resume-restores-pending-batch-clarify ()
+  "Session resume renders locked answers and sends only the unanswered question."
+  (let ((client (hermes-test--dashboard-client)) resume sent reads)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-start)
+               (lambda (&rest _)
+                 (setq hermes-chat--dashboard-client client)
+                 client))
+              ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session &rest args)
+                 (setq resume (plist-get args :resolve))))
+              ((symbol-function
+                'hermes-dashboard-transport-clarify-question-respond)
+               (lambda (_client request question answer &optional resolve _reject)
+                 (setq sent (list request question answer))
+                 (funcall resolve '((status . "ok")))))
+              ((symbol-function 'read-string)
+               (lambda (prompt &rest _)
+                 (push prompt reads)
+                 "Remaining")))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--session-id "stored")
+       (hermes-chat--load-session-history (current-buffer))
+       (funcall
+        resume
+        '((session_id . "live") (stored_session_id . "stored")
+          (messages . (((role . "assistant") (text . "History"))))
+          (pending_clarify
+           . ((request_id . "req-batch")
+              (questions . [((qid . "q0") (question . "Locked"))
+                            ((qid . "q1") (question . "Open"))])
+              (answers . ((q0 . "Accepted")))))))
+       (should (string-match-p "Answered: Accepted" (buffer-string)))
+       (hermes-chat-respond-to-prompt "req-batch")
+       (should (equal reads '("Open: ")))
+       (should (equal sent '("req-batch" "q1" "Remaining")))))))
+
+(ert-deftest hermes-chat-dashboard-stale-resume-cannot-install-clarify ()
+  "A late session-resume result cannot install a prompt after reset."
+  (let ((client (hermes-test--dashboard-client)) resume)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-start)
+               (lambda (&rest _)
+                 (setq hermes-chat--dashboard-client client)
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session &rest args)
+                 (setq resume (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--session-id "stored")
+       (hermes-chat--load-session-history (current-buffer))
+       (hermes-chat--reset-transcript)
+       (funcall resume
+                '((session_id . "stale")
+                  (pending_clarify
+                   . ((request_id . "req-stale")
+                      (questions . [((qid . "q0") (question . "Stale"))])))))
+       (should-not (hermes-chat--pending-prompt-p))
+       (should-not (string-match-p "Stale" (buffer-string)))))))
+
 (ert-deftest hermes-chat-dashboard-stale-non-model-override-stays-session-bound ()
   "Late reasoning and fast results settle without mutating their successor."
   (dolist (cell '((reasoning . "high") ("fast" . "fast")))
