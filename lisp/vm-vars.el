@@ -887,9 +887,16 @@ VM maintains this variable, you should not set it.")
 If VM has to add messages that have no specific folder type to an
 empty folder, the folder will become this default type.
 
-It decides a folder that does not exist yet or is empty, and nothing else, so
-changing it cannot change how an existing folder is read.  Where the folder's
-name says a type -- see `vm-folder-type-by-extension-alist' -- that wins.
+Where the folder's name says a type -- see
+`vm-folder-type-by-extension-alist' -- that wins.
+
+Set to mboxcl2 it decides an existing folder too, whose name says nothing: it
+is read as mboxcl2, and a message in it with no `Content-Length' is refused
+and named.  Otherwise asking for mboxcl2 here would be honoured only by the
+folders VM creates, and silently ignored by every folder already on disk.
+Name a folder .mbox to keep that one From_.  A cache written before VM named
+its caches is the exception, being VM's own file with a length on only the
+messages it rewrote: it is read as From_ and its name reported once.
 
 It was mboxcl2 on Solaris, AIX and System V and mmdf on SCO until 2026: a
 guess about what the local delivery agent writes, made when VM could not be
