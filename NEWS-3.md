@@ -8,6 +8,22 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * New command `vm-convert-caches-to-mboxcl2` converts the POP and IMAP
+    caches VM wrote before it named its caches for their type
+    (emacs-vm/vm#768).  Those are read as From_, where a message whose body
+    holds a line beginning `From ` can split the cache in two; mboxcl2 ends a
+    message by a byte count instead.  It finds them, asks once, and converts
+    and renames each, keeping the previous contents in a backup file.  A
+    prefix argument asks about each cache.  Nothing is refetched.
+
+    A folder that is already sound is now renamed rather than left under a
+    name that does not say its type, which `vm-change-folder-type` and
+    `C-u M-x vm-change-folder-type` both do too.
+
+    `vm-check-folder` reports a cache whose name states no type and names the
+    command, so such a cache now gets a report buffer where it used to be one
+    line in the echo area.  Nothing in it is wrong, and the report says so.
+
   * `vm-default-folder-type` set to mboxcl2 now names what it creates:
     saving to a folder that does not exist, an `FCC:` to one, and a postponed
     draft all create `NAME.mboxcl2` (emacs-vm/vm#767, emacs-vm/vm#766).  A
