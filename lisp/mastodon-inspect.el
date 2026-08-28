@@ -157,12 +157,11 @@ HOST is a top level domain to filter requests for."
   "Return only the REQS whose host equals HOST."
   (cl-remove-if-not
    (lambda (x) ;; list of all reqs
-     (mapcar
-      (lambda (y) ;; list of strs per req
-        (when (string-prefix-p "Host: " y)
-          ;; don't use string-suffix due to trailing :
-          (string= host (cadr (split-string y)))))
-      x))
+     (let ((req-host (car (member-if
+                           (lambda (y) (string-prefix-p "Host: " y))
+                           x))))
+       (when req-host
+         (string= host (cadr (split-string req-host))))))
    reqs))
 
 (defun mastodon-inspect-reqs-by-verb (reqs)
