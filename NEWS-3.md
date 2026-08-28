@@ -20,6 +20,10 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     name that does not say its type, which `vm-change-folder-type` and
     `C-u M-x vm-change-folder-type` both do too.
 
+    `vm-check-folder` reports a cache whose name states no type and names the
+    command, so such a cache now gets a report buffer where it used to be one
+    line in the echo area.  Nothing in it is wrong, and the report says so.
+
   * `vm-default-folder-type` set to mboxcl2 now names what it creates:
     saving to a folder that does not exist, an `FCC:` to one, and a postponed
     draft all create `NAME.mboxcl2` (emacs-vm/vm#767, emacs-vm/vm#766).  A

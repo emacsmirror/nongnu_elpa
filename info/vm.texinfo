@@ -1298,6 +1298,14 @@ folder warns, and the check is what settles it --- the warning looks at the
 first two messages, which is as much as a folder being visited can afford to
 read.  The report then names the rename and the conversion.
 
+A cache whose name states no type is reported too, and
+@code{vm-convert-caches-to-mboxcl2} named as what converts it.  Nothing in
+such a cache is wrong: read as From_ it is From_, and the messages in it now
+are delimited correctly.  What it lacks is the guarantee mboxcl2 gives, so the
+report says so and names the command rather than calling it a fault.  It is
+the one place a reader is told, since the warning at visit time fires only for
+a cache that carries lengths.
+
 A wrong length is what the command exists for, because it is the only one of
 these faults that gives no other sign.  A missing length is refused when the
 folder is visited, and a folder VM cannot parse fails loudly, but a length

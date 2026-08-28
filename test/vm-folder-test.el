@@ -5124,6 +5124,64 @@ with its name: there is no disagreement to report, so it stays one line."
     (should-not report)
     (should (string-match-p "sound" said))))
 
+(defconst vm-folder-test--plain-From_-message
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+  "One From_ message carrying no Content-Length, as an older cache holds them.")
+
+(ert-deftest vm-folder-test-check-folder-names-the-cache-conversion ()
+  "A cache whose name states no type is reported, and the command named.
+Nothing in such a cache is wrong -- read as From_ it is From_ -- so no other
+part of VM says so: the visit-time warning fires only for a cache that carries
+lengths.  This is the one place a reader is told, which is what #768 asked."
+  (vm-folder-test--checking (file "imap-cache-0123456789abcdef"
+                                  (concat vm-folder-test--plain-From_-message
+                                          vm-folder-test--plain-From_-message))
+    (should report)
+    (should (string-match-p "vm-convert-caches-to-mboxcl2" report))
+    (should (string-match-p "before VM named its caches" report))
+    ;; and it is not called a fault: the lengths are not complained about,
+    ;; because there are none to be wrong
+    (should-not (string-match-p "Content-Length" report))))
+
+(ert-deftest vm-folder-test-check-folder-suggests-nothing-for-an-ordinary-folder ()
+  "A sound folder that is not a cache stays one line in the echo area.
+The suggestion is for a cache and nothing else: a From_ folder of the reader's
+own is From_ because they named it that, and telling them to convert it would
+be wrong."
+  (vm-folder-test--checking (file "plain"
+                                  (concat vm-folder-test--plain-From_-message
+                                          vm-folder-test--plain-From_-message))
+    (should-not report)
+    (should (string-match-p "sound" said))))
+
+(ert-deftest vm-folder-test-check-folder-leaves-a-named-cache-alone ()
+  "A cache that already names its type is not suggested for conversion.
+That is every cache VM creates now, so suggesting it would mean the report
+never stops asking for something already done."
+  (vm-folder-test--checking (file "imap-cache-0123456789abcdef.mboxcl2"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should-not report)
+    (should (string-match-p "sound" said))))
+
+(ert-deftest vm-folder-test-check-folder-says-both-of-a-cache-that-is-mboxcl2 ()
+  "A cache carrying lengths under a name that says nothing gets both findings.
+What the contents turned out to be, then what converts it: the rename advice
+and the cache advice are about the same file and neither one says the whole of
+it."
+  (vm-folder-test--checking (file "imap-cache-0123456789abcdef"
+                                  (concat (vm-folder-test--mboxcl2-message)
+                                          (vm-folder-test--mboxcl2-message)))
+    (should report)
+    (should (string-match-p "The contents say mboxcl2 and the name does not"
+                            report))
+    (should (string-match-p "vm-convert-caches-to-mboxcl2" report))
+    ;; the finding before what to do about it
+    (should (< (string-match "The contents say mboxcl2 and the name does not"
+                             report)
+               (string-match "vm-convert-caches-to-mboxcl2" report)))))
+
 ;;; Saying what a conversion is doing
 
 (defmacro vm-folder-test--saying (&rest body)

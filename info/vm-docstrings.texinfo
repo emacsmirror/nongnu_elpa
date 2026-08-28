@@ -1545,6 +1545,11 @@ searching for the next separator when the count does not land on one, so VM
 reads the folder correctly while anything that believes the header -- which is
 what the format is for -- takes the wrong bytes.
 
+A POP or IMAP cache whose name states no type is reported too, and
+@code{vm-convert-caches-to-mboxcl2=} named as what converts it.  Nothing in such a
+cache is wrong, so this is the one place a reader is told: it is read as From_,
+where a message whose body holds a line beginning "From " can split in two.
+
 Nothing is written.  @code{vm-change-folder-type=} is the repair: converting a
 folder to the type it already is recomputes every length.
 @end deffn

@@ -6670,6 +6670,31 @@ HELD is how many messages the folder holds, for the count in the sentence."
 	  (file-name-nondirectory (or (buffer-file-name) (buffer-name)))
 	  vm-cache-folder-type-suffix))
 
+(defun vm-check-folder-older-cache-p ()
+  "Whether this folder is a POP or IMAP cache whose name states no type.
+Every cache VM creates carries `vm-cache-folder-type-suffix\=' and is written
+in that type; one without it was written before VM named its caches, so it is
+read as From_ whatever it holds.  Judged by the name, since that is what a
+cache is recognised by and what the type is read from."
+  (and (buffer-file-name)
+       (vm-cache-folder-name-p (buffer-file-name))
+       (null (vm-folder-type-for-name (buffer-file-name)))))
+
+(defun vm-check-folder-cache-advice ()
+  "What to do about a cache whose name states no type.
+Nothing is wrong with the folder as it stands: read as From_ it is From_, and
+the messages in it now are delimited correctly.  What it lacks is the guarantee
+mboxcl2 exists to give, so the report says so and names the command rather than
+calling it a fault."
+  (concat "This is a POP or IMAP cache from before VM named its caches for"
+	  " their type, so it is read as From_.  Nothing in it is wrong now,"
+	  " but a message whose body holds a line beginning \"From \" can"
+	  " split in two, which is the one thing mboxcl2 rules out: it ends a"
+	  " message by a byte count rather than by a line that has to be"
+	  " recognised.\n\nM-x vm-convert-caches-to-mboxcl2 converts this"
+	  " cache and every other one like it, keeping the previous contents"
+	  " in a backup file.  Nothing is refetched.\n\n"))
+
 (defun vm-check-folder-report (faults reader held survey)
   "Say what `vm-check-folder\=' found.
 FAULTS is what the lengths said, READER how many messages walking the
@@ -6680,10 +6705,13 @@ to read there.
 
 Contents saying mboxcl2 under a name that does not is not a fault in the
 folder, and gets the buffer all the same: it is the one thing here that no
-other part of VM will tell the reader."
+other part of VM will tell the reader.  A cache whose name states no type is
+the same case: the folder is sound, and a folder VM would not create now is
+what this command is asked to notice."
   (if (and (null faults)
 	   (equal reader held)
-	   (not (vm-check-folder-misnamed-p survey held)))
+	   (not (vm-check-folder-misnamed-p survey held))
+	   (not (vm-check-folder-older-cache-p)))
       (vm-inform 5 "%s: %s, %d messages, sound"
 		 (buffer-name) vm-folder-type held)
     (let ((name (buffer-name)))
@@ -6698,6 +6726,11 @@ other part of VM will tell the reader."
 	(princ (format "The default is %s\n\n" vm-default-folder-type))
 	(when (vm-check-folder-misnamed-p survey held)
 	  (princ (vm-check-folder-name-advice held)))
+	;; After the name advice, which says what the contents turned out to
+	;; be: for a cache that is mboxcl2 already both are printed, and the
+	;; order reads as the finding and then what to do about it.
+	(when (vm-check-folder-older-cache-p)
+	  (princ (vm-check-folder-cache-advice)))
 	(unless (equal reader held)
 	  (princ (format (concat "The folder holds %d messages and walking the"
 				 " separators finds %d.\n\n")
@@ -6735,6 +6768,11 @@ length that is merely wrong opens without complaint: the reader falls back on
 searching for the next separator when the count does not land on one, so VM
 reads the folder correctly while anything that believes the header -- which is
 what the format is for -- takes the wrong bytes.
+
+A POP or IMAP cache whose name states no type is reported too, and
+`vm-convert-caches-to-mboxcl2\=' named as what converts it.  Nothing in such a
+cache is wrong, so this is the one place a reader is told: it is read as From_,
+where a message whose body holds a line beginning \"From \" can split in two.
 
 Nothing is written.  `vm-change-folder-type\=' is the repair: converting a
 folder to the type it already is recomputes every length."
