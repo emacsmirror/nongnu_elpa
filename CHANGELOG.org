@@ -1,5 +1,23 @@
 #+TITLE: Changelog
 
+* [0.13.2]
+#+date: 2026-08-28
+
+** Added
+- Navigate previously sent chat input
+- Reset an individual OMEMO peer-device session from the trust buffer
+
+** Fixes
+- Persist OMEMO heartbeat ratchets before sending, preventing key reuse after
+  restart
+- Preserve OMEMO trust while rebuilding sessions and reject changed device
+  identities
+- Clear OMEMO session state atomically and wipe temporary store secrets
+- Preserve exact OMEMO cryptographic bytes in SQLite
+- Harden STARTTLS negotiation against malformed, premature, and stale replies
+- Skip queued real-time text sends after their chat session has ended
+- Handle MUC author retractions
+
 * [0.13.1]
 #+date: 2026-08-07
 
