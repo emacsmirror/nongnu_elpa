@@ -1051,7 +1051,11 @@ one.  A composition has been through none of that yet."
 (defun vm-fcc-write (folder)
   "Append the message in the current buffer to FOLDER, in FOLDER's own format.
 A folder VM is visiting is appended to in its buffer, so that the copy shows
-up without a revert; any other folder is appended to on disk."
+up without a revert; any other folder is appended to on disk.
+
+A folder that does not exist yet is created, and one created as mboxcl2 is
+created under a name that says so.  See `vm-new-folder-file-name' (#767)."
+  (setq folder (vm-new-folder-file-name folder))
   (let* ((type (or (vm-get-folder-type folder)
 		   (vm-folder-type-for-name folder)
 		   vm-default-folder-type

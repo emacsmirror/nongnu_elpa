@@ -8,15 +8,14 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
-  * `vm-default-folder-type` set to mboxcl2 now decides folders that already
-    exist, not only the ones VM creates (emacs-vm/vm#766).  A folder whose
-    name does not say a type is read as mboxcl2, so a message in it with no
-    `Content-Length` is refused and named instead of the setting being
-    ignored.  If you set it to mboxcl2 and have From_ folders, either name
-    them `.mbox`, which keeps them From_, or convert them with
-    `vm-change-folder-type`.  The default is `From_`, so nothing changes
-    unless you asked for mboxcl2.  A cache written before VM named its caches
-    is still read as From_, with its name reported once.
+  * `vm-default-folder-type` set to mboxcl2 now names what it creates:
+    saving to a folder that does not exist, an `FCC:` to one, and a postponed
+    draft all create `NAME.mboxcl2` (emacs-vm/vm#767, emacs-vm/vm#766).  A
+    folder's type is read back from its name, so mboxcl2 under a name that
+    says nothing would be read as From_ next time and split wherever a body
+    line begins `From `.  The option still decides only the folders VM
+    creates: your existing folders are read as they always were.  The default
+    is `From_`, so nothing changes unless you asked for mboxcl2.
 
   * Personality Crisis acts on the signature Emacs inserted, without being
     told to expect one.  `vm-pcrisis-expect-default-signature` now defaults to

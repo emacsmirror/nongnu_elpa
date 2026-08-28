@@ -354,6 +354,9 @@ The saved messages are flagged as `filed'."
 	    (expand-file-name (or vm-foreign-folder-directory
 				  vm-folder-directory default-directory))))
       (setq folder (expand-file-name folder)))
+    ;; A folder VM is about to create as mboxcl2 is created under a name that
+    ;; says so, or it would be read back as From_ (#767).
+    (setq folder (vm-new-folder-file-name folder))
     ;; Confirm new folders, if the user requested this.
     (when (and vm-confirm-new-folders
 	       (not (file-exists-p folder))

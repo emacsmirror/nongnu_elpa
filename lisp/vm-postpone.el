@@ -675,6 +675,9 @@ Optional argument DONT-KILL is positive, then do not kill source message."
              (vm-assimilate-new-messages)
              (vm-update-summary-and-mode-line))))
       ;; well the folder is not visited, so we write to the file
+      ;; A folder created as mboxcl2 is created under a name that says so, or
+      ;; it would be read back as From_ (#767).
+      (setq folder (vm-new-folder-file-name folder))
       (setq target-type (or (vm-get-folder-type folder)
                             (vm-folder-type-for-name folder)
                             vm-default-folder-type))
