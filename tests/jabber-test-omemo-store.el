@@ -53,7 +53,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-test-omemo-store-save-load-roundtrip ()
   "Save + load round-trips a unibyte blob."
   (jabber-test-omemo-store-with-db
-    (let ((blob (unibyte-string 7 42 0 1 127 200 255)))
+    (let ((blob (unibyte-string 7 42 0 1 13 10 127 200 255)))
       (jabber-omemo-store-save "me@example.com" blob)
       (should (equal blob (jabber-omemo-store-load "me@example.com"))))))
 
@@ -101,7 +101,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-test-omemo-store-trust-save-load-roundtrip ()
   "save-trust + load-trust round-trips."
   (jabber-test-omemo-store-with-db
-    (let ((key (encode-coding-string "identity-key-bytes" 'raw-text)))
+    (let ((key (unibyte-string 5 13 10 42 200 255)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      12345 key 1)
       (let ((rec (jabber-omemo-store-load-trust "me@example.com"
@@ -239,7 +239,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-test-omemo-store-session-save-load-roundtrip ()
   "save-session + load-session round-trips."
   (jabber-test-omemo-store-with-db
-    (let ((blob (encode-coding-string "session-data\x00\x01" 'raw-text)))
+    (let ((blob (unibyte-string 13 10 0 1 127 200 255)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 blob)
       (should (equal blob (jabber-omemo-store-load-session

@@ -37,6 +37,10 @@ for the C module which expects unibyte."
       (encode-coding-string value 'raw-text)
     value))
 
+(defsubst jabber-omemo-store--as-blob (value)
+  "Return a binary-coded copy of string VALUE for SQLite BLOB binding."
+  (propertize value 'coding-system 'binary))
+
 ;;; Store blob CRUD
 
 (defun jabber-omemo-store-save (account blob)
@@ -47,7 +51,7 @@ delete and re-insert the row, wiping it."
     (sqlite-execute db
 		    "INSERT INTO omemo_store (account, store_blob) VALUES (?, ?)
   ON CONFLICT(account) DO UPDATE SET store_blob = excluded.store_blob"
-		    (list account blob))))
+		    (list account (jabber-omemo-store--as-blob blob)))))
 
 (defun jabber-omemo-store-spk-rotated-at (account)
   "Return ACCOUNT's signed pre-key rotation time as epoch seconds, or nil."
@@ -121,7 +125,9 @@ INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_see
   VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT (account, jid, device_id)
   DO UPDATE SET trust = excluded.trust"
-			  (list account jid device-id identity-key trust now)))))))
+			  (list account jid device-id
+                                (jabber-omemo-store--as-blob identity-key)
+                                trust now)))))))
 
 (defun jabber-omemo-store-ensure-trust (account jid device-id identity-key)
   "Ensure a trust record exists for ACCOUNT, JID, DEVICE-ID.
@@ -147,7 +153,9 @@ SELECT identity_key FROM omemo_trust
           (sqlite-execute db "\
 INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_seen)
   VALUES (?, ?, ?, ?, 0, ?)"
-			  (list account jid device-id identity-key now))))))))
+			  (list account jid device-id
+                                (jabber-omemo-store--as-blob identity-key)
+                                now))))))))
 
 (defun jabber-omemo-store-load-trust (account jid device-id)
   "Load trust record for ACCOUNT, JID, DEVICE-ID as a plist, or nil.
@@ -243,7 +251,8 @@ DELETE FROM omemo_devices
     (sqlite-execute db "\
 INSERT OR REPLACE INTO omemo_sessions (account, jid, device_id, session_blob)
   VALUES (?, ?, ?, ?)"
-		    (list account jid device-id blob))))
+		    (list account jid device-id
+                          (jabber-omemo-store--as-blob blob)))))
 
 (defun jabber-omemo-store--session-transaction (operation)
   "Call OPERATION inside an OMEMO session savepoint."
