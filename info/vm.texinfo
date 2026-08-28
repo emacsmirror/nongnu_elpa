@@ -1163,39 +1163,51 @@ recognised.
 @subheading How VM decides what a folder is
 
 @cindex folder type, how it is decided
-The name decides, and between From_ and mboxcl2 it is the last word:
+The name decides, and between From_ and mboxcl2 the name is the only thing
+that can:
 
 @enumerate
 @item
 @b{What the name says}, through @code{vm-folder-type-by-extension-alist},
 matched against the file name's extension.  A folder called
-@file{sent.mboxcl2} is mboxcl2 wherever it sits and whatever is in it.
-Nothing in a folder can overrule that, or supply it: From_ and mboxcl2 look
-alike --- the difference is a @code{Content-Length} header that a From_ folder
-is free to carry as well --- so a folder that looks like one is no evidence of
-either, and the name is the only thing that answers.
+@file{sent.mboxcl2} is mboxcl2 wherever it sits.  Nothing in a folder can
+supply this or overrule it.  From_ and mboxcl2 look alike: the difference is a
+@code{Content-Length} header that a From_ folder is free to carry as well, so
+a folder that looks like one is no evidence of either.
 @item
-@b{@code{vm-default-folder-type}}, for a folder whose name says nothing.  It
-is @code{From_} on every platform, which is why a folder called @file{INBOX},
-or one called @file{2026-08.out}, is VM's mbox and stays it.
-
-Set it to mboxcl2 and mboxcl2 is what a folder is: every folder whose name
-does not say otherwise is read as one, including folders that already exist,
-and a message in such a folder with no @code{Content-Length} is refused and
-named rather than the setting being quietly ignored.  Naming one folder
-@samp{.mbox} is how to keep that one From_.  The exception is a cache VM wrote
-before it named its caches: it is VM's own file and most of its messages have
-no length, so it is read as From_ and its name reported once, rather than the
-cache being taken away from you.
+@b{What VM can work out from the contents}, for an existing folder whose name
+says nothing.  BABYL and MMDF are detected from what stands at the front of
+the file, which is reliable.  Telling mboxcl2 from From_ is not: it rests on
+whether every message carries a length, and VM reads a folder as From_ unless
+enough of them do.  @xref{VM's mbox}.  A folder read as the wrong one of those
+two is misparsed rather than refused, which is why the name is worth putting on
+a folder that has no From_ line to lose.
+@item
+@b{@code{vm-default-folder-type}}, for a folder that does not exist yet.  It
+decides what VM creates and nothing else, so changing it cannot change how a
+folder you already have is read.  It is @code{From_} on every platform, which
+is why a folder called @file{INBOX}, or one called @file{2026-08.out}, is VM's
+mbox and stays it.
 @end enumerate
 
 @noindent
-The exception is a format that states its own type.  A BABYL or MMDF folder
-announces itself in its first bytes and is read as what it is whatever the
-name claims, so a BABYL file called @file{old.mboxcl2} is BABYL: read as
-mboxcl2 it would be read as nonsense.  Those two need no configuration and no
-guessing.  An empty file announces nothing, and neither does a folder that
-does not exist yet, which is where the name and the default come in.
+@vindex vm-default-folder-type
+Set the default to mboxcl2 and it decides the name as well: a folder VM
+creates is created as @file{NAME.mboxcl2}, whether it is a folder you saved a
+message to, an @code{FCC:} copy or a postponed draft.  That is the same rule
+@code{vm-change-folder-type} follows when it converts a folder, and for the
+same reason: a folder's type is read back from its name, so mboxcl2 written
+under a name that says nothing would be read as From_ next time and split
+wherever a body line begins @samp{From }.
+
+@noindent
+Detection is not the same as knowing.  A BABYL file called
+@file{old.mboxcl2} is read as BABYL, since what is at the front of the file
+settles it and reading it as mboxcl2 would read nonsense; but a From_ folder
+that collected a few @code{Content-Length} headers, which happens, is a folder
+VM has to guess about.  An empty file gives nothing to detect, and neither
+does a folder that does not exist yet, which is where the name and the default
+come in.
 
 @subheading The folders VM writes for you
 
@@ -1216,13 +1228,20 @@ accumulates mboxcl2 and one of @file{~/mail/2026-08.out} accumulates whatever
 the default is.  An existing folder keeps its own type, so an @code{FCC:}
 never converts a folder behind you.
 @item
-@b{@acronym{IMAP} and @acronym{POP} caches.}  A cache VM creates is named
+@b{@acronym{IMAP} and @acronym{POP} caches.}  Every cache VM creates is named
 @file{imap-cache-@var{md5}.mboxcl2}, or @file{pop-cache-...}, and written in
 that type: it holds arbitrary mail that VM alone writes, which is exactly the
-case the lengths are for.  A cache made by an earlier VM has no suffix, keeps
-its name, and is read as whatever it is -- nothing is converted and nothing is
-refetched.  Such a cache carrying lengths it does not claim is reported once,
-with the name to rename it to.
+case the lengths are for.  This does not depend on
+@code{vm-default-folder-type}; a cache is named for its type either way.
+
+A cache made by an earlier VM has no suffix, keeps its name, and is read as
+From_.  Nothing is converted and nothing is refetched.  It could be mboxcl2:
+a cache was written in @code{vm-default-folder-type}, which was mboxcl2 on
+Solaris, AIX and System V until 2026.  But VM cannot tell such a cache from a
+From_ cache that collected a few lengths, and believing a length that is wrong
+puts a message boundary inside a body, where ignoring one that is right costs a
+spurious message you can see.  So From_, and where the cache looks like the
+other thing its name is reported once, with the name to rename it to.
 @end itemize
 
 @noindent

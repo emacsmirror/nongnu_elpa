@@ -823,6 +823,28 @@ the case for the types that have no entry, for
 	   (extension (vm-folder-extension-for-type type)))
       (if extension (concat base "." extension) base))))
 
+(defun vm-new-folder-file-name (file)
+  "The name to create FILE under, given `vm-default-folder-type'.
+A folder's type is read back from its name, so a folder created as mboxcl2
+under a name that says nothing would be read as From_ next time and split
+wherever a body line begins \"From \".  `vm-default-folder-type' decides a
+folder VM creates, so where it says mboxcl2 it decides the name too, through
+`vm-folder-name-for-type', which is the rule a conversion follows.
+
+FILE itself for a name that already states a type, for a file that exists,
+which has a type of its own, and for every other default: a name that says
+nothing means From_, and BABYL and MMDF are recognised by what stands at the
+front of the file."
+  (if (or (file-exists-p file)
+	  (vm-folder-type-for-name file)
+	  (not (eq (vm-canonical-folder-type vm-default-folder-type) 'mboxcl2)))
+      file
+    (let ((named (vm-folder-name-for-type file 'mboxcl2)))
+      (unless (equal named file)
+	(vm-inform 5 "Creating %s: mboxcl2 has to be said in the name"
+		   (file-name-nondirectory named)))
+      named)))
+
 (defun vm-error-if-name-contradicts-type (file type)
   "Signal unless FILE is a name a TYPE folder may be written under.
 The name is where a folder's type is stated, so writing TYPE under a name that
@@ -1079,32 +1101,23 @@ the value of vm-default-From_folder-type will be returned."
 			;; then the reader's complaint rather than a folder
 			;; quietly read as something it does not claim to be.
 			((memq named '(From_ BellFrom_ mboxcl2)) named)
-			;; A cache whose name does not say mboxcl2 is the older
-			;; format, and its lengths are not to be relied on: VM gave
-			;; one to each message it rewrote, so a From_ cache collects a
-			;; few, and a length believed wrongly puts a message boundary
-			;; inside a body.  Read as From_ it is only ever a spurious
-			;; message, which is visible.  Say so where the folder looks
-			;; like the other thing, and let the reader decide.
-			((and (vm-cache-folder-name-p (or file (buffer-file-name)))
-			      (vm-folder-looks-like-mboxcl2-p))
-			 (vm-warn-about-unnamed-mboxcl2-cache
-			  (or file (buffer-file-name)))
+			;; A cache whose name does not say mboxcl2 is one VM
+			;; wrote before it named its caches, and it is read as
+			;; From_ whatever it looks like.  It can be mboxcl2: a
+			;; cache is written in `vm-default-folder-type', which
+			;; was mboxcl2 on Solaris, AIX and System V until 2026.
+			;; But VM cannot tell that from a From_ cache that
+			;; collected a few lengths, and 6433 of the 6498 messages
+			;; in a maintainer's had none.  A length believed
+			;; wrongly puts a message boundary inside a body, where
+			;; one ignored is a spurious message the reader can see.
+			;; So From_, and the name to rename it to where it looks
+			;; like the other thing (#767).
+			((vm-cache-folder-name-p (or file (buffer-file-name)))
+			 (when (vm-folder-looks-like-mboxcl2-p)
+			   (vm-warn-about-unnamed-mboxcl2-cache
+			    (or file (buffer-file-name))))
 			 vm-default-From_-folder-type)
-			;; Nothing in the name, and the reader has said that
-			;; mboxcl2 is what a folder is here.  Read it as one: a
-			;; message with no Content-Length is then refused and
-			;; named, where the setting used to be ignored by every
-			;; folder that already existed, which got it only for
-			;; the folders VM created (#766).  Naming a folder .mbox
-			;; is how to keep that one From_.  The legacy cache
-			;; above is the exception, and comes first: it is VM's
-			;; own file, most of its messages have no length, and
-			;; refusing it would take the cache away rather than
-			;; tell the reader to rename it.
-			((eq (vm-canonical-folder-type vm-default-folder-type)
-			     'mboxcl2)
-			 'mboxcl2)
 			((not vm-trust-content-length)
 			 vm-default-From_-folder-type)
 			(t

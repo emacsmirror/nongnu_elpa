@@ -2446,38 +2446,95 @@ message that has none, which is the point of saying so in the name."
         (should (eq (vm-get-folder-type with-length)
                     vm-default-From_-folder-type))))))
 
-(ert-deftest vm-folder-test-the-default-type-is-enforced-when-it-is-mboxcl2 ()
-  "`vm-default-folder-type' set to mboxcl2 decides a folder whose name is silent.
-Issue #766.  The option said mboxcl2 and every folder that already existed was
-read as From_ anyway, so a reader who had asked for mboxcl2 got it only for
-folders VM created.  It now reads the folder as mboxcl2, which is what makes a
-message with no Content-Length a complaint rather than a setting ignored."
+(ert-deftest vm-folder-test-the-default-type-does-not-decide-an-existing-folder ()
+  "`vm-default-folder-type' decides what VM creates and nothing else.
+Issue #767.  It briefly decided an existing folder whose name said nothing,
+which meant a reader who set mboxcl2 had every From_ folder refused for want
+of a `Content-Length'.  An existing folder is read as what it is."
   (vm-folder-test-with-directory dir
     (let ((silent (expand-file-name "INBOX" dir))
-          (named-mbox (expand-file-name "legacy.mbox" dir))
           (message (concat "From VM Mon Aug 10 00:00:00 2026\n"
                            "To: someone@example.com\n\nbody\n")))
       (write-region message nil silent nil 'quiet)
-      (write-region message nil named-mbox nil 'quiet)
-      ;; the default as it ships leaves both as VM's mbox
-      (let ((vm-default-folder-type 'From_)
-            (vm-trust-content-length nil))
-        (should (eq (vm-get-folder-type silent) vm-default-From_-folder-type)))
+      (dolist (default '(From_ mboxcl2 From_-with-Content-Length))
+        (let ((vm-default-folder-type default)
+              (vm-trust-content-length nil))
+          (should (eq (vm-get-folder-type silent)
+                      vm-default-From_-folder-type)))))))
+
+(ert-deftest vm-folder-test-a-new-folder-is-named-for-the-default-type ()
+  "REGRESSION: mboxcl2 as the default names the folder VM creates.
+Issue #767.  A folder\='s type is read back from its name, so creating mboxcl2
+under a name that says nothing leaves a folder read as From_ next time and
+split wherever a body line begins \"From \", which is what
+`vm-error-if-name-contradicts-type' refuses to do on a conversion."
+  (vm-folder-test-with-directory dir
+    (let ((new (expand-file-name "2026-08.out" dir))
+          (named (expand-file-name "sent.mboxcl2" dir))
+          (as-mbox (expand-file-name "legacy.mbox" dir)))
+      (let ((vm-default-folder-type 'mboxcl2))
+        (should (equal (vm-new-folder-file-name new)
+                       (concat new ".mboxcl2")))
+        ;; a name that already says a type is left alone, either way
+        (should (equal (vm-new-folder-file-name named) named))
+        (should (equal (vm-new-folder-file-name as-mbox) as-mbox))
+        ;; and so is a file that exists, which has a type of its own
+        (write-region "From VM Mon Aug 10 00:00:00 2026\n\nbody\n"
+                      nil new nil 'quiet)
+        (should (equal (vm-new-folder-file-name new) new))
+        (delete-file new))
+      ;; the shipped default names nothing: From_ is what a silent name means
+      (let ((vm-default-folder-type 'From_))
+        (should (equal (vm-new-folder-file-name new) new)))
+      ;; nor do the types that are recognised from their contents
+      (dolist (default '(babyl mmdf))
+        (let ((vm-default-folder-type default))
+          (should (equal (vm-new-folder-file-name new) new))))
+      ;; the extension comes from the option that reads it back
       (let ((vm-default-folder-type 'mboxcl2)
-            (vm-trust-content-length nil))
-        (should (eq (vm-get-folder-type silent) 'mboxcl2))
-        ;; .mbox in the name is how to keep one folder From_
-        (should (eq (vm-get-folder-type named-mbox) 'From_)))
-      ;; the old name for the type is accepted here too, being what an init
-      ;; file written before the rename says
-      (let ((vm-default-folder-type 'From_-with-Content-Length)
-            (vm-trust-content-length nil))
-        (should (eq (vm-get-folder-type silent) 'mboxcl2)))
-      ;; and a folder that says what it is still says it
-      (let ((vm-default-folder-type 'mboxcl2)
-            (babyl (expand-file-name "old" dir)))
-        (write-region "BABYL OPTIONS:\nVersion: 5\n\n" nil babyl nil 'quiet)
-        (should (eq (vm-get-folder-type babyl) 'babyl))))))
+            (vm-folder-type-by-extension-alist '(("cl2" . mboxcl2))))
+        (should (equal (vm-new-folder-file-name new) (concat new ".cl2")))))))
+
+(ert-deftest vm-folder-test-an-fcc-creates-the-folder-with-the-type-in-its-name ()
+  "An `FCC:' to a folder that does not exist creates NAME.mboxcl2 under that
+default, and the copy is readable as mboxcl2 afterwards."
+  (vm-folder-test-with-directory dir
+    (let ((asked (expand-file-name "2026-08.out" dir))
+          (vm-default-folder-type 'mboxcl2))
+      (with-temp-buffer
+        (insert "From: me@example.com\nTo: you@example.com\nSubject: s\n\nbody\n")
+        (vm-fcc-write asked))
+      (should-not (file-exists-p asked))
+      (should (file-exists-p (concat asked ".mboxcl2")))
+      (should (eq (vm-get-folder-type (concat asked ".mboxcl2")) 'mboxcl2))
+      ;; and the length is there, which is what makes it readable
+      (with-temp-buffer
+        (insert-file-contents (concat asked ".mboxcl2"))
+        (should (string-match-p "^Content-Length:" (buffer-string)))))))
+
+(ert-deftest vm-folder-test-an-unnamed-cache-is-read-as-from_ ()
+  "A cache with no type in its name is From_, whatever its lengths look like.
+Issue #767.  A cache was written in `vm-default-folder-type', which was
+mboxcl2 on Solaris, AIX and System V until 2026, so such a cache can be
+mboxcl2, and VM cannot tell it from a From_ cache that collected a few
+lengths.  Believing a length that is wrong puts a boundary inside a body;
+ignoring one that is right costs a spurious message the reader can see."
+  (vm-folder-test-with-directory dir
+    (let* ((body "A short body.\n")
+           (length (number-to-string (length body)))
+           (counted (concat "From VM Thu May  7 06:22:17 2026\n"
+                            "From: a@example.com\nSubject: one\n"
+                            "Content-Length: " length "\n\n" body))
+           (cache (expand-file-name "imap-cache-0123456789abcdef" dir))
+           (named (expand-file-name "imap-cache-0123456789abcdef.mboxcl2" dir))
+           (vm-trust-content-length t))
+      ;; every message counted, which is what an mboxcl2 cache looks like
+      (write-region (concat counted counted counted) nil cache nil 'quiet)
+      (let ((vm-current-warning nil))
+        (should (eq (vm-get-folder-type cache) vm-default-From_-folder-type)))
+      ;; and the name is how to say otherwise
+      (write-region (concat counted counted counted) nil named nil 'quiet)
+      (should (eq (vm-get-folder-type named) 'mboxcl2)))))
 
 (ert-deftest vm-folder-test-an-empty-folder-still-has-no-type ()
   "A folder that does not exist, or is empty, has no type whatever it is
@@ -3949,11 +4006,8 @@ messages in a maintainer's IMAP cache had none, and the folder would not open.
 
 Two lengths in a row is what says the folder is written that way.
 
-This is the guessing path, which decides only where nothing has asked for
-mboxcl2: `vm-default-folder-type' is From_ here, as it ships.  Set to
-mboxcl2 it decides instead, and then such a folder is read as mboxcl2 and
-complains about the message with no length -- see
-`vm-folder-test-the-default-type-is-enforced-when-it-is-mboxcl2'."
+`vm-default-folder-type' is mboxcl2 here and makes no difference: it decides
+a folder VM creates, not one that already exists (#767)."
   (let* ((body "A short body.\n")
          (length (number-to-string (length body)))
          (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
@@ -3962,7 +4016,7 @@ complains about the message with no length -- see
          (without (concat "From VM Thu May  7 06:22:18 2026\n"
                           "From: b@example.com\nSubject: two\n\n" body))
          (vm-trust-content-length t)
-         (vm-default-folder-type 'From_)
+         (vm-default-folder-type 'mboxcl2)
          (vm-default-From_-folder-type 'From_))
     ;; the maintainer's folder: the first message has one, the rest do not
     (with-temp-buffer
@@ -3989,9 +4043,9 @@ would be taken for From_ and one that is not for mboxcl2.  It reads as far as
 the first message's length says the second one begins,
 `vm-folder-type-examine-limit' permitting.
 
-The guessing path again, so `vm-default-folder-type' is From_ as it ships:
-set to mboxcl2 it decides before any of this and the folder is read as
-mboxcl2 whatever its second message says."
+`vm-default-folder-type' is mboxcl2 here and does not enter into it: an
+existing folder is read as what it is, and the default decides only what VM
+creates (#767)."
   (let* ((body (concat (make-string 20000 ?x) "\n"))
          (length (number-to-string (length body)))
          (with-length (concat "From VM Thu May  7 06:22:17 2026\n"
@@ -4001,7 +4055,7 @@ mboxcl2 whatever its second message says."
                           "From: b@example.com\nSubject: two\n\n" body))
          (dir (file-name-as-directory (make-temp-file "vm-folder-type" t)))
          (vm-trust-content-length t)
-         (vm-default-folder-type 'From_)
+         (vm-default-folder-type 'mboxcl2)
          (vm-default-From_-folder-type 'From_))
     (unwind-protect
         (let ((all (expand-file-name "all-lengths" dir))
