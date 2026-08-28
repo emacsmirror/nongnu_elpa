@@ -68,6 +68,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
   :group "Trust"
   "t" ("Verify" jabber-omemo-trust-set-verified)
   "u" ("Untrust" jabber-omemo-trust-set-untrusted)
+  "r" ("Reset session" jabber-omemo-reset-session)
   "d" ("Delete" jabber-omemo-trust-delete)
   "w" ("Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
   "g" ("Refresh" revert-buffer)
@@ -89,6 +90,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 \\<jabber-omemo-trust-mode-map>
 \\[jabber-omemo-trust-set-verified] Set trust to verified.
 \\[jabber-omemo-trust-set-untrusted] Set trust to untrusted.
+\\[jabber-omemo-reset-session] Reset the encrypted session.
 \\[jabber-omemo-trust-delete] Delete key and session."
   (setq tabulated-list-format (jabber-omemo--list-format))
   (setq tabulated-list-padding 2)
@@ -264,6 +266,29 @@ Fetches the device list and bundles from the server."
   "Return the device ID at point as an integer, or signal an error."
   (or (tabulated-list-get-id)
       (user-error "No device at point")))
+
+;;;###autoload
+(defun jabber-omemo-reset-session ()
+  "Reset and rebuild the OMEMO session for the device at point.
+Preserve the device's trust decision and fingerprint."
+  (interactive)
+  (let ((stored-jc jabber-omemo-trust--jc)
+        (peer jabber-omemo-trust--peer))
+    (unless (and stored-jc peer)
+      (user-error "Not in an OMEMO trust buffer"))
+    (let ((jc (or (and (jabber-connection-active-p stored-jc) stored-jc)
+                  (jabber-find-active-connection stored-jc))))
+      (unless jc
+        (user-error "The Jabber connection is no longer active"))
+      (let ((did (jabber-omemo-trust--device-at-point)))
+        (message "OMEMO: resetting session for %s device %d" peer did)
+        (jabber-omemo--reset-session
+         jc peer did
+         (lambda (session)
+           (message (if session
+                        "OMEMO: rebuilt session for %s device %d"
+                      "OMEMO: could not rebuild session for %s device %d")
+                    peer did)))))))
 
 (defun jabber-omemo-trust-set-verified ()
   "Mark the device at point as verified."

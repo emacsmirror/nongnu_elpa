@@ -554,6 +554,131 @@ skipped message keys, so no fresh-session fallback is needed."
                               "me@example.com" "alice@example.com" 7)
                              jabber-omemo--sessions))))))
 
+(ert-deftest jabber-test-omemo-protocol-reset-session-preserves-trust ()
+  "Reset removes durable and cached session state but preserves trust."
+  (jabber-test-omemo-protocol-with-db
+    (let ((account "me@example.com")
+          (peer "alice@example.com")
+          (did 7)
+          rebuilt)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) account))
+                ((symbol-function 'jabber-omemo--ensure-sessions)
+                 (lambda (_jc jid callback)
+                   (should (string= peer jid))
+                   (should-not (jabber-omemo-store-load-session
+                                account peer did))
+                   (should-not
+                    (gethash (jabber-omemo--session-key account peer did)
+                             jabber-omemo--sessions))
+                   (funcall callback (list (cons did 'fresh-session))))))
+        (jabber-omemo-store-save-trust account peer did "identity" 2)
+        (jabber-omemo-store-save-session account peer did "stale-session")
+        (puthash (jabber-omemo--session-key account peer did)
+                 'stale-session jabber-omemo--sessions)
+        (jabber-omemo--reset-session
+         'fake-jc peer did (lambda (session) (setq rebuilt session)))
+        (should (eq 'fresh-session rebuilt))
+        (should (= 2 (plist-get (jabber-omemo-store-load-trust
+                                 account peer did)
+                                :trust)))))))
+
+(ert-deftest jabber-test-omemo-protocol-reset-clears-state-on-rebuild-failure ()
+  "A failed rebuild leaves no old session or legacy skipped keys."
+  (jabber-test-omemo-protocol-with-db
+    (let ((account "me@example.com")
+          (peer "alice@example.com")
+          (did 7)
+          result)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) account))
+                ((symbol-function 'jabber-omemo--ensure-sessions)
+                 (lambda (_jc _jid callback) (funcall callback nil))))
+        (jabber-omemo-store-save-trust account peer did "identity" 2)
+        (jabber-omemo-store-save-session account peer did "stale-session")
+        (sqlite-execute jabber-db--connection "\
+INSERT INTO omemo_skipped_keys
+  (account, jid, device_id, dh_key, message_number, message_key, created_at)
+  VALUES (?, ?, ?, 'dh', 3, 'mk', 0)"
+                        (list account peer did))
+        (jabber-omemo--reset-session
+         'fake-jc peer did (lambda (session) (setq result session)))
+        (should-not result)
+        (should-not (jabber-omemo-store-load-session account peer did))
+        (should-not (jabber-omemo-store-all-skipped-keys account peer did))
+        (should (= 2 (plist-get (jabber-omemo-store-load-trust
+                                 account peer did)
+                                :trust)))))))
+
+(ert-deftest jabber-test-omemo-protocol-establish-session-preserves-trust ()
+  "Re-establishing a session preserves verified trust and identity."
+  (jabber-test-omemo-protocol-with-db
+    (let* ((account "me@example.com")
+           (peer "alice@example.com")
+           (did 7)
+           (peer-store (jabber-omemo-deserialize-store
+                        (jabber-omemo-setup-store)))
+           (bundle (jabber-omemo-get-bundle peer-store))
+           (identity (plist-get bundle :identity-key)))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) account)))
+        (jabber-omemo-store-save-trust account peer did identity 2)
+        (jabber-omemo--establish-session 'fake-jc peer did bundle)
+        (let ((trust (jabber-omemo-store-load-trust account peer did)))
+          (should (= 2 (plist-get trust :trust)))
+          (should (string= identity (plist-get trust :identity-key))))))))
+
+(ert-deftest jabber-test-omemo-protocol-establish-rejects-changed-identity ()
+  "Re-establishing rejects a changed identity before saving a session."
+  (jabber-test-omemo-protocol-with-db
+    (let* ((account "me@example.com")
+           (peer "alice@example.com")
+           (did 7)
+           (old-store (jabber-omemo-deserialize-store
+                       (jabber-omemo-setup-store)))
+           (new-store (jabber-omemo-deserialize-store
+                       (jabber-omemo-setup-store)))
+           (old-identity (plist-get (jabber-omemo-get-bundle old-store)
+                                    :identity-key))
+           (new-bundle (jabber-omemo-get-bundle new-store))
+           stored-identity)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) account)))
+        (jabber-omemo-store-save-trust account peer did old-identity 2)
+        (setq stored-identity
+              (plist-get (jabber-omemo-store-load-trust account peer did)
+                         :identity-key))
+        (should-error
+         (jabber-omemo--establish-session 'fake-jc peer did new-bundle)
+         :type 'user-error)
+        (should-not (jabber-omemo-store-load-session account peer did))
+        (let ((trust (jabber-omemo-store-load-trust account peer did)))
+          (should (= 2 (plist-get trust :trust)))
+          (should (string= stored-identity
+                           (plist-get trust :identity-key))))))))
+
+(ert-deftest jabber-test-omemo-protocol-session-failure-completes-callback ()
+  "A malformed bundle completes session establishment with no result."
+  (let ((calls 0)
+        (fetched 0)
+        result)
+    (cl-letf (((symbol-function 'jabber-omemo--get-device-id)
+               (lambda (_jc) 1))
+              ((symbol-function 'jabber-omemo--get-session)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-omemo--fetch-bundle)
+               (lambda (_jc _jid _did callback)
+                 (cl-incf fetched)
+                 (funcall callback '(:pre-keys nil)))))
+      (jabber-omemo--ensure-sessions-for-ids
+       'fake-jc "alice@example.com" '(7 8)
+       (lambda (sessions)
+         (should (= 2 fetched))
+         (cl-incf calls)
+         (setq result sessions)))
+      (should (= 1 calls))
+      (should-not result))))
+
 (ert-deftest jabber-test-omemo-protocol-regular-message-requires-session ()
   "A non-pre-key message without an established session signals no-session."
   (jabber-test-omemo-protocol-with-db

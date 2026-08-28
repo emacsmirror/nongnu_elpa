@@ -296,6 +296,25 @@ INSERT INTO omemo_skipped_keys
       (should-not (jabber-omemo-store-all-skipped-keys
                    "me@example.com" "alice@example.com" 42)))))
 
+(ert-deftest jabber-test-omemo-store-session-reset-rolls-back-atomically ()
+  "A failed reset preserves both the old session and skipped keys."
+  (jabber-test-omemo-store-with-db
+    (jabber-omemo-store-save-session
+     "me@example.com" "alice@example.com" 42 "old-session")
+    (sqlite-execute jabber-db--connection "\
+INSERT INTO omemo_skipped_keys
+  (account, jid, device_id, dh_key, message_number, message_key, created_at)
+  VALUES ('me@example.com', 'alice@example.com', 42, 'dh', 7, 'mk', 0)")
+    (cl-letf (((symbol-function 'jabber-omemo-store-delete-skipped-keys)
+               (lambda (&rest _) (error "injected delete failure"))))
+      (should-error
+       (jabber-omemo-store-delete-session-state
+        "me@example.com" "alice@example.com" 42)))
+    (should (equal "old-session" (jabber-omemo-store-load-session
+                                  "me@example.com" "alice@example.com" 42)))
+    (should (= 1 (length (jabber-omemo-store-all-skipped-keys
+                          "me@example.com" "alice@example.com" 42))))))
+
 (ert-deftest jabber-test-omemo-store-session-save-composes-with-transaction ()
   "Session migration succeeds inside an existing transaction."
   (jabber-test-omemo-store-with-db

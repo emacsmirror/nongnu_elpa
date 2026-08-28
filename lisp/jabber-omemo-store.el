@@ -245,17 +245,13 @@ INSERT OR REPLACE INTO omemo_sessions (account, jid, device_id, session_blob)
   VALUES (?, ?, ?, ?)"
 		    (list account jid device-id blob))))
 
-(defun jabber-omemo-store-save-session-and-clear-legacy-keys
-    (account jid device-id blob)
-  "Save session BLOB for ACCOUNT, JID, DEVICE-ID and remove legacy keys."
+(defun jabber-omemo-store--session-transaction (operation)
+  "Call OPERATION inside an OMEMO session savepoint."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db "SAVEPOINT omemo_session_migration")
     (condition-case err
         (prog1
-            (progn
-              (jabber-omemo-store-save-session account jid device-id blob)
-              (jabber-omemo-store-delete-skipped-keys
-               account jid device-id))
+            (funcall operation)
           (sqlite-execute db "RELEASE omemo_session_migration"))
       (error
        (condition-case cleanup-err
@@ -269,6 +265,21 @@ INSERT OR REPLACE INTO omemo_sessions (account, jid, device_id, session_blob)
           (message "OMEMO session savepoint release failed: %s"
                    (error-message-string cleanup-err))))
        (signal (car err) (cdr err))))))
+
+(defun jabber-omemo-store-save-session-and-clear-legacy-keys
+    (account jid device-id blob)
+  "Save session BLOB for ACCOUNT, JID, DEVICE-ID and remove legacy keys."
+  (jabber-omemo-store--session-transaction
+   (lambda ()
+     (jabber-omemo-store-save-session account jid device-id blob)
+     (jabber-omemo-store-delete-skipped-keys account jid device-id))))
+
+(defun jabber-omemo-store-delete-session-state (account jid device-id)
+  "Delete session and legacy skipped keys for ACCOUNT, JID, DEVICE-ID."
+  (jabber-omemo-store--session-transaction
+   (lambda ()
+     (jabber-omemo-store-delete-session account jid device-id)
+     (jabber-omemo-store-delete-skipped-keys account jid device-id))))
 
 (defun jabber-omemo-store-load-session (account jid device-id)
   "Load session blob for ACCOUNT, JID, DEVICE-ID, or nil."

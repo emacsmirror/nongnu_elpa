@@ -113,5 +113,73 @@
       (should (equal "First Seen" (car (aref tabulated-list-format 3))))
       (should (= 16 (cadr (aref tabulated-list-format 3)))))))
 
+;;; Group 6: session reset
+
+(ert-deftest jabber-test-omemo-trust-reset-session-rebuilds-device ()
+  "Reset command rebuilds the selected peer device session."
+  (let (called callback messages)
+    (cl-letf (((symbol-function 'jabber-omemo-trust--device-at-point)
+               (lambda () 42))
+              ((symbol-function 'jabber-connection-active-p)
+               (lambda (jc) (eq jc 'live-jc)))
+              ((symbol-function 'jabber-find-active-connection)
+               (lambda (_jc) 'live-jc))
+              ((symbol-function 'jabber-omemo--reset-session)
+               (lambda (jc jid did cb)
+                 (setq called (list jc jid did)
+                       callback cb)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (let ((jabber-omemo-trust--jc 'stale-jc)
+            (jabber-omemo-trust--peer "alice@example.com"))
+        (jabber-omemo-reset-session)
+        (should (equal '(live-jc "alice@example.com" 42) called))
+        (funcall callback 'fresh-session)
+        (should (equal '("OMEMO: rebuilt session for alice@example.com device 42"
+                         "OMEMO: resetting session for alice@example.com device 42")
+                       messages))))))
+
+(ert-deftest jabber-test-omemo-trust-reset-session-reports-failure ()
+  "Reset command reports a failed asynchronous rebuild."
+  (let (callback messages)
+    (cl-letf (((symbol-function 'jabber-omemo-trust--device-at-point)
+               (lambda () 42))
+              ((symbol-function 'jabber-connection-active-p)
+               (lambda (_jc) t))
+              ((symbol-function 'jabber-omemo--reset-session)
+               (lambda (_jc _jid _did cb) (setq callback cb)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (let ((jabber-omemo-trust--jc 'fake-jc)
+            (jabber-omemo-trust--peer "alice@example.com"))
+        (jabber-omemo-reset-session)
+        (funcall callback nil)
+        (should (equal '("OMEMO: could not rebuild session for alice@example.com device 42"
+                         "OMEMO: resetting session for alice@example.com device 42")
+                       messages))))))
+
+(ert-deftest jabber-test-omemo-trust-reset-session-requires-active-connection ()
+  "Reset refuses to delete state when no active connection exists."
+  (let (called)
+    (cl-letf (((symbol-function 'jabber-omemo-trust--device-at-point)
+               (lambda () 42))
+              ((symbol-function 'jabber-connection-active-p)
+               (lambda (_jc) nil))
+              ((symbol-function 'jabber-find-active-connection)
+               (lambda (_jc) nil))
+              ((symbol-function 'jabber-omemo--reset-session)
+               (lambda (&rest _) (setq called t))))
+      (let ((jabber-omemo-trust--jc 'stale-jc)
+            (jabber-omemo-trust--peer "alice@example.com"))
+        (should-error (jabber-omemo-reset-session) :type 'user-error)
+        (should-not called)))))
+
+(ert-deftest jabber-test-omemo-trust-reset-session-key ()
+  "The trust mode binds r to session reset."
+  (should (eq #'jabber-omemo-reset-session
+              (keymap-lookup jabber-omemo-trust-mode-map "r"))))
+
 (provide 'jabber-test-omemo-trust)
 ;;; jabber-test-omemo-trust.el ends here

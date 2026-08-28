@@ -421,6 +421,22 @@ Updates both the database and in-memory cache."
      account jid device-id blob)
     (puthash key session-ptr jabber-omemo--sessions)))
 
+(defun jabber-omemo--reset-session (jc jid device-id callback)
+  "Reset and rebuild JID's DEVICE-ID session via JC.
+Delete the durable and cached session without changing device trust.
+Call CALLBACK with the rebuilt session, or nil when the device is no
+longer active or its bundle could not be fetched."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (bare-jid (jabber-jid-user jid))
+         (key (jabber-omemo--session-key account bare-jid device-id)))
+    (jabber-omemo-store-delete-session-state account bare-jid device-id)
+    (remhash key jabber-omemo--sessions)
+    (jabber-omemo--ensure-sessions
+     jc bare-jid
+     (lambda (sessions)
+       (when callback
+         (funcall callback (cdr (assoc device-id sessions))))))))
+
 ;;; Device list XML helpers
 
 (defun jabber-omemo--parse-device-list (items)
@@ -880,8 +896,9 @@ id-level replacement, so the publish is unconditional."
 (defun jabber-omemo--establish-session (jc jid device-id bundle)
   "Establish an OMEMO session on JC with JID's DEVICE-ID using BUNDLE.
 BUNDLE is a plist from `jabber-omemo--parse-bundle-xml'.
-Selects a random pre-key, initiates the session, saves to DB
-and cache, and stores an undecided trust record (TOFU)."
+Select a random pre-key, reject changed known identities, initiate and
+save the session, and record new devices as undecided without changing
+an existing trust decision."
   (let* ((store-ptr (jabber-omemo--get-store jc))
          (pre-keys (plist-get bundle :pre-keys))
          (signed-pre-key (plist-get bundle :signed-pre-key))
@@ -897,20 +914,26 @@ and cache, and stores an undecided trust record (TOFU)."
                                (unless identity-key "identity-key")
                                (unless signed-pre-key-id "signed-pre-key-id")))
                    ", ")))
-    (let* ((pk (nth (random (length pre-keys)) pre-keys))
-           (session-ptr (jabber-omemo-initiate-session
-                         store-ptr
-                         (plist-get bundle :signature)
-                         signed-pre-key
-                         identity-key
-                         (cdr pk)
-                         signed-pre-key-id
-                         (car pk)))
-           (account (jabber-connection-bare-jid jc)))
-      (jabber-omemo--save-session jc jid device-id session-ptr)
-      (jabber-omemo-store-save-trust account jid device-id
-                                     identity-key 0)
-      session-ptr)))
+    (let* ((account (jabber-connection-bare-jid jc))
+           (known-trust (jabber-omemo-store-load-trust
+                         account jid device-id)))
+      (when (and known-trust
+                 (not (string= identity-key
+                               (plist-get known-trust :identity-key))))
+        (user-error "OMEMO: device %d for %s changed identity key"
+                    device-id jid))
+      (let* ((pk (nth (random (length pre-keys)) pre-keys))
+             (session-ptr (jabber-omemo-initiate-session
+                           store-ptr
+                           (plist-get bundle :signature)
+                           signed-pre-key
+                           identity-key
+                           (cdr pk)
+                           signed-pre-key-id
+                           (car pk))))
+        (jabber-omemo--save-session jc jid device-id session-ptr)
+        (jabber-omemo-store-ensure-trust account jid device-id identity-key)
+        session-ptr))))
 
 (defun jabber-omemo--load-device-list-from-db (account jid)
   "Load cached device IDs for ACCOUNT + JID from the database.
@@ -948,26 +971,30 @@ a list of (DEVICE-ID . SESSION-PTR) for all active devices."
   "Ensure sessions for DEVICE-IDS of JID via JC, then call CALLBACK.
 CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
   (let ((our-id (jabber-omemo--get-device-id jc))
-        (pending 0)
-        (results nil))
+        results missing)
     (dolist (did device-ids)
       (unless (= did our-id)
-        (let ((existing (jabber-omemo--get-session jc jid did)))
-          (if existing
-              (push (cons did existing) results)
-            (cl-incf pending)
-            (jabber-omemo--fetch-bundle
-             jc jid did
-             (lambda (bundle)
-               (when bundle
-                 (let ((session (jabber-omemo--establish-session
-                                 jc jid did bundle)))
-                   (push (cons did session) results)))
-               (cl-decf pending)
-               (when (zerop pending)
-                 (funcall callback results))))))))
-    (when (zerop pending)
-      (funcall callback results))))
+        (if-let* ((existing (jabber-omemo--get-session jc jid did)))
+            (push (cons did existing) results)
+          (push did missing))))
+    (let ((pending (length missing)))
+      (if (zerop pending)
+          (funcall callback results)
+        (dolist (did missing)
+          (jabber-omemo--fetch-bundle
+           jc jid did
+           (lambda (bundle)
+             (condition-case err
+                 (when bundle
+                   (let ((session (jabber-omemo--establish-session
+                                   jc jid did bundle)))
+                     (push (cons did session) results)))
+               (error
+                (message "OMEMO: could not establish session for %s device %d: %s"
+                         jid did (error-message-string err))))
+             (cl-decf pending)
+             (when (zerop pending)
+               (funcall callback results)))))))))
 
 ;;; Message encryption XML
 
@@ -1241,13 +1268,9 @@ existing-session and fresh-session paths: the local session state
 is unusable, so delete it (database and cache) and re-fetch the
 peer's sessions so the next exchange re-establishes cleanly.  JC
 is the connection."
-  (let ((account (jabber-connection-bare-jid jc)))
-    (jabber-omemo-store-delete-session account sender-jid sender-did)
-    (remhash (jabber-omemo--session-key account sender-jid sender-did)
-             jabber-omemo--sessions)
-    (message "OMEMO: rebuilding session for %s device %s"
-             sender-jid sender-did)
-    (jabber-omemo--ensure-sessions jc sender-jid #'ignore)))
+  (message "OMEMO: rebuilding session for %s device %s"
+           sender-jid sender-did)
+  (jabber-omemo--reset-session jc sender-jid sender-did #'ignore))
 
 (defun jabber-omemo--empty-error-result (xml-data payload err)
   "Return XML-DATA for an empty OMEMO stanza, or re-signal ERR.
