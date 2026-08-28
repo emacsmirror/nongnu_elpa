@@ -1248,6 +1248,30 @@ other thing its name is reported once, with the name to rename it to.
 Note that a cache file is not the same thing as a local @acronym{IMAP} server
 holding a copy of a remote mailbox.  @xref{IMAP Cache Server}.
 
+@subheading Converting the caches you already have
+
+@findex vm-convert-caches-to-mboxcl2
+@cindex cache file, converting
+Every cache VM creates is mboxcl2 and named for it.  A cache from before that
+has no such name and is read as From_, so it keeps the one weakness mboxcl2
+exists to remove: a message whose body holds a line beginning @samp{From } can
+split it in two.  @code{vm-convert-caches-to-mboxcl2} converts each of those
+and renames it.
+
+It looks where cache names are built: @code{vm-imap-folder-cache-directory},
+@code{vm-pop-folder-cache-directory}, @code{vm-folder-directory} and your home
+directory.  It says how many it found and asks once; with a prefix argument it
+asks about each.  Each conversion is @code{vm-change-folder-type-of-file} on
+that cache, so the previous contents are kept in a backup file and you are
+asked whether to delete the copy under the old name.  Two copies of a large
+cache on disk is the price of the safety net; delete the backups when you are
+satisfied.
+
+A cache that cannot be read is left exactly as it was and named in the report,
+and the others are converted anyway.  A cache being visited with unsaved
+changes cannot be converted either: save it, or leave that folder, and run the
+command again.  Nothing is refetched from any server.
+
 @subheading Checking a folder
 
 @findex vm-check-folder

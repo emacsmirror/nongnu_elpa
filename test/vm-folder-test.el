@@ -2536,6 +2536,166 @@ ignoring one that is right costs a spurious message the reader can see."
       (write-region (concat counted counted counted) nil named nil 'quiet)
       (should (eq (vm-get-folder-type named) 'mboxcl2)))))
 
+(defconst vm-folder-test--uncounted-cache
+  (concat "From VM Thu May  7 06:22:17 2026\n"
+          "From: a@example.com\nSubject: one\n\nBody one.\n\n"
+          "From VM Thu May  7 06:22:18 2026\n"
+          "From: b@example.com\nSubject: two\n\nBody two.\n\n")
+  "Two messages with no Content-Length: a cache as an older VM wrote one.")
+
+(defmacro vm-folder-test--with-cache-directory (var &rest body)
+  "Run BODY with VAR bound to a directory that is the only place caches live."
+  (declare (indent 1) (debug t))
+  `(vm-folder-test-with-directory ,var
+     (let ((vm-imap-folder-cache-directory ,var)
+           (vm-pop-folder-cache-directory nil)
+           (vm-folder-directory nil)
+           (process-environment (cons (concat "HOME=" ,var)
+                                      process-environment)))
+       ,@body)))
+
+(defun vm-folder-test--cache (dir name &optional text)
+  "Write TEXT as cache NAME in DIR, and answer the file."
+  (let ((file (expand-file-name name dir)))
+    (write-region (or text vm-folder-test--uncounted-cache) nil file nil 'quiet)
+    file))
+
+(ert-deftest vm-folder-test-the-older-caches-are-the-ones-without-the-suffix ()
+  "`vm-cache-folders-in-the-older-format' finds a cache whose name says no type.
+Not one that names its type, and nothing that is not a cache: the name is all
+there is to go on, since the maildrop a cache belongs to is deliberately not
+recorded in it."
+  (vm-folder-test--with-cache-directory dir
+    (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
+          (old-pop (vm-folder-test--cache dir "pop-cache-fedcba9876543210")))
+      (vm-folder-test--cache dir "imap-cache-abcdef0123456789.mboxcl2")
+      (vm-folder-test--cache dir "INBOX")
+      (vm-folder-test--cache dir "imap-cache-nothexadecimal")
+      (should (equal (vm-cache-folders-in-the-older-format)
+                     (sort (list old old-pop) #'string-lessp))))))
+
+(ert-deftest vm-folder-test-converting-the-caches-names-and-counts-them ()
+  "REGRESSION: `vm-convert-caches-to-mboxcl2' converts each older cache.
+Issue #768.  Every cache VM creates is mboxcl2 and named for it; one from
+before that was read as From_, so a message whose body holds a line beginning
+\"From \" could still split it in two."
+  (vm-folder-test--with-cache-directory dir
+    (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
+          (said nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said))))
+        (vm-convert-caches-to-mboxcl2))
+      (should-not (file-exists-p old))
+      (should (file-exists-p (concat old ".mboxcl2")))
+      ;; the original bytes are kept in a backup, which is the safety net
+      (should (file-exists-p (vm-folder-backup-name old)))
+      (should (eq (vm-get-folder-type (concat old ".mboxcl2")) 'mboxcl2))
+      ;; both messages are there, and each carries its length now
+      (with-temp-buffer
+        (insert-file-contents (concat old ".mboxcl2"))
+        (should (equal 2 (how-many "^Content-Length:" (point-min) (point-max)))))
+      (should (cl-find-if (lambda (s) (string-match-p "1 cache of 1 converted" s))
+                          said)))))
+
+(defconst vm-folder-test--sound-mboxcl2-message
+  (concat "From VM Thu May  7 06:22:17 2026\n"
+          "Content-Length: 11\n"
+          "From: a@example.com\nSubject: one\n"
+          "\nBody one.\n\n")
+  "A message as VM writes one into an mboxcl2 folder.
+`Content-Length' first in the header block, which is where the conversion puts
+it, and 11 counts the body and the blank line that ends the message.  Written
+any other way the folder is not sound and a conversion rewrites it, which is
+what the test below is distinguishing.")
+
+(ert-deftest vm-folder-test-a-sound-folder-is-renamed-rather-than-rewritten ()
+  "A folder already sound is renamed where its name does not state its type.
+Nothing has to be written for that, and the name is what the type is read from
+next time, so leaving it would mean the conversion did not outlive the session
+(#743).  A cache does not reach this: one is read as From_ whatever its lengths
+look like (#767), and converting From_ to mboxcl2 rewrites the headers."
+  (vm-folder-test-with-directory dir
+    (let* ((text (concat vm-folder-test--sound-mboxcl2-message
+                         vm-folder-test--sound-mboxcl2-message))
+           (file (expand-file-name "sent" dir))
+           (vm-trust-content-length t))
+      (write-region text nil file nil 'quiet)
+      ;; read as mboxcl2 by its contents, under a name that says nothing
+      (should (eq (vm-get-folder-type file) 'mboxcl2))
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (should-not (file-exists-p file))
+      (should (file-exists-p (concat file ".mboxcl2")))
+      ;; renamed, so the bytes are the same ones and there is no backup
+      (should (equal text (with-temp-buffer
+                            (insert-file-contents (concat file ".mboxcl2"))
+                            (buffer-string))))
+      (should-not (file-exists-p (vm-folder-backup-name file))))))
+
+(ert-deftest vm-folder-test-a-cache-that-cannot-be-converted-is-reported ()
+  "One cache that cannot be converted does not stop the others.
+The fault is named and the run goes on: stopping partway through a dozen
+caches would leave a half-done job and no account of it."
+  (vm-folder-test--with-cache-directory dir
+    (let ((good (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
+          (bad (vm-folder-test--cache dir "pop-cache-fedcba9876543210"
+                                      "this is not a folder at all\n"))
+          (warned nil)
+          (said nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'vm-warn)
+                 (lambda (_level _secs &rest args) (push (apply #'format args) warned)))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said))))
+        (vm-convert-caches-to-mboxcl2))
+      (should (file-exists-p (concat good ".mboxcl2")))
+      (should (file-exists-p bad))
+      (should (cl-find-if (lambda (s) (string-match-p "pop-cache" s)) warned))
+      (should (cl-find-if (lambda (s)
+                            (string-match-p "1 cache of 2 converted, 1 could not be" s))
+                          said)))))
+
+(ert-deftest vm-folder-test-converting-the-caches-with-nothing-to-do ()
+  "Nothing to convert says so, and asks nothing."
+  (vm-folder-test--with-cache-directory dir
+    (vm-folder-test--cache dir "imap-cache-abcdef0123456789.mboxcl2")
+    (let ((said nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (error "Nothing should be asked")))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said))))
+        (vm-convert-caches-to-mboxcl2))
+      (should (cl-find-if (lambda (s) (string-match-p "No cache is in the older" s))
+                          said)))))
+
+(ert-deftest vm-folder-test-declining-the-question-converts-nothing ()
+  "Answering no leaves every cache as it was."
+  (vm-folder-test--with-cache-directory dir
+    (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef")))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+        (vm-convert-caches-to-mboxcl2))
+      (should (file-exists-p old))
+      (should-not (file-exists-p (concat old ".mboxcl2"))))))
+
+(ert-deftest vm-folder-test-a-prefix-argument-asks-about-each-cache ()
+  "With a prefix argument each cache is asked about, and only those accepted go."
+  (vm-folder-test--with-cache-directory dir
+    (let ((first (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
+          (second (vm-folder-test--cache dir "pop-cache-fedcba9876543210"))
+          (asked nil))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (prompt)
+                   (push prompt asked)
+                   (string-match-p "imap-cache" prompt))))
+        (vm-convert-caches-to-mboxcl2 t))
+      (should (equal (length asked) 2))
+      (should (file-exists-p (concat first ".mboxcl2")))
+      (should (file-exists-p second))
+      (should-not (file-exists-p (concat second ".mboxcl2"))))))
+
 (ert-deftest vm-folder-test-an-empty-folder-still-has-no-type ()
   "A folder that does not exist, or is empty, has no type whatever it is
 called.  Callers read nil as \"nothing here yet\": `vm-save-message' asks

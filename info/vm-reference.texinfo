@@ -1404,6 +1404,28 @@ Nothing is written.  @code{vm-change-folder-type=} is the repair: converting a
 folder to the type it already is recomputes every length.
 @end deffn
 
+@deffn Command vm-convert-caches-to-mboxcl2 &optional each
+@findex vm-convert-caches-to-mboxcl2
+Convert every POP and IMAP cache whose name does not state its type.
+A cache VM creates now is named for its type and written as mboxcl2, where the
+end of a message is a byte count rather than a line that has to be recognised.
+A cache from before that has no such name and is read as From_, so a message
+whose body holds a line beginning "From " can still split it in two.  This
+converts each of those and renames it, which is @code{vm-change-folder-type-of-file=}
+once per cache: the previous contents are kept in a backup file, and a cache
+that is already mboxcl2 in all but its name is only renamed.
+
+With a prefix argument it asks about each cache rather than about the lot.
+
+A cache being visited with unsaved changes cannot be converted and is reported;
+save it, or leave that folder, and run this again.  Nothing is refetched, and a
+cache that cannot be read is left exactly as it was.
+
+The caches are looked for where their names are built, which is
+@code{vm-imap-folder-cache-directory=}, @code{vm-pop-folder-cache-directory=},
+@code{vm-folder-directory=} and the home directory.
+@end deffn
+
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
 Show the line @code{vm-totals-blurb} answers, and answer with it.

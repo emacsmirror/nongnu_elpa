@@ -6290,7 +6290,9 @@ TYPE may be the type the folder already claims: converting mboxcl2 to mboxcl2
 recomputes every length, and that is the repair.
 
 The file is written only if the result reads back as TYPE, strictly, and holds
-the same number of messages; a folder already sound is not rewritten at all.
+the same number of messages.  A folder already sound is not rewritten at all,
+and is renamed where its name does not state TYPE: nothing has to be written
+for that, and the name is what the type is read from next time.
 
 Without OUTPUT it is written under the name TYPE asks for, since the name is
 what states the type: sent.mboxcl2 converted to From_ is written as sent, and
@@ -6373,8 +6375,24 @@ when saving a buffer."
 			(file-name-nondirectory destination) after
 			(file-name-nondirectory file)))
 	    ((equal original (buffer-hash))
-	     (vm-inform 5 "%s is already a sound %s folder, %d messages"
-			(file-name-nondirectory file) type after))
+	     ;; Sound already.  Nothing to write, but the name still has to
+	     ;; state the type, or the folder is read as something else next
+	     ;; time and the conversion did not outlive the session (#743).
+	     ;; That is a cache VM wrote as mboxcl2 before it named them.
+	     (let ((new-file (vm-folder-name-for-type file type)))
+	       (if (equal new-file file)
+		   (vm-inform 5 "%s is already a sound %s folder, %d messages"
+			      (file-name-nondirectory file) type after)
+		 (vm-error-if-name-contradicts-type new-file type)
+		 (when (file-exists-p new-file)
+		   (error (concat "%s is a folder already; move it aside, or"
+				  " rename this one by hand")
+			  (abbreviate-file-name new-file)))
+		 (rename-file file new-file)
+		 (vm-inform 5 (concat "%s is already a sound %s folder,"
+				      " %d messages; renamed to %s")
+			    (file-name-nondirectory file) type after
+			    (file-name-nondirectory new-file)))))
 	    ((equal (vm-folder-name-for-type file type) file)
 	     (vm-error-if-name-contradicts-type file type)
 	     (let ((backup (vm-folder-backup-name file)))
@@ -6409,6 +6427,111 @@ when saving a buffer."
 			  (file-name-nondirectory file) old type
 			  (file-name-nondirectory new-file) after)
 	       (vm-purge-renamed-folder-file file interactive)))))))
+
+(defun vm-cache-folders-in-the-older-format ()
+  "The POP and IMAP caches on disk whose names do not state their type.
+Every cache VM creates carries `vm-cache-folder-type-suffix\=' and is written
+in that type.  One without it was written by a VM that did not name its
+caches, and is read as From_, so it keeps the weakness mboxcl2 exists to
+remove: a message whose body holds a line beginning \"From \" can split it in
+two.
+
+The directories are the ones a cache name is built in:
+`vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
+`vm-folder-directory\=' and the home directory."
+  (let ((files nil))
+    (dolist (dir (vm-cache-folder-directories))
+      (setq files (nconc files (vm-cache-folders-in-directory dir))))
+    files))
+
+(defun vm-cache-folder-directories ()
+  "The directories a cache file can have been created in, each of them once."
+  (delete-dups
+   (delq nil
+	 (mapcar (lambda (dir)
+		   (and dir (file-directory-p dir)
+			(file-name-as-directory (expand-file-name dir))))
+		 (list vm-imap-folder-cache-directory
+		       vm-pop-folder-cache-directory
+		       vm-folder-directory
+		       (getenv "HOME"))))))
+
+(defun vm-cache-folders-in-directory (dir)
+  "The caches in DIR whose names do not state a type."
+  (let ((found nil))
+    (dolist (file (directory-files dir t))
+      (when (and (vm-cache-folder-name-p file)
+		 (null (vm-folder-type-for-name file))
+		 (file-regular-p file))
+	(push file found)))
+    (sort found #'string-lessp)))
+
+(defun vm-convert-one-cache (file ask)
+  "Convert cache FILE to mboxcl2.  ASK asks about this one first.
+Answers t where it was converted, nil where it was declined, and the fault as
+a string where it could not be."
+  (if (and ask
+	   (not (y-or-n-p (format "Convert %s? " (file-name-nondirectory file)))))
+      nil
+    (condition-case fault
+	(progn (vm-change-folder-type-of-file file 'mboxcl2 t) t)
+      (error (error-message-string fault)))))
+
+(defun vm-convert-caches (files ask)
+  "Convert each cache in FILES to mboxcl2, and answer (CONVERTED . FAULTS).
+FAULTS pairs each cache that could not be converted with what went wrong.  A
+fault is collected rather than raised: stopping partway through a dozen caches
+would leave the reader a half-done job and no account of it, and every fault is
+named in the report."
+  (let ((faults nil)
+	(converted 0))
+    (dolist (file files)
+      (let ((answer (vm-convert-one-cache file ask)))
+	(cond ((stringp answer) (push (cons file answer) faults))
+	      (answer (setq converted (1+ converted))))))
+    (cons converted (nreverse faults))))
+
+(defun vm-report-cache-conversion (found converted faults)
+  "Say how the conversion of FOUND caches went, and name every fault."
+  (dolist (fault faults)
+    (vm-warn 0 2 "%s: %s" (file-name-nondirectory (car fault)) (cdr fault)))
+  (vm-inform 1 "%d cache%s of %d converted%s"
+	     converted (if (= converted 1) "" "s") found
+	     (if faults (format ", %d could not be" (length faults)) "")))
+
+;;;###autoload
+(defun vm-convert-caches-to-mboxcl2 (&optional each)
+  "Convert every POP and IMAP cache whose name does not state its type.
+A cache VM creates now is named for its type and written as mboxcl2, where the
+end of a message is a byte count rather than a line that has to be recognised.
+A cache from before that has no such name and is read as From_, so a message
+whose body holds a line beginning \"From \" can still split it in two.  This
+converts each of those and renames it, which is `vm-change-folder-type-of-file\='
+once per cache: the previous contents are kept in a backup file, and a cache
+that is already mboxcl2 in all but its name is only renamed.
+
+With a prefix argument it asks about each cache rather than about the lot.
+
+A cache being visited with unsaved changes cannot be converted and is reported;
+save it, or leave that folder, and run this again.  Nothing is refetched, and a
+cache that cannot be read is left exactly as it was.
+
+The caches are looked for where their names are built, which is
+`vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
+`vm-folder-directory\=' and the home directory."
+  (interactive "P")
+  (let ((files (vm-cache-folders-in-the-older-format)))
+    (cond ((null files)
+	   (vm-inform 1 "No cache is in the older format; each one names its type"))
+	  ((not (or each
+		    (y-or-n-p (format "Convert %d cache%s to mboxcl2? "
+				      (length files)
+				      (if (cdr files) "s" "")))))
+	   (vm-inform 1 "No caches converted"))
+	  (t
+	   (let ((result (vm-convert-caches files each)))
+	     (vm-report-cache-conversion (length files) (car result)
+					 (cdr result)))))))
 
 (defun vm-error-if-folder-not-read-through ()
   "Signal unless this folder buffer holds the whole of its folder.
