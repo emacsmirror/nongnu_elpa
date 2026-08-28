@@ -987,6 +987,12 @@ details.  The variable @code{vm-default-folder-type} can be used to
 set the default format that is suitable for your environment.  This
 setting is used when VM creates new folders.
 
+VM's own format has not changed: a folder is a From_ folder --- VM's mbox,
+@pxref{VM's mbox} --- unless you ask for something else.  mboxcl2 is opt-in,
+and the way to ask is the folder's name: an extension of @samp{.mboxcl2}.
+Nothing converts a folder of yours behind you, and neither VM nor an
+@code{FCC:} nor a cache turns From_ into mboxcl2 on its own.
+
 When VM reads a folder from the file system, it examines contents of the
 folder to determine what format it is stored in and decodes it
 appropriately.  (However, such inference is not fully automatic.  See
@@ -1044,9 +1050,10 @@ What it costs: a folder that cannot be renamed cannot be typed by its name.
 A primary inbox called @file{INBOX} is the case, and the answer for one is
 @code{vm-default-folder-type}, or a name with the extension on it.
 
-@subheading Why mboxcl2 is worth having
+@subheading Why mboxcl2: it will not corrupt your mail
 
 @cindex mboxcl2, why
+@cindex corruption, mbox
 In a From_ folder the end of a message is the next line that begins
 ``From ''.  Nothing but the shape of the line says so, and mail contains such
 lines: a message that quotes another message, a digest, a mailing list
@@ -1156,29 +1163,39 @@ recognised.
 @subheading How VM decides what a folder is
 
 @cindex folder type, how it is decided
-In this order:
+The name decides, and between From_ and mboxcl2 it is the last word:
 
 @enumerate
 @item
-@b{What the folder says it is.}  A BABYL or MMDF folder announces itself in
-its first bytes, so those need no configuration and no guessing.  An empty
-file says nothing, and neither does a folder that does not exist yet.
-@item
-@b{What the name says}, through
-@code{vm-folder-type-by-extension-alist}, matched against the file name's
-extension.  This is the only thing that separates From_ from mboxcl2, since
-those two look alike -- the difference is a header that a From_ folder is
-free to carry as well.
+@b{What the name says}, through @code{vm-folder-type-by-extension-alist},
+matched against the file name's extension.  A folder called
+@file{sent.mboxcl2} is mboxcl2 wherever it sits and whatever is in it.
+Nothing in a folder can overrule that, or supply it: From_ and mboxcl2 look
+alike --- the difference is a @code{Content-Length} header that a From_ folder
+is free to carry as well --- so a folder that looks like one is no evidence of
+either, and the name is the only thing that answers.
 @item
 @b{@code{vm-default-folder-type}}, for a folder whose name says nothing.  It
-is @code{From_} on every platform.
+is @code{From_} on every platform, which is why a folder called @file{INBOX},
+or one called @file{2026-08.out}, is VM's mbox and stays it.
+
+Set it to mboxcl2 and mboxcl2 is what a folder is: every folder whose name
+does not say otherwise is read as one, including folders that already exist,
+and a message in such a folder with no @code{Content-Length} is refused and
+named rather than the setting being quietly ignored.  Naming one folder
+@samp{.mbox} is how to keep that one From_.  The exception is a cache VM wrote
+before it named its caches: it is VM's own file and most of its messages have
+no length, so it is read as From_ and its name reported once, rather than the
+cache being taken away from you.
 @end enumerate
 
 @noindent
-So a folder called @file{sent.mboxcl2} is mboxcl2 wherever it sits, a folder
-called @file{INBOX} is whatever the default says, and a BABYL file called
-@file{old.mboxcl2} is BABYL, because what the folder says about itself beats
-what its name claims.
+The exception is a format that states its own type.  A BABYL or MMDF folder
+announces itself in its first bytes and is read as what it is whatever the
+name claims, so a BABYL file called @file{old.mboxcl2} is BABYL: read as
+mboxcl2 it would be read as nonsense.  Those two need no configuration and no
+guessing.  An empty file announces nothing, and neither does a folder that
+does not exist yet, which is where the name and the default come in.
 
 @subheading The folders VM writes for you
 
@@ -1186,9 +1203,10 @@ what its name claims.
 @cindex postponed messages, folder type
 @cindex cache file, folder type
 An @code{FCC:} copy, a postponed draft and a server cache are all folders VM
-creates without asking, and each is written in the type that the same rule
-gives: what the folder already is, else what its name asks for, else
-@code{vm-default-folder-type}.
+creates without asking, and each is written in the type the same rule gives: an
+existing folder keeps the type it has, and a new one is written as its name
+asks, else as @code{vm-default-folder-type} --- From_, unless you have said
+otherwise.
 
 @itemize
 @item

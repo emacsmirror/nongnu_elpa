@@ -1091,6 +1091,20 @@ the value of vm-default-From_folder-type will be returned."
 			 (vm-warn-about-unnamed-mboxcl2-cache
 			  (or file (buffer-file-name)))
 			 vm-default-From_-folder-type)
+			;; Nothing in the name, and the reader has said that
+			;; mboxcl2 is what a folder is here.  Read it as one: a
+			;; message with no Content-Length is then refused and
+			;; named, where the setting used to be ignored by every
+			;; folder that already existed, which got it only for
+			;; the folders VM created (#766).  Naming a folder .mbox
+			;; is how to keep that one From_.  The legacy cache
+			;; above is the exception, and comes first: it is VM's
+			;; own file, most of its messages have no length, and
+			;; refusing it would take the cache away rather than
+			;; tell the reader to rename it.
+			((eq (vm-canonical-folder-type vm-default-folder-type)
+			     'mboxcl2)
+			 'mboxcl2)
 			((not vm-trust-content-length)
 			 vm-default-From_-folder-type)
 			(t
