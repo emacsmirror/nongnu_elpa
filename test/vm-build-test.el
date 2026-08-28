@@ -313,6 +313,45 @@ version, which no rule can name in advance."
       (goto-char (point-min))
       (should (re-search-forward "^test-no-opt:[ \t]*$" nil t)))))
 
+(defun vm-build-test--bare-install-lines (file)
+  "Recipe lines in FILE that run `$(INSTALL)' rather than `$(INSTALL_DATA)'.
+Each answered as \"path:line: text\".  A comment line is not a recipe, and
+`INSTALL_PROGRAM' and `INSTALL_SCRIPT' expand to `${INSTALL}' in their own
+assignments, which are not recipes either."
+  (let ((found nil)
+        (line 0))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (setq line (1+ line))
+        (let ((text (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (when (and (string-match-p "\\`\t" text)
+                     (not (string-match-p "\\`\t[ \t]*\\(@#\\|#\\)" text))
+                     (string-match-p "\\$[({]INSTALL[)}]" text))
+            (push (format "%s:%d: %s"
+                          (file-relative-name file vm-build-test--root)
+                          line text)
+                  found)))
+        (forward-line 1)))
+    (nreverse found)))
+
+(ert-deftest vm-build-test-data-is-installed-with-install-data ()
+  "REGRESSION: no makefile installs a data file with a bare `$(INSTALL)'.
+`INSTALL' is `install -c', which means mode 0755, and `INSTALL_DATA' is the
+same with `-m 644'.  info/Makefile.in used the bare one, so the whole manual
+was installed executable.  VM installs no programs, so a bare `$(INSTALL)' in
+any of the templates is this bug again.
+
+Read from the templates rather than by installing, so it holds for every make
+and needs no writable prefix."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (setq offenders
+            (append offenders (vm-build-test--bare-install-lines file))))
+    (should (equal offenders nil))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here
