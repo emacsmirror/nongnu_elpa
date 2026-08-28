@@ -134,7 +134,8 @@ entails.")
 
 (defun mastodon-inspect-profile-requests (&optional endpoint)
   "Enable `url-debug' and call `mastodon-inspect-requests'.
-Function to insert into timeline and other view loading functions."
+Function to insert into timeline and other view loading functions.
+Deletes contents of *URL-DEBUG* after calling `mastodon-inspect-requests'."
   (setq url-debug t)
   (when (get-buffer "*URL-DEBUG*")
     ;; before the new request: list previous set:
@@ -145,10 +146,10 @@ Function to insert into timeline and other view loading functions."
 
 (defun mastodon-inspect-requests (&optional endpoint)
   "Collect recent url.el requests into a buffer.
-Filters *URL-DEBUG* for requests, dumps them into *masto-requests*.
-Note that for simplicity's sake in handling async requests, we collect
-all the requests made until just before the page being loaded, and since
-the last one.
+Filters *URL-DEBUG* for requests, dumps them into *masto-requests*. Note
+that for simplicity's sake in handling async requests, we collect all
+the requests made until just *before* the page being loaded (and since
+the last one).
 ENDPOINT is a string, to create a heading for a group of
 requests."
   ;; FIXME: this will collect any requests made, including those of other
