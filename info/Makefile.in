@@ -138,8 +138,11 @@ uninstall: uninstall-pkg
 
 install-pkg: info
 	@$(MKDIR) -p -m 0755 "$(infodestdir)";
+	@# INSTALL_DATA, not INSTALL: a bare `install' means 0755 and the
+	@# manual came out executable.  Every other directory installs its data
+	@# with INSTALL_DATA; this was the one that did not.
 	for f in $(INFO_SPLIT_GLOB); do \
-		test -f "$$f" && $(INSTALL) "$$f" $(infodestdir) || true; \
+		test -f "$$f" && $(INSTALL_DATA) "$$f" $(infodestdir) || true; \
 	done
 	@# Only with an install-info to run.  Without one the recipe was the
 	@# bare arguments, which make ran as a command and the install died on
