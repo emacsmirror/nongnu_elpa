@@ -1056,7 +1056,7 @@ A primary inbox called @file{INBOX} is the case, and the answer for one is
 @cindex mboxcl2, why
 @cindex corruption, mbox
 In a From_ folder the end of a message is the next line that begins
-``From ''.  Nothing but the shape of the line says so, and mail contains such
+``From ''.  Nothing but the structure of the line says so, and mail contains such
 lines: a message that quotes another message, a digest, a mailing list
 footer, a base64 attachment that happens to wrap that way.  The answer every
 mailer uses, VM included, is to alter the mail to protect the format, turning
@@ -1117,10 +1117,16 @@ a message you edit, one you compose or @code{FCC:}, a digest you burst, and a
 folder whose type you convert.
 
 @cindex >From lines, ambiguity
-Nothing unquotes on the way out, in VM or anywhere else.  A line that arrived
-reading @samp{>From bob@dots{} 2026} and one VM quoted are the same line
-afterwards, and neither VM nor any other reader can tell them apart.  That is
-the cost the format imposes on everyone, and it is the reason mboxcl2 exists.
+@cindex mboxo
+@cindex mboxrd
+VM does not unescape on the way out, and neither does the common variant.  A
+line that arrived reading @samp{>From bob@dots{} 2026} and one VM escaped are
+the same line afterwards, and no reader can tell them apart.  That variant has
+a name, mboxo, and the loss is the reason it has a rival: mboxrd escapes
+@samp{>From } to @samp{>>From } as well, so that a reader can strip one
+@samp{>} and get the original back.  VM writes neither.  It writes mboxcl2
+instead, where the boundary is a byte count and nothing is escaped at all, so
+there is nothing to reverse.
 
 @item VM's reader is narrower than its writer, on purpose.
 Reading a From_ folder, VM takes a line as a separator only if it begins
@@ -1226,17 +1232,25 @@ and no @code{Lines:}.
 @indicateurl{https://www.jwz.org/doc/content-length.html}
 
 The one that names and describes the @code{Content-Length:} variant, which is
-what mboxcl2 is.  It does not say that a @samp{From } line is escaped only
-after a blank line, which is where the descriptions and the implementations
-part company: VM escapes without regard to what precedes the line, on purpose
-(above), so a VM folder carries escapes a reader of that document would not
-expect.
+what mboxcl2 is, and it is blunt about it: ``non-portable, easily-corruptible,
+and overall, brain-damaged''.  Worth reading for that argument against the
+format VM prefers.
+
+It gives the blank-line rule for @emph{reading} --- a separator is a
+@samp{From } line ``preceded by a blank line or beginning-of-file'' --- but
+states the escaping without that qualification, which is where the
+descriptions and the implementations part company.  VM escapes without regard
+to what precedes the line, on purpose (above), so a VM folder carries escapes
+this document would not lead you to expect.
 
 @item Wikipedia's @cite{mbox}
 @indicateurl{https://en.wikipedia.org/wiki/Mbox}
 
-The first thing a search finds and the least reliable of these; check anything
-it says against one of the others.
+The first thing a search finds, and uneven, but it is the only one of these
+that names all four variants and gets the distinction this manual turns on:
+``mboxcl still quotes From lines in the messages themselves as mboxrd does,
+while mboxcl2 doesn't''.  Check anything else it says against one of the
+others.
 @end table
 
 @subheading How VM decides what a folder is
@@ -2177,7 +2191,7 @@ immediately and its sync tool pushes it when the remote is reachable, so VM
 neither waits nor fails when the network is down.
 @end itemize
 
-@subheading The shape of it
+@subheading The structure of it
 
 Three pieces:
 
@@ -2206,7 +2220,7 @@ the password you gave the local server.
 
 @subheading Setting it up
 
-What follows is the shape rather than a recipe, because the paths and the
+What follows is the structure rather than a recipe, because the paths and the
 service manager differ by system.  Use your packaging's own locations: a
 MacPorts install puts configuration under @file{/opt/local/etc} and its store
 under @file{/opt/local/var}, Homebrew uses @file{/opt/homebrew} or
