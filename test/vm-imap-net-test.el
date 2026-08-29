@@ -1726,7 +1726,7 @@ argument: stringp, nil\", and no mail."
 (ert-deftest vm-imap-net-test-the-blocking-path-steps-over-them-too ()
   "The blocking fetch reads past an item it did not ask for as well.
 
-Its parser matched fixed shapes -- (BODY[] string), or UID before it -- so a
+Its parser matched fixed forms -- (BODY[] string), or UID before it -- so a
 server that added INTERNALDATE failed the retrieval with \"expected (BODY[]
 string) in FETCH response\".  Both paths walk the items by name now."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice)
@@ -1745,13 +1745,13 @@ string) in FETCH response\".  Both paths walk the items by name now."
                    '("badgers" "otters")))))
 
 (ert-deftest vm-imap-net-test-the-item-skip-steps-over-one-item ()
-  "`vm-imap-skip-fetch-item' takes one item off, whatever shape it is.
+  "`vm-imap-skip-fetch-item' takes one item off, whatever its structure.
 The parsers walk the items of a FETCH response by name; this is what they do
 with a name they do not know, and it has to leave the walk on the next name
 rather than in the middle of a value."
   (with-temp-buffer
     (insert "MODSEQ (23) UID 7")
-    ;; the token shapes the reader produces: (TYPE START END) or (list TOKEN...)
+    ;; the token structures the reader produces: (TYPE START END) or (list TOKEN...)
     (let* ((modseq '(atom 1 7))
            (value '(list (atom 9 11)))
            (uid '(atom 13 16))
@@ -2119,7 +2119,7 @@ server to talk to."
                  (setq asked (list 'open-network-stream host service
                                    (plist-get parameters :type)
                                    (plist-get parameters :nowait)))
-                 ;; something process-shaped to hand back, made without the
+                 ;; something process-like to hand back, made without the
                  ;; function this test has taken away
                  (start-process name buffer "cat")))
               ((symbol-function 'make-network-process)

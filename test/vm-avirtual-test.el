@@ -1205,7 +1205,7 @@ listed as one the interactive selector reader offers."
 (ert-deftest vm-avirtual-test-finding-a-selector-in-a-specification ()
   "`vm-virtual-find-selector' digs a selector of a given kind out of a
 folder definition, however deep it is: the definitions nest, and a caller
-that wants the `label' of a folder should not have to know its shape."
+that wants the `label' of a folder should not have to know its structure."
   (let ((spec '((and (subject "badgers")
                      (or (label "urgent") (author "alice"))))))
     (should (equal (vm-virtual-find-selector spec 'label) '(label "urgent")))

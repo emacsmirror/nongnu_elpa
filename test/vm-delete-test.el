@@ -329,7 +329,7 @@ hazard in place -- the combination that deleted the whole folder."
 (ert-deftest vm-delete-test-expunge-message-refuses-a-stale-reverse-link ()
   "A message whose reverse link points elsewhere is not expunged.
 The link decides which cons is spliced, so following it here would remove
-message 2 and mark it expunged while message 3 stayed in the folder.  The shape
+message 2 and mark it expunged while message 3 stayed in the folder.  The structure
 is the one #569 produces: a message dropped from the list whose link still
 points at where it used to be."
   (vm-test-with-folder vm-delete-test--three-messages
@@ -625,7 +625,7 @@ so every expunge of a sorted folder re-sorted it for nothing."
                "\n" (format "Body %d.\n\n" i))))
    '((0 . nil) (1 . 0) (2 . 1) (3 . 0) (4 . nil))
    "")
-  "Five messages in the shape 0 < 1 < 2, 0 < 3, and 4 on its own.")
+  "Five messages structured 0 < 1 < 2, 0 < 3, and 4 on its own.")
 
 (defun vm-delete-test--deleted-indices ()
   "Return the positions in `vm-message-list' of the messages flagged deleted."
@@ -677,7 +677,7 @@ Message 4 is in the folder and in no thread with the others."
 
 (ert-deftest vm-delete-test-kill-thread-subtree-outside-a-thread-takes-one ()
   "A message that is in no thread takes only itself, not the folder.
-The #496 shape: a kill command with nothing to match on deleting everything."
+The #496 case: a kill command with nothing to match on deleting everything."
   (vm-delete-test--killable 4
     (vm-kill-thread-subtree 0)
     (should (equal '(4) (vm-delete-test--deleted-indices)))))

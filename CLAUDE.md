@@ -353,11 +353,22 @@ Commits carry the equivalent through their `Co-Authored-By:` trailer.
 These apply to everything written for this repo: the manual, NEWS, docstrings,
 code comments, commit messages, and issue and merge request text.
 
-- **No em dashes.** Not `---`, not `--` used as punctuation, not the character
-  itself. Use a comma, a colon, or two sentences. In Texinfo `---` renders as an
-  em dash, so it is the same rule there.
-- **Do not write "shape".** Say "structure", or name the thing concretely. It is
-  vague where "structure" is specific.
+- **No em dashes in prose.** Not the character, and not `---`, which is what
+  Texinfo renders as one. Use a comma, a colon, or two sentences.
+
+  This is about the punctuation mark, not about the characters wherever they
+  appear. Leave these alone, none of them being an em dash:
+
+  - the Emacs file header, `;;; vm-foo.el --- description`, which is a required
+    convention and uses `---` (135 files have one)
+  - `--` in a symbol name, as in `vm-folder-test--octets`
+  - command-line options, `--with-emacs`
+  - a rule in an example, a literal MIME boundary, makeinfo's own ` -- Command:`
+    in the generated appendix, and the verbatim GPL text
+  - anything a test asserts on or that VM itself prints: `vm-icalendar.el`
+    emits `" -- accepted"`, so the manual's example has to match it
+- **Do not write "shape".** Say "structure", "form", "layout", or name the thing.
+  It is vague where "structure" is specific.
 
 ## NEWS
 

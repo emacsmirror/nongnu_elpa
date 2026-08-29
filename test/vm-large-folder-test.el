@@ -18,7 +18,7 @@
 ;; `vm-reverse-link-table'.
 ;;
 ;; The fixture is generated here rather than checked in: a folder of this size
-;; is megabytes, and its shape -- how many messages, whether they thread -- is
+;; is megabytes, and its structure -- how many messages, whether they thread -- is
 ;; the thing under test, so it belongs in code.
 ;;
 ;; Three size knobs keep the suite quick, and each can be raised from the
@@ -71,7 +71,7 @@ without the C stack and never crashed at any size tried.")
 (defun vm-large-folder-test--write (file n &optional threaded)
   "Write a folder of N messages to FILE.
 THREADED nil leaves the messages unrelated.  THREADED t makes the folder one
-chain of N, each message referencing the one before it -- the deepest shape
+chain of N, each message referencing the one before it -- the deepest structure
 thread building can be given.  THREADED a number makes threads of that many
 messages, which is what a mailing list archive looks like."
   (with-temp-file file
@@ -146,7 +146,7 @@ that every message is found and gets exactly one summary line."
 (ert-deftest vm-large-folder-test-threading-a-single-chain ()
   "Threading a folder that is one long reference chain completes and is right.
 Issue #373 again: with `vm-summary-show-threads' on, \"Recreating summary\" also
-builds the thread database, and a chain of N messages is the deepest shape it can
+builds the thread database, and a chain of N messages is the deepest structure it can
 be asked for.  Deliberately a small N -- see
 `vm-large-folder-test-chain-size' for why."
   (let ((n vm-large-folder-test-chain-size))
@@ -181,7 +181,7 @@ the reporter hit; it costs 25 seconds against 4."
          out-of-order)
     ;; Threads of 10 only so the folder looks like a real one; they are not
     ;; built here.  What the collector walks is the message list, one link per
-    ;; message, so length is what matters and thread shape is beside the point.
+    ;; message, so length is what matters and thread structure is beside the point.
     (vm-large-folder-test--with-folder (file n 10)
       (vm-visit-folder file)
       (should (= n (length vm-message-list)))

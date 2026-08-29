@@ -10,7 +10,7 @@
 ;; through random sequences of the commands that rearrange it and check, after
 ;; every single operation, things that have to hold whatever the sequence was.
 ;;
-;; Two invariants earn their keep, both of them the shape of bugs already found:
+;; Two invariants earn their keep, both of them drawn from bugs already found:
 ;;
 ;; - Each message's text is where the message says it is.  `vm-expunge-message'
 ;;   takes the cons to splice from a reverse link while `vm-expunge-folder'

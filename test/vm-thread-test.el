@@ -714,7 +714,7 @@ The control: the fix must not turn the fallback into a call that signals."
                "\n" (format "Body %d.\n\n" i))))
    '((0 . nil) (1 . 0) (2 . 1) (3 . 0) (4 . nil))
    "")
-  "Messages shaped 0 < 1 < 2 and 0 < 3, with 4 outside any thread.
+  "Messages structured 0 < 1 < 2 and 0 < 3, with 4 outside any thread.
 The fork matters: the damage a refused attach did showed on the second child of
 the root, not on the first.")
 

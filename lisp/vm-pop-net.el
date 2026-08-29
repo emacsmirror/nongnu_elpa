@@ -927,7 +927,7 @@ command asked to do something with what arrives."
     (not (vm-pop-net-busy-p folder))))
 
 (defun vm-pop-net-folder-retrieved ()
-  "What this POP folder already has, in `vm-pop-retrieved-messages\=' shape.
+  "What this POP folder already has, structured as `vm-pop-retrieved-messages\='.
 Its own messages as well as the list, since a message in the folder is one
 that must not be fetched again whether the list remembers it or not."
   (let ((popdrop (vm-popdrop-sans-password (vm-folder-pop-maildrop-spec)))

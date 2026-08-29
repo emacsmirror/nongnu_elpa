@@ -705,7 +705,7 @@ carries no other folder's messages."
     (should (buffer-live-p virt-b))))
 
 (ert-deftest vm-virtual-test-folder-alist-type-accepts-a-real-definition ()
-  "REGRESSION: the `:type' accepts the shape the documentation shows.
+  "REGRESSION: the `:type' accepts the structure the documentation shows.
 Issue #582.  A definition is a name followed by one or more clauses, and a
 clause is a folder list followed by one or more selectors.  The type described
 one clause of one selector, so Customize rejected the two-clause example in this

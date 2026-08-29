@@ -1286,7 +1286,7 @@ folder buffer from the process buffer as each response arrives, re-narrowing to
 a different message every time, and leaves point after the text it inserted --
 which is why `vm-settle-message-body\=' has to put point back before its
 `\\n\\n\=' search.  Several messages in one buffer, markers on all of them, and
-the narrowing moving between them is the shape README.headers-only described:
+the narrowing moving between them is what README.headers-only described:
 body appearing in the midst of headers.
 
 So this checks the whole folder, not the region a message's own markers claim.

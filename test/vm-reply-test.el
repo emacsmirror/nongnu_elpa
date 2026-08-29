@@ -325,7 +325,7 @@ number, platform and date after it, which is more than a header wants."
 (ert-deftest vm-reply-test-emacs-name-and-version-other-emacsen ()
   "The name and version are taken off the front of any of these strings.
 Includes the XEmacs form quoted on the issue, since VM still claims to support
-XEmacs and its `emacs-version' is a different shape."
+XEmacs and its `emacs-version' has a different form."
   (require 'vm)
   (dolist (case
            '(("GNU Emacs 30.2 (build 2, aarch64-apple-darwin24.6.0, NS appkit-2575.70)\n of 2025-09-25"

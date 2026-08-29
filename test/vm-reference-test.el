@@ -233,7 +233,7 @@ examples chosen to pass."
 (defconst vm-reference-test--not-commands
   '(;; a value for `vm-url-browser', called once VM is loaded, not typed
     vm-mouse-send-url-to-netscape
-    ;; named to show the shape of a name the reader is to invent
+    ;; named to show the form of a name the reader is to invent
     vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
   "Functions the manual names that no one invokes by name.
 Everything else the manual indexes and that is a command has to be reachable
@@ -348,7 +348,7 @@ new command in any other file has to carry a cookie."
   '(;; other packages, which VM does not require and a batch run has not loaded
     smtpmail-smtp-service smtpmail-stream-type
     w3m-force-redisplay w3m-goto-article-function w3m-pop-up-frames
-    ;; named to show the shape of a name the reader is to invent
+    ;; named to show the form of a name the reader is to invent
     vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
   "Symbols the manual indexes that are deliberately not VM's own.")
 
