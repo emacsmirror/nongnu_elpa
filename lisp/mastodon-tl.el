@@ -99,6 +99,7 @@
 (autoload 'mastodon-profile-show-user "mastodon-profile")
 (autoload 'mastodon-toot--own-toot-p "mastodon-toot")
 (autoload 'mastodon-inspect-profile-requests "mastodon-tl")
+(autoload 'mastodon-profile-open-statuses-tagged "mastodon-profile")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
