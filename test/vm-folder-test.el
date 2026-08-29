@@ -2571,8 +2571,13 @@ recorded in it."
       (vm-folder-test--cache dir "imap-cache-abcdef0123456789.mboxcl2")
       (vm-folder-test--cache dir "INBOX")
       (vm-folder-test--cache dir "imap-cache-nothexadecimal")
-      (should (equal (vm-cache-folders-in-the-older-format)
-                     (sort (list old old-pop) #'string-lessp))))))
+      ;; truenames, since that is how one directory reached two ways is
+      ;; recognised as one (#771)
+      (should (equal (car (vm-cache-folders-in-the-older-format))
+                     (sort (mapcar #'file-truename (list old old-pop))
+                           #'string-lessp)))
+      ;; and nothing was unreadable, so there is no fault to report
+      (should-not (cdr (vm-cache-folders-in-the-older-format))))))
 
 (ert-deftest vm-folder-test-converting-the-caches-names-and-counts-them ()
   "REGRESSION: `vm-convert-caches-to-mboxcl2' converts each older cache.
@@ -2692,6 +2697,95 @@ being worth opening when there are some."
       (should-not (get-buffer "*VM cache conversion*"))
       (should (cl-find-if (lambda (s) (string-match-p "1 cache of 1 converted" s))
                           said)))))
+
+(ert-deftest vm-folder-test-one-cache-reached-two-ways-is-one-cache ()
+  "REGRESSION: a directory configured twice under two names yields one cache.
+Issue #771.  `expand-file-name' does not resolve symbolic links, so a
+directory reached two ways contributed its caches twice: the first conversion
+renamed the file and the second was reported as a failure that had not
+happened.  /tmp is a symbolic link on macOS and a home directory is one on many
+managed systems, so this is ordinary rather than exotic."
+  (vm-folder-test-with-directory root
+    (let ((real (file-name-as-directory (expand-file-name "real" root)))
+          (link (expand-file-name "link" root)))
+      (make-directory real)
+      (make-symbolic-link "real" link)
+      (write-region vm-folder-test--uncounted-cache nil
+                    (expand-file-name "imap-cache-0123456789abcdef" real)
+                    nil 'quiet)
+      (let ((vm-imap-folder-cache-directory real)
+            (vm-pop-folder-cache-directory link)
+            (vm-folder-directory nil)
+            (process-environment (cons (concat "HOME=" root) process-environment)))
+        (should (equal (length (car (vm-cache-folders-in-the-older-format))) 1))
+        (let ((faults 'unset) (found nil) (converted nil))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                    ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                    ((symbol-function 'vm-inform) #'ignore)
+                    ((symbol-function 'vm-report-cache-conversion)
+                     (lambda (f c fs) (setq found f converted c faults fs))))
+            (vm-convert-caches-to-mboxcl2))
+          (should (equal found 1))
+          (should (equal converted 1))
+          (should-not faults))))))
+
+(ert-deftest vm-folder-test-a-directory-that-cannot-be-read-is-reported ()
+  "REGRESSION: one unreadable directory does not stop the others being searched.
+Issue #771.  `directory-files' raised out of the whole command before anything
+was converted, which is the half-done job with no account of it that the
+conversion collects its faults to avoid."
+  (vm-folder-test-with-directory root
+    (let ((open (file-name-as-directory (expand-file-name "open" root)))
+          (shut (file-name-as-directory (expand-file-name "shut" root))))
+      (make-directory open)
+      (make-directory shut)
+      (write-region vm-folder-test--uncounted-cache nil
+                    (expand-file-name "imap-cache-0123456789abcdef" open)
+                    nil 'quiet)
+      (set-file-modes shut #o000)
+      (unwind-protect
+          (let ((vm-imap-folder-cache-directory open)
+                (vm-pop-folder-cache-directory shut)
+                (vm-folder-directory nil)
+                (process-environment (cons (concat "HOME=" open) process-environment))
+                (report nil))
+            ;; the search says what it could not read rather than signalling
+            (should (equal (length (cdr (vm-cache-folders-in-the-older-format))) 1))
+            (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                      ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                      ((symbol-function 'vm-inform) #'ignore))
+              (vm-convert-caches-to-mboxcl2))
+            ;; the readable directory's cache was converted anyway
+            (should (file-exists-p
+                     (expand-file-name "imap-cache-0123456789abcdef.mboxcl2" open)))
+            ;; and the one that could not be read is named
+            (when (get-buffer "*VM cache conversion*")
+              (with-current-buffer "*VM cache conversion*"
+                (setq report (buffer-string)))
+              (kill-buffer "*VM cache conversion*"))
+            (should report)
+            (should (string-match-p "shut" report)))
+        (set-file-modes shut #o700)))))
+
+(ert-deftest vm-folder-test-an-unreadable-folder-says-so ()
+  "REGRESSION: a file that cannot be read or is gone says which.
+Issue #771.  Both came back \"has no folder type VM recognizes\", which sends
+the reader to look at the contents of a file they cannot open or that is not
+there at all."
+  (vm-folder-test-with-directory dir
+    (let ((gone (expand-file-name "not-here" dir))
+          (shut (expand-file-name "shut" dir))
+          (text-quoting-style 'grave))
+      (should (string-match-p "does not exist"
+                              (cadr (should-error
+                                     (vm-change-folder-type-of-file gone 'mboxcl2)))))
+      (write-region vm-folder-test--uncounted-cache nil shut nil 'quiet)
+      (set-file-modes shut #o000)
+      (unwind-protect
+          (should (string-match-p "cannot be read"
+                                  (cadr (should-error
+                                         (vm-change-folder-type-of-file shut 'mboxcl2)))))
+        (set-file-modes shut #o600)))))
 
 (defconst vm-folder-test--sound-mboxcl2-message
   (concat "From VM Thu May  7 06:22:17 2026\n"

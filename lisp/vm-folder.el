@@ -6334,6 +6334,15 @@ what states the type: sent.mboxcl2 converted to From_ is written as sent, and
 FILE is then offered for deletion.  Where the name does not change, the
 previous contents are kept in a backup file, named as Emacs would name one
 when saving a buffer."
+  ;; Before anything else, and said precisely: without these the type is read
+  ;; as nothing and the fault came back "has no folder type VM recognizes",
+  ;; which sends the reader to look at the contents of a file that is not
+  ;; there or that they cannot open (emacs-vm/vm#771).
+  (unless (file-exists-p file)
+    (error "%s does not exist" (abbreviate-file-name file)))
+  (unless (file-readable-p file)
+    (error "%s cannot be read; check its permissions"
+	   (abbreviate-file-name file)))
   (let ((buffer (vm-get-file-buffer file)))
     (when buffer
       (when (buffer-modified-p buffer)
@@ -6477,19 +6486,32 @@ two.
 
 The directories are the ones a cache name is built in:
 `vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
-`vm-folder-directory\=' and the home directory."
-  (let ((files nil))
+`vm-folder-directory\=' and the home directory.
+
+Answers (FILES . FAULTS), FAULTS pairing each directory that could not be
+listed with what went wrong.  Collected rather than raised, for the reason the
+conversion collects its own: one directory VM cannot read is no reason to
+search none of the others, and the reader is told which it was."
+  (let ((files nil)
+	(faults nil))
     (dolist (dir (vm-cache-folder-directories))
-      (setq files (nconc files (vm-cache-folders-in-directory dir))))
-    files))
+      (condition-case fault
+	  (setq files (nconc files (vm-cache-folders-in-directory dir)))
+	(file-error (push (cons dir (error-message-string fault)) faults))))
+    (cons files (nreverse faults))))
 
 (defun vm-cache-folder-directories ()
-  "The directories a cache file can have been created in, each of them once."
+  "The directories a cache file can have been created in, each of them once.
+Once by `file-truename\=', not by the name as configured: two of these being one
+directory reached two ways is ordinary -- /tmp is a symbolic link on macOS, and
+a home directory is one on many managed systems -- and it made the cache in it
+appear twice.  The second conversion then found the file already renamed and
+reported a failure that had not happened."
   (delete-dups
    (delq nil
 	 (mapcar (lambda (dir)
 		   (and dir (file-directory-p dir)
-			(file-name-as-directory (expand-file-name dir))))
+			(file-name-as-directory (file-truename dir))))
 		 (list vm-imap-folder-cache-directory
 		       vm-pop-folder-cache-directory
 		       vm-folder-directory
@@ -6585,9 +6607,15 @@ The caches are looked for where their names are built, which is
 `vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
 `vm-folder-directory\=' and the home directory."
   (interactive "P")
-  (let ((files (vm-cache-folders-in-the-older-format)))
-    (cond ((null files)
+  (let* ((search (vm-cache-folders-in-the-older-format))
+	 (files (car search))
+	 ;; A directory that could not be listed is a fault like any other and
+	 ;; is reported with them, rather than stopping the search of the rest.
+	 (unsearched (cdr search)))
+    (cond ((and (null files) (null unsearched))
 	   (vm-inform 1 "No cache is in the older format; each one names its type"))
+	  ((null files)
+	   (vm-report-cache-conversion 0 0 unsearched))
 	  ((not (or each
 		    (y-or-n-p (format "Convert %d cache%s to mboxcl2? "
 				      (length files)
@@ -6596,7 +6624,7 @@ The caches are looked for where their names are built, which is
 	  (t
 	   (let ((result (vm-convert-caches files each)))
 	     (vm-report-cache-conversion (length files) (car result)
-					 (cdr result)))))))
+					 (append unsearched (cdr result))))))))
 
 (defun vm-error-if-folder-not-read-through ()
   "Signal unless this folder buffer holds the whole of its folder.

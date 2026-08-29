@@ -1268,9 +1268,11 @@ cache on disk is the price of the safety net; delete the backups when you are
 satisfied.
 
 A cache that cannot be read is left exactly as it was, and the others are
-converted anyway.  Where anything could not be converted the faults are listed
-in a buffer, @file{*VM cache conversion*}, naming each cache and what stopped
-it; a run that converts everything says so in one line and opens nothing.
+converted anyway.  A directory that cannot be read is reported the same way and
+the rest are still searched.  Where anything could not be converted the faults
+are listed in a buffer, @file{*VM cache conversion*}, naming each cache or
+directory and what stopped it; a run that converts everything says so in one
+line and opens nothing.
 
 A cache you are reading cannot be converted.  Quit that folder with
 @code{vm-quit} and run the command again: converting the file under a live
