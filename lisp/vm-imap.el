@@ -1423,12 +1423,7 @@ Returns the process or nil if the session could not be created."
 	     ((equal auth "cram-md5")
 	      (if (not (vm-imap-auth-method 'CRAM-MD5))
 		  (error "CRAM-MD5 authentication unsupported by this server"))
-	      (let ((ipad (make-string 64 54))
-		    (opad (make-string 64 92))
-		    (command "AUTHENTICATE CRAM-MD5")
-		    (secret (concat
-			     pass
-			     (make-string (max 0 (- 64 (length pass))) 0)))
+	      (let ((command "AUTHENTICATE CRAM-MD5")
 		    response p challenge answer)
 		(vm-imap-send-command process command)
 		(setq response 
@@ -1441,15 +1436,10 @@ Returns the process or nil if the session could not be created."
 		      (t
 		       (vm-imap-protocol-error
 			"Don't understand AUTHENTICATE response")))
-		(setq answer
-		      (concat
-		       user " "
-		       (vm-md5-string
-			(concat
-			 (vm-xor-string secret opad)
-			 (vm-md5-raw-string 
-			  (concat
-			   (vm-xor-string secret ipad) challenge)))))
+		;; `vm-hmac-md5' rather than the pads and xors spelled out
+		;; here, which took the password as characters and so sent
+		;; the wrong digest for an accented one (emacs-vm/vm#772).
+		(setq answer (concat user " " (vm-hmac-md5 pass challenge))
 		      answer (vm-mime-base64-encode-string answer))
 		(vm-imap-send-command process answer nil t)
 		(unless (vm-imap-read-ok-response process)

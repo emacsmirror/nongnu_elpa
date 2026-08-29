@@ -115,6 +115,47 @@
       (setq i (1+ i)))
     result ))
 
+(defconst vm-hmac-md5-block-size 64
+  "The block size of MD5 in octets, which is the length HMAC pads a key to.
+RFC 2104 names it B.")
+
+;;;###autoload
+(defun vm-hmac-md5 (key data)
+  "The HMAC-MD5 of DATA under KEY, as 32 hex digits.  RFC 2104.
+
+KEY and DATA are taken as octets: a multibyte string is encoded to UTF-8
+first, since HMAC is defined over bytes and a character is not one.  Getting
+that wrong is not visible in the answer, only in the server rejecting it --
+CRAM-MD5 with an accented password computed a digest over character codes and
+the reader was told their password was incorrect (emacs-vm/vm#772).
+
+A key longer than the block size is hashed first, as RFC 2104 requires.
+Without that the padded key stayed longer than the pads and `vm-xor-string\='
+signalled \"strings not of equal length\", so a password over 64 characters
+raised an internal error rather than logging in."
+  (let* ((key (vm-string-as-octets key))
+	 (data (vm-string-as-octets data))
+	 (key (if (> (length key) vm-hmac-md5-block-size)
+		  (vm-md5-raw-string key)
+		key))
+	 (padded (concat key (make-string (- vm-hmac-md5-block-size
+					     (length key))
+					  0)))
+	 (ipad (make-string vm-hmac-md5-block-size ?\x36))
+	 (opad (make-string vm-hmac-md5-block-size ?\x5c)))
+    (vm-md5-string
+     (concat (vm-xor-string padded opad)
+	     (vm-md5-raw-string (concat (vm-xor-string padded ipad) data))))))
+
+(defun vm-string-as-octets (string)
+  "STRING as a unibyte string of the octets it stands for.
+A unibyte string is already those octets and is answered unchanged.  A
+multibyte one is encoded to UTF-8, which is what Emacs `md5\=' does with a
+multibyte string too, so the two agree."
+  (if (multibyte-string-p string)
+      (encode-coding-string string 'utf-8)
+    string))
+
 ;;;###autoload
 (defun vm-setup-ssh-tunnel (host port)
   (let (local-port process done)
