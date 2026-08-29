@@ -278,6 +278,13 @@ re-load mastodon.el, or restart Emacs."
   "A list of up to four tags for use with `mastodon-tl-followed-tags-timeline'."
   :type '(repeat string))
 
+(defcustom mastodon-tl--tags-groups nil
+  "A list containing lists of up to four tags each.
+You can load a tag timeline list with one of these by calling
+`mastodon-tl-tag-group-timeline'."
+  :group 'mastodon-tl
+  :type '(repeat (list string string string string)))
+
 (defcustom mastodon-tl--load-full-sized-images-in-emacs t
   "Whether to load full-sized images inside Emacs.
 Full-sized images are loaded when you hit return on or click on
@@ -3494,13 +3501,6 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
                      "Tags' timelines to view [TAB to view, comma to separate]: "
                      tags)))
     (mastodon-tl--show-tag-timeline prefix selection)))
-
-(defcustom mastodon-tl--tags-groups nil
-  "A list containing lists of up to four tags each.
-You can load a tag timeline list with one of these by calling
-`mastodon-tl-tag-group-timeline'."
-  :group 'mastodon-tl
-  :type '(repeat (list string string string string)))
 
 (defun mastodon-tl-tag-group-timeline (&optional prefix)
   "Load a timeline of a tag group from `mastodon-tl--tags-groups'.
