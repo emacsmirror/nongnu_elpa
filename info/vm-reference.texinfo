@@ -1420,11 +1420,16 @@ converts each of those and renames it, which is @code{vm-change-folder-type-of-f
 once per cache: the previous contents are kept in a backup file, and a cache
 that is already mboxcl2 in all but its name is only renamed.
 
-With a prefix argument it asks about each cache rather than about the lot.
+It asks once before starting, and then once per cache about deleting the copy
+left under the old name -- that one is a file on disk and a decision of its
+own, so it is asked rather than assumed either way.  With a prefix argument it
+asks about each cache before converting it as well.
 
-A cache being visited with unsaved changes cannot be converted and is reported;
-save it, or leave that folder, and run this again.  Nothing is refetched, and a
-cache that cannot be read is left exactly as it was.
+A cache being visited cannot be converted and is reported; quit that folder
+with @code{vm-quit=} and run this again.  Nothing is refetched, and a cache that
+cannot be read is left exactly as it was.  Where anything could not be
+converted the faults are listed in a buffer, since a run of them in the echo
+area cannot be read.
 
 The caches are looked for where their names are built, which is
 @code{vm-imap-folder-cache-directory=}, @code{vm-pop-folder-cache-directory=},
