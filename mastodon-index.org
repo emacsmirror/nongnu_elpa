@@ -194,6 +194,7 @@
 | SPC        | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |            | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
 |            | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
+| C-M-'      | mastodon-tl-tag-all-timeline                     | Load a timeline of all tags in `mastodon-tl--tags-groups'.                     |
 | C-'        | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
 | T          | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
 | S          | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
@@ -339,8 +340,10 @@
 | mastodon-active-user                               | Username of the active user.                                                 |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
+| mastodon-display-featured-tags-on-profiles         | Whether to display featured tags on user profiles.                           |
 | mastodon-group-notifications                       | Whether to use grouped notifications.                                        |
 | mastodon-images-in-notifs                          | Whether to display attached images in notifications.                         |
+| mastodon-inspect-profile-requests                  | Whether to profile requests info.                                            |
 | mastodon-instance-url                              | Base URL for the fediverse instance you want to be active.                   |
 | mastodon-media--avatar-height                      | Height of the user avatar images (if shown).                                 |
 | mastodon-media--enable-image-caching               | Whether images should be cached.                                             |
