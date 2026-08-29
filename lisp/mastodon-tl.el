@@ -2587,6 +2587,9 @@ call this function after it is set or use something else."
            'local)
           ((mastodon-tl--endpoint-str-= "timelines/public")
            'federated)
+          ;; tags all, must precede tag-timeline:
+          ((string-suffix-p "-tags-all*" (buffer-name))
+           'hashtags-all)
           ((mastodon-tl--endpoint-str-= "timelines/tag/" :prefix)
            'tag-timeline)
           ((mastodon-tl--endpoint-str-= "timelines/list/" :prefix)
@@ -2674,8 +2677,6 @@ call this function after it is set or use something else."
           ;; followed hashtags
           ((mastodon-tl--endpoint-str-= "followed_tags")
            'followed-hashtags)
-          ((string-suffix-p "-tags-all*" (buffer-name))
-           'hashtags-all)
           ;; collections:
           ((mastodon-tl--endpoint-str-= "collection" :prefix)
            'collection))))
