@@ -95,7 +95,6 @@ sync; otherwise Codex uses any live window showing the buffer."
 When nil (default), do not pass `--ask-for-approval' so that Codex's
 own `config.toml' policy decides.  Otherwise pass the chosen policy."
   :type '(choice (const :tag "Config decides (nil)" nil)
-                 (const :tag "untrusted" untrusted)
                  (const :tag "on-request" on-request)
                  (const :tag "never" never))
   :group 'codex-ide)
@@ -156,10 +155,15 @@ Escape hatch for flags not yet modeled by a defcustom."
   :interactive nil
   :lighter " Codex"
   (if codex-ide-mode
-      (add-hook 'kill-buffer-hook
-                #'codex-ide--cleanup-current-buffer-session nil t)
+      (progn
+        (add-hook 'kill-buffer-hook
+                  #'codex-ide--cleanup-current-buffer-session nil t)
+        (add-hook 'change-major-mode-hook
+                  #'codex-ide--cleanup-before-major-mode-change nil t))
     (remove-hook 'kill-buffer-hook
-                 #'codex-ide--cleanup-current-buffer-session t)))
+                 #'codex-ide--cleanup-current-buffer-session t)
+    (remove-hook 'change-major-mode-hook
+                 #'codex-ide--cleanup-before-major-mode-change t)))
 
 ;;; Helpers (pure / mostly pure)
 
@@ -173,8 +177,10 @@ Prefers the current project root; falls back to `default-directory'."
 
 (defun codex-ide--default-buffer-name (directory)
   "Return the buffer name for DIRECTORY, as `*codex[<basename>]*'."
-  (format "*codex[%s]*"
-          (file-name-nondirectory (directory-file-name directory))))
+  (let* ((root (file-name-as-directory (expand-file-name directory)))
+         (name (file-name-nondirectory (directory-file-name root)))
+         (identity (substring (secure-hash 'sha1 root) 0 8)))
+    (format "*codex[%s:%s]*" name identity)))
 
 (defun codex-ide--indexed-buffer-name (base-name session-id)
   "Return BASE-NAME indexed for SESSION-ID."
@@ -783,8 +789,13 @@ Used when a session is already running."
    (t
     (codex-ide--cleanup-target-from-buffer (current-buffer)))))
 
-(defun codex-ide--cleanup-on-exit (&optional directory session-id &rest _ignored)
+(defun codex-ide--cleanup-on-exit
+    (&optional directory session-id expected-buffer expected-process
+               preserve-buffer &rest _ignored)
   "Clean up the Codex session state for DIRECTORY and SESSION-ID.
+When EXPECTED-BUFFER or EXPECTED-PROCESS is non-nil, clean up only while
+the registered session still owns those exact resources.  PRESERVE-BUFFER
+leaves the buffer alive after stopping its process and removing its record.
 Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   (when-let* ((target (codex-ide--cleanup-target directory session-id))
               (directory (car target))
@@ -794,26 +805,41 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
              (session (codex-ide--session-by-id directory session-id))
              (buffer (or (plist-get session :buffer)
                          (get-buffer
-                          (codex-ide--get-buffer-name directory session-id)))))
-        (codex-ide--remove-session directory session-id)
-        (when (buffer-live-p buffer)
-          (let ((kill-buffer-hook nil)
-                (kill-buffer-query-functions nil))
-            (kill-buffer buffer)))
-        (codex-ide-debug "Cleaned up Codex session %s for %s"
-                         session-id
-                         (file-name-nondirectory (directory-file-name directory)))))))
+                          (codex-ide--get-buffer-name directory session-id))))
+             (process (plist-get session :process)))
+        (when (and (or (not expected-buffer) (eq buffer expected-buffer))
+                   (or (not expected-process) (eq process expected-process)))
+          (codex-ide--remove-session directory session-id)
+          (when (process-live-p process)
+            (delete-process process))
+          (when (and (not preserve-buffer) (buffer-live-p buffer))
+            (let ((kill-buffer-hook nil)
+                  (kill-buffer-query-functions nil))
+              (kill-buffer buffer)))
+          (codex-ide-debug "Cleaned up Codex session %s for %s"
+                           session-id
+                           (file-name-nondirectory
+                            (directory-file-name directory))))))))
 
 (defun codex-ide--cleanup-current-buffer-session ()
   "Clean up the Codex session owned by the current buffer."
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
-     codex-ide--session-root codex-ide--session-id)))
+     codex-ide--session-root codex-ide--session-id
+     (current-buffer) (get-buffer-process (current-buffer)))))
 
-(defun codex-ide--make-process-sentinel (directory session-id &optional original)
+(defun codex-ide--cleanup-before-major-mode-change ()
+  "Stop the current Codex session before replacing its major mode."
+  (when (and codex-ide--session-root codex-ide--session-id)
+    (codex-ide--cleanup-on-exit
+     codex-ide--session-root codex-ide--session-id
+     (current-buffer) (get-buffer-process (current-buffer)) t)))
+
+(defun codex-ide--make-process-sentinel
+    (directory session-id &optional original buffer)
   "Return the process sentinel for DIRECTORY and SESSION-ID.
 ORIGINAL is the backend sentinel being replaced.  It runs first so the
-terminal backend can finish its own teardown before Codex kills the buffer."
+terminal backend can finish its own teardown before Codex kills BUFFER."
   (lambda (proc event)
     (codex-ide-debug "Codex process event: %s" (string-trim event))
     (when (functionp original)
@@ -826,7 +852,9 @@ terminal backend can finish its own teardown before Codex kills the buffer."
     (when (string-match-p
            (rx (or "finished" "exited" "killed" "terminated"))
            event)
-      (codex-ide--cleanup-on-exit directory session-id))))
+      (codex-ide--cleanup-on-exit
+       directory session-id
+       (or buffer (and (processp proc) (process-buffer proc))) proc))))
 
 (defun codex-ide--make-env ()
   "Return the list of \"KEY=VALUE\" env vars for a Codex session."
@@ -844,7 +872,7 @@ terminal backend can finish its own teardown before Codex kills the buffer."
     (unless (process-get process 'codex-ide--sentinel-installed)
       (set-process-sentinel
        process (codex-ide--make-process-sentinel
-                directory session-id (process-sentinel process)))
+                directory session-id (process-sentinel process) buffer))
       (process-put process 'codex-ide--sentinel-installed t))
     (with-current-buffer buffer
       (setq-local codex-ide--session-root directory)
@@ -914,7 +942,12 @@ session exists, toggle its window unless NEW-SESSION is non-nil."
           (unless (and buffer process)
             (error "Failed to create Codex session"))
           (codex-ide--remember-session session)
-          (codex-ide--setup-session session)
+          (condition-case err
+              (codex-ide--setup-session session)
+            (error
+             (codex-ide--cleanup-on-exit working-dir emacs-session-id
+                                         buffer process)
+             (signal (car err) (cdr err))))
           (codex-ide-log "Codex started in %s"
                          (file-name-nondirectory
                           (directory-file-name working-dir))))))))

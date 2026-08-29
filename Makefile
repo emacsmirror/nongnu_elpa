@@ -16,6 +16,7 @@ endif
 
 EMACS ?= emacs
 EMACS_CMD ?= $(EMACS)
+EMACSCLIENT ?= emacsclient
 KEYMAP_POPUP ?=
 
 SRCS = lisp/codex-ide-debug.el lisp/codex-ide-term-eat.el \
@@ -36,7 +37,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile compile-tests do-compile-tests test do-test lint do-lint native-comp do-native-comp dev do-dev check pre-commit pre-handoff-check load do-load clean
+.PHONY: all compile do-compile compile-tests do-compile-tests test do-test pty-test lint do-lint native-comp do-native-comp dev do-dev check pre-commit pre-handoff-check load do-load clean
 
 all: compile
 
@@ -61,6 +62,9 @@ do-compile-tests:
 
 test:
 	@$(ENV_MAKE) clean do-compile-tests do-test
+
+pty-test:
+	@env -u CODEX_IDE_SKIP_PTY_TESTS $(ENV_MAKE) clean do-compile-tests do-test
 
 do-test:
 	@for f in $(TESTS); do \
@@ -117,25 +121,25 @@ load:
 	@$(ENV_MAKE) do-load
 
 do-load: clean
-	@emacsclient --eval "(progn \
+	@$(EMACSCLIENT) --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
 	  (mapatoms (lambda (s) \
 	    (when (and (string-prefix-p \"codex-ide-\" (symbol-name s)) \
 	               (boundp s) (keymapp (symbol-value s))) \
 	      (makunbound s)))))" > /dev/null
 	@for f in $(SRCS); do \
-	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m $$f\n"; \
+	  $(EMACSCLIENT) --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || { \
+	    printf "\033[31mFAIL\033[0m $$f\n"; exit 1; }; \
 	done
-	@emacsclient --eval "(dolist (buf (buffer-list)) \
+	@$(EMACSCLIENT) --eval "(dolist (buf (buffer-list)) \
 	  (with-current-buffer buf \
 	    (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
 	      (when (and (string-prefix-p \"codex-ide-\" (symbol-name major-mode)) \
 	                 map (boundp map) (keymapp (symbol-value map))) \
 	        (use-local-map (symbol-value map))))))" > /dev/null
-	@emacsclient --eval "(when (fboundp 'codex-ide--recover-live-sessions) \
+	@$(EMACSCLIENT) --eval "(when (fboundp 'codex-ide--recover-live-sessions) \
 	  (codex-ide--recover-live-sessions))" > /dev/null
-	@emacsclient --eval "(when (and (boundp 'codex-ide-context-mode) \
+	@$(EMACSCLIENT) --eval "(when (and (boundp 'codex-ide-context-mode) \
 	                                codex-ide-context-mode \
 	                                (fboundp 'codex-ide-context-start)) \
 	  (codex-ide-context-start))" > /dev/null

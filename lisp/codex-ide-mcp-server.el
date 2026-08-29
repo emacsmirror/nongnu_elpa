@@ -60,6 +60,7 @@
   "Return HTTP reason phrase for STATUS."
   (pcase status
     (200 "OK")
+    (202 "Accepted")
     (204 "No Content")
     (400 "Bad Request")
     (403 "Forbidden")
@@ -167,7 +168,12 @@
     '(403 . "Origin must be loopback"))
    ((not (codex-ide-mcp--json-content-type-p
           (codex-ide-mcp--header request "content-type")))
-    '(415 . "Content-Type must be application/json"))))
+    '(415 . "Content-Type must be application/json"))
+   ((and-let* ((version (codex-ide-mcp--header
+                         request "mcp-protocol-version")))
+      (unless (equal version codex-ide-mcp--protocol-version)
+        (cons 400 (format "Unsupported MCP-Protocol-Version: %s"
+                          version)))))))
 
 (defun codex-ide-mcp--content-length (request)
   "Return non-negative Content-Length for REQUEST, or nil when invalid.
@@ -246,9 +252,13 @@ that limit return the symbol `too-large'."
           (let* ((message (codex-ide-mcp--json-read (plist-get request :body)))
                  (response (with-current-buffer (codex-ide-mcp--selected-buffer)
                              (codex-ide-mcp--handle-message message))))
-            (if response
-                (codex-ide-mcp--send-json proc 200 response)
-              (codex-ide-mcp--send-json proc 204 nil)))
+            (cond
+             ((eq response 'accepted)
+              (codex-ide-mcp--send-json proc 202 nil))
+             (response
+              (codex-ide-mcp--send-json proc 200 response))
+             (t
+              (codex-ide-mcp--send-json proc 204 nil))))
         (error
          (codex-ide-mcp--send-json
           proc 400 (codex-ide-mcp--make-error-response
@@ -257,9 +267,23 @@ that limit return the symbol `too-large'."
 (defun codex-ide-mcp--client-state (proc)
   "Return accumulated state for client PROC, creating it if needed."
   (or (gethash proc codex-ide-mcp--clients)
-      (let ((state (list :pending "")))
-        (puthash proc state codex-ide-mcp--clients)
-        state)))
+      (if (>= (hash-table-count codex-ide-mcp--clients)
+              codex-ide-mcp-max-clients)
+          (progn
+            (ignore-errors (delete-process proc))
+            (user-error "Codex MCP client limit reached"))
+        (let ((state (list :pending "")))
+          (puthash proc state codex-ide-mcp--clients)
+          state))))
+
+(defun codex-ide-mcp--accept-client (_server client _message)
+  "Admit CLIENT immediately, or close it when the client cap is full."
+  (set-process-query-on-exit-flag client nil)
+  (set-process-coding-system client 'binary 'binary)
+  (if (>= (hash-table-count codex-ide-mcp--clients)
+          codex-ide-mcp-max-clients)
+      (ignore-errors (delete-process client))
+    (puthash client (list :pending "") codex-ide-mcp--clients)))
 
 (defun codex-ide-mcp--filter (proc string)
   "Process filter for MCP HTTP connection PROC receiving STRING."
@@ -326,12 +350,22 @@ that limit return the symbol `too-large'."
                  :server t
                  :noquery t
                  :filter #'codex-ide-mcp--filter
-                 :sentinel #'codex-ide-mcp--sentinel)))
-    (set-process-coding-system server 'binary 'binary)
-    (setq codex-ide-mcp--server server
-          codex-ide-mcp--port (codex-ide-mcp--contact-port server))
-    (codex-ide-debug "Codex MCP listening on %s" (codex-ide-mcp--url))
-    server))
+                 :sentinel #'codex-ide-mcp--sentinel
+                 :log #'codex-ide-mcp--accept-client)))
+    (condition-case err
+        (let ((port (progn
+                      (set-process-coding-system server 'binary 'binary)
+                      (codex-ide-mcp--contact-port server))))
+          (setq codex-ide-mcp--server server
+                codex-ide-mcp--port port)
+          (codex-ide-debug "Codex MCP listening on %s"
+                           (codex-ide-mcp--url))
+          server)
+      (error
+       (ignore-errors (delete-process server))
+       (setq codex-ide-mcp--server nil
+             codex-ide-mcp--port nil)
+       (signal (car err) (cdr err))))))
 
 (defun codex-ide-mcp--stop-server ()
   "Stop the local MCP HTTP server and clear harness job state."

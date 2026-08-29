@@ -59,9 +59,14 @@ prefer `$CODEX_HOME/ipc/ipc.sock'.  The directory is created with mode
   :type 'directory
   :group 'codex-ide)
 
-(defcustom codex-ide-context-max-frame-size (* 256 1024 1024)
+(defcustom codex-ide-context-max-frame-size (* 16 1024 1024)
   "Maximum accepted IPC frame size in bytes.
 Frames larger than this are rejected before parsing."
+  :type 'integer
+  :group 'codex-ide)
+
+(defcustom codex-ide-context-max-clients 16
+  "Maximum simultaneous IDE context client connections."
   :type 'integer
   :group 'codex-ide)
 
@@ -533,7 +538,8 @@ cannot be secured or another live provider owns the socket."
                      :noquery t
                      :coding 'binary
                      :filter #'codex-ide-context--filter
-                     :sentinel #'codex-ide-context--sentinel)))
+                     :sentinel #'codex-ide-context--sentinel
+                     :log #'codex-ide-context--accept-client)))
         (setq codex-ide-context--server server
               codex-ide-context--owned-socket-path path
               codex-ide-context--owned-socket-identity
@@ -575,10 +581,25 @@ cannot be secured or another live provider owns the socket."
   "Return the accumulator plist for client PROC, creating it if needed."
   (set-process-coding-system proc 'binary 'binary)
   (or (gethash proc codex-ide-context--clients)
-      (let ((state (list :pending (unibyte-string)
-                         :length nil)))
-        (puthash proc state codex-ide-context--clients)
-        state)))
+      (if (>= (hash-table-count codex-ide-context--clients)
+              codex-ide-context-max-clients)
+          (progn
+            (ignore-errors (delete-process proc))
+            (user-error "Codex IDE context client limit reached"))
+        (let ((state (list :pending (unibyte-string)
+                           :length nil)))
+          (puthash proc state codex-ide-context--clients)
+          state))))
+
+(defun codex-ide-context--accept-client (_server client _message)
+  "Admit CLIENT immediately, or close it when the client cap is full."
+  (set-process-query-on-exit-flag client nil)
+  (set-process-coding-system client 'binary 'binary)
+  (if (>= (hash-table-count codex-ide-context--clients)
+          codex-ide-context-max-clients)
+      (ignore-errors (delete-process client))
+    (puthash client (list :pending (unibyte-string) :length nil)
+             codex-ide-context--clients)))
 
 (defun codex-ide-context--parse-frames (pending length)
   "Extract complete frames from a connection accumulator.

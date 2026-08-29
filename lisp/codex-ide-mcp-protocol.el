@@ -90,7 +90,8 @@
   (list (cons "tools"
               (vconcat
                (mapcar #'codex-ide-mcp--tool->mcp
-                       codex-ide-mcp--tools)))))
+                       (cl-remove-if-not #'codex-ide-mcp--tool-enabled-p
+                                         codex-ide-mcp--tools))))))
 
 (defun codex-ide-mcp--handle-tools-call (params)
   "Call an Emacs MCP tool described by PARAMS."
@@ -114,23 +115,49 @@
     ("tools/call" (codex-ide-mcp--handle-tools-call params))
     (_ (user-error "Unsupported MCP method: %s" method))))
 
+(defun codex-ide-mcp--valid-id-p (id)
+  "Return non-nil when ID is a supported JSON-RPC identifier."
+  (or (stringp id) (numberp id)))
+
+(defun codex-ide-mcp--message-kind (message)
+  "Return the JSON-RPC kind of MESSAGE, or nil when malformed."
+  (when (equal (codex-ide-mcp--object-get message "jsonrpc") "2.0")
+    (let ((has-id (codex-ide-mcp--object-has-key-p message "id"))
+          (id (codex-ide-mcp--object-get message "id"))
+          (method (codex-ide-mcp--object-get message "method"))
+          (has-result (codex-ide-mcp--object-has-key-p message "result"))
+          (has-error (codex-ide-mcp--object-has-key-p message "error")))
+      (cond
+       ((and has-id (codex-ide-mcp--valid-id-p id) (stringp method)
+             (not has-result) (not has-error))
+        'request)
+       ((and (not has-id) (stringp method) (not has-result) (not has-error))
+        'notification)
+       ((and has-id (codex-ide-mcp--valid-id-p id) (not method)
+             (not (eq has-result has-error)))
+        'response)))))
+
 (defun codex-ide-mcp--handle-message (message)
   "Handle decoded JSON-RPC MESSAGE.
-Returns a response alist, or nil for notifications."
+Returns a response alist, or `accepted' for notifications and responses."
   (let ((id (codex-ide-mcp--object-get message "id"))
         (method (codex-ide-mcp--object-get message "method"))
         (params (codex-ide-mcp--object-get message "params")))
-    (if (not (codex-ide-mcp--object-has-key-p message "id"))
-        nil
-      (condition-case err
-          (codex-ide-mcp--make-response
-           id (codex-ide-mcp--dispatch method params))
-        (user-error
-         (codex-ide-mcp--make-error-response
-          id -32601 (error-message-string err)))
-        (error
-         (codex-ide-mcp--make-error-response
-          id -32603 (error-message-string err)))))))
+    (pcase (codex-ide-mcp--message-kind message)
+      ((or 'notification 'response) 'accepted)
+      ('request
+       (condition-case err
+           (codex-ide-mcp--make-response
+            id (codex-ide-mcp--dispatch method params))
+         (user-error
+          (codex-ide-mcp--make-error-response
+           id -32601 (error-message-string err)))
+         (error
+          (codex-ide-mcp--make-error-response
+           id -32603 (error-message-string err)))))
+      (_ (codex-ide-mcp--make-error-response
+          (and (codex-ide-mcp--valid-id-p id) id)
+          -32600 "Invalid Request")))))
 
 (provide 'codex-ide-mcp-protocol)
 

@@ -55,6 +55,16 @@ Also bounds retained incomplete request pending data per client."
   :type 'integer
   :group 'codex-ide)
 
+(defcustom codex-ide-mcp-dangerous-tools-enabled nil
+  "When non-nil, expose arbitrary Elisp, editing, and shell-job tools."
+  :type 'boolean
+  :group 'codex-ide)
+
+(defcustom codex-ide-mcp-max-clients 16
+  "Maximum simultaneous MCP client connections."
+  :type 'integer
+  :group 'codex-ide)
+
 ;;; Constants
 
 (defconst codex-ide-mcp--server-name "emacs_tools"

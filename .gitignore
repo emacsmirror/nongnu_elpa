@@ -4,4 +4,6 @@
 /.direnv/
 /local.mk
 /AGENTS.local.md
-.*
+/.claude/
+/.codex/
+/.hermes/

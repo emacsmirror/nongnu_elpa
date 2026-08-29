@@ -669,18 +669,19 @@ region, where the scrollback-browsing rule alone would strand it."
        (should (= (point) (eat-term-display-cursor eat-terminal)))))))
 
 (ert-deftest codex-ide-default-buffer-name ()
-  "Buffer name follows the `*codex[<basename>]*' shape."
-  (should (equal (codex-ide--default-buffer-name "/tmp/foo")
-                 "*codex[foo]*"))
+  "Buffer name includes the basename and stable root identity."
+  (should (string-match-p
+           (rx string-start "*codex[foo:" (= 8 hex-digit) "]*" string-end)
+           (codex-ide--default-buffer-name "/tmp/foo")))
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
-                 "*codex[foo]*")))
+                 (codex-ide--default-buffer-name "/tmp/foo"))))
 
 (ert-deftest codex-ide-indexed-buffer-name ()
   "Additional same-project sessions get indexed buffer names."
-  (should (equal (codex-ide--get-buffer-name "/tmp/foo" 1)
-                 "*codex[foo]*"))
-  (should (equal (codex-ide--get-buffer-name "/tmp/foo" 2)
-                 "*codex[foo]<2>*")))
+  (let ((base (codex-ide--get-buffer-name "/tmp/foo" 1)))
+    (should (equal base (codex-ide--default-buffer-name "/tmp/foo")))
+    (should (equal (codex-ide--get-buffer-name "/tmp/foo" 2)
+                   (concat (substring base 0 -1) "<2>*")))))
 
 (ert-deftest codex-ide-display-buffer-function-default ()
   "Codex pops the terminal buffer to another window by default."
@@ -1964,7 +1965,7 @@ region, where the scrollback-browsing rule alone would strand it."
                   (setq chained (list proc event))))
                'fake-proc "finished\n"))
     (should (equal chained '(fake-proc "finished\n")))
-    (should (equal cleaned '("/tmp/root" 1)))))
+    (should (equal cleaned '("/tmp/root" 1 nil fake-proc)))))
 
 (ert-deftest codex-ide-make-process-sentinel-chains-on-non-exit-events ()
   "Non-exit events reach the chained sentinel without triggering cleanup."
@@ -1991,7 +1992,7 @@ region, where the scrollback-browsing rule alone would strand it."
                 (lambda (_proc _event)
                   (error "Boom")))
                'fake-proc "killed\n"))
-    (should (equal cleaned '("/tmp/root" 1)))))
+    (should (equal cleaned '("/tmp/root" 1 nil fake-proc)))))
 
 (ert-deftest codex-ide-setup-session-enables-mode ()
   "Session setup enables `codex-ide-mode' with the cleanup hook."
@@ -2260,6 +2261,18 @@ region, where the scrollback-browsing rule alone would strand it."
                      codex-ide-menu--save-config))
     (should (codex-ide-test--command-bound-p codex-ide-config-map command))))
 
+(ert-deftest codex-ide-menu-approval-policies-match-current-cli ()
+  "Approval picker offers only policies accepted by current Codex."
+  (let (offered)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _)
+                 (setq offered collection)
+                 "nil"))
+              ((symbol-function 'codex-ide-log)
+               (lambda (&rest _) nil)))
+      (call-interactively #'codex-ide-menu--set-approval))
+    (should (equal offered '("nil" "on-request" "never")))))
+
 (ert-deftest codex-ide-menu-mcp-commands ()
   "MCP menu exposes start/stop/status/install commands."
   (dolist (command '(codex-ide-mcp-start
@@ -2305,6 +2318,93 @@ region, where the scrollback-browsing rule alone would strand it."
       (should (string-match-p "ON" (funcall desc-fn))))
     (let ((codex-ide-no-alt-screen nil))
       (should (string-match-p "OFF" (funcall desc-fn))))))
+
+(ert-deftest codex-ide-default-buffer-name-distinguishes-equal-basenames ()
+  "Default names distinguish project roots with the same basename."
+  (let* ((parent-a (make-temp-file "codex-root-a-" t))
+         (parent-b (make-temp-file "codex-root-b-" t))
+         (root-a (file-name-as-directory (expand-file-name "same" parent-a)))
+         (root-b (file-name-as-directory (expand-file-name "same" parent-b))))
+    (unwind-protect
+        (progn
+          (make-directory root-a)
+          (make-directory root-b)
+          (should-not (equal (codex-ide--get-buffer-name root-a)
+                             (codex-ide--get-buffer-name root-b))))
+      (delete-directory parent-a t)
+      (delete-directory parent-b t))))
+
+(ert-deftest codex-ide-stale-sentinel-preserves-replacement-session ()
+  "An old process sentinel cannot clean up a replacement owner."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-stale-sentinel-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let* ((old (car sessions))
+                  (old-process (plist-get old :process))
+                  stale replacement)
+             (cl-letf (((symbol-function 'codex-ide-term--configure-buffer)
+                        (lambda () nil)))
+               (codex-ide--setup-session old))
+             (setq stale (process-sentinel old-process))
+             (codex-ide--cleanup-on-exit root 1)
+             (setq replacement (codex-ide-test--make-session root 1))
+             (codex-ide-test--store-session replacement)
+             (unwind-protect
+                 (progn
+                   (funcall stale old-process "finished\n")
+                   (should (buffer-live-p (plist-get replacement :buffer)))
+                   (should (eq (codex-ide--session-by-id root 1) replacement)))
+               (codex-ide-test--kill-session replacement)))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-start-session-rolls-back-setup-failure ()
+  "Failed terminal setup leaves no live or registered partial session."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-setup-failure-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         session)
+    (unwind-protect
+        (cl-letf (((symbol-function 'codex-ide--ensure-cli) (lambda () t))
+                  ((symbol-function 'codex-ide--get-working-directory)
+                   (lambda () root))
+                  ((symbol-function 'codex-ide--create-session)
+                   (lambda (&rest _)
+                     (setq session (codex-ide-test--make-session root 1))))
+                  ((symbol-function 'codex-ide-term--configure-buffer)
+                   (lambda () (error "configure failed")))
+                  ((symbol-function 'codex-ide-context-record-source-buffer)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'codex-ide--maybe-ensure-context-server)
+                   (lambda () nil)))
+          (should-error (codex-ide--start-session) :type 'error)
+          (should-not (process-live-p (plist-get session :process)))
+          (should-not (buffer-live-p (plist-get session :buffer)))
+          (should-not (codex-ide--session-by-id root 1)))
+      (when session (codex-ide-test--kill-session session))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-major-mode-change-cleans-session ()
+  "Changing major mode tears down the exact terminal session."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-major-mode-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let* ((session (car sessions))
+                  (buffer (plist-get session :buffer))
+                  (process (plist-get session :process)))
+             (cl-letf (((symbol-function 'codex-ide-term--configure-buffer)
+                        (lambda () nil)))
+               (codex-ide--setup-session session))
+             (with-current-buffer buffer (fundamental-mode))
+             (should-not (process-live-p process))
+             (should-not (codex-ide--session-by-id root 1)))))
+      (delete-directory root t))))
 
 (ert-deftest codex-ide-setup-session-sentinel-idempotent ()
   "Repeated setup installs one process sentinel cleanup path."

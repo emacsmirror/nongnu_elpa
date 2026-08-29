@@ -44,6 +44,7 @@
     codex-ide-config-overrides
     codex-ide-debug
     codex-ide-mcp-enabled
+    codex-ide-mcp-dangerous-tools-enabled
     codex-ide-mcp-host
     codex-ide-mcp-port
     codex-ide-context-auto-start)
@@ -62,7 +63,7 @@
   (interactive
    (list (intern (completing-read
                   "Approval policy: "
-                  '("nil" "untrusted" "on-request" "never")
+                  '("nil" "on-request" "never")
                   nil t nil nil
                   (if codex-ide-ask-for-approval
                       (symbol-name codex-ide-ask-for-approval)
@@ -97,7 +98,7 @@
   "Save the documented configuration symbols to the custom file.
 Persists `codex-ide-menu--saved-config-symbols' only: CLI path, terminal
 backend, display function, approval, no-alt-screen, extra args, config
-overrides, debug, MCP enable/host/port, and context auto-start."
+overrides, debug, MCP enable/dangerous-tools/host/port, and context auto-start."
   (interactive)
   (mapc (lambda (symbol)
           (customize-save-variable symbol (symbol-value symbol)))

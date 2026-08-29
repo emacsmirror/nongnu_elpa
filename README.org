@@ -38,8 +38,9 @@
 + When =codex-ide-mcp-enabled= is non-nil (default), session start
   registers a transient local MCP URL via Codex =-c= overrides.
 + The bridge can evaluate Elisp, edit buffers, and run shell commands. It
-  only accepts loopback bind addresses; disable it when those tools are not
-  needed.
+  only accepts loopback bind addresses.  These dangerous tools are hidden by
+  default; enable them explicitly with
+  =(setq codex-ide-mcp-dangerous-tools-enabled t)=.
 + Commands: =codex-ide-mcp-start=, =codex-ide-mcp-stop=,
   =codex-ide-mcp-status=, =codex-ide-mcp-install-codex-config=.
 + Default port is ephemeral (=codex-ide-mcp-port= 0). Persistent Codex
@@ -55,13 +56,14 @@
 | =codex-ide-cli-extra-args= | Extra CLI args |
 | =codex-ide-no-alt-screen= | Inline TUI mode |
 | =codex-ide-mcp-enabled= | Auto-register local MCP bridge |
+| =codex-ide-mcp-dangerous-tools-enabled= | Expose eval/edit/shell tools |
 | =codex-ide-mcp-port= | 0 = ephemeral port |
 | =codex-ide-context-auto-start= | Auto-start context IPC |
 | =codex-ide-debug= | Debug logging |
 
 Menu *Save configuration* persists the documented symbol set only
 (CLI/terminal/display/approval/no-alt-screen/extra-args/config-overrides/debug/
-MCP host-port-enable/context-auto-start).
+MCP enable-dangerous-tools-host-port/context-auto-start).
 
 ** Optional vterm backend
 Install vterm separately, then select it for new sessions:
@@ -79,7 +81,15 @@ not alter already running sessions.
 See [[file:NEWS.org][NEWS.org]] for release notes.
 
 ** Installation
-+ Using =:vc=
++ Emacs 29.1 using =package-vc-install=
+#+begin_src emacs-lisp
+(unless (package-installed-p 'codex-ide)
+  (package-vc-install
+   '(codex-ide :url "https://git.thanosapollo.org/emacs-codex-ide"
+               :lisp-dir "lisp")))
+#+end_src
+
++ Emacs 30 or newer using =use-package :vc=
 #+begin_src emacs-lisp
 (use-package codex-ide
   :vc (:url "https://git.thanosapollo.org/emacs-codex-ide"

@@ -828,6 +828,57 @@
          (should codex-ide-context--owned-socket-identity)
          (should (= created 1)))))))
 
+(ert-deftest codex-ide-context-client-limit-rejects-new-connection ()
+  "A full context client table rejects and closes a new connection."
+  (let ((codex-ide-context-max-clients 1)
+        (codex-ide-context--clients (make-hash-table :test 'eq))
+        deleted)
+    (puthash 'existing '(:pending "" :length nil)
+             codex-ide-context--clients)
+    (cl-letf (((symbol-function 'set-process-coding-system)
+               (lambda (&rest _) nil))
+              ((symbol-function 'delete-process)
+               (lambda (proc) (setq deleted proc))))
+      (should-error (codex-ide-context--client-state 'new)
+                    :type 'user-error)
+      (should (eq deleted 'new))
+      (should (= (hash-table-count codex-ide-context--clients) 1)))))
+
+(ert-deftest codex-ide-context-client-limit-covers-idle-connections ()
+  "Idle Unix clients are admitted, capped, and closed by server stop."
+  (codex-ide-context-test--call-with-socket-path
+   (lambda (directory _path)
+     (let ((codex-ide-context-max-clients 1)
+           (codex-ide-context-socket-directory directory)
+           (codex-ide-context--server nil)
+           (codex-ide-context--owned-socket-path nil)
+           (codex-ide-context--owned-socket-identity nil)
+           (codex-ide-context--clients (make-hash-table :test 'eq))
+           outgoing admitted)
+       (unwind-protect
+           (progn
+             (codex-ide-context--start-server)
+             (let ((path (codex-ide-context--socket-path)))
+               (dotimes (index 2)
+                 (push (make-network-process
+                        :name (format "codex-ide-context-idle-%d" index)
+                        :family 'local :service path :noquery t :coding 'binary)
+                       outgoing)))
+             (let ((deadline (+ (float-time) 2)))
+               (while (and (< (float-time) deadline)
+                           (< (hash-table-count
+                               codex-ide-context--clients) 1))
+                 (accept-process-output nil 0.02)))
+             (should (= (hash-table-count codex-ide-context--clients) 1))
+             (maphash (lambda (proc _state) (push proc admitted))
+                      codex-ide-context--clients)
+             (codex-ide-context--stop-server)
+             (should (cl-every (lambda (proc) (not (process-live-p proc)))
+                               admitted)))
+         (codex-ide-context--stop-server)
+         (dolist (proc outgoing)
+           (when (process-live-p proc) (delete-process proc))))))))
+
 (ert-deftest codex-ide-context-stop-server-idempotent-cleans-clients ()
   "Stopping deletes live clients, clears state, and tolerates repeats."
   (let* ((path "/tmp/codex-ipc/ipc-test.sock")

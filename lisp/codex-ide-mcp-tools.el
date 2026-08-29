@@ -572,8 +572,12 @@ The `action' field is `references' or `apropos'."
     (user-error "Column must be a non-negative integer"))
   (save-excursion
     (goto-char (point-min))
-    (forward-line (1- line))
-    (move-to-column (or column 0))
+    (unless (zerop (forward-line (1- line)))
+      (user-error "Line out of range: %s" line))
+    (let ((target (or column 0)))
+      (move-to-column target)
+      (unless (= (current-column) target)
+        (user-error "Column out of range on line %s: %s" line target)))
     (point)))
 
 (defun codex-ide-harness--position-from-args
@@ -846,6 +850,14 @@ When OUTPUT is non-nil, include output data."
   (let ((command (codex-ide-mcp--object-get args "command")))
     (unless (codex-ide-harness--non-empty-string-p command)
       (user-error "Job start requires command"))
+    (let ((live 0))
+      (maphash (lambda (_id job)
+                 (unless (codex-ide-harness--job-terminal-p job)
+                   (setq live (1+ live))))
+               codex-ide-harness--jobs)
+      (when (>= live codex-ide-harness-job-limit)
+        (user-error "Harness live job limit reached: %d"
+                    codex-ide-harness-job-limit)))
     (let* ((buffer (current-buffer))
            (directory (codex-ide-harness--directory-for-args args buffer))
            (id (format "job-%d" (cl-incf codex-ide-harness--next-job-id)))
@@ -954,7 +966,8 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :optional t))
          :annotations (list (cons "destructiveHint" t)
                             (cons "openWorldHint" :json-false))
-         :function #'codex-ide-mcp--tool-execute)
+         :function #'codex-ide-mcp--tool-execute
+         :dangerous t)
    (list :name "emacs_context"
          :description "Return selected Emacs harness context."
          :args (list (list :name "buffer"
@@ -1028,7 +1041,8 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :optional t))
          :annotations (list (cons "destructiveHint" t)
                             (cons "openWorldHint" :json-false))
-         :function #'codex-ide-mcp--tool-edit)
+         :function #'codex-ide-mcp--tool-edit
+         :dangerous t)
    (list :name "emacs_job"
          :description "Start, poll, read, or cancel async harness jobs."
          :args (list (list :name "action"
@@ -1051,7 +1065,8 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :description "Output offset for read."
                            :optional t))
          :annotations (list (cons "openWorldHint" t))
-         :function #'codex-ide-mcp--tool-job)
+         :function #'codex-ide-mcp--tool-job
+         :dangerous t)
    (list :name "emacs_events"
          :description "Return recent Emacs harness events."
          :args (list (list :name "since"
@@ -1068,15 +1083,23 @@ Already-terminal jobs are left unchanged and emit no new events."
          :function #'codex-ide-mcp--tool-events))
   "Registered MCP harness tools.")
 
+(defun codex-ide-mcp--tool-enabled-p (tool)
+  "Return non-nil when TOOL is enabled by current safety options."
+  (or (not (plist-get tool :dangerous))
+      codex-ide-mcp-dangerous-tools-enabled))
+
 (defun codex-ide-mcp-tool-names ()
   "Return the names of the local Emacs MCP tools."
-  (mapcar (lambda (tool) (plist-get tool :name)) codex-ide-mcp--tools))
+  (mapcar (lambda (tool) (plist-get tool :name))
+          (cl-remove-if-not #'codex-ide-mcp--tool-enabled-p
+                            codex-ide-mcp--tools)))
 
 (defun codex-ide-mcp--tool-by-name (name)
   "Return registered tool named NAME, or nil."
-  (cl-find name codex-ide-mcp--tools
-           :key (lambda (tool) (plist-get tool :name))
-           :test #'equal))
+  (cl-find-if (lambda (tool)
+                (and (codex-ide-mcp--tool-enabled-p tool)
+                     (equal name (plist-get tool :name))))
+              codex-ide-mcp--tools))
 
 (provide 'codex-ide-mcp-tools)
 

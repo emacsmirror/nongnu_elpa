@@ -29,6 +29,10 @@
 (require 'codex-ide)
 (require 'codex-ide-mcp)
 
+;; Most tests exercise the dangerous tool implementations directly.  Safety
+;; filtering has dedicated tests below.
+(setq codex-ide-mcp-dangerous-tools-enabled t)
+
 (defun codex-ide-mcp-test--json-read (string)
   "Decode JSON STRING as an alist for assertions."
   (let ((json-object-type 'alist)
@@ -232,6 +236,17 @@
                    '("content-type" . "text/plain")))
                  '(415 . "Content-Type must be application/json"))))
 
+(ert-deftest codex-ide-mcp-request-error-rejects-protocol-version ()
+  "Request validation rejects unsupported MCP protocol versions."
+  (should (equal (codex-ide-mcp--request-error
+                  (codex-ide-mcp-test--request
+                   '("mcp-protocol-version" . "bogus")))
+                 '(400 . "Unsupported MCP-Protocol-Version: bogus")))
+  (should-not (codex-ide-mcp--request-error
+               (codex-ide-mcp-test--request
+                (cons "mcp-protocol-version"
+                      codex-ide-mcp--protocol-version)))))
+
 (ert-deftest codex-ide-mcp-start-server-rejects-non-loopback-host ()
   "Server startup rejects a non-loopback bind address."
   (let ((codex-ide-mcp-host "0.0.0.0")
@@ -241,6 +256,24 @@
                  (setq called t))))
       (should-error (codex-ide-mcp--start-server) :type 'user-error)
       (should-not called))))
+
+(ert-deftest codex-ide-mcp-start-server-rolls-back-port-failure ()
+  "Server startup deletes its listener when port discovery fails."
+  (let ((codex-ide-mcp--server nil)
+        (codex-ide-mcp--port nil)
+        deleted)
+    (cl-letf (((symbol-function 'make-network-process)
+               (lambda (&rest _) 'listener))
+              ((symbol-function 'set-process-coding-system)
+               (lambda (&rest _) nil))
+              ((symbol-function 'codex-ide-mcp--contact-port)
+               (lambda (_) (error "port lookup failed")))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (should-error (codex-ide-mcp--start-server) :type 'error)
+      (should (eq deleted 'listener))
+      (should-not codex-ide-mcp--server)
+      (should-not codex-ide-mcp--port))))
 
 (ert-deftest codex-ide-mcp-url-brackets-ipv6-loopback ()
   "MCP URLs bracket an IPv6 loopback address."
@@ -382,6 +415,58 @@
          (tools (append (cdr (assoc "tools" result)) nil)))
     (dolist (tool tools)
       (should (consp (cdr (assoc "annotations" tool)))))))
+
+(ert-deftest codex-ide-mcp-dangerous-tools-require-opt-in ()
+  "Dangerous tools are absent until explicitly enabled."
+  (let ((codex-ide-mcp-dangerous-tools-enabled nil))
+    (let ((names (codex-ide-mcp-tool-names)))
+      (should (member "emacs_context" names))
+      (dolist (name '("emacs_execute" "emacs_edit" "emacs_job"))
+        (should-not (member name names))
+        (should-not (codex-ide-mcp--tool-by-name name))))))
+
+(ert-deftest codex-ide-mcp-client-limit-rejects-new-connection ()
+  "A full MCP client table rejects and closes a new connection."
+  (let ((codex-ide-mcp-max-clients 1)
+        (codex-ide-mcp--clients (make-hash-table :test 'eq))
+        deleted)
+    (puthash 'existing '(:pending "") codex-ide-mcp--clients)
+    (cl-letf (((symbol-function 'delete-process)
+               (lambda (proc) (setq deleted proc))))
+      (should-error (codex-ide-mcp--client-state 'new) :type 'user-error)
+      (should (eq deleted 'new))
+      (should (= (hash-table-count codex-ide-mcp--clients) 1)))))
+
+(ert-deftest codex-ide-mcp-client-limit-covers-idle-connections ()
+  "Idle TCP clients are admitted, capped, and closed by server stop."
+  (let ((codex-ide-mcp-max-clients 1)
+        (codex-ide-mcp-port 0)
+        (codex-ide-mcp--server nil)
+        (codex-ide-mcp--port nil)
+        (codex-ide-mcp--clients (make-hash-table :test 'eq))
+        outgoing admitted)
+    (unwind-protect
+        (progn
+          (codex-ide-mcp--start-server)
+          (dotimes (index 2)
+            (push (make-network-process
+                   :name (format "codex-ide-mcp-idle-%d" index)
+                   :host "127.0.0.1" :service codex-ide-mcp--port
+                   :noquery t)
+                  outgoing))
+          (let ((deadline (+ (float-time) 2)))
+            (while (and (< (float-time) deadline)
+                        (< (hash-table-count codex-ide-mcp--clients) 1))
+              (accept-process-output nil 0.02)))
+          (should (= (hash-table-count codex-ide-mcp--clients) 1))
+          (maphash (lambda (proc _state) (push proc admitted))
+                   codex-ide-mcp--clients)
+          (codex-ide-mcp--stop-server)
+          (should (cl-every (lambda (proc) (not (process-live-p proc)))
+                            admitted)))
+      (codex-ide-mcp--stop-server)
+      (dolist (proc outgoing)
+        (when (process-live-p proc) (delete-process proc))))))
 
 (ert-deftest codex-ide-mcp-xref-item-to-entry-file-location ()
   "Xref file locations become plain JSON-ready entries."
@@ -594,6 +679,25 @@
           (should (equal (buffer-string) "(new)\n"))
           (should (equal (cdr (assoc "operation" decoded)) "replace"))
           (should indented))))))
+
+(ert-deftest codex-ide-mcp-edit-rejects-line-past-buffer ()
+  "Line-based edits reject a line that does not exist."
+  (with-temp-buffer
+    (insert "abc\ndef")
+    (should-error
+     (codex-ide-harness-edit
+      `(:operation "insert" :text "x" :buffer ,(buffer-name) :line 99))
+     :type 'user-error)))
+
+(ert-deftest codex-ide-mcp-edit-rejects-column-past-eol ()
+  "Line-based edits reject a column beyond the line ending."
+  (with-temp-buffer
+    (insert "abc\ndef")
+    (should-error
+     (codex-ide-harness-edit
+      `(:operation "insert" :text "x" :buffer ,(buffer-name)
+        :line 1 :column 99))
+     :type 'user-error)))
 
 (ert-deftest codex-ide-mcp-edit-delete-requires-positions ()
   "Delete without positions signals a clear user-error."
@@ -846,6 +950,43 @@
                                   (cdr (assoc "text" content)))))
       (delete-file path))))
 
+(ert-deftest codex-ide-mcp-handle-message-accepts-notification ()
+  "Valid JSON-RPC notifications are accepted without a response body."
+  (should (eq (codex-ide-mcp--handle-message
+               '(:jsonrpc "2.0" :method "notifications/initialized"))
+              'accepted)))
+
+(ert-deftest codex-ide-mcp-handle-message-accepts-client-response ()
+  "Valid JSON-RPC client responses are accepted without dispatch."
+  (dolist (id '(7 7.5 "request-7"))
+    (should (eq (codex-ide-mcp--handle-message
+                 (list :jsonrpc "2.0" :id id :result '(:ok t)))
+                'accepted))))
+
+(ert-deftest codex-ide-mcp-handle-message-rejects-invalid-shapes ()
+  "Malformed JSON-RPC objects return invalid-request errors."
+  (dolist (message '((:jsonrpc "1.0" :id 7 :method "tools/list")
+                     (:jsonrpc "2.0")
+                     (:jsonrpc "2.0" :id nil :method "tools/list")))
+    (let ((response (codex-ide-mcp--handle-message message)))
+      (should (= (cdr (assoc "code" (cdr (assoc "error" response))))
+                 -32600)))))
+
+(ert-deftest codex-ide-mcp-http-notification-returns-accepted ()
+  "HTTP notifications receive 202 Accepted and no JSON body."
+  (let (sent)
+    (cl-letf (((symbol-function 'codex-ide-mcp--send-json)
+               (lambda (_proc status body) (setq sent (list status body))))
+              ((symbol-function 'codex-ide-mcp--selected-buffer)
+               #'current-buffer))
+      (codex-ide-mcp--handle-http-request
+       'client
+       (list :method "POST" :path "/mcp"
+             :headers '(("host" . "127.0.0.1")
+                        ("content-type" . "application/json"))
+             :body "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")))
+    (should (equal sent '(202 nil)))))
+
 (ert-deftest codex-ide-mcp-handle-message-wraps-tools-list ()
   "JSON-RPC messages are wrapped in a success response."
   (let* ((response (codex-ide-mcp--handle-message
@@ -954,6 +1095,21 @@
       (should-not (cl-find "job-canceled" codex-ide-harness--events
                            :key (lambda (event) (cdr (assoc "type" event)))
                            :test #'equal)))))
+
+(ert-deftest codex-ide-harness-rejects-job-over-live-cap ()
+  "Starting a job at the live-process cap signals `user-error'."
+  (let ((codex-ide-harness-job-limit 1)
+        (codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (codex-ide-harness--next-job-id 0))
+    (unwind-protect
+        (progn
+          (codex-ide-harness-start-job '(:command "sleep 5"))
+          (should-error
+           (codex-ide-harness-start-job '(:command "sleep 5"))
+           :type 'user-error))
+      (codex-ide-harness-reset))))
 
 (ert-deftest codex-ide-harness-reset-clears-jobs-and-cancels-live ()
   "Harness reset cancels live processes and clears tables."
