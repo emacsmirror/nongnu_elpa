@@ -653,17 +653,20 @@ With a double PREFIX arg, limit results to your own instance."
     (message "Loading timeline for #%s..." tag)
     (mastodon-tl--show-tag-timeline prefix tag)))
 
+(defun mastodon-tl-tag-prefix-arg (prefix)
+  "Handle PREFIX arg for tag timelines."
+  `(("limit" . ,mastodon-tl--timeline-posts-count)
+    ,@(when (equal prefix '(4))
+        '(("only_media" . "true")))
+    ,@(when (equal prefix '(16))
+        '(("local" . "true")))))
+
 (defun mastodon-tl--show-tag-timeline (&optional prefix tag)
   "Opens a new buffer showing the timeline of posts with hastag TAG.
 If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
-  (let ((params
-         `(("limit" . ,mastodon-tl--timeline-posts-count)
-           ,@(when (eq prefix 4)
-               '(("only_media" . "true")))
-           ,@(when (eq prefix 16)
-               '(("local" . "true"))))))
+  (let ((params (mastodon-tl-tag-prefix-arg prefix)))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
