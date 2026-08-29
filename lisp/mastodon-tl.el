@@ -3523,14 +3523,15 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
            (choice-list (cdr (assoc choice list-strs #'equal))))
       (mastodon-tl--show-tag-timeline prefix choice-list))))
 
-(defun mastodon-tl--tag-group-tl (tags prefix)
+(defun mastodon-tl--tag-group-tl (tags prefix params)
   "Return data for TAGS, a group of max 4 tags."
   ;; FIXME: max_id (pagination)
   (let* ((url (mastodon-http--api
                (concat "timelines/tag/" (car tags))))
          (params (append (mastodon-tl-tag-prefix-arg prefix)
                          (mastodon-http--build-array-params-alist
-                          "any[]" (cdr tags)))))
+                          "any[]" (cdr tags))
+                         params)))
     (mastodon-http--get-json url params)))
 
 (defun mastodon-tl-ts-sort-pred (x y)
@@ -3544,13 +3545,13 @@ We convert and compare their created_at values."
       (date-to-time
        (alist-get 'created_at y)))))
 
-(defun mastodon-tl-tags-all-data (&optional prefix)
+(defun mastodon-tl-tags-all-data (&optional prefix params)
   "Return tags data for all tags in `mastodon-tl-tags-groups'.
 PREFIX is `mastodon-tl-tag-group-tl'."
   (let (list)
     ;; push to list:
     (mapc (lambda (x)
-            (let ((data (mastodon-tl--tag-group-tl x prefix))) ;; get data
+            (let ((data (mastodon-tl--tag-group-tl x prefix params))) ;; get data
               (mapcar (lambda (y)
                         (push y list)) ;; push data to single list
                       data)))
@@ -3821,6 +3822,8 @@ and profile pages when showing followers or accounts followed."
             (mastodon-tl--endpoint)
             (mastodon-tl--update-params) nil
             'mastodon-tl--more* (current-buffer) (point)))
+          ((mastodon-tl--buffer-type-eq 'hashtags-all)
+           (mastodon-tl-tags-all-more))
           (t ;; max_id paginate (timelines, items with ids/timestamps):
            (let ((max-id (mastodon-tl--oldest-id))
                  (params (mastodon-tl--update-params)))
@@ -3829,6 +3832,17 @@ and profile pages when showing followers or accounts followed."
               max-id params nil
               'mastodon-tl--more*
               (current-buffer) (point) nil max-id))))))
+
+(defun mastodon-tl-tags-all-more ()
+  "More function for all tags view.
+Calls `mastodon-tl-tags-all-data' with pagiation params, then calls `mastodon-tl-more*'."
+  (let* ((max-id (mastodon-tl--oldest-id))
+         (params (append `(("max_id" . ,max-id))
+                         (mastodon-tl--update-params)))
+         (data (cl-sort (mastodon-tl-tags-all-data nil params)
+                        #'mastodon-tl-ts-sort-pred)))
+    (mastodon-tl--more* data (current-buffer)
+             (point) nil max-id)))
 
 (defun mastodon-tl--more*
     (response buffer point-before &optional headers max-id)
