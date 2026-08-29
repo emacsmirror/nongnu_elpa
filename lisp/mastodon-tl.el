@@ -3524,7 +3524,9 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
       (mastodon-tl--show-tag-timeline prefix choice-list))))
 
 (defun mastodon-tl--tag-group-tl (tags prefix params)
-  "Return data for TAGS, a group of max 4 tags."
+  "Return data for TAGS, a group of max 4 tags.
+PREFIX is for setting optional params with `mastodon-tl-tag-prefix-arg'.
+PARAMS is any (e.g. update) params to send."
   ;; FIXME: max_id (pagination)
   (let* ((url (mastodon-http--api
                (concat "timelines/tag/" (car tags))))
@@ -3547,7 +3549,8 @@ We convert and compare their created_at values."
 
 (defun mastodon-tl-tags-all-data (&optional prefix params)
   "Return tags data for all tags in `mastodon-tl-tags-groups'.
-PREFIX is `mastodon-tl-tag-group-tl'."
+PREFIX is for `mastodon-tl-tag-group-tl'.
+PARAMS is any (e.g. update) params to send."
   (let (list)
     ;; push to list:
     (mapc (lambda (x)
@@ -3835,7 +3838,8 @@ and profile pages when showing followers or accounts followed."
 
 (defun mastodon-tl-tags-all-more ()
   "More function for all tags view.
-Calls `mastodon-tl-tags-all-data' with pagiation params, then calls `mastodon-tl-more*'."
+Calls `mastodon-tl-tags-all-data' with pagiation params, then calls
+`mastodon-tl-more*'."
   (let* ((max-id (mastodon-tl--oldest-id))
          (params (append `(("max_id" . ,max-id))
                          (mastodon-tl--update-params)))
