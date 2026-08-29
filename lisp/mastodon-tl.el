@@ -3574,7 +3574,10 @@ PREFIX is for `mastodon-tl-tag-group-tl'."
       (mastodon-tl--init-sync
        "tags-all"
        (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
-       #'mastodon-tl--timeline nil nil nil nil nil nil sorted))))
+       #'mastodon-tl--timeline nil
+       ;; params
+       (mastodon-tl-tag-prefix-arg prefix)
+       nil nil nil nil sorted))))
 
 
 ;;; REPORT TO MODERATORS
@@ -4176,7 +4179,7 @@ Use DATA rather than doing requests if present."
   (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
                           "types[]" (list note-type))))
-         (params (unless data (append notes-params params)))
+         (params (append notes-params params))
          (url (unless data (mastodon-http--api endpoint endpoint-version)))
          (buffer (concat "*mastodon-" buffer-name "*"))
          (response (unless data (mastodon-http--get-response url params)))
