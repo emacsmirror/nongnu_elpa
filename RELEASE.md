@@ -3,7 +3,6 @@
 # Aidermacs 1.13
 
 ## What's Changed
-
 * Simplify session buffer selection and fix ancestor directory handling (#221) by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/221
 * Fix session scoping in nested git repos by @OverbearingPearl
 * Set correct working directory for backend by @OverbearingPearl
@@ -15,7 +14,6 @@
 # Aidermacs 1.12
 
 ## What's Changed
-
 * Add model filtering and configured model support by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
 * Add docs and keymap for aidermacs file diff by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
 * Update example path for litellm prices file by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/217
@@ -29,7 +27,6 @@
 # Aidermacs 1.11
 
 ## What's Changed
-
 * Improve macOS notification with buffer context by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/214
 * Add OpenRouter price support and optimize model lookup by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/215
 
@@ -39,7 +36,6 @@
 # Aidermacs 1.10
 
 ## What's Changed
-
 * Add command output analysis confirmation handling by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/208
 * Optimize comint backend for large inputs by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/209
 * Increase cheap models limit from 10 to 500 by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/210
@@ -157,6 +153,7 @@
 
 **Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.3...v1.4
 
+
 # Aidermacs 1.3
 
 ## What's Changed
@@ -177,6 +174,7 @@
 
 **Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.2...v1.3
 
+
 # Aidermacs 1.2
 
 ## What's Changed
@@ -193,6 +191,7 @@
 * @paralin made their first contribution in https://github.com/MatthewZMD/aidermacs/pull/100
 
 **Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.1...v1.2
+
 
 # Aidermacs 1.1
 
@@ -239,6 +238,7 @@
 4. Clear any cached model lists if experiencing issues
 
 **Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.0...v1.1
+
 
 # Aidermacs 1.0
 
