@@ -100,6 +100,7 @@ number and the prompt that launched it.")
 (defvar hermes-chat--prepared-submit-assistant-id)
 (defvar hermes-chat--create-override-owner)
 (defvar hermes-chat--create-overrides-retry-session-id)
+(defvar hermes-chat--session-bootstrap)
 (defvar hermes-dashboard-transport-request-owner)
 
 (defconst hermes-chat--terminal-clear-fields
@@ -436,6 +437,8 @@ The buffer's subscriber is removed and its reference released; the shared client
 is torn down only when the last buffer detaches.  The buffer-local client,
 token, and live-session state are always cleared, even after a partial teardown,
 so a new session can be started afterwards."
+  (setq hermes-chat--session-bootstrap nil
+        hermes-chat--create-override-owner nil)
   (when-let* ((client hermes-chat--dashboard-client))
     (hermes-dashboard-transport-cancel-owner-requests
      client (current-buffer))
@@ -913,6 +916,75 @@ shared client."
        (or (null session-id)
            (equal session-id hermes-chat--dashboard-active-session-id))))
 
+(defun hermes-chat--dashboard-bootstrap-current-p (owner)
+  "Return non-nil when OWNER still owns this buffer's fresh session setup."
+  (and (eq owner hermes-chat--session-bootstrap)
+       (hermes-chat--dashboard-context-current-p (plist-get owner :client)
+                                                  (plist-get owner :generation)
+                                                  (plist-get owner :session-id))))
+
+(defun hermes-chat--dashboard-reject-active-bootstrap (reject)
+  "Reject REJECT when a current fresh-session setup already owns this buffer."
+  (when hermes-chat--session-bootstrap
+    (if (hermes-chat--dashboard-bootstrap-current-p hermes-chat--session-bootstrap)
+        (progn
+          (funcall (or reject #'hermes-chat--command-error)
+                   "Session setup is in progress")
+          t)
+      (setq hermes-chat--session-bootstrap nil))))
+
+(defun hermes-chat--dashboard-begin-bootstrap (client kind reject)
+  "Reserve CLIENT's fresh-session setup for KIND with failure callback REJECT."
+  (setq hermes-chat--session-bootstrap
+        (list :client client :generation hermes-chat--lifecycle-generation :kind kind
+              :reject (or reject #'hermes-chat--command-error)
+              :phase 'preflight :session-id nil)))
+
+(defun hermes-chat--dashboard-abort-bootstrap (owner message)
+  "Abort exact bootstrap OWNER and report MESSAGE once."
+  (when (hermes-chat--dashboard-bootstrap-current-p owner)
+    (setq hermes-chat--session-bootstrap nil)
+    (funcall (plist-get owner :reject) message)))
+
+(defun hermes-chat--dashboard-finish-bootstrap (owner continuation)
+  "Finish exact bootstrap OWNER, then call CONTINUATION once."
+  (when (hermes-chat--dashboard-bootstrap-current-p owner)
+    (setq hermes-chat--session-bootstrap nil)
+    (condition-case err
+        (funcall continuation)
+      ((error quit) (funcall (plist-get owner :reject) (error-message-string err))))))
+
+(defun hermes-chat--dashboard-start-bootstrap (owner buffer resolver)
+  "Start OWNER's default-cwd preflight in BUFFER, then create through RESOLVER."
+  (let ((create
+         (lambda (&optional result)
+           (hermes-chat--in-buffer buffer
+             (when (hermes-chat--dashboard-bootstrap-current-p owner)
+               (when-let* ((cwd (hermes-chat--dashboard-result-cwd result)))
+                 (hermes-chat--record-working-directory cwd))
+               (setf (plist-get owner :phase) 'create)
+               (condition-case err
+                   (apply #'hermes-dashboard-transport-session-create
+                          (plist-get owner :client)
+                          (append
+                           (hermes-chat--dashboard-create-params)
+                           (list :resolve resolver :reject
+                                 (lambda (message)
+                                   (hermes-chat--in-buffer buffer
+                                     (hermes-chat--dashboard-abort-bootstrap
+                                      owner message))))))
+                 ((error quit)
+                  (hermes-chat--dashboard-abort-bootstrap
+                   owner (error-message-string err)))))))))
+    (if (and hermes-chat--remote-filesystem-p (null hermes-chat--working-directory))
+        (condition-case nil
+            (hermes--promise-then
+             (hermes-dashboard-transport-api-request-async
+              "GET" "/api/fs/default-cwd" :client (plist-get owner :client))
+             create (lambda (_message) (funcall create)))
+          ((error quit) (funcall create)))
+      (funcall create))))
+
 (defun hermes-chat--dashboard-refresh-goal ()
   "Refresh compact goal state through vanilla Hermes `/goal status'."
   (when (and (hermes-chat--dashboard-client-live-p
@@ -1241,8 +1313,23 @@ RESOLVE and REJECT receive the asynchronous request result."
    :resolve resolve
    :reject reject))
 
+(defun hermes-chat--dashboard-apply-bootstrap-overrides (bootstrap client continue generation reject)
+  "Apply CLIENT overrides, settling optional BOOTSTRAP around CONTINUE."
+  (if (null bootstrap)
+      (hermes-chat--dashboard-apply-create-overrides
+       client continue generation reject)
+    (when (hermes-chat--dashboard-bootstrap-current-p bootstrap)
+      (setf (plist-get bootstrap :phase) 'override
+            (plist-get bootstrap :session-id)
+            hermes-chat--dashboard-active-session-id)
+      (hermes-chat--dashboard-apply-create-overrides
+       client
+       (lambda () (hermes-chat--dashboard-finish-bootstrap bootstrap continue))
+       generation
+       (lambda (message) (hermes-chat--dashboard-abort-bootstrap bootstrap message))))))
+
 (defun hermes-chat--dashboard-after-session
-    (client prompt result &optional resume-p resolve reject queued-p generation)
+    (client prompt result &optional resume-p resolve reject queued-p generation bootstrap)
   "Record CLIENT session RESULT and submit PROMPT.
 When RESUME-P is non-nil and RESULT reports a live turn, keep local busy
 state instead of submitting another prompt into that durable session.  On a
@@ -1267,14 +1354,13 @@ GENERATION scopes asynchronous create-time overrides."
      generation reject))
    (t
     (setq hermes-chat--dashboard-detached-assistant-id nil)
-    (hermes-chat--dashboard-apply-create-overrides
-     client (lambda ()
-              (hermes-chat--dashboard-submit-prompt
-               client prompt resolve reject))
+    (hermes-chat--dashboard-apply-bootstrap-overrides
+     bootstrap client
+     (lambda () (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
      generation reject))))
 
 (defun hermes-chat--dashboard-session-resolver
-    (buffer client prompt &optional resume-p resolve reject queued-p)
+    (buffer client prompt &optional resume-p resolve reject queued-p bootstrap)
   "Return a callback that records CLIENT's session in BUFFER and sends PROMPT.
 RESUME-P means the callback handles a `session.resume' response.  RESOLVE and
 REJECT receive the following prompt request result.  QUEUED-P identifies a
@@ -1282,9 +1368,12 @@ local FIFO submission."
   (let ((generation hermes-chat--lifecycle-generation))
     (lambda (result)
       (hermes-chat--in-buffer buffer
-        (when (hermes-chat--dashboard-context-current-p client generation)
+        (when (if bootstrap
+                  (hermes-chat--dashboard-bootstrap-current-p bootstrap)
+                (hermes-chat--dashboard-context-current-p client generation))
           (hermes-chat--dashboard-after-session
-           client prompt result resume-p resolve reject queued-p generation))))))
+           client prompt result resume-p resolve reject queued-p generation
+           bootstrap))))))
 
 (defun hermes-chat--dashboard-session-attached-p ()
   "Return non-nil when the current buffer has a live dashboard session."
@@ -1494,6 +1583,7 @@ Record asynchronous session results in BUFFER.  RESOLVE and REJECT receive the
 prompt request result or a session bootstrap error.  QUEUED-P identifies a
 local FIFO submission."
   (cond
+   ((hermes-chat--dashboard-reject-active-bootstrap reject) nil)
    ((hermes-chat--dashboard-session-attached-p)
     (hermes-chat--dashboard-apply-retry-overrides
      client
@@ -1509,13 +1599,11 @@ local FIFO submission."
                buffer client prompt t resolve reject queued-p)
      :reject reject))
    (t
-    (apply
-     #'hermes-dashboard-transport-session-create client
-     (append
-      (hermes-chat--dashboard-create-params)
-      (list :resolve (hermes-chat--dashboard-session-resolver
-                      buffer client prompt nil resolve reject queued-p)
-            :reject reject))))))
+    (let* ((owner (hermes-chat--dashboard-begin-bootstrap
+                   client (if queued-p 'queued 'prompt) reject))
+           (resolver (hermes-chat--dashboard-session-resolver
+                      buffer client prompt nil resolve reject queued-p owner)))
+      (hermes-chat--dashboard-start-bootstrap owner buffer resolver)))))
 
 (defun hermes-chat--dashboard-event-for-session-p (event)
   "Return non-nil when EVENT belongs to this buffer's live dashboard session."
@@ -1729,7 +1817,7 @@ With explicit DIRECTORY, pass its gateway-native spelling to the backend."
           hermes-chat--dashboard-active-session-id))))))
 
 (defun hermes-chat--dashboard-action-resolver
-    (buffer client action generation &optional create-p reject resume-p)
+    (buffer client action generation &optional create-p reject resume-p bootstrap)
   "Return a resolver to record CLIENT's session in BUFFER, then call ACTION.
 With CREATE-P non-nil the resolver handles a fresh `session.create' result,
 so pending create-time runtime overrides are applied before ACTION.  RESUME-P
@@ -1737,7 +1825,9 @@ applies only retry-owned overrides and otherwise discards them.  REJECT receives
 an override failure."
   (lambda (result)
     (hermes-chat--in-buffer buffer
-      (when (hermes-chat--dashboard-context-current-p client generation)
+      (when (if bootstrap
+                (hermes-chat--dashboard-bootstrap-current-p bootstrap)
+              (hermes-chat--dashboard-context-current-p client generation))
         (hermes-chat--dashboard-record-session client result)
         (when (hermes-chat--dashboard-result-live-turn-p result)
           (hermes-chat--dashboard-restore-inflight-turn client)
@@ -1746,8 +1836,8 @@ an override failure."
           (hermes-chat--dashboard-restore-pending-clarify result))
         (cond
          (create-p
-          (hermes-chat--dashboard-apply-create-overrides
-           client (lambda () (funcall action client)) generation reject))
+          (hermes-chat--dashboard-apply-bootstrap-overrides
+           bootstrap client (lambda () (funcall action client)) generation reject))
          (resume-p
           (hermes-chat--dashboard-apply-retry-overrides
            client (lambda () (funcall action client)) generation reject))
@@ -1779,6 +1869,9 @@ When SESSION-ID is non-nil, reject only while it still owns the buffer."
 When dashboard session bootstrap fails, call REJECT with the error message."
   (let ((generation hermes-chat--lifecycle-generation))
     (cond
+     ((hermes-chat--dashboard-reject-active-bootstrap
+       (hermes-chat--dashboard-action-rejecter
+        buffer client generation reject)) nil)
      ((hermes-chat--dashboard-session-attached-p)
       (hermes-chat--dashboard-apply-retry-overrides
        client (lambda () (funcall action client)) generation reject))
@@ -1792,14 +1885,13 @@ When dashboard session bootstrap fails, call REJECT with the error message."
        :reject (hermes-chat--dashboard-action-rejecter
                 buffer client generation reject)))
      (t
-      (apply
-       #'hermes-dashboard-transport-session-create client
-       (append
-        (hermes-chat--dashboard-create-params)
-        (list :resolve (hermes-chat--dashboard-action-resolver
-                        buffer client action generation t reject)
-              :reject (hermes-chat--dashboard-action-rejecter
-                       buffer client generation reject))))))))
+      (let* ((scoped-reject (hermes-chat--dashboard-action-rejecter
+                             buffer client generation reject))
+             (owner (hermes-chat--dashboard-begin-bootstrap
+                     client 'control scoped-reject))
+             (resolver (hermes-chat--dashboard-action-resolver
+                        buffer client action generation t scoped-reject nil owner)))
+        (hermes-chat--dashboard-start-bootstrap owner buffer resolver))))))
 
 (defun hermes-chat--with-dashboard-session (content buffer action &optional reject)
   "Ensure a live dashboard session for BUFFER, then call ACTION with the client.

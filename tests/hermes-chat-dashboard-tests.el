@@ -439,14 +439,199 @@
        (should-not first-action)
        (should-not first-reject)
        (should-not second-action)
-       (should (equal second-reject
-                      "Pre-session runtime configuration is in progress"))
+       (should (equal second-reject "Session setup is in progress"))
        (funcall resolve '((key . "fast")))
        (should first-action)
        (should-not first-reject)
        (should-not second-action)
        (should-not hermes-chat--create-override-owner)
        (should-not hermes-chat--dashboard-create-fast-p)))))
+
+(ert-deftest hermes-chat-dashboard-remote-create-uses-optional-default-cwd ()
+  "Prompt and control creation use the gateway default when it is available."
+  (dolist (path '(prompt control))
+    (dolist (outcome '(success reject signal malformed))
+      (let ((client (hermes-test--dashboard-client))
+            api-calls create-cwd action)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                   (lambda (&rest _) client))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (&rest _)
+                     (setq api-calls (1+ (or api-calls 0)))
+                     (pcase outcome
+                       ('success (hermes--promise-resolved
+                                  '((cwd . "/srv/default"))))
+                       ('reject (hermes--promise-rejected "missing"))
+                       ('signal (error "missing"))
+                       ('malformed (hermes--promise-resolved '((cwd . "")))))))
+                  ((symbol-function 'hermes-dashboard-transport-session-create)
+                   (lambda (_client &rest args)
+                     (setq create-cwd (plist-get args :cwd))
+                     (funcall (plist-get args :resolve) '((session_id . "sid")))))
+                  ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (&rest _) (setq action t)))
+                  ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+          (let ((hermes-transport-send-function #'hermes-transport-send))
+            (hermes-test-with-chat-buffer
+             (setq-local hermes-chat--remote-filesystem-p t)
+             (setq default-directory "/tmp/editor/"
+                   hermes-chat--working-directory nil)
+             (pcase path
+               ('prompt (insert "hi") (hermes-chat-send))
+               ('control
+                (setq hermes-chat--dashboard-client client)
+                (hermes-chat--dashboard-ensure-session-action
+                 client (current-buffer) (lambda (_client) (setq action t)))))
+             (should (= api-calls 1))
+             (should (equal create-cwd
+                            (and (eq outcome 'success) "/srv/default")))
+             (should (equal hermes-chat--working-directory create-cwd))
+             (should (equal default-directory "/tmp/editor/"))
+             (should action))))))))
+
+(ert-deftest hermes-chat-dashboard-fresh-reservation-rejects-each-phase ()
+  "One control owner spans preflight, create, and override settlement."
+  (let ((client (hermes-test--dashboard-client))
+        (preflight (hermes--promise-make))
+        api-calls create-calls config-calls create-resolve config-resolve
+        actions rejections)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (setq api-calls (1+ (or api-calls 0)))
+                 preflight))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-calls (1+ (or create-calls 0))
+                       create-resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq config-calls (1+ (or config-calls 0))
+                       config-resolve (plist-get args :resolve))))
+              ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+      (hermes-test-with-chat-buffer
+       (setq-local hermes-chat--remote-filesystem-p t)
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--working-directory nil
+             hermes-chat--dashboard-create-fast-p t)
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer)
+        (lambda (_client)
+          (setq actions (1+ (or actions 0)))
+          (error "continuation boom"))
+        (lambda (message) (push message rejections)))
+       (should (= api-calls 1))
+       (hermes-chat--dashboard-ensure-session
+        client "late prompt" (current-buffer) nil
+        (lambda (message) (push message rejections)))
+       (hermes--promise-resolve preflight '((cwd . "/srv/default")))
+       (should (= create-calls 1))
+       (hermes-chat--dashboard-ensure-session
+        client "late queued" (current-buffer) nil
+        (lambda (message) (push message rejections)) t)
+       (funcall create-resolve '((session_id . "sid")))
+       (should (= config-calls 1))
+       (hermes-chat--dashboard-ensure-session
+        client "late attached prompt" (current-buffer) nil
+        (lambda (message) (push message rejections)))
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) #'ignore (lambda (message) (push message rejections)))
+       (should (= (length rejections) 4))
+       (should (cl-every (lambda (message)
+                           (equal message "Session setup is in progress"))
+                         rejections))
+       (should (= create-calls 1))
+       (should (= config-calls 1))
+       (should-not actions)
+       (funcall config-resolve '((key . "fast")))
+       (should (= actions 1))
+       (should (equal (car rejections) "continuation boom"))
+       (should-not (bound-and-true-p hermes-chat--session-bootstrap))
+       (should-not hermes-chat--create-override-owner)))))
+
+(ert-deftest hermes-chat-dashboard-create-failure-settles-origin ()
+  "Sync and async create failures settle prompt and control origins once."
+  (dolist (path '(prompt control))
+    (dolist (preflight '(resolve reject))
+      (dolist (failure '(sync async))
+        (let ((client (hermes-test--dashboard-client))
+              action rejected create-reject)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                     (lambda (&rest _) client))
+                    ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                     (lambda (&rest _)
+                       (if (eq preflight 'resolve)
+                           (hermes--promise-resolved '((cwd . "/srv/default")))
+                         (hermes--promise-rejected "missing"))))
+                    ((symbol-function 'hermes-dashboard-transport-session-create)
+                     (lambda (_client &rest args)
+                       (if (eq failure 'sync)
+                           (error "create boom")
+                         (setq create-reject (plist-get args :reject)))))
+                    ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+            (let ((hermes-transport-send-function #'hermes-transport-send))
+              (hermes-test-with-chat-buffer
+               (setq-local hermes-chat--remote-filesystem-p t)
+               (setq hermes-chat--dashboard-client client
+                     hermes-chat--working-directory nil)
+               (pcase path
+                 ('prompt (insert "recover me") (hermes-chat-send))
+                 ('control
+                  (hermes-chat--dashboard-ensure-session-action
+                   client (current-buffer) (lambda (_client) (setq action t))
+                   (lambda (message) (push message rejected)))))
+               (when (eq failure 'async)
+                 (funcall create-reject "create boom")
+                 (funcall create-reject "duplicate boom"))
+               (pcase path
+                 ('prompt
+                  (should (string-match-p "create boom" (buffer-string)))
+                  (should-not hermes-chat--pending-assistant-id)
+                  (should-not hermes-chat--unsettled-submit-context))
+                 ('control
+                  (should (equal rejected '("create boom")))
+                  (should-not action)))
+               (should-not (bound-and-true-p hermes-chat--session-bootstrap))))))))))
+
+(ert-deftest hermes-chat-dashboard-reset-cancels-each-bootstrap-phase ()
+  "Reset cancels preflight, create, and override owners before late callbacks."
+  (dolist (phase '(preflight create override))
+    (let ((client (hermes-test--dashboard-client))
+          (preflight (hermes--promise-make))
+          create-resolve config-resolve action rejected)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest _) preflight))
+                ((symbol-function 'hermes-dashboard-transport-session-create)
+                 (lambda (_client &rest args)
+                   (setq create-resolve (plist-get args :resolve))))
+                ((symbol-function 'hermes-dashboard-transport-config-set)
+                 (lambda (_client _key _value &rest args)
+                   (setq config-resolve (plist-get args :resolve))))
+                ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+        (hermes-test-with-chat-buffer
+         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--working-directory nil
+               hermes-chat--dashboard-create-fast-p t)
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq action t))
+          (lambda (message) (setq rejected message)))
+         (when (memq phase '(create override))
+           (hermes--promise-resolve preflight '((cwd . "/srv/default"))))
+         (when (eq phase 'override)
+           (funcall create-resolve '((session_id . "sid"))))
+         (should (bound-and-true-p hermes-chat--session-bootstrap))
+         (should (eq (plist-get hermes-chat--session-bootstrap :phase) phase))
+         (hermes-chat--reset-transcript)
+         (pcase phase
+           ('preflight
+            (hermes--promise-resolve preflight '((cwd . "/srv/late"))))
+           ('create (funcall create-resolve '((session_id . "late"))))
+           ('override (funcall config-resolve '((key . "fast")))))
+         (should-not action)
+         (should-not rejected)
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not (bound-and-true-p hermes-chat--session-bootstrap))
+         (should-not hermes-chat--create-override-owner))))))
 
 (ert-deftest hermes-chat-dashboard-stale-model-result-does-not-prompt ()
   "A model result for a replaced session rejects without prompting."
@@ -577,6 +762,8 @@
                (lambda (&rest _) (error "CLI fallback should not run")))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) (hermes--promise-rejected "unavailable")))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
                  (setq create-args args)
