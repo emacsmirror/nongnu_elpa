@@ -576,7 +576,10 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
                                aidermacs-extra-args)))
       (if (aidermacs--live-p buffer-name)
           (aidermacs-switch-to-buffer buffer-name)
-        (aidermacs-run-backend (aidermacs-get-program) final-args buffer-name)
+        (let ((default-directory (if aidermacs-subtree-only
+                                     default-directory
+                                   (or (aidermacs-project-root) default-directory))))
+          (aidermacs-run-backend (aidermacs-get-program) final-args buffer-name))
         (with-current-buffer buffer-name
           ;; Set initial mode based on startup configuration
           (setq-local aidermacs--current-mode startup-mode))
