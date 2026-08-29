@@ -2242,6 +2242,12 @@ region, where the scrollback-browsing rule alone would strand it."
            :key (lambda (entry) (plist-get entry :command))
            :test #'eq))
 
+(defun codex-ide-test--popup-entry-by-variable (keymap variable)
+  "Return the popup switch entry for VARIABLE in KEYMAP."
+  (cl-find variable (codex-ide-test--popup-entries keymap)
+           :key (lambda (entry) (plist-get entry :variable))
+           :test #'eq))
+
 (defun codex-ide-test--command-bound-p (keymap command)
   "Return non-nil when COMMAND is reachable in KEYMAP."
   (where-is-internal command (list keymap) t))
@@ -2266,8 +2272,6 @@ region, where the scrollback-browsing rule alone would strand it."
   (dolist (command '(codex-ide-menu--set-cli-path
                      codex-ide-menu--set-terminal-backend
                      codex-ide-menu--set-approval
-                     codex-ide-menu--toggle-yolo
-                     codex-ide-menu--toggle-no-alt-screen
                      codex-ide-menu--save-config))
     (should (codex-ide-test--command-bound-p codex-ide-config-map command))))
 
@@ -2304,9 +2308,8 @@ region, where the scrollback-browsing rule alone would strand it."
                    codex-ide-menu--saved-config-symbols))))
 
 (ert-deftest codex-ide-menu-debug-commands ()
-  "Debug menu exposes status, toggle, and log commands."
+  "Debug menu exposes status and log commands."
   (dolist (command '(codex-ide-check-status
-                     codex-ide-menu--toggle-debug-mode
                      codex-ide-show-debug
                      codex-ide-clear-debug))
     (should (codex-ide-test--command-bound-p codex-ide-debug-map command))))
@@ -2317,17 +2320,14 @@ region, where the scrollback-browsing rule alone would strand it."
   (should (keymapp codex-ide-mcp-map))
   (should (keymapp codex-ide-debug-map)))
 
-(ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
-  "Toggle entries resolve their description from current variable state."
-  (let* ((entry (codex-ide-test--popup-entry-by-command
-                 codex-ide-config-map
-                 #'codex-ide-menu--toggle-no-alt-screen))
-         (desc-fn (plist-get entry :description)))
-    (should (functionp desc-fn))
-    (let ((codex-ide-no-alt-screen t))
-      (should (string-match-p "ON" (funcall desc-fn))))
-    (let ((codex-ide-no-alt-screen nil))
-      (should (string-match-p "OFF" (funcall desc-fn))))))
+(ert-deftest codex-ide-menu-booleans-use-popup-switches ()
+  "Boolean options use keymap-popup's native switch entries."
+  (dolist (pair `((,codex-ide-config-map . codex-ide-yolo)
+                  (,codex-ide-config-map . codex-ide-no-alt-screen)
+                  (,codex-ide-debug-map . codex-ide-debug)))
+    (let ((entry (codex-ide-test--popup-entry-by-variable
+                  (car pair) (cdr pair))))
+      (should (eq (plist-get entry :type) 'switch)))))
 
 (ert-deftest codex-ide-default-buffer-name-distinguishes-equal-basenames ()
   "Default names distinguish project roots with the same basename."

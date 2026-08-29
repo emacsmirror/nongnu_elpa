@@ -80,26 +80,6 @@
   (setq codex-ide-terminal-backend backend)
   (codex-ide-log "Terminal backend set to %s" backend))
 
-(defun codex-ide-menu--toggle-no-alt-screen ()
-  "Toggle `codex-ide-no-alt-screen'."
-  (interactive)
-  (setq codex-ide-no-alt-screen (not codex-ide-no-alt-screen))
-  (codex-ide-log "No-alt-screen %s"
-                 (if codex-ide-no-alt-screen "enabled" "disabled")))
-
-(defun codex-ide-menu--toggle-yolo ()
-  "Toggle `codex-ide-yolo' for new sessions."
-  (interactive)
-  (setq codex-ide-yolo (not codex-ide-yolo))
-  (codex-ide-log "YOLO mode %s"
-                 (if codex-ide-yolo "enabled" "disabled")))
-
-(defun codex-ide-menu--toggle-debug-mode ()
-  "Toggle `codex-ide-debug'."
-  (interactive)
-  (setq codex-ide-debug (not codex-ide-debug))
-  (codex-ide-log "Debug mode %s"
-                 (if codex-ide-debug "enabled" "disabled")))
 
 (defun codex-ide-menu--save-config ()
   "Save the documented configuration symbols to the custom file.
@@ -111,10 +91,6 @@ overrides, debug, MCP enable/host/port, and context auto-start."
           (customize-save-variable symbol (symbol-value symbol)))
         codex-ide-menu--saved-config-symbols)
   (codex-ide-log "Configuration saved"))
-
-(defun codex-ide-menu--on-off (value)
-  "Return \"ON\" or \"OFF\" for VALUE."
-  (if value "ON" "OFF"))
 
 ;;; Menus
 
@@ -131,12 +107,8 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   "p" ("Set CLI path" codex-ide-menu--set-cli-path)
   "t" ("Set terminal backend" codex-ide-menu--set-terminal-backend)
   "a" ("Set approval policy" codex-ide-menu--set-approval)
-  "y" ((lambda () (format "YOLO full control (%s)"
-                          (codex-ide-menu--on-off codex-ide-yolo)))
-       codex-ide-menu--toggle-yolo)
-  "A" ((lambda () (format "No-alt-screen (%s)"
-                          (codex-ide-menu--on-off codex-ide-no-alt-screen)))
-       codex-ide-menu--toggle-no-alt-screen)
+  "y" ("YOLO full control" :switch codex-ide-yolo)
+  "A" ("No-alt-screen" :switch codex-ide-no-alt-screen)
   :group "Save"
   "S" ("Save configuration" codex-ide-menu--save-config))
 
@@ -147,9 +119,7 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   :group "Status"
   "S" ("Check CLI status" codex-ide-check-status)
   :group "Settings"
-  "d" ((lambda () (format "Debug mode (%s)"
-                          (codex-ide-menu--on-off codex-ide-debug)))
-       codex-ide-menu--toggle-debug-mode)
+  "d" ("Debug mode" :switch codex-ide-debug)
   :group "Logs"
   "l" ("Show debug log" codex-ide-show-debug)
   "c" ("Clear debug log" codex-ide-clear-debug))
