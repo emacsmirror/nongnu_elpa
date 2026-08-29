@@ -3541,6 +3541,19 @@ We convert and compare their created_at values."
       (date-to-time
        (alist-get 'created_at y)))))
 
+(defun mastodon-tl-tags-all-data (&optional prefix)
+  "Return tags data for all tags in `mastodon-tl-tags-groups'.
+PREFIX is `mastodon-tl-tag-group-tl'."
+  (let (list)
+    ;; push to list:
+    (mapc (lambda (x)
+            (let ((data (mastodon-tl--tag-group-tl x prefix))) ;; get data
+              (mapcar (lambda (y)
+                        (push y list)) ;; push data to single list
+                      data)))
+          mastodon-tl--tags-groups)
+    list))
+
 (defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
 This will probably be quite slow, as it makes one request for every 4
@@ -3553,21 +3566,13 @@ PREFIX is for `mastodon-tl-tag-group-tl'."
   ;; (paginated) data mastodon-tl--tag-group-tl returns
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
-      (user-error
-       "Set `mastodon-tl--tags-groups' to view tag group timelines")
-    (let* (list)
-      ;; push to list:
-      (mapc (lambda (x)
-              (let ((data (mastodon-tl--tag-group-tl x prefix))) ;; get data
-                (mapcar (lambda (y)
-                          (push y list)) ;; push data to single list
-                        data)))
-            mastodon-tl--tags-groups)
-      (let ((sorted (cl-sort list #'mastodon-tl-ts-sort-pred)))
-        (mastodon-tl--init-sync
-         "tags-multiple"
-         (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
-         #'mastodon-tl--timeline nil nil nil nil nil nil sorted)))))
+      (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
+    (let* ((data (mastodon-tl-tags-all-data prefix))
+           (sorted (cl-sort data #'mastodon-tl-ts-sort-pred)))
+      (mastodon-tl--init-sync
+       "tags-multiple"
+       (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
+       #'mastodon-tl--timeline nil nil nil nil nil nil sorted))))
 
 
 ;;; REPORT TO MODERATORS
