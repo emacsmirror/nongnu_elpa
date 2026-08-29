@@ -296,6 +296,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "C-\"")   #'mastodon-tl-jump-to-followed-tag)
     (define-key map (kbd "'")      #'mastodon-tl-followed-tags-timeline)
     (define-key map (kbd "C-'")    #'mastodon-tl-tag-group-timeline)
+    (define-key map (kbd "C-M-'")  #'mastodon-tl-tag-all-timeline)
     (define-key map (kbd "A")      #'mastodon-profile-get-toot-author)
     (define-key map (kbd "F")      #'mastodon-tl-get-federated-timeline)
     (define-key map (kbd "H")      #'mastodon-tl-get-home-timeline)
