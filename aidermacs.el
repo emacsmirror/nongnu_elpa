@@ -419,8 +419,9 @@ This is used when you want to target an existing session."
   "Generate the aidermacs buffer name based on project root or current directory.
 When USE-EXISTING is non-nil, return an existing session buffer name.
 Otherwise, reuse an existing session whose directory contains the current
-directory; otherwise create a new buffer name based on `aidermacs-subtree-only'
-or the project root.
+directory and is not a strict ancestor of the current git repository
+(if inside a git repo); otherwise create a new buffer name based on
+`aidermacs-subtree-only' or the project root.
 If supplied, SUFFIX is appended to the buffer name within the earmuffs."
   (if use-existing
       (aidermacs-select-buffer-name)
@@ -439,10 +440,17 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
 
            ;; Determine the display-root for the buffer name
            (display-root
-            (let* ((sessions-containing-current-dir ;; Sessions whose paths contain current-dir-truename
+            (let* ((git-root (vc-git-root default-directory))
+                   (git-root-truename (and git-root (file-truename git-root)))
+                   (sessions-containing-current-dir ;; Sessions whose paths contain current-dir-truename
                     (sort (cl-remove-if-not
                            (lambda (session-path)
-                             (file-in-directory-p current-dir-truename session-path))
+                             (and (file-in-directory-p current-dir-truename session-path)
+                                  ;; When inside a git repo, don't reuse sessions
+                                  ;; that belong to a parent (enclosing) git repo.
+                                  (or (null git-root-truename)
+                                      (not (and (file-in-directory-p git-root-truename session-path)
+                                                (not (string= git-root-truename session-path)))))))
                            existing-session-paths)
                           ;; Sort by length (deeper paths are more specific)
                           (lambda (a b) (> (length a) (length b)))))
