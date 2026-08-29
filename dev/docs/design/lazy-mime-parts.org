@@ -21,7 +21,7 @@ bug that produces:
 
 - #500, headers-only corruption: body appearing among the headers.  Never
   reproduced, and the warning was retired without a code change.
-- #496, =k= deleting a whole folder, which was the same family -- a header read
+- #496, =k= deleting a whole folder, which was the same family, a header read
   returning nothing because point had moved.
 - The four =vm-assert= calls guarding that code are inert by default
   (=vm-assertion-checking-off= defaults to t), so the invariant is unchecked in
@@ -63,7 +63,7 @@ VM's IMAP client issues only two body fetches:
 | =BODY.PEEK[HEADER]= | headers only    |
 | =BODY.PEEK[]=       | the whole thing |
 
-It never asks for =BODYSTRUCTURE=, so it cannot know a message's MIME shape
+It never asks for =BODYSTRUCTURE=, so it cannot know a message's MIME structure
 without downloading it.  Lazy parts need the layout built from the server's
 description instead of by parsing bytes.
 
@@ -75,7 +75,7 @@ parenthesised-list parsing to build on.
 *** 2. Part fetching
 
 =FETCH n (BODY.PEEK[<section>])= where section is the RFC 3501 §6.4.5 part
-number -- =1=, =2.1=, =2.MIME=, =3.TEXT=.  The numbering rules are fiddly
+number: =1=, =2.1=, =2.MIME=, =3.TEXT=.  The numbering rules are fiddly
 around =message/rfc822= and single-part messages; they must come from the same
 code that built the layout, not be re-derived at fetch time.
 
@@ -90,8 +90,8 @@ parameters for this: those are the sender's data, and this is ours.
 *** 4. A fetch hook in the display path
 
 =vm-decode-mime-layout= dispatches on type and then reads the body.  The hook
-belongs at the point where a body is first needed -- one place, guarded by "is
-this part present" -- rather than spread across the type handlers.
+belongs at the point where a body is first needed, one place guarded by "is
+this part present", rather than spread across the type handlers.
 
 ** Design decisions to settle
 
@@ -131,12 +131,12 @@ Each slice is testable on its own, which matters because there is now a rig:
 =test/vm-imap-relay.el= for malformed and truncated server responses.
 
 1. =BODYSTRUCTURE= parsing into a VM MIME layout, with no fetching and no
-   display -- pure function, compared against layouts VM builds by parsing the
+   display: a pure function, compared against layouts VM builds by parsing the
    same messages it has downloaded.  That last point is the whole test strategy:
    *the two paths must agree*, which is checkable for any message.
 2. Part fetching, =BODY.PEEK[<section>]=, verified against the same messages.
 3. Provenance plus the display hook, with everything still fetched eagerly, so
-   nothing is deferred and behaviour is unchanged -- a no-op slice that proves
+   nothing is deferred and behaviour is unchanged, a no-op slice that proves
    the plumbing.
 4. Deferral policy, and the eviction accounting.
 5. Retire headers-only mode: keep =vm-enable-external-messages= working as an
