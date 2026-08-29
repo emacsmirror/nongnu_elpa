@@ -506,10 +506,10 @@ Prompts for ENCLOSURE-INDEX when called interactively."
 Prompts for ENCLOSURE-INDEX when called interactively."
   (interactive (list (elfeed-show--enclosure-maybe-prompt-index elfeed-show-entry))
                elfeed-show-mode)
-  (require 'emms)
-  (declare-function emms-add-url "emms")
-  (emms-add-url (car (elt (elfeed-entry-enclosures elfeed-show-entry)
-                          (- enclosure-index 1)))))
+  (when-let* ((url (car (elt (elfeed-entry-enclosures elfeed-show-entry)
+                             (- enclosure-index 1)))))
+    (require 'emms)
+    (eval `(with-current-emms-playlist (emms-add-url ,url)))))
 
 (defun elfeed-show-next-link ()
   "Skip to the next link, exclusive of the Link header."
