@@ -6269,6 +6269,36 @@ a thing to know about: VM is looking at the new one, so the old goes stale."
 			   " VM is not looking at it: it will go stale")
 	       (abbreviate-file-name old)))))
 
+(defun vm-folder-buffer-in-use-p (buffer)
+  "Whether BUFFER is a folder somebody is reading, rather than a leftover.
+`vm-message-pointer\=' is what tells them apart.  A visit that fails partway
+leaves a `vm-mode\=' buffer without one -- holding the messages read before the
+error, or none at all, depending on how far it got -- and that buffer is not
+one to keep, let alone to convert from.  It is also the state
+`vm-error-if-folder-not-read-through\=' refuses, and the folder whose repair is
+the on-disk conversion in the first place.
+
+A buffer with a pointer is a folder in use, and converting the file under it
+would leave it holding the folder in a type it no longer is."
+  (with-current-buffer buffer
+    (and (eq major-mode 'vm-mode)
+	 vm-message-pointer
+	 t)))
+
+(defun vm-kill-folder-buffer-with-its-attendants (buffer)
+  "Kill folder BUFFER, and the summary and presentation buffers that serve it.
+Killing the folder buffer alone leaves those two pointing at a dead buffer,
+where every command answers \"Folder buffer has been killed\" and the reader
+has nothing to do but kill them by hand."
+  (let (summary presentation)
+    (with-current-buffer buffer
+      (setq summary vm-summary-buffer
+	    presentation vm-presentation-buffer-handle))
+    (dolist (attendant (list summary presentation))
+      (when (buffer-live-p attendant)
+	(kill-buffer attendant)))
+    (kill-buffer buffer)))
+
 (defun vm-change-folder-type-of-file (file type &optional interactive output)
   "Convert the folder FILE on disk to TYPE, without visiting it.
 INTERACTIVE says whether there is anybody to ask about deleting the file left
@@ -6280,6 +6310,11 @@ nothing is offered for deletion.  OUTPUT must not exist, and its name must be
 one a TYPE folder may be written under -- a folder called out.mbox cannot hold
 mboxcl2 (emacs-vm/vm#763).  OUTPUT naming FILE itself is the in-place
 conversion below.
+A folder somebody is reading is refused, since converting the file under a live
+buffer would leave that buffer holding the folder in a type it no longer is.
+The buffer a failed visit left behind is killed instead, with its summary and
+presentation, which is the case this is for.
+
 This is how to repair a folder VM will not read: a folder saying it is mboxcl2
 with a message that has no `Content-Length' cannot be visited, so its type
 cannot be changed in a buffer.  `vm-mboxcl2-strict' is bound to nil while the
@@ -6306,13 +6341,17 @@ when saving a buffer."
 		       " change its type in its buffer with"
 		       " M-x vm-change-folder-type")
 	       (file-name-nondirectory file)))
-      ;; Nothing is lost: the buffer has no changes.  A folder that failed to
-      ;; open leaves one of these behind, holding however many messages were
-      ;; read before the error -- five of seven, in the case this was written
-      ;; for -- so it is not a buffer to keep, let alone to convert from.
-      (vm-inform 5 "Killing the buffer visiting %s, which has no changes"
+      (when (vm-folder-buffer-in-use-p buffer)
+	(error (concat "%s is being visited; quit that folder with"
+		       " M-x vm-quit and convert it again")
+	       (file-name-nondirectory file)))
+      ;; Only the buffer a failed visit left behind gets here, and nothing is
+      ;; lost: it has no changes, it holds however many messages were read
+      ;; before the error -- five of seven, in the case this was written for
+      ;; -- and it is not a buffer to keep, let alone to convert from.
+      (vm-inform 5 "Killing the buffer visiting %s, which was not read through"
 		 (file-name-nondirectory file))
-      (kill-buffer buffer)))
+      (vm-kill-folder-buffer-with-its-attendants buffer)))
   (let ((old (vm-get-folder-type file))
 	(coding-system-for-read (vm-binary-coding-system))
 	(coding-system-for-write (vm-binary-coding-system))
@@ -6491,13 +6530,34 @@ named in the report."
 	      (answer (setq converted (1+ converted))))))
     (cons converted (nreverse faults))))
 
+(defun vm-cache-conversion-tally (found converted faults)
+  "One line saying how the conversion of FOUND caches went.
+CONVERTED is how many were, FAULTS what stopped the rest."
+  (format "%d cache%s of %d converted%s"
+	  converted (if (= converted 1) "" "s") found
+	  (if faults (format ", %d could not be" (length faults)) "")))
+
 (defun vm-report-cache-conversion (found converted faults)
-  "Say how the conversion of FOUND caches went, and name every fault."
-  (dolist (fault faults)
-    (vm-warn 0 2 "%s: %s" (file-name-nondirectory (car fault)) (cdr fault)))
-  (vm-inform 1 "%d cache%s of %d converted%s"
-	     converted (if (= converted 1) "" "s") found
-	     (if faults (format ", %d could not be" (length faults)) "")))
+  "Say how the conversion of FOUND caches went, and name every fault.
+The tally alone where nothing went wrong.  A buffer as soon as anything did,
+because the faults are what the reader has to act on and a run of messages in
+the echo area replaces each with the next: with a dozen caches only the last
+of them would still be readable, which is why `vm-check-folder-report\=' puts
+its list in a buffer too."
+  (let ((tally (vm-cache-conversion-tally found converted faults)))
+    (if (null faults)
+	(vm-inform 1 "%s" tally)
+      (with-output-to-temp-buffer "*VM cache conversion*"
+	(princ (format "%s\n\n" tally))
+	(princ "These caches were left exactly as they were:\n\n")
+	(dolist (fault faults)
+	  (princ (format "  %s\n      %s\n"
+			 (abbreviate-file-name (car fault)) (cdr fault))))
+	(princ (concat "\nNothing was refetched.  Deal with each of these and"
+		       " run M-x vm-convert-caches-to-mboxcl2 again: the"
+		       " caches already converted are named for their type"
+		       " now and will not be offered a second time.\n")))
+      (vm-inform 1 "%s; see *VM cache conversion*" tally))))
 
 ;;;###autoload
 (defun vm-convert-caches-to-mboxcl2 (&optional each)
@@ -6510,11 +6570,16 @@ converts each of those and renames it, which is `vm-change-folder-type-of-file\=
 once per cache: the previous contents are kept in a backup file, and a cache
 that is already mboxcl2 in all but its name is only renamed.
 
-With a prefix argument it asks about each cache rather than about the lot.
+It asks once before starting, and then once per cache about deleting the copy
+left under the old name -- that one is a file on disk and a decision of its
+own, so it is asked rather than assumed either way.  With a prefix argument it
+asks about each cache before converting it as well.
 
-A cache being visited with unsaved changes cannot be converted and is reported;
-save it, or leave that folder, and run this again.  Nothing is refetched, and a
-cache that cannot be read is left exactly as it was.
+A cache being visited cannot be converted and is reported; quit that folder
+with `vm-quit\=' and run this again.  Nothing is refetched, and a cache that
+cannot be read is left exactly as it was.  Where anything could not be
+converted the faults are listed in a buffer, since a run of them in the echo
+area cannot be read.
 
 The caches are looked for where their names are built, which is
 `vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',

@@ -2599,6 +2599,100 @@ before that was read as From_, so a message whose body holds a line beginning
       (should (cl-find-if (lambda (s) (string-match-p "1 cache of 1 converted" s))
                           said)))))
 
+(ert-deftest vm-folder-test-a-visited-cache-is-refused-not-killed ()
+  "REGRESSION: converting a cache being visited refuses and keeps the buffer.
+Issue #770.  `vm-change-folder-type-of-file' guarded only on
+`buffer-modified-p', so a healthy folder buffer was killed without asking and
+its summary and presentation were left pointing at a dead buffer, where every
+command answers \"Folder buffer has been killed\"."
+  (vm-folder-test--with-cache-directory dir
+    (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef")))
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (vm-visit-folder old))
+      (let ((folder (vm-get-file-buffer old))
+            (faults nil))
+        (should (buffer-live-p folder))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'vm-inform) #'ignore)
+                  ((symbol-function 'vm-report-cache-conversion)
+                   (lambda (_found _converted fs) (setq faults fs))))
+          (vm-convert-caches-to-mboxcl2))
+        ;; the folder is still there, and so is the file
+        (should (buffer-live-p folder))
+        (should (file-exists-p old))
+        (should-not (file-exists-p (concat old ".mboxcl2")))
+        ;; and the reader is told which one, and what to do
+        (should (equal (length faults) 1))
+        (should (string-match-p "being visited" (cdr (car faults))))
+        (should (string-match-p "vm-quit" (cdr (car faults))))))))
+
+(ert-deftest vm-folder-test-a-failed-visit-takes-its-attendants-with-it ()
+  "REGRESSION: the buffer a failed visit left is killed with its attendants.
+Issue #770.  That buffer is still the one case the on-disk conversion may kill
+-- it holds part of a folder and no `vm-message-pointer' -- but killing it
+alone orphaned the summary and presentation."
+  (vm-folder-test--with-cache-directory dir
+    (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef")))
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (vm-visit-folder old))
+      (let* ((folder (vm-get-file-buffer old))
+             (summary (with-current-buffer folder vm-summary-buffer))
+             (presentation (with-current-buffer folder
+                             vm-presentation-buffer-handle)))
+        (should (buffer-live-p summary))
+        ;; make it look like a visit that failed partway: messages, no pointer
+        (with-current-buffer folder (setq vm-message-pointer nil))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'vm-inform) #'ignore))
+          (vm-convert-caches-to-mboxcl2))
+        (should-not (buffer-live-p folder))
+        (should-not (buffer-live-p summary))
+        (should-not (and presentation (buffer-live-p presentation)))
+        (should (file-exists-p (concat old ".mboxcl2")))))))
+
+(ert-deftest vm-folder-test-the-faults-are-listed-in-a-buffer ()
+  "REGRESSION: a cache that could not be converted is named in a buffer.
+Issue #770.  One `vm-warn' per fault replaced each with the next, so with a
+dozen caches only the last was readable, while the docstring said every fault
+was named in the report."
+  (vm-folder-test--with-cache-directory dir
+    (let ((good (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
+          (bad (vm-folder-test--cache dir "pop-cache-fedcba9876543210"
+                                      "this is not a folder at all\n"))
+          (report nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'vm-inform) #'ignore))
+        (vm-convert-caches-to-mboxcl2))
+      (should (file-exists-p (concat good ".mboxcl2")))
+      (when (get-buffer "*VM cache conversion*")
+        (with-current-buffer "*VM cache conversion*"
+          (setq report (buffer-string)))
+        (kill-buffer "*VM cache conversion*"))
+      (should report)
+      (should (string-match-p "1 cache of 2 converted, 1 could not be" report))
+      (should (string-match-p "pop-cache-fedcba9876543210" report))
+      ;; and the one that worked is not listed as a fault
+      (should-not (string-match-p "imap-cache-0123456789abcdef" report)))))
+
+(ert-deftest vm-folder-test-a-clean-conversion-opens-no-buffer ()
+  "Nothing went wrong, so there is nothing to read: the tally is one line.
+A buffer for a run with no faults would be the noise that stops the report
+being worth opening when there are some."
+  (vm-folder-test--with-cache-directory dir
+    (vm-folder-test--cache dir "imap-cache-0123456789abcdef")
+    (let ((said nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (push (apply #'format args) said))))
+        (vm-convert-caches-to-mboxcl2))
+      (should-not (get-buffer "*VM cache conversion*"))
+      (should (cl-find-if (lambda (s) (string-match-p "1 cache of 1 converted" s))
+                          said)))))
+
 (defconst vm-folder-test--sound-mboxcl2-message
   (concat "From VM Thu May  7 06:22:17 2026\n"
           "Content-Length: 11\n"
@@ -2641,18 +2735,20 @@ caches would leave a half-done job and no account of it."
     (let ((good (vm-folder-test--cache dir "imap-cache-0123456789abcdef"))
           (bad (vm-folder-test--cache dir "pop-cache-fedcba9876543210"
                                       "this is not a folder at all\n"))
-          (warned nil)
+          (report nil)
           (said nil))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
                 ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-                ((symbol-function 'vm-warn)
-                 (lambda (_level _secs &rest args) (push (apply #'format args) warned)))
                 ((symbol-function 'vm-inform)
                  (lambda (_level &rest args) (push (apply #'format args) said))))
         (vm-convert-caches-to-mboxcl2))
       (should (file-exists-p (concat good ".mboxcl2")))
       (should (file-exists-p bad))
-      (should (cl-find-if (lambda (s) (string-match-p "pop-cache" s)) warned))
+      (when (get-buffer "*VM cache conversion*")
+        (with-current-buffer "*VM cache conversion*"
+          (setq report (buffer-string)))
+        (kill-buffer "*VM cache conversion*"))
+      (should (string-match-p "pop-cache" report))
       (should (cl-find-if (lambda (s)
                             (string-match-p "1 cache of 2 converted, 1 could not be" s))
                           said)))))
@@ -2959,9 +3055,11 @@ until it stopped regenerating the envelope lines."
                             (file-attributes file)))))))
 
 (ert-deftest vm-folder-test-on-disk-conversion-will-not-touch-unsaved-changes ()
-  "A visited folder with changes is refused, and named, rather than converted
-behind the buffer's back.  An unmodified one is killed: a folder that failed
-to open leaves a buffer holding only the messages read before the error."
+  "A visited folder is refused whether or not it has changes, and named.
+Changes make it a different message, since saving is the way out of that one.
+An unmodified folder in use is refused too (#770): killing it took its summary
+and presentation with it into a state where every command answered \"Folder
+buffer has been killed\"."
   (vm-folder-test-with-file (file "folder.mbox"
                                   (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
                                           "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
@@ -2973,10 +3071,15 @@ to open leaves a buffer holding only the messages read before the error."
                               (cadr (should-error
                                      (vm-change-folder-type-of-file file 'mboxcl2)))))
       (with-current-buffer (vm-get-file-buffer file) (set-buffer-modified-p nil))
+      (should (string-match-p "being visited"
+                              (cadr (should-error
+                                     (vm-change-folder-type-of-file file 'mboxcl2)))))
+      ;; and the folder is still there to go back to
+      (should (vm-get-file-buffer file))
+      ;; quitting it is the way through, and then the conversion writes the
+      ;; folder under the name mboxcl2 asks for (emacs-vm/vm#743)
+      (with-current-buffer (vm-get-file-buffer file) (vm-quit-no-change))
       (vm-change-folder-type-of-file file 'mboxcl2)
-      (should-not (vm-get-file-buffer file))
-      ;; and it is written under the name mboxcl2 asks for, so that it reads
-      ;; back as one (emacs-vm/vm#743)
       (with-temp-buffer
         (insert-file-contents (vm-folder-name-for-type file 'mboxcl2))
         (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string)))))))

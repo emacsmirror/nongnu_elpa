@@ -24,6 +24,12 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     command, so such a cache now gets a report buffer where it used to be one
     line in the echo area.  Nothing in it is wrong, and the report says so.
 
+    Converting a folder on disk now refuses a folder you are reading rather
+    than killing its buffer, which had left its summary and presentation
+    answering "Folder buffer has been killed" (emacs-vm/vm#770).  Quit the
+    folder and convert it again.  The buffer a failed visit leaves behind is
+    still killed, and now takes its summary and presentation with it.
+
   * `vm-default-folder-type` set to mboxcl2 now names what it creates:
     saving to a folder that does not exist, an `FCC:` to one, and a postponed
     draft all create `NAME.mboxcl2` (emacs-vm/vm#767, emacs-vm/vm#766).  A
