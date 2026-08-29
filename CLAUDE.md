@@ -348,6 +348,17 @@ descriptions, MR descriptions.
 
 Commits carry the equivalent through their `Co-Authored-By:` trailer.
 
+## Writing
+
+These apply to everything written for this repo: the manual, NEWS, docstrings,
+code comments, commit messages, and issue and merge request text.
+
+- **No em dashes.** Not `---`, not `--` used as punctuation, not the character
+  itself. Use a comma, a colon, or two sentences. In Texinfo `---` renders as an
+  em dash, so it is the same rule there.
+- **Do not write "shape".** Say "structure", or name the thing concretely. It is
+  vague where "structure" is specific.
+
 ## NEWS
 
 The NEWS files record new functionality and user-visible changes of

@@ -1107,8 +1107,8 @@ place.
 VM quotes, as every mailer does: a body line that would be taken for a
 separator gets @samp{>} put in front of it.  What differs is which lines.
 Most mailers quote every body line beginning @samp{From }.  VM quotes only a
-line that begins @samp{From } @emph{and ends in a digit}, as a date does ---
-in regular expression terms @samp{^From .*[0-9]$}.  So a paragraph beginning
+line that begins @samp{From } @emph{and ends in a digit}, as a date does:
+in regular expression terms, @samp{^From .*[0-9]$}.  So a paragraph beginning
 ``From now on we ship on Fridays'' is left exactly as it was written in a VM
 folder and comes back @samp{>From now on} in most others.
 
@@ -1138,8 +1138,8 @@ mistaken.
 
 The reader's test is narrower, not exact.  A body line that begins
 @samp{From }, ends in a digit and follows an empty line is read as a
-separator wherever it was not quoted --- in a folder some other program
-wrote, or one assembled by hand --- and one message becomes two.
+separator wherever it was not quoted, in a folder some other program wrote or
+one assembled by hand, and one message becomes two.
 
 A message must therefore be followed by an empty line, which VM writes.  A
 program that appends to a VM folder without one leaves a message VM reads as
@@ -1182,14 +1182,6 @@ only on the BSDs.  Thunderbird is the exception in the other direction:
 @code{vm-sync-thunderbird-status} is @code{t} out of the box, so
 @code{X-Mozilla-Status} is kept up to date both ways.  @xref{Thunderbird
 Folders}.
-@item VM ignores @code{Lines:}.
-@cindex Lines: header
-Some mailers write a @code{Lines:} header counting the lines of a body, and
-some use it to find the end of a message the way mboxcl2 uses
-@code{Content-Length:}.  VM neither writes it nor reads it.  A folder whose
-boundaries depend on it is read by VM as an ordinary From_ folder, by
-searching for the next separator, which is right whenever the header and the
-body agree and no worse than the rest of the format when they do not.
 @end table
 
 @noindent
@@ -1197,61 +1189,13 @@ The short of it: a From_ folder is safe to share with another program if you
 are content that read and unread will not travel, that the first message is
 carrying luggage, and that a message whose body has a @samp{From } line in it
 may be escaped differently, and so split differently, at each end.  A folder
-VM writes for itself --- a cache above all --- is better left to VM, and
+VM writes for itself, a cache above all, is better left to VM, and
 better still written as mboxcl2, where the boundary is a byte count rather
 than a line that has to be recognised, and where nothing is escaped at all.
 
-@subheading Further reading on mbox
-
-@cindex mbox, further reading
-There is no standard, so the descriptions disagree with each other and none is
-complete.  These are the useful ones, with what each leaves out.
-
-@table @asis
-@item qmail's @file{mbox(5)}
-@indicateurl{http://qmail.org/qmail-manual-html/man5/mbox.html}
-
-The clearest short description.  It does not cover the @code{Content-Length:}
-variants or @code{Lines:}, and From_ line syntax varies more than it says.
-
-@item The Library of Congress format description
-@indicateurl{https://www.loc.gov/preservation/digital/formats/fdd/fdd000383.shtml}
-
-Thorough on the family and carefully sourced.  No @code{Content-Length:}
-variant and no @code{Lines:}.
-
-@item Jonathan de Boyne Pollard, ``Mail mbox formats'' (2004)
-@indicateurl{https://web.archive.org/web/20161023162432/jdebp.eu/FGA/mail-mbox-formats.html}
-
-The best account of how the variants differ and why they cannot be told apart
-reliably, which is the problem VM's naming rules exist to sidestep.  The
-original has gone; that is the archived copy.  Again no @code{Content-Length:}
-and no @code{Lines:}.
-
-@item Jamie Zawinski, ``Content-Length'' (1996)
-@indicateurl{https://www.jwz.org/doc/content-length.html}
-
-The one that names and describes the @code{Content-Length:} variant, which is
-what mboxcl2 is, and it is blunt about it: ``non-portable, easily-corruptible,
-and overall, brain-damaged''.  Worth reading for that argument against the
-format VM prefers.
-
-It gives the blank-line rule for @emph{reading} --- a separator is a
-@samp{From } line ``preceded by a blank line or beginning-of-file'' --- but
-states the escaping without that qualification, which is where the
-descriptions and the implementations part company.  VM escapes without regard
-to what precedes the line, on purpose (above), so a VM folder carries escapes
-this document would not lead you to expect.
-
-@item Wikipedia's @cite{mbox}
-@indicateurl{https://en.wikipedia.org/wiki/Mbox}
-
-The first thing a search finds, and uneven, but it is the only one of these
-that names all four variants and gets the distinction this manual turns on:
-``mboxcl still quotes From lines in the messages themselves as mboxrd does,
-while mboxcl2 doesn't''.  Check anything else it says against one of the
-others.
-@end table
+@noindent
+The Library of Congress describes the format family and its variants:
+@indicateurl{https://www.loc.gov/preservation/digital/formats/fdd/fdd000383.shtml}.
 
 @subheading How VM decides what a folder is
 
