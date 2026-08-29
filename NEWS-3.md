@@ -8,6 +8,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * IMAP CRAM-MD5 authentication now works with a password that is not
+    plain ASCII, and with one longer than 64 characters (emacs-vm/vm#772).
+    HMAC is defined over octets; VM XORed character codes and padded to 64
+    characters, so an accented password produced a digest the server
+    rejected and VM reported the correct password as incorrect.  A password
+    over 64 characters raised "strings not of equal length" instead of
+    logging in, RFC 2104's rule that an over-long key is hashed first not
+    having been implemented.  What goes on the wire changes for those
+    passwords, and is now what every other client sends.  APOP was never
+    affected.
+
   * New command `vm-convert-caches-to-mboxcl2` converts the POP and IMAP
     caches VM wrote before it named its caches for their type
     (emacs-vm/vm#768).  Those are read as From_, where a message whose body
