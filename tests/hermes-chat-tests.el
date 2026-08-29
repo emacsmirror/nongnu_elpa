@@ -636,6 +636,84 @@
       (when (buffer-live-p chat) (kill-buffer chat))
       (kill-buffer origin))))
 
+(ert-deftest hermes-chat-configured-instance-always-uses-gateway-filesystem ()
+  "A named instance stays remote even when loopback is forced to spawn."
+  (dolist (start-mode '(auto spawn))
+    (let* ((instance '("named" . "http://127.0.0.1:9119"))
+           (hermes-instances (list instance))
+           (hermes-dashboard-transport-start-mode start-mode)
+           (launch-directory (file-name-as-directory temporary-file-directory))
+           buffer)
+      (unwind-protect
+          (let ((default-directory launch-directory))
+            (setq buffer (hermes-chat nil instance))
+            (with-current-buffer buffer
+              (should hermes-chat--remote-filesystem-p)
+              (should (equal default-directory launch-directory))
+              (should-not hermes-chat--working-directory)
+              (should-not (hermes-chat--current-working-directory))
+              (should (string-match-p "\\[detached\\]" (buffer-name)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-legacy-instance-uses-resolved-filesystem-mode ()
+  "The unnamed singleton seeds cwd only when its resolved mode is spawn."
+  (dolist (spec '(("http://127.0.0.1:9119" auto t)
+                  ("http://127.0.0.1:9119" spawn t)
+                  ("http://127.0.0.1:9119" remote nil)
+                  ("https://hermes.example.test" auto nil)))
+    (let ((hermes-instances nil)
+          (hermes-dashboard-transport-url (nth 0 spec))
+          (hermes-dashboard-transport-start-mode (nth 1 spec))
+          (launch-directory (file-name-as-directory temporary-file-directory))
+          buffer)
+      (unwind-protect
+          (let ((default-directory launch-directory))
+            (setq buffer (hermes-chat nil))
+            (with-current-buffer buffer
+              (should (eq hermes-chat--remote-filesystem-p (not (nth 2 spec))))
+              (should (equal default-directory launch-directory))
+              (if (nth 2 spec)
+                  (should (equal (hermes-chat--current-working-directory)
+                                 launch-directory))
+                (should-not (hermes-chat--current-working-directory)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-remote-resume-hydrates-only-gateway-cwd ()
+  "A remote resume stays detached until the backend supplies its gateway cwd."
+  (dolist (outcome '(resolve reject))
+    (let* ((instance '("remote" . "https://hermes.example.test"))
+           (hermes-instances (list instance))
+           (launch-directory (file-name-as-directory temporary-file-directory))
+           resolve reject buffer)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) (hermes-test--dashboard-client)))
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client _session-id &rest args)
+                   (setq resolve (plist-get args :resolve)
+                         reject (plist-get args :reject)))))
+        (unwind-protect
+            (let ((default-directory launch-directory))
+              (setq buffer
+                    (hermes-chat-resume-session "stored" nil nil instance))
+              (with-current-buffer buffer
+                (should-not hermes-chat--working-directory)
+                (should (string-match-p "\\[detached\\]" (buffer-name)))
+                (should (string-match-p "detached"
+                                        (hermes-test--header-line-string)))
+                (pcase outcome
+                  ('resolve
+                   (funcall resolve
+                            '((session_id . "live")
+                              (info . ((cwd . "/srv/repo")))))
+                   (should (equal hermes-chat--working-directory "/srv/repo"))
+                   (should (string-match-p "\\[repo\\]" (buffer-name))))
+                  ('reject
+                   (funcall reject "resume failed")
+                   (should (string-match-p "\\[detached\\]" (buffer-name)))
+                   (should-not hermes-chat--working-directory)))
+                (should (equal default-directory launch-directory))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (ert-deftest hermes-chat-selects-instance-before-profile ()
   "Interactive chat selection pins the instance used to read its profile."
   (let ((instance '("remote" . "https://hermes.example.test"))

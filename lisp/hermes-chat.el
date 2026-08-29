@@ -93,6 +93,7 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--runtime-flags)
 (defvar hermes-chat--profile)
 (defvar hermes-chat--working-directory)
+(defvar hermes-chat--remote-filesystem-p)
 (defvar hermes-chat--active-tools)
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-session-ready-p)
@@ -1255,6 +1256,13 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
+(defun hermes-chat--instance-remote-filesystem-p (instance)
+  "Return non-nil when INSTANCE's gateway owns its filesystem namespace."
+  (or hermes-instances
+      (let ((hermes-dashboard-transport-url (hermes-instance-url instance)))
+        (eq (plist-get (hermes-dashboard-transport--resolve-target) :mode)
+            'remote))))
+
 (defun hermes-chat--new-buffer (&optional profile title instance)
   "Create, display, and return a fresh chat buffer.
 PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
@@ -1273,15 +1281,18 @@ entry point funnels through."
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
-      (setq hermes-chat--working-directory directory
-            hermes-instance instance
+      (setq hermes-instance instance
+            hermes-chat--remote-filesystem-p
+            (hermes-chat--instance-remote-filesystem-p instance)
+            hermes-chat--working-directory
+            (and (not hermes-chat--remote-filesystem-p) directory)
             hermes-chat--profile profile)
       (hermes-chat--restore-draft-runtime)
       (when title
         (setq hermes-chat--title title
               hermes-chat--title-manual-p t))
       (rename-buffer
-       (hermes-chat--buffer-name profile instance directory) t))
+       (hermes-chat--buffer-name profile instance) t))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
@@ -1489,16 +1500,19 @@ durable session continues on send."
         (instance (or instance (hermes-instance-resolve)))
         (title (hermes-transport--non-empty-string
                 (and title (string-trim title))))
-        (buffer (generate-new-buffer
-                 (hermes-chat--buffer-name profile instance))))
+        (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
-      (setq hermes-chat--working-directory directory
-            hermes-instance instance
+      (setq hermes-instance instance
+            hermes-chat--remote-filesystem-p
+            (hermes-chat--instance-remote-filesystem-p instance)
+            hermes-chat--working-directory
+            (and (not hermes-chat--remote-filesystem-p) directory)
             hermes-chat--session-id session-id
             hermes-chat--profile profile
-            hermes-chat--title title))
+            hermes-chat--title title)
+      (rename-buffer (hermes-chat--buffer-name profile instance) t))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
       (hermes-chat--load-session-history buffer))

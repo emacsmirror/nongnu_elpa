@@ -1394,18 +1394,23 @@ This feeds the dashboard's per-session tool list via
   "Gateway-native working directory for this chat session.
 This path belongs to the Hermes instance and need not exist on Emacs's host.")
 
+(defvar-local hermes-chat--remote-filesystem-p nil
+  "Non-nil when this chat's gateway owns a separate filesystem namespace.")
+
 (defun hermes-chat--current-working-directory ()
-  "Return this chat's gateway working directory or local launch directory."
-  (or hermes-chat--working-directory default-directory))
+  "Return this chat's gateway cwd, falling back only for local gateways."
+  (or hermes-chat--working-directory
+      (and (not hermes-chat--remote-filesystem-p) default-directory)))
 
 (defun hermes-chat--directory-basename (&optional directory)
-  "Return the final component of gateway-native DIRECTORY."
-  (let* ((directory (or directory (hermes-chat--current-working-directory)))
-         (trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory)))
-    (cond
-     ((string-empty-p trimmed) directory)
-     ((string-match "[^/\\\\]+\\'" trimmed) (match-string 0 trimmed))
-     (t trimmed))))
+  "Return the final component of gateway-native DIRECTORY, or `detached'."
+  (if-let* ((directory (or directory (hermes-chat--current-working-directory))))
+      (let ((trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory)))
+        (cond
+         ((string-empty-p trimmed) directory)
+         ((string-match "[^/\\\\]+\\'" trimmed) (match-string 0 trimmed))
+         (t trimmed)))
+    "detached"))
 
 (defun hermes-chat--header-directory-segment ()
   "Return the propertized working-directory basename for the header."

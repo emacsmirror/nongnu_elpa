@@ -498,6 +498,75 @@
          (hermes-chat-send)
          (should (equal create-cwd "/srv/remote-project")))))))
 
+(ert-deftest hermes-chat-dashboard-remote-create-omits-unknown-cwd ()
+  "A detached remote chat never submits its editor directory as gateway cwd."
+  (let ((client (hermes-test--dashboard-client)) create-args)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-args args)
+                 (funcall (plist-get args :resolve) '((session_id . "sid")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq default-directory "/tmp/local-editor/"
+               hermes-chat--working-directory nil)
+         (insert "hi")
+         (hermes-chat-send)
+         (should create-args)
+         (should-not (plist-get create-args :cwd))
+         (should (equal default-directory "/tmp/local-editor/")))))))
+
+(ert-deftest hermes-chat-remote-set-directory-preserves-editor-directory ()
+  "A remote cwd change applies the backend path without changing editor cwd."
+  (let ((client (hermes-test--dashboard-client)) request)
+    (hermes-test-with-chat-buffer
+     (setq-local hermes-chat--remote-filesystem-p t)
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory "/srv/old"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client cwd &rest args)
+                  (setq request (list cwd (plist-get args :session-id)))
+                  (funcall (plist-get args :resolve)
+                           '((cwd . "/mnt/c/translated"))))))
+       (hermes-chat-set-directory "C:/project")
+       (should (equal request '("C:/project" "sid")))
+       (should (equal hermes-chat--working-directory "/mnt/c/translated"))
+       (should (equal default-directory "/tmp/local-editor/"))))))
+
+(ert-deftest hermes-chat-unknown-remote-directory-starts-with-manual-entry ()
+  "A detached remote chat asks for a gateway path without listing a local path."
+  (let ((client (hermes-test--dashboard-client)) prompt-default set-cwd)
+    (hermes-test-with-chat-buffer
+     (setq-local hermes-chat--remote-filesystem-p t)
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--working-directory nil
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _) (ert-fail "unknown cwd must not be listed")))
+               ((symbol-function 'read-string)
+                (lambda (_prompt initial &rest _)
+                  (setq prompt-default initial)
+                  "/srv/manual"))
+               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                (lambda (_client cwd &rest args)
+                  (setq set-cwd cwd)
+                  (funcall (plist-get args :resolve) `((cwd . ,cwd))))))
+       (hermes-chat-set-directory)
+       (should (equal prompt-default ""))
+       (should (equal set-cwd "/srv/manual"))
+       (should (equal default-directory "/tmp/local-editor/"))))))
+
 (ert-deftest hermes-chat-set-directory-uses-authoritative-backend-path ()
   "Changing directory applies the authoritative backend path to the chat."
   (let ((client (hermes-test--dashboard-client))

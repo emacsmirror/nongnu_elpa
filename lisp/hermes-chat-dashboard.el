@@ -53,6 +53,7 @@
 (defvar hermes-chat--session-id)
 (defvar hermes-chat--status-state)
 (defvar hermes-chat--working-directory)
+(defvar hermes-chat--remote-filesystem-p)
 (defvar hermes-chat--transport-generation)
 (defvar hermes-chat--lifecycle-generation)
 
@@ -1554,8 +1555,9 @@ a local FIFO submission."
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
 (defun hermes-chat--apply-directory (directory)
-  "Apply gateway-native DIRECTORY to this chat's remote and local context."
-  (setq-local default-directory (file-name-as-directory directory))
+  "Apply gateway-native DIRECTORY to this chat's gateway and local context."
+  (unless hermes-chat--remote-filesystem-p
+    (setq-local default-directory (file-name-as-directory directory)))
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status
    (format "Working directory: %s" directory)
@@ -1630,7 +1632,7 @@ REASON, when non-nil, explains why remote completion was unavailable."
     (message "%s" reason))
   (let ((directory
          (read-string "Hermes instance directory: "
-                      (hermes-chat--current-working-directory))))
+                      (or (hermes-chat--current-working-directory) ""))))
     (when (and (not (string-empty-p directory))
                (hermes-chat--dashboard-context-current-p
                 client generation session-id))
@@ -1705,8 +1707,11 @@ With explicit DIRECTORY, pass its gateway-native spelling to the backend."
    (lambda (client)
      (if directory
          (hermes-chat--set-live-directory client directory)
-       (hermes-chat--browse-instance-directory
-        client (hermes-chat--current-working-directory))))))
+       (if-let* ((current (hermes-chat--current-working-directory)))
+           (hermes-chat--browse-instance-directory client current)
+         (hermes-chat--read-instance-directory
+          client hermes-chat--lifecycle-generation
+          hermes-chat--dashboard-active-session-id))))))
 
 (defun hermes-chat--dashboard-action-resolver
     (buffer client action generation &optional create-p reject resume-p)
