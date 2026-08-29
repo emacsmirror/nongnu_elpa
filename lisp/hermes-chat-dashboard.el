@@ -1342,6 +1342,9 @@ session-scoped mutation path after also seeding the fresh build at creation;
     (owner client generation session-id)
   "Return non-nil when OWNER controls CLIENT's SESSION-ID batch at GENERATION."
   (and (eq owner hermes-chat--create-override-owner)
+       (eq client (plist-get owner :client))
+       (equal generation (plist-get owner :generation))
+       (equal session-id (plist-get owner :session-id))
        (hermes-chat--dashboard-context-current-p
         client generation session-id)))
 
@@ -1453,24 +1456,36 @@ Call CONTINUE on success or ABORT on failure."
 GENERATION and an exact local owner reject stale results.  ABORT receives a
 failure; overrides remain pending until the whole batch succeeds."
   (let ((cells (hermes-chat--dashboard-create-config-cells)))
-    (if (null cells)
-        (funcall continue)
-      (let ((owner (gensym "hermes-create-overrides-")))
+    (cond
+     (hermes-chat--create-override-owner
+      (let ((message "Pre-session runtime configuration is in progress"))
+        (if abort (funcall abort message)
+          (hermes-chat--command-error message))))
+     ((null cells) (funcall continue))
+     (t
+      (let* ((session-id hermes-chat--dashboard-active-session-id)
+             (owner (list :client client :generation generation
+                          :session-id session-id)))
         (setq hermes-chat--create-override-owner owner)
         (hermes-chat--dashboard-step-create-overrides
-         owner (current-buffer) client cells
-         hermes-chat--dashboard-active-session-id generation continue abort)))))
+         owner (current-buffer) client cells session-id generation
+         continue abort))))))
 
 (defun hermes-chat--dashboard-apply-retry-overrides
     (client continue generation abort)
   "Apply CLIENT overrides at GENERATION to their retry session, else CONTINUE.
 ABORT receives a failure."
-  (if (equal hermes-chat--create-overrides-retry-session-id
-             hermes-chat--dashboard-active-session-id)
-      (hermes-chat--dashboard-apply-create-overrides
-       client continue generation abort)
+  (cond
+   (hermes-chat--create-override-owner
+    (hermes-chat--dashboard-apply-create-overrides
+     client continue generation abort))
+   ((equal hermes-chat--create-overrides-retry-session-id
+           hermes-chat--dashboard-active-session-id)
+    (hermes-chat--dashboard-apply-create-overrides
+     client continue generation abort))
+   (t
     (hermes-chat--dashboard-clear-create-overrides)
-    (funcall continue)))
+    (funcall continue))))
 
 (defun hermes-chat--dashboard-ensure-session
     (client prompt buffer &optional resolve reject queued-p)

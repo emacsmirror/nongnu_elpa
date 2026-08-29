@@ -376,6 +376,78 @@
        (should (equal (reverse calls) '(nil nil t)))
        (should-not hermes-chat--dashboard-create-model)))))
 
+(ert-deftest hermes-chat-dashboard-retry-overrides-are-non-replacing ()
+  "Concurrent retry callers preserve the first owner and send one batch."
+  (let ((client (hermes-test--dashboard-client))
+        calls resolve first-action second-action first-reject second-reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq calls (1+ (or calls 0))
+                       resolve (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid"
+             hermes-chat--dashboard-create-fast-p t
+             hermes-chat--create-overrides-retry-session-id "sid")
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) (lambda (_client) (setq first-action t))
+        (lambda (message) (setq first-reject message)))
+       (let ((owner hermes-chat--create-override-owner))
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq second-action t))
+          (lambda (message) (setq second-reject message)))
+         (should (eq hermes-chat--create-override-owner owner)))
+       (should (= calls 1))
+       (should-not first-action)
+       (should-not first-reject)
+       (should-not second-action)
+       (should (string-match-p "configuration is in progress" second-reject))
+       (funcall resolve '((key . "fast")))
+       (should first-action)
+       (should-not second-action)
+       (should-not hermes-chat--create-override-owner)
+       (should-not hermes-chat--dashboard-create-fast-p)
+       (should-not hermes-chat--create-overrides-retry-session-id)))))
+
+(ert-deftest hermes-chat-dashboard-fresh-overrides-reject-late-control ()
+  "A control caller cannot bypass an attached fresh-session override batch."
+  (let ((client (hermes-test--dashboard-client))
+        calls resolve first-action second-action first-reject second-reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve) '((session_id . "sid")))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq calls (1+ (or calls 0))
+                       resolve (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-create-fast-p t)
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) (lambda (_client) (setq first-action t))
+        (lambda (message) (setq first-reject message)))
+       (let ((owner hermes-chat--create-override-owner))
+         (should owner)
+         (should-not hermes-chat--create-overrides-retry-session-id)
+         (hermes-chat--dashboard-ensure-session-action
+          client (current-buffer) (lambda (_client) (setq second-action t))
+          (lambda (message) (setq second-reject message)))
+         (should (eq hermes-chat--create-override-owner owner)))
+       (should (= calls 1))
+       (should hermes-chat--dashboard-create-fast-p)
+       (should-not first-action)
+       (should-not first-reject)
+       (should-not second-action)
+       (should (equal second-reject
+                      "Pre-session runtime configuration is in progress"))
+       (funcall resolve '((key . "fast")))
+       (should first-action)
+       (should-not first-reject)
+       (should-not second-action)
+       (should-not hermes-chat--create-override-owner)
+       (should-not hermes-chat--dashboard-create-fast-p)))))
+
 (ert-deftest hermes-chat-dashboard-stale-model-result-does-not-prompt ()
   "A model result for a replaced session rejects without prompting."
   (let ((client (hermes-test--dashboard-client)) resolve prompted continued rejected)
