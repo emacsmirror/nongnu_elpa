@@ -3522,7 +3522,7 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
 
 (defun mastodon-tl--tag-group-tl (tags prefix)
   "Return data for TAGS, a group of max 4 tags."
-  ;; FIXME: params media, max_id (pagination)
+  ;; FIXME: max_id (pagination)
   (let* ((url (mastodon-http--api
                (concat "timelines/tag/" (car tags))))
          (params (append (mastodon-tl-tag-prefix-arg prefix)
@@ -3562,8 +3562,8 @@ loads just one group of 4 tags. Note that pagination has not been
 implemented for this function, so you can only load a single page.
 PREFIX is for `mastodon-tl-tag-group-tl'."
   ;; FIXME: to implement pagination, we need to add params to
-  ;; mastodon-tl--tag-group-tl and edit tl--more/more* for it to handle the
-  ;; (paginated) data mastodon-tl--tag-group-tl returns
+  ;; `mastodon-tl-tags-all-data' and edit `mastodon-tl--more' for it to handle the
+  ;; (paginated) data that `mastodon-tl-tags-all-data' returns
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
