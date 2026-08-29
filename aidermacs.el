@@ -420,7 +420,7 @@ This is used when you want to target an existing session."
 When USE-EXISTING is non-nil, return an existing session buffer name.
 Otherwise, reuse an existing session whose directory contains the current
 directory and is not a strict ancestor of the current git repository
-(if inside a git repo); otherwise create a new buffer name based on
+\(if inside a git repo); otherwise create a new buffer name based on
 `aidermacs-subtree-only' or the project root.
 If supplied, SUFFIX is appended to the buffer name within the earmuffs."
   (if use-existing
