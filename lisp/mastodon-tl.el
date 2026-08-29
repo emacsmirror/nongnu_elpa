@@ -4099,7 +4099,7 @@ NO-BYLINE means just insert toot body, used for announcements."
 
 (defun mastodon-tl--init-sync
     (buffer-name endpoint update-function &optional note-type params
-                 headers view-name binding-str endpoint-version)
+                 headers view-name binding-str endpoint-version data)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to receive more toots.
 Runs synchronously.
@@ -4109,19 +4109,20 @@ HEADERS are any headers to send in the request.
 VIEW-NAME is a string, to be used as a heading for the view.
 BINDING-STR is a string explaining any bindins in the view, it can have
 formatting for `substitute-command-keys'.
-ENDPOINT-VERSION is a string, format Vx, e.g. V2."
+ENDPOINT-VERSION is a string, format Vx, e.g. V2.
+Use DATA rather than doing requests if present."
   ;; Used by `mastodon-notifications-get' and in views.el
   (when mastodon-inspect-profile-requests
     (mastodon-inspect-profile-requests endpoint))
   (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
                           "types[]" (list note-type))))
-         (params (append notes-params params))
-         (url (mastodon-http--api endpoint endpoint-version))
+         (params (unless data (append notes-params params)))
+         (url (unless data (mastodon-http--api endpoint endpoint-version)))
          (buffer (concat "*mastodon-" buffer-name "*"))
-         (response (mastodon-http--get-response url params))
-         (json (car response))
-         (headers (when headers (cdr response)))
+         (response (unless data (mastodon-http--get-response url params)))
+         (json (or data (car response)))
+         (headers (unless data (when headers (cdr response))))
          (link-header (when headers
                         (mastodon-tl--get-link-header-from-response headers))))
     (with-mastodon-buffer buffer #'mastodon-mode nil
