@@ -3572,7 +3572,7 @@ PREFIX is for `mastodon-tl-tag-group-tl'."
     (let* ((data (mastodon-tl-tags-all-data prefix))
            (sorted (cl-sort data #'mastodon-tl-ts-sort-pred)))
       (mastodon-tl--init-sync
-       "tags-multiple"
+       "tags-all"
        (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
        #'mastodon-tl--timeline nil nil nil nil nil nil sorted))))
 
