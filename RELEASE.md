@@ -1,5 +1,17 @@
 # RELEASE
 
+# Aidermacs 1.13
+
+## What's Changed
+
+* Simplify session buffer selection and fix ancestor directory handling (#221) by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/221
+* Fix session scoping in nested git repos by @OverbearingPearl
+* Set correct working directory for backend by @OverbearingPearl
+* Fix parenthesis escaping in docstring by @OverbearingPearl
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.12...v1.13
+
+
 # Aidermacs 1.12
 
 ## What's Changed
