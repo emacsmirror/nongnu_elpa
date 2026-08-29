@@ -9,12 +9,12 @@ Issue: https://gitlab.com/emacs-vm/vm/-/work_items/736
 mboxcl2 is a From_ folder plus a =Content-Length= header on each message.  A
 folder therefore cannot say which of the two it is by looking like one, and
 no signature exists to test.  mmdf and babyl do have signatures and are never
-in doubt (vm-folder.el:926, vm-folder.el:927); From_ against BellFrom_ has no
+in doubt (vm-folder.el); From_ against BellFrom_ has no
 test either and is answered by =vm-default-From_-folder-type=.
 
 VM answers the mboxcl2 question by sniffing: read the first message, and if
 it carries a length, call the folder mboxcl2.  The sniff is gated by
-=vm-trust-content-length= (vm-vars.el:997), whose default is
+=vm-trust-content-length= (vm-vars.el), whose default is
 =(eq vm-default-folder-type 'mboxcl2)=.
 
 That derivation is the wart.  Setting =vm-default-folder-type= to mboxcl2
@@ -35,17 +35,17 @@ Two consequences:
 
 | source                       | decides                    | where                                |
 |------------------------------+----------------------------+--------------------------------------|
-| signature                    | mmdf, babyl                | vm-folder.el:926                     |
-| name rule                    | From_, BellFrom_, mboxcl2  | vm-folder.el:754, vm-vars.el:1031    |
-| structure test               | mboxcl2                    | vm-folder.el:789                     |
-| =vm-default-From_-folder-type= | From_ against BellFrom_  | vm-vars.el:926                       |
-| =vm-default-folder-type=       | new and empty folders    | vm-vars.el:885                       |
+| signature                    | mmdf, babyl                | vm-folder.el                     |
+| name rule                    | From_, BellFrom_, mboxcl2  | vm-folder.el, vm-vars.el    |
+| structure test               | mboxcl2                    | vm-folder.el                     |
+| =vm-default-From_-folder-type= | From_ against BellFrom_  | vm-vars.el                       |
+| =vm-default-folder-type=       | new and empty folders    | vm-vars.el                       |
 | index file                   | any                        | =vm-index-file-suffix=, nil by default |
 
-=vm-get-folder-type= applies them in that order at vm-folder.el:908.  The name
-rule matches =(file-name-nondirectory file)= only (vm-folder.el:759).
+=vm-get-folder-type= applies them in that order.  The name
+rule matches =(file-name-nondirectory file)= only (vm-folder.el).
 
-A folder header exists as a concept, =vm-folder-header= (vm-folder.el:1213),
+A folder header exists as a concept, =vm-folder-header= (vm-folder.el),
 but it is the empty string for every type except babyl, so From_ and mboxcl2
 folders have nothing at the top that could carry a declaration.
 
@@ -55,7 +55,7 @@ folders have nothing at the top that could carry a declaration.
 
 Rejected first: a folder-level header, =X-VM-Folder-Type=, in the header block
 of the first message, beside =X-VM-Message-Order= and =X-VM-IMAP-Retrieved=
-(vm-vars.el:6482 to vm-vars.el:6505).  It reads knowing nothing about the type,
+(vm-vars.el).  It reads knowing nothing about the type,
 since the first message begins at the start of the file and its header block
 ends at the first blank line, and it would cover every folder.  It is still
 wrong:
@@ -77,20 +77,20 @@ So VM names a cache after the type it writes it in,
 file, the lengths make the boundaries exact for arbitrary mail, and the reader
 does not have to search for the next separator.
 
-- =vm-imap-make-filename-for-spec= (vm-imap.el:308) and
-  =vm-pop-make-filename-for-spec= (vm-pop.el:1277) answer the file in use: the
+- =vm-imap-make-filename-for-spec= (vm-imap.el) and
+  =vm-pop-make-filename-for-spec= (vm-pop.el) answer the file in use: the
   unsuffixed name where it exists, the suffixed name otherwise.  An existing
   cache keeps its name and reads as it does today, so nobody refetches a
-  gigabyte.  Both callers want that answer, the visit path (vm.el:232) and
-  =vm-imap-cache-file-for-folder-name= (vm-imap.el:384).
+  gigabyte.  Both callers want that answer, the visit path (vm.el) and
+  =vm-imap-cache-file-for-folder-name= (vm-imap.el).
 - Both names present means a cache that was converted with the old file left
   behind: prefer the suffixed one and warn, naming the file being ignored.
-- =vm-cache-folder-name-regexp= (vm-misc.el:840) has to allow the suffix, or a
+- =vm-cache-folder-name-regexp= (vm-misc.el) has to allow the suffix, or a
   suffixed cache stops being recognised as one and the warning at
-  vm-folder.el:5778 stops firing.
+  the mismatch warning in =vm-check-folder-types= stops firing.
 - A new folder's type has to come from its name for any of this to work.
-  Three save paths consult the name already (vm-save.el:389, vm-reply.el:1054,
-  vm-postpone.el:678); the insertion paths use
+  Three save paths consult the name already (vm-save.el, vm-reply.el,
+  vm-postpone.el); the insertion paths use
   =(or vm-folder-type vm-default-folder-type)= instead, six of them across
   vm-imap.el, vm-pop.el, vm-imap-net.el and vm-pop-net.el.  One function for
   the type to write a folder in, =vm-folder-type-to-write=, consulting
@@ -118,7 +118,7 @@ No INBOX.mboxcl2.  First match still wins, and the suffix rule still works for
 FCC files.
 
 Rejected: naming new caches =imap-cache-<md5>.mboxcl2=.  VM invents those names
-(vm-imap.el:308) so it costs nothing to write, but an existing cache would
+(vm-imap.el) so it costs nothing to write, but an existing cache would
 stop being found and a user would refetch a gigabyte, so it needs a fallback
 to the unsuffixed name and a rename on first save.  Part 1 covers the caches
 without any of that.
@@ -143,7 +143,7 @@ folder and the name rule that would settle it.
 *** 4. =vm-default-folder-type= decides new folders only, and is From_ everywhere
 
 Decided: the platform table goes.  It gives mboxcl2 on Solaris, AIX and
-usg-unix-v (vm-vars.el:885), a guess about what the local delivery agent
+usg-unix-v (vm-vars.el), a guess about what the local delivery agent
 writes, and now the only thing that makes the trust default non-nil.  The
 variable never decides an existing folder's type, so changing its default
 cannot change how an existing folder reads.
@@ -154,8 +154,8 @@ cannot change how an existing folder reads.
   Error, naming the folder and the repair command, which is what
   =vm-mboxcl2-length-missing= already does.  The policy pair VM has for the
   crash box against the inbox governs it: =vm-check-folder-types= and
-  =vm-convert-folder-types=, both t (vm-vars.el:965, vm-vars.el:984, used at
-  vm-folder.el:4773).
+  =vm-convert-folder-types=, both t (vm-vars.el, vm-vars.el, used at
+  vm-folder.el).
 - =vm-default-folder-type= against =vm-trust-content-length=.  The wart.
   After part 3 the pairing means nothing.  Decided: warn once and ignore the
   trust setting.  Parts 1 and 2 leave it redundant rather than wrong, and
@@ -167,7 +167,7 @@ A genuinely mboxcl2 folder from another mailer, with no name rule, never saved
 by VM, reads as From_.  Not free: the lengths are what stop a body line
 beginning "From " being taken as a separator.
 =vm-leading-message-separator-regexp-From_= requires the line to end in a
-digit (vm-folder.el:1239) and =vm-find-From_-in-header-block= catches the
+digit (vm-folder.el) and =vm-find-From_-in-header-block= catches the
 header-block case, so a wrong split is rare rather than impossible.  That risk
 is the price of never guessing, and the warning in part 3 is how a user finds
 out they are paying it.
@@ -175,10 +175,10 @@ out they are paying it.
 ** What making a cache mboxcl2 turned up
 
 An mboxcl2 folder's messages abut exactly: the trailing separator is the empty
-string (vm-folder.el:1249), where From_ has a newline.  So the end of one
+string (vm-folder.el), where From_ has a newline.  So the end of one
 message's text and the start of the next are the same position, and for a
-message whose body has not been retrieved -- headers written with a length of
-zero -- that is also where the body goes.  Inserting it there with =insert=
+message whose body has not been retrieved, headers written with a length of
+zero, that is also where the body goes.  Inserting it there with =insert=
 leaves the next message's start marker in front of the body: the folder now
 has one message's body inside the next one's headers.  Twelve lines reproduce
 it with no server, and the two headers-only IMAP tests in
@@ -189,8 +189,8 @@ mboxcl2 and =vm-enable-external-messages= has it now.  It has to be fixed
 before a cache is written as mboxcl2, since that would make it the default for
 IMAP and POP users.
 
-The `Content-Length' was stale as well -- the headers say zero and the body
-has arrived -- which =vm-set-content-length-of= now settles from
+The `Content-Length' was stale as well, the headers saying zero when the body
+has arrived, which =vm-set-content-length-of= now settles from
 =vm-settle-message-body= and =vm-discard-real-message-body=.
 
 ** What was done

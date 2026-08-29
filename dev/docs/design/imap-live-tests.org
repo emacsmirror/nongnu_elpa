@@ -75,7 +75,7 @@ cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
 It sets =vm-imap-test-servers= and =vm-pop-test-servers=, so one file describes
-both protocols. The template is the reference for their shape; do not copy a
+both protocols. The template is the reference for their structure; do not copy a
 second copy of it into this document, which is how the two drift apart.
 
 - Two accounts are required for the cross-account tests (#38, FCC/save);
@@ -155,8 +155,8 @@ convincingly:
 - =test/vm-pop-mock.el= :: a POP3 server in the test process, listening on a
   port the OS picks.  Needs no configuration and always runs, so
   =vm-pop-mock-test.el= is part of the ordinary suite.  It serves the protocol
-  honestly -- greeting, =USER=/=PASS= or =APOP=, =STAT=, =LIST=, =UIDL=,
-  =RETR=, =TOP=, =DELE=, =RSET=, =NOOP=, =QUIT=, with dot-stuffing -- and
+  honestly: greeting, =USER=/=PASS= or =APOP=, =STAT=, =LIST=, =UIDL=,
+  =RETR=, =TOP=, =DELE=, =RSET=, =NOOP=, =QUIT=, with dot-stuffing, and
   misbehaves on request: =:no-uidl=, =:refuse=, =:drop-on=,
   =:truncate-retr=, =:lie-about-size=, =:slow-greeting=.  VM talks to it
   through =vm-pop-make-session= and everything below, so the code under test
@@ -199,7 +199,7 @@ That makes =INBOX= shared state rather than a throwaway mailbox, so:
 2. Nothing else: the same =passwd-file= passdb, the same certificate, the same
    =disable_plaintext_auth = no= that lets =PASS= work on 110.
 
-Reload after editing -- on MacPorts the port is =dovecot=, so
+Reload after editing.  On MacPorts the port is =dovecot=, so
 =sudo port reload dovecot=, not =dovecot2=.
 
 * dovecot changes needed
@@ -211,7 +211,7 @@ Step-by-step instructions live in [[file:../dev-guide.org][dev-guide.org]] under
    already allows the IMAP =LOGIN= command on 143.
 2. For TLS: =ssl = yes= plus =ssl_cert=/=ssl_key= for a self-signed
    certificate whose *subjectAltName* matches the =:host= in the config.  Not
-   the CN -- current GnuTLS checks the SAN and ignores a bare CN, so a
+   the CN.  Current GnuTLS checks the SAN and ignores a bare CN, so a
    CN-only certificate fails verification. Out of the box =ssl = no= and no
    certificate is set, so 993 listens but cannot complete a handshake.
 3. Optional, for CRAM-MD5: =auth_mechanisms = plain cram-md5= and a passdb
