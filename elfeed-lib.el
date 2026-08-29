@@ -383,9 +383,7 @@ The relative URL algorithm is described in RFC 3986 §5.2.4."
   "Compute an ID namespace from URL."
   (let* ((urlobj (url-generic-parse-url url))
          (host (url-host urlobj)))
-    (if (= 0 (length host))
-        url
-      host)))
+    (if (length= host 0) url host)))
 
 (defun elfeed-browse-url (url secondary)
   "Browse URL with `browse-url'.

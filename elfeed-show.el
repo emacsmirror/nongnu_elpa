@@ -486,7 +486,7 @@ offer to save a range of enclosures."
 
 (defun elfeed-show--enclosure-maybe-prompt-index (entry)
   "Prompt for an enclosure if there are multiple in ENTRY."
-  (if (= 1 (length (elfeed-entry-enclosures entry)))
+  (if (length= (elfeed-entry-enclosures entry) 1)
       1
     (elfeed-show--get-enclosure-num "Enclosure to play" entry)))
 
