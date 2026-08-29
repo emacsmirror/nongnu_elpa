@@ -11253,6 +11253,9 @@ expression which is evaluated
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
 a warning.
+
+RSTART and REND bound the text to expand.  Given neither, the whole
+message body is expanded, or the region under XEmacs.
 @end deffn
 
 @end macro
