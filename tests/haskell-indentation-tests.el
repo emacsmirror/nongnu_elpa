@@ -774,19 +774,19 @@ tokOpenTag =
        ]
 "
               (4 7))
-(hindent-test "37 Indent continuation lines in multiline string literal" "
+(hindent-test "37 Indent continuation lines in multiline string literal (plain, not MultilineStrings)" "
 a = \"multiline\\
 "
               (2 0 4))
 
-(hindent-test "38 Indent in do block after multiline string literal" "
+(hindent-test "38 Indent in do block after multiline string literal (plain, not MultilineStrings)" "
 s = do
   a <- \"multiline\\
        \\ line 2\"
 "
               (4 0 2 4 7))
 
-(hindent-test "39 do not crash after two multiline literals in do block" "
+(hindent-test "39 do not crash after two multiline string literals (plain, not MultilineStrings) in do block" "
 servePost = do
   a <- fun \"line 1\\
            \\line 2\"
@@ -853,7 +853,7 @@ fact n = case n of
               (4 4)
               (5 0 2 4 6 9 22))
 
-(hindent-test "47a multiline strings" "
+(hindent-test "47a multiline strings (plain, not MultilineStrings)" "
 fact n = \"\\
          \\a\""
               (1 0)
@@ -862,7 +862,7 @@ fact n = \"\\
               (2 0 9)
               (3 0 2 9))
 
-(hindent-test "47b multiline strings" "
+(hindent-test "47b multiline strings (plain, not MultilineStrings)" "
 fact n = \"\\
       \\a\\
       \\x\""
@@ -1003,7 +1003,7 @@ data X = X |
               (2 2 9)
               (3 0 7 9))
 
-(hindent-test "61 unterminated/multiline strings whose line doesn't end in backslash" "
+(hindent-test "61 unterminated/multiline strings (plain, not MultilineStrings) whose line doesn't end in backslash" "
 func = \"unterminated
            where"
               (1 0)
@@ -1014,6 +1014,20 @@ import javascript unsafe
   \"$2[$1]\" js_getProp :: S.JSString -> O.Object -> T.JSVal"
               (1 0)
               (2 0 2 7))
+
+(hindent-test "63 MultilineStrings literal" "
+foo = \"\"\"one
+two\"\"\"
+bar = 2"
+              (1 0)
+              (2 0 6)
+              (3 0 2 6))
+
+(hindent-test "63u unterminated MultilineStrings literal" "
+foo = \"\"\"one
+two"
+              (1 0)
+              (2 0 6))
 
 (ert-deftest haskell-indentation-ret-indents ()
   (with-temp-switch-to-buffer

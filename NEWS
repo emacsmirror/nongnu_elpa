@@ -8,6 +8,8 @@ This file uses Org mode. Some useful (default) key-bindings:
 
 * Changes in 17.5
 
+- Support multiline string literals
+
 - See [[https://github.com/haskell/haskell-mode/compare/v17.4...v17.5][Git history]]
 
 * Changes in 17.4
