@@ -3517,6 +3517,49 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
            (choice-list (cdr (assoc choice list-strs #'equal))))
       (mastodon-tl--show-tag-timeline prefix choice-list))))
 
+(defun mastodon-tl--tag-group-tl (tags)
+  "Return data for TAGS, a group of max 4 tags."
+  (let* ((url (mastodon-http--api
+               (concat "timelines/tag/" (car tags))))
+         (params (mastodon-http--build-array-params-alist
+                  "any[]" (cdr tags))))
+    (mastodon-http--get-json url params)))
+
+(defun mastodon-tl-ts-sort-pred (x y)
+  "Predicate for sorting toots by recency.
+X and Y are list elements (toots).
+We convert and compare their created_at values."
+  (> (time-to-seconds
+      (date-to-time
+       (alist-get 'created_at x)))
+     (time-to-seconds
+      (date-to-time
+       (alist-get 'created_at y)))))
+
+(defun mastodon-tl-tag-all-timeline ()
+  "Load a timeline of all tags in `mastodon-tl--tags-groups'.
+This will probably be quite slow. For a faster alternative, consider
+`mastodon-tl-tag-group-timeline'.
+Note that pagination has not been implemented for this function, so you
+can only load a single page."
+  (interactive)
+  (if (not mastodon-tl--tags-groups)
+      (user-error
+       "Set `mastodon-tl--tags-groups' to view tag group timelines")
+    (let* (list)
+      ;; push to list:
+      (mapc (lambda (x)
+              (let ((data (mastodon-tl--tag-group-tl x))) ;; get data
+                (mapcar (lambda (y)
+                          (push y list)) ;; push data to single list
+                        data)))
+            mastodon-tl--tags-groups)
+      (let ((sorted (cl-sort list #'mastodon-tl-ts-sort-pred)))
+        (mastodon-tl--init-sync
+         "tags-multiple"
+         (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
+         #'mastodon-tl--timeline nil nil nil nil nil nil sorted)))))
+
 
 ;;; REPORT TO MODERATORS
 
