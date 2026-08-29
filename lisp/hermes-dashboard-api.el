@@ -610,11 +610,11 @@ Return a promise of the response plist."
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
   "Authentication method for remote dashboard attach.
 `auto' probes /api/status.  An ungated dashboard uses a legacy session token.
-A gated dashboard prefers RFC 8252 native PKCE when `/api/status' advertises
-`native_pkce', otherwise username/password login with a WebSocket ticket when a
-basic provider is available.  `token' forces the legacy /api/ws?token= path.
-`basic' forces username/password login and a single-use WebSocket ticket.
-`native' forces the cookieless native PKCE attach path."
+A gated dashboard prefers stored basic credentials when a basic provider is
+available, then RFC 8252 native PKCE when `/api/status' advertises
+`native_pkce', and otherwise attempts basic login.  `token' forces the legacy
+/api/ws?token= path.  `basic' forces username/password login and a single-use
+WebSocket ticket.  `native' forces the cookieless native PKCE attach path."
   :type '(choice (const :tag "Auto" auto)
                  (const :tag "Legacy session token" token)
                  (const :tag "Basic/password gated auth" basic)
@@ -1537,24 +1537,28 @@ The result carries :url, :method, :headers, :body, and :secrets, ready for
                 (next . ,(or next "")))
         :secrets (list password)))
 
-(defun hermes-dashboard-transport--basic-login-request (base-url status)
+(defun hermes-dashboard-transport--basic-login-request
+    (base-url status &optional credentials)
   "Return the password-login request plist for BASE-URL described by STATUS.
-Signals when STATUS lacks a basic provider or auth-source has no credentials.
-The password is the sole entry of the request's :secrets list."
+Optional CREDENTIALS is a validated username/password plist.  Signals when
+STATUS lacks a basic provider or auth-source has no credentials.  The password
+is the sole entry of the request's :secrets list."
   (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
     (unless provider
       (hermes-dashboard-transport--unsupported-remote-auth base-url))
-    (let ((credentials (hermes-dashboard-transport--remote-basic-credentials
-                        base-url)))
+    (let ((credentials
+           (or credentials
+               (hermes-dashboard-transport--remote-basic-credentials base-url))))
       (hermes-dashboard-transport--basic-auth-request
        base-url provider
        (plist-get credentials :username)
        (plist-get credentials :password)))))
 
-(defun hermes-dashboard-transport--api-basic-auth (base-url status)
-  "Return REST cookie auth for dashboard BASE-URL described by STATUS."
+(defun hermes-dashboard-transport--api-basic-auth
+    (base-url status &optional credentials)
+  "Return REST cookie auth for BASE-URL and STATUS using optional CREDENTIALS."
   (let* ((request (hermes-dashboard-transport--basic-login-request
-                   base-url status))
+                   base-url status credentials))
          (password (car (plist-get request :secrets)))
          (response (hermes-dashboard-transport--http-json-request request))
          (cookies (hermes-dashboard-transport--response-cookie-header response)))
@@ -1565,8 +1569,8 @@ The password is the sole entry of the request's :secrets list."
 
 (defun hermes-dashboard-transport--api-authenticate ()
   "Resolve dashboard REST auth for `hermes-dashboard-transport-url'.
-Native PKCE requires the async path; this legacy synchronous resolver rejects
-native-gated dashboards instead of silently falling back to basic/token."
+Native PKCE requires the async path.  Auto mode may use stored basic
+credentials, but rejects when native PKCE remains the selected method."
   (let ((base-url (hermes-dashboard-transport--api-base-url)))
     (append
      (list :base-url base-url)
@@ -1578,16 +1582,19 @@ native-gated dashboards instead of silently falling back to basic/token."
         (user-error
          "Native PKCE dashboard auth requires the asynchronous request path"))
        (_ (let ((status (hermes-dashboard-transport--remote-status base-url)))
-            (cond
-             ((not (hermes-dashboard-transport--status-auth-required-p status))
-              (hermes-dashboard-transport--api-token-auth base-url))
-             ((hermes-dashboard-transport--status-supports-native-pkce-p status)
-              (user-error
-               "Native PKCE dashboard auth requires the asynchronous request path"))
-             ((hermes-dashboard-transport--status-basic-provider status)
-              (hermes-dashboard-transport--api-basic-auth base-url status))
-             (t (hermes-dashboard-transport--unsupported-remote-auth
-                 base-url)))))))))
+            (pcase (hermes-dashboard-transport--preferred-auto-auth
+                    base-url status)
+              ('token (hermes-dashboard-transport--api-token-auth base-url))
+              (`(basic . ,credentials)
+               (hermes-dashboard-transport--api-basic-auth
+                base-url status credentials))
+              ('basic (hermes-dashboard-transport--api-basic-auth
+                       base-url status))
+              ('native
+               (user-error
+                "Native PKCE dashboard auth requires the asynchronous request path"))
+              (_ (hermes-dashboard-transport--unsupported-remote-auth
+                  base-url)))))))))
 
 (defun hermes-dashboard-transport--auth-error-p (reason)
   "Return non-nil when REASON is an HTTP 401/403 authentication failure.
@@ -1744,11 +1751,12 @@ network; a missing token rejects the promise."
        (hermes-dashboard-transport--api-token-auth base-url))
     (error (hermes--promise-rejected (error-message-string err)))))
 
-(defun hermes-dashboard-transport--api-basic-auth-async (base-url status)
-  "Return a promise of REST cookie auth for BASE-URL described by STATUS."
+(defun hermes-dashboard-transport--api-basic-auth-async
+    (base-url status &optional credentials)
+  "Return REST cookie auth promise for BASE-URL, STATUS, and CREDENTIALS."
   (condition-case err
       (let* ((request (hermes-dashboard-transport--basic-login-request
-                       base-url status))
+                       base-url status credentials))
              (password (car (plist-get request :secrets))))
         (hermes--promise-then
          (hermes-dashboard-transport--http-json-request-async request)
@@ -1782,19 +1790,21 @@ network; a missing token rejects the promise."
            (_ (hermes--promise-then
                (hermes-dashboard-transport--remote-status-async base-url)
                (lambda (status)
-                 (cond
-                  ((not (hermes-dashboard-transport--status-auth-required-p
-                         status))
-                   (hermes-dashboard-transport--api-token-auth-async base-url))
-                  ((hermes-dashboard-transport--status-supports-native-pkce-p
-                    status)
-                   (hermes-dashboard-transport--api-native-auth-async
-                    base-url status))
-                  ((hermes-dashboard-transport--status-basic-provider status)
-                   (hermes-dashboard-transport--api-basic-auth-async
-                    base-url status))
-                  (t (hermes-dashboard-transport--unsupported-remote-auth
-                      base-url)))))))
+                 (pcase (hermes-dashboard-transport--preferred-auto-auth
+                         base-url status)
+                   ('token
+                    (hermes-dashboard-transport--api-token-auth-async base-url))
+                   (`(basic . ,credentials)
+                    (hermes-dashboard-transport--api-basic-auth-async
+                     base-url status credentials))
+                   ('basic
+                    (hermes-dashboard-transport--api-basic-auth-async
+                     base-url status))
+                   ('native
+                    (hermes-dashboard-transport--api-native-auth-async
+                     base-url status))
+                   (_ (hermes-dashboard-transport--unsupported-remote-auth
+                       base-url)))))))
          (lambda (auth) (append (list :base-url base-url) auth))))
     (error (hermes--promise-rejected (error-message-string err)))))
 
@@ -2061,6 +2071,30 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
         (throw 'entry (car entries))))
     nil))
 
+(defun hermes-dashboard-transport--stored-basic-credentials (base-url)
+  "Return validated stored basic credentials for BASE-URL, or nil."
+  (condition-case nil
+      (hermes-dashboard-transport--remote-basic-credentials base-url)
+    (error nil)))
+
+(defun hermes-dashboard-transport--preferred-auto-auth (base-url status)
+  "Return automatic auth method for BASE-URL described by STATUS."
+  (if (not (hermes-dashboard-transport--status-auth-required-p status))
+      'token
+    (let ((basic-provider
+           (hermes-dashboard-transport--status-basic-provider status))
+          (native-p
+           (hermes-dashboard-transport--status-supports-native-pkce-p status)))
+      (cond
+       ((and basic-provider native-p)
+        (if-let* ((credentials
+                   (hermes-dashboard-transport--stored-basic-credentials
+                    base-url)))
+            (cons 'basic credentials)
+          'native))
+       (native-p 'native)
+       (basic-provider 'basic)))))
+
 (defun hermes-dashboard-transport--auth-source-secret (entry)
   "Return secret string from auth-source ENTRY."
   (and-let* ((secret (plist-get entry :secret)))
@@ -2087,8 +2121,11 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
                  base-url :port "hermes-dashboard-basic"
                  :require '(:user :secret)))
          (username (and entry (plist-get entry :user)))
-         (password (and entry
-                        (hermes-dashboard-transport--auth-source-secret entry))))
+         (password
+          (and entry
+               (condition-case nil
+                   (hermes-dashboard-transport--auth-source-secret entry)
+                 (error nil)))))
     (unless (and (stringp username) (not (string-empty-p username))
                  (stringp password) (not (string-empty-p password)))
       (user-error
@@ -2153,13 +2190,14 @@ HOST, PORT, and BASE-URL build the URL; PASSWORD is redacted from errors."
           host port base-url password cookies ticket-response))))))
 
 (defun hermes-dashboard-transport--remote-basic-auth-async
-    (host port base-url status)
+    (host port base-url status &optional credentials)
   "Return a promise of basic-auth WebSocket auth for HOST, PORT, BASE-URL, STATUS.
-A rejected promise reports any failure, so the password login and WebSocket
-ticket round-trips never block Emacs."
+Optional CREDENTIALS is a validated username/password plist.  A rejected
+promise reports any failure, so password login and WebSocket ticket round-trips
+never block Emacs."
   (condition-case err
       (let* ((request (hermes-dashboard-transport--basic-login-request
-                       base-url status))
+                       base-url status credentials))
              (password (car (plist-get request :secrets))))
         (hermes--promise-then
          (hermes-dashboard-transport--http-json-request-async request)
@@ -2204,24 +2242,26 @@ guards native effects when non-nil."
             (hermes-dashboard-transport--remote-status-async
              base-url cancel-setter)
             (lambda (status)
-              (cond
-               ((not (hermes-dashboard-transport--status-auth-required-p
-                      status))
-                (hermes-dashboard-transport--remote-token-auth-async
-                 host port base-url token))
-               ((hermes-dashboard-transport--status-supports-native-pkce-p
-                 status)
-                (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status nil interactive cancel-setter
-                 owner-current-p))
-               ((hermes-dashboard-transport--status-basic-provider status)
-                (hermes-dashboard-transport--remote-basic-auth-async
-                 host port base-url status))
-               (t (condition-case err
-                      (hermes-dashboard-transport--unsupported-remote-auth
-                       base-url)
-                    (error (hermes--promise-rejected
-                            (error-message-string err)))))))))
+              (pcase (hermes-dashboard-transport--preferred-auto-auth
+                      base-url status)
+                ('token
+                 (hermes-dashboard-transport--remote-token-auth-async
+                  host port base-url token))
+                (`(basic . ,credentials)
+                 (hermes-dashboard-transport--remote-basic-auth-async
+                  host port base-url status credentials))
+                ('basic
+                 (hermes-dashboard-transport--remote-basic-auth-async
+                  host port base-url status))
+                ('native
+                 (hermes-dashboard-transport--remote-native-auth-async
+                  host port base-url status nil interactive cancel-setter
+                  owner-current-p))
+                (_ (condition-case err
+                       (hermes-dashboard-transport--unsupported-remote-auth
+                        base-url)
+                     (error (hermes--promise-rejected
+                             (error-message-string err)))))))))
     (_ (hermes--promise-rejected
         (format "Unknown Hermes dashboard remote auth method: %S" method)))))
 

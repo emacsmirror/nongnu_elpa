@@ -973,6 +973,197 @@
             (should-not (string-match-p (regexp-quote secret) visible)))
           (should (string-match-p "ticket=<redacted>" visible)))))))
 
+(defconst hermes-test--basic-native-auth-status
+  '((auth_required . t)
+    (auth_providers . ("basic"))
+    (auth_flows . ("cookie" "native_pkce")))
+  "Dashboard status advertising both basic and native authentication.")
+
+(ert-deftest hermes-transport-dashboard-auto-prefers-valid-stored-basic-auth ()
+  "Auto auth uses one validated basic secret before starting native PKCE."
+  (let ((status hermes-test--basic-native-auth-status)
+        selected resolved credentials (secret-calls 0))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest args)
+                 (when (equal (plist-get args :port) "hermes-dashboard-basic")
+                   (list (list :user "admin"
+                               :secret (lambda ()
+                                         (cl-incf secret-calls)
+                                         "password"))))))
+              ((symbol-function 'hermes-dashboard-transport--remote-status-async)
+               (lambda (&rest _) (hermes--promise-resolved status)))
+              ((symbol-function 'hermes-dashboard-transport--remote-basic-auth-async)
+               (lambda (_host _port _base _status &optional value)
+                 (setq selected 'basic credentials value)
+                 (hermes--promise-resolved '(:kind ticket))))
+              ((symbol-function 'hermes-dashboard-transport--remote-native-auth-async)
+               (lambda (&rest _)
+                 (setq selected 'native)
+                 (hermes--promise-resolved '(:kind native)))))
+      (hermes--promise-map
+       (hermes-dashboard-transport--remote-auth-async
+        "dash.example" 9119 "http://dash.example:9119" 'auto nil t)
+       (lambda (auth) (setq resolved auth)))
+      (should (eq selected 'basic))
+      (should (equal credentials '(:username "admin" :password "password")))
+      (should (= secret-calls 1))
+      (should (eq (plist-get resolved :kind) 'ticket)))))
+
+(ert-deftest hermes-transport-dashboard-auto-ignores-unusable-basic-secrets ()
+  "Auto auth treats empty, invalid, and failing basic secrets as absent."
+  (let ((status hermes-test--basic-native-auth-status))
+    (dolist (secret (list "" (lambda () nil) (lambda () "")
+                          (lambda () (error "private-secret-sentinel"))))
+      (cl-letf (((symbol-function 'auth-source-search)
+                 (lambda (&rest _)
+                   (list (list :user "admin" :secret secret)))))
+        (should (eq (hermes-dashboard-transport--preferred-auto-auth
+                     "http://dash.example:9119" status)
+                    'native))))))
+
+(ert-deftest hermes-transport-dashboard-auto-ungated-skips-auth-source ()
+  "Ungated auto auth does not inspect stored gated credentials."
+  (let ((status '((auth_required . nil)
+                  (auth_providers . ("basic"))
+                  (auth_flows . ("native_pkce"))))
+        searched)
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _)
+                 (setq searched t)
+                 nil)))
+      (should (eq (hermes-dashboard-transport--preferred-auto-auth
+                   "http://dash.example:9119" status)
+                  'token))
+      (should-not searched))))
+
+(ert-deftest hermes-transport-dashboard-auto-uses-native-without-basic-auth ()
+  "Auto auth uses native PKCE when no stored basic credentials exist."
+  (let ((status hermes-test--basic-native-auth-status)
+        selected)
+    (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil))
+              ((symbol-function 'hermes-dashboard-transport--remote-status-async)
+               (lambda (&rest _) (hermes--promise-resolved status)))
+              ((symbol-function 'hermes-dashboard-transport--remote-basic-auth-async)
+               (lambda (&rest _) (setq selected 'basic)))
+              ((symbol-function 'hermes-dashboard-transport--remote-native-auth-async)
+               (lambda (&rest _)
+                 (setq selected 'native)
+                 (hermes--promise-resolved '(:kind native)))))
+      (hermes-dashboard-transport--remote-auth-async
+       "dash.example" 9119 "http://dash.example:9119" 'auto nil t)
+      (should (eq selected 'native)))))
+
+(ert-deftest hermes-transport-dashboard-auto-rest-reuses-basic-credentials ()
+  "Automatic synchronous and asynchronous REST auth reuse validated credentials."
+  (let ((status hermes-test--basic-native-auth-status)
+        (hermes-dashboard-transport-url "http://dash.example:9119")
+        (hermes-dashboard-transport-remote-auth-method 'auto)
+        sync-credentials async-credentials async-result native-called
+        (secret-calls 0))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _)
+                 (list (list :user "admin"
+                             :secret (lambda ()
+                                       (cl-incf secret-calls)
+                                       "password")))))
+              ((symbol-function 'hermes-dashboard-transport--remote-status)
+               (lambda (&rest _) status))
+              ((symbol-function 'hermes-dashboard-transport--remote-status-async)
+               (lambda (&rest _) (hermes--promise-resolved status)))
+              ((symbol-function 'hermes-dashboard-transport--api-basic-auth)
+               (lambda (_base _status &optional credentials)
+                 (setq sync-credentials credentials)
+                 '(:headers (("Cookie" . "sync")))))
+              ((symbol-function 'hermes-dashboard-transport--api-basic-auth-async)
+               (lambda (_base _status &optional credentials)
+                 (setq async-credentials credentials)
+                 (hermes--promise-resolved '(:headers (("Cookie" . "async"))))))
+              ((symbol-function 'hermes-dashboard-transport--api-native-auth-async)
+               (lambda (&rest _)
+                 (setq native-called t)
+                 (hermes--promise-resolved nil))))
+      (hermes-dashboard-transport--api-authenticate)
+      (hermes--promise-map
+       (hermes-dashboard-transport--api-authenticate-async)
+       (lambda (auth) (setq async-result auth)))
+      (should (equal sync-credentials
+                     '(:username "admin" :password "password")))
+      (should (equal async-credentials sync-credentials))
+      (should (equal (plist-get async-result :base-url)
+                     "http://dash.example:9119"))
+      (should (= secret-calls 2))
+      (should-not native-called))))
+
+(ert-deftest hermes-transport-dashboard-auto-basic-only-normalizes-secret-errors ()
+  "Basic-only auto auth hides one failing secret resolution on every surface."
+  (let ((status '((auth_required . t)
+                  (auth_providers . ("basic"))
+                  (auth_flows . ("cookie"))))
+        (hermes-dashboard-transport-url "http://dash.example:9119")
+        (hermes-dashboard-transport-remote-auth-method 'auto))
+    (dolist (surface '(sync-rest async-rest websocket))
+      (let (reason (secret-calls 0))
+        (cl-letf (((symbol-function 'auth-source-search)
+                   (lambda (&rest _)
+                     (list (list :user "admin"
+                                 :secret (lambda ()
+                                           (cl-incf secret-calls)
+                                           (error "private-secret-sentinel"))))))
+                  ((symbol-function 'hermes-dashboard-transport--remote-status)
+                   (lambda (&rest _) status))
+                  ((symbol-function 'hermes-dashboard-transport--remote-status-async)
+                   (lambda (&rest _) (hermes--promise-resolved status))))
+          (pcase surface
+            ('sync-rest
+             (setq reason
+                   (condition-case err
+                       (progn
+                         (hermes-dashboard-transport--api-authenticate)
+                         nil)
+                     (error (error-message-string err)))))
+            ('async-rest
+             (hermes--promise-catch
+              (hermes-dashboard-transport--api-authenticate-async)
+              (lambda (value) (setq reason value))))
+            ('websocket
+             (hermes--promise-catch
+              (hermes-dashboard-transport--remote-auth-async
+               "dash.example" 9119 "http://dash.example:9119" 'auto nil t)
+              (lambda (value) (setq reason value)))))
+          (should (= secret-calls 1))
+          (should (string-match-p
+                   "No Hermes dashboard basic credentials found" reason))
+          (should-not (string-match-p "private-secret-sentinel" reason)))))))
+
+(ert-deftest hermes-transport-dashboard-auto-basic-rejection-does-not-fallback ()
+  "A selected basic login failure does not fall through to native PKCE."
+  (let ((status hermes-test--basic-native-auth-status)
+        credentials reason native-called (secret-calls 0))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _)
+                 (list (list :user "admin"
+                             :secret (lambda ()
+                                       (cl-incf secret-calls)
+                                       "password")))))
+              ((symbol-function 'hermes-dashboard-transport--remote-status-async)
+               (lambda (&rest _) (hermes--promise-resolved status)))
+              ((symbol-function 'hermes-dashboard-transport--remote-basic-auth-async)
+               (lambda (_host _port _base _status &optional value)
+                 (setq credentials value)
+                 (hermes--promise-rejected "basic-login-denied")))
+              ((symbol-function 'hermes-dashboard-transport--remote-native-auth-async)
+               (lambda (&rest _)
+                 (setq native-called t)
+                 (hermes--promise-resolved '(:kind native)))))
+      (hermes--promise-catch
+       (hermes-dashboard-transport--remote-auth-async
+        "dash.example" 9119 "http://dash.example:9119" 'auto nil t)
+       (lambda (value) (setq reason value)))
+      (should (equal reason "basic-login-denied"))
+      (should (equal credentials '(:username "admin" :password "password")))
+      (should (= secret-calls 1))
+      (should-not native-called))))
+
 (ert-deftest hermes-transport-dashboard-oauth-only-remote-is-unsupported ()
   "Gated OAuth without native_pkce still rejects when no basic provider exists."
   (let (requests auth-source-called reason)
