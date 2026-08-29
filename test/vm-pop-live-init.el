@@ -60,7 +60,7 @@ VM_TEST_LIVE.")
   "List of POP server plists, set by `vm-live-config-file'.
 Each is (:name NAME :host HOST :port PORT :tls BOOL :auth AUTH :accounts
 ALIST), where AUTH is \"pass\" or \"apop\" and ALIST maps user to password --
-the same shape as `vm-imap-test-servers', so one config file describes both.")
+the same structure as `vm-imap-test-servers', so one config file describes both.")
 
 (defvar vm-pop-live-timeout 10
   "Seconds any single POP interaction may take.

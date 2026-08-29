@@ -318,7 +318,7 @@ a POP server, find its cache file on the file system"
 
 (defun vm-pop-expunge-entries (entries)
   "Delete from their maildrops the messages ENTRIES names, waiting for each.
-ENTRIES is in `vm-pop-retrieved-messages\\=' shape, a list of (UIDL MAILDROP
+ENTRIES has the structure of `vm-pop-retrieved-messages\\=': a list of (UIDL MAILDROP
 `uidl\\='), and is left as it was found: one session per maildrop, and Emacs
 held for all of them.
 

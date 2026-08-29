@@ -64,7 +64,7 @@ live one.  See `vm-test-live-wanted-p\='.")
   (expand-file-name "vm-live-config.el" vm-test-dir)
   "Gitignored file describing the servers to test against, IMAP and POP alike.
 Copy test/vm-live-config.el.template to create it; that template documents the
-shape, and dev/docs/dev-guide.org has the server-side setup.")
+structure, and dev/docs/dev-guide.org has the server-side setup.")
 
 (defvar vm-live-config-obsolete-file
   (expand-file-name "vm-imap-config.el" vm-test-dir)

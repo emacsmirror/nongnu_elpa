@@ -294,7 +294,7 @@ have been true by the time it was made."
   "`vm' visits a folder with one call to itself, not two.
 A guard against reintroducing #240 rather than a reproduction of it: the removed
 call was unreachable, so this passed before the change as well.  What it protects
-is the shape -- if `vm' ever calls itself again, a folder visit will count two."
+is the point -- if `vm' ever calls itself again, a folder visit will count two."
   (require 'vm)
   (let* ((dir (file-name-as-directory (make-temp-file "vm-240" t)))
          (file (expand-file-name "folder" dir))

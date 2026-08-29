@@ -19,7 +19,7 @@
 (defconst vm-probe-test--servers
   '((:name "plain" :host "127.0.0.1" :port 143 :accounts (("u" . "p")))
     (:name "tls" :host "localhost" :port 993 :tls t :accounts (("u" . "p"))))
-  "Two servers to report on, of the shape test/vm-live-config.el sets.")
+  "Two servers to report on, structured as test/vm-live-config.el sets them.")
 
 (defmacro vm-probe-test--reporting (answers &rest body)
   "Run BODY with the servers above configured and each probed by ANSWERS.

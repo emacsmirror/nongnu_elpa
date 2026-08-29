@@ -2039,7 +2039,7 @@ message goes.  Issue #185."
     (setq list (cdr (nth 3 fetch-response)))
     ;; by name, and past anything else the server put in: it may answer the
     ;; items in any order and may add items of its own (RFC 3501 7.4.2), and
-    ;; the fixed shapes this matched before failed the retrieval outright
+    ;; the fixed forms this matched before failed the retrieval outright
     (let ((parts (vm-imap-fetch-response-parts list)))
       (setq uid (or (car parts) uid)
 	    p (cdr parts))

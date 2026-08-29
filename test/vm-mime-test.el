@@ -936,7 +936,7 @@ its (empty) sub-part list, emptying PARTS, and the loop then called
 
 (ert-deftest vm-mime-test-operate-on-attachments-delivery-failure ()
   "Test a Google-style delivery failure report.
-The real-world shape from issue #455: multipart/report whose last part
+The real-world case from issue #455: multipart/report whose last part
 is a message/rfc822 wrapping a multipart with an absent boundary."
   (with-temp-buffer
     (insert (vm-test-read-fixture "emails" "delivery-failure-report.eml"))
@@ -2734,7 +2734,7 @@ contents are discarded, and appears whether or not they were."
         (vm-delete-mime-object))
       (let ((text (with-current-buffer folder
                     (save-restriction (widen) (buffer-string)))))
-        ;; the message keeps its shape and its other part
+        ;; the message keeps its structure and its other part
         (should (string-match-p "Content-Type: multipart/mixed" text))
         (should (string-match-p "Some covering text" text))
         ;; and where the attachment was, a note saying what went
@@ -3388,7 +3388,7 @@ The first part is the fallback a reader without html support is left with."
 (ert-deftest vm-mime-test-nuking-reaches-html-wrapped-in-a-related-part ()
   "Html with inline images arrives as multipart/related inside the
 alternative, and that html is still one of the alternatives on offer.  This
-is the ordinary shape of html mail, so nuking has to reach it."
+is the ordinary structure of html mail, so nuking has to reach it."
   (vm-mime-test--nuking
       (concat "Content-Type: multipart/alternative; boundary=\"ALT\"\n\n"
               "--ALT\n"

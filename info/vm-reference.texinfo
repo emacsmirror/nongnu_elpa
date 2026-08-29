@@ -8721,7 +8721,7 @@ the width of the window at the time.
 There is no setting for text that is not broken at all.  No converter takes
 such an instruction, and asking for a page wide enough that no line would
 reach the end of it means a page laid out that wide: a centred table, which
-is the shape of most HTML mail, then comes back indented by hundreds of
+is the layout of most HTML mail, then comes back indented by hundreds of
 columns.
 
 This governs quoted text only.  Displaying a message still fills to the

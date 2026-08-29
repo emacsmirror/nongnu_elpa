@@ -1690,7 +1690,7 @@ X-Mailer wants -- so take the name and the version off the front of it.  For
 XEmacs that yields \"XEmacs 21.4\" by the same rule.
 
 Falls back to naming the editor from `featurep' if that string is not in the
-shape expected, and to \"Unknown Emacs\" if there is nothing to go on."
+form expected, and to \"Unknown Emacs\" if there is nothing to go on."
   (let ((full (if (fboundp 'emacs-version) (emacs-version) "")))
     (cond ((string-match "\\`\\([^0-9\n]*[A-Za-z]\\)[ \t]+\\([0-9][^ \t\n(]*\\)"
 			 full)

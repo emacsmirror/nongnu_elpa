@@ -8,7 +8,7 @@
 
 ;; A meeting invitation arrives as a text/calendar part, and VM showed the
 ;; iCalendar object as it stands.  These cover reading one and saying what it
-;; means (#85), the shapes real senders produce, and the import into the diary.
+;; means (#85), the forms real senders produce, and the import into the diary.
 
 ;;; Code:
 
@@ -28,7 +28,7 @@
           "ATTENDEE;CN=Carol;PARTSTAT=NEEDS-ACTION:mailto:carol@example.com\r\n"
           "DESCRIPTION:Agenda:\\n1. IMAP\\n2. Anything else\r\n"
           "END:VEVENT\r\nEND:VCALENDAR\r\n")
-  "An invitation of the shape Exchange and Google both send.")
+  "An invitation of the kind Exchange and Google both send.")
 
 ;;; Reading the object
 

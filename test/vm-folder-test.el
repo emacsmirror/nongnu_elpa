@@ -1967,7 +1967,7 @@ that is precisely what is missing."
   "A `From ' line in a message body stays body text.
 This is the case the change must not break, and the reason the search stops at
 the end of the header block: a mail quoting another mail unquoted has exactly
-this shape, and splitting there would invent a message."
+this structure, and splitting there would invent a message."
   (vm-test-with-folder
       (concat (vm-folder-test--run-together-message 1
                                        (concat "I was sent this:\n"
@@ -4947,7 +4947,7 @@ have been stated, and it has to beat `vm-default-folder-type'."
 
 (defmacro vm-folder-test--two-mboxcl2-messages (&rest body)
   "Visit a two-message mboxcl2 folder and run BODY in it.
-The first message is shaped as a headers-only fetch writes one: a length of
+The first message is written as a headers-only fetch writes one: a length of
 zero and no body, so its text region is empty and ends where the second
 message begins."
   (declare (indent 0) (debug t))
