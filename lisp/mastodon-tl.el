@@ -3520,13 +3520,14 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
            (choice-list (cdr (assoc choice list-strs #'equal))))
       (mastodon-tl--show-tag-timeline prefix choice-list))))
 
-(defun mastodon-tl--tag-group-tl (tags)
+(defun mastodon-tl--tag-group-tl (tags prefix)
   "Return data for TAGS, a group of max 4 tags."
   ;; FIXME: params media, max_id (pagination)
   (let* ((url (mastodon-http--api
                (concat "timelines/tag/" (car tags))))
-         (params (mastodon-http--build-array-params-alist
-                  "any[]" (cdr tags))))
+         (params (append (mastodon-tl-tag-prefix-arg prefix)
+                         (mastodon-http--build-array-params-alist
+                          "any[]" (cdr tags)))))
     (mastodon-http--get-json url params)))
 
 (defun mastodon-tl-ts-sort-pred (x y)
@@ -3540,23 +3541,24 @@ We convert and compare their created_at values."
       (date-to-time
        (alist-get 'created_at y)))))
 
-(defun mastodon-tl-tag-all-timeline ()
+(defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
-This will probably be quite slow. For a faster alternative, consider
-`mastodon-tl-tag-group-timeline'.
-Note that pagination has not been implemented for this function, so you
-can only load a single page."
+This will probably be quite slow, as it makes one request for every 4
+tags. For a faster alternative, consider `mastodon-tl-tag-group-timeline', which
+loads just one group of 4 tags. Note that pagination has not been
+implemented for this function, so you can only load a single page.
+PREFIX is for `mastodon-tl-tag-group-tl'."
   ;; FIXME: to implement pagination, we need to add params to
   ;; mastodon-tl--tag-group-tl and edit tl--more/more* for it to handle the
   ;; (paginated) data mastodon-tl--tag-group-tl returns
-  (interactive)
+  (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error
        "Set `mastodon-tl--tags-groups' to view tag group timelines")
     (let* (list)
       ;; push to list:
       (mapc (lambda (x)
-              (let ((data (mastodon-tl--tag-group-tl x))) ;; get data
+              (let ((data (mastodon-tl--tag-group-tl x prefix))) ;; get data
                 (mapcar (lambda (y)
                           (push y list)) ;; push data to single list
                         data)))
