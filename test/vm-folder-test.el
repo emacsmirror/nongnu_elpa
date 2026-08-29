@@ -3250,6 +3250,132 @@ said nothing, and went on adding messages to a folder whose name was a lie."
       (vm-visit-folder file)
       (should (= (length vm-message-list) 1)))))
 
+;;; Which body lines get quoted, which the manual states exactly
+
+(ert-deftest vm-folder-test-only-a-from-line-ending-in-a-digit-is-quoted ()
+  "VM quotes `^From .*[0-9]$' in a body and nothing else.
+The manual says so in as many words, so it wants a test: a reader deciding
+whether their folder is safe to hand to another program is relying on the
+rule being what the text claims.  Converting to From_ is the path that can be
+driven without a server; the same `vm-munge-message-separators' serves mail
+arriving over POP and IMAP, editing, composing and bursting a digest."
+  (vm-folder-test-with-directory dir
+    (let* ((body (concat "Quoting an old note:\n"
+                         "From bob@example.com Mon Jan  1 12:00:00 2026\n"
+                         "From now on we ship on Fridays\n"
+                         "From bob and no digit\n"
+                         ">From already quoted when it arrived 2026\n"))
+           (file (expand-file-name "folder.mboxcl2" dir))
+           (message (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            "Content-Length: "
+                            (number-to-string (1+ (length body)))
+                            "\nFrom: alice@example.com\nSubject: one\n\n"
+                            body "\n"))
+           written)
+      (write-region message nil file nil 'quiet)
+      (vm-change-folder-type-of-file file 'From_)
+      (setq written (with-temp-buffer
+                      (insert-file-contents-literally
+                       (expand-file-name "folder" dir))
+                      (buffer-string)))
+      ;; begins From_ and ends in a digit: quoted
+      (should (string-match-p
+               "^>From bob@example\\.com Mon Jan  1 12:00:00 2026$" written))
+      ;; begins From_ and does not end in a digit: left alone
+      (should (string-match-p "^From now on we ship on Fridays$" written))
+      (should (string-match-p "^From bob and no digit$" written))
+      ;; already quoted when it arrived: left alone, and now indistinguishable
+      ;; from one VM quoted, which is the round trip the manual warns about
+      (should (string-match-p
+               "^>From already quoted when it arrived 2026$" written))
+      (should-not (string-match-p ">>From" written)))))
+
+(ert-deftest vm-folder-test-mboxcl2-quotes-nothing ()
+  "Converting to mboxcl2 alters no body line.
+The whole difference between mboxcl2 and the older mboxcl, which counted the
+bytes and quoted as well, and the reason mboxcl2 stores a message as it
+arrived (emacs-vm/vm#466)."
+  (vm-folder-test-with-directory dir
+    (let* ((body (concat "Quoting an old note:\n"
+                         "From bob@example.com Mon Jan  1 12:00:00 2026\n"))
+           (file (expand-file-name "folder" dir))
+           (message (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            "From: alice@example.com\nSubject: one\n\n"
+                            body "\n")))
+      ;; the From-line in the body is not preceded by a blank line, so the
+      ;; folder reads as the one message it is
+      (write-region message nil file nil 'quiet)
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (let ((written (with-temp-buffer
+                       (insert-file-contents-literally
+                        (expand-file-name "folder.mboxcl2" dir))
+                       (buffer-string))))
+        (should (string-match-p
+                 "^From bob@example\\.com Mon Jan  1 12:00:00 2026$" written))
+        (should-not (string-match-p ">From" written))))))
+
+(defun vm-folder-test--plain-rule-separators (file)
+  "How many separators a reader using the plain mbox rule finds in FILE.
+Any line beginning \"From \" that stands at the start of the file or after a
+blank line, which is the rule most mailers use and the one RFC 4155 and
+Zawinski both describe.  VM's own rule is narrower, and the difference is what
+the two tests below measure."
+  (with-temp-buffer
+    (insert-file-contents-literally file)
+    (goto-char (point-min))
+    (let ((found 0))
+      (while (re-search-forward "^From " nil t)
+        (goto-char (match-beginning 0))
+        (when (or (bobp) (equal (char-after (- (point) 2)) ?\n))
+          (setq found (1+ found)))
+        (forward-line 1))
+      found)))
+
+(ert-deftest vm-folder-test-a-from_-folder-can-split-elsewhere ()
+  "A From_ folder VM wrote is read as two messages by the plain rule.
+The manual says so, so it wants a test.  VM escapes only a `From ' line that
+ends in a digit, so \"From the desk of Bob\" after a blank line is left as it
+was written: right by VM's rule and wrong by everyone else's."
+  (vm-folder-test-with-directory dir
+    (let* ((body "Here is the note.\n\nFrom the desk of Bob\n\nregards\n")
+           (source (expand-file-name "inbox.mboxcl2" dir))
+           (written (expand-file-name "inbox" dir)))
+      (write-region (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            "Content-Length: " (number-to-string (1+ (length body)))
+                            "\nFrom: alice@example.com\nSubject: one\n\n"
+                            body "\n")
+                    nil source nil 'quiet)
+      (vm-change-folder-type-of-file source 'From_)
+      ;; VM left it alone, having no reason of its own to escape it
+      (should-not (string-match-p ">From the desk"
+                                  (with-temp-buffer
+                                    (insert-file-contents-literally written)
+                                    (buffer-string))))
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (vm-visit-folder written))
+      (should (equal (length vm-message-list) 1))
+      (should (equal (vm-folder-test--plain-rule-separators written) 2)))))
+
+(ert-deftest vm-folder-test-an-mboxcl2-folder-splits-without-the-header ()
+  "An mboxcl2 folder is read wrongly by anything that ignores the length.
+Nothing in one is escaped, which is what makes it store a message as it
+arrived and what makes it unreadable to a program that does not honour
+`Content-Length'."
+  (vm-folder-test-with-directory dir
+    (let* ((body (concat "Here is the note.\n\n"
+                         "From bob@example.com Mon Jan  1 12:00:00 2026\n\n"
+                         "regards\n"))
+           (file (expand-file-name "kept.mboxcl2" dir)))
+      (write-region (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            "Content-Length: " (number-to-string (1+ (length body)))
+                            "\nFrom: alice@example.com\nSubject: one\n\n"
+                            body "\n")
+                    nil file nil 'quiet)
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (vm-visit-folder file))
+      (should (equal (length vm-message-list) 1))
+      (should (equal (vm-folder-test--plain-rule-separators file) 2)))))
+
 ;;; mboxcl2 lengths are octets, and a wrong one does not stop the reader
 
 (defconst vm-folder-test--accented-body

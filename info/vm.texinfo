@@ -1050,19 +1050,22 @@ What it costs: a folder that cannot be renamed cannot be typed by its name.
 A primary inbox called @file{INBOX} is the case, and the answer for one is
 @code{vm-default-folder-type}, or a name with the extension on it.
 
+@anchor{Why mboxcl2}
 @subheading Why mboxcl2: it will not corrupt your mail
 
 @cindex mboxcl2, why
 @cindex corruption, mbox
 In a From_ folder the end of a message is the next line that begins
-``From ''.  Nothing but the shape of the line says so, and mail contains such
+``From ''.  Nothing but the structure of the line says so, and mail contains such
 lines: a message that quotes another message, a digest, a mailing list
-footer, a base64 attachment that happens to wrap that way.  The usual answer
-is to alter the mail to protect the format, turning ``From '' in a body into
-``>From '', and even then a line that already read ``>From '' is
-indistinguishable afterwards; what you read back is close to what arrived
-rather than what arrived.  VM does not alter the mail, and tests the line
-harder instead, which has costs of its own.  @xref{VM's mbox}.
+footer, a base64 attachment that happens to wrap that way.  The answer every
+mailer uses, VM included, is to alter the mail to protect the format, turning
+such a line in a body into ``>From ''.  That works, and it costs you the
+original: a line that already read ``>From '' is indistinguishable from one
+that was quoted, and nobody unquotes on reading, so what you read back is
+close to what arrived rather than what arrived.  VM quotes a narrower set of
+lines than most, which is a difference of degree and not of kind.
+@xref{VM's mbox}.
 
 An mboxcl2 folder records the length of each body instead, so the boundary is
 arithmetic rather than a guess, and no body needs altering.  Two things follow:
@@ -1093,32 +1096,62 @@ a folder some other mailer wrote is only as good as that mailer.
 @cindex interoperability, mbox
 There is no standard for mbox.  RFC 4155 describes what most mailers do
 rather than requiring it, and they do not all do the same thing.  VM's From_
-folders differ from what other mailers write in three ways.  None of it
+folders differ from what other mailers write in several ways.  None of it
 matters while VM alone reads and writes the folder; all of it matters when
 another program reads that folder, appends to it, or wrote it in the first
 place.
 
 @table @asis
-@item VM does not quote @samp{From } lines in bodies.
-Other mailers turn a body line beginning @samp{From } into @samp{>From } so
-that it cannot be taken for a separator, and disagree among themselves about
-whether to turn it back on reading.  VM leaves the mail as it arrived, and
-separates messages by a stricter test: a separator is a line beginning
-@samp{From } that also ends in a digit, as a date does, and that is preceded
-by an empty line.
+@item VM quotes fewer @samp{From } lines than other mailers.
+@cindex From_ quoting
+VM quotes, as every mailer does: a body line that would be taken for a
+separator gets @samp{>} put in front of it.  What differs is which lines.
+Most mailers quote every body line beginning @samp{From }.  VM quotes only a
+line that begins @samp{From } @emph{and ends in a digit}, as a date does:
+in regular expression terms, @samp{^From .*[0-9]$}.  So a paragraph beginning
+``From now on we ship on Fridays'' is left exactly as it was written in a VM
+folder and comes back @samp{>From now on} in most others.
 
-The test is stricter, not exact.  A body line that begins @samp{From }, ends
-in a digit and follows an empty line is still read as a separator, and one
-message becomes two --- a quoted message or a digest is where that happens.
-Another program reading a VM folder by the loose rule finds more such splits
-than VM does, since it has only the first of the three tests.  And a folder
-written by a mailer that does quote keeps its @samp{>From } lines when VM
-reads it: VM cannot tell them from lines that arrived that way, so it leaves
-them alone rather than unquoting text that was never quoted.
+VM quotes on the way in: mail arriving over @acronym{POP} or @acronym{IMAP},
+a message you edit, one you compose or @code{FCC:}, a digest you burst, and a
+folder whose type you convert.
+
+@cindex >From lines, ambiguity
+@cindex mboxo
+@cindex mboxrd
+VM does not unescape on the way out, and neither does the common variant.  A
+line that arrived reading @samp{>From bob@dots{} 2026} and one VM escaped are
+the same line afterwards, and no reader can tell them apart.  That variant has
+a name, mboxo, and the loss is the reason it has a rival: mboxrd escapes
+@samp{>From } to @samp{>>From } as well, so that a reader can strip one
+@samp{>} and get the original back.  VM writes neither.  It writes mboxcl2
+instead, where the boundary is a byte count and nothing is escaped at all, so
+there is nothing to reverse.
+
+@item VM's reader is narrower than its writer, on purpose.
+Reading a From_ folder, VM takes a line as a separator only if it begins
+@samp{From }, ends in a digit, @emph{and} follows an empty line.  Writing
+one, VM quotes without the third test, deliberately: a folder VM writes has
+to be safe for a reader using the loose rule, which is most of them, and for
+older versions of VM.  So VM quotes some lines it would not itself have
+mistaken.
+
+The reader's test is narrower, not exact.  A body line that begins
+@samp{From }, ends in a digit and follows an empty line is read as a
+separator wherever it was not quoted, in a folder some other program wrote or
+one assembled by hand, and one message becomes two.
 
 A message must therefore be followed by an empty line, which VM writes.  A
 program that appends to a VM folder without one leaves a message VM reads as
 part of the message before it.
+
+@item An mboxcl2 folder is quoted not at all.
+@cindex mboxcl2, no quoting
+Everything above is about From_.  mboxcl2 finds the end of a message by
+counting its bytes, so no body line can be mistaken for a separator and none
+is altered.  That is what @ref{Why mboxcl2} above means by storing a message
+exactly as it came, and it is the whole difference between mboxcl2 and the
+older mboxcl, which counted the bytes @emph{and} quoted.
 
 @item VM keeps its own state in the messages.
 @cindex X-VM-v5-Data
@@ -1151,14 +1184,51 @@ only on the BSDs.  Thunderbird is the exception in the other direction:
 Folders}.
 @end table
 
+@subheading Where a VM folder is read differently elsewhere
+
+@cindex mbox, incompatibility
+@cindex interoperability, splitting
+The escaping rules above have a consequence worth stating plainly: there are
+folders VM reads correctly that another program does not, and the fault is not
+in either of them.  Two cases, both verified, both one-directional.
+
+@table @asis
+@item A From_ folder VM wrote, read by a program using the plain rule.
+VM escapes only a @samp{From } line that ends in a digit, so a body line such
+as @samp{From the desk of Bob}, standing after a blank line, is left exactly
+as it was written.  VM reads that folder as one message.  A program that takes
+any @samp{From } line after a blank line as a separator reads it as two, and
+the second is a fragment with no headers.
+
+@item An mboxcl2 folder, read by a program that ignores @code{Content-Length:}.
+Nothing in an mboxcl2 folder is escaped, so every body line beginning
+@samp{From } is exposed.  A program that honours the header reads the folder
+correctly.  One that ignores it, and some do, splits the folder at those
+lines.
+@end table
+
+@noindent
+The other direction is milder.  VM does not unescape, so a folder written by a
+program that doubles its escapes, mboxrd, shows the extra @samp{>} in the text
+of the message.  Nothing is lost and no message is split; it just reads wrong.
+
+@noindent
+There is no setting that makes a folder safe for every reader, because the
+readers disagree with each other.  If a folder has to be handed to a
+particular program, the thing to know is which rule that program uses.
+
 @noindent
 The short of it: a From_ folder is safe to share with another program if you
 are content that read and unread will not travel, that the first message is
 carrying luggage, and that a message whose body has a @samp{From } line in it
-may be split differently at each end.  A folder VM writes for itself --- a
-cache above all --- is better left to VM, and better still written as mboxcl2,
-where the boundary is a byte count rather than a line that has to be
-recognised.
+may be escaped differently, and so split differently, at each end.  A folder
+VM writes for itself, a cache above all, is better left to VM, and
+better still written as mboxcl2, where the boundary is a byte count rather
+than a line that has to be recognised, and where nothing is escaped at all.
+
+@noindent
+The Library of Congress describes the format family and its variants:
+@indicateurl{https://www.loc.gov/preservation/digital/formats/fdd/fdd000383.shtml}.
 
 @subheading How VM decides what a folder is
 
@@ -2098,7 +2168,7 @@ immediately and its sync tool pushes it when the remote is reachable, so VM
 neither waits nor fails when the network is down.
 @end itemize
 
-@subheading The shape of it
+@subheading The structure of it
 
 Three pieces:
 
@@ -2127,7 +2197,7 @@ the password you gave the local server.
 
 @subheading Setting it up
 
-What follows is the shape rather than a recipe, because the paths and the
+What follows is the structure rather than a recipe, because the paths and the
 service manager differ by system.  Use your packaging's own locations: a
 MacPorts install puts configuration under @file{/opt/local/etc} and its store
 under @file{/opt/local/var}, Homebrew uses @file{/opt/homebrew} or
