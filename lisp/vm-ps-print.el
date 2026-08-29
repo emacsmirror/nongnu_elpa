@@ -180,7 +180,7 @@ See:	`vm-ps-print-message-function'"
 	 (ps-right-header (if each (eval vm-ps-print-each-message-right-header env)
 			    (eval vm-ps-print-message-right-header env)))
 	 (ps-header-lines  (if each vm-ps-print-each-message-header-lines
-			     vm-ps-print-each-message-header-lines))
+			     vm-ps-print-message-header-lines))
 	 (ps-print-header-frame t)
 	 (ps-font-size vm-ps-print-message-font-size))
     (funcall vm-ps-print-message-function filename)
@@ -206,11 +206,19 @@ Like `vm-tokenized-summary-insert'."
 	      ((eq token 'mark)
 	       (setq summary (concat summary (vm-su-mark message))))
 	      ((eq token 'thread-indent)
+	       ;; As `vm-tokenized-summary-insert' indents it: a string of
+	       ;; spaces, capped by `vm-summary-maximum-thread-indentation'.
+	       ;; `concat' over a character and a count took neither, so the
+	       ;; token signalled rather than indenting (#778).
 	       (if (and vm-summary-show-threads
 			(natnump vm-summary-thread-indent-level))
-		   (setq summary (concat summary
-					 ?\ (* vm-summary-thread-indent-level
-					       (vm-thread-indentation message)))))))
+		   (setq summary
+			 (concat summary
+				 (make-string
+				  (* vm-summary-thread-indent-level
+				     (min vm-summary-maximum-thread-indentation
+					  (vm-thread-indentation message)))
+				  ?\s))))))
 	(setq tokens (cdr tokens)))
       summary)))
 
@@ -224,7 +232,10 @@ Like `vm-tokenized-summary-insert'."
 							vm-folder-directory))
 					 "/?\\(.+\\)")
 				 folder-name))
-	      (substring folder-name (match-beginning 1) (match-end 2))
+	      ;; Group 1, there being no group 2.  `(match-end 2)' is nil, so
+	      ;; `substring' ran to the end of the string, which is where
+	      ;; group 1 ends anyway (#778).
+	      (substring folder-name (match-beginning 1) (match-end 1))
 	    folder-name)))
     folder-name))
 
@@ -379,7 +390,10 @@ If EACH it t, then replace `vm-print-message' by
       (insert (format "(setq %s '%S)" (symbol-name menu) (symbol-value menu)))
       (if (re-search-backward "vm-\\(ps-\\)?print-\\(each-\\)?message"
 			      (point-min) t)
-	  (if each (replace-match "vm-print-each-message")
+	  ;; `vm-ps-print-each-message', as the docstring says: there is no
+	  ;; `vm-print-each-message' and never has been, so the entry
+	  ;; `vm-ps-print-message-infect-vm' installed could only fail (#778).
+	  (if each (replace-match "vm-ps-print-each-message")
 	    (replace-match "vm-ps-print-message")))
       (eval-buffer)
       (kill-buffer tmpbuf)
