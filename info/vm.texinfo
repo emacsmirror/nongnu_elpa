@@ -1184,6 +1184,39 @@ only on the BSDs.  Thunderbird is the exception in the other direction:
 Folders}.
 @end table
 
+@subheading Where a VM folder is read differently elsewhere
+
+@cindex mbox, incompatibility
+@cindex interoperability, splitting
+The escaping rules above have a consequence worth stating plainly: there are
+folders VM reads correctly that another program does not, and the fault is not
+in either of them.  Two cases, both verified, both one-directional.
+
+@table @asis
+@item A From_ folder VM wrote, read by a program using the plain rule.
+VM escapes only a @samp{From } line that ends in a digit, so a body line such
+as @samp{From the desk of Bob}, standing after a blank line, is left exactly
+as it was written.  VM reads that folder as one message.  A program that takes
+any @samp{From } line after a blank line as a separator reads it as two, and
+the second is a fragment with no headers.
+
+@item An mboxcl2 folder, read by a program that ignores @code{Content-Length:}.
+Nothing in an mboxcl2 folder is escaped, so every body line beginning
+@samp{From } is exposed.  A program that honours the header reads the folder
+correctly.  One that ignores it, and some do, splits the folder at those
+lines.
+@end table
+
+@noindent
+The other direction is milder.  VM does not unescape, so a folder written by a
+program that doubles its escapes, mboxrd, shows the extra @samp{>} in the text
+of the message.  Nothing is lost and no message is split; it just reads wrong.
+
+@noindent
+There is no setting that makes a folder safe for every reader, because the
+readers disagree with each other.  If a folder has to be handed to a
+particular program, the thing to know is which rule that program uses.
+
 @noindent
 The short of it: a From_ folder is safe to share with another program if you
 are content that read and unread will not travel, that the first message is
