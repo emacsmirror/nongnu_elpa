@@ -93,7 +93,6 @@
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
-(declare-function bbdb-split "ext:bbdb" (string separators))
 (declare-function bbdb/sc-consult-attr "ext:bbdb-sc" (from))
 
 ;; vm-xemacs is a fake file meant to fool Emacs 23 compiler
@@ -470,10 +469,13 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
              (setq token-value (funcall  token-value)))
           (t
            (setq token-value (eval token-value))))
-      (error (setq token-value nil)
-             (warn (format "Token `%s' caused a %S"
-                           token-value err))
-             nil))
+      ;; `warn' formats its own message, so hand it the arguments rather
+      ;; than a string that has already been through `format': an error
+      ;; text containing a percent sign made the warning itself fail.
+      ;; And report the value that failed, which clearing it first hid.
+      (error (warn "vm-serial cannot expand %S: %s.  Correct it in `vm-serial-token-alist'"
+                   token-value (error-message-string err))
+             (setq token-value nil)))
     token-value))
 
 ;;-----------------------------------------------------------------------------
@@ -482,9 +484,15 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
 Optional argument HEADER is the header to get the recipients from."
   (setq header (or header "To:"))
   (let ((to (vm-mail-mode-get-header-contents header)))
-    (if (functionp 'bbdb-extract-address-components)
-        (car (bbdb-extract-address-components to))
-      (mail-extract-address-components to))))
+    ;; Both extractors answer one (NAME ADDRESS) pair, so neither answer
+    ;; wants a `car' taken of it.  Taking one on the BBDB side left every
+    ;; name token reading `car' of a string (#777).
+    (cond ((or (null to) (string-match "\\`[ \t\n]*\\'" to))
+           nil)
+          ((functionp 'bbdb-extract-address-components)
+           (bbdb-extract-address-components to))
+          (t
+           (mail-extract-address-components to)))))
 
 (defun vm-serial-get-to ()
   "Return the recipient of current message."
@@ -681,47 +689,60 @@ expression which is evaluated
 
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
-a warning."
+a warning.
+
+RSTART and REND bound the text to expand.  Given neither, the whole
+message body is expanded, or the region under XEmacs."
   (interactive)
   
   (let ((token-regexp (concat (regexp-quote vm-serial-cookie)
                        "\\(" (regexp-quote vm-serial-cookie) "\\)*"
                        "[{(a-zA-Z]"))
         start end expr result vm-serial-point)
-    (if (and (featurep 'xemacs)
-             (region-exists-p)
-             (eq (zmacs-region-buffer) (current-buffer)))
-        (setq rstart (goto-char (region-beginning)) rend (region-end))
-      (setq rstart (mail-text) rend (point-max)))
+    ;; A caller that says where means it: `vm-serial-insert-token' expands
+    ;; the one token it just wrote, which may be in a header.  Overwriting
+    ;; RSTART and REND here re-expanded the whole body instead, and left a
+    ;; token inserted above the body unexpanded (#777).
+    (cond ((and rstart rend))
+          ((and (featurep 'xemacs)
+                (region-exists-p)
+                (eq (zmacs-region-buffer) (current-buffer)))
+           (setq rstart (region-beginning) rend (region-end)))
+          (t
+           (setq rstart (mail-text) rend (point-max))))
 
-    (narrow-to-region rstart rend)
-    (while (re-search-forward token-regexp (point-max) t)
-      (backward-char 1)
-      (setq start (- (match-end 0) 1)
-            result nil)
-      (cond ((> (length (match-string 1)) 0)
-             (delete-region (match-beginning 1) (match-end 1)))
-            ((looking-at "(")
-             (setq end (scan-sexps start 1))
-             (goto-char start)
-             (setq expr (read (current-buffer)))
-             (delete-region (- start 1) end)
-             (setq result (vm-serial-eval-token-value expr)))
-            ((looking-at "\\({\\)?\\([a-zA-Z][a-zA-Z0-9_-]*\\)\\(}\\)?")
-             (setq start (match-beginning 2))
-             (setq end (match-end 2))
-             (setq expr (buffer-substring start end))
-             (if (and (not (and (match-end 1) (match-end 3)))
-                      (or (match-end 1) (match-end 3)))
-                 (error "Invalid token expression `%s'"
-                        (match-string 0)))
-             (delete-region (- (match-beginning 0) 1) (match-end 0))
-             (setq result (vm-serial-eval-token-value
-                           (vm-serial-get-token expr))))
-            )
-      (if (and result (stringp result))
-          (insert (format "%s" result))))
-    (widen)
+    ;; `save-restriction', so that an invalid token expression leaves the
+    ;; composition buffer as wide as it found it rather than narrowed to
+    ;; the body (#777).
+    (save-restriction
+      (narrow-to-region rstart rend)
+      (goto-char rstart)
+      (while (re-search-forward token-regexp (point-max) t)
+        (backward-char 1)
+        (setq start (- (match-end 0) 1)
+              result nil)
+        (cond ((> (length (match-string 1)) 0)
+               (delete-region (match-beginning 1) (match-end 1)))
+              ((looking-at "(")
+               (setq end (scan-sexps start 1))
+               (goto-char start)
+               (setq expr (read (current-buffer)))
+               (delete-region (- start 1) end)
+               (setq result (vm-serial-eval-token-value expr)))
+              ((looking-at "\\({\\)?\\([a-zA-Z][a-zA-Z0-9_-]*\\)\\(}\\)?")
+               (setq start (match-beginning 2))
+               (setq end (match-end 2))
+               (setq expr (buffer-substring start end))
+               (if (and (not (and (match-end 1) (match-end 3)))
+                        (or (match-end 1) (match-end 3)))
+                   (error "Invalid token expression `%s'"
+                          (match-string 0)))
+               (delete-region (- (match-beginning 0) 1) (match-end 0))
+               (setq result (vm-serial-eval-token-value
+                             (vm-serial-get-token expr))))
+              )
+        (if (and result (stringp result))
+            (insert (format "%s" result)))))
     (if vm-serial-point
         (goto-char vm-serial-point))))
 
@@ -809,11 +830,16 @@ questions will bother you!"
     (if (and (not vm-serial-send-mail-jobs) (not done))
         (if (not (setq to (mail-fetch-field "To" nil t)))
             (error "There are no recipients in %s!" (buffer-name))
+          ;; Every recipient, so ask for them all: without the flag both
+          ;; extractors answer one pair for the whole header, which sent a
+          ;; single message with no To at all.  The other arm called
+          ;; `bbdb-split', a BBDB function, in the branch taken when BBDB
+          ;; is absent, so the command died there with a void-function
+          ;; error for anyone without BBDB (#777).
           (setq vm-serial-send-mail-jobs
                 (if (functionp 'bbdb-extract-address-components)
-                    (bbdb-extract-address-components to)
-                  (mapcar 'mail-extract-address-components
-                          (bbdb-split to ","))))
+                    (bbdb-extract-address-components to t)
+                  (mail-extract-address-components to t)))
           (make-local-variable 'vm-serial-sent-cnt)
           (make-local-variable 'vm-serial-edited-cnt)
           (make-local-variable 'vm-serial-killed-cnt)
