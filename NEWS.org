@@ -2,6 +2,16 @@
 
 * Unreleased
 
+* Version 0.4.1 (2026-08-29)
+
+- Kept named remote instances in the gateway filesystem namespace across chat
+  creation, resume, and working-directory changes without overwriting the
+  editor's local directory.
+- Serialized fresh-session setup and create-time runtime overrides so retries,
+  concurrent callers, and stale callbacks cannot duplicate or replace work.
+- Preferred valid stored basic credentials before browser PKCE in auto mode,
+  while preserving native fallback and normalizing unusable secret errors.
+
 * Version 0.4.0 (2026-08-29)
 
 - Added pre-session model and reasoning selection, including explicit
