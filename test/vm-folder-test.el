@@ -3250,6 +3250,105 @@ said nothing, and went on adding messages to a folder whose name was a lie."
       (vm-visit-folder file)
       (should (= (length vm-message-list) 1)))))
 
+;;; mboxcl2 lengths are octets, and a wrong one does not stop the reader
+
+(defconst vm-folder-test--accented-body
+  "Caf\N{U+00E9} na\N{U+00EF}ve \N{U+00FC}ber stra\N{U+00DF}e\n"
+  "A body whose UTF-8 is longer than its character count.
+Four characters of it take two octets each, so a length counted in characters
+and one counted in octets differ by four, which is what the tests below tell
+apart.")
+
+(defun vm-folder-test--accented-message ()
+  "One From_ message whose body is `vm-folder-test--accented-body'."
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: one\n"
+          "Content-Type: text/plain; charset=utf-8\n\n"
+          vm-folder-test--accented-body "\n"))
+
+(defun vm-folder-test--declared-and-actual (file)
+  "Answer (DECLARED . ACTUAL) for the first message of mboxcl2 FILE.
+DECLARED is what its `Content-Length' says, ACTUAL the octets from the end of
+the header block to the next separator or the end.  Read literally into a
+unibyte buffer, or the measurement would make the mistake it is looking for."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (goto-char (point-min))
+    (let ((declared (and (re-search-forward "^Content-Length: \\([0-9]+\\)$" nil t)
+                         (string-to-number (match-string 1)))))
+      (goto-char (point-min))
+      (re-search-forward "\n\n" nil t)
+      (let* ((start (point))
+             (end (or (and (re-search-forward "^From " nil t) (match-beginning 0))
+                      (point-max))))
+        (cons declared (- end start))))))
+
+(ert-deftest vm-folder-test-a-converted-length-counts-octets ()
+  "The on-disk conversion writes octet counts for a body that is not ASCII.
+Not a repair: it is right, and this is what says so.  A refactor that let a
+multibyte buffer into the conversion would write character counts instead, and
+every folder it wrote would be wrong in a way VM itself would not notice --
+the reader falls back on searching for the next separator, so only another
+program reading the folder would see it."
+  (vm-folder-test-with-directory dir
+    (let ((file (expand-file-name "folder" dir))
+          (coding-system-for-write 'utf-8))
+      (write-region (concat (vm-folder-test--accented-message)
+                            (vm-folder-test--accented-message))
+                    nil file nil 'quiet)
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (let ((lengths (vm-folder-test--declared-and-actual
+                      (concat file ".mboxcl2"))))
+        (should (car lengths))
+        ;; ACTUAL is measured in a unibyte buffer, so agreeing with it is
+        ;; what says the declared length is octets: a character count would
+        ;; be four short, one for each two-octet character in the body.
+        (should (equal (car lengths) (cdr lengths)))))))
+
+(ert-deftest vm-folder-test-the-accented-body-has-multi-octet-characters ()
+  "The premise of the two tests above, which would otherwise pass vacuously.
+A body of pure ASCII has the same length counted either way, so it could not
+tell an octet count from a character count."
+  (should (> (length (encode-coding-string vm-folder-test--accented-body 'utf-8))
+             (length vm-folder-test--accented-body))))
+
+(ert-deftest vm-folder-test-a-saved-length-counts-octets ()
+  "Saving a message into an mboxcl2 folder writes an octet count too.
+The other path that writes a length, and the one a reader uses every day."
+  (vm-folder-test-with-directory dir
+    (let ((src (expand-file-name "inbox" dir))
+          (dest (expand-file-name "kept.mboxcl2" dir))
+          (coding-system-for-write 'utf-8))
+      (write-region (vm-folder-test--accented-message) nil src nil 'quiet)
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (vm-visit-folder src))
+      (goto-char (point-min))
+      (vm-save-message dest 1)
+      (let ((lengths (vm-folder-test--declared-and-actual dest)))
+        (should (car lengths))
+        (should (equal (car lengths) (cdr lengths)))))))
+
+(ert-deftest vm-folder-test-a-malformed-length-does-not-stop-the-reader ()
+  "A Content-Length that is nonsense still opens, one message, no error.
+The reader falls back on searching for the next separator when the count does
+not land on one, which is what makes an mboxcl2 folder no worse than a From_
+one when its lengths are wrong.  Worth pinning now that mboxcl2 is what
+`vm-default-folder-type' creates: arbitrary mail reaches this code."
+  (let ((header (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                        "From: alice@example.com\n")))
+    (dolist (length '("999999" "0" "   12" "abc" "99999999999999999999" "-5"))
+      (vm-folder-test-with-directory dir
+        (let ((file (expand-file-name "odd.mboxcl2" dir)))
+          (write-region (concat header "Content-Length: " length
+                                "\n\nbody here!\n\n")
+                        nil file nil 'quiet)
+          (should (eq (vm-get-folder-type file) 'mboxcl2))
+          (let ((vm-mboxcl2-strict nil))
+            (cl-letf (((symbol-function 'vm-warn) #'ignore))
+              (vm-visit-folder file)))
+          (should (equal (length vm-message-list) 1)))))))
+
 ;;; The folder's read-only flag, and shrunken headers (emacs-vm/vm#632)
 
 (defconst vm-folder-test--state-message
