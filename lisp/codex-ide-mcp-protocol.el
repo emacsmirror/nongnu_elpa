@@ -90,8 +90,7 @@
   (list (cons "tools"
               (vconcat
                (mapcar #'codex-ide-mcp--tool->mcp
-                       (cl-remove-if-not #'codex-ide-mcp--tool-enabled-p
-                                         codex-ide-mcp--tools))))))
+                       codex-ide-mcp--tools)))))
 
 (defun codex-ide-mcp--handle-tools-call (params)
   "Call an Emacs MCP tool described by PARAMS."

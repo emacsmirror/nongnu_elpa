@@ -32,6 +32,7 @@
         (codex-ide-terminal-backend 'eat)
         (codex-ide-config-overrides nil)
         (codex-ide-ask-for-approval nil)
+        (codex-ide-yolo nil)
         (codex-ide-no-alt-screen nil)
         (codex-ide-display-buffer-function #'pop-to-buffer-same-window)
         (codex-ide-cli-extra-args nil))
@@ -286,6 +287,14 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
      (let ((codex-ide-no-alt-screen t))
        (should (equal (codex-ide--build-command)
                       (cons "codex" '("--no-alt-screen"))))))))
+
+(ert-deftest codex-ide-build-command-yolo ()
+  "`codex-ide-yolo' adds Codex's full-control alias."
+  (codex-ide-test--with-vars
+   (lambda ()
+     (let ((codex-ide-yolo t))
+       (should (equal (codex-ide--build-command)
+                      (cons "codex" '("--yolo"))))))))
 
 (ert-deftest codex-ide-build-command-extra-args ()
   "Extra args are appended verbatim."
@@ -2257,6 +2266,7 @@ region, where the scrollback-browsing rule alone would strand it."
   (dolist (command '(codex-ide-menu--set-cli-path
                      codex-ide-menu--set-terminal-backend
                      codex-ide-menu--set-approval
+                     codex-ide-menu--toggle-yolo
                      codex-ide-menu--toggle-no-alt-screen
                      codex-ide-menu--save-config))
     (should (codex-ide-test--command-bound-p codex-ide-config-map command))))

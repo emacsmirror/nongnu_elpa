@@ -43,8 +43,8 @@
     codex-ide-cli-extra-args
     codex-ide-config-overrides
     codex-ide-debug
+    codex-ide-yolo
     codex-ide-mcp-enabled
-    codex-ide-mcp-dangerous-tools-enabled
     codex-ide-mcp-host
     codex-ide-mcp-port
     codex-ide-context-auto-start)
@@ -87,6 +87,13 @@
   (codex-ide-log "No-alt-screen %s"
                  (if codex-ide-no-alt-screen "enabled" "disabled")))
 
+(defun codex-ide-menu--toggle-yolo ()
+  "Toggle `codex-ide-yolo' for new sessions."
+  (interactive)
+  (setq codex-ide-yolo (not codex-ide-yolo))
+  (codex-ide-log "YOLO mode %s"
+                 (if codex-ide-yolo "enabled" "disabled")))
+
 (defun codex-ide-menu--toggle-debug-mode ()
   "Toggle `codex-ide-debug'."
   (interactive)
@@ -97,8 +104,8 @@
 (defun codex-ide-menu--save-config ()
   "Save the documented configuration symbols to the custom file.
 Persists `codex-ide-menu--saved-config-symbols' only: CLI path, terminal
-backend, display function, approval, no-alt-screen, extra args, config
-overrides, debug, MCP enable/dangerous-tools/host/port, and context auto-start."
+backend, display function, approval, YOLO, no-alt-screen, extra args, config
+overrides, debug, MCP enable/host/port, and context auto-start."
   (interactive)
   (mapc (lambda (symbol)
           (customize-save-variable symbol (symbol-value symbol)))
@@ -124,6 +131,9 @@ overrides, debug, MCP enable/dangerous-tools/host/port, and context auto-start."
   "p" ("Set CLI path" codex-ide-menu--set-cli-path)
   "t" ("Set terminal backend" codex-ide-menu--set-terminal-backend)
   "a" ("Set approval policy" codex-ide-menu--set-approval)
+  "y" ((lambda () (format "YOLO full control (%s)"
+                          (codex-ide-menu--on-off codex-ide-yolo)))
+       codex-ide-menu--toggle-yolo)
   "A" ((lambda () (format "No-alt-screen (%s)"
                           (codex-ide-menu--on-off codex-ide-no-alt-screen)))
        codex-ide-menu--toggle-no-alt-screen)

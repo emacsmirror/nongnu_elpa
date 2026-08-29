@@ -38,9 +38,8 @@
 + When =codex-ide-mcp-enabled= is non-nil (default), session start
   registers a transient local MCP URL via Codex =-c= overrides.
 + The bridge can evaluate Elisp, edit buffers, and run shell commands. It
-  only accepts loopback bind addresses.  These dangerous tools are hidden by
-  default; enable them explicitly with
-  =(setq codex-ide-mcp-dangerous-tools-enabled t)=.
+  exposes those control tools by default and only accepts loopback bind
+  addresses.
 + Commands: =codex-ide-mcp-start=, =codex-ide-mcp-stop=,
   =codex-ide-mcp-status=, =codex-ide-mcp-install-codex-config=.
 + Default port is ephemeral (=codex-ide-mcp-port= 0). Persistent Codex
@@ -55,15 +54,15 @@
 | =codex-ide-ask-for-approval= | Optional =--ask-for-approval= policy |
 | =codex-ide-cli-extra-args= | Extra CLI args |
 | =codex-ide-no-alt-screen= | Inline TUI mode |
+| =codex-ide-yolo= | Full control without approvals or sandbox |
 | =codex-ide-mcp-enabled= | Auto-register local MCP bridge |
-| =codex-ide-mcp-dangerous-tools-enabled= | Expose eval/edit/shell tools |
 | =codex-ide-mcp-port= | 0 = ephemeral port |
 | =codex-ide-context-auto-start= | Auto-start context IPC |
 | =codex-ide-debug= | Debug logging |
 
 Menu *Save configuration* persists the documented symbol set only
-(CLI/terminal/display/approval/no-alt-screen/extra-args/config-overrides/debug/
-MCP enable-dangerous-tools-host-port/context-auto-start).
+(CLI/terminal/display/approval/YOLO/no-alt-screen/extra-args/config-overrides/
+debug/MCP host-port-enable/context-auto-start).
 
 ** Optional vterm backend
 Install vterm separately, then select it for new sessions:

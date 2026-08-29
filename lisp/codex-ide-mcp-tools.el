@@ -966,8 +966,7 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :optional t))
          :annotations (list (cons "destructiveHint" t)
                             (cons "openWorldHint" :json-false))
-         :function #'codex-ide-mcp--tool-execute
-         :dangerous t)
+         :function #'codex-ide-mcp--tool-execute)
    (list :name "emacs_context"
          :description "Return selected Emacs harness context."
          :args (list (list :name "buffer"
@@ -1041,8 +1040,7 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :optional t))
          :annotations (list (cons "destructiveHint" t)
                             (cons "openWorldHint" :json-false))
-         :function #'codex-ide-mcp--tool-edit
-         :dangerous t)
+         :function #'codex-ide-mcp--tool-edit)
    (list :name "emacs_job"
          :description "Start, poll, read, or cancel async harness jobs."
          :args (list (list :name "action"
@@ -1065,8 +1063,7 @@ Already-terminal jobs are left unchanged and emit no new events."
                            :description "Output offset for read."
                            :optional t))
          :annotations (list (cons "openWorldHint" t))
-         :function #'codex-ide-mcp--tool-job
-         :dangerous t)
+         :function #'codex-ide-mcp--tool-job)
    (list :name "emacs_events"
          :description "Return recent Emacs harness events."
          :args (list (list :name "since"
@@ -1083,23 +1080,15 @@ Already-terminal jobs are left unchanged and emit no new events."
          :function #'codex-ide-mcp--tool-events))
   "Registered MCP harness tools.")
 
-(defun codex-ide-mcp--tool-enabled-p (tool)
-  "Return non-nil when TOOL is enabled by current safety options."
-  (or (not (plist-get tool :dangerous))
-      codex-ide-mcp-dangerous-tools-enabled))
-
 (defun codex-ide-mcp-tool-names ()
   "Return the names of the local Emacs MCP tools."
-  (mapcar (lambda (tool) (plist-get tool :name))
-          (cl-remove-if-not #'codex-ide-mcp--tool-enabled-p
-                            codex-ide-mcp--tools)))
+  (mapcar (lambda (tool) (plist-get tool :name)) codex-ide-mcp--tools))
 
 (defun codex-ide-mcp--tool-by-name (name)
   "Return registered tool named NAME, or nil."
-  (cl-find-if (lambda (tool)
-                (and (codex-ide-mcp--tool-enabled-p tool)
-                     (equal name (plist-get tool :name))))
-              codex-ide-mcp--tools))
+  (cl-find name codex-ide-mcp--tools
+           :key (lambda (tool) (plist-get tool :name))
+           :test #'equal))
 
 (provide 'codex-ide-mcp-tools)
 

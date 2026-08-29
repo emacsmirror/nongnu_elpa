@@ -119,6 +119,11 @@ Escape hatch for flags not yet modeled by a defcustom."
   :type 'boolean
   :group 'codex-ide)
 
+(defcustom codex-ide-yolo nil
+  "When non-nil, pass `--yolo' for full control without approvals or sandbox."
+  :type 'boolean
+  :group 'codex-ide)
+
 (defcustom codex-ide-buffer-name-function #'codex-ide--default-buffer-name
   "Function called with the working directory to produce a buffer name."
   :type 'function
@@ -325,6 +330,8 @@ folding is pure and does not touch the shell."
     (dolist (pair codex-ide-config-overrides)
       (setq args (nconc args (list "-c"
                                    (format "%s=%s" (car pair) (cdr pair))))))
+    (when codex-ide-yolo
+      (setq args (nconc args (list "--yolo"))))
     ;; Resume subcommand (mutually exclusive shapes).
     (cond
      (session-id

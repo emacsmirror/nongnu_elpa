@@ -29,10 +29,6 @@
 (require 'codex-ide)
 (require 'codex-ide-mcp)
 
-;; Most tests exercise the dangerous tool implementations directly.  Safety
-;; filtering has dedicated tests below.
-(setq codex-ide-mcp-dangerous-tools-enabled t)
-
 (defun codex-ide-mcp-test--json-read (string)
   "Decode JSON STRING as an alist for assertions."
   (let ((json-object-type 'alist)
@@ -416,14 +412,11 @@
     (dolist (tool tools)
       (should (consp (cdr (assoc "annotations" tool)))))))
 
-(ert-deftest codex-ide-mcp-dangerous-tools-require-opt-in ()
-  "Dangerous tools are absent until explicitly enabled."
-  (let ((codex-ide-mcp-dangerous-tools-enabled nil))
-    (let ((names (codex-ide-mcp-tool-names)))
-      (should (member "emacs_context" names))
-      (dolist (name '("emacs_execute" "emacs_edit" "emacs_job"))
-        (should-not (member name names))
-        (should-not (codex-ide-mcp--tool-by-name name))))))
+(ert-deftest codex-ide-mcp-control-tools-available-by-default ()
+  "The MCP bridge exposes execute, edit, and job control by default."
+  (dolist (name '("emacs_execute" "emacs_edit" "emacs_job"))
+    (should (member name (codex-ide-mcp-tool-names)))
+    (should (codex-ide-mcp--tool-by-name name))))
 
 (ert-deftest codex-ide-mcp-client-limit-rejects-new-connection ()
   "A full MCP client table rejects and closes a new connection."
