@@ -200,14 +200,25 @@ FOLDERS should be a list of files/directories to search in."
            ))
   )
 
+(defun vm-grepmail-finished-cleanly-p (state status)
+  "Whether a grepmail process in STATE with exit STATUS did its job.
+It has to have exited, and exited zero.  Anything else -- a non-zero status, a
+signal, a process still running -- leaves the output truncated or empty, and
+what is in the buffer is not a result to go on and read."
+  (and (memq state '(exit finished))
+       (equal status 0)))
+
 (defun vm-grepmail-process-done (process state)
   "Called when the grepmail PROCESS is finished returning STATE."
   (message "grepmail cleanup.")
-  (setq state (process-status process))
-  (if (not (or (eq state 'exit) (eq state 'finished)
-               (not (= (process-exit-status process) 0))))
-      (error "Grepmail terminated abnormally with %S %d"
-             state (process-exit-status process)))
+  ;; STATE as the sentinel was given it.  Asking `process-status' again here
+  ;; overwrote it, and the condition it fed was inverted besides: it raised
+  ;; only where the status was zero, so a grepmail that failed or was killed
+  ;; was taken for success and its truncated output read as a folder
+  ;; (emacs-vm/vm#773).
+  (unless (vm-grepmail-finished-cleanly-p state (process-exit-status process))
+    (error "Grepmail terminated abnormally with %S %d"
+           state (process-exit-status process)))
 
   ;; grab the last message
   (set-buffer (process-buffer process))
@@ -216,8 +227,11 @@ FOLDERS should be a list of files/directories to search in."
   (vm-grepmail-grab-message (current-buffer) (point-min) (point))
 
   ;; cleanup
-  (let ((folder-buffer vm-grepmail-folder-buffer))
-    (kill-this-buffer)
+  (let ((folder-buffer vm-grepmail-folder-buffer)
+	(process-buffer (process-buffer process)))
+    ;; `kill-buffer' on the buffer meant, not `kill-this-buffer', which is an
+    ;; interactive command that acts on the selected window's buffer.
+    (kill-buffer process-buffer)
     (set-buffer folder-buffer)
     (vm-next-message 1)
     (vm-clear-modification-flag-undos)
