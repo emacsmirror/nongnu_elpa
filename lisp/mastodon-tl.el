@@ -2674,6 +2674,8 @@ call this function after it is set or use something else."
           ;; followed hashtags
           ((mastodon-tl--endpoint-str-= "followed_tags")
            'followed-hashtags)
+          ((string-suffix-p "-tags-all*" (buffer-name))
+           'hashtags-all)
           ;; collections:
           ((mastodon-tl--endpoint-str-= "collection" :prefix)
            'collection))))
