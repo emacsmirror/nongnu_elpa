@@ -2699,8 +2699,10 @@ See the variable `vm-handle-return-receipt-mode' for customization."
          (format 
           "Your mail has been received on %s."
           (current-time-string)))
-        (save-restriction
-          (with-current-buffer (vm-buffer-of msg)
+        ;; `save-restriction' inside the buffer switch: entered outside it,
+        ;; it held the composition and left the folder widened (#780).
+        (with-current-buffer (vm-buffer-of msg)
+          (save-restriction
             (widen)
             (setq message
                   (buffer-substring

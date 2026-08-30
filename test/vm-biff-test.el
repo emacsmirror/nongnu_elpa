@@ -63,6 +63,28 @@ and every line after the first is indented to line up under it."
       (should-not (string-match-p "\n\n" peek))
       (should (string-match-p "One\n\tTwo" peek)))))
 
+(ert-deftest vm-biff-test-body-peek-leaves-the-folder-narrowing-alone ()
+  "The peek widens the folder to read the body, and puts it back.
+`save-restriction' saves the restriction of the buffer it is entered in, and
+this one was entered before the switch to the folder, so it held whichever
+buffer the summary was being built in.  `vm-biff-popup' makes the popup
+buffer current before it formats a line, so a folder narrowed to the message
+being read came back showing the whole mbox."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\nSubject: one\n\nBody one.\n\n"
+                               "From bob@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: bob@example.com\nSubject: two\n\nBody two.\n\n")
+    (let ((m (car vm-message-list))
+          (folder (current-buffer)))
+      (narrow-to-region (vm-start-of m) (vm-end-of m))
+      (let ((bounds (cons (point-min) (point-max))))
+        (should (< (cdr bounds) (1+ (buffer-size))))   ; really narrowed
+        ;; as the popup does it: another buffer is current
+        (with-temp-buffer
+          (vm-summary-function-V m))
+        (with-current-buffer folder
+          (should (equal bounds (cons (point-min) (point-max)))))))))
+
 (ert-deftest vm-biff-test-place-frame-limits-the-height ()
   "The popup is `vm-biff-width' wide and never more than
 `vm-biff-max-height' lines, however long the message is."
