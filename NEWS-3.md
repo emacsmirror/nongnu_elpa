@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `vm-pgg` no longer takes PGP away from `vm-epg` (emacs-vm/vm#785).  Both
+    answer for the same three MIME types, and whichever was loaded last used
+    to hold them.  Loading `vm-pgg` was not always deliberate: it declared
+    its customization group as a child of `vm-ext`, so anything that asked
+    Customize about that group loaded it, `C-h v` on a VM option among them,
+    and PGP then stopped working for a reader who had never asked for
+    `vm-pgg`.  That group is declared in `vm-vars.el` now, so only opening
+    the group itself loads the file, and loading it with `vm-epg` present
+    installs nothing at all: no handlers, no advice, no compose hook.
+
+    Nothing changes for anyone using `vm-pgg` alone, which still works and
+    is still deprecated.
+
   * `vm-epg` encrypts a message to its recipients and to nobody else
     (emacs-vm/vm#782).  `vm-pgg`, through the obsolete `pgg` package, always
     added your own key, so a copy filed with `FCC:` could be read back.

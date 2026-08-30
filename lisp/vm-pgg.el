@@ -114,9 +114,6 @@
 
 ; group already defined in vm-vars.el
 
-(defgroup vm-pgg nil
-  "PGP and PGP/MIME support for VM by PGG."
-  :group  'vm-ext)
 
 (defface vm-pgg-bad-signature
   '((((type tty) (class color))
@@ -344,8 +341,6 @@ Switch mode on/off according to ARG.
 (defun vm-pgg-compose-mode-activate ()
   "Activate function `vm-pgg-compose-mode'."
   (vm-pgg-compose-mode 1))
-
-(add-hook 'vm-mail-mode-hook 'vm-pgg-compose-mode-activate t)
 
 (defun vm-pgg-get-emails (headers)
   "Return email addresses found in the given HEADERS."
@@ -594,8 +589,6 @@ When the button is pressed ACTION is called."
               (t
                (error "This should never happen!")))))))
 
-(advice-add 'vm-present-current-message
-            :after #'vm-pgg--present-cleartext-automode)
 (defun vm-pgg--present-cleartext-automode (&rest _)
   "Decode or check signature on clear text messages."
   (vm-pgg-state-set)
@@ -606,7 +599,6 @@ When the button is pressed ACTION is called."
              (not vm-mime-decoded))
     (vm-pgg-cleartext-automode)))
 
-(advice-add 'vm-scroll-forward :around #'vm-pgg--scroll-cleartext-automode)
 (defun vm-pgg--scroll-cleartext-automode (orig-fun &rest args)
   "Decode or check signature on clear text messages."
   (let ((vm-system-state-was
@@ -658,8 +650,6 @@ When the button is pressed ACTION is called."
 			     'vm-pgg-bad-signature
 			   'vm-pgg-good-signature)))))
   
-(advice-add 'vm-mime-transfer-decode-region
-            :around #'vm-pgg--transfer-cleartext-automode)
 (defun vm-pgg--transfer-cleartext-automode (orig-fun &optional layout
                                                      &rest args)
   "Decode or check signature on clear text messages parts."
@@ -675,8 +665,6 @@ When the button is pressed ACTION is called."
           (widen)
           )))))
   
-(advice-add 'vm-mime-display-internal-text/plain
-            :around #'vm-pgg--display-cleartext-automode)
 (defun vm-pgg--display-cleartext-automode (orig-fun &rest args)
   "Decode or check signature on clear text messages parts.
 We use the advice here in order to avoid overwriting VMs internal text display
@@ -792,7 +780,6 @@ cleanup here after verification and decoding took place."
 (defvar vm-pgg-recursion nil
   "Detect recursive calles.")
 
-(advice-add 'vm-decode-mime-message :around #'vm-pgg--clear-state)
 (defun vm-pgg--clear-state (orig-fun &rest args)
   "Clear the modeline state before decoding."
   (vm-select-folder-buffer)
@@ -817,7 +804,7 @@ cleanup here after verification and decoding took place."
       (vm-decode-mime-layout button t))))
 
 ;;; ###autoload
-(defun vm-mime-display-internal-multipart/encrypted (layout)
+(defun vm-pgg-display-internal-multipart/encrypted (layout)
   "Display multipart/encrypted LAYOUT."
   (vm-pgg-state-set 'encrypted)
   (let* ((part-list (vm-mm-layout-parts layout))
@@ -874,7 +861,7 @@ cleanup here after verification and decoding took place."
            t))))
 
 ;;; ###autoload
-(defun vm-mime-display-internal-multipart/signed (layout)
+(defun vm-pgg-display-internal-multipart/signed (layout)
   "Display multipart/signed LAYOUT."
   (vm-pgg-state-set 'signed)
   (let* ((part-list (vm-mm-layout-parts layout))
@@ -961,7 +948,7 @@ cleanup here after verification and decoding took place."
       (vm-decode-mime-layout button t))))
 
 ;;; ###autoload
-(defun vm-mime-display-internal-application/pgp-keys (layout)
+(defun vm-pgg-display-internal-application/pgp-keys (layout)
   "Snarf keys in LAYOUT and display result of snarfing."
   (vm-pgg-state-set 'public-key)
   ;; insert the keys
@@ -1293,16 +1280,59 @@ into your VM init file."
       (when action 
         (funcall (intern (format "vm-pgg-%s" action)))))))
 
-(display-warning
- 'vm-pgg
- (concat
-  "vm-pgg is deprecated and will be removed; please use vm-epg instead.\n"
-  (when (featurep 'vm-epg)
-    (concat
-     "vm-epg is also loaded.  Do not load both: they define the same\n"
-     "vm-mime-display-internal-* handlers, so the one loaded last (vm-pgg)\n"
-     "now wins and vm-epg's customizations have no effect.\n"))
-  "Remove (require 'vm-pgg) from your configuration."))
+;;; Switching on
+
+;; Everything above defines; nothing above changes how VM behaves.  What
+;; follows is the whole of what loading vm-pgg used to do to VM, and it is
+;; not done when vm-epg is already loaded.
+;;
+;; Loading vm-pgg is not always deliberate.  vm-pgg.el defines the `vm-pgg'
+;; customization group as a child of `vm-ext', so `lisp/vm-cus-load.el'
+;; records it as a file to load for `vm-ext' -- and anything that asks
+;; Customize about that group loads it, `C-h v' on a VM option among them.
+;; It then took the three vm-mime-display-internal-* handlers from vm-epg,
+;; and PGP stopped working for someone who had never asked for vm-pgg at
+;; all (#785).
+
+(defconst vm-pgg-mime-handlers
+  '((vm-mime-display-internal-multipart/encrypted
+     . vm-pgg-display-internal-multipart/encrypted)
+    (vm-mime-display-internal-multipart/signed
+     . vm-pgg-display-internal-multipart/signed)
+    (vm-mime-display-internal-application/pgp-keys
+     . vm-pgg-display-internal-application/pgp-keys))
+  "The MIME handlers vm-pgg answers for, each with the function that answers.
+`vm-mime-handler' looks a handler up by name, so answering one means holding
+that name.  vm-epg holds the same three.")
+
+(defun vm-pgg-install ()
+  "Make VM use vm-pgg: install its handlers, its advice and its compose hook.
+Called as vm-pgg is loaded, unless vm-epg holds the handlers already."
+  (dolist (pair vm-pgg-mime-handlers)
+    (defalias (car pair) (cdr pair)))
+  (add-hook 'vm-mail-mode-hook 'vm-pgg-compose-mode-activate t)
+  (advice-add 'vm-present-current-message
+              :after #'vm-pgg--present-cleartext-automode)
+  (advice-add 'vm-scroll-forward :around #'vm-pgg--scroll-cleartext-automode)
+  (advice-add 'vm-mime-transfer-decode-region
+              :around #'vm-pgg--transfer-cleartext-automode)
+  (advice-add 'vm-mime-display-internal-text/plain
+              :around #'vm-pgg--display-cleartext-automode)
+  (advice-add 'vm-decode-mime-message :around #'vm-pgg--clear-state))
+
+(if (featurep 'vm-epg)
+    (display-warning
+     'vm-pgg
+     (concat
+      "vm-pgg is deprecated and will be removed; please use vm-epg instead.\n"
+      "vm-epg is loaded, so vm-pgg has left PGP to it and changed nothing.\n"
+      "Remove (require 'vm-pgg) from your configuration."))
+  (vm-pgg-install)
+  (display-warning
+   'vm-pgg
+   (concat
+    "vm-pgg is deprecated and will be removed; please use vm-epg instead.\n"
+    "Remove (require 'vm-pgg) from your configuration.")))
 
 (provide 'vm-pgg)
 

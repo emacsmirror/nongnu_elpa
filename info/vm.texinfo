@@ -4376,12 +4376,11 @@ For @acronym{OpenPGP} rather than @acronym{S/MIME}, VM provides the
 to your @code{vm-preferences-file} (@pxref{Starting Up}).  To configure it,
 use @kbd{M-x customize-group @key{RET} vm-epg @key{RET}}.
 
-@strong{Do not load both @samp{vm-epg} and the older @samp{vm-pgg}.}  Both
-define the same @acronym{MIME} display handlers, so whichever is loaded last
-silently wins and the other's customizations have no effect.  @samp{vm-pgg}
-is built on the obsolete @samp{pgg} package, is deprecated, and warns when
-loaded; remove any @code{(require 'vm-pgg)} from your configuration when
-switching.
+@samp{vm-pgg}, the older package, is deprecated and warns when loaded;
+remove any @code{(require 'vm-pgg)} from your configuration.  It answers for
+the same @acronym{MIME} types, and leaves them to @samp{vm-epg} where both
+are loaded, so having it around no longer costs you anything but the
+warning.
 
 @findex vm-epg-sign
 @findex vm-epg-encrypt
