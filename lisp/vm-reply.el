@@ -1041,6 +1041,14 @@ one.  A composition has been through none of that yet."
       ;; composition keeps its own headers -- this is a copy.
       (vm-fcc-strip-headers (point-max))
       (vm-munge-message-separators type (point-min) (point-max))
+      ;; A message written into a folder ends with a newline.  The trailing
+      ;; separator then makes the blank line the next leading separator has
+      ;; to follow, and the separators of the other types begin at the start
+      ;; of a line.  A composition need not end with one, and this filed it
+      ;; as it stood, so two messages read back as one (#783).  Done before
+      ;; the count below, which has to describe what is written.
+      (goto-char (point-max))
+      (unless (bolp) (insert "\n"))
       (goto-char (point-min))
       (progn
 	(concat (vm-fcc-leading-separator type)

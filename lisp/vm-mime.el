@@ -4001,6 +4001,10 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
       (goto-char (point-min))
       (insert (vm-leading-message-separator))
       (goto-char (point-max))
+      ;; The reassembled message ends with a newline, so that the trailing
+      ;; separator makes the blank line the next leading one has to follow.
+      ;; A last fragment need not end with one (#783).
+      (unless (bolp) (insert "\n"))
       (insert (vm-trailing-message-separator))
       (set-buffer-modified-p nil)
       (vm-inform 6 "Assembling message... done")
@@ -5611,6 +5615,9 @@ file with the name should be overwritten."
 	      (goto-char (point-min))
 	      (insert (vm-leading-message-separator 'mmdf))
 	      (goto-char (point-max))
+	      ;; mmdf's separator begins a line, and a part's body need not
+	      ;; end with a newline (#783).
+	      (unless (bolp) (insert "\n"))
 	      (insert (vm-trailing-message-separator 'mmdf))
 	      (set-buffer-modified-p nil)
 	      (vm-mode t)

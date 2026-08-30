@@ -617,6 +617,65 @@ these is about."
         (should-not (string-match-p "^Content-Length:" text)))
       (delete-directory dir t))))
 
+(defun vm-reply-test--fcc (folder body)
+  "File a composition with BODY in FOLDER, through the Fcc header."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: filed\n"
+            "Fcc: " folder "\n" mail-header-separator "\n" body)
+    (vm-do-fcc-in-composition)))
+
+(defun vm-reply-test--parse-folder (folder &optional lengths)
+  "The messages FOLDER holds, as a list of body strings.
+LENGTHS non-nil reads it as a folder whose messages carry a Content-Length."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (when lengths (setq-local vm-trust-content-length t))
+    (insert-file-contents folder)
+    (setq-local vm-folder-type (vm-get-folder-type folder))
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (mapcar (lambda (m)
+              (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))
+            vm-message-list)))
+
+(ert-deftest vm-reply-test-fcc-ends-a-body-that-has-no-newline ()
+  "A composition whose last line has no newline still files as one message.
+The copy was written as it stood, so the folder lost the blank line before
+the next envelope line and the two messages read back as one
+(emacs-vm/vm#783).  A composition need not end with a newline; a message in
+a folder does."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (let ((vm-default-folder-type 'From_))
+          (vm-reply-test--fcc folder "first message, no newline at the end")
+          (vm-reply-test--fcc folder "second message\n")
+          (should (equal (vm-reply-test--parse-folder folder)
+                         '("first message, no newline at the end\n"
+                           "second message\n"))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-ends-a-body-that-has-no-newline-mboxcl2 ()
+  "The same in an mboxcl2 folder, where the damage is worse.
+That type ends a message by a byte count and has no trailing separator at
+all, so the next envelope line was glued to the end of the previous body:
+\"...no newline at the endFrom someone@...\".  The count written has to
+cover the newline, which is why it is added before the count is taken."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive.mboxcl2" dir)))
+    (unwind-protect
+        (progn
+          (vm-reply-test--fcc folder "first message, no newline at the end")
+          (vm-reply-test--fcc folder "second message\n")
+          (let ((text (vm-reply-test--folder-text folder)))
+            ;; the second envelope line begins a line of its own
+            (should (string-match-p "^From .*\nContent-Length: 15$" text))
+            (should-not (string-match-p "the endFrom " text)))
+          (should (equal (vm-reply-test--parse-folder folder t)
+                         '("first message, no newline at the end\n"
+                           "second message\n"))))
+      (delete-directory dir t))))
+
 (ert-deftest vm-reply-test-fcc-counts-for-a-Content-Length-folder ()
   "REGRESSION: a copy filed in a Content-Length folder carries a count.
 `mail-do-fcc' never wrote one, whatever the folder was, so the byte counts
