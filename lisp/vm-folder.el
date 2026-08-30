@@ -1625,7 +1625,15 @@ this way, did not finish.  It takes seven seconds with the number left out."
 HEADERS-START, if given, is where the current message's headers begin, and
 allows a From_ folder to notice a separator that has no blank line before it
 -- see `vm-find-From_-in-header-block'.  Callers that do not pass it get the
-behaviour they always had."
+behaviour they always had.
+
+Answers non-nil only when point has been left on the *leading* separator of
+the next message rather than on this one's trailing separator, which is what
+`vm-build-message-list' reads it as.  Only the From_ header-block case does
+that.  Every other arm answers nil, said here rather than left to whatever
+the last form happens to return: the mmdf arm returned the `t' of
+`vm-find-leading-message-separator', and an mmdf folder could not be read at
+all (#786)."
   (cond
    ((eq vm-folder-type 'From_)
     (if (and headers-start (vm-find-From_-in-header-block headers-start))
@@ -1634,7 +1642,8 @@ behaviour they always had."
       (forward-char -1)
       nil))
    ((eq vm-folder-type 'BellFrom_)
-    (vm-find-leading-message-separator))
+    (vm-find-leading-message-separator)
+    nil)
    ((eq vm-folder-type 'mboxcl2)
     (let ((reg1 "^From ")
 	  content-length
@@ -1669,12 +1678,15 @@ behaviour they always had."
 	(if (re-search-forward reg1 nil 0)
 	    (forward-char -5)))))
    ((eq vm-folder-type 'mmdf)
-    (vm-find-leading-message-separator))
+    (vm-find-leading-message-separator)
+    nil)
    ((eq vm-folder-type 'baremessage)
-    (goto-char (point-max)))
+    (goto-char (point-max))
+    nil)
    ((eq vm-folder-type 'babyl)
     (vm-find-leading-message-separator)
-    (forward-char -1))))
+    (forward-char -1)
+    nil)))
 
 (defun vm-skip-past-leading-message-separator ()
   "Move point past a leading message separator at point."
