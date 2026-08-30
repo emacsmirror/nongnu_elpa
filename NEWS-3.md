@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `vm-epg` encrypts a message to its recipients and to nobody else
+    (emacs-vm/vm#782).  `vm-pgg`, through the obsolete `pgg` package, always
+    added your own key, so a copy filed with `FCC:` could be read back.
+    Under `vm-epg` it cannot be, and neither can anything else you keep of
+    what you sent.  To encrypt to yourself as well, say so to GnuPG rather
+    than to VM, with a line in `~/.gnupg/gpg.conf`:
+
+        encrypt-to YOUR-KEY-ID
+
+    VM passes `gpg` no `--no-encrypt-to`, so that setting is honoured.  It
+    is `gpg`'s setting, so it applies to everything that encrypts on your
+    behalf, not to VM alone.
+
   * IMAP CRAM-MD5 authentication now works with a password that is not
     plain ASCII, and with one longer than 64 characters (emacs-vm/vm#772).
     HMAC is defined over octets; VM XORed character codes and padded to 64

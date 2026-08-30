@@ -440,6 +440,10 @@ address returned by `vm-epg-get-recipients'; an address containing \"@\" is
 looked up bracketed, as \"<addr>\", so that it matches a full user ID rather
 than any substring.
 
+The author's own key is not among them.  A user who wants every message
+readable by themselves says so to GnuPG, with `encrypt-to' in gpg.conf,
+which VM does not override (#782).
+
 Signal an error, via `vm-epg-find-usable-key', if any recipient has no
 usable encryption key."
   (mapcar (lambda (addr)
@@ -950,7 +954,9 @@ body it then wraps.
 
 Every recipient must have a usable encryption key: with no recipient key
 this signals an error rather than falling back to symmetric (passphrase)
-encryption, which is never what is wanted for mail."
+encryption, which is never what is wanted for mail.  As with
+`vm-epg-encrypt', your own key is not added; an encrypt-to line in gpg.conf
+is what adds it."
   (interactive "P")
   (save-excursion
     ;; Normalize but do NOT MIME-encode yet: the armor must be inserted into
@@ -1779,7 +1785,12 @@ Every recipient address found in the headers listed in
 keyring; otherwise this signals an error and leaves the composition
 untouched.  Note that the message is never encrypted to a passphrase: if no
 recipient key can be found, it refuses rather than falling back to symmetric
-encryption."
+encryption.
+
+Encryption is to those recipients and to nobody else, so a copy filed with
+FCC: is one you cannot read back.  To encrypt to yourself as well, put a
+line reading encrypt-to followed by your key id in ~/.gnupg/gpg.conf.  VM
+passes GnuPG no --no-encrypt-to, so that setting is honoured."
   (interactive "P")
   (vm-epg-save-work 'vm-epg-encrypt-internal sign))
 

@@ -4409,6 +4409,28 @@ than setting a flag for send time, and they rewrite the composition into its
 --- a recipient with no usable key, for instance --- leaves your composition
 untouched.
 
+@cindex encrypting to yourself
+@cindex @code{encrypt-to}
+@vindex vm-epg-get-recipients-headers
+Encryption is to the recipients of the message and to nobody else.  VM
+collects the addresses in the headers named by
+@code{vm-epg-get-recipients-headers}, which are @samp{To:}, @samp{CC:} and
+@samp{BCC:}, and encrypts to one key for each.  Your own key is not among
+them, so a copy you file with @samp{FCC:} is one you cannot read back, and
+neither is anything else you keep of what you sent.
+
+To encrypt to yourself as well, tell @command{gpg} to do it, by putting a
+line naming your key in your @file{~/.gnupg/gpg.conf}:
+
+@example
+encrypt-to YOUR-KEY-ID
+@end example
+
+@noindent
+VM passes @command{gpg} no @option{--no-encrypt-to}, so that setting is
+honoured.  It belongs to @command{gpg} rather than to VM, so it applies to
+everything that encrypts on your behalf, not to VM alone.
+
 @vindex vm-epg-ask-function
 To be prompted at send time instead of remembering to run a command, add
 @code{vm-epg-ask-hook} to @code{vm-mail-send-hook}.  It must be

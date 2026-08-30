@@ -1339,6 +1339,128 @@ does."
       (should (member " ERROR" vm-epg-state))
       (should-not (member " verified" vm-epg-state)))))
 
+;;; Who a message is encrypted to (#782)
+
+(defconst vm-epg-test--author-address "vm-author@example.invalid"
+  "The address the two-key tests compose from.")
+
+(defconst vm-epg-test--recipient-address "vm-recipient@example.invalid"
+  "The address the two-key tests compose to.")
+
+(defmacro vm-epg-test--with-two-keys (&rest body)
+  "Run BODY with a fresh keyring holding an author key and a recipient key.
+`vm-epg-test--with-a-test-keyring' makes one key and addresses everything to
+it, which cannot tell encrypting to the recipient from encrypting to the
+author.  BODY sees `home', the GNUPGHOME the keys are in."
+  (declare (indent 0) (debug t))
+  `(let ((gpg (vm-epg-test--gpg-program)))
+     (vm-test-skip-unless
+      gpg
+      "No gpg on PATH.  Install GnuPG to run the tests that sign and encrypt.")
+     (let ((home (make-temp-file "vm-epg-home" t)))
+       (set-file-modes home #o700)
+       (unwind-protect
+           (let* ((process-environment
+                   (cons (concat "GNUPGHOME=" home) process-environment))
+                  (epg-gpg-home-directory home)
+                  (user-mail-address vm-epg-test--author-address))
+             (vm-test-skip-unless
+              (and (equal 0 (vm-epg-test--generate-key
+                             (format "VM Author <%s>"
+                                     vm-epg-test--author-address)))
+                   (equal 0 (vm-epg-test--generate-key
+                             (format "VM Recipient <%s>"
+                                     vm-epg-test--recipient-address))))
+              "gpg could not generate the keys; see its output for why")
+             ,@body)
+         (call-process gpg nil nil nil "--homedir" home "--quit-agent")
+         (ignore-errors
+           (call-process "gpgconf" nil nil nil "--homedir" home
+                         "--kill" "gpg-agent"))
+         (delete-directory home t)))))
+
+(defun vm-epg-test--encryption-subkey-id (home address)
+  "The key id gpg names in a session-key packet for ADDRESS's key in HOME.
+The packet names the encryption subkey, not the primary key, so a test
+comparing the two has to ask for the subkey."
+  (with-temp-buffer
+    (call-process (vm-epg-test--gpg-program) nil t nil
+                  "--homedir" home "--batch" "--with-colons"
+                  "--list-keys" address)
+    (let (id)
+      (dolist (line (split-string (buffer-string) "\n" t) id)
+        (let ((fields (split-string line ":")))
+          (when (and (equal (nth 0 fields) "sub")
+                     (string-match-p "e" (or (nth 11 fields) "")))
+            (setq id (nth 4 fields))))))))
+
+(defun vm-epg-test--encrypted-to (home)
+  "The key ids the PGP message in the current buffer is encrypted to."
+  (goto-char (point-min))
+  (re-search-forward "-----BEGIN PGP MESSAGE-----")
+  (let ((start (match-beginning 0)))
+    (re-search-forward "-----END PGP MESSAGE-----")
+    (let ((file (make-temp-file "vm-epg-cipher"))
+          (armor (buffer-substring-no-properties start (point)))
+          ids)
+      (unwind-protect
+          (progn
+            (with-temp-file file (insert armor))
+            (with-temp-buffer
+              (call-process (vm-epg-test--gpg-program) nil t nil
+                            "--homedir" home "--batch" "--list-packets" file)
+              (goto-char (point-min))
+              (while (re-search-forward "keyid \\([0-9A-F]+\\)" nil t)
+                (push (match-string 1) ids))))
+        (delete-file file))
+      (nreverse ids))))
+
+(defun vm-epg-test--encrypt-from-author (home)
+  "Encrypt a composition from the author to the recipient; answer the key ids."
+  (let ((mail-header-separator "--text follows this line--")
+        (vm-send-using-mime t))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "From: VM Author <" vm-epg-test--author-address ">\n"
+              "To: VM Recipient <" vm-epg-test--recipient-address ">\n"
+              "Subject: for the keyring\n"
+              mail-header-separator "\n"
+              "A body to work on.\n")
+      (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+        (vm-epg-encrypt nil))
+      (vm-epg-test--encrypted-to home))))
+
+(ert-deftest vm-epg-test-encrypts-to-the-recipients-and-nobody-else ()
+  "The author's own key is not added, so a filed copy cannot be read back.
+The manual and NEWS say so, and this is what they say it about: `vm-pgg'
+added the author's key and vm-epg does not (#782)."
+  (vm-epg-test--with-two-keys
+    (let ((author (vm-epg-test--encryption-subkey-id
+                   home vm-epg-test--author-address))
+          (recipient (vm-epg-test--encryption-subkey-id
+                      home vm-epg-test--recipient-address)))
+      (should author)
+      (should recipient)
+      (let ((ids (vm-epg-test--encrypt-from-author home)))
+        (should (member recipient ids))
+        (should-not (member author ids))))))
+
+(ert-deftest vm-epg-test-gpg-conf-encrypt-to-reaches-the-encryption ()
+  "`encrypt-to' in gpg.conf adds the author's key, as the manual says it does.
+The advice is only worth giving because VM passes gpg no --no-encrypt-to;
+were that to change, the manual would be telling the reader to do something
+that no longer works (#782)."
+  (vm-epg-test--with-two-keys
+    (let ((author (vm-epg-test--encryption-subkey-id
+                   home vm-epg-test--author-address))
+          (recipient (vm-epg-test--encryption-subkey-id
+                      home vm-epg-test--recipient-address)))
+      (with-temp-file (expand-file-name "gpg.conf" home)
+        (insert "encrypt-to " author "\n"))
+      (let ((ids (vm-epg-test--encrypt-from-author home)))
+        (should (member recipient ids))
+        (should (member author ids))))))
+
 (provide 'vm-epg-test)
 
 ;;; vm-epg-test.el ends here
