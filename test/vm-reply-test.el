@@ -1766,26 +1766,33 @@ the folder anyway."
   "`vm-preview-composition' encodes a copy of the composition and reads it
 back as a one-message folder.  The copy is what is encoded: the buffer being
 composed must come back untouched, or previewing would cost you your message.
-The display at the end of the command signals `end-of-buffer' in batch, where
-there is no window to show the folder in; the folder it built by then is what
-the command is for and what is checked here."
+
+The command used to signal `end-of-buffer', which this test tolerated and
+put down to there being no window in batch.  That was wrong: the preview is
+an mmdf folder, and no mmdf folder could be read (emacs-vm/vm#786).  It now
+runs to the end and narrows to the message, as VM narrows any preview, so
+the body is read with the restriction lifted."
   (vm-reply-test--composing (_folder vm-reply-test--incoming)
     (vm-reply 1)
     (goto-char (point-max))
     (insert "Some text to preview.\n")
     (let ((composition (current-buffer))
           (before (buffer-string)))
-      (ignore-error end-of-buffer (vm-preview-composition))
+      (vm-preview-composition)
       (should (get-buffer "composition preview"))
       (with-current-buffer "composition preview"
         (should (eq major-mode 'vm-mode))
         (should (= (length vm-message-list) 1))
-        ;; what the reader would see: encoded, and with the headers a
-        ;; composition does not carry yet
-        (should (string-match-p "Some text to preview" (buffer-string)))
-        (should (string-match-p "MIME-Version: 1.0" (buffer-string)))
-        (should-not (string-match-p (regexp-quote mail-header-separator)
-                                    (buffer-string))))
+        ;; narrowed to the message it is showing, as a preview is
+        (should (< (point-min) (point-max)))
+        (save-restriction
+          (widen)
+          ;; what the reader would see: encoded, and with the headers a
+          ;; composition does not carry yet
+          (should (string-match-p "Some text to preview" (buffer-string)))
+          (should (string-match-p "MIME-Version: 1.0" (buffer-string)))
+          (should-not (string-match-p (regexp-quote mail-header-separator)
+                                      (buffer-string)))))
       (with-current-buffer composition
         (should (equal (buffer-string) before))
         (set-buffer-modified-p nil)))))

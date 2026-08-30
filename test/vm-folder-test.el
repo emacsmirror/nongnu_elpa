@@ -396,13 +396,20 @@
       (should (looking-at "\nFrom VM")))))
 
 (ert-deftest vm-folder-test-find-trailing-mmdf ()
-  "Test finding MMDF trailing separator."
+  "Finding an MMDF trailing separator leaves point on it.
+Where the message is over is what the function is for; it used to be checked
+by its return value, which meant nothing here.  `vm-build-message-list' then
+read that value as saying point was on the *next* message\='s leading
+separator, and no mmdf folder could be read at all (emacs-vm/vm#786).  Now
+every arm but the From_ header-block one answers nil, so the position is the
+only thing left to assert, and the only thing that was ever true."
   (with-temp-buffer
     (insert "Body text\n")
     (insert "\001\001\001\001\n")
     (let ((vm-folder-type 'mmdf))
       (goto-char (point-min))
-      (should (vm-find-trailing-message-separator)))))
+      (should-not (vm-find-trailing-message-separator))
+      (should (looking-at "\001\001\001\001")))))
 
 ;;; High-level buffer operations
 
