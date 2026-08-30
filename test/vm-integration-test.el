@@ -588,6 +588,83 @@ with no warning at all."
               'vm-list-mime-part-structure))
   (should (commandp 'vm-mime-list-part-structure)))
 
+;;; save-restriction and the buffer it is entered in
+
+(defconst vm-integration-test--deliberate-widens
+  '("vm-gobble-crash-box" "vm-make-presentation-copy")
+  "The two places that widen a buffer other than the protected one on purpose.
+`vm-gobble-crash-box' widens the crash buffer it goes on to kill, and
+`vm-make-presentation-copy' widens the presentation buffer before erasing and
+refilling it.  Neither has a restriction anyone wants back.")
+
+(defun vm-integration-test--widen-across-a-buffer-switch (file)
+  "Answer the places in FILE where a buffer switch separates a `widen\\=' from
+its nearest enclosing `save-restriction\\='.  Each is \"DEFUN:LINE\"."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (emacs-lisp-mode)
+    (goto-char (point-min))
+    (let (found)
+      (while (search-forward "(widen)" nil t)
+        (let* ((widen-at (match-beginning 0))
+               (opens (save-excursion (nth 9 (syntax-ppss widen-at))))
+               (enclosing
+                (mapcar (lambda (p)
+                          (save-excursion
+                            (goto-char (1+ p))
+                            (ignore-errors (read (current-buffer)))))
+                        opens))
+               (save-at (car (last (delq nil (cl-mapcar
+                                              (lambda (p head)
+                                                (and (eq head 'save-restriction) p))
+                                              opens enclosing)))))
+               ;; A `with-current-buffer' counts only where it encloses the
+               ;; `widen', since one that has closed again has put the buffer
+               ;; back.  A `set-buffer' is a call, not a form around
+               ;; anything, so for that the text in between is all there is
+               ;; to go on.
+               (switched
+                (or (cl-some (lambda (head)
+                               (memq head '(with-current-buffer with-temp-buffer)))
+                             (and save-at
+                                  (cl-mapcar (lambda (p head) (and (> p save-at) head))
+                                             opens enclosing)))
+                    (and save-at
+                         (string-match
+                          "(set-buffer\\_>"
+                          (buffer-substring-no-properties save-at widen-at))))))
+          (when (and save-at switched)
+            (push (format "%s:%d"
+                          (save-excursion
+                            (goto-char (1+ (car opens)))
+                            (ignore-errors (read (current-buffer))
+                                           (format "%s" (read (current-buffer)))))
+                          (line-number-at-pos widen-at))
+                  found))))
+      (nreverse found))))
+
+(ert-deftest vm-integration-test-no-widen-across-a-buffer-switch ()
+  "No `widen\\=' is separated from its `save-restriction\\=' by a buffer switch.
+`save-restriction\\=' saves the restriction of the buffer it is entered in, so
+entering it, switching buffer and then widening leaves the widened buffer
+with nothing to put it back.  Five places did that, and the one with a test
+of its own showed as a folder that stopped being narrowed to the message
+being read (#780).
+
+The two that remain widen a buffer they own; see
+`vm-integration-test--deliberate-widens\\='.  A new offender names itself here,
+which is the point: three of the five were in code no unit test reaches."
+  (let (offenders)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-autoloads.el" "vm-cus-load.el" "vm-version-conf.el"))
+        (dolist (hit (vm-integration-test--widen-across-a-buffer-switch file))
+          (unless (member (car (split-string hit ":"))
+                          vm-integration-test--deliberate-widens)
+            (push (format "%s (%s)" hit (file-name-nondirectory file))
+                  offenders)))))
+    (should (equal nil (sort offenders #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

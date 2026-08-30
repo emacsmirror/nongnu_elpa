@@ -184,26 +184,30 @@ folder selectors work."
         peek)
     (if (< vm-biff-body-peek (- body-end body-start))
         (setq body-end (+ vm-biff-body-peek body-start)))
-    (save-excursion
-      (save-restriction
-        (set-buffer (vm-buffer-of msg))
-        (widen)
-        (goto-char body-end)
-        (re-search-forward "$" (point-max) t)
-        (setq peek (vm-decode-mime-encoded-words-in-string
-                    (buffer-substring body-start (point))))
-        (let ((pos 0))
-          (if (string-match "^\n+" peek pos)
-              (setq peek (replace-match "" t t peek)))
-          (while (setq pos (string-match "\n\n+" peek pos))
-            (setq peek (replace-match "\n" t t peek)))
-          (setq pos 0)
-          (while (setq pos (string-match "\n" peek pos))
-            (setq peek (replace-match "\n\t" t t peek)
-                  pos (+ 2 pos))))
-        (setq peek (concat "\t" peek))
-        (put-text-property 0 (length peek) 'face 'bold peek)
-        peek))))
+    ;; `save-restriction' in the buffer being widened, not in whichever
+    ;; buffer the summary is being built in: `vm-biff-popup' makes the popup
+    ;; buffer current before it formats a line, so entering it there left the
+    ;; folder widened for good (#780).
+    (with-current-buffer (vm-buffer-of msg)
+      (save-excursion
+        (save-restriction
+          (widen)
+          (goto-char body-end)
+          (re-search-forward "$" (point-max) t)
+          (setq peek (vm-decode-mime-encoded-words-in-string
+                      (buffer-substring body-start (point))))
+          (let ((pos 0))
+            (if (string-match "^\n+" peek pos)
+                (setq peek (replace-match "" t t peek)))
+            (while (setq pos (string-match "\n\n+" peek pos))
+              (setq peek (replace-match "\n" t t peek)))
+            (setq pos 0)
+            (while (setq pos (string-match "\n" peek pos))
+              (setq peek (replace-match "\n\t" t t peek)
+                    pos (+ 2 pos))))
+          (setq peek (concat "\t" peek))
+          (put-text-property 0 (length peek) 'face 'bold peek)
+          peek)))))
 
 (defun vm-biff-place-frame (&optional f)
   "Centers the frame and limits it to `vm-biff-max-height' lines."

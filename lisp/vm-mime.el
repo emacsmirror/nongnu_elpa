@@ -5904,25 +5904,27 @@ Returns non-NIL value M is a plain message."
     list ))
 
 (defun vm-mime-find-leaf-content-id-in-layout-folder (layout id)
-  (save-excursion
-    (save-restriction
-      (let (m (o nil))
-	(set-buffer (vm-buffer-of
-		     (vm-real-message-of
-		      (vm-mm-layout-message layout))))
-	(widen)
-	(goto-char (point-min))
-	(while (and (search-forward id nil t)
-		    (setq m (vm-message-at-point)))
-	  (setq o (vm-mm-layout m))
-	  (if (not (vectorp o))
-	      nil
-	    (setq o (vm-mime-find-leaf-content-id o id))
-	    (if (null o)
+  ;; `save-restriction' in the folder being widened, not in whatever buffer
+  ;; the caller was in (#780).
+  (with-current-buffer (vm-buffer-of
+			(vm-real-message-of
+			 (vm-mm-layout-message layout)))
+    (save-excursion
+      (save-restriction
+	(let (m (o nil))
+	  (widen)
+	  (goto-char (point-min))
+	  (while (and (search-forward id nil t)
+		      (setq m (vm-message-at-point)))
+	    (setq o (vm-mm-layout m))
+	    (if (not (vectorp o))
 		nil
-	      ;; if we found it, end the search loop
-	      (goto-char (point-max)))))
-	o ))))
+	      (setq o (vm-mime-find-leaf-content-id o id))
+	      (if (null o)
+		  nil
+		;; if we found it, end the search loop
+		(goto-char (point-max)))))
+	  o )))))
 
 (defun vm-mime-find-leaf-content-id (layout id)
   (let (;; (list nil)
@@ -7397,14 +7399,14 @@ and the appropriate content-type and boundary markup information is added."
 		  object (vm-extent-property e 'vm-mime-type)))
 		;; insert attachment from another folder
 		((listp object)
-		 (save-restriction
-		   (with-current-buffer (nth 0 object)
-		     (widen))
-		   (setq boundary-positions 
-			 (cons (point-marker) boundary-positions))
-		   (insert-buffer-substring 
-		    (nth 0 object) (nth 1 object) (nth 2 object))
-		   (setq encoded-attachment t)))
+		 (setq boundary-positions
+		       (cons (point-marker) boundary-positions))
+		 ;; `vm-insert-region-from-buffer' enters `save-restriction' in
+		 ;; the folder it reads from, so that folder's narrowing comes
+		 ;; back.  Widening it from here left it widened (#780).
+		 (vm-insert-region-from-buffer
+		  (nth 0 object) (nth 1 object) (nth 2 object))
+		 (setq encoded-attachment t))
 		;; insert file
 		((stringp object)
 		 (vm-mime-insert-file-contents 
@@ -8256,18 +8258,21 @@ This is a destructive operation and cannot be undone!"
 	(save-excursion
 	  (setq ext-file (substring (caddr type) 5))
 	  (vm-select-folder-buffer)
-	  (save-restriction
-	    (let ((start (vm-mm-layout-body-start layout))
-		  (end   (vm-mm-layout-body-end layout)))
-	      (set-buffer (marker-buffer (vm-mm-layout-body-start layout)))
-	      (widen)
-	      (goto-char start)
-	      (if (not (re-search-forward
-			"Content-Type: \"?\\([^ ;\" \n\t]+\\)\"?;?"
-			end t))
-		  (error "No `Content-Type' header found in: %s"
-			 (buffer-substring start end))
-		(setq type (list (match-string 1))))))))
+	  (let ((start (vm-mm-layout-body-start layout))
+		(end   (vm-mm-layout-body-end layout)))
+	    ;; `save-restriction' in the buffer the markers point into, which
+	    ;; is normally the folder just selected but is not promised to be
+	    ;; (#780).
+	    (with-current-buffer (marker-buffer (vm-mm-layout-body-start layout))
+	      (save-restriction
+		(widen)
+		(goto-char start)
+		(if (not (re-search-forward
+			  "Content-Type: \"?\\([^ ;\" \n\t]+\\)\"?;?"
+			  end t))
+		    (error "No `Content-Type' header found in: %s"
+			   (buffer-substring start end))
+		  (setq type (list (match-string 1)))))))))
         
       ;; insert an attached-object-button
       (goto-char xstart)
