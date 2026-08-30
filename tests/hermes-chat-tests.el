@@ -714,6 +714,34 @@
                 (should (equal default-directory launch-directory))))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
+(ert-deftest hermes-chat-resume-is-explicitly-unowned-by-launch-project ()
+  "A resumed chat cannot be mistaken for a legacy project chat."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-resume-project-" t)))
+         (instance '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list instance))
+         resolve buffer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (hermes-test--dashboard-client)))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session-id &rest args)
+                 (setq resolve (plist-get args :resolve)))))
+      (unwind-protect
+          (let ((default-directory root))
+            (setq buffer
+                  (hermes-chat-resume-session "stored" nil nil instance))
+            (with-current-buffer buffer
+              (should (local-variable-p 'hermes-chat--launch-project-root))
+              (should-not hermes-chat--launch-project-root)
+              (funcall resolve
+                       '((session_id . "live")
+                         (info . ((cwd . "/srv/resumed")))))
+              (should (string-match-p "\\[resumed\\]" (buffer-name)))
+              (should-not
+               (hermes-chat--project-buffers root (list buffer)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))
+    (delete-directory root t)))
+
 (ert-deftest hermes-chat-fresh-override-failure-settles-prompt ()
   "A post-attachment override failure settles the creating prompt exactly once."
   (let ((client (hermes-test--dashboard-client)) config-reject prompt-submits)
@@ -967,6 +995,112 @@
             (list first second other))
       (delete-directory root t)
       (delete-directory other-root t))))
+
+(ert-deftest hermes-project-chat-adopts-and-renames-legacy-buffer ()
+  "Project switching repairs a pre-project-identity chat name."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-adopt-" t)))
+         (target (generate-new-buffer "*local@default: [emacs-hermes]*"))
+         shown)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (with-current-buffer target
+            (setq default-directory root)
+            (hermes-chat-mode)
+            (setq hermes-chat--remote-filesystem-p t
+                  hermes-chat--working-directory "/srv/emacs-hermes"))
+          (with-temp-buffer
+            (setq default-directory root)
+            (cl-letf (((symbol-function 'pop-to-buffer-same-window)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (hermes-project-chat)))
+          (should (eq shown target))
+          (with-current-buffer target
+            (should (equal (file-truename hermes-chat--launch-project-root)
+                           (file-truename root)))
+            (should (string-match-p
+                     (format "\\[%s\\]" (file-name-nondirectory
+                                          (directory-file-name root)))
+                     (buffer-name)))))
+      (when (buffer-live-p target) (kill-buffer target))
+      (delete-directory root t))))
+
+(ert-deftest hermes-chat-direct-new-does-not-inherit-project-identity ()
+  "A direct new chat from a project chat remains cwd-named and unowned."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-direct-from-project-" t)))
+         (instance '("local" . "http://127.0.0.1:9119"))
+         (hermes-instances (list instance))
+         (source (generate-new-buffer " *hermes-project-source*"))
+         direct-a direct-b)
+    (unwind-protect
+        (save-window-excursion
+          (with-current-buffer source
+            (setq default-directory root)
+            (hermes-chat-mode)
+            (setq hermes-instance instance
+                  hermes-chat--launch-project-root root
+                  hermes-chat--remote-filesystem-p t
+                  hermes-chat--working-directory "/srv/source")
+            (setq direct-a (hermes-chat nil instance)
+                  direct-b (hermes-chat nil instance)))
+          (dolist (buffer (list direct-a direct-b))
+            (with-current-buffer buffer
+              (hermes-chat--record-working-directory "/srv/second")
+              (should-not hermes-chat--launch-project-root)
+              (should (string-match-p "\\[second\\]" (buffer-name)))))
+          (should-not (memq direct-a
+                            (hermes-chat--project-buffers
+                             root (list direct-a direct-b))))
+          (should (string-suffix-p "<2>" (buffer-name direct-b))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list source direct-a direct-b))
+      (delete-directory root t))))
+
+(ert-deftest hermes-chat-buffer-name-function-is-customizable ()
+  "A custom naming function owns the complete chat buffer name."
+  (let ((hermes-chat-buffer-name-function
+         (lambda (profile instance directory)
+           (format "*Custom: %s/%s/%s*"
+                   (car instance) profile
+                   (file-name-nondirectory (directory-file-name directory))))))
+    (should (equal (hermes-chat--buffer-name
+                    "coder" '("local" . "http://127.0.0.1:9119") "/tmp/nema/")
+                   "*Custom: local/coder/nema*"))))
+
+(ert-deftest hermes-project-chat-keeps-launch-project-in-buffer-name ()
+  "A project chat name stays anchored to its launching project."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-name-" t)))
+         (nested (expand-file-name "src/" root))
+         (instance '("local" . "http://127.0.0.1:9119"))
+         (hermes-instances (list instance))
+         buffer)
+    (unwind-protect
+        (progn
+          (make-directory nested t)
+          (make-directory (expand-file-name ".git" root))
+          (save-window-excursion
+            (with-temp-buffer
+              (setq default-directory nested)
+              (cl-letf (((symbol-function 'hermes-chat--read-profile)
+                         (lambda () nil)))
+                (setq buffer (hermes-project-chat t)))))
+          (with-current-buffer buffer
+            (hermes-chat--record-working-directory
+             "/srv/emacs-hermes")
+            (should (equal (file-truename hermes-chat--launch-project-root)
+                           (file-truename root)))
+            (should (string-match-p
+                     (format "\\[%s\\]" (file-name-nondirectory
+                                          (directory-file-name root)))
+                     (buffer-name)))
+            (should (string-match-p "emacs-hermes"
+                                    (hermes-test--header-line-string)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-directory root t))))
 
 (ert-deftest hermes-project-chat-prefix-creates-at-project-root ()
   "Prefix always creates a sibling chat rooted at the current project."

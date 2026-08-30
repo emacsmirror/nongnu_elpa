@@ -2,6 +2,10 @@
 
 * Unreleased
 
+- Kept =hermes-project-chat= buffer names anchored to their launching project,
+  independent of the gateway working directory, and added
+  =hermes-chat-buffer-name-function= for custom naming conventions.
+
 * Version 0.4.1 (2026-08-29)
 
 - Kept named remote instances in the gateway filesystem namespace across chat

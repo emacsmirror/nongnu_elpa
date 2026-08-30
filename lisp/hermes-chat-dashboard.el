@@ -52,6 +52,8 @@
 (defvar hermes-chat--profile)
 (defvar hermes-chat--session-id)
 (defvar hermes-chat--status-state)
+(defvar hermes-chat-buffer-name-function)
+(defvar hermes-chat--launch-project-root)
 (defvar hermes-chat--working-directory)
 (defvar hermes-chat--remote-filesystem-p)
 (defvar hermes-chat--transport-generation)
@@ -1938,22 +1940,29 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
 ;; Dashboard-session behavior: server titles and /btw background
 ;; tasks live with the session lifecycle that drives them.
 
-(defun hermes-chat--buffer-name (profile &optional instance directory)
-  "Return a project-specific chat name for PROFILE, INSTANCE, and DIRECTORY.
-PROFILE nil means the default profile.  An explicitly configured, valid named
-INSTANCE identifies the owner; otherwise use the Hermes brand.  DIRECTORY
-defaults to this chat's gateway working directory."
-  (let* ((profile (or profile "default"))
-         (instance (or instance (hermes-instance-context)))
-         (owner (if (and hermes-instances
-                         (hermes-instance--valid-p instance))
-                    (hermes-instance-name instance)
-                  "Hermes"))
-         (project (hermes-chat--directory-basename directory)))
+(defun hermes-chat-default-buffer-name (profile instance directory)
+  "Return the default chat name for PROFILE, INSTANCE, and DIRECTORY."
+  (let ((owner (if (and hermes-instances
+                        (hermes-instance--valid-p instance))
+                   (hermes-instance-name instance)
+                 "Hermes"))
+        (project (hermes-chat--directory-basename directory)))
     (format "*%s@%s: [%s]*" owner profile project)))
 
+(defun hermes-chat--buffer-name (profile &optional instance directory)
+  "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY."
+  (let* ((profile (or profile "default"))
+         (instance (or instance (hermes-instance-context)))
+         (directory (or hermes-chat--launch-project-root directory
+                        (hermes-chat--current-working-directory)))
+         (name (funcall hermes-chat-buffer-name-function
+                        profile instance directory)))
+    (unless (and (stringp name) (not (string-empty-p name)))
+      (user-error "Chat buffer naming function returned an empty name"))
+    name))
+
 (defun hermes-chat--refresh-buffer-name ()
-  "Rename the current chat buffer from its live identity and working directory."
+  "Rename the current chat buffer from its live naming context."
   (let ((name (hermes-chat--buffer-name
                hermes-chat--profile hermes-instance)))
     (unless (equal name (buffer-name))

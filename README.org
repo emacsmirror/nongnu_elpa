@@ -36,7 +36,10 @@ Install it with =M-x package-install RET hermes=.
 
 =M-x hermes= opens the dashboard.  =M-x hermes-project-chat= switches to a
 live chat for the current project or creates one at its root; with =C-u= it
-always creates another.  =M-x hermes-chat= always opens a new chat buffer:
+always creates another.  Project-chat names stay anchored to that launching
+project while the header reports the gateway working directory.  Customize
+=hermes-chat-buffer-name-function= to replace the default complete naming
+convention.  =M-x hermes-chat= always opens a new chat buffer:
 - =RET= to send.
 - =/= for slash commands.
 - =C-c C-o= for the actions menu.

@@ -1393,6 +1393,9 @@ This feeds the dashboard's per-session tool list via
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
 
+(defvar-local hermes-chat--launch-project-root nil
+  "Launching Emacs project root for this chat, or nil.")
+
 (defvar-local hermes-chat--working-directory nil
   "Gateway-native working directory for this chat session.
 This path belongs to the Hermes instance and need not exist on Emacs's host.")

@@ -46,8 +46,17 @@
 (require 'hermes-chat-format)
 
 (defcustom hermes-chat-buffer-name "*Hermes Chat*"
-  "Name of the Hermes chat buffer."
+  "Name used while constructing a fresh Hermes chat buffer."
   :type 'string
+  :group 'hermes)
+
+(defcustom hermes-chat-buffer-name-function #'hermes-chat-default-buffer-name
+  "Function used to produce a Hermes chat buffer name.
+The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
+profile name, INSTANCE is the owning (NAME . URL) pair, and DIRECTORY is the
+launching project root, gateway working directory, or nil when detached.  It
+must return the complete non-empty buffer name."
+  :type 'function
   :group 'hermes)
 
 (defcustom hermes-chat-use-dashboard-transport t
@@ -92,9 +101,12 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--goal)
 (defvar hermes-chat--runtime-flags)
 (defvar hermes-chat--profile)
+(defvar hermes-chat--launch-project-root)
 (defvar hermes-chat--working-directory)
 (defvar hermes-chat--remote-filesystem-p)
 (defvar hermes-chat--active-tools)
+(defvar hermes-chat--project-chat-root nil
+  "Dynamically bound project root for a newly launched project chat.")
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-active-session-id)
@@ -1273,6 +1285,7 @@ Buffer names identify the instance, profile, and launching project; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
 entry point funnels through."
   (let ((directory default-directory)
+        (project-root hermes-chat--project-chat-root)
         (instance (or instance (hermes-instance-resolve)))
         (profile (hermes-chat--clean-profile profile))
         (title (hermes-transport--non-empty-string
@@ -1282,6 +1295,7 @@ entry point funnels through."
       (setq default-directory directory)
       (hermes-chat-mode)
       (setq hermes-instance instance
+            hermes-chat--launch-project-root project-root
             hermes-chat--remote-filesystem-p
             (hermes-chat--instance-remote-filesystem-p instance)
             hermes-chat--working-directory
@@ -1505,6 +1519,7 @@ durable session continues on send."
       (setq default-directory directory)
       (hermes-chat-mode)
       (setq hermes-instance instance
+            hermes-chat--launch-project-root nil
             hermes-chat--remote-filesystem-p
             (hermes-chat--instance-remote-filesystem-p instance)
             hermes-chat--working-directory
@@ -1658,12 +1673,23 @@ When DIRECTORY is nil, use the current buffer's `default-directory'."
      (expand-file-name (if project (project-root project) directory)))))
 
 (defun hermes-chat--project-buffers (root buffers)
-  "Return members of BUFFERS whose local project identity is ROOT."
+  "Return members of BUFFERS whose launching project is ROOT."
   (seq-filter
    (lambda (buffer)
      (with-current-buffer buffer
-       (equal (hermes-chat--project-root) root)))
+       (equal (if (local-variable-p 'hermes-chat--launch-project-root)
+                  hermes-chat--launch-project-root
+                (hermes-chat--project-root))
+              root)))
    buffers))
+
+(defun hermes-chat--adopt-project-root (buffer root)
+  "Return BUFFER after adopting ROOT as its launching project."
+  (with-current-buffer buffer
+    (unless (local-variable-p 'hermes-chat--launch-project-root)
+      (setq hermes-chat--launch-project-root root))
+    (hermes-chat--refresh-buffer-name))
+  buffer)
 
 (defun hermes-chat--read-project-buffer (buffers)
   "Read one chat from project-local BUFFERS with completion."
@@ -1679,9 +1705,13 @@ When DIRECTORY is nil, use the current buffer's `default-directory'."
 With prefix argument NEW, always create another project chat."
   (interactive "P")
   (let* ((root (hermes-chat--project-root))
+         (hermes-chat--project-chat-root root)
          (buffers (and (not new)
                        (hermes-chat--project-buffers
-                        root (hermes-chat--live-buffers)))))
+                        root (hermes-chat--live-buffers))))
+         (buffers (mapcar (lambda (buffer)
+                            (hermes-chat--adopt-project-root buffer root))
+                          buffers)))
     (cond
      ((null buffers)
       (let ((default-directory root))
