@@ -135,6 +135,122 @@ Pinned so that fixing it is noticed here: this test is the one to delete."
     (should (cl-every (lambda (f) (string-match-p "not 2\\|swallowed" f))
                       failures))))
 
+;;; Converting a folder from one type to another
+
+(defconst vm-folder-roundtrip-test--convertible
+  '(From_ mboxcl2 mmdf babyl)
+  "The types a folder is converted between here.
+BellFrom_ is left out: it cannot be read back as itself, so a conversion to
+it cannot be checked (emacs-vm/vm#787).")
+
+(defun vm-folder-roundtrip-test--convert (from to label body)
+  "File BODY and \"second\" as FROM, convert to TO and back, and report.
+Answers a plist: :before and :after the round trip, and :converted for the
+messages the TO folder held in between.  A string instead, saying what went
+wrong, when something signalled or a message went missing."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-convert" t))))
+    (unwind-protect
+        (condition-case err
+            (let* ((folder (expand-file-name "archive" dir))
+                   (written (let ((vm-default-folder-type from))
+                              (vm-folder-roundtrip-test--file folder body)
+                              (vm-folder-roundtrip-test--file folder "second\n")
+                              (let ((vm-default-folder-type from))
+                                (vm-new-folder-file-name folder))))
+                   (before (vm-folder-roundtrip-test--read written))
+                   (out (vm-folder-name-for-type (expand-file-name "out" dir) to))
+                   (back (vm-folder-name-for-type (expand-file-name "back" dir) from)))
+              (vm-change-folder-type-of-file written to nil out)
+              (let ((converted (vm-folder-roundtrip-test--read out)))
+                (vm-change-folder-type-of-file out from nil back)
+                (let ((after (vm-folder-roundtrip-test--read back)))
+                  (cond
+                   ((/= 2 (length converted))
+                    (format "%s -> %s / %s: %d message(s) after converting"
+                            from to label (length converted)))
+                   ((not (equal (nth 1 converted) "second\n"))
+                    (format "%s -> %s / %s: the second message became %S"
+                            from to label (nth 1 converted)))
+                   ((/= 2 (length after))
+                    (format "%s -> %s -> %s / %s: %d message(s) on the way back"
+                            from to from label (length after)))
+                   (t (list :before before :converted converted :after after))))))
+          (error (format "%s -> %s / %s: %s" from to label
+                         (error-message-string err))))
+      (delete-directory dir t))))
+
+(defun vm-folder-roundtrip-test--unquoted (bodies)
+  "BODIES with one leading `>' taken off each line.
+Two lists that agree after this differ only in the quoting a folder type
+puts on a line that would otherwise read as a separator."
+  (mapcar (lambda (body) (replace-regexp-in-string "^>" "" body)) bodies))
+
+(defun vm-folder-roundtrip-test--every-conversion (check)
+  "Convert between every pair of types, with every body, and collect CHECK.
+CHECK is called with the plist a conversion answers and the pair and body it
+came from; what it answers, when not nil, is collected as a complaint."
+  (let (complaints)
+    (dolist (from vm-folder-roundtrip-test--convertible)
+      (dolist (to vm-folder-roundtrip-test--convertible)
+        (unless (eq from to)
+          (dolist (spec vm-folder-roundtrip-test--bodies)
+            (let ((result (vm-folder-roundtrip-test--convert
+                           from to (car spec) (cdr spec))))
+              (if (stringp result)
+                  (push result complaints)
+                (let ((complaint (funcall check result from to (car spec))))
+                  (when complaint (push complaint complaints)))))))))
+    (nreverse complaints)))
+
+(ert-deftest vm-folder-roundtrip-test-conversion-keeps-every-message ()
+  "Converting a folder between any two types keeps both messages.
+A hundred and twenty conversions: twelve ordered pairs of types, each with
+every body.  Half read or write an mmdf folder, which could not be read at
+all until emacs-vm/vm#786, so this could not have passed before that
+whatever the conversion did."
+  (should (equal nil (vm-folder-roundtrip-test--every-conversion
+                      (lambda (&rest _) nil)))))
+
+(ert-deftest vm-folder-roundtrip-test-conversion-changes-only-the-quoting ()
+  "A conversion out and back changes nothing but a leading `>'.
+`vm-munge-message-separators' prepends one to a body line a From_ or mmdf
+folder would otherwise read as an envelope line.  It must; what it does not
+do is take it off again on the way back out (emacs-vm/vm#789).  Nothing else
+about the message may change, which is what this says."
+  (should (equal nil
+                 (vm-folder-roundtrip-test--every-conversion
+                  (lambda (result from to label)
+                    (unless (equal (vm-folder-roundtrip-test--unquoted
+                                    (plist-get result :before))
+                                   (vm-folder-roundtrip-test--unquoted
+                                    (plist-get result :after)))
+                      (format "%s -> %s -> %s / %s: %S became %S"
+                              from to from label
+                              (plist-get result :before)
+                              (plist-get result :after))))))))
+
+(ert-deftest vm-folder-roundtrip-test-nine-conversions-keep-a-quote ()
+  "Nine of the hundred and twenty come back with a `>' the message lacked.
+Pinned by name so that a decision on emacs-vm/vm#789 shows up here as a
+changed list rather than as a test that quietly still passes.  Each is a
+body the source type had no need to quote going to a type that does."
+  (let (lossy)
+    (vm-folder-roundtrip-test--every-conversion
+     (lambda (result from to label)
+       (unless (equal (plist-get result :before) (plist-get result :after))
+         (push (format "%s -> %s -> %s / %s" from to from label) lossy))
+       nil))
+    (should (equal (sort lossy #'string<)
+                   '("From_ -> mmdf -> From_ / an mmdf separator"
+                     "babyl -> From_ -> babyl / a From_ line"
+                     "babyl -> From_ -> babyl / a From_ line first"
+                     "babyl -> mmdf -> babyl / an mmdf separator"
+                     "mboxcl2 -> From_ -> mboxcl2 / a From_ line"
+                     "mboxcl2 -> From_ -> mboxcl2 / a From_ line first"
+                     "mboxcl2 -> mmdf -> mboxcl2 / an mmdf separator"
+                     "mmdf -> From_ -> mmdf / a From_ line"
+                     "mmdf -> From_ -> mmdf / a From_ line first")))))
+
 (provide 'vm-folder-roundtrip-test)
 
 ;;; vm-folder-roundtrip-test.el ends here
