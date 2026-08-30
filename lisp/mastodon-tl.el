@@ -3559,13 +3559,12 @@ PARAMS is any (e.g. update) params to send."
 (defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
 This will probably be quite slow, as it makes one request for every 4
-tags. For a faster alternative, consider `mastodon-tl-tag-group-timeline', which
-loads just one group of 4 tags. Note that pagination has not been
-implemented for this function, so you can only load a single page.
-PREFIX is for `mastodon-tl-tag-group-tl'."
-  ;; FIXME: to implement pagination, we need to add params to
-  ;; `mastodon-tl-tags-all-data' and edit `mastodon-tl--more' for it to handle the
-  ;; (paginated) data that `mastodon-tl-tags-all-data' returns
+tags followed. For a faster alternative, consider `mastodon-tl-tag-group-timeline',
+which loads just one group of 4 tags.
+Returns up to 20 items for every 4 tags followed.
+Pagination (adding more items at bottom of buffer) works, but because we
+do the requests then sort by recency client-side, items will not be in
+strictly reverse chronological order."
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
@@ -3575,7 +3574,7 @@ PREFIX is for `mastodon-tl-tag-group-tl'."
        "tags-all"
        (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
        #'mastodon-tl--timeline nil
-       ;; params
+       ;; update params
        (mastodon-tl-tag-prefix-arg prefix)
        nil nil nil nil sorted))))
 
