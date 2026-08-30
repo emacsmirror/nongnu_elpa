@@ -1005,7 +1005,7 @@ cleanup here after verification and decoding took place."
       (error "Snarfing failed"))
     (with-current-buffer
         (if (not (featurep 'xemacs)) pgg-errors-buffer pgg-output-buffer)
-      (message (buffer-substring (point-min) (point-max))))))
+      (message "%s" (buffer-substring (point-min) (point-max))))))
 
 ;;; ###autoload
 (defun vm-pgg-attach-public-key ()

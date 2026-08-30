@@ -665,6 +665,136 @@ which is the point: three of the five were in code no unit test reaches."
                   offenders)))))
     (should (equal nil (sort offenders #'string<)))))
 
+;;; Format strings the reader can see
+
+(defconst vm-integration-test--formatters
+  '((error . 1) (user-error . 1) (message . 1) (warn . 1)
+    (vm-inform . 2) (vm-warn . 3))
+  "Each message-formatting function, and where its format string sits.
+`vm-inform' takes a level first and `vm-warn' a level and a duration.")
+
+(defun vm-integration-test--literal-string-p (form)
+  "Whether FORM is a string the reader can see, however it is assembled.
+A `concat\\=' of literals is one, and so is an `if\\=' or a `cond\\=' whose every
+branch is: what matters is that no data can reach the format string."
+  (cond ((stringp form) t)
+        ((not (consp form)) nil)
+        ((eq (car form) 'concat)
+         (cl-every #'vm-integration-test--literal-string-p (cdr form)))
+        ;; `substitute-command-keys' only puts key descriptions in, so a
+        ;; literal run through it is still a format string its author wrote
+        ;; and can see the directives of.  vm.el's auto-save warning builds
+        ;; one that way on purpose and passes it an argument.
+        ((eq (car form) 'substitute-command-keys)
+         (vm-integration-test--literal-string-p (nth 1 form)))
+        ((eq (car form) 'if)
+         (cl-every #'vm-integration-test--literal-string-p (nthcdr 2 form)))
+        ((memq (car form) '(or and progn))
+         (cl-every #'vm-integration-test--literal-string-p (cdr form)))
+        ((memq (car form) '(when unless))
+         (cl-every #'vm-integration-test--literal-string-p (nthcdr 2 form)))
+        ((eq (car form) 'cond)
+         (cl-every (lambda (clause)
+                     (and (consp clause)
+                          (cl-every #'vm-integration-test--literal-string-p
+                                    (cdr clause))))
+                   (cdr form)))
+        (t nil)))
+
+(defun vm-integration-test--computed-format-strings (form where found)
+  "Add to FOUND every call in FORM whose format string is computed.
+WHERE names the file and line.  Binding lists are walked for their values
+only: a `dolist\\=' over a variable called `message\\=' is not a call to
+`message\\='."
+  (if (not (consp form))
+      found
+    (let ((head (car form)))
+      (cond
+       ((memq head '(quote function declare-function autoload defvar defcustom))
+        found)
+       ((eq head 'condition-case)
+        (setq found (vm-integration-test--computed-format-strings
+                     (nth 2 form) where found))
+        (dolist (handler (nthcdr 3 form) found)
+          (when (consp handler)
+            (setq found (vm-integration-test--computed-format-strings
+                         (cons 'progn (cdr handler)) where found)))))
+       ((memq head '(defun defsubst defmacro cl-defun cl-defsubst cl-defmacro))
+        (dolist (sub (nthcdr 3 form) found)
+          (setq found (vm-integration-test--computed-format-strings
+                       sub where found))))
+       ((eq head 'lambda)
+        (dolist (sub (nthcdr 2 form) found)
+          (setq found (vm-integration-test--computed-format-strings
+                       sub where found))))
+       ((eq head 'cond)
+        (dolist (clause (cdr form) found)
+          (when (consp clause)
+            (dolist (sub clause)
+              (setq found (vm-integration-test--computed-format-strings
+                           sub where found))))))
+       ((memq head '(cl-case cl-ecase pcase pcase-exhaustive))
+        (setq found (vm-integration-test--computed-format-strings
+                     (nth 1 form) where found))
+        (dolist (clause (nthcdr 2 form) found)
+          (when (consp clause)
+            (dolist (sub (cdr clause))
+              (setq found (vm-integration-test--computed-format-strings
+                           sub where found))))))
+       ((memq head '(dolist dotimes cl-dolist cl-dotimes))
+        (dolist (v (cdr (nth 1 form)))
+          (setq found (vm-integration-test--computed-format-strings
+                       v where found)))
+        (dolist (sub (nthcdr 2 form) found)
+          (setq found (vm-integration-test--computed-format-strings
+                       sub where found))))
+       ((memq head '(let let* cl-letf cl-letf*))
+        (dolist (binding (nth 1 form))
+          (when (consp binding)
+            (dolist (v (cdr binding))
+              (setq found (vm-integration-test--computed-format-strings
+                           v where found)))))
+        (dolist (sub (nthcdr 2 form) found)
+          (setq found (vm-integration-test--computed-format-strings
+                       sub where found))))
+       (t
+        (let ((pos (cdr (assq head vm-integration-test--formatters))))
+          (when (and pos (> (length form) pos)
+                     (not (vm-integration-test--literal-string-p (nth pos form))))
+            (push (format "%s: (%s ...)" where head) found)))
+        (dolist (sub form found)
+          (setq found (vm-integration-test--computed-format-strings
+                       sub where found))))))))
+
+(ert-deftest vm-integration-test-format-strings-are-literal ()
+  "Nothing hands a built string to a function that formats its own message.
+`error\\=', `message\\=', `warn\\=', `vm-inform\\=' and `vm-warn\\=' all format what they
+are given, so a string that has been through `format\\=' already is formatted a
+second time and any percent in it is read as a directive.  Fifteen calls did
+that, and `g' in a folder named `100% done\\=' signalled instead of saying what
+had arrived (#781).
+
+`\"%s\"' and the string as an argument is the fix, every time."
+  (let (offenders)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-autoloads.el" "vm-cus-load.el" "vm-version-conf.el"))
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (let ((form t))
+            (while form
+              (setq form (condition-case nil (read (current-buffer))
+                           (end-of-file nil)))
+              (when form
+                (setq offenders
+                      (vm-integration-test--computed-format-strings
+                       form
+                       (format "%s:%d" (file-name-nondirectory file)
+                               (line-number-at-pos))
+                       offenders))))))))
+    (should (equal nil (sort offenders #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

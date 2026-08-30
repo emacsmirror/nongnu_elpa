@@ -1756,7 +1756,7 @@ store the strings in the cached data vector.		USR, 2012-10-13"
 	  addresses (condition-case err
                         (rfc822-addresses all)
                       (error
-                       (vm-warn 0 5 err)
+                       (vm-warn 0 5 "%s" (error-message-string err))
                        (list "corrupted-header"))))
     (setq list (vm-parse-addresses all)) ; adds text properties for charsets
     (while list
@@ -1791,7 +1791,7 @@ store the strings in the cached data vector.		USR, 2012-10-13"
 	  addresses (condition-case err
                         (rfc822-addresses to)
                       (error
-                       (vm-warn 0 5 err)
+                       (vm-warn 0 5 "%s" (error-message-string err))
                        (list "corrupted-header"))))
     (setq list (vm-parse-addresses to)) ; adds text properties for charsets
     (while list

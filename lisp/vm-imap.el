@@ -1352,8 +1352,7 @@ Returns the process or nil if the session could not be created."
 	      (condition-case err
 		  (with-timeout 
 		      ((or vm-imap-server-timeout 1000)
-		       (error (format "Timed out opening connection to %s"
-				      host)))
+		       (error "Timed out opening connection to %s" host))
 		    (cond 
 		     (use-ssl
 		      (if (null vm-stunnel-program)
@@ -3958,8 +3957,7 @@ headers-only form."
 	     ;; Continue with whatever messages have been read
 	     (quit
 	      (delete-region old-eob (point-max))
-	      (error (format "Quit received during retrieval from %s"
-			     folder))))
+	      (error "Quit received during retrieval from %s" folder)))
 	 ;; unwind-protections
 	 (when statblob 
 	   (vm-imap-stop-status-timer statblob))	   
@@ -4295,8 +4293,7 @@ otherwise.
 		     )
 		    (quit
 		     (delete-region old-eob (point-max))
-		     (error (format "Quit received during retrieval from %s"
-				    folder)))))
+		     (error "Quit received during retrieval from %s" folder))))
 		;; unwind-protections
 		(when statblob
 		  (vm-imap-stop-status-timer statblob))

@@ -422,7 +422,7 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; [15] Display the totals-blurb again
 
       (when interactive
-	(vm-inform 5 totals-blurb))
+	(vm-inform 5 "%s" totals-blurb))
 
       ;; [16] Get new mail if requested
 
@@ -435,13 +435,13 @@ deleted messages.  Use `###' to expunge deleted messages."
 	  (if (vm-thoughtfully-select-message)
 	      (vm-present-current-message)
 	    (vm-update-summary-and-mode-line)))
-	(vm-inform 5 totals-blurb))
+	(vm-inform 5 "%s" totals-blurb))
 
       ;; [17] Display copyright and copying info.
       (when (and interactive (not vm-startup-message-displayed))
 	(vm-display-startup-message)
 	(if (not (input-pending-p))
-	    (vm-inform 5 totals-blurb))))))
+	    (vm-inform 5 "%s" totals-blurb))))))
 
 (defun vm-setup-xemacs-folder-coding-system ()
   ;; If the file coding system is not a no-conversion variant,
@@ -1116,7 +1116,7 @@ virtual folder buffer."
 	(if (vm-thoughtfully-select-message)
 	    (vm-present-current-message)
 	  (vm-update-summary-and-mode-line)))
-      (vm-inform 5 blurb))
+      (vm-inform 5 "%s" blurb))
     ;; make a new frame if the user wants one.  reuse an
     ;; existing frame that is showing this folder.
     (vm-goto-new-folder-frame-maybe 'folder)
@@ -1127,7 +1127,7 @@ virtual folder buffer."
     (when first-time
       (when (vm-should-generate-summary)
 	(vm-summarize t nil)
-	(vm-inform 5 blurb))
+	(vm-inform 5 "%s" blurb))
       ;; raise the summary frame if the user wants frames
       ;; raised and if there is a summary frame.
       (when (and vm-summary-buffer
@@ -1151,7 +1151,7 @@ virtual folder buffer."
     (when (and (vm-interactive-p)
 	       (not vm-startup-message-displayed))
       (vm-display-startup-message)
-      (vm-inform 5 blurb))))
+      (vm-inform 5 "%s" blurb))))
 
 ;;;###autoload
 (defun vm-visit-virtual-folder-other-frame 

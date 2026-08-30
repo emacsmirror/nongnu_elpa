@@ -677,7 +677,7 @@ burst."
     (if (vm-thoughtfully-select-message)
 	(vm-present-current-message)
       (vm-update-summary-and-mode-line))
-    (vm-inform 5 totals-blurb)))
+    (vm-inform 5 "%s" totals-blurb)))
 
 ;;;###autoload
 (defun vm-burst-rfc934-digest ()
