@@ -459,14 +459,12 @@ vm-virtual.el and vm-avirtual.el, so which one you got depended on load order,
 and the copy with the diagnostics lost.  Nothing warns about this: each
 `defun\' is fine on its own.
 
-The exception is the three `vm-mime-display-internal-*\' handlers that vm-epg.el
-and vm-pgg.el both define.  That pair is deliberate -- they are alternative
-implementations, only one is meant to be loaded, and both files and the manual
-say so."
+There is no longer an exception.  vm-epg.el and vm-pgg.el both defined the
+three `vm-mime-display-internal-*\' handlers, and whichever loaded last held
+them; vm-pgg defines its own under `vm-pgg-display-internal-*\' and takes the
+shared names only when vm-epg has not (emacs-vm/vm#785)."
   (let ((seen (make-hash-table :test 'equal))
-        (expected '("vm-mime-display-internal-application/pgp-keys"
-                    "vm-mime-display-internal-multipart/encrypted"
-                    "vm-mime-display-internal-multipart/signed"))
+        (expected nil)
         duplicates)
     (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
       (unless (member (file-name-nondirectory file)

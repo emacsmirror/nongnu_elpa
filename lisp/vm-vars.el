@@ -117,6 +117,18 @@
   "Options affecting the saving, deleting and expunging of messages in VM."
   :group 'vm)
 
+(defgroup vm-ext nil
+  "VM's add-on packages."
+  :group 'vm)
+
+;; Here rather than in vm-pgg.el, so that `lisp/vm-cus-load.el' does not
+;; record vm-pgg.el as a file to load for `vm-ext'.  It did, and anything
+;; that asked Customize about that group loaded vm-pgg -- `C-h v' on a VM
+;; option among them -- which is not a thing a reader asks for (#785).
+(defgroup vm-pgg nil
+  "PGP and PGP/MIME support for VM by PGG.  Deprecated; see vm-epg."
+  :group 'vm-ext)
+
 (defgroup vm-print nil
   "Options affecting printing of messages in VM."
   :group 'vm)
