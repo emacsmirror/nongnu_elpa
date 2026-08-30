@@ -5765,7 +5765,7 @@ files."
 		 (if (vm-thoughtfully-select-message)
 		     (vm-present-current-message)
 		   (vm-update-summary-and-mode-line))
-		 (vm-inform 5 totals-blurb))
+		 (vm-inform 5 "%s" totals-blurb))
 	     (vm-inform 5 "%s: No %s" folder description)
 	     (and (vm-interactive-p) (vm-sit-for 4) (vm-inform 5 ""))
 	     ))
@@ -5795,7 +5795,7 @@ files."
 		   (if (vm-thoughtfully-select-message)
 		       (vm-present-current-message)
 		     (vm-update-summary-and-mode-line))
-		   (vm-inform 5 totals-blurb)
+		   (vm-inform 5 "%s" totals-blurb)
 		   ;; The gathered messages are actually still on disk
 		   ;; unless the user deletes the folder himself.
 		   ;; However, users may not understand what happened if
@@ -6007,7 +6007,7 @@ which is used in interactive confirmations."
 	(vm-inform 8 "VM %s. Type ? for help." (vm-version))
 	(setq vm-startup-message-displayed t)
 	(while (and (sit-for 4) lines)
-	  (vm-inform 8 (substitute-command-keys (car lines)))
+	  (vm-inform 8 "%s" (substitute-command-keys (car lines)))
 	  (setq lines (cdr lines)))))
   (vm-inform 8 ""))
 

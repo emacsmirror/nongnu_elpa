@@ -540,8 +540,7 @@ Returns the process or nil if the session could not be created."
 	    (condition-case err
 		(with-timeout 
 		    ((or vm-pop-server-timeout 1000)
-		     (error (format "Timed out opening connection to %s"
-				    host)))
+		     (error "Timed out opening connection to %s" host))
 		  (cond (use-ssl
 			 (if (null vm-stunnel-program)
 			     (setq process 

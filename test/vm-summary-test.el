@@ -763,6 +763,44 @@ the fault was reported against."
         (should (eobp))
         (should (= (point) where))))))
 
+;;; The recovery from a header rfc822.el refuses
+
+(ert-deftest vm-summary-test-a-corrupt-recipient-header-recovers ()
+  "A header `rfc822-addresses' refuses leaves \"corrupted-header\", not an error.
+The handler warned with `(vm-warn 0 5 err)', and `vm-warn' formats its
+arguments -- so `format' was handed the condition object as its format
+string and answered `wrong-type-argument stringp'.  The recovery below it
+never ran, and the summary line failed outright (#781)."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\n"
+                               "To: bob@example.com\nSubject: hi\n\nbody\n\n")
+    (let ((m (car vm-message-list))
+          (vm-verbosity 0))
+      (cl-letf (((symbol-function 'rfc822-addresses)
+                 (lambda (_s) (error "Unbalanced parentheses"))))
+        (vm-su-do-recipients m)
+        (should (equal (vm-decoded-to-cc-of m) "corrupted-header"))
+        (vm-su-do-addressees m)
+        (should (equal (vm-decoded-to-of m) "corrupted-header"))))))
+
+(ert-deftest vm-summary-test-the-warning-survives-a-percent ()
+  "The warning for that header says what went wrong, percent sign and all.
+`vm-warn' formats what it is given, so an error text carrying a percent
+signalled in place of reporting anything."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\n"
+                               "To: bob@example.com\nSubject: hi\n\nbody\n\n")
+    (let ((m (car vm-message-list))
+          (vm-verbosity 5)
+          (vm-current-warning nil)
+          shown)
+      (cl-letf (((symbol-function 'rfc822-addresses)
+                 (lambda (_s) (error "Rubbish in address: 50%% off")))
+                ((symbol-function 'vm-emit-message)
+                 (lambda (_level text) (setq shown text))))
+        (vm-su-do-recipients m)
+        (should (string-match-p "50% off" shown))))))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here
