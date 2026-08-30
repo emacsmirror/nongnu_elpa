@@ -795,6 +795,84 @@ had arrived (#781).
                        offenders))))))))
     (should (equal nil (sort offenders #'string<)))))
 
+;;; A message written into a folder ends with a newline
+
+(defconst vm-integration-test--terminates-otherwise
+  '(("vm-digest.el"   . vm-mime-burst-layout)
+    ("vm-folder.el"   . vm-change-folder-type)
+    ("vm-folder.el"   . vm-convert-folder-type)
+    ("vm-pop.el"      . vm-pop-retrieve-to-target)
+    ("vm-postpone.el" . vm-postpone-message)
+    ("vm-save.el"     . vm-save-message-to-local-folder))
+  "Writers that end the message some other way than by asking where point is.
+
+- `vm-mime-burst-layout\\=' inserts a newline whether one is wanted or not.
+- `vm-postpone-message\\=' trims the trailing whitespace and writes \"\\n\\n\\n\".
+- `vm-pop-retrieve-to-target\\=' ends the region at the start of the \".\" line
+  that closes a POP response, so the text before it ends with a newline.
+  IMAP needs a check because there the length is the server\\='s word for it.
+- `vm-change-folder-type\\=', `vm-convert-folder-type\\=' and
+  `vm-save-message-to-local-folder\\=' copy a message already delimited in a
+  folder.  Adding a newline there would also have to correct the byte count
+  written ahead of it, so it is not the same one-line change.")
+
+(defun vm-integration-test--terminating-writers (file)
+  "The functions in FILE that write a trailing message separator.
+Each is (NAME . GUARDED), GUARDED saying whether the function asks anywhere
+whether the text ends with a newline."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let (found)
+      (goto-char (point-min))
+      (while (search-forward "(vm-trailing-message-separator" nil t)
+        (let ((line (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (unless (or (string-match-p "defun " line)
+                      (string-match-p "declare-function" line))
+            (save-excursion
+              (beginning-of-defun)
+              (let* ((name (save-excursion
+                             (forward-char 1)
+                             (ignore-errors (read (current-buffer))
+                                            (read (current-buffer)))))
+                     (body (buffer-substring-no-properties
+                            (point)
+                            (save-excursion (end-of-defun) (point))))
+                     (guarded (string-match-p
+                               "preceding-char\\|(bolp)\\|char-before\\|char-after (1-"
+                               body))
+                     (cell (assq name found)))
+                (if cell
+                    (setcdr cell (or (cdr cell) (and guarded t)))
+                  (push (cons name (and guarded t)) found)))))))
+      found)))
+
+(ert-deftest vm-integration-test-a-message-written-to-a-folder-ends-with-a-newline ()
+  "Every writer of a trailing message separator terminates the message first.
+A message in a folder ends with a newline: the From_ trailing separator then
+makes the blank line the next envelope line has to follow, and mmdf's and
+babyl\\='s separators begin a line of their own.  mboxcl2 has no trailing
+separator at all, so without the newline the next envelope line is glued to
+the end of the previous body.
+
+`vm-fcc-message-text\\=' filed a composition as it stood, and a composition
+need not end with a newline, so two filed messages read back as one
+(emacs-vm/vm#783).  Two more writers had the same gap.  The ones that
+terminate some other way are named in
+`vm-integration-test--terminates-otherwise\\=', with the reason for each."
+  (let (offenders)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-autoloads.el" "vm-cus-load.el" "vm-version-conf.el"))
+        (pcase-dolist (`(,name . ,guarded)
+                       (vm-integration-test--terminating-writers file))
+          (unless (or guarded
+                      (member (cons (file-name-nondirectory file) name)
+                              vm-integration-test--terminates-otherwise))
+            (push (format "%s (%s)" name (file-name-nondirectory file))
+                  offenders)))))
+    (should (equal nil (sort offenders #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
