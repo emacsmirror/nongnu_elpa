@@ -4,7 +4,7 @@
 
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Assisted-by: Deepseek:deepseek-v4-pro default
-;; Version: 0.3.1
+;; Version: 0.3.2
 ;; Package-Requires: ((emacs "26.1") (transient "0.3.0"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
@@ -946,6 +946,25 @@ Returns nil when the current buffer is not a status buffer."
                           root)))
 
 ;;;###autoload
+(defun sapling-debug-log (revision)
+  "Show `sl --debug --verbose log -r REVISION'.
+
+`--debug' and `--verbose' enable Sapling's Python command-layer debug
+output.  This is usually more useful than `SL_LOG' for Python-only
+command paths."
+  (interactive
+   (list (let ((revision (read-string "Revision (default .): " nil nil ".")))
+           (if (string-empty-p revision) "." revision))))
+  (let ((root (sapling--find-root default-directory)))
+    (unless root
+      (user-error "Not inside a Sapling repository"))
+    (sapling--show-output
+     sapling-output-buffer-name
+     (list "--debug" "--verbose" "log" "-r" revision)
+     "Sapling Python Debug Log"
+     root)))
+
+;;;###autoload
 (defun sapling-show ()
   "Show the current Sapling commit."
   (interactive)
@@ -1611,7 +1630,11 @@ command-line option syntax."
 
 ;;;###autoload
 (transient-define-prefix sapling-menu ()
-  "Sapling dispatch menu."
+  "Sapling dispatch menu.
+
+`C-c D' runs `sl --debug --verbose log -r REV', Sapling's Python
+command-layer debug logging.  `C-c d' toggles Emacs-side command
+logging instead."
   [:class
    transient-columns
    :pad-keys t
@@ -1651,7 +1674,8 @@ command-line option syntax."
   ["Other"
    ("z" "shelve" sapling-shelve)
    ("Z" "unshelve" sapling-unshelve)
-   ("C-c d" "debug" sapling-toggle-debug)]])
+   ("C-c d" "debug" sapling-toggle-debug)
+   ("C-c D" "python debug log" sapling-debug-log)]])
 
 (provide 'sapling)
 

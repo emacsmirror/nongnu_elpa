@@ -86,6 +86,111 @@ customize `sapling-program`:
 (setq sapling-program "C:/Program Files/Sapling/sl.exe")
 ```
 
+## Debugging and profiling
+
+Sapling has two different debugging channels, and they are easy to confuse:
+
+- `sapling-toggle-debug` (`C-c d` in the status buffer, or `C-c d` in
+  `M-x sapling-menu`) logs the `sl` commands that `sapling.el` runs into
+  `*sapling-debug*`.  This shows how Emacs invokes Sapling.
+- Sapling's own `SL_LOG`, `SL_BTLOG`, `--debug`, `--verbose`, and
+  `--profile` controls show what is happening inside the `sl` process.
+
+### Rust tracing with `SL_LOG`
+
+Rust tracing is enabled by setting `SL_LOG`:
+
+```shell
+SL_LOG=debug sl status
+SL_LOG=commands::run=trace sl log -r .
+SL_LOG=info,dag=debug,commands::run=trace sl log -r .
+```
+
+`SL_LOG` uses `tracing_subscriber` `EnvFilter` syntax.  The useful subset is:
+
+- `debug` — enable a level globally.
+- `commands::run=trace` — enable a level for one Rust module target.
+- `info,dag=debug` — combine several directives with commas.
+
+Start broad with `SL_LOG=debug`, identify noisy or useful targets, then narrow
+the filter.
+
+On Windows, the usual Unix `VAR=value command` prefix does not work in `cmd`.
+Run these examples inside Emacs instead:
+
+- `M-x eshell` is preferred and built in.  Eshell accepts
+  `SL_LOG=debug sl status` and the other examples above directly.
+- `M-x ghostel` also works and has better terminal graphics.  Ghostel is on
+  MELPA; check it with `M-: (require 'ghostel nil t)`.  If that returns nil,
+  install it from MELPA first.
+
+### Python debugging from the transient menu
+
+For Python-heavy command paths, the most useful first step is Sapling's
+global debug output:
+
+```shell
+sl --debug --verbose log -r .
+```
+
+`--debug` and `--verbose` are understood by Sapling's Python command layer
+and extensions.  They are usually more useful than `SL_LOG` for Python-only
+behavior, while `SL_LOG` still helps in mixed Python/native paths.
+
+From the transient menu, `M-x sapling-menu` and then `C-c D` (or
+`M-x sapling-debug-log`) runs exactly this command and shows the result in
+`*sapling-output*`.
+
+### Backtraces at tracing points
+
+`SL_BTLOG` prints a native backtrace when a matching tracing event or span
+transition happens:
+
+```shell
+SL_BTLOG=dag::lifecycle::create=debug sl log -r .
+```
+
+It uses the same `EnvFilter` syntax as `SL_LOG`, but the output is much
+larger because every matching event or span transition prints a backtrace.
+Keep the filter narrow.  On supported builds, Sapling can also resolve Python
+frames inside native backtraces, showing entries such as
+`static:sapling.commands:3874`.
+
+### Profiling
+
+Add `--profile` to enable Sapling's native sampling profiler:
+
+```shell
+sl log -r . --profile
+```
+
+It samples native stacks and, on supported builds, Python frames, then prints
+an ASCII summary to stderr.  Useful configuration examples:
+
+```shell
+sl log -r . --profile --config profiling.interval=1ms
+sl log -r . --profile --config profiling.output=/tmp/sl-profile.txt
+```
+
+For Python-only profiles, enable `profiling.enabled-python` and choose a
+`profiling.type`:
+
+```shell
+sl log -r . --config profiling.enabled-python=true --config profiling.type=stat
+```
+
+The available Python profiler types are:
+
+- `stat` — statistical profiler; best for long-running commands.
+- `ls` — Python's built-in instrumenting profiler; works broadly, but line
+  reporting is tied to function start lines.
+- `traceprof` — tracing profiler; useful for tree-shaped reports of small
+  functions called many times.
+
+In the ASCII profiler summary, follow large `Dur` values downward until the
+time stops concentrating in one child; that split is usually the next place
+to investigate.  See `sl help config.profiling` for more knobs.
+
 ## Status buffer keys
 
 | Key | Command |
