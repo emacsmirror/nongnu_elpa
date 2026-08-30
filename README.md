@@ -27,8 +27,8 @@ package.
 - Other output commands (`log`, `smartlog`, `show`, `grep`, etc.) run with
   ANSI color enabled and `sapling-status` highlights smartlog changesets in
   yellow, matching colored `sl` output in a terminal.
-- A lightweight dispatch menu (`M-x sapling-menu`) with no external
-  dependencies.
+- A transient-based dispatch menu (`M-x sapling-menu`) for the main Sapling
+  workflows.
 - A dynamic command builder (`M-x sapling-command`, or `C-c c` in the status
   buffer) that reads Sapling's own help text and offers the documented
   command-line subcommands and options without constructing a heavy transient
@@ -42,6 +42,7 @@ package.
 ## Requirements
 
 - Emacs 26.1 or later.
+- Transient 0.3.0 or later.
 - Sapling `sl` on `exec-path`.
 
 ## Installation
@@ -153,7 +154,7 @@ This is an early, intentionally small implementation. Obvious next steps:
   absorb onto a commit, etc.).
 - Add an Emacs-native interface for `sl split` and `sl histedit` (both are
   interactive terminal programs, so they need a dedicated selection UI).
-- Optional `transient` menus when `transient` is installed.
+- Add per-command transient menus for the most-used Sapling commands.
 - Integrate `sapling-status` with `project.el`.
 
 ## Thank you

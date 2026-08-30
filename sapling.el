@@ -5,7 +5,7 @@
 ;; Author: Swithin Chan <swithinchan@yahoo.com.hk>
 ;; Assisted-by: Deepseek:deepseek-v4-pro default
 ;; Version: 0.3.1
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "26.1") (transient "0.3.0"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/swithinchan/sapling/
 
@@ -49,6 +49,7 @@
 (require 'seq)
 (require 'ansi-color)
 (require 'diff-mode)
+(require 'transient)
 
 (defgroup sapling nil
   "Sapling SCM interface."
@@ -1609,22 +1610,45 @@ command-line option syntax."
   (delq nil (list (nth 0 option) (nth 1 option))))
 
 ;;;###autoload
-(defun sapling-menu ()
-  "Display a Magit-style dispatch menu for Sapling commands."
-  (interactive)
-  (let* ((choices (mapcar (lambda (item)
-                            (list (car item) (cadr item) (caddr item)))
-                          sapling-menu-table))
-         (entry (read-multiple-choice "Sapling" choices))
-         (choice (car entry))
-         (selected (and choice (assq choice sapling-menu-table))))
-    (pcase selected
-      (`(,_ ,_ ,_ ,cmd ,interactivep)
-       (when cmd
-         (if interactivep
-             (funcall-interactively cmd)
-           (funcall cmd))))
-      (_ nil))))
+(transient-define-prefix sapling-menu ()
+  "Sapling dispatch menu."
+  ["View"
+   ("s" "status" sapling-status)
+   ("l" "smartlog" sapling-smartlog)
+   ("L" "log" sapling-log)
+   ("o" "show" sapling-show)
+   ("J" "journal" sapling-journal)
+   ("d" "diff" sapling-diff)]
+  ["Commit"
+   ("c" "commit" sapling-commit)
+   ("a" "amend" sapling-amend)
+   ("e" "metaedit" sapling-metaedit)
+   ("x" "absorb" sapling-absorb)
+   ("u" "undo" sapling-undo)
+   ("R" "redo" sapling-redo)]
+  ["Stack"
+   ("r" "rebase" sapling-rebase)
+   ("f" "fold" sapling-fold)
+   ("C-c g" "graft" sapling-graft)
+   ("h" "hide" sapling-hide)
+   ("H" "unhide" sapling-unhide)
+   ("n" "next" sapling-next)
+   ("p" "previous" sapling-previous)]
+  ["Worktree"
+   ("A" "add" sapling-add)
+   ("D" "remove" sapling-remove)
+   ("K" "forget" sapling-forget)
+   ("V" "revert" sapling-revert)]
+  ["Remote and navigation"
+   ("F" "pull" sapling-pull)
+   ("P" "push" sapling-push)
+   ("B" "bookmark" sapling-bookmark-create)
+   ("G" "goto" sapling-goto)
+   ("C-c c" "command builder" sapling-command)]
+  ["Other"
+   ("z" "shelve" sapling-shelve)
+   ("Z" "unshelve" sapling-unshelve)
+   ("C-c d" "debug" sapling-toggle-debug)])
 
 (provide 'sapling)
 
