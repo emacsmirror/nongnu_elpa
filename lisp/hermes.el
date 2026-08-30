@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Assisted-by: Hermes:MoA
-;; Version: 0.4.1
+;; Version: 0.4.2
 ;; URL: https://git.thanosapollo.org/emacs-hermes
 ;; Keywords: tools, convenience
 ;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15") (markdown-mode "2.6"))

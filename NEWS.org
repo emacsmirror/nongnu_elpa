@@ -2,6 +2,8 @@
 
 * Unreleased
 
+* Version 0.4.2 (2026-08-30)
+
 - Kept =hermes-project-chat= buffer names anchored to their launching project,
   independent of the gateway working directory, and added
   =hermes-chat-buffer-name-function= for custom naming conventions.
