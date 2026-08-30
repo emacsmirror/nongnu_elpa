@@ -811,7 +811,9 @@ body it then wraps.
 
 Every recipient must have a usable encryption key: with no recipient key
 this signals an error rather than falling back to symmetric (passphrase)
-encryption, which is never what is wanted for mail.
+encryption, which is never what is wanted for mail.  As with
+@code{vm-epg-encrypt}, your own key is not added; an encrypt-to line in gpg.conf
+is what adds it.
 @end deffn
 
 @deffn Command vm-epg-cleartext-sign
@@ -867,6 +869,11 @@ keyring; otherwise this signals an error and leaves the composition
 untouched.  Note that the message is never encrypted to a passphrase: if no
 recipient key can be found, it refuses rather than falling back to symmetric
 encryption.
+
+Encryption is to those recipients and to nobody else, so a copy filed with
+FCC: is one you cannot read back.  To encrypt to yourself as well, put a
+line reading encrypt-to followed by your key id in ~/.gnupg/gpg.conf.  VM
+passes GnuPG no --no-encrypt-to, so that setting is honoured.
 @end deffn
 
 @deffn Command vm-epg-insert-public-key
