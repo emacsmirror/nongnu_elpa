@@ -1612,6 +1612,7 @@ command-line option syntax."
 ;;;###autoload
 (transient-define-prefix sapling-menu ()
   "Sapling dispatch menu."
+  :class transient-columns
   ["View"
    ("s" "status" sapling-status)
    ("l" "smartlog" sapling-smartlog)
