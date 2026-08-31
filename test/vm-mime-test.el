@@ -4005,6 +4005,137 @@ in front of the CR that the CRLF conversion inserts."
     (vm-mime-base64-encode-region (point-min) (point-max) t)
     (should (equal (base64-decode-string (string-trim (buffer-string)))
                    "line one\r\nline two\r\n"))))
+;;; Encoding a header for sending, and reading it back (RFC 2047)
+
+(defconst vm-mime-test--header-texts
+  '(("plain ascii"         . "A plain subject")
+    ("latin-1"             . "Grüße aus München")
+    ("cjk"                 . "日本語のメール")
+    ("mixed"               . "Re: Grüße from Ada")
+    ("one 8-bit word"      . "Ada Löbe")
+    ("an equals-question"  . "Is 2 =? 3 or not")
+    ("a tab"               . "before\tafter")
+    ("a leading space"     . " leading")
+    ("a trailing space"    . "trailing ")
+    ("two spaces"          . "two  spaces")
+    ("an empty subject"    . "")
+    ("a long ascii line"   . "This is a fairly long but entirely ASCII subject line that goes past seventy-eight characters for sure")
+    ("a display name"      . "\"Löbe, Ada\" <ada@example.com>")
+    ("a comma"             . "one, two, three")
+    ("a colon"             . "Re: something: else")
+    ("8-bit and a comma"   . "Löbe, Ada"))
+  "Header texts to send and read back.
+A text that is already an encoded word is not among them: decoding one is
+what decoding means, so it cannot come back as it went in.")
+
+(defun vm-mime-test--encode-subject (text)
+  "The Subject line `vm-mime-encode-headers' writes for TEXT, header name off."
+  (let ((mail-header-separator "--text follows this line--"))
+    (with-temp-buffer
+      (insert "Subject: " text "\n" mail-header-separator "\nbody\n")
+      (vm-mime-encode-headers)
+      (goto-char (point-min))
+      (re-search-forward "^Subject: ?")
+      (buffer-substring-no-properties (point) (line-end-position)))))
+
+(defun vm-mime-test--decode-as-vm (encoded)
+  (let ((vm-display-using-mime t))
+    (substring-no-properties
+     (vm-decode-mime-encoded-words-in-string encoded))))
+
+(defun vm-mime-test--decode-as-rfc2047 (encoded)
+  "ENCODED read by Emacs\\='s own RFC 2047 decoder, which VM did not write."
+  (require 'rfc2047)
+  (with-temp-buffer
+    (insert encoded)
+    (rfc2047-decode-region (point-min) (point-max))
+    (substring-no-properties (buffer-string))))
+
+(ert-deftest vm-mime-test-header-text-survives-being-sent ()
+  "Every header text comes back as it went in.
+`vm-mime-encode-words-in-string' had one test, for ASCII."
+  (should (equal nil
+                 (delq nil
+                       (mapcar
+                        (lambda (spec)
+                          (let* ((sent (vm-mime-test--encode-subject (cdr spec)))
+                                 (back (vm-mime-test--decode-as-vm sent)))
+                            (unless (equal back (cdr spec))
+                              (format "%s: %S sent as %S came back %S"
+                                      (car spec) (cdr spec) sent back))))
+                        vm-mime-test--header-texts)))))
+
+(ert-deftest vm-mime-test-header-text-survives-a-conforming-reader ()
+  "And comes back the same through a decoder VM did not write.
+Emacs\\='s `rfc2047-decode-region' follows the rule that whitespace between two
+adjacent encoded words is not part of the text.  A sender that encoded each
+8-bit word separately would lose the spaces between them for such a reader
+while looking right to itself."
+  (should (equal nil
+                 (delq nil
+                       (mapcar
+                        (lambda (spec)
+                          (let* ((sent (vm-mime-test--encode-subject (cdr spec)))
+                                 (back (vm-mime-test--decode-as-rfc2047 sent)))
+                            (unless (equal back (cdr spec))
+                              (format "%s: %S sent as %S read back %S"
+                                      (car spec) (cdr spec) sent back))))
+                        vm-mime-test--header-texts)))))
+
+(ert-deftest vm-mime-test-header-adjacent-8bit-words-are-encoded-together ()
+  "Two 8-bit words with only a space between them become one encoded word.
+`vm-mime-encode-headers' says so in its docstring, and the reason is the
+rule above: encoded separately, the space between them would be dropped by
+a conforming reader.  Pinned because nothing checked the promise."
+  (should (equal (vm-mime-test--encode-subject "Grüße Grüße")
+                 "=?iso-8859-1?Q?Gr=FC=DFe_Gr=FC=DFe?="))
+  ;; and ASCII between them keeps them apart, which is what makes it safe
+  (should (equal (vm-mime-test--encode-subject "Grüße aus München")
+                 "=?iso-8859-1?Q?Gr=FC=DFe?= aus =?iso-8859-1?Q?M=FCnchen?=")))
+
+(ert-deftest vm-mime-test-header-encoded-words-are-short-enough ()
+  "For ordinary text no encoded word passes the 75 characters RFC 2047 allows."
+  (let ((examined 0))
+    (dolist (spec vm-mime-test--header-texts)
+      (let ((sent (vm-mime-test--encode-subject (cdr spec)))
+            (pos 0))
+        (while (string-match "=\\?[^?]*\\?[BbQq]\\?[^?]*\\?=" sent pos)
+          (should (<= (- (match-end 0) (match-beginning 0)) 75))
+          (setq examined (1+ examined)
+                pos (match-end 0)))))
+    ;; the premise: encoded words were actually found, so this is not a test
+    ;; of nothing should the encoder stop emitting them
+    (should (> examined 5))))
+
+(ert-deftest vm-mime-test-header-lines-are-written-unfolded ()
+  "A header VM writes is one line however long it is.
+
+RFC 5322 says a line MUST be at most 998 characters and SHOULD be at most
+78; RFC 2047 says an encoded word MUST be at most 75.  VM folds nothing, so
+a long subject breaks all three:
+
+    200 latin-1 words   one line, 2025 characters
+    400 ascii words     one line, 2008 characters
+    one 400-char word   one line, 1226, and one encoded word of 1218
+
+Recorded rather than asserted away: folding is a change to what goes on the
+wire, and splitting a run of 8-bit text into several encoded words has to
+keep the adjacency rule above in mind, so it is the maintainer\\='s call.  This
+test is the one to change when it is made.
+
+The adjacency handling is why the long-word case arises at all: VM encodes a
+run of 8-bit words together, correctly, and then never breaks it up."
+  (let ((many (mapconcat #'identity (make-list 200 "Grüße") " "))
+        (ascii (mapconcat #'identity (make-list 400 "word") " "))
+        (one-word (make-string 400 ?ü)))
+    (dolist (text (list many ascii one-word))
+      (let ((sent (vm-mime-test--encode-subject text)))
+        ;; one line: no fold anywhere
+        (should-not (string-match-p "\n" sent))
+        (should (> (length sent) 998))
+        ;; and the text is still all there, which is why nothing has broken
+        ;; for a reader that tolerates the length
+        (should (equal (vm-mime-test--decode-as-vm sent) text))))))
 
 (provide 'vm-mime-test)
 
