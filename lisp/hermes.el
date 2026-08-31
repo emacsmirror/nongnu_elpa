@@ -484,27 +484,35 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
                     (append node '(:instance-grouped-p t)))
                   (cdr nodes)))))
 
+(defun hermes-dashboard--node-instance-p (node instance)
+  "Return non-nil when chat NODE belongs to INSTANCE."
+  (if-let* ((id (plist-get node :instance-id)))
+      (equal id (hermes-instance-id instance))
+    (equal (plist-get node :instance) (hermes-instance-name instance))))
+
 (defun hermes-dashboard--group-chat-nodes (nodes)
   "Group chat NODES by configured instance when multiple are available."
   (if (not (hermes-instance-multiple-p))
       nodes
-    (let* ((names (mapcar #'hermes-instance-name
-                          (hermes-instance-configured)))
+    (let* ((instances (hermes-instance-configured))
            (known
             (apply #'append
                    (mapcar
-                    (lambda (name)
+                    (lambda (instance)
                       (hermes-dashboard--instance-group
-                       name
+                       (hermes-instance-name instance)
                        (seq-filter
                         (lambda (node)
-                          (equal (plist-get node :instance) name))
+                          (hermes-dashboard--node-instance-p node instance))
                         nodes)))
-                    names)))
+                    instances)))
            (other
-            (seq-remove (lambda (node)
-                          (member (plist-get node :instance) names))
-                        nodes)))
+            (seq-remove
+             (lambda (node)
+               (seq-some (lambda (instance)
+                           (hermes-dashboard--node-instance-p node instance))
+                         instances))
+             nodes)))
       (append known (hermes-dashboard--instance-group "Other" other)))))
 
 (defun hermes-dashboard--empty-node ()

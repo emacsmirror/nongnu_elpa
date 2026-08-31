@@ -14,6 +14,61 @@
     (should (equal (hermes-instance-configured)
                    '(("default" . "http://127.0.0.1:9119"))))))
 
+(ert-deftest hermes-instance-typed-identity-is-client-local ()
+  "Typed identity exposes local metadata without requiring server support."
+  (let* ((instance '(:id "constantine" :name "Constantine"
+                     :url "https://hermes.example.test"))
+         (hermes-instances (list instance)))
+    (should (equal (hermes-instance-configured) (list instance)))
+    (should (equal (hermes-instance-id instance) "constantine"))
+    (should (equal (hermes-instance-name instance) "Constantine"))
+    (should (equal (hermes-instance-url instance)
+                   "https://hermes.example.test"))
+    (should (equal (hermes-instance-resolve) instance))))
+
+(ert-deftest hermes-instance-typed-identity-selects-by-name ()
+  "Typed instances prompt with display names and retain stable ids."
+  (let* ((local '(:id "local" :name "Local"
+                  :url "http://127.0.0.1:9119"))
+         (remote '(:id "remote" :name "Remote"
+                   :url "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         (hermes-instance nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _)
+                 (should (equal collection '("Local" "Remote")))
+                 "Remote")))
+      (should (equal (hermes-instance-resolve) remote)))))
+
+(ert-deftest hermes-instance-typed-identity-rejects-duplicate-ids ()
+  "Stable instance ids are unique even when display names differ."
+  (let ((hermes-instances
+         '((:id "server" :name "Primary" :url "http://primary")
+           (:id "server" :name "Backup" :url "http://backup"))))
+    (should-error (hermes-instance-configured) :type 'user-error)))
+
+(ert-deftest hermes-instance-typed-identity-rejects-malformed-fields ()
+  "Typed identities reject unknown and duplicated fields."
+  (dolist (instance
+           '((:foo "extra" :id "a" :name "A" :url "http://a")
+             (:id "a" :name "A" :url "http://a" :id "b")
+             (:id "a" :name "A" :name "B" :url "http://a")
+             (:id "a" :name "A" :url "http://a" :url "http://b")))
+    (let ((hermes-instances (list instance)))
+      (should-error (hermes-instance-configured) :type 'user-error))))
+
+(ert-deftest hermes-instance-configured-rejects-nil-and-nonproper-entries ()
+  "Nil, improper, and circular entries fail the instance shape contract."
+  (let* ((circular (list :id "a" :name "A" :url "http://a"))
+         (tail (last circular)))
+    (setcdr tail circular)
+    (unwind-protect
+        (dolist (instance (list nil '(:id "a" :name . "A") circular))
+          (let ((hermes-instances (list instance))
+                (print-circle t))
+            (should-error (hermes-instance-configured) :type 'user-error)))
+      (setcdr tail nil))))
+
 (ert-deftest hermes-instance-resolve-uses-buffer-context ()
   "A buffer-owned instance wins without prompting."
   (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")

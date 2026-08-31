@@ -66,47 +66,100 @@ Use `hermes-dashboard-transport-start-mode' to force spawn or remote attach."
 
 (defcustom hermes-instances nil
   "Named Hermes dashboard instances.
-Each entry is (NAME . URL).  When nil, the existing
-`hermes-dashboard-transport-url' is available as the instance named
-\=`default'."
-  :type '(alist :key-type (string :tag "Name")
-                :value-type (string :tag "Dashboard URL"))
+Each entry is either the legacy (NAME . URL) pair or a typed plist with
+`:id', `:name', and `:url'.  The stable id is local client identity; Hermes
+Agent receives the same requests as before and needs no matching server field.
+When nil, `hermes-dashboard-transport-url' is available as the legacy instance
+named `default'."
+  :type '(repeat
+          (choice
+           (cons :tag "Legacy instance"
+                 (string :tag "Name")
+                 (string :tag "Dashboard URL"))
+           (list :tag "Typed instance"
+                 (const :format "" :id)
+                 (string :tag "Stable ID")
+                 (const :format "" :name)
+                 (string :tag "Display name")
+                 (const :format "" :url)
+                 (string :tag "Dashboard URL"))))
   :group 'hermes-dashboard-transport)
 
 (defvar-local hermes-instance nil
-  "Hermes instance owned by the current buffer, as (NAME . URL).")
+  "Hermes instance owned by the current buffer.
+The value is a legacy (NAME . URL) pair or a typed identity plist.")
+
+(defun hermes-instance--nonempty-string-p (value)
+  "Return non-nil when VALUE is a nonempty string."
+  (and (stringp value)
+       (not (string-empty-p (string-trim value)))))
+
+(defun hermes-instance--typed-p (instance)
+  "Return non-nil when INSTANCE is a typed identity candidate."
+  (and (proper-list-p instance)
+       (keywordp (car instance))))
+
+(defun hermes-instance--typed-shape-p (instance)
+  "Return non-nil when INSTANCE has each supported typed field once."
+  (and (hermes-instance--typed-p instance)
+       (= (length instance) 6)
+       (let ((keys (list (nth 0 instance)
+                         (nth 2 instance)
+                         (nth 4 instance))))
+         (and (seq-every-p #'keywordp keys)
+              (= (seq-count (lambda (key) (eq key :id)) keys) 1)
+              (= (seq-count (lambda (key) (eq key :name)) keys) 1)
+              (= (seq-count (lambda (key) (eq key :url)) keys) 1)))))
 
 (defun hermes-instance--valid-p (instance)
-  "Return non-nil when INSTANCE is a valid (NAME . URL) pair."
-  (and (consp instance)
-       (stringp (car instance))
-       (not (string-empty-p (string-trim (car instance))))
-       (stringp (cdr instance))
-       (not (string-empty-p (string-trim (cdr instance))))))
+  "Return non-nil when INSTANCE is a valid Hermes instance value."
+  (if (hermes-instance--typed-p instance)
+      (and (hermes-instance--typed-shape-p instance)
+           (seq-every-p #'hermes-instance--nonempty-string-p
+                        (list (plist-get instance :id)
+                              (plist-get instance :name)
+                              (plist-get instance :url))))
+    (and (consp instance)
+         (hermes-instance--nonempty-string-p (car instance))
+         (hermes-instance--nonempty-string-p (cdr instance)))))
 
-(defun hermes-instance-configured ()
-  "Return configured Hermes instances as (NAME . URL) pairs.
-Fall back to the existing dashboard URL as the instance named `default'."
-  (let* ((instances (or hermes-instances
-                        (list (cons "default"
-                                    hermes-dashboard-transport-url))))
-         (invalid (seq-find (lambda (instance)
-                              (not (hermes-instance--valid-p instance)))
-                            instances))
-         (names (mapcar #'car instances)))
-    (when invalid
-      (user-error "Invalid Hermes instance: %S" invalid))
-    (unless (= (length names) (length (delete-dups (copy-sequence names))))
-      (user-error "Hermes instance names must be unique"))
-    (copy-tree instances)))
+(defun hermes-instance-id (instance)
+  "Return INSTANCE's stable client-local identity."
+  (if (hermes-instance--typed-p instance)
+      (plist-get instance :id)
+    (car instance)))
 
 (defun hermes-instance-name (instance)
   "Return INSTANCE's display name."
-  (car instance))
+  (if (hermes-instance--typed-p instance)
+      (plist-get instance :name)
+    (car instance)))
 
 (defun hermes-instance-url (instance)
   "Return INSTANCE's dashboard URL."
-  (cdr instance))
+  (if (hermes-instance--typed-p instance)
+      (plist-get instance :url)
+    (cdr instance)))
+
+(defun hermes-instance-configured ()
+  "Return configured legacy or typed Hermes instances.
+Fall back to the existing dashboard URL as the legacy instance named
+`default'.  Stable ids and display names must each be unique."
+  (let* ((instances (or hermes-instances
+                        (list (cons "default"
+                                    hermes-dashboard-transport-url))))
+         (invalid-index
+          (cl-position-if-not #'hermes-instance--valid-p instances)))
+    (when invalid-index
+      (user-error "Invalid Hermes instance: %S"
+                  (nth invalid-index instances)))
+    (let ((ids (mapcar #'hermes-instance-id instances))
+          (names (mapcar #'hermes-instance-name instances)))
+      (unless (= (length ids) (length (delete-dups (copy-sequence ids))))
+        (user-error "Hermes instance ids must be unique"))
+      (unless (= (length names) (length (delete-dups (copy-sequence names))))
+        (user-error "Hermes instance names must be unique")))
+    (copy-tree instances)))
 
 (defun hermes-instance-multiple-p ()
   "Return non-nil when more than one Hermes instance is configured."
@@ -127,10 +180,13 @@ Unlike `hermes-instance-resolve', this never prompts."
 Use the current buffer's instance first.  Select the sole configured instance
 without prompting, or prompt when multiple configured instances are available."
   (or (hermes-instance-context)
-      (let ((instances (hermes-instance-configured)))
-        (assoc (completing-read "Hermes instance: "
-                                (mapcar #'car instances) nil t)
-               instances))))
+      (let* ((instances (hermes-instance-configured))
+             (name (completing-read "Hermes instance: "
+                                    (mapcar #'hermes-instance-name instances)
+                                    nil t)))
+        (seq-find (lambda (instance)
+                    (equal (hermes-instance-name instance) name))
+                  instances))))
 
 (defcustom hermes-dashboard-transport-http-timeout 30
   "Seconds before a dashboard REST/HTTP request gives up.

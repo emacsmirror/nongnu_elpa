@@ -418,6 +418,8 @@ stops its poll) instead of being called by name from this file.")
                    (buffer-name))
         :instance (and (hermes-instance--valid-p hermes-instance)
                        (hermes-instance-name hermes-instance))
+        :instance-id (and (hermes-instance--valid-p hermes-instance)
+                          (hermes-instance-id hermes-instance))
         :session-id hermes-chat--session-id
         :connection (hermes-chat--dashboard-connection-label)
         :status (or (plist-get hermes-chat--status-state :status) 'ready)

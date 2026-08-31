@@ -53,9 +53,10 @@
 (defcustom hermes-chat-buffer-name-function #'hermes-chat-default-buffer-name
   "Function used to produce a Hermes chat buffer name.
 The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
-profile name, INSTANCE is the owning (NAME . URL) pair, and DIRECTORY is the
-launching project root, gateway working directory, or nil when detached.  It
-must return the complete non-empty buffer name."
+profile name.  INSTANCE is the owning legacy pair or typed identity; use
+`hermes-instance-id', `hermes-instance-name', and `hermes-instance-url' to read
+it.  DIRECTORY is the launching project root, gateway working directory, or nil
+when detached.  The function must return the complete non-empty buffer name."
   :type 'function
   :group 'hermes)
 

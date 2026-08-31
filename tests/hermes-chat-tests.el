@@ -1127,11 +1127,14 @@
   (let ((hermes-chat-buffer-name-function
          (lambda (profile instance directory)
            (format "*Custom: %s/%s/%s*"
-                   (car instance) profile
+                   (hermes-instance-name instance) profile
                    (file-name-nondirectory (directory-file-name directory))))))
-    (should (equal (hermes-chat--buffer-name
-                    "coder" '("local" . "http://127.0.0.1:9119") "/tmp/nema/")
-                   "*Custom: local/coder/nema*"))))
+    (dolist (instance '(("local" . "http://127.0.0.1:9119")
+                        (:id "local-id" :name "local"
+                         :url "http://127.0.0.1:9119")))
+      (should (equal (hermes-chat--buffer-name
+                      "coder" instance "/tmp/nema/")
+                     "*Custom: local/coder/nema*")))))
 
 (ert-deftest hermes-project-chat-keeps-launch-project-in-buffer-name ()
   "A project chat name stays anchored to its launching project."

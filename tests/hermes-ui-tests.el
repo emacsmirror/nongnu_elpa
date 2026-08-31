@@ -205,6 +205,18 @@
                     (hermes-dashboard--format-chat-detail
                      '(:instance "remote" :status ready))))))
 
+(ert-deftest hermes-dashboard-groups-typed-instance-by-stable-id ()
+  "A display rename does not orphan a typed instance's existing chats."
+  (let* ((hermes-instances
+          '((:id "local" :name "Local" :url "http://127.0.0.1:9119")
+            (:id "remote" :name "Remote renamed"
+             :url "https://hermes.example.test")))
+         (nodes '((:id "chat:remote" :instance-id "remote"
+                   :instance "Old remote name")))
+         (grouped (hermes-dashboard--group-chat-nodes nodes)))
+    (should (equal (plist-get (car grouped) :instance-heading)
+                   "Remote renamed"))))
+
 (ert-deftest hermes-dashboard-groups-chats-by-configured-instance ()
   "Multiple instances render as stable dashboard sections."
   (let (local-buffer local-name remote-buffer remote-name)
