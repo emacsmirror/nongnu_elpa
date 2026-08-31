@@ -1489,6 +1489,68 @@ each line, which is what the reply held."
                     (fill-column 70))
                 (vm-fill-prefix-leaves-room-p))))
 
+;;; Compiled files older than their sources (emacs-vm/vm#791)
+
+(defmacro vm-misc-test--with-a-lisp-dir (spec &rest body)
+  "Run BODY with a directory of fake VM files on `load-path'.
+SPEC is (DIR-VAR).  BODY makes the files it wants; `features' is bound, so
+what it pretends to have loaded does not outlive the test."
+  (declare (indent 1) (debug t))
+  `(let* ((,(car spec) (file-name-as-directory (make-temp-file "vm-stale" t)))
+          (load-path (cons ,(car spec) load-path))
+          (features features))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,(car spec) t))))
+
+(defun vm-misc-test--fake-file (dir name elc-age)
+  "Write DIR/NAME.el and its .elc, the .elc ELC-AGE seconds older.
+Answers nothing; adds NAME to `features' so VM counts it as loaded."
+  (let ((el (expand-file-name (concat name ".el") dir))
+        (elc (expand-file-name (concat name ".elc") dir)))
+    (write-region (format ";;; %s\n(provide '%s)\n" name name) nil el nil 'quiet)
+    (write-region "" nil elc nil 'quiet)
+    (let ((when (- (float-time (file-attribute-modification-time
+                                (file-attributes el)))
+                   elc-age)))
+      (set-file-times elc (seconds-to-time when)))
+    (push (intern name) features)))
+
+(ert-deftest vm-misc-test-a-stale-compiled-file-is-noticed ()
+  "A VM .elc older than its .el is reported by name.
+Emacs loads the compiled file in preference to the newer source, and VM's
+files inline one another's defsubsts, so a stale one runs code that no longer
+matches the rest of VM.  That is how a vm-folder.elc compiled before #453
+answered `(setting-constant nil)' from inside `vm-build-message-list'."
+  (vm-misc-test--with-a-lisp-dir (dir)
+    (vm-misc-test--fake-file dir "vm-pretend-stale" 60)
+    (should (member "vm-pretend-stale" (vm-stale-compiled-files)))))
+
+(ert-deftest vm-misc-test-a-current-compiled-file-is-not-reported ()
+  "A .elc at least as new as its .el is not reported."
+  (vm-misc-test--with-a-lisp-dir (dir)
+    (vm-misc-test--fake-file dir "vm-pretend-fresh" -60)
+    (should-not (member "vm-pretend-fresh" (vm-stale-compiled-files)))))
+
+(ert-deftest vm-misc-test-a-file-with-no-elc-is-not-reported ()
+  "A file running interpreted, with no .elc at all, is nothing to report."
+  (vm-misc-test--with-a-lisp-dir (dir)
+    (write-region ";;; x\n(provide 'vm-pretend-plain)\n" nil
+                  (expand-file-name "vm-pretend-plain.el" dir) nil 'quiet)
+    (push 'vm-pretend-plain features)
+    (should-not (member "vm-pretend-plain" (vm-stale-compiled-files)))))
+
+(ert-deftest vm-misc-test-the-stale-warning-names-the-files ()
+  "The warning says which files and what to do about them."
+  (vm-misc-test--with-a-lisp-dir (dir)
+    (vm-misc-test--fake-file dir "vm-pretend-stale" 60)
+    (let (said)
+      (cl-letf (((symbol-function 'display-warning)
+                 (lambda (_type message &rest _) (setq said message))))
+        (vm-warn-about-stale-compiled-files))
+      (should said)
+      (should (string-match-p "vm-pretend-stale" said))
+      (should (string-match-p "byte-recompile-directory" said)))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

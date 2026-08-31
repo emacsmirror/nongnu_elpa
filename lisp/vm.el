@@ -1546,6 +1546,9 @@ draft messages."
         (require 'vm-toolbar)
         (require 'vm-window)
         (require 'vm-menu)
+        ;; Before anything reads a folder: a stale .elc fails deep inside
+        ;; the parser with an error that says nothing about the cause (#791).
+        (vm-warn-about-stale-compiled-files)
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
         ;; Offers unfinished compositions to the postponed folder as Emacs
         ;; is left, rather than leaving them to be written to files one at a
