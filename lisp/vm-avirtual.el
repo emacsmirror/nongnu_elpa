@@ -902,7 +902,7 @@ where VIRTUAL-FOLDER-NAME names a virtual folder in
 applies to, and ACTIONS is a property list of what to do with them:
 
   :label STRING       attach the labels named in STRING, which is a
-                      space separated list, as `vm-add-message-labels'
+                      list separated by spaces or commas, as `vm-add-message-labels'
                       takes them
   :attributes STRING  set the attributes named in STRING, a space
                       separated list of `vm-supported-attribute-names',

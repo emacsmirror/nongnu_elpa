@@ -298,8 +298,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -346,8 +346,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -394,8 +394,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be deleted.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
 A numeric prefix argument COUNT causes the current message and
 the next COUNT-1 message to have the labels deleted.  A
