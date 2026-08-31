@@ -695,6 +695,29 @@
         (set-default 'hermes-dashboard-transport-start-mode saved-mode)
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest hermes-chat-new-instance-does-not-inherit-source-start-mode ()
+  "A new chat resolves its instance without inheriting another chat's mode."
+  (let* ((local '("local" . "http://127.0.0.1:9119"))
+         (remote '("remote" . "https://hermes.example.test"))
+         (hermes-instances (list local remote))
+         (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+         (launch-directory (file-name-as-directory temporary-file-directory))
+         local-buffer remote-buffer)
+    (unwind-protect
+        (progn
+          (set-default 'hermes-dashboard-transport-start-mode 'auto)
+          (let ((default-directory launch-directory))
+            (setq local-buffer (hermes-chat nil local)))
+          (with-current-buffer local-buffer
+            (setq remote-buffer (hermes-chat nil remote)))
+          (with-current-buffer remote-buffer
+            (should (eq hermes-dashboard-transport-start-mode 'remote))
+            (should hermes-chat--remote-filesystem-p)
+            (should-not (hermes-chat--current-working-directory))))
+      (set-default 'hermes-dashboard-transport-start-mode saved-mode)
+      (when (buffer-live-p local-buffer) (kill-buffer local-buffer))
+      (when (buffer-live-p remote-buffer) (kill-buffer remote-buffer)))))
+
 (ert-deftest hermes-chat-legacy-instance-uses-resolved-filesystem-mode ()
   "The unnamed singleton seeds cwd only when its resolved mode is spawn."
   (dolist (spec '(("http://127.0.0.1:9119" auto t)

@@ -1269,8 +1269,12 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
 (defun hermes-chat--instance-start-mode (instance)
-  "Return INSTANCE's resolved dashboard start mode."
-  (let ((hermes-dashboard-transport-url (hermes-instance-url instance)))
+  "Return INSTANCE's resolved dashboard start mode.
+Use the user option's global value so another chat's pinned buffer-local mode
+cannot leak into this new instance."
+  (let ((hermes-dashboard-transport-url (hermes-instance-url instance))
+        (hermes-dashboard-transport-start-mode
+         (default-value 'hermes-dashboard-transport-start-mode)))
     (plist-get (hermes-dashboard-transport--resolve-target) :mode)))
 
 (defun hermes-chat--new-buffer (&optional profile title instance)
