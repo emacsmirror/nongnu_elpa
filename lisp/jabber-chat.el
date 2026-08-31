@@ -42,6 +42,7 @@
 (require 'url-queue)
 (require 'hex-util)
 (require 'jabber-image)
+(require 'jabber-link-preview)
 (require 'jabber-muc-protocol)
 (require 'jabber-muc-state)
 (require 'jabber-presence-display)
@@ -194,7 +195,9 @@ with RET bypasses this list but not `jabber-image-max-bytes'."
 (defvar jabber-chat-printers '(jabber-chat-print-subject
 			       jabber-chat-print-body
 			       jabber-chat-print-url
+			       jabber-chat-print-link-preview
 			       jabber-chat-goto-address
+			       jabber-chat-mark-link-preview-url
 			       jabber-chat-mark-oob-attachment
 			       jabber-chat-mark-aesgcm-url
 			       jabber-chat--schedule-image-scan)
@@ -2046,6 +2049,18 @@ duplication (e.g. HTTP Upload messages)."
           (setq printed t))))
     printed))
 
+(defun jabber-chat-print-link-preview (msg _who mode)
+  "Print cached link metadata for MSG in display MODE."
+  (when-let* ((url (jabber-link-preview-url (plist-get msg :body)))
+              (metadata (jabber-link-preview-get url))
+              ((listp metadata))
+              ((not (plist-get metadata :error))))
+    (when (eql mode :insert)
+      (let ((start (point)))
+        (insert (jabber-link-preview-format metadata))
+        (jabber-chat--add-url-keymap start (point))))
+    t))
+
 (defun jabber-chat--parse-aesgcm-url (url)
   "Parse an aesgcm:// URL into a plist.
 Returns (:https-url URL :iv BYTES :key BYTES) or nil if URL is
@@ -2160,7 +2175,7 @@ ALLOWED-TYPES and `jabber-image-max-bytes' are enforced per
     (define-key map (kbd "RET") #'jabber-chat-url-action-at-point)
     (define-key map "w" #'jabber-chat-copy-url)
     map)
-  "Keymap active on inline images and downloadable URLs in chat buffers.")
+  "Keymap active on images, attachments, and preview URLs in chats.")
 
 (define-key jabber-chat-url-keymap "+" #'jabber-chat-image-enlarge)
 (define-key jabber-chat-url-keymap "=" #'jabber-chat-image-enlarge)
@@ -2187,7 +2202,9 @@ Lets a manual resize survive redraws that regenerate the URL text.")
   "Copy the URL at point to the kill ring and display it."
   (interactive)
   (if-let* ((url (or (get-text-property (point) 'jabber-chat-file-url)
-                     (get-text-property (point) 'jabber-chat-image-url))))
+                     (get-text-property (point) 'jabber-chat-image-url)
+                     (get-text-property
+                      (point) 'jabber-chat-link-preview-url))))
       (progn (kill-new url) (message "%s" url))
     (user-error "No URL at point")))
 
@@ -2252,23 +2269,71 @@ not `jabber-image-max-bytes'."
              (jabber-chat--start-image-fetch url beg end nil t))
            (message "Loading image...")))))
 
+(defun jabber-chat--ewoc-node-live-p (node)
+  "Return non-nil when NODE still belongs to `jabber-chat-ewoc'."
+  (let ((candidate (and jabber-chat-ewoc
+                        (ewoc-nth jabber-chat-ewoc 0)))
+        found)
+    (while (and candidate (not found))
+      (if (eq candidate node)
+          (setq found t)
+        (setq candidate (ewoc-next jabber-chat-ewoc candidate))))
+    found))
+
+(defun jabber-chat--handle-link-preview (result url token node buffer)
+  "Cache preview RESULT for URL and redraw NODE in BUFFER.
+TOKEN identifies the request so stale callbacks cannot replace newer state."
+  (when (equal (jabber-link-preview-get url) token)
+    (jabber-link-preview-put url result)
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (jabber-chat--ewoc-node-live-p node)
+          (jabber-chat-ewoc-invalidate node))
+        (if (plist-get result :error)
+            (message "Link preview unavailable: %s"
+                     (plist-get result :error))
+          (message "Link preview loaded"))))))
+
+(defun jabber-chat--load-link-preview-at-point (url)
+  "Load or open the link preview for URL at point."
+  (let ((cached (jabber-link-preview-get url)))
+    (cond ((eq (car-safe cached) 'loading)
+           (message "Link preview fetch already in progress"))
+          ((and cached (listp cached) (not (plist-get cached :error)))
+           (browse-url url))
+          ((not jabber-chat-ewoc)
+           (user-error "No chat message at point"))
+          (t
+           (let ((node (ewoc-locate jabber-chat-ewoc (point)))
+                 (token (list 'loading (gensym "jabber-preview-"))))
+             (unless node
+               (user-error "No chat message at point"))
+             (jabber-link-preview-put url token)
+             (jabber-link-preview-fetch
+              url #'jabber-chat--handle-link-preview
+              url token node (current-buffer))
+             (message "Loading link preview..."))))))
+
 (defun jabber-chat-url-action-at-point (&optional arg)
-  "Load the image URL at point inline, or download the URL at point.
+  "Load a preview or image at point, or download the URL at point.
 An image URL that is not yet displayed is fetched and shown
 inline.  Displayed images, file URLs, and any URL with prefix
 ARG are downloaded to a file, decrypting aesgcm:// URLs after
-download."
+download.  A page URL loads its preview; once loaded, RET opens it."
   (interactive "P")
   (let ((file-url (get-text-property (point) 'jabber-chat-file-url))
-        (image-url (get-text-property (point) 'jabber-chat-image-url)))
+        (image-url (get-text-property (point) 'jabber-chat-image-url))
+        (preview-url (get-text-property
+                      (point) 'jabber-chat-link-preview-url)))
     (cond (file-url
            (jabber-chat-download-url file-url))
-          ((null image-url)
-           (user-error "No downloadable URL at point"))
-          ((or arg (get-text-property (point) 'display))
+          ((and image-url
+                (or arg (get-text-property (point) 'display)))
            (jabber-chat-download-url image-url))
-          (t
-           (jabber-chat--load-image-at-point)))))
+          (image-url (jabber-chat--load-image-at-point))
+          (preview-url
+           (jabber-chat--load-link-preview-at-point preview-url))
+          (t (user-error "No actionable URL at point")))))
 
 (defun jabber-chat-download-url (url)
   "Prompt to download URL to a local file.
@@ -2644,6 +2709,29 @@ does not auto-display stay clickable and load with RET."
                          (> (overlay-end ov) end))
                 (move-overlay ov (overlay-start ov) end)))))
       (error (message "jabber-chat: goto-address-fontify failed: %s" err)))))
+
+(defun jabber-chat-mark-link-preview-url (msg _who mode)
+  "Mark the first eligible page URL in MSG when MODE is `:insert'."
+  (when (eql mode :insert)
+    (when-let* ((url (jabber-link-preview-url (plist-get msg :body))))
+      (save-excursion
+        (let ((end (point)))
+          (goto-char (or jabber-chat--body-start (point-min)))
+          (when (search-forward url end t)
+            (let ((start (- (point) (length url))))
+              (add-text-properties
+               start (point)
+               (list 'jabber-chat-link-preview-url url
+                     'help-echo "RET: load link preview; w: copy URL"))
+              (if-let* ((overlay
+                         (seq-find
+                          (lambda (candidate)
+                            (overlay-get candidate 'goto-address))
+                          (overlays-in start (point)))))
+                  (let ((map (copy-keymap jabber-chat-url-keymap)))
+                    (set-keymap-parent map (overlay-get overlay 'keymap))
+                    (overlay-put overlay 'keymap map))
+                (jabber-chat--add-url-keymap start (point))))))))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)
   "Mark non-image OOB attachment URLs in MSG (MODE = :insert) for download.
