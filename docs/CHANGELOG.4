@@ -1,4 +1,43 @@
 # -*- mode: org -*-
+* v4.7.1    UNRELEASED
+
+- In repository listings the home directory is now used as
+  ~default-directory~.  874781fe
+
+- Added ~--merge~ to ~magit-branch~ menu.  874781fe
+
+- In Dired buffers ~magit-read-repository~ now defaults to the
+  repository at point.  1b50adfc
+
+- ~magit-gitdir~ now supports returning the common Git directory.
+  #5614
+
+- Added ~--find-copies-harder~ to diff menus because ~-C~ often doesn't
+  do anything if the former isn't used as well.  Both arguments are
+  hidden by default now.  #5629
+
+Bugfixes:
+
+- ~magit-generate-changelog~ failed inside a worktree that specifies
+  the path to the Git directory using a relative path.  #5582
+
+- ~magit-local-branch-p~ recently started using ~--branches~ but that
+  was only added in Git v2.46.0.  #5625
+
+- ~magit-gitignore-in-gitdir~ did not account for linked worktrees.
+  #5614
+
+- ~magit-xref-restore~ needlessy called ~magit-refresh-buffer~.
+  ~magit-setup-buffer-internal~ already takes care of that.  #5626
+
+- ~magit--blob-normal-mode~ bound ~after-change-major-mode-hook~ to
+  suppress certain hook functions, which prevented additions to
+  that hook from persisting, which can happen due to lazy loading.
+  #5627
+
+- ~--find-copies-harder~ is no longer added if ~-C~ is used, because
+  the former renders the latter ineffective.  #5629
+
 * v4.7.0    2026-08-01
 
 - If the region marks a single commit, ~magit-patch-create~ now creates
