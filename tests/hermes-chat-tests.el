@@ -869,11 +869,19 @@
               (if (nth 2 spec)
                   (should (equal (hermes-chat--current-working-directory)
                                  launch-directory))
-                (should-not (hermes-chat--current-working-directory)))))
+                (should-not (hermes-chat--current-working-directory))
+                (should (string-match-p
+                         (format "\\[%s\\]"
+                                 (regexp-quote
+                                  (hermes-chat--directory-basename
+                                   launch-directory)))
+                         (buffer-name)))
+                (should (string-match-p
+                         "detached" (hermes-test--header-line-string))))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-remote-resume-hydrates-only-gateway-cwd ()
-  "A remote resume stays detached until the backend supplies its gateway cwd."
+  "A remote resume uses editor identity while gateway execution stays detached."
   (dolist (outcome '(resolve reject))
     (let* ((instance '("remote" . "https://hermes.example.test"))
            (hermes-instances (list instance))
@@ -891,7 +899,12 @@
                     (hermes-chat-resume-session "stored" nil nil instance))
               (with-current-buffer buffer
                 (should-not hermes-chat--working-directory)
-                (should (string-match-p "\\[detached\\]" (buffer-name)))
+                (should (string-match-p
+                         (format "\\[%s\\]"
+                                 (regexp-quote
+                                  (hermes-chat--directory-basename
+                                   launch-directory)))
+                         (buffer-name)))
                 (should (string-match-p "detached"
                                         (hermes-test--header-line-string)))
                 (pcase outcome
@@ -903,7 +916,12 @@
                    (should (string-match-p "\\[repo\\]" (buffer-name))))
                   ('reject
                    (funcall reject "resume failed")
-                   (should (string-match-p "\\[detached\\]" (buffer-name)))
+                   (should (string-match-p
+                            (format "\\[%s\\]"
+                                    (regexp-quote
+                                     (hermes-chat--directory-basename
+                                      launch-directory)))
+                            (buffer-name)))
                    (should-not hermes-chat--working-directory)))
                 (should (equal default-directory launch-directory))))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
@@ -1267,6 +1285,22 @@
                       "coder" instance "/tmp/nema/")
                      "*Custom: local/coder/nema*")))))
 
+(ert-deftest hermes-chat-buffer-name-function-receives-display-directory ()
+  "A custom name receives editor fallback, then hydrated gateway cwd."
+  (let* (captured
+         (hermes-chat-buffer-name-function
+          (lambda (_profile _instance directory)
+            (setq captured directory)
+            "*Captured Hermes*")))
+    (hermes-test-with-chat-buffer
+     (setq default-directory "/tmp/local-editor/"
+           hermes-chat--launch-project-root nil
+           hermes-chat--working-directory nil)
+     (hermes-chat--refresh-buffer-name)
+     (should (equal captured "/tmp/local-editor/"))
+     (hermes-chat--record-working-directory "/srv/project")
+     (should (equal captured "/srv/project")))))
+
 (ert-deftest hermes-project-chat-keeps-launch-project-in-buffer-name ()
   "A project chat name stays anchored to its launching project."
   (let* ((root (file-name-as-directory
@@ -1298,6 +1332,43 @@
                                     (hermes-test--header-line-string)))))
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (delete-directory root t))))
+
+(ert-deftest hermes-project-chat-routes-from-adopted-project-buffer ()
+  "A project chat routes from its launch root after explicit cwd adoption."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "hermes-project-route-" t)))
+         (gateway (file-name-as-directory
+                   (make-temp-file "hermes-gateway-route-" t)))
+         (buffer (generate-new-buffer " *Hermes project route*"))
+         selected normal-created prefix-created prefix-directory prefix-phase)
+    (unwind-protect
+        (with-current-buffer buffer
+          (setq default-directory root)
+          (hermes-chat-mode)
+          (setq hermes-chat--launch-project-root root
+                hermes-chat--resolved-start-mode 'remote)
+          (hermes-chat--apply-directory gateway)
+          (cl-letf (((symbol-function 'hermes-chat--live-buffers)
+                     (lambda () (list buffer)))
+                    ((symbol-function 'pop-to-buffer-same-window)
+                     (lambda (target &rest _) (setq selected target)))
+                    ((symbol-function 'call-interactively)
+                     (lambda (command &rest _)
+                       (if prefix-phase
+                           (setq prefix-created command
+                                 prefix-directory default-directory)
+                         (setq normal-created command)))))
+            (hermes-project-chat)
+            (should (eq selected buffer))
+            (should-not normal-created)
+            (setq prefix-phase t)
+            (hermes-project-chat t)
+            (should (eq prefix-created #'hermes-chat))
+            (should (equal (file-truename prefix-directory)
+                           (file-truename root)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-directory root t)
+      (delete-directory gateway t))))
 
 (ert-deftest hermes-project-chat-prefix-creates-at-project-root ()
   "Prefix always creates a sibling chat rooted at the current project."

@@ -781,25 +781,94 @@
          (should-not (plist-get create-args :cwd))
          (should (equal default-directory "/tmp/local-editor/")))))))
 
-(ert-deftest hermes-chat-remote-set-directory-preserves-editor-directory ()
-  "A remote cwd change applies the backend path without changing editor cwd."
-  (let ((client (hermes-test--dashboard-client)) request)
-    (hermes-test-with-chat-buffer
-     (setq-local hermes-chat--resolved-start-mode 'remote)
-     (setq default-directory "/tmp/local-editor/"
-           hermes-chat--working-directory "/srv/old"
-           hermes-chat--dashboard-client client
-           hermes-chat--dashboard-session-ready-p t
-           hermes-chat--dashboard-active-session-id "sid")
-     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
-                (lambda (_client cwd &rest args)
-                  (setq request (list cwd (plist-get args :session-id)))
-                  (funcall (plist-get args :resolve)
-                           '((cwd . "/mnt/c/translated"))))))
-       (hermes-chat-set-directory "C:/project")
-       (should (equal request '("C:/project" "sid")))
-       (should (equal hermes-chat--working-directory "/mnt/c/translated"))
-       (should (equal default-directory "/tmp/local-editor/"))))))
+(ert-deftest hermes-chat-set-directory-converges-after-session-info ()
+  "The current response adopts cwd after passive gateway projection."
+  (dolist (project-root '(nil "/tmp/project-a/"))
+    (let* ((client (hermes-test--dashboard-client))
+           (editor-directory (or project-root "/tmp/local-editor/"))
+           resolve request)
+      (hermes-test-with-chat-buffer
+       (setq-local hermes-chat--resolved-start-mode 'remote)
+       (setq default-directory editor-directory
+             hermes-chat--launch-project-root project-root
+             hermes-chat--working-directory "/srv/old"
+             hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid")
+       (hermes-chat--refresh-buffer-name)
+       (let ((initial-name (buffer-name))
+             (event-callback
+              (hermes-chat--transport-callback
+               (current-buffer) nil t hermes-chat--transport-generation)))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                    (lambda (_client cwd &rest args)
+                      (setq request (list cwd (plist-get args :session-id))
+                            resolve (plist-get args :resolve)))))
+           (hermes-chat-set-directory "C:/project")
+           (should (equal request '("C:/project" "sid")))
+           (funcall event-callback
+                    '(:type status :event "session.info" :status "ready"
+                            :session-id "sid" :cwd "/mnt/c/translated"))
+           (should (equal hermes-chat--working-directory
+                          "/mnt/c/translated"))
+           (should (equal default-directory editor-directory))
+           (should (string-match-p
+                    "translated" (hermes-test--header-line-string)))
+           (if project-root
+               (should (equal (buffer-name) initial-name))
+             (should (string-match-p "\\[translated\\]" (buffer-name))))
+           (funcall resolve '((cwd . "/mnt/c/translated")))
+           (should (equal default-directory "/mnt/c/translated/"))
+           (should (equal hermes-chat--working-directory
+                          "/mnt/c/translated"))
+           (if project-root
+               (progn
+                 (should (equal (buffer-name) initial-name))
+                 (should (equal hermes-chat--launch-project-root project-root))
+                 (should (equal
+                          (hermes-chat--project-buffers
+                           project-root (list (current-buffer)))
+                          (list (current-buffer)))))
+             (should (string-match-p "\\[translated\\]" (buffer-name))))))))))
+
+(ert-deftest hermes-chat-set-directory-separates-event-response-ownership ()
+  "A replacement blocks stale event or response effects at its own boundary."
+  (dolist (schedule '(before-event before-response))
+    (let ((client (hermes-test--dashboard-client)) resolve)
+      (hermes-test-with-chat-buffer
+       (setq-local hermes-chat--resolved-start-mode 'remote)
+       (setq default-directory "/tmp/local-editor/"
+             hermes-chat--working-directory "/srv/old"
+             hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-old")
+       (hermes-chat--refresh-buffer-name)
+       (let ((initial-name (buffer-name))
+             (event-callback
+              (hermes-chat--transport-callback
+               (current-buffer) nil t hermes-chat--transport-generation)))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                    (lambda (_client _cwd &rest args)
+                      (setq resolve (plist-get args :resolve)))))
+           (hermes-chat-set-directory "C:/project")
+           (when (eq schedule 'before-event)
+             (setq hermes-chat--dashboard-active-session-id "sid-new"))
+           (funcall event-callback
+                    '(:type status :event "session.info" :status "ready"
+                            :session-id "sid-old" :cwd "/mnt/c/translated"))
+           (when (eq schedule 'before-response)
+             (setq hermes-chat--dashboard-active-session-id "sid-new"))
+           (funcall resolve '((cwd . "/mnt/c/translated")))
+           (should (equal default-directory "/tmp/local-editor/"))
+           (pcase schedule
+             ('before-event
+              (should (equal hermes-chat--working-directory "/srv/old"))
+              (should (equal (buffer-name) initial-name)))
+             ('before-response
+              (should (equal hermes-chat--working-directory
+                             "/mnt/c/translated"))
+              (should (string-match-p
+                       "\\[translated\\]" (buffer-name)))))))))))
 
 (ert-deftest hermes-chat-unknown-remote-directory-starts-with-manual-entry ()
   "A detached remote chat asks for a gateway path without listing a local path."
@@ -824,7 +893,7 @@
        (hermes-chat-set-directory)
        (should (equal prompt-default ""))
        (should (equal set-cwd "/srv/manual"))
-       (should (equal default-directory "/tmp/local-editor/"))))))
+       (should (equal default-directory "/srv/manual/"))))))
 
 (ert-deftest hermes-chat-set-directory-uses-authoritative-backend-path ()
   "Changing directory applies the authoritative backend path to the chat."

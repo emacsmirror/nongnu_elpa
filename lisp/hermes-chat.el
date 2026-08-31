@@ -55,8 +55,10 @@
 The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
 profile name.  INSTANCE is the owning legacy pair or typed identity; use
 `hermes-instance-id', `hermes-instance-name', and `hermes-instance-url' to read
-it.  DIRECTORY is the launching project root, gateway working directory, or nil
-when detached.  The function must return the complete non-empty buffer name."
+it.  DIRECTORY is selected in order from the launch-project root, an explicit
+caller argument, the gateway working directory, or editor `default-directory'.
+The editor fallback is display-only and need not be the gateway cwd.  The
+function must return the complete non-empty buffer name."
   :type 'function
   :group 'hermes)
 
@@ -1698,7 +1700,9 @@ When DIRECTORY is nil, use the current buffer's `default-directory'."
   "Switch to a live chat for the current project, or create one.
 With prefix argument NEW, always create another project chat."
   (interactive "P")
-  (let* ((root (hermes-chat--project-root))
+  (let* ((root (or (and (derived-mode-p 'hermes-chat-mode)
+                        hermes-chat--launch-project-root)
+                   (hermes-chat--project-root)))
          (hermes-chat--project-chat-root root)
          (buffers (and (not new)
                        (hermes-chat--project-buffers

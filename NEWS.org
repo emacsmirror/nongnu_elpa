@@ -2,6 +2,10 @@
 
 * Unreleased
 
+- Kept project-chat names tied to their launch root while separating editor
+  directory from gateway cwd.  Passive cwd updates leave the editor context
+  alone; an explicit “Set directory” adopts the backend-returned path.
+
 * Version 0.4.2 (2026-08-30)
 
 - Kept =hermes-project-chat= buffer names anchored to their launching project,

@@ -1180,7 +1180,8 @@ shared client."
 
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
-  (or (eq (plist-get event :type) 'background)
+  (or (hermes-chat--session-info-event-p event)
+      (eq (plist-get event :type) 'background)
       (hermes-chat--reconnecting-status-event-p event)
       (hermes-chat--reconnected-status-event-p event)))
 
@@ -1701,8 +1702,7 @@ a local FIFO submission."
 
 (defun hermes-chat--apply-directory (directory)
   "Apply gateway-native DIRECTORY to this chat's gateway and local context."
-  (when (eq (hermes-chat--ensure-resolved-start-mode) 'spawn)
-    (setq-local default-directory (file-name-as-directory directory)))
+  (setq-local default-directory (file-name-as-directory directory))
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status
    (format "Working directory: %s" directory)
@@ -1994,7 +1994,7 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
   (let* ((profile (or profile "default"))
          (instance (or instance (hermes-instance-context)))
          (directory (or hermes-chat--launch-project-root directory
-                        (hermes-chat--current-working-directory)))
+                        hermes-chat--working-directory default-directory))
          (name (funcall hermes-chat-buffer-name-function
                         profile instance directory)))
     (unless (and (stringp name) (not (string-empty-p name)))
