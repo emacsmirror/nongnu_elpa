@@ -55,7 +55,7 @@
 (defvar hermes-chat-buffer-name-function)
 (defvar hermes-chat--launch-project-root)
 (defvar hermes-chat--working-directory)
-(defvar hermes-chat--remote-filesystem-p)
+(defvar hermes-chat--resolved-start-mode)
 (defvar hermes-chat--transport-generation)
 (defvar hermes-chat--lifecycle-generation)
 
@@ -441,6 +441,7 @@ The buffer's subscriber is removed and its reference released; the shared client
 is torn down only when the last buffer detaches.  The buffer-local client,
 token, and live-session state are always cleared, even after a partial teardown,
 so a new session can be started afterwards."
+  (hermes-chat--adopt-client-start-mode)
   (setq hermes-chat--session-bootstrap nil
         hermes-chat--create-override-owner nil)
   (when-let* ((client hermes-chat--dashboard-client))
@@ -813,6 +814,38 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (and (hermes-dashboard-transport-client-p client)
        (hermes-dashboard-transport-client-websocket client)))
 
+(defun hermes-chat--instance-start-mode (instance)
+  "Return INSTANCE's resolved dashboard start mode.
+Use the global user option so another chat's legacy local pin cannot leak."
+  (let ((hermes-dashboard-transport-url (hermes-instance-url instance))
+        (hermes-dashboard-transport-start-mode
+         (default-value 'hermes-dashboard-transport-start-mode)))
+    (plist-get (hermes-dashboard-transport--resolve-target) :mode)))
+
+(defun hermes-chat--legacy-pinned-start-mode ()
+  "Return this legacy buffer's concrete pinned start mode, or nil."
+  (when (and (local-variable-p 'hermes-dashboard-transport-start-mode)
+             (memq hermes-dashboard-transport-start-mode '(spawn remote)))
+    hermes-dashboard-transport-start-mode))
+
+(defun hermes-chat--adopt-client-start-mode ()
+  "Return a concrete mode after adopting this buffer's owned client when needed."
+  (or (and (memq hermes-chat--resolved-start-mode '(spawn remote))
+           hermes-chat--resolved-start-mode)
+      (when-let* ((mode (hermes-dashboard-transport--client-start-mode
+                         hermes-chat--dashboard-client)))
+        (setq hermes-chat--resolved-start-mode mode))))
+
+(defun hermes-chat--ensure-resolved-start-mode (&optional instance)
+  "Return this chat's concrete mode, using INSTANCE for final resolution."
+  (or (hermes-chat--adopt-client-start-mode)
+      (when-let* ((mode (hermes-chat--legacy-pinned-start-mode)))
+        (setq hermes-chat--resolved-start-mode mode))
+      (let ((instance (or instance (hermes-instance-resolve))))
+        (setq hermes-instance instance
+              hermes-chat--resolved-start-mode
+              (hermes-chat--instance-start-mode instance)))))
+
 (defun hermes-chat--dashboard-cols ()
   "Return the current chat width for dashboard session requests."
   (max 20 (window-total-width)))
@@ -980,7 +1013,8 @@ shared client."
                  ((error quit)
                   (hermes-chat--dashboard-abort-bootstrap
                    owner (error-message-string err)))))))))
-    (if (and hermes-chat--remote-filesystem-p (null hermes-chat--working-directory))
+    (if (and (eq (hermes-chat--ensure-resolved-start-mode) 'remote)
+             (null hermes-chat--working-directory))
         (condition-case nil
             (hermes--promise-then
              (hermes-dashboard-transport-api-request-async
@@ -1252,17 +1286,21 @@ still route through this buffer's subscriber, so the fallback only matters once
 no buffer is attached."
   (setq-local hermes-dashboard-transport-request-owner (current-buffer))
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-      hermes-chat--dashboard-client
-    (hermes-chat--stop-dashboard-client)
+      (progn
+        (hermes-chat--ensure-resolved-start-mode)
+        hermes-chat--dashboard-client)
     (let* ((instance (hermes-instance-resolve))
+           (start-mode (hermes-chat--ensure-resolved-start-mode instance))
            (hermes-dashboard-transport-url (hermes-instance-url instance)))
+      (hermes-chat--stop-dashboard-client)
       (setq hermes-chat--dashboard-session-ready-p nil
             hermes-chat--dashboard-active-session-id nil
             hermes-chat--dashboard-client
             (hermes-dashboard-transport-acquire
-             :callback (or callback #'ignore))))
-    (hermes-chat--warm-model-options hermes-chat--dashboard-client)
-    hermes-chat--dashboard-client))
+             :callback (or callback #'ignore)
+             :start-mode start-mode))
+      (hermes-chat--warm-model-options hermes-chat--dashboard-client)
+      hermes-chat--dashboard-client)))
 
 (defun hermes-chat--dashboard-set-subscriber (client callback)
   "Bind CALLBACK as this buffer's subscriber function on shared CLIENT.
@@ -1663,7 +1701,7 @@ a local FIFO submission."
 
 (defun hermes-chat--apply-directory (directory)
   "Apply gateway-native DIRECTORY to this chat's gateway and local context."
-  (unless hermes-chat--remote-filesystem-p
+  (when (eq (hermes-chat--ensure-resolved-start-mode) 'spawn)
     (setq-local default-directory (file-name-as-directory directory)))
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status

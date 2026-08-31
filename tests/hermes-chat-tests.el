@@ -651,7 +651,8 @@
           (let ((default-directory launch-directory))
             (setq buffer (hermes-chat nil instance))
             (with-current-buffer buffer
-              (should (eq hermes-chat--remote-filesystem-p (not (nth 2 spec))))
+              (should (eq hermes-chat--resolved-start-mode
+                          (if (nth 2 spec) 'spawn 'remote)))
               (should (equal default-directory launch-directory))
               (if (nth 2 spec)
                   (should (equal (hermes-chat--current-working-directory)
@@ -661,9 +662,10 @@
 
 (ert-deftest hermes-chat-configured-instance-pins-resolved-start-mode ()
   "A named chat keeps one transport mode for cwd locality and acquisition."
-  (dolist (spec '((auto remote spawn nil t)
-                  (remote spawn remote t nil)))
-    (let* ((instance '("named" . "http://127.0.0.1:9119"))
+  (dolist (spec '((auto remote spawn t)
+                  (remote spawn remote nil)))
+    (let* ((instance '(:id "named" :name "Named"
+                       :url "http://127.0.0.1:9119"))
            (hermes-instances (list instance))
            (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
            (launch-directory (file-name-as-directory temporary-file-directory))
@@ -677,23 +679,150 @@
             (set-default 'hermes-dashboard-transport-start-mode (nth 1 spec))
             (with-current-buffer buffer
               (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
-                         (lambda (&rest _)
-                           (let ((hermes-dashboard-transport-url
-                                  (hermes-instance-url hermes-instance)))
-                             (setq acquired-mode
-                                   (plist-get
-                                    (hermes-dashboard-transport--resolve-target)
-                                    :mode)))
+                         (lambda (&rest args)
+                           (setq acquired-mode (plist-get args :start-mode))
                            client)))
                 (hermes-chat--dashboard-ensure-client))
               (should (eq acquired-mode (nth 2 spec)))
-              (should (eq hermes-chat--remote-filesystem-p (nth 3 spec)))
-              (if (nth 4 spec)
+              (should (eq hermes-chat--resolved-start-mode (nth 2 spec)))
+              (should-not
+               (local-variable-p 'hermes-dashboard-transport-start-mode))
+              (if (nth 3 spec)
                   (should (equal (hermes-chat--current-working-directory)
                                  launch-directory))
                 (should-not (hermes-chat--current-working-directory)))))
         (set-default 'hermes-dashboard-transport-start-mode saved-mode)
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-legacy-buffer-adopts-attached-client-start-mode ()
+  "A live legacy client wins over changed configuration before reacquisition."
+  (dolist (spec '((remote "https://hermes.example.test" spawn
+                          ("named" . "http://127.0.0.1:9119"))
+                  (spawn (spawn "127.0.0.1" 9119) remote
+                         ("named" . "https://hermes.example.test"))))
+    (let* ((expected (nth 0 spec))
+           (client (make-hermes-dashboard-transport-client
+                    :websocket 'attached-websocket
+                    :endpoint-key (nth 1 spec)))
+           (replacement (hermes-test--dashboard-client))
+           (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+           (buffer (generate-new-buffer " *hermes-legacy-mode*"))
+           acquired-mode)
+      (unwind-protect
+          (progn
+            (set-default 'hermes-dashboard-transport-start-mode (nth 2 spec))
+            (with-current-buffer buffer
+              (hermes-chat-mode)
+              (setq hermes-instance (nth 3 spec)
+                    hermes-chat--dashboard-client client)
+              (kill-local-variable 'hermes-dashboard-transport-start-mode)
+              (should (eq (hermes-chat--dashboard-ensure-client) client))
+              (should (eq hermes-chat--resolved-start-mode expected))
+              (setq hermes-chat--dashboard-client nil)
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                         (lambda (&rest args)
+                           (setq acquired-mode (plist-get args :start-mode))
+                           replacement)))
+                (hermes-chat--dashboard-ensure-client))
+              (should (eq acquired-mode expected))))
+        (set-default 'hermes-dashboard-transport-start-mode saved-mode)
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-legacy-buffer-adopts-old-local-start-mode ()
+  "A legacy concrete pin wins over changed configuration during acquisition."
+  (dolist (spec '((spawn remote) (remote spawn)))
+    (let ((saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+          (client (hermes-test--dashboard-client))
+          (buffer (generate-new-buffer " *hermes-legacy-local-mode*"))
+          acquired-mode)
+      (unwind-protect
+          (progn
+            (set-default 'hermes-dashboard-transport-start-mode (nth 1 spec))
+            (with-current-buffer buffer
+              (hermes-chat-mode)
+              (setq hermes-instance
+                    '("named" . "http://127.0.0.1:9119"))
+              (setq-local hermes-dashboard-transport-start-mode (nth 0 spec))
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                         (lambda (&rest args)
+                           (setq acquired-mode (plist-get args :start-mode))
+                           client)))
+                (hermes-chat--dashboard-ensure-client))
+              (should (eq hermes-chat--resolved-start-mode (nth 0 spec)))
+              (should (eq acquired-mode (nth 0 spec)))))
+        (set-default 'hermes-dashboard-transport-start-mode saved-mode)
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-legacy-buffer-resolves-instance-once-for-acquisition ()
+  "One selected instance supplies both fallback mode and acquisition URL."
+  (let* ((remote '(:id "remote" :name "Remote"
+                   :url "https://hermes.example.test"))
+         (local '("local" . "http://127.0.0.1:9119"))
+         (choices (list remote local))
+         (client (hermes-test--dashboard-client))
+         (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+         (buffer (generate-new-buffer " *hermes-legacy-instance*"))
+         prompts acquired-mode acquired-url)
+    (unwind-protect
+        (progn
+          (set-default 'hermes-dashboard-transport-start-mode 'auto)
+          (with-current-buffer buffer
+            (hermes-chat-mode)
+            (kill-local-variable 'hermes-dashboard-transport-start-mode)
+            (cl-letf (((symbol-function 'hermes-instance-resolve)
+                       (lambda ()
+                         (setq prompts (1+ (or prompts 0)))
+                         (pop choices)))
+                      ((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest args)
+                         (setq acquired-mode (plist-get args :start-mode)
+                               acquired-url hermes-dashboard-transport-url)
+                         client)))
+              (hermes-chat--dashboard-ensure-client))
+            (should (= prompts 1))
+            (should (equal hermes-instance remote))
+            (should (eq acquired-mode 'remote))
+            (should (equal acquired-url "https://hermes.example.test"))))
+      (set-default 'hermes-dashboard-transport-start-mode saved-mode)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest hermes-chat-lifetime-reset-adopts-attached-client-start-mode ()
+  "Disconnect and reset preserve an unpinned attached client's endpoint mode."
+  (dolist (action '(disconnect reset))
+    (dolist (spec '((remote "https://hermes.example.test" spawn
+                            ("named" . "https://hermes.example.test"))
+                    (spawn (spawn "127.0.0.1" 9119) remote
+                           ("named" . "http://127.0.0.1:9119"))))
+      (let* ((expected (nth 0 spec))
+             (client (make-hermes-dashboard-transport-client
+                      :websocket 'attached-websocket
+                      :endpoint-key (nth 1 spec)))
+             (replacement (hermes-test--dashboard-client))
+             (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+             (buffer (generate-new-buffer " *hermes-lifetime-mode*"))
+             acquired-mode)
+        (unwind-protect
+            (progn
+              (set-default 'hermes-dashboard-transport-start-mode (nth 2 spec))
+              (with-current-buffer buffer
+                (hermes-chat-mode)
+                (setq hermes-instance (nth 3 spec)
+                      hermes-chat--dashboard-client client
+                      hermes-chat--dashboard-active-session-id "sid")
+                (kill-local-variable 'hermes-dashboard-transport-start-mode)
+                (let ((hermes-chat-cleanup-functions nil))
+                  (pcase action
+                    ('disconnect (hermes-chat-disconnect))
+                    ('reset (hermes-chat--reset-transcript))))
+                (should (eq hermes-chat--resolved-start-mode expected))
+                (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                           (lambda (&rest args)
+                             (setq acquired-mode (plist-get args :start-mode))
+                             replacement)))
+                  (hermes-chat--dashboard-ensure-client))
+                (should (eq acquired-mode expected))))
+          (set-default 'hermes-dashboard-transport-start-mode saved-mode)
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-chat-new-instance-does-not-inherit-source-start-mode ()
   "A new chat resolves its instance without inheriting another chat's mode."
@@ -711,8 +840,9 @@
           (with-current-buffer local-buffer
             (setq remote-buffer (hermes-chat nil remote)))
           (with-current-buffer remote-buffer
-            (should (eq hermes-dashboard-transport-start-mode 'remote))
-            (should hermes-chat--remote-filesystem-p)
+            (should (eq hermes-chat--resolved-start-mode 'remote))
+            (should-not
+             (local-variable-p 'hermes-dashboard-transport-start-mode))
             (should-not (hermes-chat--current-working-directory))))
       (set-default 'hermes-dashboard-transport-start-mode saved-mode)
       (when (buffer-live-p local-buffer) (kill-buffer local-buffer))
@@ -733,7 +863,8 @@
           (let ((default-directory launch-directory))
             (setq buffer (hermes-chat nil))
             (with-current-buffer buffer
-              (should (eq hermes-chat--remote-filesystem-p (not (nth 2 spec))))
+              (should (eq hermes-chat--resolved-start-mode
+                          (if (nth 2 spec) 'spawn 'remote)))
               (should (equal default-directory launch-directory))
               (if (nth 2 spec)
                   (should (equal (hermes-chat--current-working-directory)
@@ -824,7 +955,7 @@
               ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
-         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq-local hermes-chat--resolved-start-mode 'remote)
          (setq hermes-chat--dashboard-create-fast-p t)
          (insert "hello")
          (hermes-chat-send)
@@ -853,7 +984,7 @@
                (lambda (&rest _) (error "sync create boom"))))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
-         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq-local hermes-chat--resolved-start-mode 'remote)
          (setq hermes-chat--working-directory nil)
          (hermes-chat--queue-content "queued")
          (let ((entry (car hermes-chat--queued-messages)))
@@ -1071,7 +1202,7 @@
           (with-current-buffer target
             (setq default-directory root)
             (hermes-chat-mode)
-            (setq hermes-chat--remote-filesystem-p t
+            (setq hermes-chat--resolved-start-mode 'remote
                   hermes-chat--working-directory "/srv/emacs-hermes"))
           (with-temp-buffer
             (setq default-directory root)
@@ -1104,7 +1235,7 @@
             (hermes-chat-mode)
             (setq hermes-instance instance
                   hermes-chat--launch-project-root root
-                  hermes-chat--remote-filesystem-p t
+                  hermes-chat--resolved-start-mode 'remote
                   hermes-chat--working-directory "/srv/source")
             (setq direct-a (hermes-chat nil instance)
                   direct-b (hermes-chat nil instance)))

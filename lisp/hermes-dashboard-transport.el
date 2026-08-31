@@ -273,6 +273,13 @@ buffer attached to the same dashboard endpoint.")
   (and (hermes-dashboard-transport-client-p client)
        (not (hermes-dashboard-transport-client-stopping-p client))))
 
+(defun hermes-dashboard-transport--client-start-mode (client)
+  "Return CLIENT's concrete endpoint start mode, or nil."
+  (pcase (and (hermes-dashboard-transport-client-p client)
+              (hermes-dashboard-transport-client-endpoint-key client))
+    (`(spawn . ,_) 'spawn)
+    ((pred stringp) 'remote)))
+
 (defun hermes-dashboard-transport--unregister-client (client)
   "Remove CLIENT from the shared registry when it is still the registered one."
   (when-let* ((key (hermes-dashboard-transport-client-endpoint-key client)))

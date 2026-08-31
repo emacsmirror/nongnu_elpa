@@ -1400,13 +1400,13 @@ This feeds the dashboard's per-session tool list via
   "Gateway-native working directory for this chat session.
 This path belongs to the Hermes instance and need not exist on Emacs's host.")
 
-(defvar-local hermes-chat--remote-filesystem-p nil
-  "Non-nil when this chat's gateway owns a separate filesystem namespace.")
+(defvar-local hermes-chat--resolved-start-mode nil
+  "Concrete `spawn' or `remote' transport mode owned by this chat buffer.")
 
 (defun hermes-chat--current-working-directory ()
   "Return this chat's gateway cwd, falling back only for local gateways."
   (or hermes-chat--working-directory
-      (and (not hermes-chat--remote-filesystem-p) default-directory)))
+      (and (eq hermes-chat--resolved-start-mode 'spawn) default-directory)))
 
 (defun hermes-chat--directory-basename (&optional directory)
   "Return the final component of gateway-native DIRECTORY, or `detached'."

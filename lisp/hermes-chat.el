@@ -104,7 +104,7 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--profile)
 (defvar hermes-chat--launch-project-root)
 (defvar hermes-chat--working-directory)
-(defvar hermes-chat--remote-filesystem-p)
+(defvar hermes-chat--resolved-start-mode)
 (defvar hermes-chat--active-tools)
 (defvar hermes-chat--project-chat-root nil
   "Dynamically bound project root for a newly launched project chat.")
@@ -1269,15 +1269,6 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
-(defun hermes-chat--instance-start-mode (instance)
-  "Return INSTANCE's resolved dashboard start mode.
-Use the user option's global value so another chat's pinned buffer-local mode
-cannot leak into this new instance."
-  (let ((hermes-dashboard-transport-url (hermes-instance-url instance))
-        (hermes-dashboard-transport-start-mode
-         (default-value 'hermes-dashboard-transport-start-mode)))
-    (plist-get (hermes-dashboard-transport--resolve-target) :mode)))
-
 (defun hermes-chat--new-buffer (&optional profile title instance)
   "Create, display, and return a fresh chat buffer.
 PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
@@ -1298,13 +1289,11 @@ entry point funnels through."
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
-      (setq-local hermes-dashboard-transport-start-mode start-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
-            hermes-chat--remote-filesystem-p
-            (eq start-mode 'remote)
+            hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory
-            (and (not hermes-chat--remote-filesystem-p) directory)
+            (and (eq start-mode 'spawn) directory)
             hermes-chat--profile profile)
       (hermes-chat--restore-draft-runtime)
       (when title
@@ -1524,13 +1513,11 @@ durable session continues on send."
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
-      (setq-local hermes-dashboard-transport-start-mode start-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root nil
-            hermes-chat--remote-filesystem-p
-            (eq start-mode 'remote)
+            hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory
-            (and (not hermes-chat--remote-filesystem-p) directory)
+            (and (eq start-mode 'spawn) directory)
             hermes-chat--session-id session-id
             hermes-chat--profile profile
             hermes-chat--title title)

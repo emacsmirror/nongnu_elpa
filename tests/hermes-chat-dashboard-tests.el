@@ -473,7 +473,7 @@
                   ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
           (let ((hermes-transport-send-function #'hermes-transport-send))
             (hermes-test-with-chat-buffer
-             (setq-local hermes-chat--remote-filesystem-p t)
+             (setq-local hermes-chat--resolved-start-mode 'remote)
              (setq default-directory "/tmp/editor/"
                    hermes-chat--working-directory nil)
              (pcase path
@@ -509,7 +509,7 @@
                        config-resolve (plist-get args :resolve))))
               ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
       (hermes-test-with-chat-buffer
-       (setq-local hermes-chat--remote-filesystem-p t)
+       (setq-local hermes-chat--resolved-start-mode 'remote)
        (setq hermes-chat--dashboard-client client
              hermes-chat--working-directory nil
              hermes-chat--dashboard-create-fast-p t)
@@ -570,7 +570,7 @@
                     ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
             (let ((hermes-transport-send-function #'hermes-transport-send))
               (hermes-test-with-chat-buffer
-               (setq-local hermes-chat--remote-filesystem-p t)
+               (setq-local hermes-chat--resolved-start-mode 'remote)
                (setq hermes-chat--dashboard-client client
                      hermes-chat--working-directory nil)
                (pcase path
@@ -608,7 +608,7 @@
                    (setq config-resolve (plist-get args :resolve))))
                 ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
         (hermes-test-with-chat-buffer
-         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq-local hermes-chat--resolved-start-mode 'remote)
          (setq hermes-chat--dashboard-client client
                hermes-chat--working-directory nil
                hermes-chat--dashboard-create-fast-p t)
@@ -772,7 +772,7 @@
                (lambda (&rest _) 'prompt-request)))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
-         (setq-local hermes-chat--remote-filesystem-p t)
+         (setq-local hermes-chat--resolved-start-mode 'remote)
          (setq default-directory "/tmp/local-editor/"
                hermes-chat--working-directory nil)
          (insert "hi")
@@ -785,7 +785,7 @@
   "A remote cwd change applies the backend path without changing editor cwd."
   (let ((client (hermes-test--dashboard-client)) request)
     (hermes-test-with-chat-buffer
-     (setq-local hermes-chat--remote-filesystem-p t)
+     (setq-local hermes-chat--resolved-start-mode 'remote)
      (setq default-directory "/tmp/local-editor/"
            hermes-chat--working-directory "/srv/old"
            hermes-chat--dashboard-client client
@@ -805,7 +805,7 @@
   "A detached remote chat asks for a gateway path without listing a local path."
   (let ((client (hermes-test--dashboard-client)) prompt-default set-cwd)
     (hermes-test-with-chat-buffer
-     (setq-local hermes-chat--remote-filesystem-p t)
+     (setq-local hermes-chat--resolved-start-mode 'remote)
      (setq default-directory "/tmp/local-editor/"
            hermes-chat--working-directory nil
            hermes-chat--dashboard-client client
