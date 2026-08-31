@@ -312,6 +312,25 @@ thread are saved."
 
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs?
 
+(defun vm-save-message-text-for-type (m target-type)
+  "M\='s headers and body, quoted the way a folder of TARGET-TYPE needs.
+A body line that a folder of that type would read as a message separator is
+prefixed with \">\", which is what `vm-munge-message-separators\=' is for and
+what `vm-fcc-message-text\=' does for a composition.
+
+Saving wrote the bytes as they stood.  A message from a folder that had no
+need to quote them -- mboxcl2 counts its bytes, mmdf and babyl have
+separators of their own -- then carried a line that the target read as a
+separator: saved into a From_ folder it became two messages there, and
+saved into an mmdf folder it made that folder unreadable."
+  (let ((source (vm-buffer-of m))
+        (start (vm-headers-of m))
+        (end (vm-text-end-of m)))
+    (with-temp-buffer
+      (insert-buffer-substring source start end)
+      (vm-munge-message-separators target-type (point-min) (point-max))
+      (buffer-string))))
+
 ;;;###autoload
 (defun vm-save-message-to-local-folder (folder &optional count mlist quiet)
   "Save the current message to a mail folder.
@@ -442,8 +461,8 @@ The saved messages are flagged as `filed'."
 			   (vm-write-string
 			    folder (concat vm-content-length-header " "
 					   (vm-su-byte-count m) "\n")))
-		       (write-region 
-			(vm-headers-of m) (vm-text-end-of m) folder t 'quiet)
+		       (vm-write-string
+			folder (vm-save-message-text-for-type m target-type))
 		       (vm-write-string
 			folder (vm-trailing-message-separator target-type))))
 		 ;; write to folder-buffer
@@ -477,9 +496,8 @@ The saved messages are flagged as `filed'."
 			       (current-buffer)
 			       (concat vm-content-length-header " "
 				       (vm-su-byte-count m) "\n")))
-			    (insert-buffer-substring (vm-buffer-of m)
-						     (vm-headers-of m)
-						     (vm-text-end-of m))
+			    (insert (vm-save-message-text-for-type
+				     m target-type))
 			    (vm-write-string
 			     (current-buffer)
 			     (vm-trailing-message-separator target-type)))))
