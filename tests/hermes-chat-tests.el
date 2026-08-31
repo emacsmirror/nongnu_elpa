@@ -636,23 +636,63 @@
       (when (buffer-live-p chat) (kill-buffer chat))
       (kill-buffer origin))))
 
-(ert-deftest hermes-chat-configured-instance-always-uses-gateway-filesystem ()
-  "A named instance stays remote even when loopback is forced to spawn."
-  (dolist (start-mode '(auto spawn))
-    (let* ((instance '("named" . "http://127.0.0.1:9119"))
+(ert-deftest hermes-chat-configured-instance-uses-resolved-filesystem-mode ()
+  "A named instance derives filesystem ownership from its transport target."
+  (dolist (spec '(("http://127.0.0.1:9119" auto t)
+                  ("http://127.0.0.1:9119" spawn t)
+                  ("http://127.0.0.1:9119" remote nil)
+                  ("https://hermes.example.test" auto nil)))
+    (let* ((instance (cons "named" (nth 0 spec)))
            (hermes-instances (list instance))
-           (hermes-dashboard-transport-start-mode start-mode)
+           (hermes-dashboard-transport-start-mode (nth 1 spec))
            (launch-directory (file-name-as-directory temporary-file-directory))
            buffer)
       (unwind-protect
           (let ((default-directory launch-directory))
             (setq buffer (hermes-chat nil instance))
             (with-current-buffer buffer
-              (should hermes-chat--remote-filesystem-p)
+              (should (eq hermes-chat--remote-filesystem-p (not (nth 2 spec))))
               (should (equal default-directory launch-directory))
-              (should-not hermes-chat--working-directory)
-              (should-not (hermes-chat--current-working-directory))
-              (should (string-match-p "\\[detached\\]" (buffer-name)))))
+              (if (nth 2 spec)
+                  (should (equal (hermes-chat--current-working-directory)
+                                 launch-directory))
+                (should-not (hermes-chat--current-working-directory)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-configured-instance-pins-resolved-start-mode ()
+  "A named chat keeps one transport mode for cwd locality and acquisition."
+  (dolist (spec '((auto remote spawn nil t)
+                  (remote spawn remote t nil)))
+    (let* ((instance '("named" . "http://127.0.0.1:9119"))
+           (hermes-instances (list instance))
+           (saved-mode (default-value 'hermes-dashboard-transport-start-mode))
+           (launch-directory (file-name-as-directory temporary-file-directory))
+           (client (hermes-test--dashboard-client))
+           buffer acquired-mode)
+      (unwind-protect
+          (progn
+            (set-default 'hermes-dashboard-transport-start-mode (nth 0 spec))
+            (let ((default-directory launch-directory))
+              (setq buffer (hermes-chat nil instance)))
+            (set-default 'hermes-dashboard-transport-start-mode (nth 1 spec))
+            (with-current-buffer buffer
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                         (lambda (&rest _)
+                           (let ((hermes-dashboard-transport-url
+                                  (hermes-instance-url hermes-instance)))
+                             (setq acquired-mode
+                                   (plist-get
+                                    (hermes-dashboard-transport--resolve-target)
+                                    :mode)))
+                           client)))
+                (hermes-chat--dashboard-ensure-client))
+              (should (eq acquired-mode (nth 2 spec)))
+              (should (eq hermes-chat--remote-filesystem-p (nth 3 spec)))
+              (if (nth 4 spec)
+                  (should (equal (hermes-chat--current-working-directory)
+                                 launch-directory))
+                (should-not (hermes-chat--current-working-directory)))))
+        (set-default 'hermes-dashboard-transport-start-mode saved-mode)
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-legacy-instance-uses-resolved-filesystem-mode ()

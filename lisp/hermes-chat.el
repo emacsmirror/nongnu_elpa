@@ -1268,12 +1268,10 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
-(defun hermes-chat--instance-remote-filesystem-p (instance)
-  "Return non-nil when INSTANCE's gateway owns its filesystem namespace."
-  (or hermes-instances
-      (let ((hermes-dashboard-transport-url (hermes-instance-url instance)))
-        (eq (plist-get (hermes-dashboard-transport--resolve-target) :mode)
-            'remote))))
+(defun hermes-chat--instance-start-mode (instance)
+  "Return INSTANCE's resolved dashboard start mode."
+  (let ((hermes-dashboard-transport-url (hermes-instance-url instance)))
+    (plist-get (hermes-dashboard-transport--resolve-target) :mode)))
 
 (defun hermes-chat--new-buffer (&optional profile title instance)
   "Create, display, and return a fresh chat buffer.
@@ -1284,20 +1282,22 @@ PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
 Buffer names identify the instance, profile, and launching project; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
 entry point funnels through."
-  (let ((directory default-directory)
-        (project-root hermes-chat--project-chat-root)
-        (instance (or instance (hermes-instance-resolve)))
-        (profile (hermes-chat--clean-profile profile))
-        (title (hermes-transport--non-empty-string
-                (and title (string-trim title))))
-        (buffer (generate-new-buffer hermes-chat-buffer-name)))
+  (let* ((directory default-directory)
+         (project-root hermes-chat--project-chat-root)
+         (instance (or instance (hermes-instance-resolve)))
+         (start-mode (hermes-chat--instance-start-mode instance))
+         (profile (hermes-chat--clean-profile profile))
+         (title (hermes-transport--non-empty-string
+                 (and title (string-trim title))))
+         (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
+      (setq-local hermes-dashboard-transport-start-mode start-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
             hermes-chat--remote-filesystem-p
-            (hermes-chat--instance-remote-filesystem-p instance)
+            (eq start-mode 'remote)
             hermes-chat--working-directory
             (and (not hermes-chat--remote-filesystem-p) directory)
             hermes-chat--profile profile)
@@ -1510,18 +1510,20 @@ durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
-  (let ((directory default-directory)
-        (instance (or instance (hermes-instance-resolve)))
-        (title (hermes-transport--non-empty-string
-                (and title (string-trim title))))
-        (buffer (generate-new-buffer hermes-chat-buffer-name)))
+  (let* ((directory default-directory)
+         (instance (or instance (hermes-instance-resolve)))
+         (start-mode (hermes-chat--instance-start-mode instance))
+         (title (hermes-transport--non-empty-string
+                 (and title (string-trim title))))
+         (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
+      (setq-local hermes-dashboard-transport-start-mode start-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root nil
             hermes-chat--remote-filesystem-p
-            (hermes-chat--instance-remote-filesystem-p instance)
+            (eq start-mode 'remote)
             hermes-chat--working-directory
             (and (not hermes-chat--remote-filesystem-p) directory)
             hermes-chat--session-id session-id
