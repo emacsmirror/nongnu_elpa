@@ -20,6 +20,7 @@
 ;;; Code:
 
 (require 'dom)
+(require 'json)
 (require 'seq)
 (require 'subr-x)
 (require 'url-parse)
@@ -129,6 +130,31 @@ Return nil when the document has no usable title."
             (list :error 'metadata))
       (error (list :error 'parser)))))
 
+(defun jabber-link-preview--youtube-oembed-url (url)
+  "Return YouTube's oEmbed endpoint for watch URL, or nil."
+  (let* ((parsed (url-generic-parse-url url))
+         (host (downcase (or (url-host parsed) ""))))
+    (when (and (member host '("youtube.com" "www.youtube.com"))
+               (string-prefix-p "/watch?" (url-filename parsed)))
+      (format "https://www.youtube.com/oembed?url=%s&format=json"
+              (url-hexify-string url)))))
+
+(defun jabber-link-preview--parse-youtube-json (json url)
+  "Return preview metadata parsed from YouTube oEmbed JSON for URL."
+  (condition-case nil
+      (let* ((data (json-parse-string json :object-type 'plist
+                                      :null-object nil :false-object nil))
+             (title (plist-get data :title)))
+        (when title
+          (append (list :url url
+                        :site (or (plist-get data :provider_name) "YouTube")
+                        :title title)
+                  (when-let* ((author (plist-get data :author_name)))
+                    (list :description author))
+                  (when-let* ((image (plist-get data :thumbnail_url)))
+                    (list :image image)))))
+    (error nil)))
+
 (defun jabber-link-preview--trim-url (url)
   "Remove common sentence punctuation from the end of URL."
   (replace-regexp-in-string "[.,;:!?)}\\]]+\\'" "" url))
@@ -228,7 +254,6 @@ be globally routable."
           "--noproxy" "*"
           "--connect-timeout" (number-to-string jabber-link-preview-timeout)
           "--max-time" (number-to-string jabber-link-preview-timeout)
-          "--max-filesize" (number-to-string jabber-link-preview-max-html-bytes)
           "--resolve" (format "%s:443:%s" host pin-address)
           "--header" "Accept: text/html"
           "--header" (format "Range: bytes=0-%d"
@@ -258,13 +283,6 @@ be globally routable."
              (format "^%s:[ \t]*\\([^\r\n;]+\\)" (regexp-quote name))
              end t)
         (string-trim (match-string-no-properties 1))))))
-(defun jabber-link-preview--declared-too-large-p (header-end)
-  "Return non-nil when Content-Length before HEADER-END exceeds the cap."
-  (when-let* ((value (jabber-link-preview--header-value
-                      "Content-Length" header-end))
-              ((string-match-p "\\`[0-9]+\\'" value)))
-    (> (string-to-number value) jabber-link-preview-max-html-bytes)))
-
 (defun jabber-link-preview--process-filter (process chunk)
   "Insert retrieval CHUNK for PROCESS while enforcing response limits."
   (when-let* ((buffer (process-buffer process))
@@ -288,11 +306,10 @@ be globally routable."
                 (point-max))
                (jabber-link-preview--abort-oversize process))
               ((and header-end
-                    (or (jabber-link-preview--declared-too-large-p header-end)
-                        (> (string-bytes
-                            (buffer-substring-no-properties
-                             header-end (point-max)))
-                           jabber-link-preview-max-html-bytes)))
+                    (> (string-bytes
+                        (buffer-substring-no-properties
+                         header-end (point-max)))
+                       jabber-link-preview-max-html-bytes))
                (delete-region
                 (min (point-max)
                      (+ header-end jabber-link-preview-max-html-bytes))
@@ -301,15 +318,15 @@ be globally routable."
 
 (defun jabber-link-preview--buffer-result (process url)
   "Return preview result from PROCESS buffer for URL."
-  (cond ((process-get process 'jabber-link-preview-too-large)
-         (list :error 'size))
-        ((not (zerop (process-exit-status process)))
+  (let ((oversized (process-get process 'jabber-link-preview-too-large)))
+    (cond ((and (not oversized)
+                (not (zerop (process-exit-status process))))
          (list :error 'fetch))
         (t
          (with-current-buffer (process-buffer process)
            (goto-char (point-min))
            (if (not (re-search-forward "\r?\n\r?\n" nil t))
-               (list :error 'response)
+               (list :error (if oversized 'size 'response))
              (let ((body-start (point))
                    (status (save-excursion
                              (goto-char (point-min))
@@ -322,13 +339,28 @@ be globally routable."
                (cond ((not (and status (<= 200 status) (< status 300)))
                       (list :error 'response))
                      ((not (and content-type
-                                (string-equal-ignore-case
-                                 content-type "text/html")))
+                                (if (eq (process-get process
+                                                     'jabber-link-preview-kind)
+                                        'youtube)
+                                    (string-equal-ignore-case
+                                     content-type "application/json")
+                                  (string-equal-ignore-case
+                                   content-type "text/html"))))
                       (list :error 'mime))
                      (t
-                      (jabber-link-preview--parse-result
-                       (buffer-substring-no-properties body-start (point-max))
-                       url)))))))))
+                      (let* ((body (buffer-substring-no-properties
+                                    body-start (point-max)))
+                             (result
+                              (if (eq (process-get process
+                                                   'jabber-link-preview-kind)
+                                      'youtube)
+                                  (or (jabber-link-preview--parse-youtube-json
+                                       body url)
+                                      (list :error 'metadata))
+                                (jabber-link-preview--parse-result body url))))
+                        (if (and oversized (plist-get result :error))
+                            (list :error 'size)
+                          result)))))))))))
 
 (defun jabber-link-preview--process-sentinel (process _event)
   "Finish link preview retrieval PROCESS."
@@ -347,8 +379,9 @@ be globally routable."
                   (error (list :error 'response))))
         (when (buffer-live-p buffer) (kill-buffer buffer)))
       (apply callback result cbargs))))
-(defun jabber-link-preview--start-process (url address callback cbargs)
-  "Start a preview process for URL at ADDRESS with CALLBACK and CBARGS."
+(defun jabber-link-preview--start-process
+    (fetch-url source-url kind address callback cbargs)
+  "Fetch FETCH-URL at ADDRESS for SOURCE-URL using KIND parser."
   (let* ((buffer (generate-new-buffer " *jabber-link-preview*"))
          process)
     (with-current-buffer buffer (set-buffer-multibyte nil))
@@ -356,7 +389,7 @@ be globally routable."
           (make-process
            :name "jabber-link-preview"
            :buffer buffer
-           :command (jabber-link-preview--curl-command url address)
+           :command (jabber-link-preview--curl-command fetch-url address)
            :coding 'binary
            :connection-type 'pipe
            :filter #'jabber-link-preview--process-filter
@@ -364,7 +397,8 @@ be globally routable."
            :noquery t))
     (process-put process 'jabber-link-preview-callback callback)
     (process-put process 'jabber-link-preview-cbargs cbargs)
-    (process-put process 'jabber-link-preview-url url)
+    (process-put process 'jabber-link-preview-url source-url)
+    (process-put process 'jabber-link-preview-kind kind)
     process))
 
 (defun jabber-link-preview-fetch (url callback &rest cbargs)
@@ -378,10 +412,14 @@ no cookies or referrer, and aborts when response limits are exceeded."
         ((not (fboundp 'libxml-parse-html-region))
          (apply callback (list :error 'parser-unavailable) cbargs))
         (t
-         (if-let* ((address (jabber-link-preview--resolved-address url)))
+         (let* ((oembed (jabber-link-preview--youtube-oembed-url url))
+                (fetch-url (or oembed url))
+                (kind (and oembed 'youtube)))
+           (if-let* ((address
+                      (jabber-link-preview--resolved-address fetch-url)))
              (jabber-link-preview--start-process
-              url address callback cbargs)
-           (apply callback (list :error 'unsafe) cbargs)))))
+              fetch-url url kind address callback cbargs)
+             (apply callback (list :error 'unsafe) cbargs))))))
 
 (provide 'jabber-link-preview)
 

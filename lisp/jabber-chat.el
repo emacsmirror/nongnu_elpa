@@ -149,6 +149,12 @@ URL.  Images of other types stay clickable URLs; loading them
 with RET bypasses this list but not `jabber-image-max-bytes'."
   :type '(repeat (symbol :tag "Image type")))
 
+(defcustom jabber-chat-display-link-previews t
+  "When non-nil, fetch previews for newly displayed live HTTPS links.
+Archived messages are never fetched automatically."
+  :type 'boolean
+  :group 'jabber-chat)
+
 (defface jabber-rare-time-face
   '((t :inherit font-lock-comment-face :underline t))
   "Face for displaying rare time information.")
@@ -198,6 +204,7 @@ with RET bypasses this list but not `jabber-image-max-bytes'."
 			       jabber-chat-print-link-preview
 			       jabber-chat-goto-address
 			       jabber-chat-mark-link-preview-url
+			       jabber-chat--schedule-link-preview
 			       jabber-chat-mark-oob-attachment
 			       jabber-chat-mark-aesgcm-url
 			       jabber-chat--schedule-image-scan)
@@ -212,7 +219,10 @@ MODE       :insert or :printp.  For :insert, insert text at point.
 (defvar jabber-chat--body-start nil
   "Buffer position where the current message body starts.
 Bound dynamically during ewoc rendering so that printer-chain
-functions can style or fontify only the body region.")
+printer-chain functions can style or fontify only the body region.")
+
+(defvar jabber-chat--link-preview-waiters (make-hash-table :test #'equal)
+  "Map preview URLs to live (BUFFER . EWOC-NODE) consumers.")
 
 (defvar jabber-body-printers '(jabber-chat-normal-body)
   "List of functions that may be able to print a body for a message.
@@ -2054,6 +2064,7 @@ duplication (e.g. HTTP Upload messages)."
   (when-let* ((url (jabber-link-preview-url (plist-get msg :body)))
               (metadata (jabber-link-preview-get url))
               ((listp metadata))
+              ((plist-get metadata :url))
               ((not (plist-get metadata :error))))
     (when (eql mode :insert)
       (let ((start (point)))
@@ -2285,34 +2296,52 @@ not `jabber-image-max-bytes'."
 TOKEN identifies the request so stale callbacks cannot replace newer state."
   (when (equal (jabber-link-preview-get url) token)
     (jabber-link-preview-put url result)
+    (jabber-chat--redraw-link-preview-waiters url)
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (when (jabber-chat--ewoc-node-live-p node)
-          (jabber-chat-ewoc-invalidate node))
         (if (plist-get result :error)
             (message "Link preview unavailable: %s"
                      (plist-get result :error))
           (message "Link preview loaded"))))))
 
+(defun jabber-chat--register-link-preview-waiter (url buffer node)
+  "Register BUFFER and NODE as a consumer of URL preview."
+  (let ((entry (cons buffer node)))
+    (unless (member entry (gethash url jabber-chat--link-preview-waiters))
+      (puthash url (cons entry (gethash url jabber-chat--link-preview-waiters))
+               jabber-chat--link-preview-waiters))))
+
+(defun jabber-chat--redraw-link-preview-waiters (url)
+  "Redraw every still-live message waiting for URL preview."
+  (let ((waiters (gethash url jabber-chat--link-preview-waiters)))
+    (remhash url jabber-chat--link-preview-waiters)
+    (dolist (entry waiters)
+      (when (buffer-live-p (car entry))
+        (with-current-buffer (car entry)
+          (when (jabber-chat--ewoc-node-live-p (cdr entry))
+            (jabber-chat-ewoc-invalidate (cdr entry))))))))
+
 (defun jabber-chat--load-link-preview-at-point (url)
   "Load or open the link preview for URL at point."
-  (let ((cached (jabber-link-preview-get url)))
-    (cond ((eq (car-safe cached) 'loading)
-           (message "Link preview fetch already in progress"))
-          ((and cached (listp cached) (not (plist-get cached :error)))
+  (let ((cached (jabber-link-preview-get url))
+        (node (and jabber-chat-ewoc
+                   (ewoc-locate jabber-chat-ewoc (point)))))
+    (cond ((and cached (listp cached) (plist-get cached :url)
+                (not (plist-get cached :error)))
            (browse-url url))
-          ((not jabber-chat-ewoc)
+          ((or (not jabber-chat-ewoc) (not node))
            (user-error "No chat message at point"))
           (t
-           (let ((node (ewoc-locate jabber-chat-ewoc (point)))
-                 (token (list 'loading (gensym "jabber-preview-"))))
-             (unless node
-               (user-error "No chat message at point"))
-             (jabber-link-preview-put url token)
-             (jabber-link-preview-fetch
-              url #'jabber-chat--handle-link-preview
-              url token node (current-buffer))
-             (message "Loading link preview..."))))))
+           (jabber-chat--register-link-preview-waiter
+            url (current-buffer) node)
+           (if (eq (car-safe cached) 'loading)
+               (message "Link preview fetch already in progress")
+             (let ((token (list 'loading (gensym "jabber-preview-"))))
+               (jabber-link-preview-put url token)
+               (jabber-link-preview-fetch
+                url #'jabber-chat--handle-link-preview
+                url token node (current-buffer))
+               (message "Loading link preview...")))))))
 
 (defun jabber-chat-url-action-at-point (&optional arg)
   "Load a preview or image at point, or download the URL at point.
@@ -2732,6 +2761,37 @@ does not auto-display stay clickable and load with RET."
                     (set-keymap-parent map (overlay-get overlay 'keymap))
                     (overlay-put overlay 'keymap map))
                 (jabber-chat--add-url-keymap start (point))))))))))
+
+(defun jabber-chat--auto-load-link-preview (buffer marker url)
+  "Load URL at MARKER when BUFFER still displays the same preview link."
+  (when (and (buffer-live-p buffer) (marker-position marker))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char marker)
+        (when (and (equal (get-text-property
+                           (point) 'jabber-chat-link-preview-url)
+                          url)
+                   (let ((cached (jabber-link-preview-get url)))
+                     (or (null cached)
+                         (eq (car-safe cached) 'loading))))
+          (jabber-chat--load-link-preview-at-point url)))))
+  (set-marker marker nil))
+
+(defun jabber-chat--schedule-link-preview (msg _who mode)
+  "Schedule an automatic preview for a newly displayed live MSG.
+MODE follows the `jabber-chat-printers' contract."
+  (when (and jabber-chat-display-link-previews
+             (eql mode :insert)
+             (not (plist-get msg :delayed)))
+    (when-let* ((url (jabber-link-preview-url (plist-get msg :body)))
+                (cached (list (jabber-link-preview-get url)))
+                ((or (null (car cached))
+                     (eq (car-safe (car cached)) 'loading))))
+      (save-excursion
+        (when (search-backward url jabber-chat--body-start t)
+          (run-at-time
+           0 nil #'jabber-chat--auto-load-link-preview
+           (current-buffer) (copy-marker (point)) url))))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)
   "Mark non-image OOB attachment URLs in MSG (MODE = :insert) for download.

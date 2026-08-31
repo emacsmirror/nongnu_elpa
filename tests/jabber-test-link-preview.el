@@ -19,6 +19,18 @@
 <title>Ignored title</title>
 </head></html>")
 
+(ert-deftest jabber-test-link-preview-youtube-oembed-metadata ()
+  (let* ((url "https://www.youtube.com/watch?v=NYFGCESmikA")
+         (endpoint (jabber-link-preview--youtube-oembed-url url))
+         (json "{\"title\":\"Video title\",\"author_name\":\"Author\",\"provider_name\":\"YouTube\",\"thumbnail_url\":\"https://i.ytimg.com/vi/x/hqdefault.jpg\"}"))
+    (should (string-prefix-p "https://www.youtube.com/oembed?url=" endpoint))
+    (should
+     (equal (jabber-link-preview--parse-youtube-json json url)
+            '(:url "https://www.youtube.com/watch?v=NYFGCESmikA"
+              :site "YouTube" :title "Video title"
+              :description "Author"
+              :image "https://i.ytimg.com/vi/x/hqdefault.jpg")))))
+
 (ert-deftest jabber-test-link-preview-parses-open-graph ()
   (should
    (equal (jabber-link-preview-parse-html
@@ -117,6 +129,7 @@
     (should (member "*" command))
     (should (member "--resolve" command))
     (should (member "example.org:443:93.184.216.34" command))
+    (should-not (member "--max-filesize" command))
     (should-not (member "--location" command))))
 
 (ert-deftest jabber-test-link-preview-parser-unavailable-is-an-error-result ()
@@ -139,6 +152,27 @@
           (with-current-buffer buffer
             (should (<= (buffer-size)
                         jabber-link-preview--response-overhead-bytes))))
+      (when (process-live-p process) (delete-process process))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-link-preview-parses-bounded-prefix-of-large-page ()
+  (let* ((buffer (generate-new-buffer " *jabber-preview-prefix-test*"))
+         (process (make-process :name "jabber-preview-prefix-test"
+                                :buffer buffer :command '("cat")
+                                :sentinel #'ignore :noquery t))
+         (jabber-link-preview-max-html-bytes 80))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (set-buffer-multibyte nil))
+          (jabber-link-preview--process-filter
+           process (concat "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                           "<html><head><title>YouTube video</title></head>"
+                           (make-string 80 ?x)))
+          (should
+           (equal (jabber-link-preview--buffer-result
+                   process "https://www.youtube.com/watch?v=test")
+                  '(:url "https://www.youtube.com/watch?v=test"
+                    :site "www.youtube.com" :title "YouTube video"))))
       (when (process-live-p process) (delete-process process))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
@@ -221,6 +255,86 @@
            url old-token nil nil)
           (should (eq (jabber-link-preview-get url) new-token)))
       (remhash url jabber-link-preview--cache))))
+
+(ert-deftest jabber-test-chat-auto-preview-schedules-live-links ()
+  (with-temp-buffer
+    (let ((url "https://example.org/page")
+          scheduled)
+      (insert url)
+      (put-text-property (point-min) (point-max)
+                         'jabber-chat-link-preview-url url)
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (&rest args) (setq scheduled args))))
+        (jabber-chat--schedule-link-preview
+         (list :body url) :muc-local :insert))
+      (should (equal (nth 2 scheduled)
+                     #'jabber-chat--auto-load-link-preview)))))
+
+(ert-deftest jabber-test-chat-auto-preview-skips-backlog ()
+  (with-temp-buffer
+    (let ((scheduled nil))
+      (insert "https://example.org/page")
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (&rest _) (setq scheduled t))))
+        (jabber-chat--schedule-link-preview
+         '(:body "https://example.org/page" :delayed t)
+         :foreign :insert))
+      (should-not scheduled))))
+
+(defun jabber-test-link-preview--chat-buffer (url)
+  "Return a temporary chat buffer displaying URL in one EWOC node."
+  (let ((buffer (generate-new-buffer " *jabber-preview-shared-test*")))
+    (with-current-buffer buffer
+      (setq-local
+       jabber-chat-ewoc
+       (ewoc-create
+        (lambda (data)
+          (let ((message (cadr data))
+                (jabber-chat--body-start (point)))
+            (jabber-chat-print-body message :foreign :insert)
+            (jabber-chat-print-link-preview message :foreign :insert)
+            (jabber-chat-goto-address message :foreign :insert)
+            (jabber-chat-mark-link-preview-url message :foreign :insert)
+            (jabber-chat--schedule-link-preview message :foreign :insert)))))
+      (jabber-chat-ewoc-enter (list :foreign (list :body url)))
+      (goto-char (point-min))
+      (search-forward url)
+      (backward-char))
+    buffer))
+
+(ert-deftest jabber-test-chat-shared-fetch-redraws-every-waiter ()
+  (let ((url "https://example.org/shared")
+        first second pending timers
+        (fetches 0))
+    (unwind-protect
+        (cl-letf (((symbol-function 'run-at-time)
+                   (lambda (_time _repeat function &rest args)
+                     (setq timers (append timers (list (cons function args))))))
+                  ((symbol-function 'jabber-link-preview-fetch)
+                   (lambda (_url callback &rest args)
+                     (setq pending (cons callback args))
+                     (cl-incf fetches))))
+          (setq first (jabber-test-link-preview--chat-buffer url))
+          (apply (caar timers) (cdar timers))
+          (setq timers (cdr timers))
+          (should (= fetches 1))
+          (setq second (jabber-test-link-preview--chat-buffer url))
+          (apply (caar timers) (cdar timers))
+          (should (= fetches 1))
+          (should-not (with-current-buffer second
+                        (string-match-p "│ Shared" (buffer-string))))
+          (apply (car pending)
+                 (list :url url :site "Example" :title "Shared")
+                 (cdr pending))
+          (dolist (buffer (list first second))
+            (should (with-current-buffer buffer
+                      (string-match-p "│ Shared" (buffer-string))))))
+      (remhash url jabber-link-preview--cache)
+      (when (boundp 'jabber-chat--link-preview-waiters)
+        (remhash url jabber-chat--link-preview-waiters))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list first second)))))
 
 (ert-deftest jabber-test-chat-link-preview-ret-lifecycle ()
   (with-temp-buffer
