@@ -228,10 +228,10 @@ be globally routable."
     (add-text-properties
      1 (length card)
      (list 'jabber-chat-link-preview-url url
+           'face 'shadow
            'mouse-face 'highlight
            'help-echo "RET: open link; w: copy URL")
      card)
-    (put-text-property 1 (+ 2 (length site)) 'face 'shadow card)
     card))
 
 (defun jabber-link-preview-get (url)

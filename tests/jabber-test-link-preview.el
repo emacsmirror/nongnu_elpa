@@ -63,13 +63,15 @@
   (should-not (jabber-link-preview-url "https://localhost/private"))
   (should-not (jabber-link-preview-url "https://127.0.0.1/private")))
 
-(ert-deftest jabber-test-link-preview-card-remains-readable-without-faces ()
+(ert-deftest jabber-test-link-preview-card-uses-shadow-throughout ()
   (let ((card (jabber-link-preview-format
                '(:url "https://example.org/a"
                  :site "Example" :title "Title" :description "Summary"))))
     (should (equal (substring-no-properties card)
                    "\n│ Example\n│ Title\n│ Summary"))
-    (should (eq (get-text-property 2 'face card) 'shadow))
+    (cl-loop for position from 1 below (length card)
+             do (should (eq (get-text-property position 'face card)
+                            'shadow)))
     (should (equal (get-text-property 2 'jabber-chat-link-preview-url card)
                    "https://example.org/a"))))
 
