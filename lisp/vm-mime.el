@@ -615,7 +615,12 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
        (vm-emit-mime-decoding-message "Decoding base64... done")))
 
 (defun vm-mime-base64-encode-region (start end &optional crlf B-encoding)
-  (or (markerp end) (setq end (vm-marker end)))
+  ;; A marker that advances, as `vm-mime-qp-encode-region' has.  Turning the
+  ;; last LF into CRLF below inserts at END, and a marker that does not
+  ;; advance is left in front of the CR: the body's last line break then fell
+  ;; outside the region and was not encoded, so a base64 part arrived without
+  ;; the newline it was sent with, where quoted-printable and 8bit kept it.
+  (setq end (copy-marker end t))
   (and (> (- end start) 200)
        (vm-inform 7 "Encoding base64..."))
   (let ((buffer-undo-list t)) ;; FIXME: Really?

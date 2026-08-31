@@ -3909,6 +3909,103 @@ is what makes an attached text/x-org readable rather than a button, and
   (should (fboundp (vm-mime-handler "display-internal" "text")))
   (should (member "text" vm-mime-auto-displayed-content-types)))
 
+;;; What a transfer encoding does to the body it carries
+
+(defconst vm-mime-test--encoded-bodies
+  `(("plain ascii"      . "a body line\n")
+    ("8-bit"            . "Grüße aus München\n")
+    ("a From_ line"     . "text\nFrom nobody@example.com Mon Jan  1 00:00:00 2024\n")
+    ("a trailing space" . "a line with a trailing space \nand another\n")
+    ("a long line"      . ,(concat (make-string 1200 ?x) "\n"))
+    ("a 998-char line"  . ,(concat (make-string 998 ?y) "\n"))
+    ("an equals sign"   . "1 + 1 = 2, and 50% of 4 = 2\n")
+    ("a lone CR"        . "before\rafter\n")
+    ("a dot on a line"  . "before\n.\nafter\n")
+    ("no final newline" . "no newline at the end")
+    ("an empty body"    . ""))
+  "Bodies that stress a transfer encoding, each sent and read back.")
+
+(defun vm-mime-test--send-and-receive (encoding body)
+  "Encode a composition holding BODY under ENCODING, and read it back.
+Answers (CHARSET CTE TEXT): what VM said it was sending, and what a
+receiver gets after undoing the transfer encoding, the CRLF canonical form
+and the charset, which is what a receiving reader does."
+  (let ((mail-header-separator "--text follows this line--")
+        (vm-send-using-mime t)
+        (vm-mime-8bit-text-transfer-encoding encoding))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "To: someone@example.com\nSubject: encoded\n"
+              mail-header-separator "\n" body)
+      (vm-mime-encode-composition)
+      (goto-char (point-min))
+      (let* ((cte (and (re-search-forward
+                        "^Content-Transfer-Encoding: \\(.*\\)$" nil t)
+                       (match-string 1)))
+             (charset (progn (goto-char (point-min))
+                             (if (re-search-forward "charset=\\([^ \t\n;]+\\)" nil t)
+                                 (match-string 1)
+                               "us-ascii")))
+             (raw (progn (goto-char (point-min))
+                         (re-search-forward
+                          (concat "^" (regexp-quote mail-header-separator) "\n"))
+                         (buffer-substring-no-properties (point) (point-max)))))
+        (list charset cte
+               (with-temp-buffer
+                 (set-buffer-multibyte nil)
+                 (insert raw)
+                 (cond ((equal cte "quoted-printable")
+                        (quoted-printable-decode-region (point-min) (point-max)))
+                       ((equal cte "base64")
+                        (base64-decode-region (point-min) (point-max))))
+                 (goto-char (point-min))
+                 (while (search-forward "\r\n" nil t) (replace-match "\n"))
+                 (substring-no-properties
+                  (decode-coding-string (buffer-string)
+                                        (or (intern-soft (downcase charset))
+                                            'utf-8)))))))))
+
+(defun vm-mime-test--encoding-losses (encoding)
+  "Every body ENCODING does not carry unchanged, as a list of complaints."
+  (delq nil
+        (mapcar
+         (lambda (spec)
+           (let ((got (vm-mime-test--send-and-receive encoding (cdr spec))))
+             (unless (equal (nth 2 got) (cdr spec))
+               (format "%s / %s: sent as %s in %s, came back %S not %S"
+                       encoding (car spec) (nth 1 got) (nth 0 got)
+                       (nth 2 got) (cdr spec)))))
+         vm-mime-test--encoded-bodies)))
+
+(ert-deftest vm-mime-test-quoted-printable-carries-the-body-unchanged ()
+  "Every body survives being sent with `vm-mime-8bit-text-transfer-encoding'
+set to quoted-printable."
+  (should (equal nil (vm-mime-test--encoding-losses 'quoted-printable))))
+
+(ert-deftest vm-mime-test-base64-carries-the-body-unchanged ()
+  "Every body survives being sent with that option set to base64.
+It did not: `vm-mime-base64-encode-region' held the end of the region in a
+marker that does not advance, and turning the last LF into CRLF inserts at
+that marker.  The final line break fell outside the region and went
+unencoded, so a base64 part arrived one newline short of what was sent,
+where quoted-printable and 8bit carried it."
+  (should (equal nil (vm-mime-test--encoding-losses 'base64))))
+
+(ert-deftest vm-mime-test-8bit-carries-the-body-unchanged ()
+  "Every body survives being sent with that option set to 8bit."
+  (should (equal nil (vm-mime-test--encoding-losses '8bit))))
+
+(ert-deftest vm-mime-test-base64-encodes-the-whole-region ()
+  "`vm-mime-base64-encode-region' encodes the trailing newline too.
+Said at the level of the function, because what made it wrong is a property
+of the marker rather than of any body: an insertion-type nil marker is left
+in front of the CR that the CRLF conversion inserts."
+  (with-temp-buffer
+    (insert "line one\nline two\n")
+    (vm-mime-base64-encode-region (point-min) (point-max) t)
+    (should (equal (base64-decode-string (string-trim (buffer-string)))
+                   "line one\r\nline two\r\n"))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
