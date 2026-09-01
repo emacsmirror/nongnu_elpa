@@ -2,6 +2,8 @@
 
 * Unreleased
 
+* Version 0.4.3 (2026-09-01)
+
 - Kept project-chat names tied to their launch root while separating editor
   directory from gateway cwd.  Passive cwd updates leave the editor context
   alone; an explicit “Set directory” adopts the backend-returned path.
