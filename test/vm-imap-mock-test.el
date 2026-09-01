@@ -1298,3 +1298,87 @@ carries a keyword at all, so a mailbox with one keeps its say over the rest."
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here
+
+
+;;; Arriving mail whose body looks like a folder separator
+
+;; `vm-imap-move-mail' is the IMAP maildrop path: mail on an IMAP server named
+;; in `vm-spool-files', moved into a local folder.  It is the counterpart of
+;; `vm-pop-move-mail', whose separator-shaped bodies are crossed with every
+;; folder type in vm-pop-mock-test.el, and it had no test of any kind.
+;;
+;; What a folder cannot survive is a body its own type reads as a separator.
+;; Retrieval is the path every received message takes, so it is where the
+;; quoting has to happen.
+
+(defconst vm-imap-mock-test--separator-bodies
+  '(("plain"              . "an ordinary body line.")
+    ("a From_ line"       . "text\nFrom nobody@example.com Mon Jan  1 00:00:00 2024")
+    ("a From_ line first" . "From nobody@example.com Mon Jan  1 00:00:00 2024\nrest")
+    ("an mmdf separator"  . "text\n\001\001\001\001\nmore")
+    ("a babyl separator"  . "text\n\037\014\nmore")
+    ("8-bit"              . "Gr\303\274\303\237e"))
+  "Bodies that a folder of some type would otherwise read as a separator.")
+
+(defun vm-imap-mock-test--message-with (n body)
+  "A message numbered N carrying BODY."
+  (concat "From: alice@example.com\nTo: vmtest@example.com\n"
+          (format "Subject: message %d\nMessage-ID: <imap-%d@example.com>\n\n" n n)
+          body "\n"))
+
+(defun vm-imap-mock-test--messages-in (file type)
+  "Read FILE as a folder of TYPE; answer (TYPE-READ . COUNT).
+`vm-build-message-list' asks `vm-get-folder-type' rather than trusting the
+caller, so the buffer is given a name that states the type, as a folder VM
+visits has."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (insert-file-contents file)
+    (setq-local buffer-file-name (vm-folder-name-for-type file type))
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (cons vm-folder-type (length vm-message-list))))
+
+(defun vm-imap-mock-test--move-into (type body)
+  "Move two messages, the first carrying BODY, into a folder of TYPE.
+Answers a complaint, or nil when the folder reads back as the two messages
+that were sent."
+  (let ((dest (make-temp-file "vm-imap-mock-dest")))
+    (unwind-protect
+        (condition-case err
+            (vm-imap-mock-with (mock :messages
+                                     (list (vm-imap-mock-test--message-with 1 body)
+                                           (vm-imap-mock-test--message-with 2 "second body")))
+              (let ((vm-imap-server-timeout 10)
+                    (vm-imap-ok-to-ask nil)
+                    (vm-imap-expunge-after-retrieving t)
+                    (vm-imap-retrieved-messages nil)
+                    (vm-imap-auto-expunge-alist nil)
+                    (vm-imap-max-message-size nil)
+                    (vm-imap-messages-per-session nil)
+                    (vm-imap-bytes-per-session nil)
+                    (vm-folder-type type))
+                (vm-imap-move-mail (vm-imap-mock-spec mock) dest)
+                (let ((read (vm-imap-mock-test--messages-in dest type)))
+                  (cond ((not (eq (car read) type))
+                         (format "%s / %s: read back as %s" type body (car read)))
+                        ((/= 2 (cdr read))
+                         (format "%s / %s: %d messages, not 2" type body (cdr read)))
+                        (t nil)))))
+          (error (format "%s / %s: %s" type body (error-message-string err))))
+      (when (file-exists-p dest) (delete-file dest)))))
+
+(ert-deftest vm-imap-mock-test-a-separator-shaped-body-arrives-whole ()
+  "Mail arriving from an IMAP maildrop lands as one message whatever it holds.
+Every folder type VM will create, crossed with the bodies that a type would
+otherwise read as a separator: twenty-four moves, each of two messages, each
+folder read back afterwards as the two that were sent."
+  (should (equal nil
+                 (delq nil
+                       (let (complaints)
+                         (dolist (type '(From_ mboxcl2 mmdf babyl)
+                                       (nreverse complaints))
+                           (dolist (spec vm-imap-mock-test--separator-bodies)
+                             (push (vm-imap-mock-test--move-into type (cdr spec))
+                                   complaints))))))))
