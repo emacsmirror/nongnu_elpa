@@ -168,6 +168,7 @@ All Contributors
 - Greg Sexton
 - Greg Steuck
 - Guillaume Martres
+- HaiYing Wang
 - Hannu Koivisto
 - Hans-Peter Deifel
 - hokomo
@@ -248,6 +249,7 @@ All Contributors
 - Luke Amdor
 - Magnar Sveen
 - Magnus Malm
+- Mahmoud Nagy Adam
 - Mak Kolybabi
 - Manuel Vázquez Acosta
 - Marcel Wolf
@@ -310,6 +312,7 @@ All Contributors
 - Pedro Ribeiro Mendes Júnior
 - Pekka Pessi
 - Pengji Zhang
+- Perry Fraser
 - Peter Eisentraut
 - Peter Jaros
 - Peter J. Weisberg
@@ -415,6 +418,7 @@ All Contributors
 - Wei Huang
 - Wilfred Hughes
 - Win Treese
+- Wojciech Graj
 - Wojciech Siewierski
 - Wouter Bolsterlee
 - X4lldux
