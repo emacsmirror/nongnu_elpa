@@ -4,7 +4,7 @@
 
 ;; Author: Xah Lee ( http://xahlee.info/ )
 ;; Maintainer: Xah Lee <xah@xahlee.org>
-;; Version: 28.11.20260729193514
+;; Version: 28.11.20260901082352
 ;; Created: 2013-09-10
 ;; Package-Requires: ((emacs "28.3"))
 ;; Keywords: convenience, vi, vim, ergoemacs, keybinding
@@ -1878,10 +1878,11 @@ xString can be multiple chars or any string.
    ("LADY bug BEETLE 🐞" . "🐞")
 
    ("checkmark ✅" . "✅")
-   ("new 🆕" . "🆕")
-   ("rocket 🚀" . "🚀")
    ("large circle" . "⭕")
    ("cross ❌" . "❌")
+   ("stop 🛑" . "🛑")
+   ("new 🆕" . "🆕")
+   ("rocket 🚀" . "🚀")
    ("red triangle 🔺" . "🔺")
    ("diamond 💠" . "💠")
    ("square ⬛" . "⬛")
@@ -4056,7 +4057,7 @@ Version: 2022-07-06"
 Version: 2017-07-07"
   (interactive)
   (xah-fly-command-mode-init)
-  (when xah-fly-command-mode-hl-line (progn (global-hl-line-mode 1)))
+  (when xah-fly-command-mode-hl-line (global-hl-line-mode 1))
   (run-hooks 'xah-fly-command-mode-activate-hook))
 
 (defun xah-fly-command-mode-activate-no-hook ()
@@ -4071,8 +4072,8 @@ Runs variable `xah-fly-insert-mode-activate-hook'
 Version: 2017-07-07"
   (interactive)
   (xah-fly-insert-mode-init)
-  ;; (when xah-fly-command-mode-hl-line (global-hl-line-mode 0))
-  ;; (run-hooks 'xah-fly-insert-mode-activate-hook)
+  (when xah-fly-command-mode-hl-line (global-hl-line-mode 0))
+  (run-hooks 'xah-fly-insert-mode-activate-hook)
   )
 
 (defun xah-fly-insert-mode-activate-newline ()
