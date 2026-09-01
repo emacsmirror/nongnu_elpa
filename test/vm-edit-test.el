@@ -12,6 +12,7 @@
 
 (require 'vm-test-init)
 (require 'vm-edit)
+(require 'vm-reply)
 
 ;;; Edit function existence tests
 
@@ -583,6 +584,159 @@ runs one message into the next when the folder is next read."
             (with-current-buffer buffer (set-buffer-modified-p nil))
             (kill-buffer buffer))))
       (delete-directory dir t))))
+
+
+;;; Editing a separator-shaped body into a folder of every type
+
+;; The manual lists editing among the paths VM quotes on, alongside mail
+;; arriving over POP and IMAP, composing, and bursting a digest.  Everything
+;; above edits a From_ or an mboxcl2 folder, and every edit it makes puts
+;; ordinary prose in the body.
+;;
+;; What a folder cannot survive is an edit that types a separator into a
+;; message.  An edit rewrites the message in place, so it is the same class of
+;; in-place arithmetic as an expunge, and it is the one path where the text
+;; comes from the reader rather than from a server.
+
+(defconst vm-edit-test--decoys
+  '(("a From_ line"      . "From nobody@example.com Mon Jan  1 00:00:00 2024")
+    ("an mmdf separator" . "\001\001\001\001")
+    ("a babyl separator" . "\037\014")
+    ("8-bit text"        . "Gr\u00fc\u00dfe"))
+  "Lines a reader might type into a message that a folder reads as a separator.
+The last is not a separator anywhere and is here as the control: an edit must
+not damage it either.  Written as characters rather than as the UTF-8 bytes,
+because that is what an edit buffer holds and what reading the folder back
+gives: comparing a decoded string against raw bytes fails on a folder that is
+perfectly correct.")
+
+(defun vm-edit-test--file-into (folder body)
+  "File a composition with BODY into FOLDER through its Fcc header.
+The coding-system variables are bound as `vm-mail-send' binds them around the
+Fcc, so 8-bit text does not stop to ask what to write it in."
+  (let ((coding-system-for-write (vm-binary-coding-system))
+        (vm-dont-ask-coding-system-question t)
+        (select-safe-coding-system-function nil))
+    (with-temp-buffer
+      (insert "To: someone@example.com\nSubject: filed\n"
+              "Fcc: " folder "\n" mail-header-separator "\n" body)
+      (vm-do-fcc-in-composition))))
+
+(defun vm-edit-test--read-bodies (folder type)
+  "The bodies of the messages FOLDER holds, read as VM reads a folder of TYPE."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (insert-file-contents folder)
+    ;; `vm-build-message-list' re-derives the type from the buffer name.
+    (setq-local buffer-file-name (vm-folder-name-for-type folder type))
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (mapcar (lambda (m)
+              (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))
+            vm-message-list)))
+
+(defun vm-edit-test--type-a-decoy-into (type decoy)
+  "Edit DECOY into the first of two messages in a folder of TYPE.
+Answers a complaint, or nil when the folder still reads back as two messages
+with the edit in the first of them."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-edit-decoy" t)))
+         (vm-default-folder-type type)
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-frame-per-edit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-confirm-quit nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (condition-case err
+            (let ((folder (progn
+                            (vm-edit-test--file-into
+                             (expand-file-name "inbox" dir) "first body\n")
+                            (vm-edit-test--file-into
+                             (expand-file-name "inbox" dir) "second body\n")
+                            (vm-new-folder-file-name
+                             (expand-file-name "inbox" dir)))))
+              (cl-letf (((symbol-function 'vm-display) #'ignore))
+                (vm-visit-folder folder)
+                (setq vm-message-pointer vm-message-list)
+                (vm-edit-message)
+                (goto-char (point-min))
+                (unless (search-forward "first body" nil t)
+                  (error "the edit buffer does not hold the message"))
+                ;; An empty line before it, because VM's From_ reader takes a
+                ;; line for a separator only where one precedes it.  Without
+                ;; that the decoy is not dangerous for From_ at all, and the
+                ;; test passes with the quoting taken out.
+                (replace-match (concat "first body\n\n" decoy))
+                (vm-edit-message-end)
+                (vm-save-folder))
+              (let ((bodies (vm-edit-test--read-bodies folder type)))
+                (cond
+                 ((/= 2 (length bodies))
+                  (format "%s / %s: %d message(s) after the edit, not 2: %S"
+                          type decoy (length bodies) bodies))
+                 ((not (string-match-p "second body" (nth 1 bodies)))
+                  (format "%s / %s: the second message reads %S"
+                          type decoy (nth 1 bodies)))
+                 ;; The decoy may have been quoted on the way in, which is
+                 ;; the point of the quoting; what must not happen is losing
+                 ;; it.  Compare the last line of it, a `>' being prepended.
+                 ((not (string-match-p
+                        (regexp-quote (car (last (split-string decoy "\n"))))
+                        (nth 0 bodies)))
+                  (format "%s / %s: the edit is not in the message: %S"
+                          type decoy (nth 0 bodies)))
+                 (t nil))))
+          (error (format "%s / %s: %s" type decoy (error-message-string err))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(defun vm-edit-test--every-decoy (type)
+  "Type every decoy into a message in a folder of TYPE, and report."
+  (delq nil
+        (mapcar (lambda (spec)
+                  (vm-edit-test--type-a-decoy-into type (cdr spec)))
+                vm-edit-test--decoys)))
+
+(ert-deftest vm-edit-test-editing-a-separator-into-a-From_-folder ()
+  "A separator typed into a message leaves a From_ folder readable.
+This is the one of the four that turns on the quoting: taking the
+`vm-munge-message-separators' call out of `vm-edit-message-end' fails it, the
+folder reading back as three messages."
+  (should (equal nil (vm-edit-test--every-decoy 'From_))))
+
+(ert-deftest vm-edit-test-editing-a-separator-into-an-mboxcl2-folder ()
+  "It leaves an mboxcl2 folder readable, its byte count following the edit.
+Nothing is quoted here and nothing needs to be: the byte count says where the
+message ends whatever the body holds, which is what the type is for
+(emacs-vm/vm#466).  So this passes with the quoting taken out, and what it is
+holding is the count being recomputed to match the edit."
+  (should (equal nil (vm-edit-test--every-decoy 'mboxcl2))))
+
+(ert-deftest vm-edit-test-editing-a-separator-into-an-mmdf-folder ()
+  "It leaves an mmdf folder readable.
+The other one that turns on the quoting, and the stricter of the two: an mmdf
+separator needs no empty line before it, so an unquoted one splits the message
+wherever it falls.  Taking the quoting out fails this."
+  (should (equal nil (vm-edit-test--every-decoy 'mmdf))))
+
+(ert-deftest vm-edit-test-editing-a-separator-into-a-babyl-folder ()
+  "It leaves a babyl folder readable.
+Measured, so as not to claim more than it checks: an edit does not quote a
+`\037\014' typed into a babyl folder, though babyl is named in
+`vm-munge-message-separators', and the folder reads back as two messages
+regardless.  Its reader starts a message where the last one ended rather than
+searching for the next separator, so a stray one in a body reaches nothing.
+So this passes with the quoting taken out, and what it holds is that an edit
+does not corrupt the folder."
+  (should (equal nil (vm-edit-test--every-decoy 'babyl))))
 
 (provide 'vm-edit-test)
 
