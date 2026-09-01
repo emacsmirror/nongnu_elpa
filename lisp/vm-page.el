@@ -28,6 +28,10 @@
 (require 'vm-motion)
 (require 'vm-menu)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-make-virtual-copy "vm-virtual" (message))
 (declare-function vm-make-presentation-copy "vm-mime" (message))
 (declare-function vm-decode-mime-message "vm-mime" (&optional state))

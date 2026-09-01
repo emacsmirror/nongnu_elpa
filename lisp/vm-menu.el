@@ -55,6 +55,11 @@
 
 (require 'vm-misc)
 (require 'vm-mime)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function event-window "vm-xemacs" (event))
 (declare-function event-point "vm-xemacs" (event))

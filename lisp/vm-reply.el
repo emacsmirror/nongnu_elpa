@@ -70,6 +70,10 @@
 (require 'vm-summary)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-emacs-name-and-version "vm" ())
 (declare-function vm-mode "vm" (&optional read-only))
 ;; The Fcc of a composition may name an IMAP mailbox (emacs-vm/vm#605), so

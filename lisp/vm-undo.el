@@ -25,6 +25,10 @@
 (require 'vm-macro)
 (require 'vm-summary)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; vm-undo-record-list is a buffer-local-variable containing
 ;; undo-records.
 ;; An undo-record has:

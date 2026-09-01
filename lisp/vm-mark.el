@@ -32,6 +32,10 @@
 (require 'vm-virtual)
 (require 'vm-window)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;;;###autoload
 (defun vm-clear-all-marks ()
   "Removes all message marks in the current folder."

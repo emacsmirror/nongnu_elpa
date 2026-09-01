@@ -97,6 +97,10 @@
 (require 'vm-mime)
 (require 'vm-reply)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function deiconify-frame "vm-xemacs" (&optional frame))
 (declare-function frames-of-buffer "vm-xemacs" 
 		  (&optional buffer visible-only))

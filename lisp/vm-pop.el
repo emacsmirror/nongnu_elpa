@@ -32,6 +32,10 @@
 (require 'vm-mime)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-submit-bug-report
 		  "vm.el" (&optional pre-hooks post-hooks))
 (declare-function open-network-stream

@@ -25,6 +25,10 @@
 (require 'vm-macro)
 (require 'vm-mouse)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function button-press-event-p "vm-xemacs" (object))
 (declare-function button-release-event-p "vm-xemacs" (object))
 (declare-function menu-event-p "vm-xemacs" (object))

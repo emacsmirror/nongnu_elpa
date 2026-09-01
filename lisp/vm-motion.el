@@ -28,6 +28,10 @@
 (require 'vm-window)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-so-sortable-subject "vm-sort" (message))
 (declare-function vm-set-summary-pointer "vm-summary" (m))
 

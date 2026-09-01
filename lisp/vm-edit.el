@@ -26,6 +26,10 @@
 (require 'vm-folder)
 (require 'vm-motion)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;;;###autoload
 (defun vm-edit-message (&optional prefix-argument)
   "Edit the current message.  Prefix arg means mark as unedited instead.

@@ -30,6 +30,10 @@
 (require 'smime)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
 (declare-function get-itimer "vm-xemacs" (name))
 (declare-function start-itimer "vm-xemacs"

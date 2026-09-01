@@ -33,6 +33,11 @@
 
 (require 'vm-mime)
 (require 'vm-misc)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (eval-and-compile (vm-load-features-silent-when-compiling '(w3m)))
 

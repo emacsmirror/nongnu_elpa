@@ -27,6 +27,11 @@
 (require 'vm-misc)
 (require 'vm-folder)
 (eval-when-compile (require 'cl-lib))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;; --------------------------------------------------------------------------
 ;; Top-level operations
