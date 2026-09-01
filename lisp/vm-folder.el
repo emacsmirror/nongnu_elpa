@@ -773,6 +773,20 @@ and a symbol that is not one names a type VM will never give anything."
 			     " (EXTENSION . TYPE) naming one of %s")
 		 entry vm-folder-types)))))
 
+(defun vm-check-default-folder-type ()
+  "Complain if `vm-default-folder-type' names a type VM will not create.
+Run as VM starts, after the init file has been read.  BellFrom_ was offered
+until 2026 and is not now: it is From_ without the blank line between
+messages, so it has no signature of its own, and a folder VM writes as one is
+read back as From_ with its messages run together.  A configuration that
+still asks for it gets what it asks for, and is told once what that means
+rather than finding out from a folder.  Issue #787."
+  (when (eq (vm-canonical-folder-type vm-default-folder-type) 'BellFrom_)
+    (vm-warn 1 2 (concat "vm-default-folder-type is BellFrom_, and a folder"
+                         " written as one reads back as From_ with its"
+                         " messages run together; set it to From_, or to"
+                         " mboxcl2 for a folder kept as a record"))))
+
 (defun vm-folder-type-for-name (file)
   "The folder type FILE's name asks for, or nil if the name says nothing.
 The extension decides, matched literally against

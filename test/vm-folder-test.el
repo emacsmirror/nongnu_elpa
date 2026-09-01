@@ -6163,6 +6163,61 @@ that it does not accumulate."
         (let ((after-two (funcall trip after-one 2)))
           (should (equal 1 (funcall quotes-in after-two))))))))
 
+
+;;; The types VM offers to create, and the wider set it reads
+
+;; #787: a folder VM wrote as BellFrom_ is read back as From_ with its
+;; messages run together, that format being From_ without the blank line
+;; between messages and so having no signature of its own.  The decision was
+;; to stop offering it: VM reads one it is handed and creates none.
+
+(ert-deftest vm-folder-test-BellFrom_-is-not-offered-for-creation ()
+  "Neither `vm-default-folder-type' nor the conversion prompt offers BellFrom_.
+The two places a reader is asked what type to make a folder."
+  (should-not (member "BellFrom_" vm-supported-folder-types))
+  (should-not (memq 'BellFrom_
+                    ;; the symbols the option's :type offers
+                    (let ((type (get 'vm-default-folder-type 'custom-type)))
+                      (mapcar (lambda (choice)
+                                (and (consp choice) (eq (car choice) 'const)
+                                     (nth 1 choice)))
+                              (cdr type))))))
+
+(ert-deftest vm-folder-test-BellFrom_-is-still-read ()
+  "VM still reads a BellFrom_ folder it is handed.
+Dropping it from what VM creates must not drop it from what VM understands:
+`vm-folder-types' is the wider list, `vm-change-folder-type' still accepts the
+symbol, and `vm-default-From_-folder-type' still offers it, that option being
+how a reader says which of the two From-style formats their system writes."
+  (should (memq 'BellFrom_ vm-folder-types))
+  (should (memq 'BellFrom_
+                (mapcar (lambda (choice)
+                          (and (consp choice) (eq (car choice) 'const)
+                               (nth 1 choice)))
+                        (cdr (get 'vm-default-From_-folder-type
+                                  'custom-type))))))
+
+(ert-deftest vm-folder-test-a-BellFrom_-default-is-warned-about ()
+  "VM says so at startup if `vm-default-folder-type' still asks for BellFrom_.
+A configuration written before it was withdrawn gets what it asks for, so it
+is told what that means rather than finding out from a folder whose messages
+have run together."
+  (let (warnings)
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _time format &rest args)
+                 (push (apply #'format format args) warnings))))
+      (let ((vm-default-folder-type 'BellFrom_))
+        (vm-check-default-folder-type))
+      (should (equal 1 (length warnings)))
+      (should (string-match-p "BellFrom_" (car warnings)))
+      ;; solution-directed: it says what to set instead
+      (should (string-match-p "From_\\|mboxcl2" (car warnings)))
+      (setq warnings nil)
+      (dolist (type '(From_ mboxcl2 mmdf babyl))
+        (let ((vm-default-folder-type type))
+          (vm-check-default-folder-type)))
+      (should-not warnings))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

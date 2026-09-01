@@ -921,12 +921,18 @@ Allowed types are:
 
    From_
    mboxcl2
-   BellFrom_
    mmdf
    babyl
 
 `mboxcl2' was called `From_-with-Content-Length' until 2026 and is still
-accepted under that name.  It is the one mbox variant that stores a message
+accepted under that name.
+
+`BellFrom_' is not among them, and has not been offered since 2026.  VM reads
+one it is handed, and creates none: that format is From_ without the blank
+line between messages, so it has no signature of its own, and a folder VM
+wrote as one is read back as From_ with its messages run together.  Setting
+it here still works and still has that result, so VM says so as it starts.
+Issue #787.  It is the one mbox variant that stores a message
 exactly as it arrived, and so the one to choose for a folder kept as a
 record.
 
@@ -941,7 +947,6 @@ must set `vm-trust-content-length' non-nil."
   :group 'vm-folders
   :type '(choice (const From_)
                  (const mboxcl2)
-                 (const BellFrom_)
                  (const mmdf)
                  (const babyl)))
 
@@ -6575,10 +6580,13 @@ folder needs to be updated.")
   "\\(X-VM-\\|X-Mozilla-\\|Status:\\|Content-Length:\\)")
 (defvar vm-matched-header-vector (make-vector 6 nil))
 (defconst vm-supported-folder-types
-  '("From_" "BellFrom_" "mboxcl2" "mmdf" "babyl")
-  "The folder types VM can read and write, as strings, for completion.
+  '("From_" "mboxcl2" "mmdf" "babyl")
+  "The folder types VM offers to create, as strings, for completion.
 `mboxcl2' was called `From_-with-Content-Length' until 2026; the old name is
-still accepted where a type is given, and is not offered here.")
+still accepted where a type is given, and is not offered here.  So is
+`BellFrom_', which VM reads and no longer offers to write, a folder written as
+one being read back as From_ (issue #787).  `vm-folder-types' is the wider
+list, of what VM can read.")
 (defconst vm-supported-window-configurations
   '(
     ("default")
