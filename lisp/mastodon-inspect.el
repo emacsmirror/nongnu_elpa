@@ -130,9 +130,6 @@ timeline entails."
   (setq mastodon-inspect--single-account-json
         (car mastodon-inspect--search-query-accounts-result)))
 
-(defvar mastodon-inspect-url-debug-marker nil
-  "Marker in *URL-DEBUG* buffer.")
-
 (require 'url-util)
 
 (defun mastodon-inspect-profile-requests (&optional endpoint host)
