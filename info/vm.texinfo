@@ -1128,6 +1128,24 @@ a name, mboxo, and the loss is the reason it has a rival: mboxrd escapes
 instead, where the boundary is a byte count and nothing is escaped at all, so
 there is nothing to reverse.
 
+@cindex From_ quoting, kept
+@cindex mboxcl2, quoting picked up elsewhere
+The @samp{>} is permanent, and it outlasts the folder that called for it.  A
+message held in mboxcl2, filed or converted into a From_ folder and brought
+back to mboxcl2, keeps it: nothing in VM takes off a @samp{>} it put on, so
+the byte count on the way back describes the quoted line.  Saving a message
+from one folder to another of a different type is enough;
+@code{vm-change-folder-type} is not needed.
+
+One @samp{>} per quoted line is the whole of it, however many trips the
+message makes.  A line already reading @samp{>From } is left alone, so quoting
+an already quoted line changes nothing.  Only a line matching
+@samp{^From .*[0-9]$} is ever touched, which is the narrow rule above, so most
+bodies are not touched at all.
+
+To hold a message exactly as it came, keep it out of From_ folders: file it
+between mboxcl2 folders, where neither end quotes anything.
+
 @item VM's reader is narrower than its writer, on purpose.
 Reading a From_ folder, VM takes a line as a separator only if it begins
 @samp{From }, ends in a digit, @emph{and} follows an empty line.  Writing
@@ -1152,6 +1170,10 @@ counting its bytes, so no body line can be mistaken for a separator and none
 is altered.  That is what @ref{Why mboxcl2} above means by storing a message
 exactly as it came, and it is the whole difference between mboxcl2 and the
 older mboxcl, which counted the bytes @emph{and} quoted.
+
+The folder does no quoting; it does not undo quoting done elsewhere.  A
+message that has passed through a From_ folder arrives carrying whatever that
+folder added, and mboxcl2 stores it faithfully, @samp{>} and all.
 
 @item VM keeps its own state in the messages.
 @cindex X-VM-v5-Data
