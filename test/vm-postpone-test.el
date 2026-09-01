@@ -289,25 +289,45 @@ name, which is how it survived: nothing checked that the target was defined."
   (should (eq (lookup-key vm-mail-mode-map "\C-c\C-d")
               'vm-postpone-message)))
 
+;; The four header keys are bound by `vm-postpone-mode' since 2026, where
+;; loading the file bound them before (emacs-vm/vm#788), so each turns the mode
+;; on.  vm-postpone-test-loading-does-not-switch-it-on below is the other side
+;; of that.
+
+(defmacro vm-postpone-test-with-the-mode (&rest body)
+  "Run BODY with `vm-postpone-mode' on, and leave it as it was."
+  (declare (indent 0) (debug t))
+  `(let ((vm-mail-mode-hook vm-mail-mode-hook)
+         (mail-send-hook (and (boundp 'mail-send-hook) mail-send-hook))
+         (vm-postpone-message-hook vm-postpone-message-hook)
+         (was vm-postpone-mode))
+     (unwind-protect
+         (progn (vm-postpone-mode 1) ,@body)
+       (unless was (vm-postpone-mode -1)))))
+
 (ert-deftest vm-postpone-test-keybinding-return-receipt ()
   "Test C-c C-f C-a is bound to vm-mail-return-receipt-to."
-  (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-a")
-              'vm-mail-return-receipt-to)))
+  (vm-postpone-test-with-the-mode
+    (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-a")
+                'vm-mail-return-receipt-to))))
 
 (ert-deftest vm-postpone-test-keybinding-priority ()
   "Test C-c C-f C-p is bound to vm-mail-priority."
-  (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-p")
-              'vm-mail-priority)))
+  (vm-postpone-test-with-the-mode
+    (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-p")
+                'vm-mail-priority))))
 
 (ert-deftest vm-postpone-test-keybinding-fcc ()
   "Test C-c C-f C-f is bound to vm-mail-fcc."
-  (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-f")
-              'vm-mail-fcc)))
+  (vm-postpone-test-with-the-mode
+    (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-f")
+                'vm-mail-fcc))))
 
 (ert-deftest vm-postpone-test-keybinding-notice ()
   "Test C-c C-f C-n is bound to vm-mail-notice-requested-upon-delivery-to."
-  (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-n")
-              'vm-mail-notice-requested-upon-delivery-to)))
+  (vm-postpone-test-with-the-mode
+    (should (eq (lookup-key vm-mail-mode-map "\C-c\C-f\C-n")
+                'vm-mail-notice-requested-upon-delivery-to))))
 
 ;;; Feature provide tests
 
@@ -462,7 +482,11 @@ inserted is the raw one and the headers must be kept to match."
 (defmacro vm-postpone-test-with-composition (&rest body)
   "Start a composition from a folder and run BODY with it as `composition'.
 Everything is torn down afterwards, and the postponed folder is a file in a
-temporary directory, bound as `drafts'."
+temporary directory, bound as `drafts'.
+
+`vm-postpone-mode' is on inside, since 2026 that being what puts
+`vm-add-save-killed-message-hook' on `vm-mail-mode-hook'; loading the file
+used to (emacs-vm/vm#788)."
   (declare (indent 0) (debug t))
   `(let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-exit" t)))
           (file (expand-file-name "folder" dir))
@@ -489,11 +513,19 @@ temporary directory, bound as `drafts'."
           (vm-summary-tokenized-compiled-format-alist
            vm-summary-tokenized-compiled-format-alist)
           (before (buffer-list))
+          (vm-mail-mode-hook vm-mail-mode-hook)
+          (mail-send-hook (and (boundp 'mail-send-hook) mail-send-hook))
+          (vm-postpone-message-hook vm-postpone-message-hook)
+          ;; The mode is global and binds keys in `vm-mail-mode-map', which no
+          ;; `let' restores, so it is turned back off in the teardown.
+          (mode-was (and (boundp 'vm-postpone-mode) vm-postpone-mode))
           composition)
      (require 'vm)
      (require 'vm-postpone)
      (unwind-protect
          (progn
+           ;; The hooks are the mode's since 2026, not the file's.
+           (vm-postpone-mode 1)
            (with-temp-file file
              (insert "From a@example.com  Thu Jan  1 00:00:00 2026\n"
                      "From: a@example.com\nSubject: s\n\nbody\n"))
@@ -509,6 +541,7 @@ temporary directory, bound as `drafts'."
            (when (buffer-live-p buffer)
              (with-current-buffer buffer (set-buffer-modified-p nil))
              (kill-buffer buffer))))
+       (unless mode-was (vm-postpone-mode -1))
        (delete-directory dir t))))
 
 (ert-deftest vm-postpone-test-a-composition-is-recognised ()
@@ -1255,6 +1288,73 @@ the top of it, of the very drafts the reader was being asked to pick from."
               (vm-continue-what-message))
             (should (equal (nreverse said) (list "Please select a draft!"))))
         (kill-buffer buffer)))))
+
+
+;;; The mode, and loading not switching it on (emacs-vm/vm#788)
+
+(ert-deftest vm-postpone-test-loading-does-not-switch-it-on ()
+  "Loading vm-postpone does not bind a header key or add a hook.
+Customize loads this file whenever it is asked about a VM option, so loading
+had to stop meaning enabling."
+  (require 'vm-postpone)
+  (let ((vm-mail-mode-hook nil)
+        (vm-postpone-mode nil))
+    (should-not (memq 'vm-add-save-killed-message-hook vm-mail-mode-hook))
+    (dolist (binding vm-postpone-key-bindings)
+      (should-not (eq (lookup-key vm-mail-mode-map (car binding))
+                      (cdr binding))))))
+
+(ert-deftest vm-postpone-test-mode-toggles-the-keys-and-the-hooks ()
+  "The mode binds four header keys and three hooks, and undoes both."
+  (require 'vm-postpone)
+  (let ((vm-mail-mode-hook nil)
+        (mail-send-hook nil)
+        (vm-postpone-message-hook nil)
+        (vm-postpone-mode nil))
+    (vm-postpone-mode 1)
+    (dolist (binding vm-postpone-key-bindings)
+      (should (eq (lookup-key vm-mail-mode-map (car binding)) (cdr binding))))
+    (dolist (pair vm-postpone-hooks)
+      (should (memq (cdr pair) (symbol-value (car pair)))))
+    (vm-postpone-mode -1)
+    (dolist (binding vm-postpone-key-bindings)
+      (should-not (eq (lookup-key vm-mail-mode-map (car binding))
+                      (cdr binding))))
+    (dolist (pair vm-postpone-hooks)
+      (should-not (memq (cdr pair) (symbol-value (car pair)))))))
+
+(ert-deftest vm-postpone-test-C-c-C-d-is-VMs-own-and-survives-the-mode ()
+  "Turning the mode off leaves C-c C-d bound to `vm-postpone-message'.
+This file bound that key as it loaded, but `vm-mail-mode-map' in vm-vars.el
+already binds it to the same command, so the binding here was a no-op.  It is
+deliberately not among `vm-postpone-key-bindings': a mode that unbound it
+would take away a binding VM's core owns, and the command it runs is
+autoloaded, so it works with the mode off."
+  (require 'vm-postpone)
+  (should-not (assoc "\C-c\C-d" vm-postpone-key-bindings))
+  (let ((vm-postpone-mode nil))
+    (vm-postpone-mode 1)
+    (vm-postpone-mode -1)
+    (should (eq (lookup-key vm-mail-mode-map "\C-c\C-d")
+                'vm-postpone-message))))
+
+(ert-deftest vm-postpone-test-unbinding-lets-mail-mode-show-through ()
+  "Turning the mode off removes the entry rather than binding it to nil.
+`vm-mail-mode-map' has `mail-mode-map' for its parent and Mail mode binds
+C-c C-f C-a to `mail-mail-reply-to'.  A nil binding in the child shadows the
+parent instead of falling through, which would leave the key dead rather than
+Mail mode's.  Needs `keymap-unset', which arrived in Emacs 29; on 28 the nil
+is the best available, so the test asks for the fall-through only where the
+function is there to do it."
+  (require 'vm-postpone)
+  (require 'sendmail)
+  (skip-unless (fboundp 'keymap-unset))
+  (let ((vm-postpone-mode nil)
+        (composed nil))
+    (vm-postpone-mode 1)
+    (vm-postpone-mode -1)
+    (setq composed (make-composed-keymap vm-mail-mode-map mail-mode-map))
+    (should (eq (lookup-key composed "\C-c\C-f\C-a") 'mail-mail-reply-to))))
 
 (provide 'vm-postpone-test)
 

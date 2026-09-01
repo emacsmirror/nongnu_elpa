@@ -41,9 +41,14 @@
 ;; You may want to use the following into your .vm file after adding other
 ;; vm-mail-mode-hooks ...
 ;; 
-;;   (require 'vm-serial)
+;;   (vm-serial-mode 1)
 ;;   (add-hook 'vm-mail-mode-hook 'vm-serial-auto-yank-mail t)
 ;;   (define-key vm-mail-mode-map "\C-c\C-t" 'vm-serial-expand-tokens)
+;;
+;; (require 'vm-serial) on its own switched the advice on until 2026, and does
+;; nothing now beyond making the mode and the commands available: loading a
+;; file and asking for what it does are separate acts, and Customize loads
+;; this one without being asked (emacs-vm/vm#788).
 ;; 
 ;; and check out what happens if you reply to a message or what happens after
 ;; specifying a recipient in the to header and typing [C-c C-t].
@@ -939,10 +944,29 @@ questions will bother you!"
               (if vm-serial-send-mail-exit
                   (kill-this-buffer))))))))
 
-(advice-add 'vm-mail-send-and-exit :after #'vm-serial--send-mail)
 (defun vm-serial--send-mail (&rest _)
   (if vm-serial-source-buffer
       (kill-this-buffer)))
+
+;;;###autoload
+(define-minor-mode vm-serial-mode
+  "Compose one message from a template and send it to many recipients.
+Turning this on advises `vm-mail-send-and-exit' so that a composition sent
+from a source buffer is killed with it; turning it off removes that advice.
+`vm-serial-expand-tokens' and `vm-serial-send-mail' are commands and work
+either way.
+
+The bindings and the compose hook are yours to add, as the commentary at the
+top of this file says: this mode does not take them over.
+
+Loading this file switched the advice on until 2026 (emacs-vm/vm#788).
+Customize loads it whenever it is asked about a VM option, so loading no
+longer enables: say so here."
+  :global t
+  :group 'vm-serial
+  (if vm-serial-mode
+      (advice-add 'vm-mail-send-and-exit :after #'vm-serial--send-mail)
+    (advice-remove 'vm-mail-send-and-exit #'vm-serial--send-mail)))
 
 ;;-----------------------------------------------------------------------------
 (provide 'vm-serial)

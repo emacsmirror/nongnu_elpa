@@ -166,6 +166,56 @@ so rather than selecting something arbitrary."
           (should (string-match-p "No message history"
                                   (error-message-string err))))))))
 
+
+;;; The mode, and loading not switching it on (emacs-vm/vm#788)
+
+(ert-deftest vm-message-history-test-loading-does-not-switch-it-on ()
+  "Loading vm-message-history does not bind a key or add a hook.
+Loading a file should not change how Emacs behaves, and Customize loads this
+one whenever it is asked about a VM option: `C-h v' on any VM variable did it,
+so a reader who had never asked for a message history got three keys taken out
+of `vm-mode-map' and a function on `vm-select-message-hook'.  The mode does it
+instead."
+  (require 'vm-message-history)
+  (let ((vm-select-message-hook nil)
+        (vm-message-history-mode nil))
+    ;; Loading has already happened; nothing is installed.
+    (should-not (memq 'vm-message-history-add vm-select-message-hook))
+    (dolist (binding vm-message-history-key-bindings)
+      (should-not (eq (lookup-key vm-mode-map (car binding)) (cdr binding))))))
+
+(ert-deftest vm-message-history-test-mode-toggles-everything-it-installs ()
+  "The mode binds the keys, adds the menu entries and the hook, and undoes all three."
+  (require 'vm-message-history)
+  (let ((vm-select-message-hook nil)
+        (vm-menu-motion-menu nil)
+        (vm-message-history-mode nil))
+    (vm-message-history-mode 1)
+    (should (memq 'vm-message-history-add vm-select-message-hook))
+    (dolist (binding vm-message-history-key-bindings)
+      (should (eq (lookup-key vm-mode-map (car binding)) (cdr binding))))
+    (should (equal vm-menu-motion-menu vm-message-history-menu-items))
+    (vm-message-history-mode -1)
+    (should-not (memq 'vm-message-history-add vm-select-message-hook))
+    (dolist (binding vm-message-history-key-bindings)
+      (should-not (eq (lookup-key vm-mode-map (car binding)) (cdr binding))))
+    (should-not vm-menu-motion-menu)))
+
+(ert-deftest vm-message-history-test-mode-is-idempotent ()
+  "Switching it on twice leaves one copy of the hook and one of each menu entry.
+`add-hook' guarantees the hook; the menu is an `append' and would have listed
+the three entries twice, which is why the mode removes them before adding."
+  (require 'vm-message-history)
+  (let ((vm-select-message-hook nil)
+        (vm-menu-motion-menu nil)
+        (vm-message-history-mode nil))
+    (vm-message-history-mode 1)
+    (vm-message-history-mode 1)
+    (should (= 1 (seq-count (lambda (f) (eq f 'vm-message-history-add))
+                            vm-select-message-hook)))
+    (should (equal (length vm-menu-motion-menu)
+                   (length vm-message-history-menu-items)))))
+
 (provide 'vm-message-history-test)
 
 ;;; vm-message-history-test.el ends here
