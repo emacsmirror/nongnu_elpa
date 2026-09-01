@@ -23,6 +23,7 @@
 (require 'json)
 (require 'seq)
 (require 'subr-x)
+(require 'url-expand)
 (require 'url-parse)
 (require 'url-util)
 
