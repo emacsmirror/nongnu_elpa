@@ -1356,6 +1356,30 @@ function is there to do it."
     (setq composed (make-composed-keymap vm-mail-mode-map mail-mode-map))
     (should (eq (lookup-key composed "\C-c\C-f\C-a") 'mail-mail-reply-to))))
 
+(ert-deftest vm-postpone-test-the-mode-leaves-the-keymap-as-it-found-it ()
+  "On and then off leaves `vm-mail-mode-map' equal to what it was.
+`define-key' on a multi-key sequence makes the intermediate keymap it needs,
+and unbinding the leaf does not take it away: this left an empty keymap for
+C-c C-f where there had been no entry for that prefix, which is a keymap
+changed behind the mode and what `test-runner --leaks' reported.
+
+Compares the whole keymap rather than the four keys, that being the only way
+to see a residue nobody thought to look for."
+  (require 'vm-postpone)
+  (skip-unless (fboundp 'keymap-unset))
+  (let ((before (copy-tree vm-mail-mode-map))
+        (vm-mail-mode-hook vm-mail-mode-hook)
+        (mail-send-hook (and (boundp 'mail-send-hook) mail-send-hook))
+        (vm-postpone-message-hook vm-postpone-message-hook)
+        (was vm-postpone-mode))
+    (unwind-protect
+        (progn
+          (vm-postpone-mode 1)
+          (should-not (equal before vm-mail-mode-map))
+          (vm-postpone-mode -1)
+          (should (equal before vm-mail-mode-map)))
+      (when was (vm-postpone-mode 1)))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here

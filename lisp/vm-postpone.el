@@ -955,6 +955,22 @@ If set to nil it will never save them nor it will ask."
 They arrange for a composition killed unsent to be offered as a draft, which
 is what `vm-save-killed-message' asks for.")
 
+(defun vm-postpone--drop-empty-prefix (prefix)
+  "Take PREFIX out of `vm-mail-mode-map' if this mode left it holding nothing.
+`define-key' on a multi-key sequence makes the intermediate keymap it needs,
+and unbinding the leaf does not take it away again: turning the mode off left
+`vm-mail-mode-map' holding an empty keymap for C-c C-f where it had no entry
+for that prefix at all.  Harmless, in that lookup still falls through to
+`mail-mode-map', but it is a keymap left changed behind the mode, which
+`test-runner --leaks' reports and which would make a second look at this code
+wonder what put it there.
+
+Only an empty one, so a prefix something else has put a binding under is left
+alone."
+  (let ((under (lookup-key vm-mail-mode-map prefix)))
+    (when (equal under '(keymap))
+      (vm-postpone--unbind prefix))))
+
 (defun vm-postpone--unbind (key)
   "Take KEY out of `vm-mail-mode-map', letting `mail-mode-map' show through.
 Removing the entry and not binding it to nil: `vm-mail-mode-map' has
@@ -995,6 +1011,8 @@ say so here."
       ;; is left to it.
       (when (eq (lookup-key vm-mail-mode-map (car binding)) (cdr binding))
 	(vm-postpone--unbind (car binding)))))
+  (unless vm-postpone-mode
+    (vm-postpone--drop-empty-prefix "\C-c\C-f"))
   (dolist (pair vm-postpone-hooks)
     (if vm-postpone-mode
 	(add-hook (car pair) (cdr pair))
