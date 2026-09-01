@@ -1,4 +1,8 @@
 # -*- mode: org -*-
+* v1.1.4    2026-09-01
+
+- Added ~cond-let-fontify-mode~.  bbe1f1c
+
 * v1.1.3    2026-07-01
 
 - Fixed a typo in documentation.
