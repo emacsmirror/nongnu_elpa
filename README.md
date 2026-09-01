@@ -125,7 +125,7 @@ suggested features or made monetary contributions.
 
 ***
 <div align="center">
-  <a href="https://repology.org/project/emacs%3Amagit/versions"><img alt="Packaging status" src="https://repology.org/badge/vertical-allrepos/emacs%3Amagit.svg?header=&columns=4&minversion=4.5&exclude_unsupported=1"/></a>
+  <a href="https://repology.org/project/emacs%3Amagit/versions"><img alt="Packaging status" src="https://repology.org/badge/vertical-allrepos/emacs%3Amagit.svg?header=&columns=4&minversion=4.7&exclude_unsupported=1"/></a>
 </div>
 <div align="center">
   <a href="https://snapshots.melpa.org/#/magit"><img alt="MELPA Snapshots" src="https://snapshots.melpa.org/packages/magit-badge.svg"/></a>
