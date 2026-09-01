@@ -1406,7 +1406,7 @@ See `helm-completing-read-extra-metadata'."
               (cl-return (setq doc (car (split-string docstring "\n")))))))
         (unless doc
           (setq doc (helm--get-theme-doc-from-header)))))
-    doc))
+    (or doc "")))
 
 (defun helm--get-theme-doc-from-header ()
   "Extract doc in first line of theme file."
