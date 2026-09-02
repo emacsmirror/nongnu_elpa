@@ -1395,9 +1395,9 @@ never came true."
 
 (ert-deftest vm-reply-test-fcc-envelope-line-names-the-sender-and-the-date ()
   "A filed copy's envelope line names the address the message is from and
-carries the message's own Date.  RFC 4155 wants an addr-spec there, which is
-what every other writer of an mbox puts; VM used to write its own name and the
-moment of filing, so the line recorded neither fact (emacs-vm/vm#611)."
+carries the message's own Date.  Every other writer of an mbox puts an
+addr-spec there; VM used to write its own name and the moment of filing, so
+the line recorded neither fact (emacs-vm/vm#611)."
   (let ((user-mail-address "me@example.com"))
     (with-temp-buffer
       (insert "To: someone@example.com\n"

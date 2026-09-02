@@ -1094,12 +1094,11 @@ a folder some other mailer wrote is only as good as that mailer.
 @cindex mbox, VM's variant
 @cindex From_ folders, differences
 @cindex interoperability, mbox
-There is no standard for mbox.  RFC 4155 describes what most mailers do
-rather than requiring it, and they do not all do the same thing.  VM's From_
-folders differ from what other mailers write in several ways.  None of it
-matters while VM alone reads and writes the folder; all of it matters when
-another program reads that folder, appends to it, or wrote it in the first
-place.
+There is no standard for mbox, and mailers do not all do the same thing.
+VM's From_ folders differ from what other mailers write in several ways.
+None of it matters while VM alone reads and writes the folder; all of it
+matters when another program reads that folder, appends to it, or wrote it in
+the first place.
 
 @table @asis
 @item VM quotes fewer @samp{From } lines than other mailers.
@@ -1511,7 +1510,7 @@ nothing is renamed and nothing is offered.
 @cindex From_
 The system default format on most flavors of Unix (except Solaris, AIX and
 System V) is referred to as
-@code{From_}.  It is the Unix mbox format described in RFC 4155.  In this
+@code{From_}.  It is the traditional Unix mbox format.  In this
 format, a leading separator line and a trailing separator line are added to
 each message.  The leading separator line starts with the string ``From ''.
 The trailing separator line is a blank line.  VM actually adds two blank
@@ -1654,8 +1653,8 @@ reading and does not under the other.
 @noindent
 On the formats themselves, see the Library of Congress descriptions at
 @url{https://www.loc.gov/preservation/digital/formats/fdd/fdd000387.shtml}
-for mboxcl2 and @code{fdd000383} for the mbox family it belongs to, and RFC
-4155 for the mbox format as such.  The four names were settled on by Daniel J.@:
+for mboxcl2 and @code{fdd000383} for the mbox family it belongs to.  The four
+names were settled on by Daniel J.@:
 Bernstein, Rahul Dhesi and others in 1996; they are a convention for talking
 about folders rather than anything a program can detect.
 
@@ -8753,10 +8752,9 @@ Internal to Emacs, the mbox is loaded into a text buffer (the @dfn{Folder}
 buffer) and individual messages are identified by remembering markers into
 the text buffer.  @xref{Message Internals}.
 
-The Unix @dfn{mbox} format is described in the RFC 4155 specification of the
-Internet Engineering Task Force.  The mail folder is a text file consisting
-of a sequence of messages, with each message consisting of a series of
-headers followed by a message body.  The beginning of each message is
+The Unix @dfn{mbox} format has no specification.  The mail folder is a text
+file consisting of a sequence of messages, with each message consisting of a
+series of headers followed by a message body.  The beginning of each message is
 delineated by a separator line starting with the string ``From '' and the
 end of the message by a blank line.  The leading separator line in VM folder
 is of the form ``From VM ...'' where the ``...''  records the time at which

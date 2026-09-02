@@ -1426,9 +1426,8 @@ delimited by spaces, so an address containing one cannot go in it."
 
 (defun vm-From_-separator (address date)
   "An mbox envelope line naming ADDRESS, dated from DATE, a Date header.
-RFC 4155 wants an addr-spec there, which is what every other writer of an
-mbox puts.  VM names itself when there is no address to give, which is what
-it used to do always."
+Every other writer of an mbox puts an addr-spec there.  VM names itself when
+there is no address to give, which is what it used to do always."
   (concat "From " (or address "VM") " "
 	  (or (vm-From_-date date) (current-time-string))
 	  "\n"))
