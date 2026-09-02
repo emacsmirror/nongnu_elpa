@@ -74,6 +74,7 @@
 (defvar ffap-machine-p-local)
 (defvar ffap-machine-p-known)
 (defvar helm-debug-output-buffer)
+(defvar org-fold-show-context-detail)
 
 ;;; User vars.
 ;;
@@ -810,8 +811,10 @@ displayed in BUFNAME."
 
 (defun helm-help-org-mark-ring-goto ()
   "Calls `org-mark-ring-goto' ignoring errors."
-  (ignore-errors
-    (org-mark-ring-goto)))
+  ;; Don't reveal links when going back to them.
+  (let ((org-fold-show-context-detail 'org-goto))
+    (ignore-errors
+      (org-mark-ring-goto))))
 
 (defvar helm--help-org-prefargs
   (if (> emacs-major-version 28)
