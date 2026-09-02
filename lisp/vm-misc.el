@@ -453,6 +453,57 @@ need to add quotes or leave them undecoded.             RWF"
 	     (nreverse list))
 	(and work-buffer (kill-buffer work-buffer)))))))
 
+(defun vm-stale-compiled-files ()
+  "VM's own files whose .elc is older than the .el beside it.
+Answers a list of base names, or nil.
+
+Only files VM has already loaded are asked about, so this says nothing about
+a part of VM the session has not touched."
+  (let (stale)
+    (dolist (feature features (nreverse stale))
+      (let ((name (symbol-name feature)))
+        (when (or (string-prefix-p "vm-" name)
+                  (member name '("vm" "tapestry" "u-vm-color")))
+          (let* ((el (locate-library (concat name ".el")))
+                 (elc (and el (concat el "c"))))
+            (when (and el elc (file-exists-p elc)
+                       (file-newer-than-file-p el elc))
+              (push name stale))))))))
+
+(defun vm-warn-about-stale-compiled-files ()
+  "Say so, once, if VM is running compiled files older than its sources.
+
+Emacs loads a .elc in preference to a newer .el unless `load-prefer-newer\\='
+says otherwise, and its own warning about that is one line among many at
+startup.  What makes it worth repeating here is that VM\\='s files inline one
+another: the accessors in vm-message.el are `defsubst\\='s, and the byte
+compiler copies their bodies into every caller.  A stale .elc therefore runs
+code that no longer matches the rest of VM, and fails somewhere with no
+apparent connection to what is wrong.
+
+That is not hypothetical.  #453 moved a message\\='s reverse link out of the
+message vector; a vm-folder.elc compiled before it still ran the old
+`vm-set-reverse-link-of\\=', which on a message built by the new
+`vm-make-message\\=' is `(set nil ...)'.  Visiting any folder answered
+\"(setting-constant nil)\" from inside `vm-build-message-list\\=', with nothing
+in the backtrace to say why (#791)."
+  (let ((stale (vm-stale-compiled-files)))
+    (when stale
+      (display-warning
+       'vm
+       (concat
+        "VM is running compiled files that are older than its sources:\n  "
+        (mapconcat #'identity stale " ")
+        "\n\nEmacs loads the compiled file in preference to the newer source,"
+        "\nand VM's files inline one another, so a stale one runs code that no"
+        "\nlonger matches the rest of VM and fails in places that make no sense."
+        "\n\nRecompile VM: `make' in the source tree, or M-x"
+        " byte-recompile-directory\non "
+        (or (file-name-directory (or (locate-library "vm-misc.el") "")) "VM's")
+        " with a prefix argument.  Deleting the .elc files"
+        "\nworks too; VM then runs interpreted, more slowly.")
+       :warning))))
+
 (defun vm-write-string (where string)
   (if (bufferp where)
       (save-current-buffer
