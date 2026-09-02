@@ -38,6 +38,11 @@
 (require 'vm-mime)
 (require 'smime)
 (eval-when-compile (require 'cl-lib))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defun vm-mime-smime-extract-pkcs7-signature (layout)
   (unless (vectorp layout)

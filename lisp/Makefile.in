@@ -210,6 +210,7 @@ install-pkg: all $(INSTALL_FILES)
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
 		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-w3.el $(DESTDIR)$(lispdir)/vm-w3.elc
 	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
 	  echo "Installing $$i in $(DESTDIR)$(lispdir)" ;    \
 	  $(INSTALL_DATA) $$i $(DESTDIR)$(lispdir) ;         \
@@ -226,6 +227,7 @@ uninstall-pkg:
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
 		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-w3.el $(DESTDIR)$(lispdir)/vm-w3.elc
 	@# $(INSTALL_FILES) is every .el and .elc install puts there.  The list
 	@# used to carry $(SOURCES:%=@srcdir@/%) as well, which is the same files
 	@# named through the source directory: harmlessly duplicated for an

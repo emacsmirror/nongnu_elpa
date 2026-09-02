@@ -108,6 +108,10 @@
 (require 'vm-vars)
 (require 'vm-thread)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; FIXME: Cyclic dependency, we can't require `vm-virtual'.
 (declare-function vm-vs-spam-word "vm-virtual" (m &optional part))
 

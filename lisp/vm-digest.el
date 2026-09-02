@@ -31,6 +31,10 @@
 (require 'vm-mime)
 (require 'vm-delete)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-mode "vm-mode" (&optional read-only))
 (declare-function vm-yank-message "vm-reply" (message))
 

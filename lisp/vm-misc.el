@@ -52,6 +52,10 @@
 
 (require 'vm-vars)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; This file contains various low-level operations that address
 ;; incomaptibilities between Gnu and XEmacs.  Expect compiler warnings.
 
@@ -471,7 +475,11 @@ a part of VM the session has not touched."
               (push name stale))))))))
 
 (defun vm-warn-about-stale-compiled-files ()
-  "Say so, once, if VM is running compiled files older than its sources.
+  "Say so, once, if VM is running compiled files from another build.
+Two ways of telling: a .elc older than the .el beside it, and a .elc that
+says it was compiled against a different VM (see `vm-assert-version\=').  The
+second is the one that works on an installed tree, where every .elc is newer
+than its source because `make install\=' copies it later.
 
 Emacs loads a .elc in preference to a newer .el unless `load-prefer-newer\\='
 says otherwise, and its own warning about that is one line among many at
@@ -487,13 +495,20 @@ message vector; a vm-folder.elc compiled before it still ran the old
 `vm-make-message\\=' is `(set nil ...)'.  Visiting any folder answered
 \"(setting-constant nil)\" from inside `vm-build-message-list\\=', with nothing
 in the backtrace to say why (#791)."
-  (let ((stale (vm-stale-compiled-files)))
+  (let* ((older (vm-stale-compiled-files))
+         (mismatched (mapcar #'car vm-version-mismatched-files))
+         (stale (delete-dups (append mismatched older))))
     (when stale
       (display-warning
        'vm
        (concat
-        "VM is running compiled files that are older than its sources:\n  "
+        "VM is running compiled files left over from another build:\n  "
         (mapconcat #'identity stale " ")
+        (when mismatched
+          (concat "\n\nThose were compiled against "
+                  (mapconcat (lambda (cell) (cdr cell))
+                             vm-version-mismatched-files ", ")
+                  ",\nand this is " (vm-version-stamp) "."))
         "\n\nEmacs loads the compiled file in preference to the newer source,"
         "\nand VM's files inline one another, so a stale one runs code that no"
         "\nlonger matches the rest of VM and fails in places that make no sense."

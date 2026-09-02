@@ -49,6 +49,11 @@
       (defun vm-summary-faces-list-extents () (mapcar-extents 'identity))
     (defun vm-summary-faces-list-extents ()
       (let ((o (overlay-lists))) (nconc (car o) (cdr o))))))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defvar vm-summary-faces-hide nil
   "Last face hidden by `vm-summary-faces-hide'.")

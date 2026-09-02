@@ -27,6 +27,10 @@
 (require 'tapestry) ;; FIXME: Use Emacs-24's `frameset'?
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function frame-highest-window "vm-xemacs" (frame))
 ;; XEmacs called a frame a screen, and Epoch a window.  Named here so that
 ;; the wrappers at the end of this file can call them rather than reach them

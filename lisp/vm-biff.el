@@ -47,6 +47,11 @@
 (require 'vm-misc)
 (require 'vm-summary)
 (require 'vm-message)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
 (declare-function get-itimer "vm-xemacs.el" (name))

@@ -23,6 +23,11 @@
 ;;; Code:
 
 (require 'vm-window)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function Info-goto-node "ext:info" (nodename &optional fork))
 

@@ -1551,6 +1551,79 @@ answered `(setting-constant nil)' from inside `vm-build-message-list'."
       (should (string-match-p "vm-pretend-stale" said))
       (should (string-match-p "byte-recompile-directory" said)))))
 
+;;; The version a file was compiled against (emacs-vm/vm#791)
+
+(ert-deftest vm-misc-test-a-clean-build-reports-no-mismatch ()
+  "The VM running this suite was built in one piece, and says so.
+The premise of every other test here: were this to fail, the tree under test
+would be one nobody should trust the rest of the run on."
+  (should (equal nil vm-version-mismatched-files))
+  (should (equal nil (vm-stale-compiled-files))))
+
+(ert-deftest vm-misc-test-the-version-stamp-names-a-build ()
+  "`vm-version-stamp' answers the release and the commit, and is stable."
+  (let ((stamp (vm-version-stamp)))
+    (should (stringp stamp))
+    (should (string-match-p "/" stamp))
+    (should (equal stamp (vm-version-stamp)))))
+
+(ert-deftest vm-misc-test-the-assertion-fires-on-another-version ()
+  "`vm-assert-version' expanded under one version notes it under another.
+Expanded here rather than compiled, which is the same thing: the macro bakes
+in whatever `vm-version-stamp' said when it ran, and the form left behind
+compares that with what says it later."
+  (let ((vm-version-mismatched-files nil)
+        (form (cl-letf (((symbol-function 'vm-version-stamp)
+                         (lambda () "8.3.2/deadbeef")))
+                (macroexpand '(vm-assert-version)))))
+    ;; under the version it was expanded with, nothing to say
+    (cl-letf (((symbol-function 'vm-version-stamp)
+               (lambda () "8.3.2/deadbeef")))
+      (eval form t))
+    (should (equal nil vm-version-mismatched-files))
+    ;; under another, it notes the file and what it was built against
+    (cl-letf (((symbol-function 'vm-version-stamp)
+               (lambda () "8.3.3/cafe")))
+      (eval form t))
+    (should (equal 1 (length vm-version-mismatched-files)))
+    (should (equal "8.3.2/deadbeef" (cdar vm-version-mismatched-files)))))
+
+(ert-deftest vm-misc-test-the-warning-reports-a-version-mismatch ()
+  "The warning names the file, the version it was built against, and this one.
+This is the half that works on an installed tree: `make install' copies the
+.elc after the .el, so there the .elc is always the newer of the two and no
+comparison of timestamps can say anything."
+  (let ((vm-version-mismatched-files '(("vm-folder.el" . "8.3.2/deadbeef")))
+        said)
+    (cl-letf (((symbol-function 'display-warning)
+               (lambda (_type message &rest _) (setq said message)))
+              ((symbol-function 'vm-stale-compiled-files) (lambda () nil)))
+      (vm-warn-about-stale-compiled-files))
+    (should said)
+    (should (string-match-p "vm-folder\\.el" said))
+    (should (string-match-p "8\\.3\\.2/deadbeef" said))
+    (should (string-match-p "byte-recompile-directory" said))))
+
+(ert-deftest vm-misc-test-every-compiled-vm-file-carries-the-assertion ()
+  "Every VM file that is byte-compiled says which VM built it.
+A file without the form is one whose staleness nothing would notice, which
+is how #791 went unexplained.  The four left out are named here with why."
+  (let ((exempt '("vm-autoloads.el"      ; generated
+                  "vm-cus-load.el"       ; generated, never compiled
+                  "vm-version-conf.el"   ; generated, and what the stamp reads
+                  "vm-macro.el"          ; defines the macro
+                  "vm-build.el"))        ; run by the build, not by VM
+        missing)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\`vm-.*\\.el\\'"))
+      (let ((name (file-name-nondirectory file)))
+        (unless (member name exempt)
+          (with-temp-buffer
+            (insert-file-contents file)
+            (goto-char (point-min))
+            (unless (re-search-forward "^(vm-assert-version)$" nil t)
+              (push name missing))))))
+    (should (equal nil (sort missing #'string<)))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

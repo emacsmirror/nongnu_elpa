@@ -30,6 +30,10 @@
 (require 'vm-sort)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;;;###autoload
 (defun vm-delete-message (count &optional mlist)
   "Add the `deleted' attribute to the current message.

@@ -24,6 +24,11 @@
 
 (require 'vm-misc)
 (require 'vm-folder)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;; compatibility
 (fset 'vm-pop-md5 'vm-md5-string)

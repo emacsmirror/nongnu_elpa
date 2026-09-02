@@ -27,6 +27,10 @@
 (require 'vm-vars)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-mime-encode-words-in-string "vm-mime" (string))
 (declare-function vm-reencode-mime-encoded-words-in-string
 		  "vm-mime" (string))

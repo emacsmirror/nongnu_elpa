@@ -286,5 +286,63 @@ vm-buffer-types stack."
     (sit-for 1)))
 
 
+;;; Compiled against which VM
+
+;; A .elc left from an older VM is loaded in preference to the newer source,
+;; and VM's accessors are defsubsts, so it runs bodies that no longer match
+;; the rest of VM and fails somewhere unrelated.  #453 moved a message's
+;; reverse link out of the message vector; a vm-folder.elc compiled before
+;; that still ran the old `vm-set-reverse-link-of', which on a message built
+;; by the new `vm-make-message' is (set nil ...), and visiting any folder
+;; answered "(setting-constant nil)" from inside `vm-build-message-list'
+;; (#791).
+;;
+;; Timestamps cannot catch that.  `make install' gives every file a fresh
+;; mtime and copies the .elc after the .el, so on an installed tree the .elc
+;; is always the newer of the two.  What does catch it is the version being
+;; written into the compiled file as it is compiled, which is what Org does
+;; with `org-assert-version' and for the same reason.
+
+(defun vm-version-stamp ()
+  "What VM this is, as a string, for comparing a compiled file against.
+The release and the commit together: two builds of one release differ by
+their commit, and a tree built without git has neither, which compares equal
+to itself and so says nothing."
+  ;; `load', not `require': the generated file sets two variables and calls
+  ;; no `provide', so `require' signals on it even with NOERROR.  This is the
+  ;; same way `vm-version-conf-info' in vm.el reads it.
+  (unless (boundp 'vm-version-config)
+    (ignore-errors (load "vm-version-conf" t t)))
+  (format "%s/%s"
+          (if (boundp 'vm-version-config) (or vm-version-config "unknown")
+            "unknown")
+          (if (boundp 'vm-version-commit-config)
+              (or vm-version-commit-config "") "")))
+
+(defvar vm-version-mismatched-files nil
+  "VM files whose compiled form was built against another version of VM.
+Filled in as they load; `vm-warn-about-stale-compiled-files' reports them.")
+
+(defun vm-note-version-mismatch (file compiled)
+  "Record that FILE was compiled against COMPILED, which is not what runs."
+  (unless (assoc file vm-version-mismatched-files)
+    (push (cons file compiled) vm-version-mismatched-files)))
+
+(defmacro vm-assert-version ()
+  "Note it if the file being compiled is loaded into another VM later.
+Expands with this tree's version written into it, so the compiled file
+carries the version it was built against and can say so as it loads.
+
+Put this at the top of every VM file that is byte-compiled, after its
+requires.  It costs one string comparison at load."
+  (let ((compiled (vm-version-stamp))
+        (file (file-name-nondirectory
+               (or (and (boundp 'byte-compile-current-file)
+                        (stringp byte-compile-current-file)
+                        byte-compile-current-file)
+                   load-file-name buffer-file-name "a VM file"))))
+    `(unless (equal ,compiled (vm-version-stamp))
+       (vm-note-version-mismatch ,file ,compiled))))
+
 (provide 'vm-macro)
 ;;; vm-macro.el ends here

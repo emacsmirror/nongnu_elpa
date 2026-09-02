@@ -28,6 +28,10 @@
 (require 'vm-misc)
 (require 'vm-minibuf)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; FIXME: Cyclic dependence between vm-virtual.el and vm-avirtual.el
 ;; prevents us from requiring `vm-avirtual' here.
 (defvar vm-virtual-message)

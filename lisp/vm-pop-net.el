@@ -45,6 +45,11 @@
 (require 'cl-lib)
 (require 'generator)
 (require 'vm-net)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defvar vm-pop-net-read-point nil
   "Where the next read of this POP session starts.

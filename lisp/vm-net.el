@@ -62,6 +62,11 @@
 (require 'generator)
 
 (eval-when-compile (require 'vm-misc))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-inform "vm-misc" (level &rest args))
 (declare-function vm-warn "vm-misc" (level seconds &rest args))
