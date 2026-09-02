@@ -3324,9 +3324,9 @@ arrived (emacs-vm/vm#466)."
 (defun vm-folder-test--plain-rule-separators (file)
   "How many separators a reader using the plain mbox rule finds in FILE.
 Any line beginning \"From \" that stands at the start of the file or after a
-blank line, which is the rule most mailers use and the one RFC 4155 and
-Zawinski both describe.  VM's own rule is narrower, and the difference is what
-the two tests below measure."
+blank line, which is the rule most mailers use and the one Zawinski
+describes.  VM's own rule is narrower, and the difference is what the two
+tests below measure."
   (with-temp-buffer
     (insert-file-contents-literally file)
     (goto-char (point-min))
