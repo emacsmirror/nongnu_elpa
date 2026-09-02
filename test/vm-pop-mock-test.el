@@ -666,6 +666,88 @@ message to name: it used to print whatever the last DELE was, or nil."
       (should-not (cl-find-if (lambda (w) (string-match-p "UIDL nil" w))
                               warnings)))))
 
+;;; Arriving mail whose body looks like a folder separator
+
+;; Everything above retrieves messages whose bodies are ordinary prose.  What
+;; a folder cannot survive is a body the folder type reads as a separator: a
+;; `From ' line going into a From_ folder, \001\001\001\001 into an mmdf one.
+;; Retrieval is the path every received message takes, so it is the one that
+;; must quote them, and nothing checked that it does.
+
+(defconst vm-pop-mock-test--separator-bodies
+  '(("plain"              . "an ordinary body line.")
+    ("a From_ line"       . "text\nFrom nobody@example.com Mon Jan  1 00:00:00 2024")
+    ("a From_ line first" . "From nobody@example.com Mon Jan  1 00:00:00 2024\nrest")
+    ("an mmdf separator"  . "text\n\001\001\001\001\nmore")
+    ("a babyl separator"  . "text\n\037\014\nmore")
+    ("8-bit"              . "Gr\303\274\303\237e"))
+  "Bodies that a folder of some type would otherwise read as a separator.")
+
+(defun vm-pop-mock-test--message-with (n body)
+  "A message numbered N carrying BODY."
+  (concat "From: alice@example.com\nTo: vmtest@example.com\n"
+          (format "Subject: message %d\nMessage-ID: <pop-%d@example.com>\n\n" n n)
+          body "\n"))
+
+(defun vm-pop-mock-test--messages-in (file type)
+  "Read FILE as a folder of TYPE; answer (TYPE-READ . COUNT).
+`vm-build-message-list' asks `vm-get-folder-type' rather than trusting the
+caller, so the buffer is given a name that states the type, as a folder VM
+visits has."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (insert-file-contents file)
+    (setq-local buffer-file-name (vm-folder-name-for-type file type))
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (cons vm-folder-type (length vm-message-list))))
+
+(defun vm-pop-mock-test--retrieve-into (type body)
+  "Retrieve two messages, the first carrying BODY, into a folder of TYPE.
+Answers a complaint, or nil when the folder reads back as the two messages
+that were sent."
+  (let ((dest (make-temp-file "vm-pop-mock-dest")))
+    (unwind-protect
+        (condition-case err
+            (vm-pop-mock-with (mock :messages
+                                    (list (vm-pop-mock-test--message-with 1 body)
+                                          (vm-pop-mock-test--message-with 2 "second body")))
+              (let ((vm-pop-server-timeout 10)
+                    (vm-pop-ok-to-ask nil)
+                    (vm-pop-expunge-after-retrieving t)
+                    (vm-pop-retrieved-messages nil)
+                    (vm-pop-auto-expunge-alist nil)
+                    (vm-pop-max-message-size nil)
+                    (vm-pop-messages-per-session nil)
+                    (vm-pop-bytes-per-session nil)
+                    (vm-folder-type type))
+                (vm-pop-move-mail (vm-pop-mock-spec mock) dest)
+                (let ((read (vm-pop-mock-test--messages-in dest type)))
+                  (cond ((not (eq (car read) type))
+                         (format "%s: read back as %s" type (car read)))
+                        ((/= 2 (cdr read))
+                         (format "%s: %d messages, not 2" type (cdr read)))
+                        (t nil)))))
+          (error (format "%s: %s" type (error-message-string err))))
+      (when (file-exists-p dest) (delete-file dest)))))
+
+(ert-deftest vm-pop-mock-test-a-separator-shaped-body-arrives-whole ()
+  "Mail arriving from POP lands as one message whatever its body looks like.
+Every folder type VM will create, crossed with the bodies that a type would
+otherwise read as a separator: twenty-four retrievals, each of two messages,
+each folder read back afterwards as the two that were sent."
+  (should (equal nil
+                 (delq nil
+                       (let (complaints)
+                         (dolist (type '(From_ mboxcl2 mmdf babyl)
+                                       (nreverse complaints))
+                           (dolist (spec vm-pop-mock-test--separator-bodies)
+                             (let ((c (vm-pop-mock-test--retrieve-into
+                                       type (cdr spec))))
+                               (push (and c (format "%s / %s" c (car spec)))
+                                     complaints)))))))))
+
 (provide 'vm-pop-mock-test)
 
 ;;; vm-pop-mock-test.el ends here
