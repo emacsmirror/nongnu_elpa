@@ -1532,6 +1532,17 @@ appropriate setting for this variable.  It is recommended that you
 convert all the old @code{BellFrom_} folders to the @code{From_} format using
 the command @code{vm-change-folder-type}.
 
+@vindex vm-default-folder-type
+VM will not create a @code{BellFrom_} folder.  It is not among the types
+@code{vm-default-folder-type} offers, nor among those
+@code{vm-change-folder-type} offers to convert to, because a folder VM writes
+as one cannot be read back as one: having no trailing blank line, the format
+has no signature of its own, so VM reads it as @code{From_} and each message
+swallows the headers of the next.  Reading is unaffected, which is what
+@code{vm-default-From_-folder-type} above is for.  Setting
+@code{vm-default-folder-type} to @code{BellFrom_} by hand still works, and
+still has that result, so VM says so as it starts.
+
 @cindex Solaris
 @cindex System V
 @cindex AIX

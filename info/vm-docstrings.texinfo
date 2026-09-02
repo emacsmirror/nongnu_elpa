@@ -2139,13 +2139,19 @@ Allowed types are:
 @example
    From_
    mboxcl2
-   BellFrom_
    mmdf
    babyl
 
 @end example
 @code{mboxcl2} was called @code{From_-with-Content-Length} until 2026 and is still
-accepted under that name.  It is the one mbox variant that stores a message
+accepted under that name.
+
+@code{BellFrom_} is not among them, and has not been offered since 2026.  VM reads
+one it is handed, and creates none: that format is From_ without the blank
+line between messages, so it has no signature of its own, and a folder VM
+wrote as one is read back as From_ with its messages run together.  Setting
+it here still works and still has that result, so VM says so as it starts.
+Issue #787.  It is the one mbox variant that stores a message
 exactly as it arrived, and so the one to choose for a folder kept as a
 record.
 

@@ -8,6 +8,23 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `vm-default-folder-type` no longer offers `BellFrom_`, and neither does
+    `vm-change-folder-type` (emacs-vm/vm#787).  VM reads a BellFrom_ folder it
+    is handed, and creates none.  That format is From_ without the blank line
+    between messages, so it has no signature of its own: `vm-get-folder-type`
+    answers `From_` for it, and a folder VM wrote as one was read back as
+    From_ with each message swallowing the headers of the next.  The manual
+    has recommended converting old BellFrom_ folders to From_ since 2000.
+
+    Reading is unchanged.  A folder whose name or `vm-folder-type-by-extension-alist`
+    entry says `BellFrom_` is still read as one, and
+    `vm-default-From_-folder-type` still takes either value, that option being
+    how you say which of the two From-style formats your delivery agent
+    writes.
+
+    A configuration that still sets `vm-default-folder-type` to `BellFrom_`
+    gets what it asks for, and VM now says once at startup what that means.
+
   * `vm-pgg` no longer takes PGP away from `vm-epg` (emacs-vm/vm#785).  Both
     answer for the same three MIME types, and whichever was loaded last used
     to hold them.  Loading `vm-pgg` was not always deliberate: it declared
