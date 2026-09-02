@@ -7358,8 +7358,8 @@ thread are loaded."
     ))
 
 ;;;###autoload
-(defun vm-retrieve-operable-messages (&optional count mlist
-						&key fail)
+(cl-defun vm-retrieve-operable-messages (&optional count mlist
+						   &key fail)
   "Retrieve the current \"operable\" messages from their
 permanent locations for temporary use.  Currently this facility is
 only available for IMAP folders.  If FAIL is non-nil then any errors

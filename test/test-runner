@@ -45,7 +45,8 @@ With no options: build, then every pass this machine can run.
   --no-optional    the tests that use BBDB, emacs-w3m and vcard, without them
   --assert         the suite with VM's own assertions checked
   --leaks          report tests that leave global state behind
-  --coverage       write test/coverage-results.txt
+  --coverage       write test/coverage-results.txt (which functions were called)
+  --forms-coverage write test/forms-coverage-results.txt (what ran inside them)
   --build          what configure hands to make, in a copy of the tree
 
   --skip-live      no live servers in any pass
@@ -86,6 +87,7 @@ while [ $# -gt 0 ]; do
         --assert)      add_choice assert ;;
         --leaks)       add_choice leaks ;;
         --coverage)    add_choice coverage ;;
+        --forms-coverage) add_choice forms_coverage ;;
         --skip-live)   skip_live=yes ;;
         --skip-send)   skip_send=yes ;;
         --verbose)     verbose=yes ;;
@@ -344,6 +346,15 @@ pass_coverage () {
         emacs_run "$live" 1 -l "$root/test/coverage-report.el"
 }
 
+# Form coverage, which the function-call report above cannot give: a function
+# entered once counts as covered there however much of it never ran.  This
+# instruments every form with testcover, so a `cond' arm no test took is
+# reported.  Slower, since edebug instruments the whole tree.
+pass_forms_coverage () {
+    run_pass "form coverage report" \
+        emacs_run "$live" 1 -l "$root/test/forms-coverage-report.el"
+}
+
 pass_one () {
     run_pass "$one_file" emacs_run "$live" 1 \
         -l "$root/test/vm-test-init.el" -l "$root/test/$one_file" \
@@ -359,6 +370,7 @@ if [ -n "$chosen" ]; then
     wanted assert      && pass_assert
     wanted leaks       && pass_leaks
     wanted coverage    && pass_coverage
+    wanted forms_coverage && pass_forms_coverage
     wanted build       && pass_build
     if wanted send; then
         if [ "$send_configured" = yes ]; then

@@ -96,8 +96,35 @@ machine can:
 
 Every pass runs whichever fails, and the summary at the end names each one.
 `--one FILE`, `--imap`, `--pop`, `--send`, `--mock`, `--no-optional`,
-`--assert`, `--leaks` and `--coverage` each run that alone; `--skip-live`,
-`--skip-send`, `--verbose` and `--no-build` modify a run.
+`--assert`, `--leaks`, `--coverage` and `--forms-coverage` each run that
+alone; `--skip-live`, `--skip-send`, `--verbose` and `--no-build` modify a
+run.
+
+**Two coverage reports, and they answer different questions.** `--coverage`
+advises every `vm-` function and says which were called, so a function of
+forty lines entered once counts as covered. `--forms-coverage` instruments
+every form with `testcover` and says what ran inside: per definition, how
+many forms were never evaluated, how many always returned the same value, and
+how many varied. A never-evaluated `cond` arm is a branch no test took, which
+is as close to branch coverage as Emacs gets; nothing in Emacs does path
+coverage. The always-one-value count is the more useful signal, a predicate
+that never returned nil being one no test varied.
+
+`--forms-coverage` depends on edebug being able to read every file, and two
+arglists stopped it doing so (#795): `&key` in a plain `defun`, which Emacs
+Lisp does not understand, and an `&optional` with no arguments after it. Both
+failed **quietly**, the run finishing with plausible numbers while saying
+nothing about the two largest files in the tree.
+`vm-integration-test-every-file-can-be-instrumented` and
+`vm-integration-test-only-cl-defun-takes-keyword-arguments` hold that shut.
+
+- **A test that instruments the tree needs a subprocess Emacs.**
+  `testcover-start` leaves its instrumentation in place, and instrumented code
+  raises an error of testcover's own the moment a form it thought constant
+  returns something else. Run in the suite's own Emacs, the instrumentation
+  check killed a later test with `Value of form expected to be constant does
+  vary` inside `vm-postpone.el`. It calls a child Emacs now, the same way the
+  loaddefs tests do.
 
 `VM_TEST_LIVE=0` (also `no`, `off`, `mock`) refuses the live servers and
 `VM_TEST_OPTIONAL=0` the optional packages, for a pass run by hand. The mock

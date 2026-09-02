@@ -871,6 +871,100 @@ terminate some other way are named in
                   offenders)))))
     (should (equal nil (sort offenders #'string<)))))
 
+
+;;; Keyword arguments belong to cl-defun, not defun
+
+(defun vm-integration-test--lisp-files ()
+  "Every VM lisp file worth auditing, the generated ones left out."
+  (seq-remove (lambda (f)
+                (member (file-name-nondirectory f)
+                        '("vm-autoloads.el" "vm-cus-load.el"
+                          "vm-version-conf.el")))
+              (directory-files vm-test-lisp-dir t "\\.el\\'")))
+
+(ert-deftest vm-integration-test-only-cl-defun-takes-keyword-arguments ()
+  "No plain `defun', `defsubst' or `defmacro' has `&key' or `&aux' in its
+arglist.
+
+Emacs Lisp's own lambda list knows `&optional' and `&rest' and nothing else,
+so a `&key' there is not a keyword marker: it becomes an ordinary variable
+whose name happens to be `&key', and the argument after it becomes one more
+positional.  `vm-retrieve-operable-messages' was written that way and worked
+by coincidence, every caller passing `:fail t' so that the variable named
+`&key' swallowed the `:fail' and `t' landed in `fail'.  Called as
+`(f 1 mlist :fail)' it silently answered nil, and a second keyword would have
+been a wrong-number-of-arguments error.
+
+It also stops edebug reading the file, so `testcover' could not instrument
+vm-folder.el at all and test/forms-coverage-report.el was blind to the
+largest file in the tree.
+
+Walks the arglist of every definition in lisp/."
+  (let ((offenders nil))
+    (dolist (file (vm-integration-test--lisp-files))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "^(\\(defun\\|defsubst\\|defmacro\\) " nil t)
+          (let ((start (match-beginning 0)))
+            (goto-char start)
+            (let ((form (condition-case nil (read (current-buffer)) (error nil))))
+              (when (and form (listp (nth 2 form))
+                         (or (memq '&key (nth 2 form))
+                             (memq '&aux (nth 2 form))))
+                (push (format "%s:%d %s"
+                              (file-name-nondirectory file)
+                              (line-number-at-pos start)
+                              (nth 1 form))
+                      offenders)))))))
+    (should (equal nil (nreverse offenders)))))
+
+(defun vm-integration-test--instrument-in-a-subprocess ()
+  "The VM files a fresh Emacs cannot instrument with `testcover', by name.
+
+In a subprocess, and that is the whole point.  `testcover-start' leaves the
+instrumentation in place, and instrumented code raises an error of testcover's
+own the moment a form it thought constant returns something else: doing this
+in the suite's own Emacs made a later test die with \"Value of form expected
+to be constant does vary\" inside `vm-postpone.el'.  A test that instruments
+the tree cannot share an Emacs with the tests that follow it."
+  (let* ((lisp (expand-file-name "lisp" (file-name-directory
+                                         (directory-file-name vm-test-lisp-dir))))
+         (form `(let ((failed nil))
+                  (require 'testcover)
+                  (dolist (file (directory-files ,vm-test-lisp-dir t "\\.el\\'"))
+                    (unless (member (file-name-nondirectory file)
+                                    '("vm-autoloads.el" "vm-cus-load.el"
+                                      "vm-version-conf.el"))
+                      (condition-case err
+                          (testcover-start file)
+                        (error
+                         (push (cons (file-name-nondirectory file)
+                                     (error-message-string err))
+                               failed)))))
+                  (prin1 (nreverse failed)))))
+    (ignore lisp)
+    (with-temp-buffer
+      (let ((status (call-process
+                     (expand-file-name invocation-name invocation-directory)
+                     nil t nil "-batch" "-Q" "-L" vm-test-lisp-dir
+                     "--eval" (prin1-to-string form))))
+        (should (equal status 0))
+        (goto-char (point-max))
+        (backward-sexp)
+        (read (current-buffer))))))
+
+(ert-deftest vm-integration-test-every-file-can-be-instrumented ()
+  "edebug can read every VM file, so `testcover' can measure every one.
+
+test/forms-coverage-report.el instruments the tree to report which forms ran.
+A file edebug cannot parse is a file that report says nothing about, and it
+says nothing quietly: the run still finishes and the numbers still look
+plausible.  Two arglists did it, `&key' in a plain `defun' in vm-folder.el
+and an `&optional' with no arguments after it in vm-imap.el, and between them
+they hid the two largest files in the tree (emacs-vm/vm#795)."
+  (should (equal nil (vm-integration-test--instrument-in-a-subprocess))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

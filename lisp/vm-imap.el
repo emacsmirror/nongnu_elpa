@@ -3618,7 +3618,7 @@ operation of the server to minimize I/O."
 ;;                 :do-retrieves bool &
 ;;                 :save-attributes nil|t|'all & 
 ;;                 :retrieve-attributes bool) -> void
-;; vm-imap-save-attributes: (&optional :all-flags bool) -> void
+;; vm-imap-save-attributes: (:all-flags bool) -> void
 ;; vm-imap-folder-check-mail: (&optional interactive) -> ?
 ;;
 ;; vm-imap-get-synchronization-data: (&optional bool) -> 
@@ -4422,8 +4422,7 @@ cached tables.  If there is no cached data, return nil.  USR, 2012-10-19"
 	  (car (symbol-value uid-sym)))
       (error nil))))
 
-(cl-defun vm-imap-save-attributes (&optional &key
-					   (all-flags nil))
+(cl-defun vm-imap-save-attributes (&key (all-flags nil))
   "Save the attributes of changed messages to the IMAP folder.
 ALL-FLAGS, if true says that the attributes of all messages should
 be saved to the IMAP folder, not only those of changed messages."

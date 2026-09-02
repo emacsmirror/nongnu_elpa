@@ -6326,6 +6326,33 @@ would be a header nothing reads."
         (should-not (vm-berkeley-test--status-lines
                      (buffer-substring-no-properties (point-min) (point-max))))))))
 
+
+;;; Keyword arguments that really are keyword arguments (emacs-vm/vm#795)
+
+(ert-deftest vm-folder-test-retrieve-operable-messages-takes-a-real-keyword ()
+  "REGRESSION: `vm-retrieve-operable-messages' has a genuine `:fail' keyword.
+It was a plain `defun' with `&key fail' in the arglist, which Emacs Lisp's
+lambda list does not understand: `&key' became an ordinary variable of that
+name and `fail' one more positional argument.  Every caller writes
+`:fail t', so the variable named `&key' swallowed the `:fail' and `t' landed
+in `fail' -- right by coincidence.
+
+What that cost: `(f 1 mlist :fail)' with no value answered nil rather than
+complaining, a second keyword would have been a wrong-number-of-arguments
+error, and edebug could not read vm-folder.el at all, so
+test/forms-coverage-report.el was blind to the largest file in the tree.
+
+Asserts the signature rather than the behaviour, there being nothing to
+observe from outside: with `cl-defun' there is no variable called `&key', and
+the keyword is parsed by cl-lib."
+  (let ((arglist (help-function-arglist 'vm-retrieve-operable-messages)))
+    ;; no pseudo-variable called `&key'
+    (should-not (memq '&key arglist))
+    ;; cl-lib collects the keywords into a &rest, which is its signature
+    (should (memq '&rest arglist))
+    ;; and `fail' is no longer a positional of its own
+    (should-not (memq 'fail arglist))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
