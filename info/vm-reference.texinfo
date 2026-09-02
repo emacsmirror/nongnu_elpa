@@ -10867,8 +10867,8 @@ message attributes like @code{new} and @code{deleted}.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -10886,8 +10886,8 @@ message attributes like @code{new} and @code{deleted}.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -10905,8 +10905,8 @@ message attributes like @code{new} and @code{deleted}.  Interactively you
 will be prompted for the labels to be deleted.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
 A numeric prefix argument COUNT causes the current message and
 the next COUNT-1 message to have the labels deleted.  A
@@ -11754,7 +11754,7 @@ applies to, and ACTIONS is a property list of what to do with them:
 
 @example
   :label STRING       attach the labels named in STRING, which is a
-                      space separated list, as ‘vm-add-message-labels’
+                      list separated by spaces or commas, as ‘vm-add-message-labels’
                       takes them
   :attributes STRING  set the attributes named in STRING, a space
                       separated list of ‘vm-supported-attribute-names’,

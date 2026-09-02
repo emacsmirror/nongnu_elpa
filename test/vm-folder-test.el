@@ -6018,6 +6018,86 @@ write the conversion; one prefix argument asks only for the folder."
     (should-not (nth 2 args))
     (should (= (length asked) 1))))
 
+;;; Attributes across a save and a re-read
+
+;; A label has `vm-label-test-labels-survive-saving-and-reading'.  The
+;; attributes had nothing: 171 calls to the setters across the suite and not
+;; one that saved the folder and read it again.  They live in the same
+;; X-VM-v5-Data header, and losing one means a message you deleted coming
+;; back, or one you have read coming back unread.
+
+(defconst vm-folder-test--attribute-setters
+  '((deleted       . vm-set-deleted-flag)
+    (filed         . vm-set-filed-flag)
+    (replied       . vm-set-replied-flag)
+    (written       . vm-set-written-flag)
+    (forwarded     . vm-set-forwarded-flag)
+    (redistributed . vm-set-redistributed-flag)
+    (flagged       . vm-set-flagged-flag))
+  "Each attribute VM keeps for a message, and the function that sets it.
+`new' and `unread' are left out: they are turned off by reading a message,
+which the act of visiting the folder does.")
+
+(defun vm-folder-test--attribute-of (name m)
+  "Whether M carries the attribute NAME."
+  (and (funcall (intern (format "vm-%s-flag" name)) m) t))
+
+(ert-deftest vm-folder-test-attributes-survive-saving-and-reading ()
+  "Every attribute set on a message is still set next time the folder is read.
+One attribute per message, so that a header holding the wrong one is caught
+rather than hidden by all of them agreeing."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-attrs" t)))
+         (file (expand-file-name "folder" dir))
+         (names (mapcar #'car vm-folder-test--attribute-setters))
+         (before (buffer-list)))
+    (unwind-protect
+        (let ((vm-frame-per-folder nil)
+              (vm-mutable-frame-configuration nil)
+              (vm-summary-show-threads nil))
+          (vm-test-write-simple-folder file (length names))
+          (cl-letf (((symbol-function 'vm-display) #'ignore))
+            (vm-visit-folder file)
+            ;; one attribute per message, in order
+            (let ((mp vm-message-list)
+                  (setters vm-folder-test--attribute-setters))
+              (while (and mp setters)
+                (funcall (cdr (car setters)) (car mp) t)
+                (setq mp (cdr mp) setters (cdr setters))))
+            (vm-save-folder))
+          ;; read it again in a buffer of its own
+          (let ((again (find-file-noselect file)))
+            (unwind-protect
+                (with-current-buffer again
+                  (cl-letf (((symbol-function 'vm-display) #'ignore))
+                    (vm-mode))
+                  (should (= (length names) (length vm-message-list)))
+                  (let ((mp vm-message-list)
+                        (wanted names)
+                        wrong)
+                    (while (and mp wanted)
+                      ;; the one that was set is set
+                      (unless (vm-folder-test--attribute-of (car wanted) (car mp))
+                        (push (format "message %s lost %s"
+                                      (vm-number-of (car mp)) (car wanted))
+                              wrong))
+                      ;; and none of the others is
+                      (dolist (other names)
+                        (unless (eq other (car wanted))
+                          (when (vm-folder-test--attribute-of other (car mp))
+                            (push (format "message %s gained %s"
+                                          (vm-number-of (car mp)) other)
+                                  wrong))))
+                      (setq mp (cdr mp) wanted (cdr wanted)))
+                    (should (equal nil (nreverse wrong)))))
+              (with-current-buffer again (set-buffer-modified-p nil))
+              (kill-buffer again))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

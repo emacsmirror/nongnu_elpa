@@ -137,6 +137,27 @@ deleting URGENT takes off urgent."
     (vm-delete-message-labels "URGENT" 1)
     (should (null (vm-label-test--labels 1)))))
 
+(ert-deftest vm-label-test-a-comma-separates-labels-too ()
+  "A comma separates label names, as spaces and tabs do.
+The docstrings said \"a space separated list\" and nothing said otherwise, so
+a reader typing `work,home' would expect one label of that name and get two.
+`vm-add-or-delete-message-labels' splits on any of the control characters,
+space, comma, and the bytes above DEL, so the docstrings now say spaces or
+commas."
+  (vm-label-test--with-folder (_file)
+    (vm-add-message-labels "work,home" 1)
+    (should (equal (sort (copy-sequence (vm-label-test--labels 1)) #'string<)
+                   '("home" "work")))
+    ;; and the same the other way: deleting by comma-separated names
+    (vm-delete-message-labels "home,work" 1)
+    (should (null (vm-label-test--labels 1)))))
+
+(ert-deftest vm-label-test-a-repeated-label-is-kept-once ()
+  "Naming a label twice attaches it once."
+  (vm-label-test--with-folder (_file)
+    (vm-add-message-labels "urgent urgent" 1)
+    (should (equal (vm-label-test--labels 1) '("urgent")))))
+
 (provide 'vm-label-test)
 
 ;;; vm-label-test.el ends here
