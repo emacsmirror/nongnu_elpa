@@ -6218,6 +6218,114 @@ have run together."
           (vm-check-default-folder-type)))
       (should-not warnings))))
 
+
+;;; BSD Mail(1) Status: headers (`vm-berkeley-mail-compatibility')
+
+;; The option had no test of any kind, and it decides what VM writes into a
+;; folder: with it on, a From_ folder gets a `Status:' header per message and
+;; any Status already there is removed first.  What is written has to be what
+;; is read back, or an attribute is lost every time a folder is saved.
+;;
+;; These call `vm-stuff-message-data' per message rather than
+;; `vm-stuff-folder-data', which stuffs only the messages whose
+;; `vm-stuff-flag-of' is set and so writes nothing for a message whose
+;; attributes were set with `norecord'.
+
+(defun vm-berkeley-test--folder (n)
+  "A From_ folder of N messages, none of them carrying VM's own data."
+  (mapconcat
+   (lambda (i)
+     (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                     "From: alice@example.com\nSubject: subject %d\n\n"
+                     "body %d\n\n")
+             i i))
+   (number-sequence 1 n) ""))
+
+(defun vm-berkeley-test--status-lines (text)
+  "The Status: header lines in TEXT."
+  (let ((lines nil)
+        (start 0))
+    (while (string-match "^Status: .*$" text start)
+      (push (match-string 0 text) lines)
+      (setq start (match-end 0)))
+    (nreverse lines)))
+
+(ert-deftest vm-berkeley-test-a-status-header-is-written-only-when-asked ()
+  "`vm-berkeley-mail-compatibility' decides whether a Status: header is written.
+Off, which is the default away from BSD, nothing of the sort reaches the
+folder."
+  (dolist (wanted '(t nil))
+    (vm-test-with-folder (vm-berkeley-test--folder 2)
+      (let ((vm-berkeley-mail-compatibility wanted))
+        (dolist (m vm-message-list)
+          (vm-set-new-flag m nil 'norecord)
+          (vm-set-unread-flag m nil 'norecord))
+        (dolist (m vm-message-list) (vm-stuff-message-data m))
+        (let ((written (vm-berkeley-test--status-lines
+                        (buffer-substring-no-properties (point-min) (point-max)))))
+          (if wanted
+              (should (equal 2 (length written)))
+            (should-not written)))))))
+
+(ert-deftest vm-berkeley-test-the-status-says-whether-the-message-was-read ()
+  "A read message is written `Status: RO', an unread one `Status: O'.
+That is the whole of what the header carries, and `vm-read-attributes' reads
+the R back out of it."
+  (vm-test-with-folder (vm-berkeley-test--folder 2)
+    (let ((vm-berkeley-mail-compatibility t)
+          (read (car vm-message-list))
+          (unread (nth 1 vm-message-list)))
+      (dolist (m vm-message-list) (vm-set-new-flag m nil 'norecord))
+      (vm-set-unread-flag read nil 'norecord)
+      (vm-set-unread-flag unread t 'norecord)
+      (dolist (m vm-message-list) (vm-stuff-message-data m))
+      (let ((written (vm-berkeley-test--status-lines
+                      (buffer-substring-no-properties (point-min) (point-max)))))
+        (should (equal '("Status: RO" "Status: O") written))))))
+
+(ert-deftest vm-berkeley-test-a-new-message-gets-no-status-header ()
+  "Nothing is written for a message still new.
+The code writes the header only where the new flag is off, so a folder of
+unseen mail is left alone."
+  (vm-test-with-folder (vm-berkeley-test--folder 2)
+    (let ((vm-berkeley-mail-compatibility t))
+      (dolist (m vm-message-list) (vm-set-new-flag m t 'norecord))
+      (dolist (m vm-message-list) (vm-stuff-message-data m))
+      (should-not (vm-berkeley-test--status-lines
+                   (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest vm-berkeley-test-stuffing-twice-leaves-one-status-header ()
+  "Saving a folder again does not add a second Status: header.
+The writer removes what is there before writing, so the count stays at one
+per message however many times the folder is saved.  Without that a folder
+would grow a header on every save."
+  (vm-test-with-folder (vm-berkeley-test--folder 2)
+    (let ((vm-berkeley-mail-compatibility t))
+      (dolist (m vm-message-list)
+        (vm-set-new-flag m nil 'norecord)
+        (vm-set-unread-flag m nil 'norecord))
+      (dotimes (_ 3)
+        (dolist (m vm-message-list) (vm-stuff-message-data m)))
+      (should (equal 2 (length (vm-berkeley-test--status-lines
+                                (buffer-substring-no-properties
+                                 (point-min) (point-max)))))))))
+
+(ert-deftest vm-berkeley-test-only-a-From_-folder-gets-the-header ()
+  "The header is written into a From_ folder and no other type.
+`Status:' is a From_ mbox convention; an mboxcl2 folder counts its bytes and
+an mmdf or babyl folder has its own attribute machinery, so writing one there
+would be a header nothing reads."
+  (dolist (type '(mboxcl2 mmdf babyl))
+    (vm-test-with-folder (vm-berkeley-test--folder 2)
+      (let ((vm-berkeley-mail-compatibility t)
+            (vm-folder-type type))
+        (dolist (m vm-message-list)
+          (vm-set-new-flag m nil 'norecord)
+          (vm-set-unread-flag m nil 'norecord))
+        (dolist (m vm-message-list) (vm-stuff-message-data m))
+        (should-not (vm-berkeley-test--status-lines
+                     (buffer-substring-no-properties (point-min) (point-max))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
