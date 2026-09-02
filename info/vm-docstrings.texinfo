@@ -5200,6 +5200,12 @@ recipient and author headers.
 Whitespace between encoded words is trimmed during decoding and thus those
 should be encoded together.
 
+A run too long for one encoded word becomes several in a row, RFC 2047
+allowing 75 characters each, and a header line longer than
+@code{vm-mime-header-line-limit} is folded at whitespace.  Both are undone by the
+reader: a folded line is joined back up, and the whitespace between two
+adjacent encoded words is dropped.
+
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 

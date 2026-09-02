@@ -7212,6 +7212,87 @@ describes what was deleted."
 	       (vm-set-mm-layout-parts layout nil)
 	       (vm-set-mm-layout-display-error layout nil)))))))
 
+(defconst vm-mime-encoded-word-limit 75
+  "The longest an encoded word may be, from RFC 2047 section 2.
+Counting the whole of it: the charset, the encoding letter, the question
+marks and the payload.  A run of text too long to fit becomes several
+encoded words in a row, which is what the standard says to do.")
+
+(defconst vm-mime-header-line-limit 78
+  "The longest a header line should be, from RFC 5322 section 2.1.1.
+That section also sets a limit of 998 that a line MUST NOT exceed.  This is
+the smaller, softer one, which VM aims for by folding; a header with a single
+unbreakable run longer than this exceeds it and cannot be helped.")
+
+(defun vm-mime-encoded-word-payload (text coding encoding)
+  "TEXT encoded for the body of an RFC 2047 word, without the wrapper.
+CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
+  (with-temp-buffer
+    (insert text)
+    (when (and coding (not (eq coding 'no-conversion)))
+      (if (featurep 'xemacs)
+	  (vm-encode-coding-region (point-min) (point-max) coding)
+	;; using vm-encode-coding-region causes wrong encoding in GNU Emacs
+	(encode-coding-region (point-min) (point-max) coding)))
+    ;; A marker that advances: Q-encoding expands the text it encodes, and
+    ;; `vm-mime-Q-encode-region' turns the spaces into underscores afterwards
+    ;; over the region it was given.  A plain position taken before the call
+    ;; is short by then, and the tail of the word keeps a space, which ends
+    ;; the encoded word where it stands.
+    (let ((end (copy-marker (point-max) t)))
+      (if (eq encoding 'Q)
+	  (vm-mime-Q-encode-region (point-min) end)
+	;; B-encoding, so that no line break is inserted: a break inside an
+	;; encoded word would end it.
+	(vm-mime-base64-encode-region (point-min) end nil t))
+      (set-marker end nil))
+    (buffer-string)))
+
+(defun vm-mime-encoded-word (text charset coding encoding)
+  "TEXT as one whole RFC 2047 encoded word."
+  (concat "=?" charset "?" (format "%s" encoding) "?"
+	  (vm-mime-encoded-word-payload text coding encoding)
+	  "?="))
+
+(defun vm-mime-encoded-word-budget (charset encoding)
+  "How many characters of payload an encoded word for CHARSET has room for."
+  (- vm-mime-encoded-word-limit
+     (length (vm-mime-encoded-word "" charset nil encoding))))
+
+(defun vm-mime-split-for-encoded-words (text charset coding encoding)
+  "TEXT split into the pieces that each fit in one encoded word.
+Split between characters, never inside one: a piece is encoded on its own, so
+a multibyte character cut in half would encode as two invalid ones.
+
+A piece that still does not fit is a single character whose encoding is
+longer than the budget, which no split can help; it is passed through whole
+rather than dropped."
+  (let ((budget (vm-mime-encoded-word-budget charset encoding))
+	(pieces nil)
+	(piece "")
+	(piece-length 0))
+    (dolist (char (string-to-list text))
+      (let* ((one (char-to-string char))
+	     (cost (length (vm-mime-encoded-word-payload one coding encoding))))
+	(when (and (> piece-length 0) (> (+ piece-length cost) budget))
+	  (push piece pieces)
+	  (setq piece "" piece-length 0))
+	(setq piece (concat piece one)
+	      piece-length (+ piece-length cost))))
+    (when (> (length piece) 0)
+      (push piece pieces))
+    (nreverse pieces)))
+
+(defun vm-mime-encoded-words (text charset coding encoding)
+  "TEXT as one or more RFC 2047 encoded words, none over the limit.
+Several of them are written next to each other, separated by a space.  That
+is lossless: RFC 2047 section 6.2 has a decoder drop the whitespace between
+two adjacent encoded words, so the text comes back as it went in.  It is also
+where a folder may break the line."
+  (mapconcat (lambda (piece) (vm-mime-encoded-word piece charset coding encoding))
+	     (vm-mime-split-for-encoded-words text charset coding encoding)
+	     " "))
+
 (defun vm-mime-encode-words (&optional encoding)
   "MIME encode all words in the current buffer.
 The optional argument ENCODING can be the symbol `Q' or `B' (for
@@ -7235,24 +7316,24 @@ If none is specified, quoted-printable is used."
             end   (copy-marker (match-end 0) t)
             charset (vm-determine-proper-charset start end)
             coding (vm-mime-charset-to-coding charset))
-      ;; encode coding system body
-      (when (and  coding (not (eq coding 'no-conversion)))
-        (if (featurep 'xemacs)
-	    (vm-encode-coding-region start end coding)
-	  ;; using vm-encode-coding-region causes wrong encoding in GNU Emacs
-	  (encode-coding-region start end coding)))
-      ;; encode 
-      (if (eq encoding 'Q)
-	  (vm-mime-Q-encode-region start end)
-        (vm-mime-base64-encode-region  start end))
-      ;; insert start and end markers 
-      (goto-char start)
-      (insert "=?" charset "?" (format "%s" encoding) "?")
-      (setq start (point))
-      (goto-char end)
-      (insert "?=")
-      ;; goto end for next round
-      (goto-char end))))
+      ;; One encoded word where the run fits in one, several in a row where it
+      ;; does not: RFC 2047 puts a limit of 75 on each (emacs-vm/vm#794).
+      (let ((words (vm-mime-encoded-words
+		    (buffer-substring-no-properties start end)
+		    charset coding encoding)))
+	;; Insert first and delete after, not the other way about.  A marker
+	;; sitting at the end of this run -- `body-start' in
+	;; `vm-mime-encode-headers' is one -- collapses to START when the
+	;; region under it is deleted, and an insertion there does not carry
+	;; it along, its insertion type being nil.  Inserting first pushes it
+	;; past the new text, and deleting the old text then leaves it exactly
+	;; at the end of the new.
+	(goto-char start)
+	(insert words)
+	;; END advances, so the insertion above has already carried it past the
+	;; new text: what is left between point and it is the old text.
+	(delete-region (point) end))
+      (set-marker end nil))))
 
 ;;;###autoload
 (defun vm-mime-encode-words-in-string (string &optional _encoding)
@@ -7269,7 +7350,13 @@ not the whole header as this will cause trouble for the
 recipient and author headers.
 
 Whitespace between encoded words is trimmed during decoding and thus those
-should be encoded together."
+should be encoded together.
+
+A run too long for one encoded word becomes several in a row, RFC 2047
+allowing 75 characters each, and a header line longer than
+`vm-mime-header-line-limit' is folded at whitespace.  Both are undone by the
+reader: a folded line is joined back up, and the whitespace between two
+adjacent encoded words is dropped."
   (interactive)
   (save-excursion 
     (let ((headers (concat "^\\(" vm-mime-encode-headers-regexp "\\):"))
@@ -7289,13 +7376,68 @@ should be encoded together."
           (insert " ")
           (backward-char 1))
         (save-excursion
-          (setq end (or (and (re-search-forward "^[^ \t:]+:" body-start t)
-                             (match-beginning 0))
-                        body-start)))
+          ;; A marker that advances: encoding the words expands the text, and
+          ;; a plain position taken now points into the middle of the header
+          ;; afterwards.  The folding below needs to know where it really ends.
+          (setq end (copy-marker
+                     (or (and (re-search-forward "^[^ \t:]+:" body-start t)
+                              (match-beginning 0))
+                         body-start)
+                     t)))
         (save-restriction
          (narrow-to-region start end)
          (vm-mime-encode-words))
-        (goto-char end)))))
+        ;; and fold what is now there, counting the header name, which is part
+        ;; of the first line (emacs-vm/vm#794)
+        (vm-mime-fold-header (save-excursion (goto-char start)
+                                             (line-beginning-position))
+                             end)
+        (goto-char end)
+        (set-marker end nil)))))
+(defun vm-mime-fold-header--break (bol limit)
+  "Where to break the line starting at BOL so it is no longer than LIMIT.
+The last whitespace at or before the limit, and never the first character of
+the line, a break there leaving an empty line.  Nil when there is nowhere to
+break: one long run with no whitespace in it."
+  (save-excursion
+    (let ((eol (line-end-position))
+          (break nil))
+      (goto-char (1+ bol))
+      (while (and (< (point) eol)
+                  (re-search-forward "[ \t]" eol t)
+                  (<= (- (point) bol) limit))
+        (setq break (match-beginning 0)))
+      break)))
+
+(defun vm-mime-fold-header (start end)
+  "Fold the header between START and END so its lines are not over-long.
+RFC 5322 section 2.1.1 sets a limit of 998 characters that a line MUST NOT
+exceed and 78 that it SHOULD NOT; `vm-mime-header-line-limit' is the second.
+A folded line is broken at whitespace and the next one begins with a space,
+which section 2.2.3 says a reader joins back up.
+
+Breaks only where whitespace already is, so nothing is inserted into the
+text: between two encoded words the whitespace is dropped when they are
+decoded, and elsewhere it was in the header to begin with.  A run with no
+whitespace in it stays over the limit, there being nowhere to break it."
+  (save-excursion
+    (let ((end (copy-marker end t)))
+      (goto-char start)
+      (while (< (point) end)
+        (let* ((bol (line-beginning-position))
+               (break (and (> (- (min end (line-end-position)) bol)
+                              vm-mime-header-line-limit)
+                           (vm-mime-fold-header--break
+                            bol vm-mime-header-line-limit))))
+          (if (not break)
+              (forward-line 1)
+            (goto-char break)
+            (delete-region break (progn (skip-chars-forward " \t") (point)))
+            (insert "\n ")
+            ;; carry on from the continuation line, which may need folding too
+            (beginning-of-line))))
+      (set-marker end nil))))
+
 (put 'vm-mime-encode-headers 'vm-called-by-vm t)
 
 ;;;###autoload

@@ -8,6 +8,27 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * A long header is folded, and a long encoded word is split
+    (emacs-vm/vm#794).  VM wrote every header on one line however long it
+    grew, so a subject of any length went out past what RFC 5322 allows: 78
+    characters a line SHOULD NOT exceed and 998 it MUST NOT.  A run of 8-bit
+    text became a single RFC 2047 encoded word whatever its length, where
+    that standard sets 75.
+
+    Thirty accented words made a line of 325 with an encoded word of 316 in
+    it; four hundred plain words made a line of 2008.  Both are now lines of
+    75 or less.
+
+    What VM chooses is unchanged: the same charset, the same quoted-printable
+    or base64, the same run of adjacent words encoded together.  Only the
+    line breaks are new, and a reader joins them back up.  Splitting a run
+    into several encoded words in a row is lossless for the same reason: RFC
+    2047 section 6.2 has a decoder drop the whitespace between two adjacent
+    encoded words.
+
+    A run with no whitespace in it still goes out long, there being nowhere
+    to break it.
+
   * Loading `vm-message-history.el`, `vm-postpone.el` or `vm-serial.el` no
     longer switches it on (emacs-vm/vm#788).  Each has a mode instead, all
     three autoloaded, so no `require` is needed:
