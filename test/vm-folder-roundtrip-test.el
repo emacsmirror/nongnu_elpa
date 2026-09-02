@@ -251,6 +251,100 @@ body the source type had no need to quote going to a type that does."
                      "mmdf -> From_ -> mmdf / a From_ line"
                      "mmdf -> From_ -> mmdf / a From_ line first")))))
 
+;;; Saving a message from a folder of one type into another
+
+(defun vm-folder-roundtrip-test--fill (folder type body)
+  "Make FOLDER a folder of TYPE holding BODY and then \"second\".
+Answers the name it was actually written under, which for mboxcl2 says the
+type (emacs-vm/vm#767)."
+  (let ((vm-default-folder-type type))
+    (vm-folder-roundtrip-test--file folder body)
+    (vm-folder-roundtrip-test--file folder "second\n")
+    (vm-new-folder-file-name folder)))
+
+(defun vm-folder-roundtrip-test--save (from to body)
+  "Save the first of two messages from a FROM folder into a TO folder.
+Answers a plist: :sent, the body as the source folder holds it, and :landed,
+the bodies the target folder holds afterwards.  A string instead when
+something signalled."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-savetype" t)))
+        (before (buffer-list)))
+    (unwind-protect
+        (condition-case err
+            (let* ((src (vm-folder-roundtrip-test--fill
+                         (expand-file-name "src" dir) from body))
+                   (dst (vm-folder-name-for-type
+                         (expand-file-name "dst" dir) to))
+                   (vm-init-file nil)
+                   (vm-preferences-file nil)
+                   (vm-confirm-quit nil)
+                   (vm-frame-per-folder nil)
+                   (vm-mutable-frame-configuration nil)
+                   (vm-summary-show-threads nil))
+              ;; A target that exists and is of the wanted type, so that
+              ;; nothing about it has to be guessed.
+              (vm-folder-roundtrip-test--fill
+               (expand-file-name "seed" dir) to "seed\n")
+              (vm-visit-folder src)
+              (let ((sent (car (vm-folder-roundtrip-test--read src))))
+                (vm-save-message dst 1 nil t)
+                (list :sent sent
+                      :landed (vm-folder-roundtrip-test--read dst))))
+          (error (format "%s -> %s: %s" from to (error-message-string err))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(defun vm-folder-roundtrip-test--every-save (check)
+  "Save between every pair of types with every body, collecting CHECK."
+  (let (complaints)
+    (dolist (from vm-folder-roundtrip-test--convertible)
+      (dolist (to vm-folder-roundtrip-test--convertible)
+        (dolist (spec vm-folder-roundtrip-test--bodies)
+          (let ((result (vm-folder-roundtrip-test--save
+                         from to (cdr spec))))
+            (if (stringp result)
+                (push (format "%s / %s" result (car spec)) complaints)
+              (let ((complaint (funcall check result from to (car spec))))
+                (when complaint (push complaint complaints))))))))
+    (nreverse complaints)))
+
+(ert-deftest vm-folder-roundtrip-test-saving-lands-one-message ()
+  "Saving a message into a folder of another type puts one message there.
+The bytes were written as they stood, with no quoting for the target.  A
+message out of a folder that had no need to quote them -- mboxcl2 counts its
+bytes, mmdf and babyl have separators of their own -- then carried a line the
+target read as a separator: into a From_ folder it became two messages, and
+into an mmdf folder it made the folder unreadable."
+  (should (equal nil
+                 (vm-folder-roundtrip-test--every-save
+                  (lambda (result from to label)
+                    (let ((landed (plist-get result :landed)))
+                      (unless (= 1 (length landed))
+                        (format "%s -> %s / %s: %d messages landed: %S"
+                                from to label (length landed) landed))))))))
+
+(ert-deftest vm-folder-roundtrip-test-saving-changes-only-the-quoting ()
+  "What lands differs from what was sent only by a leading `>'.
+The target may have to quote a line that would read as its separator; it may
+not do anything else to the message.  Which lines get a `>' and whether it
+ever comes off again is emacs-vm/vm#789."
+  (should (equal nil
+                 (vm-folder-roundtrip-test--every-save
+                  (lambda (result from to label)
+                    (let ((landed (plist-get result :landed)))
+                      (when (= 1 (length landed))
+                        (unless (equal (vm-folder-roundtrip-test--unquoted
+                                        (list (plist-get result :sent)))
+                                       (vm-folder-roundtrip-test--unquoted
+                                        landed))
+                          (format "%s -> %s / %s: sent %S, landed %S"
+                                  from to label (plist-get result :sent)
+                                  (car landed))))))))))
+
 (provide 'vm-folder-roundtrip-test)
 
 ;;; vm-folder-roundtrip-test.el ends here
