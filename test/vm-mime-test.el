@@ -4323,6 +4323,115 @@ would be quoted-printable and nobody would know."
   (let ((vm-mime-encode-headers-type (cdr (nth 2 vm-mime-test--encoding-types))))
     (should (string-match-p "=?[^?]+?B?" (vm-mime-test--encode-header "Grüße")))))
 
+
+;;; The charset VM names for outgoing text (`vm-coding-system-priorities')
+
+;; The option had no test of any kind, and it decides the charset label on
+;; every message VM sends.  A label naming a charset that cannot hold the
+;; text is mail the recipient decodes into something else, which is the
+;; quietest kind of corruption: nothing fails, the words are simply wrong.
+
+(defconst vm-charset-test--texts
+  '(("ascii"       . "plain text")
+    ("latin-1"     . "Grüße")
+    ("euro sign"   . "cost: 5€")
+    ("greek"       . "Ελληνικά")
+    ("japanese"    . "日本語")
+    ("latin+greek" . "Grüße Ελληνικά")
+    ("emoji"       . "hi 😀"))
+  "Texts spanning ASCII, one Latin set, two that need a wider one, and
+two that need Unicode.  The euro sign is in iso-8859-15 and not in
+iso-8859-1, which is what tells the two apart.")
+
+(defconst vm-charset-test--priorities
+  '(nil
+    (iso-8859-1)
+    (iso-8859-1 utf-8)
+    (utf-8)
+    (iso-8859-15 iso-8859-1 utf-8))
+  "Values of `vm-coding-system-priorities' worth crossing, the default
+included.")
+
+(defun vm-charset-test--chosen (text priorities)
+  "The charset VM names for TEXT under PRIORITIES."
+  (let ((vm-coding-system-priorities priorities))
+    (with-temp-buffer
+      (insert text)
+      (vm-determine-proper-charset (point-min) (point-max)))))
+
+(defun vm-charset-test--survives-p (text charset)
+  "Whether TEXT written as CHARSET and read back is TEXT again."
+  (let ((coding (vm-mime-charset-to-coding charset)))
+    (and coding
+         (not (eq coding 'no-conversion))
+         (equal text (decode-coding-string
+                      (encode-coding-string text coding) coding)))))
+
+(ert-deftest vm-charset-test-the-charset-named-can-hold-the-text ()
+  "Whatever charset VM names, the text survives being written in it.
+
+The invariant that matters: a label naming a charset too narrow for the text
+is a message the recipient reads as something else.  Five settings of
+`vm-coding-system-priorities' crossed with seven texts, thirty-five in all,
+each encoded in the charset VM chose and decoded back."
+  (let ((complaints nil))
+    (dolist (priorities vm-charset-test--priorities)
+      (dolist (spec vm-charset-test--texts)
+        (let ((charset (vm-charset-test--chosen (cdr spec) priorities)))
+          (unless (vm-charset-test--survives-p (cdr spec) charset)
+            (push (format "%S / %s: named %s, which cannot hold it"
+                          priorities (car spec) charset)
+                  complaints)))))
+    (should (equal nil (nreverse complaints)))))
+
+(ert-deftest vm-charset-test-pure-ascii-is-us-ascii-whatever-is-asked-for ()
+  "Text with no 8-bit character in it is us-ascii under every setting.
+The first thing the function tests, and the answer that keeps VM from
+labelling ordinary mail with a charset it does not need."
+  (dolist (priorities vm-charset-test--priorities)
+    (should (equal "us-ascii"
+                   (vm-charset-test--chosen "plain text" priorities)))))
+
+(ert-deftest vm-charset-test-the-narrowest-that-fits-is-chosen-by-default ()
+  "With the option nil, VM names the narrowest charset that holds the text.
+`Grüße' goes out as iso-8859-1 rather than utf-8, and the euro sign, which
+iso-8859-1 has no room for, as iso-8859-15.  That is what makes VM's headers
+shorter than most, and it is `vm-get-coding-system-priorities' answering with
+its default list rather than the option being unset meaning utf-8."
+  (should (equal "iso-8859-1" (vm-charset-test--chosen "Grüße" nil)))
+  (should (equal "iso-8859-15" (vm-charset-test--chosen "cost: 5€" nil)))
+  (should (equal "utf-8" (vm-charset-test--chosen "Ελληνικά" nil))))
+
+(ert-deftest vm-charset-test-the-priority-order-is-obeyed ()
+  "The first charset in the list that can hold the text is the one named.
+iso-8859-15 ahead of iso-8859-1 gets iso-8859-15 for text either could
+carry, which is the whole purpose of the option: it is a preference, not a
+constraint."
+  (should (equal "iso-8859-15"
+                 (vm-charset-test--chosen "Grüße" '(iso-8859-15 iso-8859-1 utf-8))))
+  (should (equal "iso-8859-1"
+                 (vm-charset-test--chosen "Grüße" '(iso-8859-1 iso-8859-15 utf-8)))))
+
+(ert-deftest vm-charset-test-a-list-that-cannot-hold-the-text-falls-back ()
+  "A priority list with nothing wide enough falls back to utf-8.
+`(iso-8859-1)' alone cannot carry Greek, and holds no universal coding system
+to stop the search, so the loop runs out and the documented fallback answers.
+Without it VM would name iso-8859-1 for text it cannot represent."
+  (dolist (text '("Ελληνικά" "日本語" "hi 😀"))
+    (should (equal "utf-8" (vm-charset-test--chosen text '(iso-8859-1)))))
+  ;; and the fallback is not merely the last entry: there is no utf-8 here
+  (should (equal "utf-8" (vm-charset-test--chosen "Ελληνικά"
+                                                  '(iso-8859-1 iso-8859-15)))))
+
+(ert-deftest vm-charset-test-a-universal-coding-system-stops-the-search ()
+  "A charset in `vm-mime-ucs-list' is taken even where it cannot be checked.
+The loop stops at the first entry that is universal, so utf-8 anywhere in the
+list answers for any text at all."
+  (should (member 'utf-8 (vm-get-mime-ucs-list)))
+  (dolist (text (mapcar #'cdr vm-charset-test--texts))
+    (unless (equal text "plain text")
+      (should (equal "utf-8" (vm-charset-test--chosen text '(utf-8)))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
