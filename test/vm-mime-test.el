@@ -4028,15 +4028,40 @@ in front of the CR that the CRLF conversion inserts."
 A text that is already an encoded word is not among them: decoding one is
 what decoding means, so it cannot come back as it went in.")
 
-(defun vm-mime-test--encode-subject (text)
-  "The Subject line `vm-mime-encode-headers' writes for TEXT, header name off."
+(defun vm-mime-test--encode-header (text)
+  "The whole Subject header `vm-mime-encode-headers' writes for TEXT.
+The name and the folding are left in, so a test can measure the lines as they
+go on the wire.  `vm-mime-test--encode-subject' is the value alone."
   (let ((mail-header-separator "--text follows this line--"))
     (with-temp-buffer
       (insert "Subject: " text "\n" mail-header-separator "\nbody\n")
       (vm-mime-encode-headers)
       (goto-char (point-min))
-      (re-search-forward "^Subject: ?")
-      (buffer-substring-no-properties (point) (line-end-position)))))
+      (string-trim-right
+       (buffer-substring-no-properties
+        (point-min)
+        (progn (re-search-forward
+                (concat "^" (regexp-quote mail-header-separator)))
+               (match-beginning 0)))
+       "\n"))))
+
+(defun vm-mime-test--unfold (header)
+  "HEADER with its continuation lines joined back on, as a reader joins them.
+RFC 5322 section 2.2.3: a line break followed by whitespace is folding, and
+means the whitespace alone."
+  (replace-regexp-in-string "\n[ \t]+" " " (string-trim-right header "\n")))
+
+(defun vm-mime-test--encode-subject (text)
+  "The value `vm-mime-encode-headers' writes for a Subject of TEXT.
+Unfolded and with the header name off, which is what a reader ends up with
+and what the round-trip tests compare.  Since emacs-vm/vm#794 a long header
+is folded, and one whose first encoded word does not fit beside the name is
+folded straight after the colon, so the name has to come off after the
+unfolding and not before."
+  (replace-regexp-in-string
+   ;; The one space that separates the name from the value, not any run of
+   ;; whitespace: a value whose own first character is a space keeps it.
+   "\\`Subject: ?" "" (vm-mime-test--unfold (vm-mime-test--encode-header text))))
 
 (defun vm-mime-test--decode-as-vm (encoded)
   (let ((vm-display-using-mime t))
@@ -4107,35 +4132,196 @@ a conforming reader.  Pinned because nothing checked the promise."
     ;; of nothing should the encoder stop emitting them
     (should (> examined 5))))
 
-(ert-deftest vm-mime-test-header-lines-are-written-unfolded ()
-  "A header VM writes is one line however long it is.
+(ert-deftest vm-mime-test-header-lines-are-folded ()
+  "A header VM writes is folded so no line runs past the limit.
 
-RFC 5322 says a line MUST be at most 998 characters and SHOULD be at most
-78; RFC 2047 says an encoded word MUST be at most 75.  VM folds nothing, so
-a long subject breaks all three:
+RFC 5322 section 2.1.1 sets 998 characters a line MUST NOT exceed and 78 it
+SHOULD NOT; RFC 2047 section 2 sets 75 for an encoded word.  VM used to fold
+nothing, so a long subject broke all three (emacs-vm/vm#794):
 
-    200 latin-1 words   one line, 2025 characters
-    400 ascii words     one line, 2008 characters
-    one 400-char word   one line, 1226, and one encoded word of 1218
+    30 latin-1 words    one line of 325, one encoded word of 316
+    400 ascii words     one line of 2008
+    one 400-char word   one line of 1226, one encoded word of 1218
 
-Recorded rather than asserted away: folding is a change to what goes on the
-wire, and splitting a run of 8-bit text into several encoded words has to
-keep the adjacency rule above in mind, so it is the maintainer\\='s call.  This
-test is the one to change when it is made.
+Now each of those is several lines of 75 or less, and the text still comes
+back whole from both decoders, which
+vm-mime-test-header-text-survives-a-conforming-reader checks across the whole
+corpus."
+  (dolist (text (list (mapconcat #'identity (make-list 30 "Grüße") " ")
+                      (mapconcat #'identity (make-list 400 "word") " ")
+                      (make-string 400 ?ü)
+                      (mapconcat #'identity (make-list 40 "日本語") "")))
+    (let* ((sent (vm-mime-test--encode-header text))
+           (lines (split-string (string-trim-right sent) "\n")))
+      ;; it did fold: more than one line, and the premise of the rest
+      (should (> (length lines) 1))
+      (dolist (line lines)
+        (should (<= (length line) vm-mime-header-line-limit)))
+      ;; every continuation line begins with whitespace, or it is not folding
+      (dolist (line (cdr lines))
+        (should (string-match-p "\\`[ \t]" line)))
+      ;; and the text is still all there
+      (should (equal (vm-mime-test--decode-as-vm
+                      (replace-regexp-in-string "\\`Subject: ?" ""
+                                                (vm-mime-test--unfold sent)))
+                     text)))))
 
-The adjacency handling is why the long-word case arises at all: VM encodes a
-run of 8-bit words together, correctly, and then never breaks it up."
-  (let ((many (mapconcat #'identity (make-list 200 "Grüße") " "))
-        (ascii (mapconcat #'identity (make-list 400 "word") " "))
-        (one-word (make-string 400 ?ü)))
-    (dolist (text (list many ascii one-word))
-      (let ((sent (vm-mime-test--encode-subject text)))
-        ;; one line: no fold anywhere
-        (should-not (string-match-p "\n" sent))
-        (should (> (length sent) 998))
-        ;; and the text is still all there, which is why nothing has broken
-        ;; for a reader that tolerates the length
-        (should (equal (vm-mime-test--decode-as-vm sent) text))))))
+(ert-deftest vm-mime-test-header-a-word-with-no-break-in-it-is-left-long ()
+  "A single unencoded run with no whitespace cannot be folded, and is not.
+Folding breaks at whitespace that is already there; RFC 5322 gives nowhere
+else to put a break.  An 800-character ASCII word therefore still goes out on
+one line over the limit.  The one break available is the space after the
+colon, which is taken, so the header is two lines: `Subject:' and the word.
+It is ASCII, so no encoded word is involved and RFC 2047 has nothing to say
+about it."
+  (let* ((sent (vm-mime-test--encode-header (make-string 800 ?x)))
+         (lines (split-string (string-trim-right sent) "\n")))
+    (should (equal 2 (length lines)))
+    (should (equal "Subject:" (car lines)))
+    ;; the word itself, still long, with nowhere to break it
+    (should (> (length (nth 1 lines)) vm-mime-header-line-limit))
+    (should (string-match-p "\\`[ \t]x+\\'" (nth 1 lines)))))
+
+(defun vm-mime-test--count-encoded-words (text)
+  "How many complete RFC 2047 encoded words TEXT holds."
+  (let ((case-fold-search nil)
+        (n 0)
+        (start 0))
+    (while (string-match "=\\?[^?]+\\?[BbQq]\\?[^?]*\\?=" text start)
+      (setq n (1+ n)
+            start (match-end 0)))
+    n))
+
+(ert-deftest vm-mime-test-header-folding-does-not-split-an-encoded-word ()
+  "No line break falls inside an encoded word.
+A break there would leave a word with no `?=' to end it, and a reader would
+show the rest as ordinary text.  The encoder keeps each word inside the
+75-character limit so the folder never has to break one.
+
+Counts the complete words line by line and compares with the count after
+unfolding.  A word split across a fold is complete in the unfolded text and
+in neither line, so the two counts part company; a literal `=?' in a subject
+that was never encoded is a word in neither, so it does not register.  Not by
+counting `=?' against `?=': a base64 payload ends in padding, so
+`R3LDvMOfZQ==?=' holds a `=?' that opens nothing."
+  (let ((split 0))
+    (dolist (spec (cons (cons "a long run"
+                              (mapconcat #'identity (make-list 40 "Grüße") " "))
+                        vm-mime-test--header-texts))
+      (let* ((sent (vm-mime-test--encode-header (cdr spec)))
+             (per-line (apply #'+ (mapcar #'vm-mime-test--count-encoded-words
+                                          (split-string sent "\n"))))
+             (whole (vm-mime-test--count-encoded-words
+                     (vm-mime-test--unfold sent))))
+        (should (equal per-line whole))
+        (setq split (+ split whole))))
+    ;; the premise: encoded words were there to be split
+    (should (> split 10))))
+
+
+;;; The encoding the reader chose, crossed with the text
+
+;; `vm-mime-encode-headers-type' takes Q, B, or a regexp choosing base64 for
+;; the words it matches and quoted-printable for the rest.  Nothing tested any
+;; of the three, and the splitting added for emacs-vm/vm#794 has a budget per
+;; encoding: base64 pads to a multiple of four and expands three bytes to
+;; four, quoted-printable takes one to three characters per byte.  An
+;; arithmetic error in either shows as a word over the limit, or as a word
+;; split where the encoding cannot be resumed.
+
+(defconst vm-mime-test--encoding-types
+  '(("quoted-printable" . Q)
+    ("base64"           . B)
+    ("base64 on 8-bit"  . "[^- !#-'*+/-9=?A-Z^-~]"))
+  "The values `vm-mime-encode-headers-type' takes.
+The third is the regexp form the option offers as a default, which picks
+base64 for a word holding anything outside a bare ASCII set.")
+
+(defconst vm-mime-test--long-header-texts
+  (list (cons "30 latin-1 words" (mapconcat #'identity (make-list 30 "Grüße") " "))
+        (cons "400 ascii words"  (mapconcat #'identity (make-list 400 "word") " "))
+        (cons "one 400-char word" (make-string 400 ?ü))
+        (cons "40 cjk words"     (mapconcat #'identity (make-list 40 "日本語") ""))
+        (cons "greek"            "Ελληνικά κείμενα εδώ και τώρα για όλους"))
+  "Texts long enough to need splitting, folding, or both.")
+
+(defun vm-mime-test--encoding-complaint (label text)
+  "Encode TEXT as a Subject and report what is wrong with the result.
+LABEL names the case.  Answers nil when every line is short enough, every
+encoded word is inside the RFC 2047 limit, no word is split across a fold,
+and both decoders give TEXT back."
+  (condition-case err
+      (let* ((sent (vm-mime-test--encode-header text))
+             (lines (split-string (string-trim-right sent) "\n"))
+             (whole (vm-mime-test--unfold sent))
+             (value (replace-regexp-in-string "\\`Subject: ?" "" whole))
+             (long (seq-filter (lambda (l)
+                                 (and (> (length l) vm-mime-header-line-limit)
+                                      ;; a run with no whitespace cannot be
+                                      ;; broken, and is not this test's business
+                                      (string-match-p "[ \t]" (string-trim l))))
+                               lines))
+             (over (let ((n 0) (start 0))
+                     (while (string-match "=\\?[^?]+\\?[BbQq]\\?[^?]*\\?=" whole start)
+                       (when (> (- (match-end 0) (match-beginning 0)) 75)
+                         (setq n (1+ n)))
+                       (setq start (match-end 0)))
+                     n)))
+        (cond
+         (long (format "%s: %d line(s) over %d, longest %d"
+                       label (length long) vm-mime-header-line-limit
+                       (apply #'max (mapcar #'length long))))
+         ((> over 0) (format "%s: %d encoded word(s) over 75" label over))
+         ((/= (apply #'+ (mapcar #'vm-mime-test--count-encoded-words lines))
+              (vm-mime-test--count-encoded-words whole))
+          (format "%s: an encoded word is split across a fold" label))
+         ((not (equal (vm-mime-test--decode-as-vm value) text))
+          (format "%s: VM reads it back as %S" label
+                  (vm-mime-test--decode-as-vm value)))
+         ((not (equal (vm-mime-test--decode-as-rfc2047 value) text))
+          (format "%s: a conforming reader gets %S" label
+                  (vm-mime-test--decode-as-rfc2047 value)))
+         (t nil)))
+    (error (format "%s: %s" label (error-message-string err)))))
+
+(defun vm-mime-test--every-text-under (type)
+  "Encode every text with `vm-mime-encode-headers-type' bound to TYPE."
+  (let ((vm-mime-encode-headers-type type))
+    (delq nil
+          (mapcar (lambda (spec)
+                    (vm-mime-test--encoding-complaint (car spec) (cdr spec)))
+                  (append vm-mime-test--header-texts
+                          vm-mime-test--long-header-texts)))))
+
+(ert-deftest vm-mime-test-header-quoted-printable-holds-every-text ()
+  "Twenty-one texts encoded Q come back whole, inside both limits."
+  (should (equal nil (vm-mime-test--every-text-under 'Q))))
+
+(ert-deftest vm-mime-test-header-base64-holds-every-text ()
+  "The same encoded B.
+Base64 is where the splitting arithmetic is easiest to get wrong: it pads to
+a multiple of four, so a word cut at the wrong character encodes to something
+a decoder cannot finish."
+  (should (equal nil (vm-mime-test--every-text-under 'B))))
+
+(ert-deftest vm-mime-test-header-a-regexp-type-holds-every-text ()
+  "The same again with the regexp form, which chooses per run.
+`vm-mime-encode-headers-type' accepts a regexp and picks base64 for what it
+matches, quoted-printable for the rest, so one header can carry both."
+  (should (equal nil (vm-mime-test--every-text-under
+                      (cdr (nth 2 vm-mime-test--encoding-types))))))
+
+(ert-deftest vm-mime-test-header-the-type-decides-the-encoding-letter ()
+  "The encoding VM asks for is the one that reaches the wire.
+Otherwise the tests above would pass while the option did nothing: all three
+would be quoted-printable and nobody would know."
+  (dolist (spec '((Q . "Q") (B . "B")))
+    (let ((vm-mime-encode-headers-type (car spec)))
+      (should (string-match-p (concat "=?[^?]+?" (cdr spec) "?")
+                              (vm-mime-test--encode-header "Grüße")))))
+  ;; and the regexp form picks base64 for a run that matches it
+  (let ((vm-mime-encode-headers-type (cdr (nth 2 vm-mime-test--encoding-types))))
+    (should (string-match-p "=?[^?]+?B?" (vm-mime-test--encode-header "Grüße")))))
 
 (provide 'vm-mime-test)
 
