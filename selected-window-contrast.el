@@ -259,8 +259,9 @@ Used in `selected-window-contrast-mark-small-rectangle-temporary'.")
   "For every key pressed, disable highlighing of pointer.
 Fix for case when we switch to buffer and do something fast while cursor
  highlighted with rectangle."
-  (deactivate-mark)
-  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t))
+  (when (buffer-live-p (current-buffer)) ; for `with-temp-buffer' in ert tests
+    (deactivate-mark)
+    (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t)))
 
 (defun selected-window-contrast-mark-small-rectangle-temporary (window)
   "Mark a 2x2 rectangle around point for 1 sec, to hightlight WINDOW.
@@ -285,12 +286,13 @@ Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
       ;; Start timer to deactivate mark and rectangle mode.
       (run-with-timer selected-window-contrast-region-timeout
                       nil (lambda (buf)
-                            (with-current-buffer buf
-                              (when (region-active-p)
-                                (let ((inhibit-message t) (message-log-max nil))
-                                  ;; (exchange-point-and-mark)
-                                  (deactivate-mark)
-                                  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t)))))
+                            (when (buffer-live-p buf) ; for `with-temp-buffer' in ert tests
+                              (with-current-buffer buf
+                                (when (region-active-p)
+                                  (let ((inhibit-message t) (message-log-max nil))
+                                    ;; (exchange-point-and-mark)
+                                    (deactivate-mark)
+                                    (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t))))))
                       (current-buffer))))
   ;; save current window, because `previous-window' is not working.
   (setq selected-window-contrast-prev-window (selected-window)))
