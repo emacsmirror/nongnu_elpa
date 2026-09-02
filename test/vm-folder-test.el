@@ -6353,6 +6353,196 @@ the keyword is parsed by cl-lib."
     ;; and `fail' is no longer a positional of its own
     (should-not (memq 'fail arglist))))
 
+
+;;; The message order header (X-VM-Message-Order)
+
+;; The header that records the order a folder's messages are in, written into
+;; the first message.  Nothing tested it, and the coverage report put
+;; `vm-stuff-message-order' among the definitions with the most forms never
+;; evaluated: half of them.  An order header VM cannot read back is a folder
+;; that comes back in the wrong order.
+
+(defun vm-order-test--folder (n)
+  "A From_ folder of N messages, subjects and bodies numbered."
+  (mapconcat
+   (lambda (i)
+     (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                     "From: alice@example.com\nSubject: subject %d\n\n"
+                     "body %d\n\n")
+             i i))
+   (number-sequence 1 n) ""))
+
+(defun vm-order-test--header ()
+  "The order header in the current buffer, continuation lines and all.
+Nil when there is none."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward vm-message-order-header-regexp nil t)
+      (let ((start (match-beginning 0)))
+        (goto-char start)
+        (forward-line 1)
+        (while (looking-at "[ \t]") (forward-line 1))
+        (buffer-substring-no-properties start (point))))))
+
+(defun vm-order-test--order-in-header ()
+  "The list of numbers the order header holds, read as VM reads it."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward vm-message-order-header-regexp nil t)
+      (read (current-buffer)))))
+
+(ert-deftest vm-order-test-a-one-message-folder-gets-no-order-header ()
+  "Nothing is written for a folder with one message in it.
+`vm-stuff-message-order' begins `(if (cdr vm-message-list)', there being no
+order to record when there is nothing to order."
+  (vm-test-with-folder (vm-order-test--folder 1)
+    (vm-number-messages)
+    (vm-stuff-message-order)
+    (should-not (vm-order-test--header))))
+
+(ert-deftest vm-order-test-the-header-holds-every-message-number ()
+  "Two messages are written as (1 2), in the order they sit in the folder."
+  (vm-test-with-folder (vm-order-test--folder 2)
+    (vm-number-messages)
+    (vm-stuff-message-order)
+    (should (equal '(1 2) (vm-order-test--order-in-header)))))
+
+(ert-deftest vm-order-test-a-long-order-is-folded-every-fifteen ()
+  "The header wraps after every fifteenth number, and stays readable.
+
+`vm-stuff-message-order' writes \"\\n\\t \" where `(zerop (% n 15))', so a
+folder of sixteen messages is the first with a continuation line.  Nothing
+reached that branch before: the coverage report had it among the never
+evaluated, every test until now using two or three messages.
+
+Both halves matter.  The continuation lines have to begin with whitespace or
+they are not folding and the header ends early, and the whole has to `read'
+back as the same list of numbers or the order is lost."
+  (dolist (n '(16 33))
+    (vm-test-with-folder (vm-order-test--folder n)
+      (vm-number-messages)
+      (vm-stuff-message-order)
+      (let ((header (vm-order-test--header)))
+        (should header)
+        (let ((lines (split-string (string-trim-right header "\n") "\n")))
+          ;; it wrapped: 16 numbers over two lines, 33 over three
+          (should (equal (+ 2 (/ (1- n) 15)) (length lines)))
+          ;; every line after the first is a continuation
+          (dolist (line (cdr lines))
+            (should (string-match-p "\\`[ \t]" line))))
+        ;; and it reads back as the numbers that went in
+        (should (equal (number-sequence 1 n) (vm-order-test--order-in-header)))))))
+
+(ert-deftest vm-order-test-stuffing-twice-leaves-one-header ()
+  "Writing the order again replaces it rather than adding a second.
+The writer deletes any order header it finds before inserting, and without
+that a folder would grow one on every save."
+  (vm-test-with-folder (vm-order-test--folder 4)
+    (vm-number-messages)
+    (dotimes (_ 3) (vm-stuff-message-order))
+    (let ((n 0))
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward vm-message-order-header-regexp nil t)
+          (setq n (1+ n))))
+      (should (equal 1 n)))
+    (should (equal '(1 2 3 4) (vm-order-test--order-in-header)))))
+
+(ert-deftest vm-order-test-a-reordered-folder-round-trips ()
+  "An order VM wrote is the order VM reads back.
+
+Reverses the message list, writes the order, then reads the folder afresh and
+gobbles the header: the messages come back in the reversed order.  This is
+what the header is for, and what a folder loses if the writing and the reading
+disagree.
+
+The header lists the numbers in the folder\'s *physical* order, not in
+presentation order: `vm-stuff-message-order\' sorts by `vm-start-of\' and
+writes each message\'s number.  So a reversed list gives (5 4 3 2 1), the
+message stored first being the one now presented fifth."
+  (vm-test-with-folder (vm-order-test--folder 5)
+    (vm-number-messages)
+    (setq vm-message-list (nreverse vm-message-list))
+    (vm-number-messages)
+    (vm-stuff-message-order)
+    (should (equal '(5 4 3 2 1) (vm-order-test--order-in-header)))
+    ;; the subjects in the order the list now has
+    (let ((subjects (mapcar (lambda (m) (vm-su-subject m)) vm-message-list))
+          (text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (equal "subject 5" (car subjects)))
+      ;; read it again from the same text and apply the header
+      (vm-test-with-folder text
+        (vm-number-messages)
+        (vm-gobble-message-order)
+        (should (equal subjects
+                       (mapcar (lambda (m) (vm-su-subject m)) vm-message-list)))))))
+
+(ert-deftest vm-order-test-a-bad-order-header-is-a-warning-not-a-failure ()
+  "A header that will not `read' is complained about and ignored.
+The folder is still readable afterwards, in the order it is stored in, which
+is the point of the `condition-case': a corrupt order header must not stop a
+folder being opened."
+  (vm-test-with-folder (vm-order-test--folder 3)
+    (vm-number-messages)
+    ;; Into the first message's header block, which is the only place
+    ;; `vm-gobble-message-order' looks: it stops at the blank line.
+    (save-excursion
+      (goto-char (point-min))
+      (forward-line 1)                  ; past the From_ separator
+      (insert "X-VM-Message-Order:\n\t(1 2 3\n"))
+    (let (warned)
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (_l _t format &rest args)
+                   (push (apply #'format format args) warned))))
+        (vm-gobble-message-order))
+      (should warned)
+      (should (string-match-p "[Bb]ad order header" (car warned))))
+    ;; still three messages, still in their stored order
+    (should (equal 3 (length vm-message-list)))
+    (should (equal '("subject 1" "subject 2" "subject 3")
+                   (mapcar (lambda (m) (vm-su-subject m)) vm-message-list)))))
+
+(ert-deftest vm-order-test-removing-the-header-takes-it-out ()
+  "`vm-remove-message-order' leaves no order header behind."
+  (vm-test-with-folder (vm-order-test--folder 4)
+    (vm-number-messages)
+    (vm-stuff-message-order)
+    (should (vm-order-test--header))
+    (vm-remove-message-order)
+    (should-not (vm-order-test--header))))
+
+(ert-deftest vm-order-test-having-an-order-header-is-detected ()
+  "`vm-has-message-order' answers for the folder in the buffer.
+It is how VM decides whether a folder has an order to apply at all, and it
+looks only in the first message's header block, which is where the writer
+puts one."
+  (vm-test-with-folder (vm-order-test--folder 3)
+    (vm-number-messages)
+    (should-not (vm-has-message-order))
+    (vm-stuff-message-order)
+    (should (vm-has-message-order))
+    (vm-remove-message-order)
+    (should-not (vm-has-message-order))))
+
+(ert-deftest vm-order-test-an-order-header-in-a-body-is-not-found ()
+  "A message body holding what looks like an order header is not one.
+`vm-has-message-order' and `vm-gobble-message-order' both stop at the blank
+line that ends the first message's headers, so text further down cannot
+reorder a folder.  A message quoting one of these headers would otherwise do
+it."
+  (vm-test-with-folder (vm-order-test--folder 3)
+    (vm-number-messages)
+    (save-excursion
+      (goto-char (point-min))
+      (re-search-forward "^body 1$")
+      (beginning-of-line)
+      (insert "X-VM-Message-Order:\n\t(3 2 1)\n"))
+    (should-not (vm-has-message-order))
+    (vm-gobble-message-order)
+    ;; the order is unchanged, the body text notwithstanding
+    (should (equal '("subject 1" "subject 2" "subject 3")
+                   (mapcar (lambda (m) (vm-su-subject m)) vm-message-list)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
