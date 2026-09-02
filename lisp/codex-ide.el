@@ -125,7 +125,8 @@ Escape hatch for flags not yet modeled by a defcustom."
   :group 'codex-ide)
 
 (defcustom codex-ide-buffer-name-function #'codex-ide--default-buffer-name
-  "Function called with the working directory to produce a buffer name."
+  "Function called with the working directory to produce a base buffer name.
+Codex IDE adds a root identity when another project already uses that name."
   :type 'function
   :group 'codex-ide)
 
@@ -183,9 +184,60 @@ Prefers the current project root; falls back to `default-directory'."
 (defun codex-ide--default-buffer-name (directory)
   "Return the buffer name for DIRECTORY, as `*codex[<basename>]*'."
   (let* ((root (file-name-as-directory (expand-file-name directory)))
-         (name (file-name-nondirectory (directory-file-name root)))
-         (identity (substring (secure-hash 'sha1 root) 0 8)))
-    (format "*codex[%s:%s]*" name identity)))
+         (name (file-name-nondirectory (directory-file-name root))))
+    (format "*codex[%s]*" name)))
+
+(defun codex-ide--identified-buffer-name (base-name root)
+  "Return BASE-NAME with a stable identity for ROOT."
+  (let ((identity (substring (secure-hash 'sha1 root) 0 8)))
+    (cond
+     ((string-suffix-p "]*" base-name)
+      (concat (substring base-name 0 -2) ":" identity "]*"))
+     ((string-suffix-p "*" base-name)
+      (concat (substring base-name 0 -1) ":" identity "*"))
+     (t
+      (format "%s:%s" base-name identity)))))
+
+(defun codex-ide--same-root-p (left right)
+  "Return non-nil when LEFT and RIGHT name the same normalized root."
+  (and left right
+       (equal (file-name-as-directory (expand-file-name left))
+              (file-name-as-directory (expand-file-name right)))))
+
+(defun codex-ide--buffer-name-conflict-p (name root)
+  "Return non-nil when NAME is occupied by a buffer outside ROOT."
+  (when-let* ((buffer (get-buffer name)))
+    (let ((owner (buffer-local-value 'codex-ide--session-root buffer)))
+      (not (codex-ide--same-root-p owner root)))))
+
+(defun codex-ide--buffer-for-session (root &optional session-id)
+  "Return a live session buffer for ROOT and optional SESSION-ID."
+  (cl-find-if
+   (lambda (buffer)
+     (with-current-buffer buffer
+       (and (codex-ide--same-root-p codex-ide--session-root root)
+            (integerp codex-ide--session-id)
+            (or (not session-id)
+                (equal codex-ide--session-id session-id)))))
+   (buffer-list)))
+
+(defun codex-ide--session-base-name (buffer)
+  "Return the unindexed base name established by session BUFFER."
+  (with-current-buffer buffer
+    (let* ((name (buffer-name buffer))
+           (suffix (format "<%d>" codex-ide--session-id))
+           (starred-suffix (concat suffix "*")))
+      (cond
+       ((= codex-ide--session-id 1) name)
+       ((string-suffix-p starred-suffix name)
+        (concat (string-remove-suffix starred-suffix name) "*"))
+       ((string-suffix-p suffix name)
+        (string-remove-suffix suffix name))))))
+
+(defun codex-ide--established-buffer-name (root)
+  "Return the base name already used by a live session for ROOT."
+  (when-let* ((buffer (codex-ide--buffer-for-session root)))
+    (codex-ide--session-base-name buffer)))
 
 (defun codex-ide--indexed-buffer-name (base-name session-id)
   "Return BASE-NAME indexed for SESSION-ID."
@@ -198,11 +250,16 @@ Prefers the current project root; falls back to `default-directory'."
 
 (defun codex-ide--get-buffer-name (&optional directory session-id)
   "Return the buffer name for DIRECTORY and SESSION-ID.
-DIRECTORY defaults to the current project and SESSION-ID defaults to 1."
-  (codex-ide--indexed-buffer-name
-   (funcall codex-ide-buffer-name-function
-            (or directory (codex-ide--get-working-directory)))
-   (or session-id 1)))
+DIRECTORY defaults to the current project and SESSION-ID defaults to 1.
+Add a stable root identity when another project occupies the base name."
+  (let* ((directory (or directory (codex-ide--get-working-directory)))
+         (root (file-name-as-directory (expand-file-name directory)))
+         (base-name (funcall codex-ide-buffer-name-function directory))
+         (name (or (codex-ide--established-buffer-name root)
+                   (if (codex-ide--buffer-name-conflict-p base-name root)
+                       (codex-ide--identified-buffer-name base-name root)
+                     base-name))))
+    (codex-ide--indexed-buffer-name name (or session-id 1))))
 
 (defun codex-ide--make-session (root id buffer process)
   "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS."
@@ -811,9 +868,12 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
       (let* ((codex-ide--cleanup-in-progress t)
              (session (codex-ide--session-by-id directory session-id))
              (buffer (or (plist-get session :buffer)
+                         (codex-ide--buffer-for-session directory session-id)
                          (get-buffer
                           (codex-ide--get-buffer-name directory session-id))))
-             (process (plist-get session :process)))
+             (process (or (plist-get session :process)
+                          (and (buffer-live-p buffer)
+                               (get-buffer-process buffer)))))
         (when (and (or (not expected-buffer) (eq buffer expected-buffer))
                    (or (not expected-process) (eq process expected-process)))
           (codex-ide--remove-session directory session-id)

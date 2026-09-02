@@ -678,10 +678,9 @@ region, where the scrollback-browsing rule alone would strand it."
        (should (= (point) (eat-term-display-cursor eat-terminal)))))))
 
 (ert-deftest codex-ide-default-buffer-name ()
-  "Buffer name includes the basename and stable root identity."
-  (should (string-match-p
-           (rx string-start "*codex[foo:" (= 8 hex-digit) "]*" string-end)
-           (codex-ide--default-buffer-name "/tmp/foo")))
+  "Buffer name uses the project basename."
+  (should (equal (codex-ide--default-buffer-name "/tmp/foo")
+                 "*codex[foo]*"))
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
                  (codex-ide--default-buffer-name "/tmp/foo"))))
 
@@ -2330,19 +2329,123 @@ region, where the scrollback-browsing rule alone would strand it."
       (should (eq (plist-get entry :type) 'switch)))))
 
 (ert-deftest codex-ide-default-buffer-name-distinguishes-equal-basenames ()
-  "Default names distinguish project roots with the same basename."
+  "Live project collisions add a stable root identity."
   (let* ((parent-a (make-temp-file "codex-root-a-" t))
          (parent-b (make-temp-file "codex-root-b-" t))
          (root-a (file-name-as-directory (expand-file-name "same" parent-a)))
-         (root-b (file-name-as-directory (expand-file-name "same" parent-b))))
+         (root-b (file-name-as-directory (expand-file-name "same" parent-b)))
+         buffer-a buffer-b root-b-name)
     (unwind-protect
         (progn
           (make-directory root-a)
           (make-directory root-b)
-          (should-not (equal (codex-ide--get-buffer-name root-a)
-                             (codex-ide--get-buffer-name root-b))))
+          (setq buffer-a
+                (get-buffer-create (codex-ide--get-buffer-name root-a)))
+          (with-current-buffer buffer-a
+            (setq-local codex-ide--session-root root-a)
+            (setq-local codex-ide--session-id 1))
+          (should (equal (codex-ide--get-buffer-name root-a)
+                         "*codex[same]*"))
+          (setq root-b-name (codex-ide--get-buffer-name root-b))
+          (should (string-match-p
+                   (rx string-start "*codex[same:"
+                       (= 8 hex-digit) "]*" string-end)
+                   root-b-name))
+          (setq buffer-b (get-buffer-create root-b-name))
+          (with-current-buffer buffer-b
+            (setq-local codex-ide--session-root root-b)
+            (setq-local codex-ide--session-id 1))
+          (kill-buffer buffer-a)
+          (setq buffer-a nil)
+          (should (equal (codex-ide--get-buffer-name root-b 2)
+                         (concat (substring root-b-name 0 -1) "<2>*"))))
+      (when (buffer-live-p buffer-a)
+        (kill-buffer buffer-a))
+      (when (buffer-live-p buffer-b)
+        (kill-buffer buffer-b))
       (delete-directory parent-a t)
       (delete-directory parent-b t))))
+
+(ert-deftest codex-ide-custom-buffer-name-disambiguates-collisions ()
+  "Custom base names retain root-safe collision handling."
+  (let* ((codex-ide-buffer-name-function (lambda (_directory) "*my-codex*"))
+         (root-a (file-name-as-directory
+                  (make-temp-file "codex-custom-root-a-" t)))
+         (root-b (file-name-as-directory
+                  (make-temp-file "codex-custom-root-b-" t)))
+         (buffer (get-buffer-create (codex-ide--get-buffer-name root-a))))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq-local codex-ide--session-root root-a)
+            (setq-local codex-ide--session-id 1))
+          (should (equal (codex-ide--get-buffer-name root-a) "*my-codex*"))
+          (should (string-match-p
+                   (rx string-start "*my-codex:"
+                       (= 8 hex-digit) "*" string-end)
+                   (codex-ide--get-buffer-name root-b))))
+      (kill-buffer buffer)
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
+
+(ert-deftest codex-ide-cleanup-finds-identified-buffer-without-record ()
+  "Cleanup finds an identified session after the original collision ends."
+  (let* ((codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (parent-a (make-temp-file "codex-cleanup-root-a-" t))
+         (parent-b (make-temp-file "codex-cleanup-root-b-" t))
+         (root-a (file-name-as-directory (expand-file-name "same" parent-a)))
+         (root-b (file-name-as-directory (expand-file-name "same" parent-b)))
+         buffer-a buffer-b)
+    (unwind-protect
+        (progn
+          (make-directory root-a)
+          (make-directory root-b)
+          (setq buffer-a
+                (get-buffer-create (codex-ide--get-buffer-name root-a)))
+          (with-current-buffer buffer-a
+            (setq-local codex-ide--session-root root-a)
+            (setq-local codex-ide--session-id 1))
+          (setq buffer-b
+                (get-buffer-create (codex-ide--get-buffer-name root-b)))
+          (with-current-buffer buffer-b
+            (setq-local codex-ide--session-root root-b)
+            (setq-local codex-ide--session-id 1))
+          (kill-buffer buffer-a)
+          (setq buffer-a nil)
+          (codex-ide--cleanup-on-exit root-b 1)
+          (should-not (buffer-live-p buffer-b)))
+      (when (buffer-live-p buffer-a)
+        (kill-buffer buffer-a))
+      (when (buffer-live-p buffer-b)
+        (kill-buffer buffer-b))
+      (delete-directory parent-a t)
+      (delete-directory parent-b t))))
+
+(ert-deftest codex-ide-cleanup-finds-recovered-arbitrary-name ()
+  "Cleanup uses session ownership when a recovered name cannot be derived."
+  (let* ((codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (root (file-name-as-directory
+                (make-temp-file "codex-cleanup-recovered-" t)))
+         (buffer (generate-new-buffer " *codex-recovered-session*"))
+         process)
+    (unwind-protect
+        (progn
+          (setq process
+                (codex-ide-test--make-buffer-process
+                 buffer "codex-cleanup-recovered"))
+          (with-current-buffer buffer
+            (setq-local codex-ide--session-root root)
+            (setq-local codex-ide--session-id 2))
+          (codex-ide--cleanup-on-exit root 2 buffer process)
+          (should-not (process-live-p process))
+          (should-not (buffer-live-p buffer)))
+      (when (process-live-p process)
+        (delete-process process))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory root t))))
 
 (ert-deftest codex-ide-stale-sentinel-preserves-replacement-session ()
   "An old process sentinel cannot clean up a replacement owner."
