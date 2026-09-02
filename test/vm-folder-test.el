@@ -6543,6 +6543,58 @@ it."
     (should (equal '("subject 1" "subject 2" "subject 3")
                    (mapcar (lambda (m) (vm-su-subject m)) vm-message-list)))))
 
+
+;;; What VM says when mail arrives (emacs-vm/vm#796)
+
+(ert-deftest vm-folder-test-the-arrival-line-names-the-folder-once ()
+  "REGRESSION: the arrival announcement does not say the folder twice.
+
+Issue #796, reported against develop.  The asynchronous IMAP and POP paths
+each prefixed the folder name and then appended `vm-totals-blurb', which
+labels itself, so a reader getting new mail saw
+
+    folder: 1 new message.  folder: 3 messages, 3 new, 0 unread, 0 deleted
+
+with the name twice and the new count twice.  The reporter took it for a
+corrupted status bar; it is one message, and the echo area was showing all of
+it."
+  (vm-test-with-real-folder (3)
+    (let* ((name (buffer-name))
+           (line (vm-arrival-blurb 1))
+           (times (let ((n 0) (start 0))
+                    (while (string-match (regexp-quote name) line start)
+                      (setq n (1+ n) start (match-end 0)))
+                    n)))
+      (should (equal 1 times))
+      ;; and it still says both things: what arrived, and what the folder holds
+      (should (string-match-p "1 new message\\." line))
+      (should (string-match-p "3 messages, 3 new, 0 unread, 0 deleted" line)))))
+
+(ert-deftest vm-folder-test-the-totals-blurb-can-leave-its-label-off ()
+  "`vm-totals-blurb' labels itself unless asked not to.
+The labelled form is what `vm-emit-totals-blurb' shows on its own; the
+unlabelled one is for a caller that has named the folder already, which is
+what #796 was about."
+  (vm-test-with-real-folder (3)
+    (let ((name (buffer-name)))
+      (should (string-prefix-p (concat name ": ") (vm-totals-blurb)))
+      (should-not (string-match-p (regexp-quote name) (vm-totals-blurb t)))
+      ;; the counts are the same either way
+      (should (equal (vm-totals-blurb)
+                     (concat name ": " (vm-totals-blurb t)))))))
+
+(ert-deftest vm-folder-test-an-empty-folder-says-so-either-way ()
+  "The no-messages form is labelled or not, as asked.
+The other arm of `vm-totals-blurb', which a folder with nothing in it takes."
+  (vm-test-with-real-folder (1)
+    ;; one message, then emptied of it
+    (setq vm-message-list nil
+          vm-totals nil
+          vm-modification-counter (1+ vm-modification-counter))
+    (let ((name (buffer-name)))
+      (should (equal (concat name ": No messages.") (vm-totals-blurb)))
+      (should (equal "No messages." (vm-totals-blurb t))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

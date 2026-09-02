@@ -1643,7 +1643,7 @@ synchronisation asks for: `vm-imap-save-attributes\=' with `:all-flags\='."
 
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
 (declare-function vm-present-current-message "vm-page" ())
-(declare-function vm-totals-blurb "vm-folder" ())
+(declare-function vm-arrival-blurb "vm-folder" (count))
 
 (defun vm-imap-net-show-arrival (folder count)
   "Say that COUNT messages arrived in FOLDER, and show one of them.
@@ -1652,12 +1652,14 @@ than when the command was typed.  A folder that was empty has no current
 message until this runs, and every command that works on the current message
 would have nothing to work on."
   (with-current-buffer folder
-    (let ((blurb (vm-totals-blurb)))
+    ;; Built before the selection below, which reads a message and alters the
+    ;; new count, as the synchronous path builds its blurb first for the same
+    ;; reason.
+    (let ((blurb (vm-arrival-blurb count)))
       (if (vm-thoughtfully-select-message)
 	  (vm-present-current-message)
 	(vm-update-summary-and-mode-line))
-      (vm-net-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
-		 count (if (= count 1) "" "s") blurb))))
+      (vm-net-inform 5 "%s" blurb))))
 
 (defvar vm-imap-net-session nil
   "The session this folder has running, if it has one.

@@ -784,7 +784,7 @@ again."
 (declare-function vm-update-summary-and-mode-line "vm-summary" ())
 (declare-function vm-thoughtfully-select-message "vm-folder" ())
 (declare-function vm-present-current-message "vm-page" ())
-(declare-function vm-totals-blurb "vm-folder" ())
+(declare-function vm-arrival-blurb "vm-folder" (count))
 (declare-function vm-inform "vm-misc" (level &rest args))
 (declare-function vm-warn "vm-misc" (l secs &rest args))
 (declare-function vm-get-folder-type "vm-folder"
@@ -993,12 +993,13 @@ fetched again."
 	(vm-set-pop-uidl-of message (car rest))
 	(vm-set-stuff-flag-of message t)
 	(setq rest (cdr rest)))
-      (if (vm-thoughtfully-select-message)
-	  (vm-present-current-message)
-	(vm-update-summary-and-mode-line))
-      (vm-net-inform 5 "%s: %d new message%s.  %s" (buffer-name folder)
-		 (length new) (if (= (length new) 1) "" "s")
-		 (vm-totals-blurb))
+      ;; Built before the selection below, which reads a message and alters
+      ;; the new count.
+      (let ((blurb (vm-arrival-blurb (length new))))
+	(if (vm-thoughtfully-select-message)
+	    (vm-present-current-message)
+	  (vm-update-summary-and-mode-line))
+	(vm-net-inform 5 "%s" blurb))
       (length new))))
 
 (defun vm-pop-net-get-folder-mail ()

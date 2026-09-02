@@ -2406,7 +2406,7 @@ Supports version 4 format of attribute storage, for backward compatibility."
 			    vm-unread-count
 			    vm-deleted-count)))))
 
-(defun vm-totals-blurb ()
+(defun vm-totals-blurb (&optional unlabelled)
   "How many messages the folder holds, and how many are in each state.
 New, unread and deleted are counted separately, and a folder with nothing in
 it says so.  This is the line the mode line summarises.  The totals are
@@ -2414,20 +2414,40 @@ recomputed only when the folder has changed since they were last worked out.
 
 Answers the line without showing it, for a caller that puts it in a message
 of its own: showing it here as well printed the same counts twice, once on
-its own and once inside the line that followed it."
+its own and once inside the line that followed it.
+
+UNLABELLED non-nil leaves the folder\='s name off the front, for a caller
+that has named it already.  A caller that prefixed its own name to the
+labelled form printed the name twice (emacs-vm/vm#796)."
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-    (let ((folder (buffer-name)))
+    (let ((label (if unlabelled "" (concat (buffer-name) ": "))))
       (if (not (equal (nth 0 vm-totals) vm-modification-counter))
 	  (vm-compute-totals))
       (if (equal (nth 1 vm-totals) 0)
-	  (format "%s: No messages." folder)
-	(format "%s: %d message%s, %d new, %d unread, %d deleted"
-		folder
+	  (format "%sNo messages." label)
+	(format "%s%d message%s, %d new, %d unread, %d deleted"
+		label
 		(nth 1 vm-totals) (if (= (nth 1 vm-totals) 1) "" "s")
 		(nth 2 vm-totals)
 		(nth 3 vm-totals)
 		(nth 4 vm-totals))))))
+
+(defun vm-arrival-blurb (count)
+  "What to say when COUNT messages have just arrived in the current folder.
+
+The folder is named once.  `vm-totals-blurb\=' labels itself, so the
+asynchronous IMAP and POP paths, which prefixed the folder name and then
+appended the labelled blurb, said it twice and gave the new count twice with
+it: \"folder: 1 new message.  folder: 3 messages, 1 new, 0 unread, 0
+deleted\" (emacs-vm/vm#796).
+
+Both of them build the line here rather than each writing its own, the two
+having drifted into the same fault separately."
+  (format "%s: %d new message%s.  %s"
+	  (buffer-name)
+	  count (if (= count 1) "" "s")
+	  (vm-totals-blurb t)))
 
 ;;;###autoload
 (defun vm-emit-totals-blurb ()
