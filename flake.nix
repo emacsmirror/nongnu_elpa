@@ -36,7 +36,7 @@
             config.permittedInsecurePackages = [ "emacs-nox-29.4" ];
           };
           lib = pkgs.lib;
-          version = "0.1.1";
+          version = "0.1.2";
 
           emacs = pkgs.emacs30-nox or pkgs.emacs;
           emacsPackages = pkgs.emacsPackagesFor emacs;

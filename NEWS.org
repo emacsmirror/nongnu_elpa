@@ -1,5 +1,22 @@
 #+title: emacs-codex-ide NEWS
 
+* Version 0.1.2 (2026-09-02)
+
+** Sessions
+
+- Use concise project-based buffer names and add stable root identities only
+  when equal basenames collide.
+- Preserve session ownership across recovery, replacement, and cleanup paths.
+
+** MCP and permissions
+
+- Restore the full local MCP control tool set and add YOLO mode.
+- Harden MCP and session lifecycle cleanup.
+
+** Menu
+
+- Present boolean options as popup switches.
+
 * Version 0.1.1 (2026-08-13)
 
 ** Terminal backends
