@@ -362,6 +362,29 @@ pair for the whole header and a single message went out with no To at all."
                  '("Alice Smith <alice@example.com>"
                    "Bob Jones <bob@example.com>"))))
 
+
+;;; The mode, and loading not switching it on (emacs-vm/vm#788)
+
+(ert-deftest vm-serial-test-loading-does-not-advise-anything ()
+  "Loading vm-serial does not advise `vm-mail-send-and-exit'.
+Customize loads this file whenever it is asked about a VM option, and it
+required vm-postpone too, so one `C-h v' installed the advice here and the
+hooks and keys there."
+  (require 'vm-serial)
+  (let ((vm-serial-mode nil))
+    (should-not (advice-member-p #'vm-serial--send-mail
+                                'vm-mail-send-and-exit))))
+
+(ert-deftest vm-serial-test-mode-toggles-the-advice ()
+  "The mode adds the advice and removes it again."
+  (require 'vm-serial)
+  (let ((vm-serial-mode nil))
+    (vm-serial-mode 1)
+    (should (advice-member-p #'vm-serial--send-mail 'vm-mail-send-and-exit))
+    (vm-serial-mode -1)
+    (should-not (advice-member-p #'vm-serial--send-mail
+                                 'vm-mail-send-and-exit))))
+
 (provide 'vm-serial-test)
 
 ;;; vm-serial-test.el ends here

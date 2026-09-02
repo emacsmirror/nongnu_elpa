@@ -4897,6 +4897,29 @@ folder carefully if you do: it has to hold whatever the message holds.
 Sometimes, you might want to interrupt the composing of a message and
 continue it later.  This is called @dfn{postponing}.
 
+@findex vm-postpone-mode
+@kbd{C-c C-d} and @code{vm-continue-postponed-message} below are VM's own and
+need nothing switched on.  The rest of @file{vm-postpone.el} does: four keys
+that insert a header field, and the offer to keep a composition you kill
+unsent as a draft.  Switch it on in your @code{vm-init-file}:
+
+@lisp
+(vm-postpone-mode 1)
+@end lisp
+
+@noindent
+The mode is autoloaded, so no @code{require} is needed.  Turning it off with
+@code{(vm-postpone-mode -1)} takes those keys and that offer away again.
+
+Loading the file installed them in earlier releases, so @code{(require
+'vm-postpone)} was how one switched it on.  That still loads the file but no
+longer changes how VM behaves, so an init file saying only @code{(require
+'vm-postpone)} needs the line above.  The same applies to
+@file{vm-message-history.el} and @file{vm-serial.el}, which have
+@code{vm-message-history-mode} and @code{vm-serial-mode}.  The reason is that
+Customize loads any of them to answer a question about a VM option, so a
+reader who never asked for one was getting its hooks and keys anyway.
+
 @findex vm-postpone-message
 @kindex C-c C-d
 @vindex vm-postponed-folder

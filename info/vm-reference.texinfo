@@ -5650,9 +5650,6 @@ C-/             vm-undo
 C-c C-d         vm-delete-all-attachments
 C-c C-e         vm-edit-message
 C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
 
 C-x C-q         vm-toggle-read-only
 C-x C-s         vm-save-folder
@@ -5833,9 +5830,6 @@ C-/             vm-undo
 C-c C-d         vm-delete-all-attachments
 C-c C-e         vm-edit-message
 C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
 
 C-x C-q         vm-toggle-read-only
 C-x C-s         vm-save-folder
@@ -6239,6 +6233,39 @@ Select the next message in the current folder’s history.
 With prefix ARG, select the ARG’th next message.
 @end deffn
 
+@deffn Command vm-message-history-mode &optional arg
+@findex vm-message-history-mode
+Move backward and forward through the messages selected in each folder.
+
+Like a web browser’s history: selecting a message forgets the ones selected
+after it, except where @code{vm-goto-message-last-seen} or one of this file’s own
+commands did the selecting.
+
+Turning this on binds M-x vm-message-history-backward,
+M-x vm-message-history-forward and M-x vm-message-history-browse in
+@code{vm-mode-map}, adds three entries to the Motion menu, and records each message
+as it is selected.  Turning it off undoes all three, and leaves
+@code{vm-message-history} alone: turning it back on picks up where it left off.
+
+Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
+loads it whenever it is asked about a VM option, so loading no longer enables:
+say so here.
+
+This is a global minor mode.  If called interactively, toggle the
+@code{Vm-Message-History mode} mode.  If the prefix argument is positive,
+enable the mode, and if it is zero or negative, disable the mode.
+
+If called from Lisp, toggle the mode if ARG is @code{toggle}.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
+
+To check whether the minor mode is enabled in the current buffer,
+evaluate @code{(default-value 'vm-message-history-mode)}.
+
+The mode’s hook is called both when the mode is enabled and when it is
+disabled.
+@end deffn
+
 @appendixsubsec User options
 
 @defopt vm-message-history-max
@@ -6246,6 +6273,13 @@ With prefix ARG, select the ARG’th next message.
 The number of read or previewed messages in each folder’s history.
 
 Default value: @code{32}
+@end defopt
+
+@defopt vm-message-history-mode-hook
+@vindex vm-message-history-mode-hook
+Hook run after entering or leaving @code{vm-message-history-mode}.
+No problems result if this variable is not bound.
+@code{add-hook} automatically binds it.  (This is true for all hook variables.)
 @end defopt
 
 @appendixsubsec Called by VM
@@ -7584,6 +7618,38 @@ the folder.
 Optional argument DONT-KILL is positive, then do not kill source message.
 @end deffn
 
+@deffn Command vm-postpone-mode &optional arg
+@findex vm-postpone-mode
+Postpone a composition and continue it later, as Pine does.
+
+C-c C-d in a composition files it in
+@code{vm-save-killed-messages-folder}; visit that folder and type
+M-x vm-continue-postponed-message to take it up again.  That
+key is bound by VM itself and works whether this mode is on or off.
+
+What turning this on adds is four keys that insert a header field, and the
+arrangement by which a composition killed unsent is offered as a draft.
+Turning it off undoes both, and leaves any postponed folder where it is.
+
+Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
+loads it whenever it is asked about a VM option, so loading no longer enables:
+say so here.
+
+This is a global minor mode.  If called interactively, toggle the
+@code{Vm-Postpone mode} mode.  If the prefix argument is positive, enable the
+mode, and if it is zero or negative, disable the mode.
+
+If called from Lisp, toggle the mode if ARG is @code{toggle}.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
+
+To check whether the minor mode is enabled in the current buffer,
+evaluate @code{(default-value 'vm-postpone-mode)}.
+
+The mode’s hook is called both when the mode is enabled and when it is
+disabled.
+@end deffn
+
 @deffn Command vm-reply-by-continue-postponed-message
 @findex vm-reply-by-continue-postponed-message
 Like @code{vm-reply} but preserves attachments.
@@ -7657,6 +7723,13 @@ Default value: @code{"\\([^<\11\n ]+\\)@@"}
 @defopt vm-postpone-message-hook
 @vindex vm-postpone-message-hook
 List of hook functions to be run before postponing a message.
+@end defopt
+
+@defopt vm-postpone-mode-hook
+@vindex vm-postpone-mode-hook
+Hook run after entering or leaving @code{vm-postpone-mode}.
+No problems result if this variable is not bound.
+@code{add-hook} automatically binds it.  (This is true for all hook variables.)
 @end defopt
 
 @defopt vm-postponed-folder
@@ -9416,6 +9489,37 @@ Return value of vm-serial TOKEN.
 Reads a valid token, inserts it at point and expands it.
 @end deffn
 
+@deffn Command vm-serial-mode &optional arg
+@findex vm-serial-mode
+Compose one message from a template and send it to many recipients.
+
+Turning this on advises @code{vm-mail-send-and-exit} so that a composition sent
+from a source buffer is killed with it; turning it off removes that advice.
+@code{vm-serial-expand-tokens} and @code{vm-serial-send-mail} are commands and work
+either way.
+
+The bindings and the compose hook are yours to add, as the commentary at the
+top of this file says: this mode does not take them over.
+
+Loading this file switched the advice on until 2026 (emacs-vm/vm#788).
+Customize loads it whenever it is asked about a VM option, so loading no
+longer enables: say so here.
+
+This is a global minor mode.  If called interactively, toggle the
+@code{Vm-Serial mode} mode.  If the prefix argument is positive, enable the
+mode, and if it is zero or negative, disable the mode.
+
+If called from Lisp, toggle the mode if ARG is @code{toggle}.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
+
+To check whether the minor mode is enabled in the current buffer,
+evaluate @code{(default-value 'vm-serial-mode)}.
+
+The mode’s hook is called both when the mode is enabled and when it is
+disabled.
+@end deffn
+
 @deffn Command vm-serial-send-mail &optional non-interactive done
 @findex vm-serial-send-mail
 Send an expanded mail to each recipient listed in the To-header.
@@ -9591,6 +9695,13 @@ let me know!
 
 mailto:Robert Fenk"))
 @end example
+@end defopt
+
+@defopt vm-serial-mode-hook
+@vindex vm-serial-mode-hook
+Hook run after entering or leaving @code{vm-serial-mode}.
+No problems result if this variable is not bound.
+@code{add-hook} automatically binds it.  (This is true for all hook variables.)
 @end defopt
 
 @defopt vm-serial-token-alist
@@ -11228,9 +11339,6 @@ C-/             vm-undo
 C-c C-d         vm-delete-all-attachments
 C-c C-e         vm-edit-message
 C-c C-s         vm-save-all-attachments
-C-c b           vm-message-history-browse
-C-c n           vm-message-history-forward
-C-c p           vm-message-history-backward
 
 C-x C-q         vm-toggle-read-only
 C-x C-s         vm-save-folder

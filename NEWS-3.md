@@ -8,6 +8,34 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * Loading `vm-message-history.el`, `vm-postpone.el` or `vm-serial.el` no
+    longer switches it on (emacs-vm/vm#788).  Each has a mode instead, all
+    three autoloaded, so no `require` is needed:
+
+    ```elisp
+    (vm-message-history-mode 1)
+    (vm-postpone-mode 1)
+    (vm-serial-mode 1)
+    ```
+
+    An init file that says only `(require 'vm-message-history)` and expects
+    the history keys, or `(require 'vm-postpone)` and expects a killed
+    composition to be offered as a draft, or `(require 'vm-serial)` and
+    expects a composition sent from a source buffer to be killed with it,
+    needs the matching line above.  Turning a mode off undoes what it did,
+    which was not possible before.
+
+    The reason is that loading was never something a reader asked for:
+    Customize loads any file that declares a group under `vm-ext` in order to
+    answer a question about a VM option, so `C-h v` on any VM variable
+    installed the hooks, keys and advice of all three.  `vm-biff` and
+    Personality Crisis went the same way earlier in this cycle, and #785 was
+    the case where it broke something.
+
+    `C-c C-d` (`vm-postpone-message`) and `vm-continue-postponed-message` are
+    unaffected: VM binds the first itself and both are autoloaded, so
+    postponing and continuing work with the mode off.
+
   * `vm-default-folder-type` no longer offers `BellFrom_`, and neither does
     `vm-change-folder-type` (emacs-vm/vm#787).  VM reads a BellFrom_ folder it
     is handed, and creates none.  That format is From_ without the blank line

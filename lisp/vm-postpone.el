@@ -48,6 +48,15 @@
 ;;  behaviour:
 ;;
 ;;  (define-key vm-mode-map "m" 'vm-continue-what-message)
+;;
+;;  Switch it on with
+;;
+;;  (vm-postpone-mode 1)
+;;
+;;  (require 'vm-postpone) on its own switched this on until 2026, and does
+;;  nothing now beyond making the mode available: loading a file and asking
+;;  for what it does are separate acts, and Customize loads this one without
+;;  being asked (emacs-vm/vm#788).
 ;;  (setq vm-zero-drafts-start-compose t)
 ;;
 ;;  If you have postponed messages you will be asked if you want to continue
@@ -550,7 +559,22 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 
 
 ;;-----------------------------------------------------------------------------
-(define-key vm-mail-mode-map "\C-c\C-d" 'vm-postpone-message)
+(defconst vm-postpone-key-bindings
+  '(("\C-c\C-f\C-a" . vm-mail-return-receipt-to)
+    ("\C-c\C-f\C-p" . vm-mail-priority)
+    ("\C-c\C-f\C-f" . vm-mail-fcc)
+    ("\C-c\C-f\C-n" . vm-mail-notice-requested-upon-delivery-to))
+  "The `vm-mail-mode-map' keys `vm-postpone-mode' binds, each inserting a header.
+
+`C-c C-d' is not among them.  This file bound it to `vm-postpone-message' as
+it loaded, but `vm-mail-mode-map' in vm-vars.el already binds it to the same
+command, so that was a no-op -- and unbinding it with the mode would take away
+a binding VM's core owns.
+
+Two of these four shadow `mail-mode-map', the parent map: it has
+`mail-mail-reply-to' on C-c C-f C-a and `mail-fcc' on C-c C-f C-f.  Turning
+the mode off removes the shadow and those show through again, rather than
+leaving the keys undefined.")
 
 (defvar vm-postpone-message-modes-to-disable
   '(font-lock-mode ispell-minor-mode filladapt-mode auto-fill-mode)
@@ -923,16 +947,58 @@ If set to nil it will never save them nor it will ask."
       (vm-postpone-message vm-save-killed-messages-folder t)
     (message "`%s' is gone forever!" (buffer-name))))
 
-(add-hook 'vm-mail-mode-hook 'vm-add-save-killed-message-hook)
-(add-hook 'mail-send-hook 'vm-remove-save-killed-message-hook)
-(add-hook 'vm-postpone-message-hook 'vm-remove-save-killed-message-hook)
+(defconst vm-postpone-hooks
+  '((vm-mail-mode-hook        . vm-add-save-killed-message-hook)
+    (mail-send-hook           . vm-remove-save-killed-message-hook)
+    (vm-postpone-message-hook . vm-remove-save-killed-message-hook))
+  "The hooks `vm-postpone-mode' adds to, and what it adds.
+They arrange for a composition killed unsent to be offered as a draft, which
+is what `vm-save-killed-message' asks for.")
 
-;;-----------------------------------------------------------------------------
-;; New header fields
-(define-key vm-mail-mode-map "\C-c\C-f\C-a" 'vm-mail-return-receipt-to)
-(define-key vm-mail-mode-map "\C-c\C-f\C-p" 'vm-mail-priority)
-(define-key vm-mail-mode-map "\C-c\C-f\C-f" 'vm-mail-fcc)
-(define-key vm-mail-mode-map "\C-c\C-f\C-n" 'vm-mail-notice-requested-upon-delivery-to)
+(defun vm-postpone--unbind (key)
+  "Take KEY out of `vm-mail-mode-map', letting `mail-mode-map' show through.
+Removing the entry and not binding it to nil: `vm-mail-mode-map' has
+`mail-mode-map' for its parent, and a nil binding in the child shadows the
+parent rather than falling through to it, so C-c C-f C-a would be dead where
+Mail mode has `mail-mail-reply-to' on it.
+
+`keymap-unset' with its REMOVE argument does that and arrived in Emacs 29;
+VM supports 28.1, where the nil is the best available and leaves those two
+keys undefined until the mode is turned back on.  It takes a key in the
+`key-valid-p' syntax rather than the raw string `define-key' takes, so the
+key is described for it."
+  (if (fboundp 'keymap-unset)
+      (keymap-unset vm-mail-mode-map (key-description key) t)
+    (define-key vm-mail-mode-map key nil)))
+
+;;;###autoload
+(define-minor-mode vm-postpone-mode
+  "Postpone a composition and continue it later, as Pine does.
+\\<vm-mail-mode-map>\\[vm-postpone-message] in a composition files it in
+`vm-save-killed-messages-folder'; visit that folder and type
+\\<vm-mode-map>\\[vm-continue-postponed-message] to take it up again.  That
+key is bound by VM itself and works whether this mode is on or off.
+
+What turning this on adds is four keys that insert a header field, and the
+arrangement by which a composition killed unsent is offered as a draft.
+Turning it off undoes both, and leaves any postponed folder where it is.
+
+Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
+loads it whenever it is asked about a VM option, so loading no longer enables:
+say so here."
+  :global t
+  :group 'vm-postpone
+  (dolist (binding vm-postpone-key-bindings)
+    (if vm-postpone-mode
+	(define-key vm-mail-mode-map (car binding) (cdr binding))
+      ;; Only what this mode bound, so a key another package has taken since
+      ;; is left to it.
+      (when (eq (lookup-key vm-mail-mode-map (car binding)) (cdr binding))
+	(vm-postpone--unbind (car binding)))))
+  (dolist (pair vm-postpone-hooks)
+    (if vm-postpone-mode
+	(add-hook (car pair) (cdr pair))
+      (remove-hook (car pair) (cdr pair)))))
 
 ;;;###autoload
 (defcustom vm-mail-return-receipt-to
