@@ -6098,6 +6098,71 @@ rather than hidden by all of them agreeing."
             (kill-buffer buffer))))
       (delete-directory dir t))))
 
+
+;;; What the manual promises about a message making the trip more than once
+
+;; The mbox section of the manual states this, having been asked to say what
+;; the quoting costs rather than change it (emacs-vm/vm#789).
+;;
+;; vm-folder-test-only-a-from-line-ending-in-a-digit-is-quoted above already
+;; holds the narrow rule and the already-quoted line, through a real
+;; conversion.  What nothing held is the promise that follows from them: that
+;; the cost is one `>' per line for good, and not one per trip.
+
+(ert-deftest vm-folder-test-munging-is-idempotent ()
+  "Quoting a line that is already quoted changes nothing."
+  (let ((line "From bob@example.com Mon Jan  1 00:00:00 2024\n"))
+    (dolist (times '(1 2 3))
+      (with-temp-buffer
+        (insert line)
+        (dotimes (_ times)
+          (vm-munge-message-separators 'From_ (point-min) (point-max)))
+        (should (equal (buffer-string) (concat ">" line)))))))
+
+(ert-deftest vm-folder-test-a-second-trip-through-From_-adds-no-second-quote ()
+  "A message converted to From_ and back twice carries one `>', not two.
+The manual promises the loss is one character per quoted line however many
+times the message passes through a From_ folder.  Round trips it twice and
+compares: the first trip adds the `>', the second changes nothing.
+
+The `>' is never removed, which is what emacs-vm/vm#789 is about and what
+`vm-folder-roundtrip-test.el' pins by name.  This is the other half of it:
+that it does not accumulate."
+  (vm-folder-test-with-directory dir
+    (let* ((body (concat "Quoting an old note:\n"
+                         "From bob@example.com Mon Jan  1 12:00:00 2026\n"))
+           (file (expand-file-name "folder.mboxcl2" dir))
+           (message (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            "Content-Length: "
+                            (number-to-string (1+ (length body)))
+                            "\nFrom: alice@example.com\nSubject: one\n\n"
+                            body "\n"))
+           (quotes-in
+            (lambda (path)
+              (with-temp-buffer
+                (insert-file-contents path)
+                (goto-char (point-min))
+                (let ((n 0))
+                  (while (re-search-forward "^>+From bob@example.com" nil t)
+                    (setq n (+ n (length (match-string 0))
+                               (- (length "From bob@example.com")))))
+                  n))))
+           (trip
+            (lambda (from-file n)
+              ;; mboxcl2 to From_ and back, into files of their own so that
+              ;; each step is a folder VM reads by its name.
+              (let ((out (expand-file-name (format "trip%d" n) dir))
+                    (back (expand-file-name (format "back%d.mboxcl2" n) dir)))
+                (vm-change-folder-type-of-file from-file 'From_ nil out)
+                (vm-change-folder-type-of-file out 'mboxcl2 nil back)
+                back))))
+      (write-region message nil file nil 'quiet)
+      (should (equal 0 (funcall quotes-in file)))
+      (let ((after-one (funcall trip file 1)))
+        (should (equal 1 (funcall quotes-in after-one)))
+        (let ((after-two (funcall trip after-one 2)))
+          (should (equal 1 (funcall quotes-in after-two))))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
