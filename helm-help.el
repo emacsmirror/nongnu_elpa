@@ -1987,7 +1987,7 @@ highlighted since there is no ~--color~-like option in GID itself.
 
 Helm-AG is different from grep or ack-grep in that it works on a
 directory recursively and not on a list of files.  It is called
-helm-AG but it support several backend, namely AG, RG and PT.
+helm-AG but it supports several backend, namely AG, RG and PT.
 Nowaday the best backend is Ripgrep aka RG, it is the fastest and
 is actively maintained, see `helm-grep-ag-command' and
 `helm-grep-ag-pipe-cmd-switches' to configure it.
@@ -2009,6 +2009,17 @@ completion.  See RG and AG man pages on how to add new types.
 Note: You can mark several types to match in the AG query.  The first AG
 versions providing this feature allowed only one type, so in this case only the
 last mark will be used.
+
+*** Specific commands to helm grep ag
+
+See [[Stop grepping with AG or RG and search in the current results][Stop grepping with AG or RG and search in the current results]]
+and [[Grep AG/RG on parent directory][Grep AG/RG on parent directory]].
+
+\\<helm-grep-ag-map>
+|Keys|Description
+|-----------+----------|
+|\\[helm-grep-run-ag-grep-parent-directory]|Launch a search in parent directory.
+|\\[helm-grep-ag-run-search-results]|Search in current results.
 
 * Helm git-grep
 
