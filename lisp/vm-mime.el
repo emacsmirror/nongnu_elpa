@@ -7955,9 +7955,15 @@ WHOLE-MESSAGE is true then nil is returned."
 		     "Content-Type: message/partial; id=%s; number=%d"
 		   "Content-Type: message/partial;\n\tid=%s;\n\tnumber=%d")
 		 id n))
+	;; No number here on purpose: how many parts there will be is not
+	;; known until the last one has been cut, so the value is written
+	;; below, at the position recorded next.  A `%d' here puts the
+	;; fragment's own number in the way of it, and the two run together:
+	;; three parts numbered 1, 2, 3 went out saying total=13, 23 and 33,
+	;; which no reader can reassemble (emacs-vm/vm#797).
 	(if vm-mime-avoid-folding-content-type
-	    (insert (format "; total=%d" n))
-	  (insert (format ";\n\ttotal=%d" n)))
+	    (insert "; total=")
+	  (insert ";\n\ttotal="))
 	(setq total-markers (cons (point) total-markers))
 	(insert "\nContent-Transfer-Encoding: 7bit\n")
 	(goto-char (point-max))

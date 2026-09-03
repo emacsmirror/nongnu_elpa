@@ -4432,6 +4432,173 @@ list answers for any text at all."
     (unless (equal text "plain text")
       (should (equal "utf-8" (vm-charset-test--chosen text '(utf-8)))))))
 
+
+;;; Splitting a composition into message/partial fragments
+
+;; `vm-mime-fragment-composition' is what `vm-mime-max-message-size' asks for,
+;; and it had no test of any kind: the form coverage report put it among the
+;; definitions with the most forms never evaluated.  A message split wrongly
+;; is mail nothing can put back together.
+
+(defmacro vm-fragment-test--with-fragments (spec &rest body)
+  "Fragment a composition and run BODY with FRAGMENTS bound to the buffers.
+SPEC is (SIZE LINES &optional AVOID-FOLDING).  The buffers are killed
+afterwards, fragmenting making one per part."
+  (declare (indent 1) (debug t))
+  `(let ((vm-mime-avoid-folding-content-type ,(nth 2 spec))
+         (fragments nil))
+     (unwind-protect
+         (with-temp-buffer
+           (insert "To: someone@example.com\nSubject: a big one\n"
+                   mail-header-separator "\n")
+           (dotimes (i ,(nth 1 spec))
+             (insert (format "line %04d %s\n" i (make-string 60 ?x))))
+           (setq fragments (vm-mime-fragment-composition ,(car spec)))
+           ,@body)
+       (dolist (buffer fragments)
+         (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(defun vm-fragment-test--parameter (buffer name)
+  "The message/partial parameter NAME in BUFFER's Content-Type."
+  (with-current-buffer buffer
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward (concat name "=\\([^;\n \t]+\\)") nil t)
+        (match-string-no-properties 1)))))
+
+(defun vm-fragment-test--body (buffer)
+  "The text of BUFFER after the header separator."
+  (with-current-buffer buffer
+    (save-excursion
+      (goto-char (point-min))
+      (search-forward (concat "\n" mail-header-separator "\n"))
+      (buffer-substring-no-properties (point) (point-max)))))
+
+(ert-deftest vm-fragment-test-every-part-declares-the-real-total ()
+  "REGRESSION: `total=' is the number of parts, on every one of them.
+
+Issue #797.  The total is not known until the last part has been cut, so
+`vm-mime-fragment-composition' writes `total=' empty, records the position
+and fills it in at the end by inserting there, not by replacing.  4181e0d1
+in 2010 added a `%d' to that empty format string, which looks like tidying a
+`format' call that has an argument and no directive.  It put the fragment's
+own number where the total goes, and the fill-in then ran on after it: three
+parts went out saying total=13, 23 and 33.
+
+Nothing could reassemble such a message, VM included:
+`vm-mime-display-internal-message/partial' refuses parts that disagree about
+the total, and a lone part claiming thirteen would wait for ten that never
+come."
+  (dolist (avoid '(nil t))
+    (let ((vm-mime-avoid-folding-content-type avoid)
+          (fragments nil))
+      (unwind-protect
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: a big one\n"
+                    mail-header-separator "\n")
+            (dotimes (i 100)
+              (insert (format "line %04d %s\n" i (make-string 60 ?x))))
+            (setq fragments (vm-mime-fragment-composition 3000))
+            (let ((total (number-to-string (length fragments)))
+                  (n 0))
+              (should (> (length fragments) 1))
+              (dolist (buffer fragments)
+                (setq n (1+ n))
+                (should (equal total (vm-fragment-test--parameter buffer "total")))
+                (should (equal (number-to-string n)
+                               (vm-fragment-test--parameter buffer "number"))))))
+        (dolist (buffer fragments)
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest vm-fragment-test-the-parts-carry-one-id-between-them ()
+  "Every fragment names the same id, which is how a reader groups them."
+  (vm-fragment-test--with-fragments (3000 100)
+    (let ((id (vm-fragment-test--parameter (car fragments) "id")))
+      (should id)
+      (should (> (length fragments) 1))
+      (dolist (buffer fragments)
+        (should (equal id (vm-fragment-test--parameter buffer "id")))))))
+
+(ert-deftest vm-fragment-test-the-bodies-join-back-into-the-message ()
+  "The fragment bodies, in order, are the message that was split.
+
+The invariant the whole feature rests on.  Every part carries a slice of the
+original and nothing else, so a reader that concatenates them in number order
+has the message back."
+  (let ((vm-mime-avoid-folding-content-type nil)
+        (fragments nil)
+        (whole nil))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: a big one\n"
+                  mail-header-separator "\n")
+          (dotimes (i 100)
+            (insert (format "line %04d %s\n" i (make-string 60 ?x))))
+          (setq fragments (vm-mime-fragment-composition 3000))
+          ;; the master buffer, as fragmenting left it, is what the parts
+          ;; between them should hold
+          (setq whole (buffer-substring-no-properties (point-min) (point-max)))
+          (let ((joined (mapconcat #'vm-fragment-test--body fragments "")))
+            ;; `vm-add-mail-mode-header-separator' puts the separator line back
+            ;; in the master buffer as fragmenting finishes; the parts carry a
+            ;; real blank line there, as a message does.  Taking the text of
+            ;; the separator out, and leaving its newline, makes the two
+            ;; comparable.
+            (should (equal (replace-regexp-in-string
+                            (regexp-quote mail-header-separator) "" whole)
+                           joined))))
+      (dolist (buffer fragments)
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest vm-fragment-test-each-part-is-declared-7bit ()
+  "Every fragment says message/partial and 7bit, and drops the original type.
+RFC 2046 section 5.2.2 allows message/partial only with 7bit, and the
+original Content-Type belongs to the message inside, not to the fragment
+carrying it."
+  (vm-fragment-test--with-fragments (3000 100)
+    (dolist (buffer fragments)
+      (with-current-buffer buffer
+        (goto-char (point-min))
+        (let ((headers (buffer-substring-no-properties
+                        (point-min)
+                        (save-excursion
+                          (search-forward mail-header-separator)
+                          (point)))))
+          (should (string-match-p "Content-Type: message/partial" headers))
+          (should (string-match-p "Content-Transfer-Encoding: 7bit" headers))
+          (should (string-match-p "MIME-Version: 1.0" headers))
+          ;; the subject rides along, so a reader sees what it is
+          (should (string-match-p "Subject: a big one" headers)))))))
+
+(ert-deftest vm-fragment-test-folding-the-content-type-is-optional ()
+  "`vm-mime-avoid-folding-content-type' decides whether the type is folded.
+Both forms carry the same three parameters; only the whitespace differs.  It
+is the option's only use here and neither arm had a test."
+  (dolist (avoid '(nil t))
+    (let ((vm-mime-avoid-folding-content-type avoid)
+          (fragments nil))
+      (unwind-protect
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: a big one\n"
+                    mail-header-separator "\n")
+            (dotimes (i 100)
+              (insert (format "line %04d %s\n" i (make-string 60 ?x))))
+            (setq fragments (vm-mime-fragment-composition 3000))
+            (with-current-buffer (car fragments)
+              (goto-char (point-min))
+              (let ((type (buffer-substring-no-properties
+                           (progn (re-search-forward "^Content-Type:") 
+                                  (match-beginning 0))
+                           (progn (re-search-forward "^Content-Transfer-Encoding:")
+                                  (match-beginning 0)))))
+                (if avoid
+                    (should-not (string-match-p "\n\t" type))
+                  (should (string-match-p "\n\t" type)))
+                (dolist (parameter '("id=" "number=" "total="))
+                  (should (string-match-p (regexp-quote parameter) type))))))
+        (dolist (buffer fragments)
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
