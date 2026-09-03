@@ -2295,6 +2295,83 @@ use IMAP-FCC pays for it."
     (should-not appended)
     (should-not sessions)))
 
+
+(defmacro vm-reply-test--with-a-displayed-folder (&rest body)
+  "Visit a folder holding a receipt request, with a summary window, run BODY.
+FOLDER is the folder buffer.  A real visit with a summary on display, because
+that is what the bug needs: `vm-reply-test--receipting' works over temp
+buffers with no folder displayed, so `vm-reply' changes no window there and a
+test written on it passes whether the fix is in or not."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-receipt" t)))
+          (file (expand-file-name "inbox" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-frame-per-summary nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list))
+          folder)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (insert vm-reply-test--receipt-requested))
+           (vm-visit-folder file)
+           (setq folder (current-buffer))
+           (vm-summarize)
+           (ignore folder)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-sending-a-receipt-leaves-the-windows-alone ()
+  "REGRESSION: sending a return receipt does not take the summary away.
+
+Issue #800, reported by @goeran.  The receipt is composed by `vm-reply' and
+sent at once without the reader asking to see either, but `vm-reply' displays
+the composition on the way past, so the window showing the summary was left
+showing the presentation buffer and had to be brought back by hand.
+
+Compares the buffers the windows show, not how many there are: replacing one
+buffer with another keeps the number the same, which is exactly what happened.
+
+The `edit' side of the fix, where the composition is shown on purpose and the
+display is the reader's to keep, is checked by
+vm-reply-test-editing-a-receipt-still-shows-it below."
+  (vm-reply-test--with-a-displayed-folder
+    (let ((vm-handle-return-receipt-mode 'ask)
+          (shown (mapcar #'window-buffer (window-list))))
+      (should (> (length shown) 1))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'vm-mail-send) (lambda (&rest _) t))
+                ((symbol-function 'mail-send) (lambda (&rest _) t)))
+        (vm-handle-return-receipt))
+      (should (equal shown (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-reply-test-editing-a-receipt-still-shows-it ()
+  "In `edit' mode the composition is shown, the windows being theirs to keep.
+
+The other side of #800: the fix puts the display back only where the reader
+was never shown anything, so the mode that exists to let them edit the receipt
+must still put it in front of them."
+  (vm-reply-test--with-a-displayed-folder
+    (let ((vm-handle-return-receipt-mode 'edit)
+          (shown (mapcar #'window-buffer (window-list))))
+      (vm-handle-return-receipt)
+      (let ((now (mapcar #'window-buffer (window-list))))
+        (should-not (equal shown now))
+        (should (seq-some (lambda (buffer)
+                            (with-current-buffer buffer
+                              (derived-mode-p 'mail-mode)))
+                          now))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

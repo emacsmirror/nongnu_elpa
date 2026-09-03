@@ -2700,6 +2700,16 @@ See the variable `vm-handle-return-receipt-mode' for customization."
            (vm-mode-hook nil)
            message)
       (when (and mode (not (vm-replied-flag msg)))
+        ;; Put the reader's windows back afterwards.  The receipt is composed
+        ;; and sent without their asking to see it, and `vm-reply' below
+        ;; displays the composition, so the summary window was left replaced
+        ;; by the presentation buffer and had to be brought back by hand
+        ;; (emacs-vm/vm#800).  In `edit' mode they are shown the composition
+        ;; on purpose and the display is theirs to keep, which is the
+        ;; distinction `vm-mutable-frame-configuration' is bound by above.
+        (let ((windows (unless (eq mode 'edit) (current-window-configuration))))
+         (unwind-protect
+        (progn
         (vm-reply 1)
         (vm-mail-mode-remove-header "Return-Receipt-To:")
         (vm-mail-mode-remove-header "To:")
@@ -2734,6 +2744,7 @@ See the variable `vm-handle-return-receipt-mode' for customization."
         (if (not (eq mode 'edit))
             (vm-mail-send-and-exit nil))
         )
+           (when windows (set-window-configuration windows)))))
       )))
 (put 'vm-handle-return-receipt 'vm-called-by-vm t)
 
