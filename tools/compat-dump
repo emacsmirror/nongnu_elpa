@@ -4,7 +4,7 @@
            "Not in the package-lint directory")
 
 (package-install 'compat)
-(cl-assert (package-installed-p 'compat (version-to-list "29.1")))
+(cl-assert (package-installed-p 'compat (version-to-list "31.0")))
 
 (let (symbols functions)
   (dolist (file (directory-files (file-name-directory (locate-library "compat"))
