@@ -295,60 +295,146 @@ override the defaults from `jabber-account-list'."
 					     :port port
 					     :proxy proxy))))))
 
+(defun jabber-core--close-transport (connection)
+  "Close exact CONNECTION and its buffer without aborting cleanup."
+  (when (processp connection)
+    (let ((buffer (process-buffer connection)))
+      (condition-case err
+          (delete-process connection)
+        ((error quit)
+         (message "Jabber transport cleanup failed: %s"
+                  (error-message-string err))))
+      (when (and (buffer-live-p buffer)
+                 (not jabber-debug-keep-process-buffers))
+        (condition-case err
+            (kill-buffer buffer)
+          ((error quit)
+           (message "Jabber transport buffer cleanup failed: %s"
+                    (error-message-string err))))))))
+
+(defun jabber-core--retry-owner-p (fsm state-data)
+  "Return non-nil when FSM owns the retry lease in STATE-DATA."
+  (and (plist-get state-data :nil-entry-token)
+       (null (get fsm :state))
+       (memq fsm jabber-connections)
+       (not (plist-get state-data :terminalized))
+       (not (plist-get state-data :disconnection-expected))))
+
+(defun jabber-core--promote-nil-entry-pending (state-data)
+  "Return a copy of STATE-DATA with held work before live pending work."
+  (let ((state-data (copy-sequence state-data)))
+    (setq state-data
+          (plist-put state-data :sm-pending-queue
+                     (append (plist-get state-data :nil-entry-pending)
+                             (plist-get state-data :sm-pending-queue))))
+    (plist-put state-data :nil-entry-pending nil)))
+
+(defun jabber-core--claim-nil-entry
+    (fsm state-data &optional preserve-pending)
+  "Commit FSM nil entry from STATE-DATA.
+When PRESERVE-PENDING is non-nil, terminalize held retry work while
+leaving callback-created current pending entries untouched.  Return a
+plist of captured callback effects and retry authority."
+  (let* ((state-data (copy-sequence state-data))
+         (connection (plist-get state-data :connection))
+         (expected (plist-get state-data :disconnection-expected))
+         (held (plist-get state-data :nil-entry-pending))
+         (resumable (and (plist-get state-data :sm-enabled)
+                         (plist-get state-data :sm-id)))
+         (retrying (and jabber-auto-reconnect
+                        (not expected)
+                        (not (plist-get state-data :terminalized))
+                        (plist-get state-data :ever-session-established)
+                        (memq fsm jabber-connections)))
+         (reset-p (not (and retrying resumable)))
+         (reset-claimed
+          (and reset-p (not (plist-get state-data :session-reset-done))))
+         (token (make-symbol "nil-entry"))
+         entries)
+    (setq state-data (plist-put state-data :connection nil))
+    (setq state-data (jabber-sm--stop-r-timer state-data))
+    (pcase-let ((`(,detached ,captured)
+                 (jabber-sm--take-pending state-data)))
+      (cond
+       ((not reset-p)
+        (setq entries (append held captured))
+        (setq state-data
+              (plist-put detached :nil-entry-pending entries)))
+       (preserve-pending
+        (setq entries held)
+        (setq state-data (jabber-sm--reset detached))
+        (setq state-data
+              (plist-put state-data :sm-pending-queue captured))
+        (setq state-data
+              (plist-put state-data :nil-entry-pending nil)))
+       (t
+        (setq entries (append held captured))
+        (setq state-data (jabber-sm--reset detached))
+        (setq state-data
+              (plist-put state-data :nil-entry-pending nil)))))
+    (when reset-claimed
+      (setq state-data (plist-put state-data :session-reset-done t)))
+    (when (and retrying resumable)
+      (setq state-data (plist-put state-data :sm-resuming t)))
+    (setq state-data (plist-put state-data :nil-entry-token token))
+    (unless retrying
+      (setq state-data (plist-put state-data :terminalized t)))
+    (fsm-stop-timer fsm)
+    (unless retrying
+      (setq jabber-connections (delq fsm jabber-connections)))
+    (put fsm :state-data state-data)
+    (list :state state-data :retrying retrying :retain (not reset-p)
+          :reset reset-claimed :entries entries :connection connection)))
+
+(defun jabber-core--settle-nil-entry
+    (fsm state-data &optional suppress-loss preserve-pending)
+  "Settle FSM nil entry from STATE-DATA before arbitrary callbacks.
+SUPPRESS-LOSS omits repeated loss effects.  PRESERVE-PENDING keeps work
+accepted after an earlier retry claim out of late terminal settlement."
+  (if (plist-get state-data :terminalized)
+      (list (fsm-get-state-data fsm) nil)
+    (let* ((claim (jabber-core--claim-nil-entry
+                   fsm state-data preserve-pending))
+           (claimed (plist-get claim :state))
+           (token (plist-get claimed :nil-entry-token)))
+      (jabber-core--close-transport (plist-get claim :connection))
+      (when (plist-get claim :reset)
+        (jabber-lifecycle-dispatch-session-reset fsm))
+      (unless (plist-get claim :retain)
+        (jabber-sm--fail-pending
+         (plist-get claim :entries)
+         "connection closed before transport handoff"))
+      (unless (plist-get claim :retrying)
+        (jabber-lifecycle-dispatch-connection-list-changed))
+      (unless (or suppress-loss
+                  (plist-get claimed :disconnection-expected))
+        (jabber-lifecycle--dispatch-contained
+         'jabber-lost-connection-hooks fsm)
+        (message "%s@%s%s: connection lost: `%s'"
+                 (plist-get claimed :username)
+                 (plist-get claimed :server)
+                 (if (plist-get claimed :resource)
+                     (concat "/" (plist-get claimed :resource)) "")
+                 (plist-get claimed :disconnection-reason)))
+      (let ((current (fsm-get-state-data fsm)))
+        (cond
+         ((or (not (null (get fsm :state)))
+              (not (eq token (plist-get current :nil-entry-token))))
+          (list current :keep))
+         ((jabber-core--retry-owner-p fsm current)
+          (when (plist-get claim :retain)
+            (setq current
+                  (jabber-core--promote-nil-entry-pending current))
+            (put fsm :state-data current))
+          (list current jabber-reconnect-delay))
+         ((and (plist-get claim :retrying)
+               (not (plist-get current :terminalized)))
+          (jabber-core--settle-nil-entry fsm current t t))
+         (t (list current nil)))))))
+
 (define-enter-state jabber-connection nil
 		    (fsm state-data)
-		    ;; `nil' is the error state.
-
-		    ;; Close the network connection.
-		    (let ((connection (plist-get state-data :connection)))
-		      (when (processp connection)
-			(let ((process-buffer (process-buffer connection)))
-			  (delete-process connection)
-			  (when (and (bufferp process-buffer)
-				     (not jabber-debug-keep-process-buffers))
-			    (kill-buffer process-buffer)))))
-		    (setq state-data (plist-put state-data :connection nil))
-		    ;; Stop SM timer
-		    (setq state-data (jabber-sm--stop-r-timer state-data))
-
-		    (let ((expected (plist-get state-data :disconnection-expected))
-			  (reason (plist-get state-data :disconnection-reason))
-			  (ever-session-established (plist-get state-data :ever-session-established))
-			  (sm-resumable (and (plist-get state-data :sm-enabled)
-					     (plist-get state-data :sm-id))))
-
-		      ;; If SM is active and disconnect is unexpected, preserve SM state
-		      ;; for resume attempt.  Skip MUC cleanup since contacts still see
-		      ;; us as online during the server's resume window.
-		      (if (and sm-resumable (not expected))
-			  (setq state-data (plist-put state-data :sm-resuming t))
-			;; Otherwise clear MUC data and SM state.
-			(jabber-lifecycle-dispatch-session-reset fsm)
-			(setq state-data
-			      (jabber-sm--discard-pending
-			       state-data "connection closed before transport handoff"))
-			(setq state-data (jabber-sm--reset state-data)))
-
-		      (unless expected
-			(run-hook-with-args 'jabber-lost-connection-hooks fsm)
-			(message "%s@%s%s: connection lost: `%s'"
-				 (plist-get state-data :username)
-				 (plist-get state-data :server)
-				 (if (plist-get state-data :resource)
-				     (concat "/" (plist-get state-data :resource))
-				   "")
-				 reason))
-
-		      (if (and jabber-auto-reconnect (not expected) ever-session-established)
-			  ;; Reconnect after a short delay?
-			  (list state-data jabber-reconnect-delay)
-			;; Else the connection is really dead.  Remove it from the list
-			;; of connections.
-			(setq jabber-connections
-			      (delq fsm jabber-connections))
-			(jabber-lifecycle-dispatch-connection-list-changed)
-			;; And let the FSM sleep...
-			(list state-data nil))))
+		    (jabber-core--settle-nil-entry fsm state-data))
 
 (define-state jabber-connection nil
 	      (fsm state-data event _callback)
@@ -357,14 +443,22 @@ override the defaults from `jabber-account-list'."
 	      ;; meaning to cancel reconnection.
 	      (pcase event
 		(:timeout
-		 (list :connecting state-data))
+		 (if (and (timerp (get fsm :timeout))
+			  (jabber-core--retry-owner-p fsm state-data))
+		     (let ((current
+			    (jabber-core--promote-nil-entry-pending state-data)))
+		       (list :connecting
+			     (plist-put current :nil-entry-token nil)))
+		   (list nil state-data nil)))
 		(:do-disconnect
-		 (setq state-data
-		       (plist-put state-data :disconnection-expected t))
-		 (jabber-lifecycle-dispatch-session-reset fsm)
-		 (setq jabber-connections
-		       (delq fsm jabber-connections))
-		 (list nil state-data nil))))
+		 (let ((current
+			(plist-put (copy-sequence state-data)
+				   :disconnection-expected t)))
+		   (put fsm :state-data current)
+		   (pcase-let ((`(,settled ,timeout)
+				(jabber-core--settle-nil-entry
+				 fsm current t)))
+		     (list nil settled timeout))))))
 
 (define-enter-state jabber-connection :connecting
 		    (fsm state-data)
@@ -923,6 +1017,14 @@ STATE-DATA is the connection state to preserve."
 
 (define-enter-state jabber-connection :session-established
 		    (fsm state-data)
+		    (setq state-data (copy-sequence state-data))
+		    (setq state-data
+			  (plist-put state-data :session-reset-done nil))
+		    (setq state-data
+			  (plist-put state-data :nil-entry-token nil))
+		    (setq state-data
+			  (plist-put state-data :nil-entry-pending nil))
+		    (put fsm :state-data state-data)
 		    (if (plist-get state-data :sm-resumed)
 			;; On SM resume, the session was never lost; skip roster fetch
 			;; and bookmark prefetch.  Run resume-specific hooks (MAM

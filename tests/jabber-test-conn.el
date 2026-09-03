@@ -672,6 +672,10 @@
             (let ((fsm (car jabber-connections)))
               (should (equal (plist-get (fsm-get-state-data fsm) :proxy)
                              proxy))
+              ;; Model a reconnect, not an initial connection failure.
+              (put fsm :state-data
+                   (plist-put (fsm-get-state-data fsm)
+                              :ever-session-established t))
               (fsm-send-sync fsm '(:connection-failed ("first attempt")))
               (fsm-send-sync fsm :timeout)
               (should (equal connector-proxies (list proxy proxy)))

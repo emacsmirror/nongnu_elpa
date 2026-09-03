@@ -13,6 +13,7 @@
 (require 'jabber-core)
 
 (defvar jabber-connections)
+(defvar jabber-debug-keep-process-buffers)
 
 ;;; Counter arithmetic
 
@@ -1083,6 +1084,1418 @@
              nil)
          ((error quit) t)))
       (should (equal calls '(second first))))))
+
+(ert-deftest jabber-test-sm-terminal-loss-detaches-before-callbacks ()
+  "Terminal loss retires the old connection before reset and failure effects."
+  (let* ((jc (make-symbol "terminal-loss"))
+         (replacement (make-symbol "replacement"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect nil)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (reset-observation nil)
+         (failure-observation nil)
+         (failures 0)
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :connection transport :ever-session-established t
+                   :sm-enabled nil :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason)
+             (cl-incf failures)
+             (setq failure-observation
+                   (list (memq jc jabber-connections)
+                         (plist-get (fsm-get-state-data jc) :connection)
+                         (plist-get (fsm-get-state-data jc)
+                                    :sm-pending-queue))))))
+    (let ((jabber-lifecycle-session-reset-functions
+           (list (lambda (_connection)
+                   (setq reset-observation
+                         (list (memq jc jabber-connections)
+                               (plist-get (fsm-get-state-data jc) :connection)
+                               (plist-get (fsm-get-state-data jc)
+                                          :sm-pending-queue)))
+                   (push replacement jabber-connections)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (fsm-send-sync jc (list :connection-dead transport "lost")))
+    (should (equal reset-observation '(nil nil nil)))
+    (should (equal failure-observation '(nil nil nil)))
+    (should (= failures 1))
+    (should-not (memq jc jabber-connections))
+    (should (memq replacement jabber-connections))
+    (should-not (plist-get (fsm-get-state-data jc) :connection))
+    (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))))
+
+(ert-deftest jabber-test-sm-terminal-resumable-loss-without-retry-discards ()
+  "Resumable work is terminally settled when no retry owner exists."
+  (let* ((jc (make-symbol "terminal-resumable"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect nil)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (jabber-lifecycle-session-reset-functions nil)
+         (failures 0)
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :connection transport :ever-session-established t
+                   :sm-enabled t :sm-id "session" :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data sd)
+    (fsm-send-sync jc (list :connection-dead transport "lost"))
+    (should (= failures 1))
+    (should-not (plist-get (fsm-get-state-data jc) :sm-enabled))
+    (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+    (should-not (memq jc jabber-connections))
+    (should-not (get jc :timeout))))
+
+(ert-deftest jabber-test-sm-cancel-retry-detaches-before-callbacks ()
+  "Cancelling a retry retires old ownership before arbitrary effects."
+  (let* ((jc (make-symbol "cancel-retry"))
+         (replacement (make-symbol "replacement"))
+         (transport (make-symbol "stale-transport"))
+         (timer (run-with-timer 3600 nil #'ignore))
+         (sm-timer (run-with-timer 3600 nil #'ignore))
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (reset-observation nil)
+         (failure-observation nil)
+         (failures 0)
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :connection transport :disconnection-expected nil
+                   :sm-enabled nil :sm-r-timer sm-timer
+                   :sm-pending-queue nil)))
+    (unwind-protect
+        (progn
+          (setq sd
+                (jabber-sm--enqueue-pending
+                 sd '(message ((to . "peer@example.org"))) nil
+                 (lambda (_reason)
+                   (cl-incf failures)
+                   (setq failure-observation
+                         (list (memq jc jabber-connections)
+                               (get jc :timeout)
+                               (plist-get (fsm-get-state-data jc) :sm-r-timer)
+                               (memq sm-timer timer-list)
+                               (plist-get (fsm-get-state-data jc) :connection)
+                               (plist-get (fsm-get-state-data jc)
+                                          :sm-pending-queue))))))
+          (put jc :name 'jabber-connection)
+          (put jc :state nil)
+          (put jc :state-data sd)
+          (put jc :timeout timer)
+          (let ((jabber-lifecycle-session-reset-functions
+                 (list (lambda (_connection)
+                         (setq reset-observation
+                               (list (memq jc jabber-connections)
+                                     (get jc :timeout)
+                                     (plist-get (fsm-get-state-data jc)
+                                                :sm-r-timer)
+                                     (memq sm-timer timer-list)
+                                     (plist-get (fsm-get-state-data jc)
+                                                :connection)
+                                     (plist-get (fsm-get-state-data jc)
+                                                :sm-pending-queue)))
+                         (push replacement jabber-connections)))))
+            (jabber-disconnect-one jc))
+          (should (equal reset-observation '(nil nil nil nil nil nil)))
+          (should (equal failure-observation '(nil nil nil nil nil nil)))
+          (should (= failures 1))
+          (should-not (memq jc jabber-connections))
+          (should (memq replacement jabber-connections))
+          (should-not (get jc :timeout))
+          (should-not (plist-get (fsm-get-state-data jc) :sm-r-timer))
+          (should-not (memq sm-timer timer-list))
+          (should-not (plist-get (fsm-get-state-data jc) :connection))
+          (should-not (plist-get (fsm-get-state-data jc)
+                                 :sm-pending-queue)))
+      (when (timerp timer)
+        (cancel-timer timer))
+      (when (timerp sm-timer)
+        (cancel-timer sm-timer)))))
+
+(ert-deftest jabber-test-sm-terminal-lost-hooks-isolate-error-and-quit ()
+  "A failing lost-connection hook cannot skip later loss effects."
+  (dolist (condition '(error quit))
+    (let* ((jc (make-symbol "terminal-lost-hook"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect nil)
+           (jabber-connections (list jc))
+           (jabber-lifecycle-session-reset-functions nil)
+           (later-loss 0)
+           (sd (list :username "user" :server "example.org" :resource "emacs"
+                     :connection transport :ever-session-established t
+                     :sm-enabled nil :sm-pending-queue nil))
+           (jabber-lost-connection-hooks
+            (list (lambda (_connection) (signal condition nil))
+                  (lambda (_connection) (cl-incf later-loss)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (should-not
+       (condition-case nil
+           (progn
+             (fsm-send-sync jc (list :connection-dead transport "lost"))
+             nil)
+         ((error quit) t)))
+      (should (= later-loss 1))
+      (should-not (memq jc jabber-connections)))))
+
+(ert-deftest jabber-test-sm-terminal-transport-cleanup-cannot-abort ()
+  "Transport cleanup error or quit cannot interrupt terminal settlement."
+  (dolist (case '((delete error) (delete quit)
+                  (buffer error) (buffer quit)))
+    (pcase-let* ((`(,source ,condition) case)
+                 (jc (make-symbol "terminal-transport-cleanup"))
+                 (transport (make-symbol "transport"))
+                 (buffer (generate-new-buffer " *jabber-terminal-cleanup*"))
+                 (original-kill-buffer (symbol-function 'kill-buffer))
+                 (jabber-auto-reconnect nil)
+                 (jabber-debug-keep-process-buffers nil)
+                 (jabber-connections (list jc))
+                 (jabber-lost-connection-hooks nil)
+                 (resets 0)
+                 (failures 0)
+                 (buffer-cleanups 0)
+                 (jabber-lifecycle-session-reset-functions
+                  (list (lambda (_connection) (cl-incf resets))))
+                 (sd (list :username "user" :server "example.org"
+                           :resource "emacs" :connection transport
+                           :ever-session-established t :sm-enabled nil
+                           :sm-pending-queue nil)))
+      (setq sd
+            (jabber-sm--enqueue-pending
+             sd '(message ((to . "peer@example.org"))) nil
+             (lambda (_reason) (cl-incf failures))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (cl-letf (((symbol-function 'processp)
+                 (lambda (object) (eq object transport)))
+                ((symbol-function 'process-buffer)
+                 (lambda (_process) buffer))
+                ((symbol-function 'delete-process)
+                 (lambda (_process)
+                   (when (eq source 'delete)
+                     (signal condition nil))))
+                ((symbol-function 'kill-buffer)
+                 (lambda (target)
+                   (if (eq target buffer)
+                       (progn
+                         (cl-incf buffer-cleanups)
+                         (when (eq source 'buffer)
+                           (signal condition nil)))
+                     (funcall original-kill-buffer target)))))
+        (should-not
+         (condition-case nil
+             (progn
+               (fsm-send-sync jc (list :connection-dead transport "lost"))
+               nil)
+           ((error quit) t))))
+      (should (= buffer-cleanups 1))
+      (should (= resets 1))
+      (should (= failures 1))
+      (should-not (memq jc jabber-connections))
+      (should-not (plist-get (fsm-get-state-data jc) :connection))
+      (should-not (plist-get (fsm-get-state-data jc)
+                             :sm-pending-queue))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-reentrant-cancel-prevents-orphan-retry ()
+  "Cancelling from retry callbacks cannot re-arm an orphan FSM."
+  (dolist (source '(reset pending lost))
+    (let* ((jc (make-symbol "reentrant-cancel"))
+           (replacement (make-symbol "replacement"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect t)
+           (jabber-reconnect-delay 300)
+           (jabber-connections (list jc))
+           (cancelled nil)
+           (resets 0)
+           (failures 0)
+           (losses 0)
+           (list-changes 0)
+           (cancel
+            (lambda ()
+              (unless cancelled
+                (setq cancelled t)
+                (push replacement jabber-connections)
+                (jabber-disconnect-one jc))))
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_connection)
+                    (cl-incf resets)
+                    (when (eq source 'reset)
+                      (funcall cancel)))))
+           (jabber-lifecycle-connection-list-changed-functions
+            (list (lambda () (cl-incf list-changes))))
+           (jabber-lost-connection-hooks
+            (list (lambda (_connection)
+                    (cl-incf losses)
+                    (when (eq source 'lost)
+                      (funcall cancel)))))
+           (sd (list :username "user" :server "example.org" :resource "emacs"
+                     :connection transport :ever-session-established t
+                     :disconnection-expected nil
+                     :sm-enabled (eq source 'lost)
+                     :sm-id (and (eq source 'lost) "session")
+                     :sm-pending-queue nil)))
+      (setq sd
+            (jabber-sm--enqueue-pending
+             sd '(message ((to . "peer@example.org"))) nil
+             (lambda (_reason)
+               (cl-incf failures)
+               (when (eq source 'pending)
+                 (funcall cancel)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (unwind-protect
+          (progn
+            (fsm-send-sync jc (list :connection-dead transport "lost"))
+            (should-not (get jc :state))
+            (should-not (get jc :timeout))
+            (should-not (memq jc jabber-connections))
+            (should (memq replacement jabber-connections))
+            (should (plist-get (fsm-get-state-data jc) :terminalized))
+            (should (plist-get (fsm-get-state-data jc)
+                               :disconnection-expected))
+            (should (= failures 1))
+            (should (= resets 1))
+            (should (= losses 1))
+            (should (= list-changes 1)))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))))))
+
+(ert-deftest jabber-test-sm-terminal-reentry-is-once-only ()
+  "Terminal callbacks cannot repeat retirement effects."
+  (dolist (source '(reset pending list lost))
+    (let* ((jc (make-symbol "terminal-reentry"))
+           (replacement (make-symbol "replacement"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect nil)
+           (jabber-connections (list jc))
+           (triggered nil)
+           (resets 0)
+           (failures 0)
+           (losses 0)
+           (list-changes 0)
+           (reenter
+            (lambda ()
+              (unless triggered
+                (setq triggered t)
+                (push replacement jabber-connections)
+                (jabber-disconnect-one jc))))
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_connection)
+                    (cl-incf resets)
+                    (when (eq source 'reset)
+                      (funcall reenter)))))
+           (jabber-lifecycle-connection-list-changed-functions
+            (list (lambda ()
+                    (cl-incf list-changes)
+                    (when (eq source 'list)
+                      (funcall reenter)))))
+           (jabber-lost-connection-hooks
+            (list (lambda (_connection)
+                    (cl-incf losses)
+                    (when (eq source 'lost)
+                      (funcall reenter)))))
+           (sd (list :username "user" :server "example.org" :resource "emacs"
+                     :connection transport :ever-session-established t
+                     :disconnection-expected nil :sm-enabled nil
+                     :sm-pending-queue nil)))
+      (setq sd
+            (jabber-sm--enqueue-pending
+             sd '(message ((to . "peer@example.org"))) nil
+             (lambda (_reason)
+               (cl-incf failures)
+               (when (eq source 'pending)
+                 (funcall reenter)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (fsm-send-sync jc (list :connection-dead transport "lost"))
+      (should-not (get jc :state))
+      (should-not (get jc :timeout))
+      (should-not (memq jc jabber-connections))
+      (should (memq replacement jabber-connections))
+      (should (plist-get (fsm-get-state-data jc) :terminalized))
+      (should (= resets 1))
+      (should (= failures 1))
+      (should (= losses 1))
+      (should (= list-changes 1)))))
+
+(ert-deftest jabber-test-sm-terminalization-does-not-mark-input-plist ()
+  "Terminal retirement does not mark or detach an external plist alias."
+  (dolist (entry '(active-loss nil-disconnect))
+    (let* ((jc (make-symbol "terminal-state-copy"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect nil)
+           (jabber-connections (list jc))
+           (jabber-lifecycle-session-reset-functions nil)
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (jabber-lost-connection-hooks nil)
+           (state-data
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection transport :ever-session-established t
+                  :disconnection-expected nil :sm-enabled nil
+                  :sm-pending-queue nil)))
+      (put jc :name 'jabber-connection)
+      (put jc :state (and (eq entry 'active-loss) :session-established))
+      (put jc :state-data state-data)
+      (if (eq entry 'active-loss)
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+        (jabber-disconnect-one jc))
+      (should-not (plist-get state-data :terminalized))
+      (should-not (plist-get state-data :disconnection-expected))
+      (should (eq (plist-get state-data :connection) transport))
+      (should (plist-get (fsm-get-state-data jc) :terminalized)))))
+
+(defun jabber-test-sm--assert-unowned-resume-terminalized (source)
+  "Assert resumable loss from unowned SOURCE is terminally settled."
+  (let* ((jc (make-symbol "unowned-resume"))
+         (replacement (make-symbol "replacement"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-connections
+          (if (eq source 'entry) (list replacement) (list jc)))
+         (resets 0)
+         (failures 0)
+         (list-changes 0)
+         (lost-observation nil)
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda () (cl-incf list-changes))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection)
+                  (when (eq source 'entry)
+                    (let ((current (fsm-get-state-data jc)))
+                      (setq lost-observation
+                            (list (plist-get current :terminalized)
+                                  (plist-get current :sm-enabled)
+                                  (plist-get current :sm-pending-queue)
+                                  failures resets list-changes))))
+                  (when (eq source 'lost-hook)
+                    (setq jabber-connections
+                          (cons replacement
+                                (delq jc jabber-connections)))))))
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :connection transport :ever-session-established t
+                   :disconnection-expected nil
+                   :sm-enabled t :sm-id "session"
+                   :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data sd)
+    (unwind-protect
+        (progn
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (let ((current (fsm-get-state-data jc)))
+            (should (plist-get current :terminalized))
+            (should-not (plist-get current :sm-enabled))
+            (should-not (plist-get current :sm-id))
+            (should-not (plist-get current :sm-resuming))
+            (should-not (plist-get current :sm-pending-queue)))
+          (should (= resets 1))
+          (should (= failures 1))
+          (should (= list-changes 1))
+          (should-not (get jc :timeout))
+          (should-not (memq jc jabber-connections))
+          (should (memq replacement jabber-connections)))
+      (when (eq source 'entry)
+        (should (equal lost-observation '(t nil nil 1 1 1))))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout))))))
+
+(ert-deftest jabber-test-sm-resumable-retry-requires-owner-at-entry ()
+  "Resumable state without an entry retry owner is terminally settled."
+  (jabber-test-sm--assert-unowned-resume-terminalized 'entry))
+
+(ert-deftest jabber-test-sm-resumable-retry-settles-lost-owner ()
+  "Resumable state whose retry owner is lost before return is settled."
+  (jabber-test-sm--assert-unowned-resume-terminalized 'lost-hook))
+
+(ert-deftest jabber-test-sm-nonresumable-lost-owner-does-not-reset-twice ()
+  "Late terminalization reuses an already completed session reset."
+  (let* ((jc (make-symbol "lost-fresh-owner"))
+         (replacement (make-symbol "replacement"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-connections (list jc))
+         (resets 0)
+         (failures 0)
+         (list-changes 0)
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda () (cl-incf list-changes))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection)
+                  (setq jabber-connections (list replacement)))))
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :connection transport :ever-session-established t
+                   :disconnection-expected nil :sm-enabled nil
+                   :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data sd)
+    (fsm-send-sync jc (list :connection-dead transport "lost"))
+    (should (= resets 1))
+    (should (= failures 1))
+    (should (= list-changes 1))
+    (should-not (get jc :timeout))
+    (should-not (memq jc jabber-connections))
+    (should (memq replacement jabber-connections))
+    (should (plist-get (fsm-get-state-data jc) :terminalized))))
+
+(ert-deftest jabber-test-sm-transport-cleanup-cancel-is-once-only ()
+  "Cancellation from transport cleanup retires old ownership once."
+  (let* ((jc (make-symbol "cleanup-cancel"))
+         (replacement (make-symbol "replacement"))
+         (buffer (generate-new-buffer " *jabber-cleanup-cancel*"))
+         (transport (make-pipe-process :name "jabber-cleanup-cancel"
+                                       :buffer buffer :noquery t))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-debug-keep-process-buffers nil)
+         (jabber-connections (list jc))
+         (triggered nil)
+         (resets 0)
+         (failures 0)
+         (losses 0)
+         (list-changes 0)
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda () (cl-incf list-changes))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection) (cl-incf losses))))
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :ever-session-established t
+                :disconnection-expected nil :sm-enabled t :sm-id "session"
+                :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (with-current-buffer buffer
+      (add-hook 'kill-buffer-hook
+                (lambda ()
+                  (unless triggered
+                    (setq triggered t)
+                    (push replacement jabber-connections)
+                    (jabber-disconnect-one jc)))
+                nil t))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (progn
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (let ((current (fsm-get-state-data jc)))
+            (should (plist-get current :terminalized))
+            (should (plist-get current :disconnection-expected))
+            (should-not (plist-get current :sm-pending-queue))
+            (should-not (plist-get current :nil-entry-pending)))
+          (should (= resets 1))
+          (should (= failures 1))
+          (should (= losses 1))
+          (should (= list-changes 1))
+          (should-not (memq jc jabber-connections))
+          (should (memq replacement jabber-connections))
+          (should-not (get jc :timeout))
+          (should-not (buffer-live-p buffer)))
+      (when (process-live-p transport)
+        (delete-process transport))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-transport-cleanup-timeout-waits-for-retry-lease ()
+  "Transport cleanup cannot reconnect before the retry lease is armed."
+  (let* ((jc (make-symbol "cleanup-retry"))
+         (buffer (generate-new-buffer " *jabber-cleanup-retry*"))
+         (transport (make-pipe-process :name "jabber-cleanup-retry"
+                                       :buffer buffer :noquery t))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-debug-keep-process-buffers nil)
+         (jabber-connections (list jc))
+         (triggered nil)
+         (reconnects 0)
+         (resets 0)
+         (failures 0)
+         (losses 0)
+         (list-changes 0)
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda () (cl-incf list-changes))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection) (cl-incf losses))))
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :connection-type 'network
+                :network-server "example.org" :port 5222
+                :ever-session-established t :disconnection-expected nil
+                :sm-enabled nil :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (with-current-buffer buffer
+      (add-hook 'kill-buffer-hook
+                (lambda ()
+                  (unless triggered
+                    (setq triggered t)
+                    (fsm-send-sync jc :timeout)))
+                nil t))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-get-connect-function)
+                   (lambda (_type)
+                     (lambda (&rest _) (cl-incf reconnects)))))
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (should-not (get jc :state))
+          (should (= reconnects 0))
+          (should (= resets 1))
+          (should (= failures 1))
+          (should (= losses 1))
+          (should (= list-changes 0))
+          (should (memq jc jabber-connections))
+          (should-not (plist-get (fsm-get-state-data jc)
+                                 :sm-pending-queue))
+          (should (timerp (get jc :timeout)))
+          (fsm-send-sync jc :timeout)
+          (should (eq (get jc :state) :connecting))
+          (should (= reconnects 1))
+          (should-not (get jc :timeout))
+          (should-not (buffer-live-p buffer)))
+      (when (process-live-p transport)
+        (delete-process transport))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-session-establishment-clears-reset-marker ()
+  "A genuine session permits one later logical-session reset."
+  (let* ((jc (make-symbol "fresh-session"))
+         (token (cons nil nil))
+         (held (list (make-symbol "held")))
+         (state-data
+          (list :session-reset-done t :nil-entry-token token
+                :nil-entry-pending held
+                :sm-resumed nil :sm-enabled nil :sm-pending-queue nil))
+         (enter (gethash :session-established
+                         (get 'jabber-connection :fsm-enter))))
+    (put jc :state-data state-data)
+    (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-bootstrap)
+               #'ignore)
+              ((symbol-function 'jabber-sm--drain-pending)
+               (lambda (_jc current) current)))
+      (setq state-data (car (funcall enter jc state-data))))
+    (should-not (plist-get state-data :session-reset-done))
+    (should-not (plist-get state-data :nil-entry-token))
+    (should-not (plist-get state-data :nil-entry-pending))
+    (should-not (plist-get (fsm-get-state-data jc) :session-reset-done))
+    (should-not (plist-get (fsm-get-state-data jc) :nil-entry-token))
+    (should-not (plist-get (fsm-get-state-data jc) :nil-entry-pending))))
+
+(ert-deftest jabber-test-sm-terminal-cleanup-keeps-cancellation ()
+  "Terminal cleanup reentry preserves explicit cancellation authority."
+  (dolist (mode '(no-retry lost-owner))
+    (let* ((jc (make-symbol "terminal-cleanup"))
+           (replacement (make-symbol "replacement"))
+           (buffer (generate-new-buffer " *jabber-terminal-cleanup*"))
+           (process (make-pipe-process
+                     :name "jabber-terminal-cleanup" :buffer buffer
+                     :noquery t))
+           (jabber-auto-reconnect (not (eq mode 'no-retry)))
+           (jabber-debug-keep-process-buffers nil)
+           (jabber-connections
+            (if (eq mode 'lost-owner) (list replacement) (list jc)))
+           (triggered nil)
+           (resets 0)
+           (failures 0)
+           (list-changes 0)
+           (lost 0)
+           reset-observations
+           (jabber-lost-connection-hooks
+            (list (lambda (_connection) (cl-incf lost))))
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_connection)
+                    (cl-incf resets)
+                    (push (plist-get (fsm-get-state-data jc)
+                                     :disconnection-expected)
+                          reset-observations))))
+           (jabber-lifecycle-connection-list-changed-functions
+            (list (lambda () (cl-incf list-changes))))
+           (input
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection process :disconnection-expected nil
+                  :ever-session-established t :sm-enabled nil
+                  :sm-pending-queue nil))
+           state-data)
+      (setq state-data
+            (jabber-sm--enqueue-pending
+             input '(message ((to . "peer@example.org"))) nil
+             (lambda (_reason) (cl-incf failures))))
+      (with-current-buffer buffer
+        (add-hook 'kill-buffer-hook
+                  (lambda ()
+                    (unless triggered
+                      (setq triggered t)
+                      (cl-pushnew replacement jabber-connections)
+                      (jabber-disconnect-one jc)))
+                  nil t))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state-data)
+      (unwind-protect
+          (progn
+            (fsm-send-sync jc (list :connection-dead process "lost"))
+            (let ((current (fsm-get-state-data jc)))
+              (should triggered)
+              (should (equal reset-observations '(t)))
+              (should (plist-get current :disconnection-expected))
+              (should (plist-get current :terminalized))
+              (should-not (get jc :state))
+              (should-not (memq jc jabber-connections))
+              (should (memq replacement jabber-connections))
+              (should (= resets 1))
+              (should (= failures 1))
+              (should (= list-changes 1))
+              (should (= lost 1))))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))
+        (when (process-live-p process)
+          (delete-process process))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(defun jabber-test-sm--terminal-timeout-case (source)
+  "Assert terminal timeout reentry from SOURCE stays inert."
+  (let* ((jc (make-symbol "terminal-timeout"))
+         (replacement (make-symbol "replacement"))
+         (buffer (and (eq source 'cleanup)
+                      (generate-new-buffer " *jabber-timeout-cleanup*")))
+         (process (and buffer
+                       (make-pipe-process
+                        :name "jabber-timeout-cleanup" :buffer buffer
+                        :noquery t)))
+         (transport (or process (make-symbol "transport")))
+         (jabber-auto-reconnect nil)
+         (jabber-debug-keep-process-buffers nil)
+         (jabber-connections (list jc replacement))
+         (triggered 0)
+         (reconnects 0)
+         (resets 0)
+         (failures 0)
+         (list-changes 0)
+         (lost 0)
+         trigger
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection)
+                  (cl-incf resets)
+                  (when (eq source 'reset) (funcall trigger)))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda ()
+                  (cl-incf list-changes)
+                  (when (eq source 'list) (funcall trigger)))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection)
+                  (cl-incf lost)
+                  (when (eq source 'lost) (funcall trigger)))))
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :disconnection-expected nil
+                :ever-session-established t :sm-enabled nil
+                :sm-pending-queue nil)))
+    (setq trigger
+          (lambda ()
+            (cl-incf triggered)
+            (fsm-send-sync jc :timeout)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason)
+             (cl-incf failures)
+             (when (eq source 'pending) (funcall trigger)))))
+    (when buffer
+      (with-current-buffer buffer
+        (add-hook 'kill-buffer-hook
+                  (lambda () (funcall trigger)) nil t)))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-get-connect-function)
+                   (lambda (_connection-type)
+                     (lambda (&rest _) (cl-incf reconnects)))))
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (when (eq source 'delayed) (funcall trigger))
+          (let ((current (fsm-get-state-data jc)))
+            (should (= triggered 1))
+            (should (= reconnects 0))
+            (should-not (get jc :state))
+            (should (plist-get current :terminalized))
+            (should-not (memq jc jabber-connections))
+            (should (memq replacement jabber-connections))
+            (should-not (get jc :timeout))))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout)))
+      (when (and process (process-live-p process))
+        (delete-process process))
+      (when (and buffer (buffer-live-p buffer))
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-terminal-timeout-is-inert ()
+  "Terminal reset, failure, list, lost, cleanup, and delayed timeouts are inert."
+  (dolist (source '(reset pending list lost cleanup delayed))
+    (jabber-test-sm--terminal-timeout-case source)))
+
+(ert-deftest jabber-test-sm-timeout-requires-complete-retry-lease ()
+  "Only a registered, tokened, nonterminal nil-state retry may reconnect."
+  (dolist (case '(unregistered terminal expected missing-token
+                  missing-timer live))
+    (let* ((jc (make-symbol "retry-lease"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect t)
+           (jabber-reconnect-delay 300)
+           (jabber-connections (list jc))
+           (jabber-lifecycle-session-reset-functions nil)
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (jabber-lost-connection-hooks nil)
+           (reconnects 0)
+           (state-data
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection transport :connection-type 'network
+                  :network-server "example.org" :port 5222
+                  :disconnection-expected nil :ever-session-established t
+                  :sm-enabled nil :sm-pending-queue nil)))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state-data)
+      (unwind-protect
+          (cl-letf (((symbol-function 'jabber-get-connect-function)
+                     (lambda (_connection-type)
+                       (lambda (&rest _) (cl-incf reconnects)))))
+            (fsm-send-sync jc (list :connection-dead transport "lost"))
+            (pcase case
+              ('unregistered
+               (setq jabber-connections (delq jc jabber-connections)))
+              ('terminal
+               (plist-put (fsm-get-state-data jc) :terminalized t))
+              ('expected
+               (plist-put (fsm-get-state-data jc)
+                          :disconnection-expected t))
+              ('missing-token
+               (plist-put (fsm-get-state-data jc) :nil-entry-token nil)))
+            (when (eq case 'missing-timer)
+              (fsm-stop-timer jc))
+            (fsm-send-sync jc :timeout)
+            (if (eq case 'live)
+                (progn
+                  (should (eq (get jc :state) :connecting))
+                  (should (= reconnects 1)))
+              (should-not (get jc :state))
+              (should (= reconnects 0))))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))))))
+
+(ert-deftest jabber-test-sm-reset-reentry-keeps-successor-queue ()
+  "Reset and pending callbacks cannot erase same-plist successor work."
+  (dolist (source '(reset pending))
+    (let* ((jc (make-symbol "reset-successor"))
+           (replacement (make-symbol "replacement"))
+           (transport (make-symbol "transport"))
+           (jabber-auto-reconnect t)
+           (jabber-connections (list jc replacement))
+           (resets 0)
+           (old-failures 0)
+           (successor-failures 0)
+           (reconnects 0)
+           (advanced nil)
+           (same-object nil)
+           successor-entries
+           advance
+           (jabber-lost-connection-hooks nil)
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_connection)
+                    (cl-incf resets)
+                    (when (eq source 'reset) (funcall advance)))))
+           (state-data
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection transport :disconnection-expected nil
+                  :ever-session-established t :sm-enabled nil
+                  :sm-pending-queue nil)))
+      (setq advance
+            (lambda ()
+              (unless advanced
+                (setq advanced t)
+                (fsm-send-sync jc :timeout)
+                (let* ((current (fsm-get-state-data jc))
+                       (first
+                        (jabber-sm--enqueue-pending
+                         current '(message ((id . "successor"))) nil
+                         (lambda (_reason) (cl-incf successor-failures))))
+                       (second
+                        (jabber-sm--enqueue-pending
+                         first '(message ((id . "successor"))) nil
+                         (lambda (_reason) (cl-incf successor-failures)))))
+                  (setq same-object (and (eq current first)
+                                         (eq first second)))
+                  (setq successor-entries
+                        (copy-sequence
+                         (plist-get second :sm-pending-queue)))
+                  (put jc :state-data second)))))
+      (setq state-data
+            (jabber-sm--enqueue-pending
+             state-data '(message ((id . "old"))) nil
+             (lambda (_reason)
+               (cl-incf old-failures)
+               (when (eq source 'pending) (funcall advance)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state-data)
+      (cl-letf (((symbol-function 'jabber-get-connect-function)
+                 (lambda (_connection-type)
+                   (lambda (&rest _) (cl-incf reconnects)))))
+        (fsm-send-sync jc (list :connection-dead transport "lost"))
+        (let ((current (fsm-get-state-data jc)))
+          (should advanced)
+          (should same-object)
+          (should-not (get jc :state))
+          (should (memq jc jabber-connections))
+          (should (memq replacement jabber-connections))
+          (should (= reconnects 0))
+          (should (= resets 1))
+          (should (= old-failures 1))
+          (should (= successor-failures 0))
+          (let ((pending (plist-get current :sm-pending-queue)))
+            (should (= (length pending) 2))
+            (should (eq (nth 0 pending) (nth 0 successor-entries)))
+            (should (eq (nth 1 pending) (nth 1 successor-entries)))
+            (should
+             (equal (mapcar #'jabber-sm--pending-stanza pending)
+                    '((message ((id . "successor")))
+                      (message ((id . "successor")))))))
+          (should (timerp (get jc :timeout)))
+          (fsm-send-sync jc :timeout)
+          (should (eq (get jc :state) :connecting))
+          (should (= reconnects 1)))))))
+
+(ert-deftest jabber-test-sm-expected-loss-does-not-retry ()
+  "An expected active loss is terminal despite automatic reconnect."
+  (let* ((jc (make-symbol "expected-loss"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect t)
+         (jabber-connections (list jc))
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         (jabber-lost-connection-hooks nil)
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :disconnection-expected t
+                :ever-session-established t :sm-enabled nil
+                :sm-pending-queue nil)))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (fsm-send-sync jc (list :connection-dead transport "closed"))
+    (should (plist-get (fsm-get-state-data jc) :terminalized))
+    (should-not (memq jc jabber-connections))
+    (should-not (get jc :timeout))))
+
+(ert-deftest jabber-test-sm-initial-failure-does-not-retry ()
+  "A never-established FSM is terminal despite automatic reconnect."
+  (let* ((jc (make-symbol "initial-failure"))
+         (jabber-auto-reconnect t)
+         (jabber-connections (list jc))
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         (jabber-lost-connection-hooks nil)
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection nil :disconnection-expected nil
+                :ever-session-established nil :sm-enabled nil
+                :sm-pending-queue nil)))
+    (put jc :name 'jabber-connection)
+    (put jc :state :connecting)
+    (put jc :state-data state-data)
+    (fsm-send-sync jc '(:connection-failed ("no route")))
+    (should (plist-get (fsm-get-state-data jc) :terminalized))
+    (should-not (memq jc jabber-connections))
+    (should-not (get jc :timeout))))
+
+(ert-deftest jabber-test-sm-nested-nil-entry-preserves-new-retry-timer ()
+  "A stale outer nil entry cannot replace a nested retry timer."
+  (let* ((jc (make-symbol "nested-nil-entry"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (nested nil)
+         (resets 0)
+         (failures 0)
+         (reconnects 0)
+         old-token new-token nested-timer
+         (jabber-lifecycle-session-reset-functions
+          (list
+           (lambda (_connection)
+             (cl-incf resets)
+             (unless nested
+               (setq nested t)
+               (setq old-token
+                     (plist-get (fsm-get-state-data jc) :nil-entry-token))
+               (fsm-start-timer jc 300)
+               (fsm-send-sync jc :timeout)
+               (fsm-send-sync jc '(:connection-failed ("nested")))
+               (setq new-token
+                     (plist-get (fsm-get-state-data jc) :nil-entry-token))
+               (setq nested-timer (get jc :timeout))))))
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :connection-type 'network
+                :network-server "example.org" :port 5222
+                :disconnection-expected nil :ever-session-established t
+                :sm-enabled nil :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((id . "old"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-get-connect-function)
+                   (lambda (_connection-type)
+                     (lambda (&rest _) (cl-incf reconnects)))))
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (should nested)
+          (should old-token)
+          (should new-token)
+          (should-not (eq old-token new-token))
+          (should (eq (get jc :state) nil))
+          (should (eq (get jc :timeout) nested-timer))
+          (should (timerp nested-timer))
+          (should (memq jc jabber-connections))
+          (should (= reconnects 1))
+          (should (= resets 1))
+          (should (= failures 1)))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout))))))
+
+(ert-deftest jabber-test-sm-cleanup-added-work-survives-session-reset ()
+  "Cleanup-created successor occurrences survive old-session settlement."
+  (dolist (mode '(retry terminal))
+    (let* ((jc (make-symbol "cleanup-successor-work"))
+           (buffer (generate-new-buffer " *jabber-cleanup-successor*"))
+           (transport (make-pipe-process
+                       :name "jabber-cleanup-successor" :buffer buffer
+                       :noquery t))
+           (jabber-auto-reconnect (eq mode 'retry))
+           (jabber-reconnect-delay 300)
+           (jabber-debug-keep-process-buffers nil)
+           (jabber-connections (list jc))
+           (jabber-lifecycle-session-reset-functions nil)
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (jabber-lost-connection-hooks nil)
+           (old-failures 0)
+           (successor-failures 0)
+           successor-entries
+           (state-data
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection transport :ever-session-established t
+                  :disconnection-expected nil :sm-enabled nil
+                  :sm-pending-queue nil)))
+      (setq state-data
+            (jabber-sm--enqueue-pending
+             state-data '(message ((id . "old"))) nil
+             (lambda (_reason) (cl-incf old-failures))))
+      (with-current-buffer buffer
+        (add-hook
+         'kill-buffer-hook
+         (lambda ()
+           (let* ((current (fsm-get-state-data jc))
+                  (first
+                   (jabber-sm--enqueue-pending
+                    current '(message ((id . "successor"))) nil
+                    (lambda (_reason) (cl-incf successor-failures))))
+                  (second
+                   (jabber-sm--enqueue-pending
+                    first '(message ((id . "successor"))) nil
+                    (lambda (_reason) (cl-incf successor-failures)))))
+             (setq successor-entries
+                   (copy-sequence (plist-get second :sm-pending-queue)))
+             (put jc :state-data second)))
+         nil t))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state-data)
+      (unwind-protect
+          (progn
+            (fsm-send-sync jc (list :connection-dead transport "lost"))
+            (should (= old-failures 1))
+            (should (= successor-failures 0))
+            (let ((pending
+                   (plist-get (fsm-get-state-data jc) :sm-pending-queue)))
+              (should (= (length pending) 2))
+              (should (eq (nth 0 pending) (nth 0 successor-entries)))
+              (should (eq (nth 1 pending) (nth 1 successor-entries)))
+              (should
+               (equal (mapcar #'jabber-sm--pending-stanza pending)
+                      '((message ((id . "successor")))
+                        (message ((id . "successor")))))))
+            (if (eq mode 'retry)
+                (progn
+                  (should (memq jc jabber-connections))
+                  (should (timerp (get jc :timeout))))
+              (should-not (memq jc jabber-connections))
+              (should-not (get jc :timeout))))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))
+        (when (process-live-p transport)
+          (delete-process transport))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-sm-resumable-cleanup-restores-old-before-successors ()
+  "A surviving resumable retry restores old work before cleanup additions."
+  (let* ((jc (make-symbol "resumable-cleanup-order"))
+         (buffer (generate-new-buffer " *jabber-resumable-cleanup-order*"))
+         (transport (make-pipe-process
+                     :name "jabber-resumable-cleanup-order" :buffer buffer
+                     :noquery t))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-debug-keep-process-buffers nil)
+         (jabber-connections (list jc))
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         (jabber-lost-connection-hooks nil)
+         (old-failures 0)
+         (successor-failures 0)
+         old-queue
+         successor-entries
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :ever-session-established t
+                :disconnection-expected nil :sm-enabled t :sm-id "session"
+                :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((id . "old"))) nil
+           (lambda (_reason) (cl-incf old-failures))))
+    (setq old-queue (plist-get state-data :sm-pending-queue))
+    (with-current-buffer buffer
+      (add-hook
+       'kill-buffer-hook
+       (lambda ()
+         (let* ((current (fsm-get-state-data jc))
+                (first
+                 (jabber-sm--enqueue-pending
+                  current '(message ((id . "successor-1"))) nil
+                  (lambda (_reason) (cl-incf successor-failures))))
+                (second
+                 (jabber-sm--enqueue-pending
+                  first '(message ((id . "successor-2"))) nil
+                  (lambda (_reason) (cl-incf successor-failures)))))
+           (setq successor-entries
+                 (copy-sequence (plist-get second :sm-pending-queue)))
+           (put jc :state-data second)))
+       nil t))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (progn
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (let ((pending
+                 (plist-get (fsm-get-state-data jc) :sm-pending-queue)))
+            (should (= old-failures 0))
+            (should (= successor-failures 0))
+            (should (= (length old-queue) 1))
+            (should (= (length pending) 3))
+            (should (eq (nth 0 pending) (nth 0 old-queue)))
+            (should (eq (nth 1 pending) (nth 0 successor-entries)))
+            (should (eq (nth 2 pending) (nth 1 successor-entries)))
+            (should
+             (equal (mapcar #'jabber-sm--pending-stanza pending)
+                    '((message ((id . "old")))
+                      (message ((id . "successor-1")))
+                      (message ((id . "successor-2")))))))
+          (should (plist-get (fsm-get-state-data jc) :sm-resuming))
+          (should (memq jc jabber-connections))
+          (should (timerp (get jc :timeout)))
+          (should-not (plist-get (fsm-get-state-data jc)
+                                 :nil-entry-pending)))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout)))
+      (when (process-live-p transport)
+        (delete-process transport))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-resumable-callback-timeout-promotes-held-work ()
+  "A callback-armed retry promotes held work before connecting."
+  (let* ((jc (make-symbol "resumable-callback-timeout"))
+         (buffer (generate-new-buffer " *jabber-resumable-timeout*"))
+         (transport (make-pipe-process
+                     :name "jabber-resumable-timeout" :buffer buffer
+                     :noquery t))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-debug-keep-process-buffers nil)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (jabber-post-resume-hooks nil)
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         (old-failures 0)
+         (successor-failures 0)
+         (reconnects 0)
+         old-queue old-entry successor-entries
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :connection-type 'network
+                :network-server "example.org" :port 5222
+                :disconnection-expected nil :ever-session-established t
+                :sm-enabled t :sm-id "session" :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((id . "old"))) nil
+           (lambda (_reason) (cl-incf old-failures))))
+    (setq old-queue (plist-get state-data :sm-pending-queue))
+    (setq old-entry (car old-queue))
+    (with-current-buffer buffer
+      (add-hook
+       'kill-buffer-hook
+       (lambda ()
+         (let* ((current (fsm-get-state-data jc))
+                (first
+                 (jabber-sm--enqueue-pending
+                  current '(message ((id . "successor-1"))) nil
+                  (lambda (_reason) (cl-incf successor-failures))))
+                (second
+                 (jabber-sm--enqueue-pending
+                  first '(message ((id . "successor-2"))) nil
+                  (lambda (_reason) (cl-incf successor-failures)))))
+           (setq successor-entries
+                 (copy-sequence (plist-get second :sm-pending-queue)))
+           (put jc :state-data second)
+           (fsm-start-timer jc 300)
+           (fsm-send-sync jc :timeout)))
+       nil t))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-get-connect-function)
+                   (lambda (_connection-type)
+                     (lambda (&rest _) (cl-incf reconnects)))))
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (let* ((current (fsm-get-state-data jc))
+                 (pending (plist-get current :sm-pending-queue)))
+            (should (eq (get jc :state) :connecting))
+            (should (= reconnects 1))
+            (should (= old-failures 0))
+            (should (= successor-failures 0))
+            (should (= (length old-queue) 1))
+            (should (= (length pending) 3))
+            (should (eq (nth 0 pending) old-entry))
+            (should (eq (nth 1 pending) (nth 0 successor-entries)))
+            (should (eq (nth 2 pending) (nth 1 successor-entries)))
+            (should-not (plist-get current :nil-entry-pending))
+            (setq current (copy-sequence current))
+            (setq current (plist-put current :sm-resumed t))
+            (fsm-update jc :session-established current nil))
+          (let ((pending
+                 (plist-get (fsm-get-state-data jc) :sm-pending-queue)))
+            (should (= (length pending) 3))
+            (should (eq (nth 0 pending) old-entry))
+            (should (eq (nth 1 pending) (nth 0 successor-entries)))
+            (should (eq (nth 2 pending) (nth 1 successor-entries)))
+            (should-not (plist-get (fsm-get-state-data jc)
+                                   :nil-entry-pending))))
+      (let ((timer (plist-get (fsm-get-state-data jc) :sm-r-timer)))
+        (when (timerp timer)
+          (cancel-timer timer)))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout)))
+      (when (process-live-p transport)
+        (delete-process transport))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-sm-late-owner-loss-preserves-cleanup-work ()
+  "Late retry-owner loss cannot consume cleanup-created successor work."
+  (dolist (mode '(nonresumable resumable))
+    (let* ((jc (make-symbol "late-owner-cleanup"))
+           (replacement (make-symbol "replacement"))
+           (buffer (generate-new-buffer " *jabber-late-owner-cleanup*"))
+           (transport (make-pipe-process
+                       :name "jabber-late-owner-cleanup" :buffer buffer
+                       :noquery t))
+           (jabber-auto-reconnect t)
+           (jabber-reconnect-delay 300)
+           (jabber-debug-keep-process-buffers nil)
+           (jabber-connections (list jc))
+           (resets 0)
+           (list-changes 0)
+           (losses 0)
+           (old-failures 0)
+           (successor-failures 0)
+           successor-entries
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_connection) (cl-incf resets))))
+           (jabber-lifecycle-connection-list-changed-functions
+            (list (lambda () (cl-incf list-changes))))
+           (jabber-lost-connection-hooks
+            (list (lambda (_connection)
+                    (cl-incf losses)
+                    (setq jabber-connections
+                          (cons replacement (delq jc jabber-connections))))))
+           (state-data
+            (list :username "user" :server "example.org" :resource "emacs"
+                  :connection transport :ever-session-established t
+                  :disconnection-expected nil
+                  :sm-enabled (eq mode 'resumable)
+                  :sm-id (and (eq mode 'resumable) "session")
+                  :sm-pending-queue nil)))
+      (setq state-data
+            (jabber-sm--enqueue-pending
+             state-data '(message ((id . "old"))) nil
+             (lambda (_reason) (cl-incf old-failures))))
+      (with-current-buffer buffer
+        (add-hook
+         'kill-buffer-hook
+         (lambda ()
+           (let* ((current (fsm-get-state-data jc))
+                  (first
+                   (jabber-sm--enqueue-pending
+                    current '(message ((id . "successor"))) nil
+                    (lambda (_reason) (cl-incf successor-failures))))
+                  (second
+                   (jabber-sm--enqueue-pending
+                    first '(message ((id . "successor"))) nil
+                    (lambda (_reason) (cl-incf successor-failures)))))
+             (setq successor-entries
+                   (copy-sequence (plist-get second :sm-pending-queue)))
+             (put jc :state-data second)))
+         nil t))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state-data)
+      (unwind-protect
+          (progn
+            (fsm-send-sync jc (list :connection-dead transport "lost"))
+            (let* ((current (fsm-get-state-data jc))
+                   (pending (plist-get current :sm-pending-queue)))
+              (should (= old-failures 1))
+              (should (= successor-failures 0))
+              (should (= (length pending) 2))
+              (should (eq (nth 0 pending) (nth 0 successor-entries)))
+              (should (eq (nth 1 pending) (nth 1 successor-entries)))
+              (should
+               (equal (mapcar #'jabber-sm--pending-stanza pending)
+                      '((message ((id . "successor")))
+                        (message ((id . "successor"))))))
+              (should (= resets 1))
+              (should (= list-changes 1))
+              (should (= losses 1))
+              (should (plist-get current :terminalized))
+              (should-not (plist-get current :sm-enabled))
+              (should-not (plist-get current :sm-id)))
+            (should-not (get jc :state))
+            (should-not (get jc :timeout))
+            (should-not (memq jc jabber-connections))
+            (should (memq replacement jabber-connections)))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))
+        (when (process-live-p transport)
+          (delete-process transport))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-sm-late-list-cancellation-keeps-current-state ()
+  "Late terminal list reentry preserves explicit cancellation state."
+  (let* ((jc (make-symbol "late-list-cancel"))
+         (replacement (make-symbol "replacement"))
+         (transport (make-symbol "transport"))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 300)
+         (jabber-connections (list jc))
+         (triggered nil)
+         (resets 0)
+         (failures 0)
+         (list-changes 0)
+         (losses 0)
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda ()
+                  (cl-incf list-changes)
+                  (unless triggered
+                    (setq triggered t)
+                    (jabber-disconnect-one jc)))))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection)
+                  (cl-incf losses)
+                  (setq jabber-connections
+                        (cons replacement (delq jc jabber-connections))))))
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :ever-session-established t
+                :disconnection-expected nil
+                :sm-enabled t :sm-id "session"
+                :sm-pending-queue nil)))
+    (setq state-data
+          (jabber-sm--enqueue-pending
+           state-data '(message ((id . "old"))) nil
+           (lambda (_reason) (cl-incf failures))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data state-data)
+    (unwind-protect
+        (progn
+          (fsm-send-sync jc (list :connection-dead transport "lost"))
+          (let ((current (fsm-get-state-data jc)))
+            (should triggered)
+            (should (plist-get current :terminalized))
+            (should (plist-get current :disconnection-expected))
+            (should-not (plist-get current :sm-pending-queue)))
+          (should (= resets 1))
+          (should (= failures 1))
+          (should (= list-changes 1))
+          (should (= losses 1))
+          (should-not (get jc :state))
+          (should-not (get jc :timeout))
+          (should-not (memq jc jabber-connections))
+          (should (memq replacement jabber-connections)))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout))))))
 
 ;;; Priority queue
 
