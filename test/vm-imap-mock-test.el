@@ -1295,6 +1295,84 @@ carries a keyword at all, so a mailbox with one keeps its say over the rest."
       (vm-imap-net-wait nil 10)
       (should (equal (vm-decoded-labels-of message) (list "important"))))))
 
+
+
+;;; Expunging from the server what has been retrieved
+
+;; `vm-expunge-imap-messages' sets \Deleted on every message the folder has
+;; already retrieved and expunges.  Deleting the wrong one is not recoverable,
+;; so what it must never do is touch a message that is not in
+;; `vm-imap-retrieved-messages'.
+;;
+;; This is the blocking path, which runs only where the asynchronous driver
+;; declines, so `vm-imap-net-expunge-retrieved' is stubbed to nil, as
+;; vm-imap-mock-test--blocking does for retrieval.
+;;
+;; **The password has to be seeded.**  VM records a maildrop in
+;; `vm-imap-retrieved-messages' with the password stripped
+;; (`vm-imapdrop-sans-password'), so the session opened here has none and asks
+;; for one.  In batch that blocks on stdin and no timer fires, which reads as
+;; a hang with nothing to show for it.  The key `vm-imap-make-session' looks
+;; the password up under is the maildrop without its password *and* without
+;; its mailbox.
+
+(defconst vm-imap-expunge-test--messages
+  (list "From: a@example.com\nSubject: m1\n\nbody 1\n"
+        "From: a@example.com\nSubject: m2\n\nbody 2\n"
+        "From: a@example.com\nSubject: m3\n\nbody 3\n")
+  "Three messages, so that one can be left alone.")
+
+(defun vm-imap-expunge-test--subjects (mock)
+  "The subjects MOCK's INBOX still holds."
+  (mapcar (lambda (message)
+            (let ((text (vm-imap-mock-message-text message)))
+              (and (string-match "Subject: \\(m[0-9]\\)" text)
+                   (match-string 1 text))))
+          (vm-imap-mock-messages mock "INBOX")))
+
+(ert-deftest vm-imap-mock-test-expunging-takes-only-what-was-retrieved ()
+  "Only the messages the folder retrieved are deleted on the server.
+
+Two things this adds to vm-imap-mock-test-expunging-what-has-been-retrieved
+above, which covers the same command through the asynchronous driver.
+
+It is *selective*: three messages on the server, two of them recorded as
+retrieved, and the third still there afterwards.  The existing test retrieves
+both of its two and expects an empty mailbox, so it would pass equally if the
+command deleted whatever it found.  A message VM has no copy of must survive,
+and nothing said so.
+
+And it is the *blocking* path, which runs where the driver declines and is
+the one a reader gets when VM has not been told the maildrop\'s password.
+
+Also pins how it is done, which is not obvious from the outside: VM marks the
+two with STORE and then sends CLOSE, whose implicit expunge does the deleting
+(RFC 3501 6.4.2).  No EXPUNGE command is sent at all, so a test looking for
+one would conclude nothing had happened."
+  (vm-imap-mock-with (mock :messages vm-imap-expunge-test--messages)
+    (let* ((spec (vm-imap-mock-spec mock))
+           (vm-imap-server-timeout 10)
+           (vm-imap-passwords
+            (cons (list (vm-imapdrop-sans-password-and-mailbox spec)
+                        (vm-imap-mock-password mock))
+                  vm-imap-passwords)))
+      (should (equal 3 (length (vm-imap-mock-messages mock "INBOX"))))
+      (vm-test-with-real-folder (2)
+        (setq vm-imap-retrieved-messages
+              (list (list "1" "1000" (vm-imapdrop-sans-password spec) 'uid)
+                    (list "3" "1000" (vm-imapdrop-sans-password spec) 'uid)))
+        (cl-letf (((symbol-function 'vm-imap-net-expunge-retrieved)
+                   (lambda (&rest _) nil)))
+          (let ((vm-imap-ok-to-ask nil))
+            (vm-expunge-imap-messages))))
+      ;; the one never retrieved is the one left
+      (should (equal '("m2") (vm-imap-expunge-test--subjects mock)))
+      ;; and it got there by marking those two and closing
+      (should (vm-imap-mock-received-p mock "STORE 1:1 \\+FLAGS.SILENT (\\\\Deleted)"))
+      (should (vm-imap-mock-received-p mock "STORE 3:3 \\+FLAGS.SILENT (\\\\Deleted)"))
+      (should-not (vm-imap-mock-received-p mock "STORE 2:2"))
+      (should (vm-imap-mock-received-p mock "CLOSE")))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

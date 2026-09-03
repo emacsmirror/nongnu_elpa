@@ -203,6 +203,15 @@ Gotchas found the hard way:
 - **A mutation that makes a test skip reads as a surviving mutation.** ert
   counts a skip among its expected results, so a harness watching only for
   FAILED reports the test as blind when it never ran. Count skips too.
+- **A batch test of a blocking IMAP path needs the password seeded, or it
+  blocks on stdin.** VM records a maildrop in `vm-imap-retrieved-messages`
+  with the password stripped, so the blocking session asks for one:
+  `IMAP password for ...: Error reading from stdin`, and because Emacs is
+  blocked reading stdin rather than waiting on a process, **no timer fires**
+  and it reads as a hang with nothing to show for it. Seed `vm-imap-passwords`
+  under `vm-imapdrop-sans-password-and-mailbox` of the spec, which is the key
+  `vm-imap-make-session` looks up. `SIGUSR2` with
+  `(setq debug-on-event 'sigusr2)` is what got the answer out.
 - **A mock IMAP test can pass without running the code it claims to test.**
   Visiting a folder and getting mail both go through the asynchronous driver,
   and the blocking `vm-imap-synchronize-folder` runs only where the driver
