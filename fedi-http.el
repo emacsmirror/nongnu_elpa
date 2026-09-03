@@ -303,9 +303,18 @@ VECTOR means return json arrays as vectors.
 Callback to `fedi-http--get-response-async'."
   ;; view raw response:
   ;; (switch-to-buffer (current-buffer))
-  (let ((headers (unless no-headers
-                   (fedi-http--process-headers)))
-        (status url-http-response-status))
+  (let* ((head-str (buffer-substring-no-properties
+                    (point-min)
+                    ;; `url-http-end-of-headers' fails on cached responses?
+                    (-  (re-search-forward "^$" nil 'move)
+                        1)))
+         (headers (unless no-headers
+                    (fedi-http--process-headers)))
+         (status
+          ;; `url-http-response-status' fails on cached responses?
+          (cadr (split-string (car
+                               (split-string head-str "\n"))
+                              " "))))
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
     (let ((json-array-type (if vector 'vector 'list))
@@ -337,10 +346,14 @@ Callback to `fedi-http--get-response-async'."
   (goto-char (point-min))
   (let* ((head-str (buffer-substring-no-properties
                     (point-min)
-                    (- url-http-end-of-headers 1)))
+                    ;; `url-http-end-of-headers' fails on cached buffers?
+                    (-  (re-search-forward "^$" nil 'move)
+                        1)))
          (head-list (split-string head-str "\n")))
     (cons
-     (cons 'status url-http-response-status)
+     ;; `url-http-response-status' fails on cached buffers?
+     (cons 'status  (cadr
+                     (split-string (car head-list) " ")))
      (mapcar (lambda (x)
                (let ((sep (string-search ": " x)))
                  (cons (substring x 0 sep) (substring x (+ 2 sep)))))
