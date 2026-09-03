@@ -42,5 +42,7 @@ jobs:
         version: ${{ matrix.emacs_version }}
 
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
     - name: Run tests
       run: make
