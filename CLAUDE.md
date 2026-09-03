@@ -110,6 +110,19 @@ is as close to branch coverage as Emacs gets; nothing in Emacs does path
 coverage. The always-one-value count is the more useful signal, a predicate
 that never returned nil being one no test varied.
 
+`--forms-coverage` writes three files. `test/forms-coverage-results.txt` is
+per definition; `test/line-coverage-results.txt` is per line, naming the
+source lines that hold a form which never ran; `test/line-coverage.info` is
+the same in lcov, for `genhtml` and the coverage viewers. A line is counted
+only where it carries an instrumented form, so a comment is not reported as
+uncovered. Currently 32273 lines with forms, 9167 never reached.
+
+The line numbers come from edebug's own data: `(get SYMBOL 'edebug)` holds a
+marker at the definition and a vector of per-form offsets from it, which is
+how `testcover-mark` places the splotches it shows interactively. So they are
+exact. lcov counts executions and this knows only whether a form ran, so a
+line is written as run once or not at all.
+
 `--forms-coverage` depends on edebug being able to read every file, and two
 arglists stopped it doing so (#795): `&key` in a plain `defun`, which Emacs
 Lisp does not understand, and an `&optional` with no arguments after it. Both

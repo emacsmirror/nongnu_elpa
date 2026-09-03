@@ -51,6 +51,8 @@ commit.msg
 /.claude/
 /test/coverage-results.txt
 /test/forms-coverage-results.txt
+/test/line-coverage-results.txt
+/test/line-coverage.info
 /test/vm-live-config.el
 /notes
 
