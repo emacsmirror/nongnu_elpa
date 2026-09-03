@@ -33,7 +33,12 @@
 
 (require 'fsm)
 (require 'jabber-core)
+(require 'jabber-lifecycle)
 (require 'jabber-ping)
+
+(declare-function sleep-event-state "ext:system-sleep" (event) t)
+(declare-function system-sleep-enable "ext:system-sleep" ())
+(defvar system-sleep-event-functions)
 
 ;;;###autoload
 (defgroup jabber-keepalive nil
@@ -65,6 +70,23 @@
 
 ;; Global reference declarations
 
+(defun jabber-keepalive--retire-round ()
+  "Retire the current keepalive round without stopping future rounds."
+  (when (timerp jabber-keepalive-timeout-timer)
+    (cancel-timer jabber-keepalive-timeout-timer))
+  (setq jabber-keepalive-timeout-timer nil
+        jabber-keepalive-pending nil
+        jabber-keepalive-round (1+ jabber-keepalive-round)))
+
+(defun jabber-keepalive--active-transports ()
+  "Return active connection and exact transport pairs."
+  (let (result)
+    (dolist (jc jabber-connections)
+      (when (jabber-connection-active-p jc)
+        (push (cons jc (plist-get (fsm-get-state-data jc) :connection))
+              result)))
+    (nreverse result)))
+
 ;;;###autoload
 (defun jabber-keepalive-start (&optional _jc)
   "Activate keepalive.
@@ -91,27 +113,15 @@ for all accounts regardless of the argument."
 
   (when jabber-keepalive-timer
     (cancel-timer jabber-keepalive-timer))
-  (when (timerp jabber-keepalive-timeout-timer)
-    (cancel-timer jabber-keepalive-timeout-timer))
-  (setq jabber-keepalive-timer nil
-        jabber-keepalive-timeout-timer nil
-        jabber-keepalive-pending nil
-        jabber-keepalive-round (1+ jabber-keepalive-round)))
+  (setq jabber-keepalive-timer nil)
+  (jabber-keepalive--retire-round))
 
 (defun jabber-keepalive-do ()
   "Send a ping to every connection and arm the timeout timer."
   (when jabber-keepalive-debug
     (message "%s: sending keepalive packet(s)" (current-time-string)))
-  (when (timerp jabber-keepalive-timeout-timer)
-    (cancel-timer jabber-keepalive-timeout-timer))
-  (setq jabber-keepalive-timeout-timer nil
-        jabber-keepalive-pending nil
-        jabber-keepalive-round (1+ jabber-keepalive-round))
-  (dolist (c jabber-connections)
-    (when (jabber-connection-active-p c)
-      (push (cons c (plist-get (fsm-get-state-data c) :connection))
-            jabber-keepalive-pending)))
-  (setq jabber-keepalive-pending (nreverse jabber-keepalive-pending))
+  (jabber-keepalive--retire-round)
+  (setq jabber-keepalive-pending (jabber-keepalive--active-transports))
   (when jabber-keepalive-pending
     (let ((round jabber-keepalive-round))
       (setq jabber-keepalive-timeout-timer
@@ -178,6 +188,37 @@ _XML-DATA is the ignored IQ result or error stanza."
                       (error-message-string err))))))
       (unless jabber-connections
         (jabber-keepalive-stop)))))
+
+(defun jabber-keepalive--system-sleep-event (event)
+  "Reconnect active transports after a post-wake sleep EVENT."
+  (condition-case err
+      (when (eq (sleep-event-state event) 'post-wake)
+        (jabber-keepalive--retire-round)
+        (dolist (entry (jabber-keepalive--active-transports))
+          (condition-case peer-error
+              (fsm-send-sync
+               (car entry)
+               (list :connection-dead (cdr entry) "System wake"))
+            (error
+             (message "Jabber post-wake reconnect failed: %s"
+                      (error-message-string peer-error))))))
+    (error
+     (message "Jabber system sleep handler failed: %s"
+              (error-message-string err)))))
+
+(defun jabber-keepalive--enable-system-sleep (_jc)
+  "Enable optional sleep handling for a newly established session JC."
+  (condition-case err
+      (when (require 'system-sleep nil t)
+        (add-hook 'system-sleep-event-functions
+                  #'jabber-keepalive--system-sleep-event)
+        (system-sleep-enable))
+    (error
+     (message "Jabber system sleep support failed: %s"
+              (error-message-string err)))))
+
+(add-hook 'jabber-lifecycle-session-bootstrap-functions
+          #'jabber-keepalive--enable-system-sleep)
 
 ;;;; Whitespace pings - less traffic, no error checking on our side
 ;;;

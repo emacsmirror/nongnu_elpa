@@ -10,9 +10,158 @@
 (require 'ert)
 (require 'jabber-keepalive)
 
+(defvar system-sleep-event-functions)
+
 (defun jabber-test-keepalive--mock-timer-p (object)
   "Return non-nil when OBJECT is a mock keepalive timer."
   (and (consp object) (eq (car object) 'mock-timer)))
+
+(ert-deftest jabber-test-system-sleep-pre-sleep-is-inert ()
+  "A pre-sleep event does not mutate transport or keepalive state."
+  (let* ((entry '(connection . transport))
+         (timeout '(mock-timer timeout))
+         (jabber-connections '(connection))
+         (jabber-keepalive-round 4)
+         (jabber-keepalive-pending (list entry))
+         (jabber-keepalive-timeout-timer timeout)
+         cancelled sent result)
+    (cl-letf (((symbol-function 'sleep-event-state)
+               (lambda (_) 'pre-sleep))
+              ((symbol-function 'cancel-timer)
+               (lambda (&rest _) (setq cancelled t)))
+              ((symbol-function 'fsm-send-sync)
+               (lambda (&rest args) (setq sent args))))
+      (setq result
+            (condition-case nil
+                (progn (jabber-keepalive--system-sleep-event 'event) 'ok)
+              (void-function 'missing))))
+    (should (eq result 'ok))
+    (should (= jabber-keepalive-round 4))
+    (should (equal jabber-keepalive-pending (list entry)))
+    (should (eq jabber-keepalive-timeout-timer timeout))
+    (should-not cancelled)
+    (should-not sent)))
+
+(ert-deftest jabber-test-system-sleep-post-wake-invalidates-snapshot ()
+  "Post-wake retires one round and contains stale per-peer failures."
+  (let* ((first (make-symbol "first"))
+         (second (make-symbol "second"))
+         (connecting (make-symbol "connecting"))
+         (first-transport (make-symbol "first-transport"))
+         (second-transport (make-symbol "second-transport"))
+         (successor (make-symbol "successor"))
+         (timeout '(mock-timer timeout))
+         (recurring '(mock-timer recurring))
+         (jabber-connections (list first second connecting))
+         (jabber-keepalive-timer recurring)
+         (jabber-keepalive-timeout-timer timeout)
+         (jabber-keepalive-pending '((old . transport)))
+         (jabber-keepalive-round 9)
+         cancelled events second-result result)
+    (put first :state :session-established)
+    (put first :state-data (list :connection first-transport))
+    (put second :state :session-established)
+    (put second :state-data (list :connection second-transport))
+    (put connecting :state :connecting)
+    (put connecting :state-data '(:connection nil))
+    (cl-letf (((symbol-function 'sleep-event-state)
+               (lambda (_) 'post-wake))
+              ((symbol-function 'timerp)
+               #'jabber-test-keepalive--mock-timer-p)
+              ((symbol-function 'cancel-timer)
+               (lambda (timer) (push timer cancelled)))
+              ((symbol-function 'fsm-send-sync)
+               (lambda (jc event)
+                 (push (cons jc event) events)
+                 (if (eq jc first)
+                     (progn
+                       (put second :state-data (list :connection successor))
+                       (error "first failed"))
+                   (setq second-result
+                         (funcall
+                          (gethash :session-established
+                                   (get 'jabber-connection :fsm-event))
+                          jc (fsm-get-state-data jc) event #'ignore))))))
+      (setq result
+            (condition-case nil
+                (progn (jabber-keepalive--system-sleep-event 'event) 'ok)
+              (void-function 'missing))))
+    (setq events (nreverse events))
+    (should (eq result 'ok))
+    (should (= jabber-keepalive-round 10))
+    (should-not jabber-keepalive-pending)
+    (should-not jabber-keepalive-timeout-timer)
+    (should (eq jabber-keepalive-timer recurring))
+    (should (equal cancelled (list timeout)))
+    (should (equal (mapcar #'car events) (list first second)))
+    (should (equal (cdr (assq first events))
+                   (list :connection-dead first-transport "System wake")))
+    (should (equal (cdr (assq second events))
+                   (list :connection-dead second-transport "System wake")))
+    (should (eq (car second-result) :session-established))
+    (should (eq (plist-get (cadr second-result) :connection) successor))))
+
+(ert-deftest jabber-test-system-sleep-handler-contains-event-errors ()
+  "A malformed sleep event cannot stop the abnormal hook chain."
+  (let (result)
+    (cl-letf (((symbol-function 'sleep-event-state)
+               (lambda (_) (error "bad event"))))
+      (setq result
+            (condition-case nil
+                (progn (jabber-keepalive--system-sleep-event 'event) 'ok)
+              (error 'escaped))))
+    (should (eq result 'ok))))
+
+(ert-deftest jabber-test-system-sleep-registration-is-optional ()
+  "Sleep support registers idempotently and absence remains inert."
+  (let ((was-loaded (featurep 'system-sleep))
+        (hooks-bound (boundp 'system-sleep-event-functions))
+        (saved-hooks (and (boundp 'system-sleep-event-functions)
+                          (symbol-value 'system-sleep-event-functions)))
+        (enabled 0))
+    (set 'system-sleep-event-functions nil)
+    (unless was-loaded
+      (provide 'system-sleep))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'system-sleep-enable)
+                     (lambda () (cl-incf enabled))))
+            (jabber-keepalive--enable-system-sleep nil)
+            (jabber-keepalive--enable-system-sleep nil))
+          (should (= enabled 2))
+          (should (equal (symbol-value 'system-sleep-event-functions)
+                         '(jabber-keepalive--system-sleep-event))))
+      (unless was-loaded
+        (setq features (delq 'system-sleep features)))
+      (if hooks-bound
+          (set 'system-sleep-event-functions saved-hooks)
+        (makunbound 'system-sleep-event-functions))))
+  (let ((was-loaded (featurep 'system-sleep))
+        (hooks-bound (boundp 'system-sleep-event-functions))
+        (saved-hooks (and (boundp 'system-sleep-event-functions)
+                          (symbol-value 'system-sleep-event-functions)))
+        (load-path nil)
+        called)
+    (set 'system-sleep-event-functions '(existing))
+    (unwind-protect
+        (progn
+          (setq features (delq 'system-sleep features))
+          (cl-letf (((symbol-function 'system-sleep-enable)
+                     (lambda () (setq called t))))
+            (jabber-keepalive--enable-system-sleep nil))
+          (should (equal (symbol-value 'system-sleep-event-functions)
+                         '(existing)))
+          (should-not called))
+      (when was-loaded
+        (provide 'system-sleep))
+      (if hooks-bound
+          (set 'system-sleep-event-functions saved-hooks)
+        (makunbound 'system-sleep-event-functions)))))
+
+(ert-deftest jabber-test-system-sleep-registration-is-automatic ()
+  "Session bootstrap owns sleep-event registration."
+  (should (memq #'jabber-keepalive--enable-system-sleep
+                jabber-lifecycle-session-bootstrap-functions)))
 
 (ert-deftest jabber-test-keepalive-monitors-only-active-transports ()
   "A keepalive round snapshots only established exact transports."
