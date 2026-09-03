@@ -4599,6 +4599,143 @@ is the option's only use here and neither arm had a test."
         (dolist (buffer fragments)
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
+
+;;; Putting message/partial fragments back together
+
+;; `vm-mime-display-internal-message/partial' is the receiving half of the
+;; feature tested above, and had no test either: the form coverage report put
+;; it at the head of the definitions with the most forms never evaluated.
+;;
+;; These drive it as the button does, with an extent carrying the part's
+;; layout, over a folder whose messages are the fragments.
+
+(defun vm-partial-test--folder-of-fragments (file fragments)
+  "Write FRAGMENTS into FILE as a From_ folder, one message each."
+  (with-temp-file file
+    (dolist (buffer fragments)
+      (insert "From vm@example.com Mon Jan  1 00:00:00 2024\n")
+      (insert (with-current-buffer buffer
+                ;; the composition separator is not part of a message
+                (replace-regexp-in-string
+                 (regexp-quote mail-header-separator) ""
+                 (buffer-substring-no-properties (point-min) (point-max)))))
+      (insert "\n"))))
+
+(defun vm-partial-test--fragment-texts (lines size)
+  "The message/partial fragments for a composition of LINES, as strings."
+  (let ((fragments nil))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: a big one\n"
+                  mail-header-separator "\n")
+          (dotimes (i lines)
+            (insert (format "line %04d %s\n" i (make-string 50 ?y))))
+          (setq fragments (vm-mime-fragment-composition size))
+          (mapcar (lambda (buffer)
+                    (with-current-buffer buffer
+                      ;; the composition separator is not part of a message
+                      (replace-regexp-in-string
+                       (regexp-quote mail-header-separator) ""
+                       (buffer-substring-no-properties (point-min) (point-max)))))
+                  fragments))
+      (dolist (buffer fragments)
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(defmacro vm-partial-test--with-a-folder-of (texts &rest body)
+  "Visit a From_ folder whose messages are TEXTS, and run BODY.
+FOLDER is bound to the folder buffer and ASSEMBLE to a function of no
+arguments that reassembles from the first message and answers the assembled
+buffer, widened."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-partial" t)))
+          (file (expand-file-name "fragments" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (before (buffer-list))
+          folder assemble)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (dolist (text ,texts)
+               (insert "From vm@example.com Mon Jan  1 00:00:00 2024\n"
+                       text "\n")))
+           (vm-visit-folder file)
+           (setq folder (current-buffer))
+           (setq assemble
+                 (lambda ()
+                   (with-current-buffer folder
+                     (let* ((layout (vm-mm-layout (car vm-message-list)))
+                            (extent (vm-make-extent
+                                     (vm-mm-layout-body-start layout)
+                                     (vm-mm-layout-body-end layout))))
+                       (vm-set-extent-property extent 'vm-mime-layout layout)
+                       (save-window-excursion
+                         (vm-mime-display-internal-message/partial extent))
+                       ;; The function ends by switching buffers, so the
+                       ;; assembled one is found by name.  And `vm-mode' has
+                       ;; narrowed it to the message, so it is read widened.
+                       (let ((assembled (get-buffer "assembled message")))
+                         (and assembled
+                              (with-current-buffer assembled
+                                (save-restriction
+                                  (widen)
+                                  (buffer-substring-no-properties
+                                   (point-min) (point-max))))))))))
+           (ignore folder assemble)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-partial-test-the-parts-assemble-into-the-message ()
+  "Fragmenting a message and reassembling it gives the message back.
+
+The round trip the feature exists for, and neither half had a test.  Sixty
+lines cut into parts, written into a folder as separate messages, and put
+back: every line is there, in order, with the original headers."
+  (vm-partial-test--with-a-folder-of (vm-partial-test--fragment-texts 60 2500)
+    (should (> (length (with-current-buffer folder vm-message-list)) 1))
+    (let ((text (funcall assemble)))
+      (should text)
+      (dotimes (i 60)
+        (should (string-match-p (format "line %04d" i) text)))
+      (should (string-match-p "Subject: a big one" text))
+      ;; in order: the first line comes before the last
+      (should (< (string-match "line 0000" text)
+                 (string-match "line 0059" text))))))
+
+(ert-deftest vm-partial-test-parts-that-disagree-about-the-total-are-refused ()
+  "Parts claiming different totals are an error, not a wrong assembly.
+
+The check that makes #797 visible from the receiving end: fragments written
+before that fix each declared a different total, and this refuses them rather
+than assembling something short."
+  (let* ((texts (vm-partial-test--fragment-texts 60 2500))
+         (broken (cons (car texts)
+                       (mapcar (lambda (text)
+                                 (replace-regexp-in-string
+                                  "total=[0-9]+" "total=99" text))
+                               (cdr texts)))))
+    (should (> (length texts) 1))
+    (vm-partial-test--with-a-folder-of broken
+      (should-error (funcall assemble)))))
+
+(ert-deftest vm-partial-test-a-missing-part-is-refused ()
+  "A folder holding only some of the parts is an error, not a short message.
+Assembling what is there would hand the reader a message with a hole in it
+and no sign of one."
+  (let ((texts (vm-partial-test--fragment-texts 60 2500)))
+    (should (> (length texts) 1))
+    ;; the first part alone, which still says how many there should be
+    (vm-partial-test--with-a-folder-of (list (car texts))
+      (should-error (funcall assemble)))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
