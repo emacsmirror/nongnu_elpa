@@ -22,13 +22,24 @@
 (require 'jabber-sm)
 (require 'jabber-stanza)
 
-(defun jabber-sm--discard-pending (state-data reason)
-  "Fail pending entries in STATE-DATA with REASON, then clear them."
-  (dolist (entry (plist-get state-data :sm-pending-queue))
+(defun jabber-sm--take-pending (state-data)
+  "Return STATE-DATA and its pending entries with queue ownership detached."
+  (let ((entries (plist-get state-data :sm-pending-queue)))
+    (list (plist-put state-data :sm-pending-queue nil) entries)))
+
+(defun jabber-sm--fail-pending (entries reason)
+  "Fail ENTRIES independently with REASON."
+  (dolist (entry entries)
     (when (keywordp (car-safe entry))
       (jabber-sm--run-pending-callback
-       (plist-get entry :failure) reason)))
-  (plist-put state-data :sm-pending-queue nil))
+       (plist-get entry :failure) reason))))
+
+(defun jabber-sm--discard-pending (state-data reason)
+  "Detach and fail pending entries in STATE-DATA with REASON."
+  (pcase-let ((`(,detached ,entries)
+               (jabber-sm--take-pending state-data)))
+    (jabber-sm--fail-pending entries reason)
+    detached))
 
 (defun jabber-sm--count-inbound (jc state-data stanza)
   "Record inbound STANZA and send a periodic acknowledgement when due.

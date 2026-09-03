@@ -974,6 +974,116 @@
     (should (equal called '(second first)))
     (should (null (plist-get sd :sm-pending-queue)))))
 
+(ert-deftest jabber-test-lifecycle-reset-isolates-error-and-quit ()
+  "A failing reset hook cannot skip later reset effects."
+  (dolist (condition '(error quit))
+    (let* ((calls nil)
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (_jc)
+                    (push 'first calls)
+                    (signal condition nil))
+                  (lambda (_jc) (push 'second calls)))))
+      (should-not
+       (condition-case nil
+           (progn
+             (jabber-lifecycle-dispatch-session-reset 'fake-jc)
+             nil)
+         ((error quit) t)))
+      (should (equal calls '(second first))))))
+
+(ert-deftest jabber-test-lifecycle-reset-preserves-local-hook-semantics ()
+  "Reset dispatch honors local hooks that include global functions."
+  (let ((calls nil)
+        (saved (default-value
+                'jabber-lifecycle-session-reset-functions)))
+    (unwind-protect
+        (progn
+          (setq-default jabber-lifecycle-session-reset-functions
+                        (list (lambda (_jc) (push 'global calls))))
+          (with-temp-buffer
+            (setq-local jabber-lifecycle-session-reset-functions
+                        (list (lambda (_jc) (push 'local calls)) t))
+            (jabber-lifecycle-dispatch-session-reset 'fake-jc))
+          (should (equal calls '(global local))))
+      (setq-default jabber-lifecycle-session-reset-functions saved))))
+
+(ert-deftest jabber-test-sm-drain-isolates-success-callback-quit ()
+  "A quitting success callback cannot skip later queued work."
+  (let* ((jabber-sm-max-in-flight nil)
+         (sent nil)
+         (later 0)
+         (first '(message ((to . "first@example.org"))))
+         (second '(message ((to . "second@example.org"))))
+         (sd (jabber-sm--reset nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd first (lambda () (signal 'quit nil)) nil))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd second (lambda () (cl-incf later)) nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc stanza) (push stanza sent))))
+      (should-not
+       (condition-case nil
+           (progn
+             (setq sd (jabber-sm--drain-pending 'fake-jc sd))
+             nil)
+         (quit t))))
+    (should (= later 1))
+    (should (equal (nreverse sent) (list first second)))
+    (should-not (plist-get sd :sm-pending-queue))))
+
+(ert-deftest jabber-test-sm-discard-isolates-failure-callback-quit ()
+  "A quitting failure callback cannot skip later settlements."
+  (let* ((later 0)
+         (msg '(message ((to . "a@example.org"))))
+         (sd (jabber-sm--reset nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg nil (lambda (_reason) (signal 'quit nil))))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg nil (lambda (_reason) (cl-incf later))))
+    (should-not
+     (condition-case nil
+         (progn
+           (setq sd (jabber-sm--discard-pending sd "terminal"))
+           nil)
+       (quit t)))
+    (should (= later 1))
+    (should-not (plist-get sd :sm-pending-queue))))
+
+(ert-deftest jabber-test-sm-discard-detaches-before-callbacks ()
+  "Discard removes live queue ownership before failure callbacks."
+  (let* ((observed 'unset)
+         (msg '(message ((to . "a@example.org"))))
+         (sd (jabber-sm--reset nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg nil
+           (lambda (_reason)
+             (setq observed (plist-get sd :sm-pending-queue)))))
+    (setq sd (jabber-sm--discard-pending sd "terminal"))
+    (should-not observed)
+    (should-not (plist-get sd :sm-pending-queue))))
+
+(ert-deftest jabber-test-lifecycle-list-change-isolates-error-and-quit ()
+  "A failing list-change hook cannot skip later notifications."
+  (dolist (condition '(error quit))
+    (let* ((calls nil)
+           (jabber-lifecycle-connection-list-changed-functions
+            (list (lambda ()
+                    (push 'first calls)
+                    (signal condition nil))
+                  (lambda () (push 'second calls)))))
+      (should-not
+       (condition-case nil
+           (progn
+             (jabber-lifecycle-dispatch-connection-list-changed)
+             nil)
+         ((error quit) t)))
+      (should (equal calls '(second first))))))
+
 ;;; Priority queue
 
 (ert-deftest jabber-test-sm-stanza-priority-message ()

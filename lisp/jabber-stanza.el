@@ -91,7 +91,7 @@ Set to a string to also append XML input and output to that file."
         (if argument
             (funcall callback argument)
           (funcall callback))
-      (error
+      ((error quit)
        (message "SM callback failed: %s" (error-message-string err))))))
 
 (defun jabber-send-sexp--immediate

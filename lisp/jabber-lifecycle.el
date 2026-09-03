@@ -38,9 +38,24 @@
 (defvar jabber-lifecycle-connection-list-changed-functions nil
   "Functions called after the live connection list changes.")
 
+(defun jabber-lifecycle--call-contained (function &rest arguments)
+  "Call FUNCTION with ARGUMENTS, containing callback failures."
+  (condition-case err
+      (apply function arguments)
+    ((error quit)
+     (message "Jabber lifecycle callback failed: %s"
+              (error-message-string err))))
+  nil)
+
+(defun jabber-lifecycle--dispatch-contained (hook &rest arguments)
+  "Run HOOK with ARGUMENTS, containing each callback failure."
+  (apply #'run-hook-wrapped
+         hook #'jabber-lifecycle--call-contained arguments))
+
 (defun jabber-lifecycle-dispatch-session-reset (jc)
   "Dispatch logical session reset effects for JC."
-  (run-hook-with-args 'jabber-lifecycle-session-reset-functions jc))
+  (jabber-lifecycle--dispatch-contained
+   'jabber-lifecycle-session-reset-functions jc))
 
 (defun jabber-lifecycle-dispatch-session-bootstrap (jc)
   "Dispatch new session bootstrap effects for JC."
@@ -52,7 +67,8 @@
 
 (defun jabber-lifecycle-dispatch-connection-list-changed ()
   "Dispatch effects of a change to the live connection list."
-  (run-hooks 'jabber-lifecycle-connection-list-changed-functions))
+  (jabber-lifecycle--dispatch-contained
+   'jabber-lifecycle-connection-list-changed-functions))
 
 (provide 'jabber-lifecycle)
 ;;; jabber-lifecycle.el ends here
