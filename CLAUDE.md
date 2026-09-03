@@ -150,6 +150,14 @@ checks its invariants after each one. It runs a small search as part of the
 suite; `VM_FUZZ_SEEDS` and `VM_FUZZ_OPS` make it search harder, and a failure
 reports the sequence that caused it.
 
+**A round trip through VM proves less than it looks.** VM's readers forgive
+what VM's writers do, so a folder that reads back correctly in VM can still be
+one nothing else can read. `test/vm-interop-test.el` writes folders with VM
+and counts the messages with Python's `mailbox` module, which owes nothing to
+VM; `test/vm-interop-count.py` is the reader. It skips where python3 is
+missing. That is how #801 was found, and it is the way to settle any claim
+about what another program makes of a VM folder.
+
 Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
 the same commit. **Verify the test actually fails without the fix**: stash the
 lisp change, run the test, restore. Where a fix removes unreachable code there
