@@ -1,6 +1,6 @@
 ;;; package-lint-test.el --- Test suite for package-lint
 
-;; Copyright (C) 2016-2019  Steve Purcell, Fanael Linithien
+;; Copyright (C) 2016-2026  Steve Purcell, Fanael Linithien
 
 ;; Author: Steve Purcell <steve@sanityinc.com>
 ;;         Fanael Linithien <fanael4@gmail.com>
@@ -270,7 +270,7 @@ headers and provide form."
   (should
    (equal
     '((6 23 warning "This makes the package uninstallable in all released Emacs versions."))
-    (package-lint-test--run ";; Package-Requires: ((emacs \"31\"))"))))
+    (package-lint-test--run ";; Package-Requires: ((emacs \"32\"))"))))
 
 (ert-deftest package-lint-test-accept-emacs-24+-dep ()
   (should (equal '() (package-lint-test--run ";; Package-Requires: ((emacs \"24\"))")))
