@@ -42,7 +42,7 @@
     (insert line)))
 
 (defmacro with-temp-switch-to-buffer (&rest body)
-  "Create a temporary buffer and evalute BODY there.
+  "Create a temporary buffer and evaluate BODY there.
 Uses `switch-to-buffer' and evaluates BODY in temp buffer like `progn'.
 
 Seems that `execute-kbd-macro' is not able to correctly execute
@@ -59,7 +59,7 @@ keybindings without this."
               (kill-buffer ,temp-buffer))))))
 
 (defun check-syntax-and-face-match-range (beg end syntax face)
-  "Check if all charaters between positions BEG and END have
+  "Check if all characters between positions BEG and END have
 syntax set to SYNTAX and face set to FACE.
 
 If SYNTAX or FACE are set to t then any syntex respective face is

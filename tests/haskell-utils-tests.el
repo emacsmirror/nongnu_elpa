@@ -130,7 +130,7 @@
 (ert-deftest type-at-command-composition ()
   "Test `haskell-utils-compose-type-at-command'.
 Test only position conversion to line and column numbers, do not
-test last string compontent, it is used in `:type-at` command to
+test last string component, it is used in `:type-at` command to
 provide user friendly output only and could be any string, even
 empty one. Very likely the way how its composed for multilne
 strings will change in future."

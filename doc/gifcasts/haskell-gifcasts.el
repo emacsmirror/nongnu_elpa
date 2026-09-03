@@ -261,7 +261,7 @@
 
    (insert "\n\n\n\n"
            "main = do\n"
-           "    putStrLn \"Heskell is a realy nice lanuage\"\n"
+           "    putStrLn \"Haskell is a really nice language\"\n"
            "\n\n\n\n\n\n\n\n\n")
    (goto-char (point-min)))
 
@@ -279,7 +279,7 @@
 
  (gifcast-capture)
 
- (re-search-forward "Heskell")
+ (re-search-forward "Haskell")
  (gifcast-capture)
  (gifcast-keys (kbd "M-$"))
  (gifcast-capture)

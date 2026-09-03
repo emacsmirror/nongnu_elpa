@@ -444,7 +444,7 @@ as quoter names according to Template Haskell specification."
 (defun haskell-lexeme-classify-by-first-char (char)
   "Classify token by CHAR.
 
-CHAR is a chararacter that is assumed to be the first character
+CHAR is a character that is assumed to be the first character
 of a token."
   (let ((category (get-char-code-property (or char ?\ ) 'general-category)))
 

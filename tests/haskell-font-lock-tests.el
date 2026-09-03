@@ -13,7 +13,7 @@
      ("where" "w" haskell-keyword-face))))
 
 (ert-deftest haskell-syntactic-test-4 ()
-  "Apostrophe as part of a contructor token."
+  "Apostrophe as part of a constructor token."
   :expected-result :failed
   (check-properties
    '("T_'ttt_'t_' T Tx T'x T_x T_'_")
@@ -57,7 +57,7 @@
    '(("Cons" "w" haskell-constructor-face))))
 
 (ert-deftest haskell-syntactic-test-7c ()
-  "Tripple backslash in a string that also has a quote."
+  "Triple backslash in a string that also has a quote."
   (check-properties
    ;; the below is: "\"\\\"" and \\\ get marked as punctuation because
    ;; of detecting -- that is a part of larger non-comment lexeme
