@@ -55,7 +55,10 @@
   "Timer object for keepalive timeout function.")
 
 (defvar jabber-keepalive-pending nil
-  "List of outstanding keepalive connections.")
+  "Outstanding keepalive entries as (CONNECTION . TRANSPORT) pairs.")
+
+(defvar jabber-keepalive-round 0
+  "Identity of the current keepalive round.")
 
 (defvar jabber-keepalive-debug nil
   "Log keepalive traffic when non-nil.")
@@ -92,7 +95,8 @@ for all accounts regardless of the argument."
     (cancel-timer jabber-keepalive-timeout-timer))
   (setq jabber-keepalive-timer nil
         jabber-keepalive-timeout-timer nil
-        jabber-keepalive-pending nil))
+        jabber-keepalive-pending nil
+        jabber-keepalive-round (1+ jabber-keepalive-round)))
 
 (defun jabber-keepalive-do ()
   "Send a ping to every connection and arm the timeout timer."
@@ -100,41 +104,80 @@ for all accounts regardless of the argument."
     (message "%s: sending keepalive packet(s)" (current-time-string)))
   (when (timerp jabber-keepalive-timeout-timer)
     (cancel-timer jabber-keepalive-timeout-timer))
-  (setq jabber-keepalive-timeout-timer
-	(run-with-timer jabber-keepalive-timeout
-			nil
-			#'jabber-keepalive-timeout))
-  (setq jabber-keepalive-pending jabber-connections)
+  (setq jabber-keepalive-timeout-timer nil
+        jabber-keepalive-pending nil
+        jabber-keepalive-round (1+ jabber-keepalive-round))
   (dolist (c jabber-connections)
-    ;; Whether we get an error or not is not interesting.
-    ;; Getting a response at all is.
-    (jabber-ping-send c nil 'jabber-keepalive-got-response nil nil)))
+    (when (jabber-connection-active-p c)
+      (push (cons c (plist-get (fsm-get-state-data c) :connection))
+            jabber-keepalive-pending)))
+  (setq jabber-keepalive-pending (nreverse jabber-keepalive-pending))
+  (when jabber-keepalive-pending
+    (let ((round jabber-keepalive-round))
+      (setq jabber-keepalive-timeout-timer
+	    (run-with-timer jabber-keepalive-timeout nil
+			    #'jabber-keepalive-timeout round))
+      (dolist (entry (copy-sequence jabber-keepalive-pending))
+        (let ((c (car entry))
+              (transport (cdr entry)))
+          (condition-case err
+              ;; Any IQ response proves that the transport is alive.
+              (jabber-ping-send
+               c nil #'jabber-keepalive-got-response
+               (cons round transport) (cons round transport))
+            (error
+             (setq jabber-keepalive-pending
+                   (delq entry jabber-keepalive-pending))
+             (message "Jabber keepalive send failed: %s"
+                      (error-message-string err))
+             (fsm-send c
+                       (list :connection-dead transport
+                             "Keepalive send failed")))))))
+    (when (and (null jabber-keepalive-pending)
+               (timerp jabber-keepalive-timeout-timer))
+      (cancel-timer jabber-keepalive-timeout-timer)
+      (setq jabber-keepalive-timeout-timer nil))))
 
-(defun jabber-keepalive-got-response (jc &rest _args)
-  "Mark connection JC as having answered the last keepalive ping."
+(defun jabber-keepalive-got-response (jc _xml-data round-transport)
+  "Mark JC answered when ROUND-TRANSPORT matches the current ping.
+_XML-DATA is the ignored IQ result or error stanza."
   (when jabber-keepalive-debug
     (message "%s: got keepalive response from %s"
 	     (current-time-string)
 	     (plist-get (fsm-get-state-data jc) :server)))
-  (setq jabber-keepalive-pending (remq jc jabber-keepalive-pending))
-  (when (and (null jabber-keepalive-pending) (timerp jabber-keepalive-timeout-timer))
-    (cancel-timer jabber-keepalive-timeout-timer)
-    (setq jabber-keepalive-timeout-timer nil)))
+  (let ((entry (assq jc jabber-keepalive-pending)))
+    (when (and entry
+               (= (car round-transport) jabber-keepalive-round)
+               (eq (cdr round-transport) (cdr entry)))
+      (setq jabber-keepalive-pending
+            (delq entry jabber-keepalive-pending))
+      (when (and (null jabber-keepalive-pending)
+                 (timerp jabber-keepalive-timeout-timer))
+        (cancel-timer jabber-keepalive-timeout-timer)
+        (setq jabber-keepalive-timeout-timer nil)))))
 
-(defun jabber-keepalive-timeout ()
-  "Treat any connection that did not answer as lost and disconnect it."
-  (let ((pending jabber-keepalive-pending))
-    (setq jabber-keepalive-timeout-timer nil
-          jabber-keepalive-pending nil)
-    (dolist (c pending)
-      (message "%s: keepalive timeout, connection to %s considered lost"
-	       (current-time-string)
-	       (plist-get (fsm-get-state-data c) :server))
-
-      (run-hook-with-args 'jabber-lost-connection-hooks c)
-      (jabber-disconnect-one c nil))
-    (unless jabber-connections
-      (jabber-keepalive-stop))))
+(defun jabber-keepalive-timeout (round)
+  "Report unanswered transports from current ROUND as lost."
+  (when (= round jabber-keepalive-round)
+    (let ((pending jabber-keepalive-pending))
+      (setq jabber-keepalive-timeout-timer nil
+            jabber-keepalive-pending nil
+            jabber-keepalive-round (1+ jabber-keepalive-round))
+      (dolist (entry pending)
+        (let ((c (car entry))
+              (transport (cdr entry)))
+          (condition-case err
+              (progn
+                (message "%s: keepalive timeout, connection to %s considered lost"
+		         (current-time-string)
+		         (plist-get (fsm-get-state-data c) :server))
+                (fsm-send-sync
+                 c (list :connection-dead transport "Keepalive timeout")))
+            (error
+             (message "Jabber keepalive timeout handling failed: %s"
+                      (error-message-string err))))))
+      (unless jabber-connections
+        (jabber-keepalive-stop)))))
 
 ;;;; Whitespace pings - less traffic, no error checking on our side
 ;;;
@@ -198,12 +241,14 @@ accounts."
 	      (jabber-send-string c " ")
 	    (error
 	     (message "jabber-keepalive: whitespace ping failed: %s" err)
-	     (fsm-send c :connection-dead)))
+	     (fsm-send c (list :connection-dead connection
+			       "Whitespace ping failed"))))
 	;; Connection process is dead but FSM didn't transition.
 	;; Only act when stuck in :session-established; other states
 	;; are transient and will resolve on their own.
 	(when (eq (get c :state) :session-established)
-	  (fsm-send c :connection-dead))))))
+	  (fsm-send c (list :connection-dead connection
+			    "Connection process lost")))))))
 
 (provide 'jabber-keepalive)
 

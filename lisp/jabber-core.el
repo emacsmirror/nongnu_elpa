@@ -992,12 +992,17 @@ override the defaults from `jabber-account-list'."
 		 (list :session-established state-data :keep))
 
 		(:connection-dead
-		 ;; Connection process vanished without a proper FSM transition
-		 ;; (e.g. race between stream error and sentinel).  Reconnect.
-		 (unless (plist-get state-data :disconnection-reason)
-		   (setq state-data (plist-put state-data :disconnection-reason
-					       "Connection process lost")))
-		 (list nil state-data))
+		 (let ((expected (and (consp event) (cadr event)))
+		       (reason (and (consp event) (caddr event))))
+		   (if (or (not (consp event))
+			   (not (eq expected
+				    (plist-get state-data :connection))))
+		       (list :session-established state-data :keep)
+		     (unless (plist-get state-data :disconnection-reason)
+		       (setq state-data
+			     (plist-put state-data :disconnection-reason
+					(or reason "Connection process lost"))))
+		     (list nil state-data))))
 
 		(:do-disconnect
 		 (jabber-send-string fsm "</stream:stream>")

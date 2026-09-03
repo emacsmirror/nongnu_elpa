@@ -250,6 +250,21 @@
     (should (equal "Stream Management acknowledgement timeout"
                    (plist-get state-data :disconnection-reason)))))
 
+(ert-deftest jabber-test-sm-stall-reports-exact-virtual-transport ()
+  "A non-process stall reports the exact transport to the FSM."
+  (let* ((connection (make-symbol "virtual-transport"))
+         (state-data (list :connection connection
+                           :sm-outbound-queue '((1 . first))))
+         sent)
+    (cl-letf (((symbol-function 'processp) (lambda (_) nil))
+              ((symbol-function 'fsm-send)
+               (lambda (jc event) (setq sent (list jc event)))))
+      (jabber-sm--recover-stall 'fake-jc state-data))
+    (should (equal sent
+                   (list 'fake-jc
+                         (list :connection-dead connection
+                               "Stream Management acknowledgement timeout"))))))
+
 ;;; FSM routing helper
 
 (ert-deftest jabber-test-sm-maybe-enable-with-sm ()

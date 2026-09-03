@@ -404,6 +404,36 @@
     (should-not (plist-get state-data :encrypted))
     (should-not (plist-get state-data :disconnection-reason))))
 
+(ert-deftest jabber-conn-test-stale-dead-event-does-not-close-successor ()
+  "Loss evidence for an old transport must not close its successor."
+  (let* ((old-transport (make-symbol "old-transport"))
+         (new-transport (make-symbol "new-transport"))
+         (state-data (list :connection new-transport
+                           :disconnection-reason nil))
+         (handler (jabber-test-conn--state-handler :session-established))
+         (stale (funcall handler 'fake-fsm state-data
+                         (list :connection-dead old-transport "old failure")
+                         #'ignore))
+         (current (funcall handler 'fake-fsm state-data
+                           (list :connection-dead new-transport "new failure")
+                           #'ignore)))
+    (should (eq (car stale) :session-established))
+    (should (eq (cadr stale) state-data))
+    (should-not (car current))
+    (should (equal (plist-get (cadr current) :disconnection-reason)
+                   "new failure"))))
+
+(ert-deftest jabber-conn-test-bare-dead-event-is-ignored ()
+  "Loss evidence without a transport identity cannot close a session."
+  (let* ((state-data (list :connection (make-symbol "transport")))
+         (handler (jabber-test-conn--state-handler :session-established))
+         (result
+          (condition-case nil
+              (funcall handler 'fake-fsm state-data :connection-dead #'ignore)
+            (error 'handler-error))))
+    (should (eq (car-safe result) :session-established))
+    (should (eq (cadr result) state-data))))
+
 (ert-deftest jabber-conn-test-direct-tls-sets-encryption ()
   "A direct TLS connection records that its socket is encrypted."
   (let* ((connection 'new-connection)

@@ -100,7 +100,8 @@ STATE-DATA is the FSM plist.  Return updated state data."
     (if-let* ((connection (plist-get state-data :connection))
               ((processp connection)))
         (delete-process connection)
-      (fsm-send jc '(:connection-dead)))))
+      (fsm-send jc (list :connection-dead connection
+                         "Stream Management acknowledgement timeout")))))
 
 (defun jabber-sm--send-count-too-high-error (jc h sent)
   "Reject on JC an acknowledgement H beyond SENT."
