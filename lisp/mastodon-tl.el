@@ -114,7 +114,6 @@
 (defvar mastodon-instance-url)
 (defvar mastodon-toot-timestamp-format)
 (defvar shr-use-fonts)  ;; declare it since Emacs24 didn't have this
-(defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
 (defvar mastodon-media--sensitive-image-data)
 (defvar mastodon-media--attachments)
