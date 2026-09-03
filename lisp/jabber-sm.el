@@ -38,6 +38,8 @@
 
 (require 'cl-lib)
 (require 'jabber-xml)
+(require 'rx)
+(require 'subr-x)
 (require 'fsm)
 
 (defconst jabber-sm-xmlns "urn:xmpp:sm:3"
@@ -77,8 +79,14 @@ Stream Management can resume without discarding unacknowledged data."
   :type 'integer
   :group 'jabber-sm)
 
+(define-error 'jabber-sm-protocol-error
+  "Invalid Stream Management acknowledgement")
 (define-error 'jabber-sm-handled-count-too-high
-  "Server acknowledged more stanzas than were sent")
+  "Server acknowledged more stanzas than were sent"
+  'jabber-sm-protocol-error)
+(define-error 'jabber-sm-invalid-acknowledgement
+  "Invalid Stream Management acknowledgement"
+  'jabber-sm-protocol-error)
 
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 
@@ -98,6 +106,53 @@ Both values are mod 2^32.  Result is in [0, 2^32)."
   "Return non-nil if counter A is at or behind counter B.
 Uses forward-distance heuristic: if delta(B,A) < 2^31, A <= B."
   (< (jabber-sm--counter-delta b a) (/ jabber-sm--counter-max 2)))
+
+(defun jabber-sm--parse-handled-count (stanza &optional optional)
+  "Return STANZA's unsignedInt h value.
+When OPTIONAL is non-nil, return nil if h is absent."
+  (let* ((raw (jabber-xml-get-attribute stanza 'h))
+         (text (and raw (string-trim raw))))
+    (cond
+     ((and optional (null raw)) nil)
+     ((not (and text
+                (string-match-p
+                 (rx string-start (? "+") (+ (in "0-9")) string-end)
+                 text)))
+      (signal 'jabber-sm-invalid-acknowledgement (list raw)))
+     (t
+      (let ((h (string-to-number text)))
+        (if (< h jabber-sm--counter-max)
+            h
+          (signal 'jabber-sm-invalid-acknowledgement (list raw))))))))
+
+(defun jabber-sm--handled-count-status (state-data h)
+  "Classify H against STATE-DATA as :current, :forward, or :stale.
+Signal `jabber-sm-handled-count-too-high' for a forward over-ack."
+  (let* ((last (plist-get state-data :sm-last-acked))
+         (sent (plist-get state-data :sm-outbound-count))
+         (handled-delta (jabber-sm--counter-delta h last))
+         (in-flight (jabber-sm--counter-delta sent last)))
+    (cond
+     ((zerop handled-delta) :current)
+     ((<= handled-delta in-flight) :forward)
+     ((jabber-sm--counter-<= h last) :stale)
+     (t (signal 'jabber-sm-handled-count-too-high (list h sent))))))
+
+(defun jabber-sm--apply-handled-count (state-data h &optional reject-stale)
+  "Apply validated handled count H to STATE-DATA.
+When REJECT-STALE is non-nil, stale evidence is a protocol error."
+  (pcase (jabber-sm--handled-count-status state-data h)
+    (:current state-data)
+    (:stale
+     (if reject-stale
+         (signal 'jabber-sm-invalid-acknowledgement (list h))
+       state-data))
+    (:forward
+     (let ((queue (jabber-sm--prune-queue
+                   (plist-get state-data :sm-outbound-queue) h)))
+       (setq state-data (plist-put state-data :sm-last-acked h))
+       (setq state-data (plist-put state-data :sm-outbound-queue queue))
+       (plist-put state-data :sm-stall-since nil)))))
 
 ;;; Predicates for SM XML elements
 
@@ -252,23 +307,10 @@ Return updated STATE-DATA."
 (defun jabber-sm--process-ack (state-data stanza)
   "Process an incoming <a/> ack STANZA, pruning the outbound queue.
 Only advance `:sm-last-acked' forward -- ignore stale acks whose h
-is at or behind the current value.
-Signal `jabber-sm-handled-count-too-high' for an impossible ack.
-Return updated STATE-DATA."
-  (let* ((h (string-to-number (or (jabber-xml-get-attribute stanza 'h) "0")))
-         (sent (plist-get state-data :sm-outbound-count))
-         (last-acked (plist-get state-data :sm-last-acked))
-         (queue (plist-get state-data :sm-outbound-queue))
-         (pruned (jabber-sm--prune-queue queue h)))
-    (cond
-     ((jabber-sm--counter-<= h last-acked)
-      state-data)
-     ((not (jabber-sm--counter-<= h sent))
-      (signal 'jabber-sm-handled-count-too-high (list h sent)))
-     (t
-      (setq state-data (plist-put state-data :sm-last-acked h))
-      (setq state-data (plist-put state-data :sm-outbound-queue pruned))
-      (plist-put state-data :sm-stall-since nil)))))
+is at or behind the current value.  Signal `jabber-sm-protocol-error'
+for malformed or impossible acknowledgements.  Return updated STATE-DATA."
+  (jabber-sm--apply-handled-count
+   state-data (jabber-sm--parse-handled-count stanza)))
 
 ;;; Enable/resume XML generation
 
@@ -308,10 +350,16 @@ Return updated STATE-DATA."
   "Process <resumed/> STANZA against STATE-DATA after stream resumption.
 Prune the outbound queue per the server's h value.
 Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
-  (let* ((h (string-to-number (or (jabber-xml-get-attribute stanza 'h) "0")))
-         (queue (plist-get state-data :sm-outbound-queue))
-         (pruned (jabber-sm--prune-queue queue h))
-         (to-resend (mapcar #'cdr pruned)))
+  (unless (and (jabber-xml-get-attribute stanza 'previd)
+               (equal (jabber-xml-get-attribute stanza 'previd)
+                      (plist-get state-data :sm-id)))
+    (signal 'jabber-sm-invalid-acknowledgement
+            (list (jabber-xml-get-attribute stanza 'previd))))
+  (let* ((h (jabber-sm--parse-handled-count stanza))
+         (state-data (jabber-sm--apply-handled-count state-data h t))
+         (to-resend (mapcar
+                     #'cdr
+                     (plist-get state-data :sm-outbound-queue))))
     (setq state-data (plist-put state-data :sm-last-acked h))
     (setq state-data (plist-put state-data :sm-outbound-count h))
     (setq state-data (plist-put state-data :sm-outbound-queue nil))
@@ -323,9 +371,9 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
   "Prepare STATE-DATA for a new session after failed resume STANZA.
 Preserve stanzas the server did not acknowledge and existing
 pending entries."
-  (let ((h (jabber-xml-get-attribute stanza 'h)))
+  (let ((h (jabber-sm--parse-handled-count stanza t)))
     (when h
-      (setq state-data (jabber-sm--process-ack state-data stanza))))
+      (setq state-data (jabber-sm--apply-handled-count state-data h))))
   (let ((outbound (mapcar
                    (lambda (entry)
                      (cons (jabber-sm--stanza-priority (cdr entry))

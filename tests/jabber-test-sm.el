@@ -359,6 +359,8 @@
          (msg-b '(message ((to . "b@x")) (body () "b")))
          (msg-c '(message ((to . "c@x")) (body () "c")))
          (sd (list :sm-enabled t
+                   :sm-id "abc"
+                   :sm-outbound-count 3
                    :sm-outbound-queue (list (cons 1 msg-a)
                                             (cons 2 msg-b)
                                             (cons 3 msg-c))
@@ -381,11 +383,13 @@
 (ert-deftest jabber-test-sm-handle-resumed-all-acked ()
   "All stanzas acked means nothing to resend."
   (let* ((sd (list :sm-enabled t
+                   :sm-id "abc"
+                   :sm-outbound-count 2
                    :sm-outbound-queue (list (cons 1 'a) (cons 2 'b))
                    :sm-last-acked 0
                    :sm-resumed nil
                    :sm-resuming t))
-         (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "5") (previd . "abc"))))
+         (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "2") (previd . "abc"))))
          (result (jabber-sm--handle-resumed sd resumed)))
     (should (null (cdr result)))))
 
@@ -395,6 +399,7 @@
          (msg-b '(message ((to . "b@x")) (body () "b")))
          (msg-c '(message ((to . "c@x")) (body () "c")))
          (sd (list :sm-enabled t
+                   :sm-id "s1"
                    :sm-outbound-count 10
                    :sm-outbound-queue (list (cons 8 msg-a)
                                             (cons 9 msg-b)
@@ -539,6 +544,126 @@
 
 ;;; h-count validation
 
+(ert-deftest jabber-test-sm-parse-handled-count-valid ()
+  "Parse every supported XML Schema unsignedInt lexical shape."
+  (dolist (case '(("0" . 0)
+                  ("0001" . 1)
+                  ("+1" . 1)
+                  (" 1 " . 1)
+                  ("4294967295" . 4294967295)))
+    (should (= (jabber-sm--parse-handled-count
+                `(a ((h . ,(car case)))))
+               (cdr case))))
+  (should-not
+   (jabber-sm--parse-handled-count
+    '(failed ((xmlns . "urn:xmpp:sm:3"))) t)))
+
+(ert-deftest jabber-test-sm-parse-handled-count-rejects-invalid ()
+  "Reject missing, malformed, negative, and overflowing handled counts."
+  (dolist (h '(nil "" "1oops" "-1" "1.0" "4294967296"
+                    "\v1" "\u00a01"))
+    (should-error
+     (jabber-sm--parse-handled-count
+      `(a (,@(when h `((h . ,h))))))
+     :type 'jabber-sm-invalid-acknowledgement)))
+
+(ert-deftest jabber-test-sm-classifies-handled-count-intervals ()
+  "Classify current, forward, stale, and over-high counts across wrap."
+  (let ((ordinary '(:sm-last-acked 7 :sm-outbound-count 10))
+        (wrapped `(:sm-last-acked ,(1- jabber-sm--counter-max)
+                                  :sm-outbound-count 1)))
+    (should (eq (jabber-sm--handled-count-status ordinary 7) :current))
+    (should (eq (jabber-sm--handled-count-status ordinary 8) :forward))
+    (should (eq (jabber-sm--handled-count-status ordinary 10) :forward))
+    (should (eq (jabber-sm--handled-count-status ordinary 6) :stale))
+    (should-error (jabber-sm--handled-count-status ordinary 11)
+                  :type 'jabber-sm-handled-count-too-high)
+    (should (eq (jabber-sm--handled-count-status
+                 wrapped (1- jabber-sm--counter-max))
+                :current))
+    (should (eq (jabber-sm--handled-count-status wrapped 0) :forward))
+    (should (eq (jabber-sm--handled-count-status wrapped 1) :forward))
+    (should (eq (jabber-sm--handled-count-status
+                 wrapped (- jabber-sm--counter-max 2))
+                :stale))
+    (should-error (jabber-sm--handled-count-status wrapped 2)
+                  :type 'jabber-sm-handled-count-too-high)))
+
+(ert-deftest jabber-test-sm-classifies-generated-valid-intervals ()
+  "Every generated count inside a bounded modular interval is accepted."
+  (dolist (last `(0 1 ,(- jabber-sm--counter-max 2)
+                       ,(1- jabber-sm--counter-max)))
+    (dotimes (span 5)
+      (let ((state-data
+             (list :sm-last-acked last
+                   :sm-outbound-count
+                   (mod (+ last span) jabber-sm--counter-max))))
+        (dotimes (step (1+ span))
+          (should
+           (eq (jabber-sm--handled-count-status
+                state-data (mod (+ last step) jabber-sm--counter-max))
+               (if (zerop step) :current :forward))))))))
+
+(ert-deftest jabber-test-sm-invalid-a-preserves-state ()
+  "Malformed ordinary acknowledgements cannot mutate SM state."
+  (dolist (h '(nil "" "1oops" "-1" "4294967296"))
+    (let* ((sd (list :sm-outbound-count 2
+                     :sm-last-acked 0
+                     :sm-outbound-queue '((1 . first) (2 . second))
+                     :sm-pending-queue '((0 . pending))))
+           (before (copy-tree sd)))
+      (should-error
+       (jabber-sm--process-ack sd `(a (,@(when h `((h . ,h))))))
+       :type 'jabber-sm-invalid-acknowledgement)
+      (should (equal sd before)))))
+
+(ert-deftest jabber-test-sm-invalid-resumed-preserves-state ()
+  "Invalid resumption evidence cannot mutate queues or counters."
+  (dolist (stanza
+           '((resumed ((xmlns . "urn:xmpp:sm:3") (previd . "s1")))
+             (resumed ((xmlns . "urn:xmpp:sm:3")
+                       (h . "1oops") (previd . "s1")))
+             (resumed ((xmlns . "urn:xmpp:sm:3") (h . "2")))
+             (resumed ((xmlns . "urn:xmpp:sm:3")
+                       (h . "2") (previd . "other")))
+             (resumed ((xmlns . "urn:xmpp:sm:3")
+                       (h . "0") (previd . "s1")))))
+    (let* ((sd (list :sm-id "s1"
+                     :sm-outbound-count 2
+                     :sm-last-acked 1
+                     :sm-outbound-queue '((2 . second))
+                     :sm-pending-queue '((0 . pending))
+                     :sm-resuming t))
+           (before (copy-tree sd)))
+      (should-error (jabber-sm--handle-resumed sd stanza)
+                    :type 'jabber-sm-invalid-acknowledgement)
+      (should (equal sd before))))
+  (let* ((sd (list :sm-id "s1"
+                   :sm-outbound-count 2
+                   :sm-last-acked 1
+                   :sm-outbound-queue '((2 . second))))
+         (before (copy-tree sd)))
+    (should-error
+     (jabber-sm--handle-resumed
+      sd '(resumed ((h . "3") (previd . "s1"))))
+     :type 'jabber-sm-handled-count-too-high)
+    (should (equal sd before))))
+
+(ert-deftest jabber-test-sm-invalid-failed-h-preserves-state ()
+  "Malformed optional failed h evidence cannot reset or prune SM state."
+  (dolist (h '("" "1oops" "-1" "4294967296"))
+    (let* ((sd (list :sm-id "s1"
+                     :sm-outbound-count 2
+                     :sm-last-acked 0
+                     :sm-outbound-queue '((1 . first) (2 . second))
+                     :sm-pending-queue '((0 . pending))
+                     :sm-resuming t))
+           (before (copy-tree sd)))
+      (should-error
+       (jabber-sm--handle-failed-resume sd `(failed ((h . ,h))))
+       :type 'jabber-sm-invalid-acknowledgement)
+      (should (equal sd before)))))
+
 (ert-deftest jabber-test-sm-session-rejects-ack-h-too-high ()
   "An impossible acknowledgement closes the stream with the XEP error."
   (let* ((sd (list :sm-enabled t
@@ -559,6 +684,96 @@
         (should (string-match-p "acknowledged 99 stanzas"
                                 (plist-get (cadr result)
                                            :disconnection-reason)))))))
+
+(ert-deftest jabber-test-sm-too-high-send-failure-still-closes ()
+  "Failure to emit the over-ack stream error cannot leave the stream open."
+  (let* ((sd (list :sm-enabled t
+                   :sm-outbound-count 2
+                   :sm-last-acked 0
+                   :sm-outbound-queue '((1 . first) (2 . second))))
+         (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "3"))))
+         (handler (gethash :session-established
+                           (get 'jabber-connection :fsm-event)))
+         result)
+    (cl-letf (((symbol-function 'jabber-send-string)
+               (lambda (&rest _) (error "transport closed"))))
+      (setq result
+            (condition-case nil
+                (funcall handler 'fake-jc sd (list :stanza ack) nil)
+              (error 'escaped))))
+    (should (listp result))
+    (should-not (car result))
+    (should (string-match-p "acknowledged 3 stanzas"
+                            (plist-get (cadr result)
+                                       :disconnection-reason)))))
+
+(ert-deftest jabber-test-sm-session-rejects-malformed-ack ()
+  "A malformed ordinary acknowledgement closes without pruning queues."
+  (let* ((outbound '((1 . first) (2 . second)))
+         (pending '((0 . pending)))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 2
+                   :sm-last-acked 0
+                   :sm-outbound-queue outbound
+                   :sm-pending-queue pending))
+         (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "1oops"))))
+         (handler (gethash :session-established
+                           (get 'jabber-connection :fsm-event)))
+         sent drained)
+    (cl-letf (((symbol-function 'jabber-send-string)
+               (lambda (_jc string) (setq sent string)))
+              ((symbol-function 'jabber-sm--drain-pending)
+               (lambda (&rest _) (setq drained t))))
+      (let ((result (funcall handler 'fake-jc sd (list :stanza ack) nil)))
+        (should-not (car result))
+        (should (equal (plist-get (cadr result) :sm-outbound-queue)
+                       outbound))
+        (should (equal (plist-get (cadr result) :sm-pending-queue)
+                       pending))
+        (should-not sent)
+        (should-not drained)
+        (should (string-match-p
+                 "Invalid Stream Management acknowledgement"
+                 (plist-get (cadr result) :disconnection-reason)))))))
+
+(ert-deftest jabber-test-sm-resume-rejects-invalid-evidence ()
+  "Invalid resumed and failed evidence closes without resetting session state."
+  (dolist (stanza
+           '((resumed ((xmlns . "urn:xmpp:sm:3")
+                       (h . "3") (previd . "s1")))
+             (failed ((xmlns . "urn:xmpp:sm:3") (h . "3")))
+             (failed ((xmlns . "urn:xmpp:sm:3") (h . "1oops")))))
+    (let* ((outbound '((1 . first) (2 . second)))
+           (pending '((0 . pending)))
+           (sd (list :sm-enabled t
+                     :sm-id "s1"
+                     :sm-outbound-count 2
+                     :sm-last-acked 0
+                     :sm-outbound-queue outbound
+                     :sm-pending-queue pending
+                     :sm-resuming t
+                     :stream-features
+                     `(features ()
+                                (bind ((xmlns . ,jabber-bind-xmlns)))
+                                (sm ((xmlns . ,jabber-sm-xmlns))))))
+           (handler (gethash :sm-resume
+                             (get 'jabber-connection :fsm-event)))
+           sent reset)
+      (cl-letf (((symbol-function 'jabber-send-string)
+                 (lambda (_jc string) (setq sent string)))
+                ((symbol-function 'jabber-lifecycle-dispatch-session-reset)
+                 (lambda (_) (setq reset t))))
+        (let ((result (funcall handler 'fake-jc sd
+                               (list :stanza stanza) nil)))
+          (should-not (car result))
+          (should (equal (plist-get (cadr result) :sm-outbound-queue)
+                         outbound))
+          (should (equal (plist-get (cadr result) :sm-pending-queue)
+                         pending))
+          (should-not reset)
+          (if (equal (jabber-xml-get-attribute stanza 'h) "3")
+              (should (string-match-p "handled-count-too-high" sent))
+            (should-not sent)))))))
 
 ;;; Back-pressure
 

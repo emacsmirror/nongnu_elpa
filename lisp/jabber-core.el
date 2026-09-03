@@ -438,6 +438,23 @@ override the defaults from `jabber-account-list'."
 	    (plist-put state-data :disconnection-reason trimmed-string))))
     (list nil new-state-data)))
 
+(defun jabber--sm-protocol-error-transition (fsm state-data err)
+  "Return a closed-stream transition for SM protocol ERR on FSM.
+STATE-DATA is the connection state to preserve."
+  (let ((reason "Invalid Stream Management acknowledgement"))
+    (when (eq (car err) 'jabber-sm-handled-count-too-high)
+      (let ((h (cadr err))
+            (sent (caddr err)))
+        (condition-case send-error
+            (jabber-sm--send-count-too-high-error fsm h sent)
+          (error
+           (message "Could not send SM stream error: %s"
+                    (error-message-string send-error))))
+        (setq reason
+              (format "Server acknowledged %d stanzas after %d sent"
+                      h sent))))
+    (list nil (plist-put state-data :disconnection-reason reason))))
+
 (define-enter-state jabber-connection :connected
 		    (fsm state-data)
 
@@ -859,28 +876,38 @@ override the defaults from `jabber-account-list'."
 		 (let ((stanza (cadr event)))
 		   (cond
 		    ((jabber-sm--resumed-p stanza)
-		     (let* ((result (jabber-sm--handle-resumed state-data stanza))
-			    (new-state-data (car result))
-			    (to-resend (cdr result)))
-		       ;; Resend unacked stanzas (bypass gate to avoid re-queuing).
-		       (dolist (sexp to-resend)
-			 (jabber-send-sexp--immediate fsm sexp))
-		       ;; Drain any stanzas queued before disconnect.
-		       (setq new-state-data
-			     (jabber-sm--drain-pending fsm new-state-data))
-		       (list :session-established new-state-data)))
+		     (condition-case err
+			 (let* ((result (jabber-sm--handle-resumed state-data stanza))
+				(new-state-data (car result))
+				(to-resend (cdr result)))
+			   ;; Resend unacked stanzas (bypass gate to avoid re-queuing).
+			   (dolist (sexp to-resend)
+			     (jabber-send-sexp--immediate fsm sexp))
+			   ;; Drain any stanzas queued before disconnect.
+			   (setq new-state-data
+				 (jabber-sm--drain-pending fsm new-state-data))
+			   (list :session-established new-state-data))
+		       (jabber-sm-protocol-error
+			(jabber--sm-protocol-error-transition
+			 fsm state-data err))))
 		    ((jabber-sm--failed-p stanza)
-		     (message "Stream Management resume failed, binding a new session")
-		     (jabber-lifecycle-dispatch-session-reset fsm)
-		     (setq state-data
-			   (jabber-sm--handle-failed-resume state-data stanza))
-		     (if (jabber-xml-get-children
-			  (plist-get state-data :stream-features) 'bind)
-			 (list :bind
-			       (plist-put state-data
-					  :bind-after-sm-failure t))
-		       (message "Server doesn't permit resource binding")
-		       (list nil state-data)))
+		     (condition-case err
+			 (progn
+			   (setq state-data
+				 (jabber-sm--handle-failed-resume state-data stanza))
+			   (message
+			    "Stream Management resume failed, binding a new session")
+			   (jabber-lifecycle-dispatch-session-reset fsm)
+			   (if (jabber-xml-get-children
+				(plist-get state-data :stream-features) 'bind)
+			       (list :bind
+				     (plist-put state-data
+						:bind-after-sm-failure t))
+			     (message "Server doesn't permit resource binding")
+			     (list nil state-data)))
+		       (jabber-sm-protocol-error
+			(jabber--sm-protocol-error-transition
+			 fsm state-data err))))
 		    (t
 		     (or
 		      (jabber-process-stream-error stanza state-data)
@@ -938,16 +965,9 @@ override the defaults from `jabber-account-list'."
 			   (setq state-data
 				 (jabber-sm--drain-pending fsm state-data))
 			   (list :session-established state-data :keep))
-		       (jabber-sm-handled-count-too-high
-			(let ((h (cadr err))
-			      (sent (caddr err)))
-			  (jabber-sm--send-count-too-high-error fsm h sent)
-			  (list nil
-				(plist-put
-				 state-data :disconnection-reason
-				 (format
-				  "Server acknowledged %d stanzas after %d sent"
-				  h sent)))))))
+		       (jabber-sm-protocol-error
+			(jabber--sm-protocol-error-transition
+			 fsm state-data err))))
 		    (t
 		     ;; Only message/presence/iq stanzas reach here; <r/>/<a/> are
 		     ;; SM control elements and must not be counted (XEP-0198 §4).
