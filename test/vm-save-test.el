@@ -922,6 +922,146 @@ no leaves the folder alone."
       (dolist (m vm-message-list)
         (should-not (vm-filed-flag m))))))
 
+
+;;; The guard on saving bodies into something that is a folder
+
+;; `vm-save-message-sans-headers' writes message bodies with no separators
+;; between them, which is right for a plain file and wrong for a folder: the
+;; bodies would run together with whatever is there and the folder would be
+;; misread from that point on.  So it asks first where the target looks like a
+;; folder, and that question is the only thing standing between a reader and a
+;; wrecked folder.
+;;
+;; The tests above cover writing to a plain file.  The line coverage report
+;; had the guard among the lines never reached.
+
+(defun vm-save-test--folder-shaped-file (path)
+  "Write a From_ folder of one message at PATH."
+  (with-temp-file path
+    (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+            "From: alice@example.com\nSubject: already here\n\n"
+            "a message that is already in this folder\n\n")))
+
+(ert-deftest vm-save-test-saving-bodies-into-a-folder-asks-first ()
+  "Pointed at a file that looks like a mail folder, the command asks.
+Declining aborts and leaves the file as it was: bodies written into a folder
+have no separators, so everything after them is read as part of the message
+before."
+  (vm-save-test--with-pipe-folder
+    (let ((target (make-temp-file "vm-save-guard")))
+      (unwind-protect
+          (progn
+            (vm-save-test--folder-shaped-file target)
+            (let ((before (with-temp-buffer (insert-file-contents target)
+                                            (buffer-string)))
+                  (asked nil))
+              (cl-letf (((symbol-function 'y-or-n-p)
+                         (lambda (prompt) (setq asked prompt) nil)))
+                (should-error (vm-save-message-sans-headers target 1 t)))
+              (should asked)
+              (should (string-match-p "looks like a mail folder" asked))
+              ;; nothing written
+              (should (equal before
+                             (with-temp-buffer (insert-file-contents target)
+                                               (buffer-string))))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-saving-bodies-into-a-folder-obeys-a-yes ()
+  "Answering yes appends the body anyway, the reader having been warned.
+The guard is a question and not a refusal: collecting bodies out of a folder
+into another folder is odd but it is the reader's business."
+  (vm-save-test--with-pipe-folder
+    (let ((target (make-temp-file "vm-save-guard")))
+      (unwind-protect
+          (progn
+            (vm-save-test--folder-shaped-file target)
+            (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+              (vm-save-message-sans-headers target 1 t))
+            (let ((after (with-temp-buffer (insert-file-contents target)
+                                           (buffer-string))))
+              (should (string-match-p "already in this folder" after))
+              (should (string-match-p "The body to be piped" after))))
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-saving-bodies-into-a-plain-file-asks-nothing ()
+  "A target that is not a folder is written without a question.
+The guard has to be quiet in the ordinary case, or it would be in the way of
+the command's whole purpose."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "plain-target" temporary-file-directory)))
+      (unwind-protect
+          (let ((asked nil))
+            (ignore-errors (delete-file target))
+            (cl-letf (((symbol-function 'y-or-n-p)
+                       (lambda (prompt) (setq asked prompt) t)))
+              (vm-save-message-sans-headers target 1 t))
+            (should-not asked)
+            (should (string-match-p "The body to be piped"
+                                    (with-temp-buffer
+                                      (insert-file-contents target)
+                                      (buffer-string)))))
+        (ignore-errors (delete-file target))))))
+
+
+;;; The two guards on saving into a local folder
+
+;; `vm-save-message-to-local-folder' refuses two things before it writes, and
+;; the line coverage report had both among the lines never reached.
+
+(ert-deftest vm-save-test-a-new-folder-is-confirmed-when-asked-for ()
+  "With `vm-confirm-new-folders' set, saving somewhere new asks first.
+Declining aborts and creates nothing.  The option exists because a mistyped
+folder name is otherwise a folder, and mail filed into it looks lost."
+  (vm-save-test--with-a-folder-of 2
+    (let ((vm-confirm-new-folders t)
+          (asked nil))
+      (should-not (file-exists-p target))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (should-error (vm-save-message target 1)))
+      (should asked)
+      (should (string-match-p "does not exist, save there anyway" asked))
+      (should-not (file-exists-p target)))))
+
+(ert-deftest vm-save-test-a-new-folder-confirmed-is-written ()
+  "Answering yes to that question saves, so the guard is a question only."
+  (vm-save-test--with-a-folder-of 2
+    (let ((vm-confirm-new-folders t))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-message target 1))
+      (should (file-exists-p target))
+      (should (string-match-p "Subject: msg 1"
+                              (with-temp-buffer
+                                (insert-file-contents target)
+                                (buffer-string)))))))
+
+(ert-deftest vm-save-test-saving-into-a-visited-folder-is-refused ()
+  "Saving into a folder that is being visited is an error, not a write.
+
+`vm-visit-when-saving' nil means VM writes the file directly.  Doing that to
+a folder someone has open would put the buffer and the file out of step, and
+the next save from that buffer would write the buffer over the top of what was
+appended.  So it refuses, and says which folder."
+  (vm-save-test--with-a-folder-of 2
+    (let ((vm-visit-when-saving nil)
+          (visiting nil))
+      (unwind-protect
+          (progn
+            ;; something else has the target open
+            (with-temp-file target
+              (insert "From a@example.com Mon Jan  1 00:00:00 2024\n"
+                      "From: a@example.com\nSubject: already\n\nbody\n\n"))
+            (setq visiting (find-file-noselect target))
+            (let ((error-message
+                   (condition-case err
+                       (progn (vm-save-message target 1) nil)
+                     (error (error-message-string err)))))
+              (should error-message)
+              (should (string-match-p "being visited" error-message))))
+        (when (buffer-live-p visiting)
+          (with-current-buffer visiting (set-buffer-modified-p nil))
+          (kill-buffer visiting))))))
+
 (provide 'vm-save-test)
 
 ;;; vm-save-test.el ends here
