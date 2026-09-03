@@ -354,16 +354,55 @@
   "Return the `jabber-connection' handler for STATE."
   (gethash state (get 'jabber-connection :fsm-event)))
 
+(ert-deftest jabber-conn-test-closed-handoff-uses-error-state-cleanup ()
+  "A process closed before FSM handoff is rejected and its buffer is cleaned."
+  (dolist (keep-buffer '(nil t))
+    (let* ((buffer (generate-new-buffer " *jabber-closed-handoff*"))
+           (connection (make-pipe-process
+                        :name "jabber-closed-handoff" :buffer buffer))
+           (fsm (make-symbol "jabber-closed-handoff"))
+           (jabber-connections (list fsm))
+           (jabber-auto-reconnect t)
+           (jabber-debug-keep-process-buffers keep-buffer)
+           (jabber-lost-connection-hooks nil)
+           (jabber-lifecycle-session-reset-functions nil)
+           (state-data
+            (list :username "romeo" :server "example.org" :resource "emacs"
+                  :ever-session-established t))
+           result)
+      (unwind-protect
+          (progn
+            (delete-process connection)
+            (setq result
+                  (funcall (jabber-test-conn--state-handler :connecting)
+                           fsm state-data
+                           (list :connected connection nil) #'ignore))
+            (should-not (car result))
+            (should (equal
+                     (plist-get (cadr result) :disconnection-reason)
+                     "Connection closed before protocol handoff"))
+            (pcase-let ((`(,cleaned ,delay)
+                         (funcall
+                          (gethash nil (get 'jabber-connection :fsm-enter))
+                          fsm (cadr result))))
+              (should (= delay jabber-reconnect-delay))
+              (should-not (plist-get cleaned :connection)))
+            (should-not (process-live-p connection))
+            (should (eq (buffer-live-p buffer) keep-buffer)))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 (ert-deftest jabber-conn-test-ordinary-reconnect-clears-encryption ()
-  "An ordinary TCP reconnect clears encryption state from the old socket."
+  "An ordinary TCP reconnect clears old transport state."
   (let* ((connection 'new-connection)
 	 (result (funcall (jabber-test-conn--state-handler :connecting)
-			  'fake-fsm '(:encrypted t)
+			  'fake-fsm '(:encrypted t :disconnection-reason "old")
 			  (list :connected connection nil) #'ignore))
 	 (state-data (cadr result)))
     (should (eq (car result) :connected))
     (should (eq (plist-get state-data :connection) connection))
-    (should-not (plist-get state-data :encrypted))))
+    (should-not (plist-get state-data :encrypted))
+    (should-not (plist-get state-data :disconnection-reason))))
 
 (ert-deftest jabber-conn-test-direct-tls-sets-encryption ()
   "A direct TLS connection records that its socket is encrypted."

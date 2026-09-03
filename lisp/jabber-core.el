@@ -378,8 +378,9 @@ override the defaults from `jabber-account-list'."
 
 (defun jabber-core--connected-state-data (state-data connection directtls-p)
   "Update STATE-DATA for a new CONNECTION using DIRECTTLS-P."
-  (plist-put (plist-put state-data :connection connection)
-	     :encrypted (and directtls-p t)))
+  (setq state-data (plist-put state-data :connection connection))
+  (setq state-data (plist-put state-data :encrypted (and directtls-p t)))
+  (plist-put state-data :disconnection-reason nil))
 
 (define-state jabber-connection :connecting
 	      (fsm state-data event _callback)
@@ -392,16 +393,22 @@ override the defaults from `jabber-account-list'."
 			 (jabber-core--connected-state-data
 			  state-data connection directtls-p))
 
-		   (when (processp connection)
-		     ;; TLS connections leave data in the process buffer, which
-		     ;; the XML parser will choke on.
-		     (with-current-buffer (process-buffer connection)
-		       (erase-buffer))
+		   (if (and (processp connection)
+			    (not (process-live-p connection)))
+		       (list nil
+			     (plist-put
+			      state-data :disconnection-reason
+			      "Connection closed before protocol handoff"))
+		     (when (processp connection)
+		       ;; TLS connections leave data in the process buffer, which
+		       ;; the XML parser will choke on.
+		       (with-current-buffer (process-buffer connection)
+			 (erase-buffer))
 
-		     (set-process-filter connection (fsm-make-filter fsm))
-		     (set-process-sentinel connection (fsm-make-sentinel fsm)))
+		       (set-process-filter connection (fsm-make-filter fsm))
+		       (set-process-sentinel connection (fsm-make-sentinel fsm)))
 
-		   (list :connected state-data)))
+		     (list :connected state-data))))
 
 		(:connection-failed
 		 (message "Jabber connection failed")
