@@ -103,6 +103,111 @@ holds only what is worth acting on."
                      (string< (car a) (car b))
                    (> (nth 1 a) (nth 1 b)))))))
 
+(defun vm-forms-coverage-lines ()
+  "Which source lines hold a form that was never evaluated, or only one value.
+
+Answers an alist of (FILE (NEVER . lines) (ONE . lines) (ANY . lines)), the
+line numbers sorted.  ANY is every line carrying an instrumented form at all,
+which is the denominator: a line of comment or a blank one is not uncovered,
+it simply has nothing to run.
+
+Where the positions come from: `(get SYMBOL \\='edebug)\\=' holds a marker at
+the definition and, third, a vector of offsets from it, one per instrumented
+form.  Form I therefore sits at (+ MARKER (aref OFFSETS I)).  That is how
+`testcover-mark\\=' places the splotches it shows interactively, so the data
+is exact rather than guessed at."
+  (let ((files nil))
+    (mapatoms
+     (lambda (sym)
+       (let* ((data (get sym 'edebug))
+              (coverage (get sym 'edebug-coverage))
+              (mark (car-safe data))
+              (offsets (nth 2 data)))
+         (when (and coverage offsets (markerp mark)
+                    (buffer-live-p (marker-buffer mark))
+                    (string-prefix-p "vm-" (symbol-name sym)))
+           (with-current-buffer (marker-buffer mark)
+             (let* ((file (or (buffer-file-name) (buffer-name)))
+                    (entry (or (assoc file files)
+                               (car (push (list file nil nil nil) files)))))
+               (dotimes (i (min (length coverage) (length offsets)))
+                 (let* ((position (+ mark (aref offsets i)))
+                        (line (and (<= (point-min) position)
+                                   (<= position (point-max))
+                                   (line-number-at-pos position))))
+                   (when line
+                     (push line (nth 3 entry))
+                     (cond ((eq (aref coverage i) 'edebug-unknown)
+                            (push line (nth 1 entry)))
+                           ((eq (aref coverage i) 'edebug-ok-coverage) nil)
+                           (t (push line (nth 2 entry)))))))))))))
+    (dolist (entry files)
+      (dotimes (i 3)
+        (setf (nth (1+ i) entry)
+              (sort (delete-dups (nth (1+ i) entry)) #'<))))
+    (sort files (lambda (a b) (string< (car a) (car b))))))
+
+(defun vm-forms-coverage-write-lines (rows)
+  "Write the per-line report and an lcov file from ROWS.
+Two files: one to read, and one for `genhtml' and the coverage viewers, which
+speak lcov.  lcov counts executions and this knows only whether a form ran, so
+a line is written as run once or not at all."
+  (let ((plain (expand-file-name "test/line-coverage-results.txt"
+                                 vm-forms-coverage-dir))
+        (lcov (expand-file-name "test/line-coverage.info"
+                                vm-forms-coverage-dir)))
+    (with-temp-file plain
+      (insert "VM LINE COVERAGE REPORT\n")
+      (insert (format-time-string "%Y-%m-%d %H:%M:%S\n\n"))
+      (insert "A line is counted only where it carries a form that was\n")
+      (insert "instrumented.  NEVER lists the lines holding a form that never\n")
+      (insert "ran; 1VALUE those whose forms all ran but always answered the\n")
+      (insert "same thing.  Ranges are collapsed.\n\n")
+      (let ((any 0) (never 0))
+        (dolist (row rows)
+          (setq any (+ any (length (nth 3 row)))
+                never (+ never (length (nth 1 row)))))
+        (insert (format "Lines with forms: %d, never reached: %d (%.1f%%)\n\n"
+                        any never
+                        (if (zerop any) 0.0 (* 100.0 (/ (float never) any))))))
+      (dolist (row rows)
+        (insert (format "%s\n  %d lines with forms, %d never reached\n"
+                        (file-name-nondirectory (car row))
+                        (length (nth 3 row)) (length (nth 1 row))))
+        (when (nth 1 row)
+          (insert (format "  NEVER:  %s\n"
+                          (vm-forms-coverage-ranges (nth 1 row)))))
+        (when (nth 2 row)
+          (insert (format "  1VALUE: %s\n"
+                          (vm-forms-coverage-ranges (nth 2 row)))))
+        (insert "\n")))
+    (with-temp-file lcov
+      (dolist (row rows)
+        (insert (format "SF:%s\n" (car row)))
+        (dolist (line (nth 3 row))
+          (insert (format "DA:%d,%d\n" line
+                          (if (memq line (nth 1 row)) 0 1))))
+        (insert (format "LF:%d\nLH:%d\nend_of_record\n"
+                        (length (nth 3 row))
+                        (- (length (nth 3 row)) (length (nth 1 row)))))))
+    (message "Line coverage written to test/line-coverage-results.txt")
+    (message "lcov written to test/line-coverage.info")))
+
+(defun vm-forms-coverage-ranges (lines)
+  "LINES as a compact string, runs of consecutive numbers collapsed."
+  (let ((pieces nil)
+        (start nil)
+        (previous nil))
+    (dolist (line (append lines (list nil)))
+      (cond ((null start) (setq start line previous line))
+            ((and line (= line (1+ previous))) (setq previous line))
+            (t (push (if (= start previous)
+                         (number-to-string start)
+                       (format "%d-%d" start previous))
+                     pieces)
+               (setq start line previous line))))
+    (mapconcat #'identity (nreverse pieces) " ")))
+
 (defun vm-forms-coverage-report (failed)
   "Write the report, naming any FAILED files first."
   (let* ((rows (vm-forms-coverage-tally))
@@ -163,7 +268,8 @@ holds only what is worth acting on."
                           (car row) (nth 1 row) (nth 2 row) (nth 3 row))))))
     (message "\nForm coverage: %d forms, %d never evaluated, %d always one value"
              forms never one)
-    (message "Report written to test/forms-coverage-results.txt")))
+    (message "Report written to test/forms-coverage-results.txt")
+    (vm-forms-coverage-write-lines (vm-forms-coverage-lines))))
 
 ;; Main
 (let ((failed (vm-forms-coverage-instrument)))
