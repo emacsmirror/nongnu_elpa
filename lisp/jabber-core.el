@@ -970,16 +970,8 @@ STATE-DATA is the connection state to preserve."
 		   (cond
 		    ((jabber-sm--resumed-p stanza)
 		     (condition-case err
-			 (let* ((result (jabber-sm--handle-resumed state-data stanza))
-				(new-state-data (car result))
-				(to-resend (cdr result)))
-			   ;; Resend unacked stanzas (bypass gate to avoid re-queuing).
-			   (dolist (sexp to-resend)
-			     (jabber-send-sexp--immediate fsm sexp))
-			   ;; Drain any stanzas queued before disconnect.
-			   (setq new-state-data
-				 (jabber-sm--drain-pending fsm new-state-data))
-			   (list :session-established new-state-data))
+			 (list :session-established
+			       (jabber-sm--handle-resumed state-data stanza))
 		       (jabber-sm-protocol-error
 			(jabber--sm-protocol-error-transition
 			 fsm state-data err))))
@@ -1031,12 +1023,21 @@ STATE-DATA is the connection state to preserve."
 			  (when (plist-get state-data :sm-enabled)
 			    (setq state-data (jabber-sm--start-r-timer fsm state-data)))
 			  (setq state-data (plist-put state-data :sm-resumed nil))
-			  (run-hook-with-args 'jabber-post-resume-hooks fsm))
+			  (put fsm :state-data state-data)
+			  (jabber-lifecycle--dispatch-contained
+			   'jabber-post-resume-hooks fsm))
 		      ;; Normal connect: feature modules fetch initial session data.
-		      (jabber-lifecycle-dispatch-session-bootstrap fsm)
-		      (setq state-data
-			    (jabber-sm--drain-pending fsm state-data)))
-		    (list (plist-put state-data :ever-session-established t) nil))
+		      (jabber-lifecycle-dispatch-session-bootstrap fsm))
+		    (let ((current (fsm-get-state-data fsm)))
+		      (if (or (not (eq (get fsm :state) :session-established))
+			      (not (eq current state-data))
+			      (not (memq fsm jabber-connections)))
+			  (list current :keep)
+			(setq state-data
+			      (plist-put state-data :ever-session-established t))
+			(put fsm :state-data state-data)
+			(jabber-sm--schedule-drain fsm state-data)
+			(list state-data nil))))
 
 (define-state jabber-connection :session-established
 	      (fsm state-data event _callback)
@@ -1061,8 +1062,7 @@ STATE-DATA is the connection state to preserve."
 			 (progn
 			   (setq state-data
 				 (jabber-sm--process-ack state-data stanza))
-			   (setq state-data
-				 (jabber-sm--drain-pending fsm state-data))
+			   (jabber-sm--schedule-drain fsm state-data)
 			   (list :session-established state-data :keep))
 		       (jabber-sm-protocol-error
 			(jabber--sm-protocol-error-transition

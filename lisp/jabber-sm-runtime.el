@@ -18,6 +18,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'fsm)
 (require 'jabber-sm)
 (require 'jabber-stanza)
@@ -55,36 +56,87 @@ JC is the Jabber connection.  Return updated STATE-DATA."
         (jabber-sm--send-ack jc state-data))))
   state-data)
 
+(defun jabber-sm--drain-owner-p (jc state-data)
+  "Return non-nil when JC still owns active STATE-DATA."
+  (and (eq (get jc :state) :session-established)
+       (eq (fsm-get-state-data jc) state-data)
+       (memq jc jabber-connections)
+       (plist-get state-data :connection)
+       (not (plist-get state-data :terminalized))
+       (not (plist-get state-data :disconnection-expected))))
+
+(defun jabber-sm--prepare-drain-state (state-data)
+  "Return a copy of STATE-DATA with ordinary pending work stably sorted."
+  (let ((state-data (copy-sequence state-data)))
+    (plist-put
+     state-data :sm-pending-queue
+     (cl-stable-sort
+      (copy-sequence (plist-get state-data :sm-pending-queue))
+      (lambda (a b)
+        (< (jabber-sm--pending-priority a)
+           (jabber-sm--pending-priority b)))))))
+
+(defun jabber-sm--next-drain-entry (state-data)
+  "Return the next drain entry descriptor from STATE-DATA."
+  (let ((recovered (plist-get state-data :sm-recovered-queue))
+        (pending (plist-get state-data :sm-pending-queue)))
+    (cond
+     (recovered
+      (list :sm-recovered-queue (car recovered) (car recovered) nil))
+     ((and pending
+           (or (null jabber-sm-max-in-flight)
+               (< (jabber-sm--in-flight-count state-data)
+                  jabber-sm-max-in-flight)))
+      (let ((entry (car pending)))
+        (list :sm-pending-queue entry
+              (jabber-sm--pending-stanza entry)
+              (and (keywordp (car-safe entry))
+                   (plist-get entry :success))))))))
+
+(defun jabber-sm--commit-drain-entry (jc state-data queue-key entry sexp)
+  "Commit one sent ENTRY from QUEUE-KEY when JC still owns STATE-DATA."
+  (when (and (jabber-sm--drain-owner-p jc state-data)
+             (eq entry (car (plist-get state-data queue-key))))
+    (let ((next (copy-sequence state-data)))
+      (setq next
+            (plist-put next queue-key
+                       (cdr (plist-get state-data queue-key))))
+      (setq next
+            (plist-put next :sm-outbound-queue
+                       (copy-sequence
+                        (plist-get state-data :sm-outbound-queue))))
+      (setq next (jabber-sm--count-outbound next sexp))
+      (put jc :state-data next)
+      next)))
+
 (defun jabber-sm--drain-pending (jc state-data)
-  "Send queued stanzas on JC up to the in-flight limit.
-STATE-DATA is the FSM plist.  Return updated state data."
-  (let ((queue (sort (plist-get state-data :sm-pending-queue)
-                     (lambda (a b)
-                       (< (jabber-sm--pending-priority a)
-                          (jabber-sm--pending-priority b)))))
-        failed)
-    (while (and queue
-                (not failed)
-                (or (null jabber-sm-max-in-flight)
-                    (< (jabber-sm--in-flight-count state-data)
-                       jabber-sm-max-in-flight)))
-      (let* ((entry (pop queue))
-             (sexp (jabber-sm--pending-stanza entry)))
-        (condition-case err
-            (progn
-              (jabber-send-sexp--raw jc sexp)
-              (setq state-data
-                    (jabber-sm--count-outbound state-data sexp))
-              (when (keywordp (car-safe entry))
-                (jabber-sm--run-pending-callback
-                 (plist-get entry :success))))
-          (error
-           (setq failed t)
-           (when (keywordp (car-safe entry))
-             (jabber-sm--run-pending-callback
-              (plist-get entry :failure)
-              (error-message-string err)))))))
-    (plist-put state-data :sm-pending-queue queue)))
+  "Drain work owned by JC under the exact STATE-DATA lease."
+  (when (jabber-sm--drain-owner-p jc state-data)
+    (setq state-data (jabber-sm--prepare-drain-state state-data))
+    (put jc :state-data state-data)
+    (let ((continue t))
+      (while (and continue (jabber-sm--drain-owner-p jc state-data))
+        (if-let* ((descriptor (jabber-sm--next-drain-entry state-data)))
+            (pcase-let ((`(,queue-key ,entry ,sexp ,success) descriptor))
+              (condition-case nil
+                  (progn
+                    (jabber-send-sexp--raw jc sexp)
+                    (if-let* ((next (jabber-sm--commit-drain-entry
+                                     jc state-data queue-key entry sexp)))
+                        (progn
+                          (setq state-data next)
+                          (jabber-sm--run-pending-callback success)
+                          (unless (jabber-sm--drain-owner-p jc state-data)
+                            (setq continue nil)))
+                      (setq continue nil)))
+                ((error quit)
+                 (message "SM: queue drain write failed")
+                 (setq continue nil))))
+          (setq continue nil))))))
+
+(defun jabber-sm--schedule-drain (jc state-data)
+  "Schedule a top-level queue drain for JC and exact STATE-DATA."
+  (run-at-time 0 nil #'jabber-sm--drain-pending jc state-data))
 
 (defun jabber-sm--check-stall (jc)
   "Check JC for an acknowledgement stall and recover when timed out."

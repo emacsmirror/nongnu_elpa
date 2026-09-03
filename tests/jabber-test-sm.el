@@ -71,12 +71,14 @@
 
 (ert-deftest jabber-test-sm-reset ()
   "Reset clears all SM keys to defaults."
-  (let* ((sd (list :username "test" :sm-enabled t :sm-outbound-count 42))
+  (let* ((sd (list :username "test" :sm-enabled t :sm-outbound-count 42
+                   :sm-recovered-queue '(stanza)))
          (result (jabber-sm--reset sd)))
     (should-not (plist-get result :sm-enabled))
     (should (= (plist-get result :sm-outbound-count) 0))
     (should (= (plist-get result :sm-inbound-count) 0))
     (should (null (plist-get result :sm-outbound-queue)))
+    (should (null (plist-get result :sm-recovered-queue)))
     ;; Non-SM keys preserved
     (should (equal (plist-get result :username) "test"))))
 
@@ -355,7 +357,7 @@
 ;;; Resume handling
 
 (ert-deftest jabber-test-sm-handle-resumed ()
-  "Handle <resumed/> prunes queue and returns stanzas to resend."
+  "Handle <resumed/> moves unacked stanzas into recovered wire order."
   (let* ((msg-a '(message ((to . "a@x")) (body () "a")))
          (msg-b '(message ((to . "b@x")) (body () "b")))
          (msg-c '(message ((to . "c@x")) (body () "c")))
@@ -365,21 +367,20 @@
                    :sm-outbound-queue (list (cons 1 msg-a)
                                             (cons 2 msg-b)
                                             (cons 3 msg-c))
+                   :sm-recovered-queue nil
                    :sm-last-acked 0
                    :sm-resumed nil
                    :sm-resuming t))
          (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "1") (previd . "abc"))))
          (result (jabber-sm--handle-resumed sd resumed)))
     ;; state-data updated
-    (should (= (plist-get (car result) :sm-last-acked) 1))
-    (should (= (plist-get (car result) :sm-outbound-count) 1))
-    (should (null (plist-get (car result) :sm-outbound-queue)))
-    (should (eq (plist-get (car result) :sm-resumed) t))
-    (should-not (plist-get (car result) :sm-resuming))
-    ;; stanzas to resend: entries 2 and 3
-    (should (= (length (cdr result)) 2))
-    (should (equal (car (cdr result)) msg-b))
-    (should (equal (cadr (cdr result)) msg-c))))
+    (should (= (plist-get result :sm-last-acked) 1))
+    (should (= (plist-get result :sm-outbound-count) 1))
+    (should (null (plist-get result :sm-outbound-queue)))
+    (should (eq (plist-get result :sm-resumed) t))
+    (should-not (plist-get result :sm-resuming))
+    (should (equal (plist-get result :sm-recovered-queue)
+                   (list msg-b msg-c)))))
 
 (ert-deftest jabber-test-sm-handle-resumed-all-acked ()
   "All stanzas acked means nothing to resend."
@@ -392,7 +393,7 @@
                    :sm-resuming t))
          (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "2") (previd . "abc"))))
          (result (jabber-sm--handle-resumed sd resumed)))
-    (should (null (cdr result)))))
+    (should (null (plist-get result :sm-recovered-queue)))))
 
 (ert-deftest jabber-test-sm-handle-resumed-counter-reset ()
   "Outbound counter resets to server h, preventing drift on resend."
@@ -410,18 +411,43 @@
                    :sm-resuming t))
          (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "8") (previd . "s1"))))
          (result (jabber-sm--handle-resumed sd resumed))
-         (new-sd (car result))
-         (to-resend (cdr result)))
+         (to-resend (plist-get result :sm-recovered-queue)))
     ;; Counter must reset to server's h so resent stanzas start from 8
-    (should (= (plist-get new-sd :sm-outbound-count) 8))
+    (should (= (plist-get result :sm-outbound-count) 8))
     ;; Two stanzas to resend (9 and 10 were unacked)
     (should (= (length to-resend) 2))
     ;; After resending, count-outbound increments from 8 to 9, 10
     ;; rather than from 10 to 11, 12 (the old drift bug)
-    (let ((after-resend new-sd))
+    (let ((after-resend result))
       (dolist (sexp to-resend)
         (setq after-resend (jabber-sm--count-outbound after-resend sexp)))
       (should (= (plist-get after-resend :sm-outbound-count) 10)))))
+
+(ert-deftest jabber-test-sm-handle-resumed-prepends-new-recovery ()
+  "Newly unacked occurrences precede older unsent recovered work."
+  (let* ((old-a (list 'message '((id . "same"))))
+         (old-b (list 'message '((id . "same"))))
+         (unsent (list 'presence '((id . "later"))))
+         (pending (list (cons 0 '(message ((id . "pending"))))))
+         (outbound (list (cons 4 old-a) (cons 5 old-b)))
+         (sd (list :sm-enabled t :sm-id "s1"
+                   :sm-outbound-count 5 :sm-last-acked 3
+                   :sm-outbound-queue outbound
+                   :sm-recovered-queue (list unsent)
+                   :sm-pending-queue pending
+                   :sm-resuming t))
+         (result
+          (jabber-sm--handle-resumed
+           sd '(resumed ((h . "3") (previd . "s1"))))))
+    (should (equal (plist-get result :sm-recovered-queue)
+                   (list old-a old-b unsent)))
+    (should (eq (nth 0 (plist-get result :sm-recovered-queue)) old-a))
+    (should (eq (nth 1 (plist-get result :sm-recovered-queue)) old-b))
+    (should (eq (plist-get result :sm-pending-queue) pending))
+    (should (eq (plist-get sd :sm-outbound-queue) outbound))
+    (should (= 5 (plist-get sd :sm-outbound-count)))
+    (should (= 3 (plist-get sd :sm-last-acked)))
+    (should-not (plist-get sd :sm-resumed))))
 
 (ert-deftest jabber-test-sm-handle-failed-resume-preserves-unacked ()
   "A failed resume carries unacknowledged stanzas into the new session."
@@ -489,22 +515,163 @@
                         (plist-get entered-data :sm-pending-queue))
                 (list msg)))))))
 
-(ert-deftest jabber-test-sm-new-session-drains-recovered-stanzas ()
-  "A newly established session sends stanzas recovered from failed resume."
-  (let* ((msg '(message ((to . "a@x")) (body () "unacked")))
-         (state-data (jabber-sm--reset nil))
+(ert-deftest jabber-test-sm-new-session-schedules-pending-drain ()
+  "A newly established session schedules rather than runs its drain inline."
+  (let* ((msg '(message ((to . "a@x")) (body () "pending")))
+         (jc (make-symbol "new-session-drain"))
+         (state-data (plist-put (jabber-sm--reset nil)
+                                :connection 'transport))
          (enter (gethash :session-established
                          (get 'jabber-connection :fsm-enter)))
-         sent)
+         (jabber-connections (list jc))
+         scheduled)
     (setq state-data
           (plist-put state-data :sm-pending-queue (list (cons 0 msg))))
+    (jabber-test-sm--install-drain-state jc state-data)
     (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-bootstrap)
                #'ignore)
+              ((symbol-function 'jabber-sm--schedule-drain)
+               (lambda (scheduled-jc scheduled-data)
+                 (setq scheduled (list scheduled-jc scheduled-data))))
               ((symbol-function 'jabber-send-sexp--raw)
-               (lambda (_jc sexp) (push sexp sent))))
-      (pcase-let ((`(,result nil) (funcall enter 'fake-jc state-data)))
-        (should (equal sent (list msg)))
-        (should-not (plist-get result :sm-pending-queue))))))
+               (lambda (&rest _) (error "inline drain"))))
+      (pcase-let ((`(,result nil) (funcall enter jc state-data)))
+        (should (eq (car scheduled) jc))
+        (should (eq (cadr scheduled) result))
+        (should (= 1 (length (plist-get result :sm-pending-queue))))))))
+
+(ert-deftest jabber-test-sm-ack-schedules-pending-drain ()
+  "An acknowledgement schedules its pending drain after handler return."
+  (let* ((jc (make-symbol "ack-drain"))
+         (state-data
+          (list :connection 'transport :sm-enabled t
+                :sm-outbound-count 1 :sm-last-acked 0
+                :sm-outbound-queue '((1 . sent))
+                :sm-pending-queue '((0 . pending))))
+         (handler (gethash :session-established
+                           (get 'jabber-connection :fsm-event)))
+         scheduled)
+    (cl-letf (((symbol-function 'jabber-sm--schedule-drain)
+               (lambda (scheduled-jc scheduled-data)
+                 (setq scheduled (list scheduled-jc scheduled-data))))
+              ((symbol-function 'jabber-send-sexp--raw)
+               (lambda (&rest _) (error "inline drain"))))
+      (pcase-let ((`(:session-established ,result :keep)
+                   (funcall handler jc state-data
+                            `(:stanza (a ((xmlns . ,jabber-sm-xmlns)
+                                          (h . "1"))))
+                            #'ignore)))
+        (should (eq (car scheduled) jc))
+        (should (eq (cadr scheduled) result))
+        (should (= 1 (length (plist-get result :sm-pending-queue))))))))
+
+(ert-deftest jabber-test-sm-resume-schedules-recovered-drain ()
+  "A resumed FSM enters the session before scheduling recovered work."
+  (let* ((jc (make-symbol "resume-drain"))
+         (msg '(message ((id . "unacked"))))
+         (state-data
+          (list :connection 'transport :sm-enabled t :sm-id "s1"
+                :sm-outbound-count 1 :sm-last-acked 0
+                :sm-outbound-queue (list (cons 1 msg))
+                :sm-recovered-queue nil :sm-pending-queue nil
+                :sm-resuming t))
+         (jabber-connections (list jc))
+         (jabber-post-resume-hooks nil)
+         scheduled)
+    (put jc :name 'jabber-connection)
+    (put jc :state :sm-resume)
+    (put jc :state-data state-data)
+    (cl-letf (((symbol-function 'jabber-sm--start-r-timer)
+               (lambda (_jc data) data))
+              ((symbol-function 'jabber-sm--schedule-drain)
+               (lambda (scheduled-jc scheduled-data)
+                 (setq scheduled (list scheduled-jc scheduled-data))))
+              ((symbol-function 'jabber-send-sexp--raw)
+               (lambda (&rest _) (error "inline replay"))))
+      (fsm-send-sync
+       jc `(:stanza (resumed ((xmlns . ,jabber-sm-xmlns)
+                              (h . "0") (previd . "s1")))))
+      (should (eq (get jc :state) :session-established))
+      (should (eq (car scheduled) jc))
+      (should (eq (cadr scheduled) (fsm-get-state-data jc)))
+      (should (eq (car (plist-get (fsm-get-state-data jc)
+                                  :sm-recovered-queue))
+                  msg)))))
+
+(ert-deftest jabber-test-sm-session-entry-reentry-preserves-terminal-state ()
+  "A resume hook disconnect cannot be overwritten or schedule a stale drain."
+  (let* ((jc (make-symbol "session-enter-disconnect"))
+         (jabber-auto-reconnect nil)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         scheduled
+         close-writes
+         (state-data
+          (list :username "user" :server "example.org" :resource "emacs"
+                :ever-session-established t :connection 'transport
+                :send-function
+                (lambda (_transport string) (push string close-writes))
+                :sm-enabled t :sm-id "s1" :sm-resumed t
+                :sm-outbound-count 0 :sm-last-acked 0
+                :sm-outbound-queue nil :sm-recovered-queue nil
+                :sm-pending-queue nil))
+         (jabber-post-resume-hooks
+          (list (lambda (_fsm) (fsm-send-sync jc :do-disconnect)))))
+    (put jc :name 'jabber-connection)
+    (put jc :state :sm-resume)
+    (put jc :state-data state-data)
+    (cl-letf (((symbol-function 'jabber-sm--start-r-timer)
+               (lambda (_jc data) data))
+              ((symbol-function 'jabber-sm--schedule-drain)
+               (lambda (&rest args) (setq scheduled args))))
+      (fsm-update jc :session-established state-data nil))
+    (should (equal close-writes '("</stream:stream>")))
+    (should-not scheduled)
+    (should-not (get jc :state))
+    (should (plist-get (fsm-get-state-data jc) :terminalized))
+    (should-not (memq jc jabber-connections))))
+
+(ert-deftest jabber-test-sm-session-entry-contains-hook-conditions ()
+  "Session hooks cannot abort later hooks or the scheduled drain."
+  (dolist (branch '(resume bootstrap))
+    (dolist (condition '(error quit))
+      (let* ((jc (make-symbol "session-hook-condition"))
+             (jabber-connections (list jc))
+             (later 0)
+             (scheduled 0)
+             escaped
+             result
+             (callbacks
+              (list (lambda (_fsm) (signal condition nil))
+                    (lambda (_fsm) (cl-incf later))))
+             (jabber-post-resume-hooks
+              (and (eq branch 'resume) callbacks))
+             (jabber-lifecycle-session-bootstrap-functions
+              (and (eq branch 'bootstrap) callbacks))
+             (state-data
+              (list :connection 'transport
+                    :sm-enabled nil
+                    :sm-resumed (eq branch 'resume)
+                    :sm-pending-queue '((0 . pending)))))
+        (jabber-test-sm--install-drain-state jc state-data)
+        (cl-letf (((symbol-function 'jabber-sm--schedule-drain)
+                   (lambda (_jc _state-data) (cl-incf scheduled))))
+          (setq escaped
+                (condition-case nil
+                    (progn
+                      (setq result
+                            (funcall
+                             (gethash :session-established
+                                      (get 'jabber-connection :fsm-enter))
+                             jc state-data))
+                      nil)
+                  ((error quit) t))))
+        (should-not escaped)
+        (should (= later 1))
+        (should (= scheduled 1))
+        (should (plist-get (car result) :ever-session-established))))))
 
 ;;; Ack XML generation
 
@@ -723,7 +890,7 @@
          sent drained)
     (cl-letf (((symbol-function 'jabber-send-string)
                (lambda (_jc string) (setq sent string)))
-              ((symbol-function 'jabber-sm--drain-pending)
+              ((symbol-function 'jabber-sm--schedule-drain)
                (lambda (&rest _) (setq drained t))))
       (let ((result (funcall handler 'fake-jc sd (list :stanza ack) nil)))
         (should-not (car result))
@@ -843,6 +1010,28 @@
     (should (= (caar (plist-get sd :sm-pending-queue)) 0))
     (should (= (caadr (plist-get sd :sm-pending-queue)) 0))))
 
+(defun jabber-test-sm--install-drain-state (jc state-data)
+  "Install STATE-DATA as an active session owned by JC."
+  (put jc :name 'jabber-connection)
+  (put jc :state :session-established)
+  (put jc :state-data state-data))
+
+(ert-deftest jabber-test-sm-schedule-drain-is-top-level ()
+  "Drain scheduling captures exact lease arguments on a zero timer."
+  (let ((jc (make-symbol "scheduled-drain"))
+        (state-data (list :lease t))
+        call)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (seconds repeat function &rest arguments)
+                 (setq call (list seconds repeat function arguments))
+                 'timer)))
+      (should (eq (jabber-sm--schedule-drain jc state-data) 'timer)))
+    (should (equal (car call) 0))
+    (should-not (cadr call))
+    (should (eq (nth 2 call) #'jabber-sm--drain-pending))
+    (should (eq (car (nth 3 call)) jc))
+    (should (eq (cadr (nth 3 call)) state-data))))
+
 (ert-deftest jabber-test-sm-drain-pending-partial ()
   "Drain sends stanzas up to the cap, leaving the rest queued."
   (let* ((jabber-sm-max-in-flight 2)
@@ -850,6 +1039,7 @@
          (msg2 '(message ((to . "a@b")) (body () "2")))
          (msg3 '(message ((to . "a@b")) (body () "3")))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-inbound-count 0
                    :sm-last-acked 0
@@ -857,49 +1047,64 @@
                    :sm-pending-queue (list (cons 0 msg1)
                                            (cons 0 msg2)
                                            (cons 0 msg3))))
-         (sent nil))
+         (sent nil)
+         (jc (make-symbol "drain-partial"))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc sexp) (push sexp sent))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
-    ;; Should have sent exactly 2 (the cap)
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (should (= (length sent) 2))
-    ;; One remains in pending queue
     (should (= (length (plist-get sd :sm-pending-queue)) 1))
     (should (equal (cdar (plist-get sd :sm-pending-queue)) msg3))
-    ;; Outbound count incremented for sent stanzas
     (should (= (plist-get sd :sm-outbound-count) 2))))
 
 (ert-deftest jabber-test-sm-drain-pending-counts-once ()
   "Draining counts each transmitted stanza exactly once."
   (let* ((jabber-sm-max-in-flight 2)
+         (existing '(message ((to . "old@b"))))
          (msg '(message ((to . "a@b")) (body () "1")))
+         (outbound (list (cons 10 existing)))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 10
                    :sm-last-acked 9
-                   :sm-outbound-queue nil
+                   :sm-outbound-queue outbound
                    :sm-pending-queue (list (cons 0 msg))))
-         (sent nil))
+         (sent nil)
+         (jc (make-symbol "drain-once"))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc sexp) (push sexp sent))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (should (equal sent (list msg)))
     (should (= (plist-get sd :sm-outbound-count) 11))
-    (should (= (length (plist-get sd :sm-outbound-queue)) 1))
-    (should (= (caar (plist-get sd :sm-outbound-queue)) 11))
+    (should (= (length (plist-get sd :sm-outbound-queue)) 2))
+    (should (= (caadr (plist-get sd :sm-outbound-queue)) 11))
+    (should (= (length outbound) 1))
+    (should (eq (cdar outbound) existing))
     (should (null (plist-get sd :sm-pending-queue)))))
 
 (ert-deftest jabber-test-sm-drain-pending-empty ()
   "Drain with empty queue is a no-op."
   (let* ((jabber-sm-max-in-flight 10)
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-last-acked 0
                    :sm-outbound-queue nil
                    :sm-pending-queue nil))
-         (sent nil))
+         (sent nil)
+         (jc (make-symbol "drain-empty"))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc sexp) (push sexp sent))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (should (null sent))
     (should (null (plist-get sd :sm-pending-queue)))))
 
@@ -916,45 +1121,314 @@
          (failures 0)
          (msg '(message ((to . "a@b")) (body () "queued")))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-last-acked 0
                    :sm-outbound-queue nil
-                   :sm-pending-queue nil)))
+                   :sm-pending-queue nil))
+         (jc (make-symbol "drain-success"))
+         (jabber-connections (list jc)))
     (setq sd
           (jabber-sm--enqueue-pending
            sd msg
            (lambda () (cl-incf successes))
            (lambda (_reason) (cl-incf failures))))
+    (jabber-test-sm--install-drain-state jc sd)
     (should (= 0 successes))
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (&rest _) nil)))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (should (= 1 successes))
     (should (= 0 failures))
     (should (null (plist-get sd :sm-pending-queue)))))
 
-(ert-deftest jabber-test-sm-drain-runs-transport-failure-callback ()
-  "A failed queue-drain write fails once and removes that entry."
+(ert-deftest jabber-test-sm-drain-write-failure-retains-work ()
+  "A failed queue-drain write retains work without settling callbacks."
   (let* ((jabber-sm-max-in-flight nil)
          (successes 0)
          (failures 0)
          (msg '(message ((to . "a@b")) (body () "queued")))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-last-acked 0
                    :sm-outbound-queue nil
-                   :sm-pending-queue nil)))
+                   :sm-pending-queue nil))
+         (jc (make-symbol "drain-failure"))
+         (jabber-connections (list jc)))
     (setq sd
           (jabber-sm--enqueue-pending
            sd msg
            (lambda () (cl-incf successes))
            (lambda (_reason) (cl-incf failures))))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (&rest _) (error "transport failed"))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (should (= 0 successes))
-    (should (= 1 failures))
-    (should (null (plist-get sd :sm-pending-queue)))))
+    (should (= 0 failures))
+    (should (= 0 (plist-get sd :sm-outbound-count)))
+    (should (= 1 (length (plist-get sd :sm-pending-queue))))))
+
+(ert-deftest jabber-test-sm-drain-write-condition-retries-losslessly ()
+  "An error or quit leaves both drain partitions available for retry."
+  (dolist (condition '(error quit))
+    (let* ((jabber-sm-max-in-flight nil)
+           (successes 0)
+           (recovered (list 'presence `((id . ,(symbol-name condition)))))
+           (pending-stanza (list 'message '((id . "pending"))))
+           (pending-entry
+            (list :priority 0 :stanza pending-stanza
+                  :success (lambda () (cl-incf successes))))
+           (sd (list :sm-enabled t :connection 'transport
+                     :sm-outbound-count 7 :sm-last-acked 7
+                     :sm-outbound-queue nil
+                     :sm-recovered-queue (list recovered)
+                     :sm-pending-queue (list pending-entry)))
+           (jc (make-symbol "drain-retry"))
+           (jabber-connections (list jc))
+           (attempt 0)
+           sent)
+      (jabber-test-sm--install-drain-state jc sd)
+      (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+                 (lambda (_jc stanza)
+                   (cl-incf attempt)
+                   (if (= attempt 1)
+                       (signal condition nil)
+                     (push stanza sent))))
+                ((symbol-function 'message) #'ignore))
+        (should-not
+         (condition-case nil
+             (progn
+               (jabber-sm--drain-pending jc sd)
+               nil)
+           (quit t)))
+        (setq sd (fsm-get-state-data jc))
+        (should (= 7 (plist-get sd :sm-outbound-count)))
+        (should-not (plist-get sd :sm-outbound-queue))
+        (should (eq (car (plist-get sd :sm-recovered-queue)) recovered))
+        (should (eq (car (plist-get sd :sm-pending-queue)) pending-entry))
+        (should (= 0 successes))
+        (jabber-sm--drain-pending jc sd))
+      (setq sd (fsm-get-state-data jc))
+      (should (equal (nreverse sent) (list recovered pending-stanza)))
+      (should (= 1 successes))
+      (should (= 9 (plist-get sd :sm-outbound-count)))
+      (should-not (plist-get sd :sm-recovered-queue))
+      (should-not (plist-get sd :sm-pending-queue)))))
+
+(ert-deftest jabber-test-sm-drain-recovered-before-ordinary-priority ()
+  "Recovered wire order precedes stable ordinary priority order."
+  (let* ((jabber-sm-max-in-flight nil)
+         (recovered-a (list 'presence '((id . "same"))))
+         (recovered-b (list 'presence '((id . "same"))))
+         (ordinary-presence '(presence ((id . "ordinary-presence"))))
+         (ordinary-message-a (list 'message '((id . "ordinary-message"))))
+         (ordinary-message-b (list 'message '((id . "ordinary-message"))))
+         (sd (list :sm-enabled t :connection 'transport
+                   :sm-outbound-count 0 :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-recovered-queue (list recovered-a recovered-b)
+                   :sm-pending-queue
+                   (list (cons 2 ordinary-presence)
+                         (cons 0 ordinary-message-a)
+                         (cons 0 ordinary-message-b))))
+         (jc (make-symbol "drain-order"))
+         (jabber-connections (list jc))
+         sent)
+    (jabber-test-sm--install-drain-state jc sd)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc stanza) (push stanza sent))))
+      (jabber-sm--drain-pending jc sd))
+    (setq sent (nreverse sent))
+    (should (equal sent
+                   (list recovered-a recovered-b
+                         ordinary-message-a ordinary-message-b
+                         ordinary-presence)))
+    (should (eq (nth 0 sent) recovered-a))
+    (should (eq (nth 1 sent) recovered-b))
+    (should (eq (nth 2 sent) ordinary-message-a))
+    (should (eq (nth 3 sent) ordinary-message-b))))
+
+(ert-deftest jabber-test-sm-drain-recovered-bypasses-ordinary-cap ()
+  "All recovered work replays before the in-flight cap blocks pending work."
+  (let* ((jabber-sm-max-in-flight 1)
+         (first '(message ((id . "recovered-1"))))
+         (second '(message ((id . "recovered-2"))))
+         (pending '(message ((id . "pending"))))
+         (sd (list :connection 'transport :sm-enabled t
+                   :sm-outbound-count 0 :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-recovered-queue (list first second)
+                   :sm-pending-queue (list (cons 0 pending))))
+         (jc (make-symbol "recovered-cap"))
+         (jabber-connections (list jc))
+         sent)
+    (jabber-test-sm--install-drain-state jc sd)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc stanza) (push stanza sent))))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
+    (should (equal (nreverse sent) (list first second)))
+    (should (= 2 (plist-get sd :sm-outbound-count)))
+    (should-not (plist-get sd :sm-recovered-queue))
+    (should (equal (mapcar #'jabber-sm--pending-stanza
+                           (plist-get sd :sm-pending-queue))
+                   (list pending)))))
+
+(ert-deftest jabber-test-sm-drain-publishes-before-disconnecting-callback ()
+  "A success callback sees its commit and cannot let the drain resurrect JC."
+  (let* ((jabber-sm-max-in-flight nil)
+         (jc (make-symbol "drain-disconnect"))
+         (jabber-auto-reconnect nil)
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks nil)
+         (jabber-lifecycle-session-reset-functions nil)
+         (jabber-lifecycle-connection-list-changed-functions nil)
+         (first '(message ((id . "first"))))
+         (second '(message ((id . "second"))))
+         (successes 0)
+         (second-successes 0)
+         (second-failures 0)
+         observed
+         sent
+         close-writes
+         (sd (list :username "user" :server "example.org" :resource "emacs"
+                   :ever-session-established t
+                   :sm-enabled t :sm-id "sm" :connection 'transport
+                   :send-function
+                   (lambda (_transport string) (push string close-writes))
+                   :sm-outbound-count 0 :sm-last-acked 0
+                   :sm-outbound-queue nil :sm-recovered-queue nil
+                   :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd first
+           (lambda ()
+             (let ((current (fsm-get-state-data jc)))
+               (setq observed
+                     (list (plist-get current :sm-outbound-count)
+                           (length (plist-get current :sm-outbound-queue))
+                           (length (plist-get current :sm-pending-queue)))))
+             (cl-incf successes)
+             (fsm-send-sync jc :do-disconnect))
+           nil))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd second
+           (lambda () (cl-incf second-successes))
+           (lambda (_reason) (cl-incf second-failures))))
+    (jabber-test-sm--install-drain-state jc sd)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc stanza) (push stanza sent))))
+      (jabber-sm--drain-pending jc sd))
+    (should (equal observed '(1 1 1)))
+    (should (= 1 successes))
+    (should (= 0 second-successes))
+    (should (= 1 second-failures))
+    (should (equal sent (list first)))
+    (should (equal close-writes '("</stream:stream>")))
+    (should-not (get jc :state))
+    (should-not (memq jc jabber-connections))
+    (should (plist-get (fsm-get-state-data jc) :terminalized))))
+
+(ert-deftest jabber-test-sm-drain-stale-lease-is-inert ()
+  "A stale state-data or registration lease cannot send or publish."
+  (dolist (mode '(replaced unregistered))
+    (let* ((jabber-sm-max-in-flight nil)
+           (jc (make-symbol "stale-drain"))
+           (stanza '(message ((id . "stale"))))
+           (expected (list :connection 'transport :sm-enabled t
+                           :sm-outbound-count 0 :sm-last-acked 0
+                           :sm-outbound-queue nil
+                           :sm-pending-queue (list (cons 0 stanza))))
+           (replacement (copy-sequence expected))
+           (jabber-connections (and (eq mode 'replaced) (list jc)))
+           sent)
+      (jabber-test-sm--install-drain-state jc replacement)
+      (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+                 (lambda (_jc sexp) (push sexp sent))))
+        (jabber-sm--drain-pending jc expected))
+      (should-not sent)
+      (should (eq (fsm-get-state-data jc) replacement)))))
+
+(ert-deftest jabber-test-sm-drain-send-replacement-is-not-overwritten ()
+  "A replacement installed during raw send survives stale completion."
+  (let* ((jabber-sm-max-in-flight nil)
+         (jc (make-symbol "replace-during-send"))
+         (stanza '(message ((id . "old"))))
+         (successes 0)
+         (expected (list :connection 'transport :sm-enabled t
+                         :sm-outbound-count 0 :sm-last-acked 0
+                         :sm-outbound-queue nil
+                         :sm-pending-queue
+                         (list (list :priority 0 :stanza stanza
+                                    :success
+                                    (lambda () (cl-incf successes))))))
+         (replacement (list :replacement t :connection 'new-transport))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc expected)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc _stanza)
+                 (put jc :state-data replacement))))
+      (jabber-sm--drain-pending jc expected))
+    (should (eq (fsm-get-state-data jc) replacement))
+    (should (= 0 successes))
+    (should (= 1 (length (plist-get expected :sm-pending-queue))))))
+
+(ert-deftest jabber-test-sm-drain-head-replacement-is-not-committed ()
+  "A same-lease queue-head replacement survives stale send completion."
+  (let* ((jabber-sm-max-in-flight nil)
+         (jc (make-symbol "replace-drain-head"))
+         (old-stanza '(message ((id . "old"))))
+         (replacement-stanza '(message ((id . "replacement"))))
+         (old-entry (cons 0 old-stanza))
+         (replacement-entry (cons 0 replacement-stanza))
+         (state-data
+          (list :connection 'transport :sm-enabled t
+                :sm-outbound-count 0 :sm-last-acked 0
+                :sm-outbound-queue nil
+                :sm-pending-queue (list old-entry)))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc state-data)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc _stanza)
+                 (plist-put (fsm-get-state-data jc) :sm-pending-queue
+                            (list replacement-entry)))))
+      (jabber-sm--drain-pending jc state-data))
+    (setq state-data (fsm-get-state-data jc))
+    (should (eq (car (plist-get state-data :sm-pending-queue))
+                replacement-entry))
+    (should (= 0 (plist-get state-data :sm-outbound-count)))
+    (should-not (plist-get state-data :sm-outbound-queue))))
+
+(ert-deftest jabber-test-sm-drain-removes-one-occurrence-after-send ()
+  "A send-time equal successor remains queued as a distinct occurrence."
+  (let* ((jabber-sm-max-in-flight 1)
+         (jc (make-symbol "append-during-send"))
+         (stanza '(message ((id . "same"))))
+         (old-entry (cons 0 stanza))
+         successor
+         (sd (list :connection 'transport :sm-enabled t
+                   :sm-outbound-count 0 :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue (list old-entry)))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc _stanza)
+                 (jabber-sm--enqueue-pending
+                  (fsm-get-state-data jc) stanza)
+                 (setq successor
+                       (car (last (plist-get (fsm-get-state-data jc)
+                                             :sm-pending-queue)))))))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
+    (should (= 1 (length (plist-get sd :sm-pending-queue))))
+    (should (eq (car (plist-get sd :sm-pending-queue)) successor))
+    (should-not (eq successor old-entry))))
 
 (ert-deftest jabber-test-sm-discard-pending-isolates-failure-callbacks ()
   "Discard runs every failure callback even when one callback errors."
@@ -1015,21 +1489,25 @@
          (later 0)
          (first '(message ((to . "first@example.org"))))
          (second '(message ((to . "second@example.org"))))
-         (sd (jabber-sm--reset nil)))
+         (sd (plist-put (jabber-sm--reset nil) :connection 'transport))
+         (jc (make-symbol "drain-callback-quit"))
+         (jabber-connections (list jc)))
     (setq sd
           (jabber-sm--enqueue-pending
            sd first (lambda () (signal 'quit nil)) nil))
     (setq sd
           (jabber-sm--enqueue-pending
            sd second (lambda () (cl-incf later)) nil))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc stanza) (push stanza sent))))
       (should-not
        (condition-case nil
            (progn
-             (setq sd (jabber-sm--drain-pending 'fake-jc sd))
+             (jabber-sm--drain-pending jc sd)
              nil)
          (quit t))))
+    (setq sd (fsm-get-state-data jc))
     (should (= later 1))
     (should (equal (nreverse sent) (list first second)))
     (should-not (plist-get sd :sm-pending-queue))))
@@ -1805,15 +2283,15 @@
          (held (list (make-symbol "held")))
          (state-data
           (list :session-reset-done t :nil-entry-token token
-                :nil-entry-pending held
+                :nil-entry-pending held :connection 'transport
                 :sm-resumed nil :sm-enabled nil :sm-pending-queue nil))
+         (jabber-connections (list jc))
          (enter (gethash :session-established
                          (get 'jabber-connection :fsm-enter))))
-    (put jc :state-data state-data)
+    (jabber-test-sm--install-drain-state jc state-data)
     (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-bootstrap)
                #'ignore)
-              ((symbol-function 'jabber-sm--drain-pending)
-               (lambda (_jc current) current)))
+              ((symbol-function 'jabber-sm--schedule-drain) #'ignore))
       (setq state-data (car (funcall enter jc state-data))))
     (should-not (plist-get state-data :session-reset-done))
     (should-not (plist-get state-data :nil-entry-token))
@@ -2621,34 +3099,39 @@
          (pres2 '(presence ((to . "r2@muc/nick"))))
          (iq1 '(iq ((type . "get") (id . "1"))))
          (msg2 '(message ((to . "c@d")) (body () "2")))
+         (pending (list (cons 2 pres1)
+                        (cons 0 msg1)
+                        (cons 2 pres2)
+                        (cons 1 iq1)
+                        (cons 0 msg2)))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-inbound-count 0
                    :sm-last-acked 0
                    :sm-outbound-queue nil
-                   :sm-pending-queue (list (cons 2 pres1)
-                                           (cons 0 msg1)
-                                           (cons 2 pres2)
-                                           (cons 1 iq1)
-                                           (cons 0 msg2))))
-         (sent nil))
+                   :sm-pending-queue pending))
+         (sent nil)
+         (jc (make-symbol "drain-priority"))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc sexp) (push sexp sent))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (setq sent (nreverse sent))
-    ;; Messages first (FIFO), then IQ, then presences (FIFO)
     (should (= (length sent) 5))
     (should (eq (car-safe (nth 0 sent)) 'message))
     (should (eq (car-safe (nth 1 sent)) 'message))
     (should (eq (car-safe (nth 2 sent)) 'iq))
     (should (eq (car-safe (nth 3 sent)) 'presence))
     (should (eq (car-safe (nth 4 sent)) 'presence))
-    ;; FIFO within messages
     (should (equal (nth 0 sent) msg1))
     (should (equal (nth 1 sent) msg2))
-    ;; FIFO within presence
     (should (equal (nth 3 sent) pres1))
-    (should (equal (nth 4 sent) pres2))))
+    (should (equal (nth 4 sent) pres2))
+    (should (equal (mapcar #'jabber-sm--pending-stanza pending)
+                   (list pres1 msg1 pres2 iq1 msg2)))))
 
 (ert-deftest jabber-test-sm-drain-pending-priority-partial ()
   "With a cap, messages drain first even if presence was enqueued first."
@@ -2657,6 +3140,7 @@
          (msg1 '(message ((to . "a@b")) (body () "urgent")))
          (pres2 '(presence ((to . "r2@muc/nick"))))
          (sd (list :sm-enabled t
+                   :connection 'transport
                    :sm-outbound-count 0
                    :sm-inbound-count 0
                    :sm-last-acked 0
@@ -2664,16 +3148,18 @@
                    :sm-pending-queue (list (cons 2 pres1)
                                            (cons 0 msg1)
                                            (cons 2 pres2))))
-         (sent nil))
+         (sent nil)
+         (jc (make-symbol "drain-priority-partial"))
+         (jabber-connections (list jc)))
+    (jabber-test-sm--install-drain-state jc sd)
     (cl-letf (((symbol-function 'jabber-send-sexp--raw)
                (lambda (_jc sexp) (push sexp sent))))
-      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+      (jabber-sm--drain-pending jc sd))
+    (setq sd (fsm-get-state-data jc))
     (setq sent (nreverse sent))
-    ;; Message sent first, then one presence
     (should (= (length sent) 2))
     (should (equal (nth 0 sent) msg1))
     (should (equal (nth 1 sent) pres1))
-    ;; One presence remains
     (should (= (length (plist-get sd :sm-pending-queue)) 1))
     (should (equal (cdar (plist-get sd :sm-pending-queue)) pres2))))
 

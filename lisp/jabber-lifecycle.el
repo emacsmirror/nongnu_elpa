@@ -59,7 +59,8 @@
 
 (defun jabber-lifecycle-dispatch-session-bootstrap (jc)
   "Dispatch new session bootstrap effects for JC."
-  (run-hook-with-args 'jabber-lifecycle-session-bootstrap-functions jc))
+  (jabber-lifecycle--dispatch-contained
+   'jabber-lifecycle-session-bootstrap-functions jc))
 
 (defun jabber-lifecycle-dispatch-registration (jc)
   "Dispatch account registration startup for JC."

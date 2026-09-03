@@ -190,6 +190,7 @@ When REJECT-STALE is non-nil, stale evidence is a protocol error."
 		:sm-outbound-count 0
 		:sm-inbound-count 0
 		:sm-outbound-queue nil
+		:sm-recovered-queue nil
 		:sm-pending-queue nil
 		:sm-last-acked 0
 		:sm-resuming nil
@@ -348,24 +349,28 @@ Return updated STATE-DATA."
 
 (defun jabber-sm--handle-resumed (state-data stanza)
   "Process <resumed/> STANZA against STATE-DATA after stream resumption.
-Prune the outbound queue per the server's h value.
-Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
+Move unacknowledged stanzas into the recovered partition in wire order.
+Return updated state data."
   (unless (and (jabber-xml-get-attribute stanza 'previd)
                (equal (jabber-xml-get-attribute stanza 'previd)
                       (plist-get state-data :sm-id)))
     (signal 'jabber-sm-invalid-acknowledgement
             (list (jabber-xml-get-attribute stanza 'previd))))
-  (let* ((h (jabber-sm--parse-handled-count stanza))
+  (let* ((state-data (copy-sequence state-data))
+         (h (jabber-sm--parse-handled-count stanza))
          (state-data (jabber-sm--apply-handled-count state-data h t))
-         (to-resend (mapcar
-                     #'cdr
-                     (plist-get state-data :sm-outbound-queue))))
+         (recovered
+          (append (mapcar #'cdr
+                          (plist-get state-data :sm-outbound-queue))
+                  (plist-get state-data :sm-recovered-queue))))
     (setq state-data (plist-put state-data :sm-last-acked h))
     (setq state-data (plist-put state-data :sm-outbound-count h))
     (setq state-data (plist-put state-data :sm-outbound-queue nil))
+    (setq state-data
+          (plist-put state-data :sm-recovered-queue recovered))
     (setq state-data (plist-put state-data :sm-resumed t))
     (setq state-data (plist-put state-data :sm-resuming nil))
-    (cons state-data to-resend)))
+    state-data))
 
 (defun jabber-sm--handle-failed-resume (state-data stanza)
   "Prepare STATE-DATA for a new session after failed resume STANZA.
