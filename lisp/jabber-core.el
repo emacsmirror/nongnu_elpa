@@ -549,6 +549,19 @@ STATE-DATA is the connection state to preserve."
                       h sent))))
     (list nil (plist-put state-data :disconnection-reason reason))))
 
+(defun jabber-core--active-disconnect-transition (fsm state-data)
+  "Return FSM's terminal transition from STATE-DATA after active close."
+  (let ((current
+         (plist-put (copy-sequence state-data)
+                    :disconnection-expected t)))
+    (put fsm :state-data current)
+    (condition-case err
+        (jabber-send-string fsm "</stream:stream>")
+      ((error quit)
+       (message "Jabber stream close failed: %s"
+                (error-message-string err))))
+    (list nil (fsm-get-state-data fsm))))
+
 (define-enter-state jabber-connection :connected
 		    (fsm state-data)
 
@@ -626,9 +639,7 @@ STATE-DATA is the connection state to preserve."
 		     (list :sasl-auth (plist-put state-data :stream-features stanza))))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :starttls
 		    (fsm state-data)
@@ -666,9 +677,7 @@ STATE-DATA is the connection state to preserve."
 		      (list nil new-state-data)))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :register-account
 		    (fsm state-data)
@@ -696,9 +705,7 @@ STATE-DATA is the connection state to preserve."
 		    (list :register-account state-data))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :legacy-auth
 		    (_fsm state-data)
@@ -734,9 +741,7 @@ STATE-DATA is the connection state to preserve."
 				      :disconnection-expected t)))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :sasl-auth
 		    (fsm state-data)
@@ -782,9 +787,7 @@ STATE-DATA is the connection state to preserve."
 				      :disconnection-expected t)))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (defun jabber--send-bind-request (jc state-data)
   "Request resource binding for JC using STATE-DATA."
@@ -906,9 +909,7 @@ STATE-DATA is the connection state to preserve."
 		 (list nil state-data))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :sm-enable
 		    (fsm state-data)
@@ -943,9 +944,7 @@ STATE-DATA is the connection state to preserve."
 		      (list :sm-enable state-data))))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (define-enter-state jabber-connection :sm-resume
 		    (fsm state-data)
@@ -1008,9 +1007,7 @@ STATE-DATA is the connection state to preserve."
 		      (list :sm-resume state-data))))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (defvar jabber-pending-presence-timeout 0.5
   "Wait this long before doing presence packet batch processing.")
@@ -1127,9 +1124,7 @@ STATE-DATA is the connection state to preserve."
 		     (list nil state-data))))
 
 		(:do-disconnect
-		 (jabber-send-string fsm "</stream:stream>")
-		 (list nil (plist-put state-data
-				      :disconnection-expected t)))))
+		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (defun jabber-disconnect (&optional arg interactivep)
   "Disconnect from all Jabber servers.  If ARG supplied, disconnect one account.

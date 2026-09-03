@@ -1432,6 +1432,108 @@
       (should (= losses 1))
       (should (= list-changes 1)))))
 
+(defun jabber-test-sm--active-disconnect-observation (state condition)
+  "Return active disconnect results for STATE when send signals CONDITION."
+  (let* ((jc (make-symbol "active-disconnect"))
+         (transport (make-symbol "transport"))
+         (resets 0)
+         (failures 0)
+         (list-changes 0)
+         (losses 0)
+         (sends 0)
+         sent expected-at-send escaped
+         (jabber-connections (list jc))
+         (jabber-lost-connection-hooks
+          (list (lambda (_connection) (cl-incf losses))))
+         (jabber-lifecycle-session-reset-functions
+          (list (lambda (_connection) (cl-incf resets))))
+         (jabber-lifecycle-connection-list-changed-functions
+          (list (lambda () (cl-incf list-changes))))
+         (input
+          (list :username "user" :server "example.org" :resource "emacs"
+                :connection transport :disconnection-expected nil
+                :ever-session-established t :sm-enabled nil
+                :sm-pending-queue nil
+                :send-function
+                (lambda (_connection string)
+                  (cl-incf sends)
+                  (setq sent string)
+                  (setq expected-at-send
+                        (plist-get (fsm-get-state-data jc)
+                                   :disconnection-expected))
+                  (put jc :state-data
+                       (plist-put (copy-sequence (fsm-get-state-data jc))
+                                  :close-send-observed t))
+                  (when condition
+                    (signal condition nil)))))
+         (state-data
+          (jabber-sm--enqueue-pending
+           input '(message ((to . "peer@example.org"))) nil
+           (lambda (_reason) (cl-incf failures)))))
+    (put jc :name 'jabber-connection)
+    (put jc :state state)
+    (put jc :state-data state-data)
+    (condition-case err
+        (jabber-disconnect-one jc)
+      ((error quit) (setq escaped err)))
+    (let ((current (fsm-get-state-data jc)))
+      (prog1
+          (list :condition condition :transport transport
+                :escaped (car-safe escaped)
+                :sends sends :sent sent :expected-at-send expected-at-send
+                :fsm-state (get jc :state)
+                :terminalized (plist-get current :terminalized)
+                :send-observed (plist-get current :close-send-observed)
+                :expected (plist-get current :disconnection-expected)
+                :connection (plist-get current :connection)
+                :pending (plist-get current :sm-pending-queue)
+                :registered (and (memq jc jabber-connections) t)
+                :resets resets :failures failures
+                :list-changes list-changes :losses losses
+                :input-expected
+                (plist-get input :disconnection-expected)
+                :input-terminalized (plist-get input :terminalized)
+                :input-connection (plist-get input :connection)
+                :input-pending (plist-get input :sm-pending-queue))
+        (when (timerp (get jc :timeout))
+          (cancel-timer (get jc :timeout)))))))
+
+(ert-deftest jabber-test-sm-active-disconnect-is-fail-closed ()
+  "Every active state reaches terminal cleanup despite close failures."
+  (let ((observations
+         (cl-loop for state in '(:connected :starttls :register-account
+                                 :legacy-auth :sasl-auth :bind :sm-enable
+                                 :sm-resume :session-established)
+                  append
+                  (cl-loop for condition in '(nil error quit)
+                           collect
+                           (jabber-test-sm--active-disconnect-observation
+                            state condition)))))
+    (should
+     (cl-every
+      (lambda (entry)
+        (and (null (plist-get entry :escaped))
+             (= (plist-get entry :sends) 1)
+             (equal (plist-get entry :sent) "</stream:stream>")
+             (plist-get entry :expected-at-send)
+             (null (plist-get entry :fsm-state))
+             (plist-get entry :terminalized)
+             (plist-get entry :send-observed)
+             (plist-get entry :expected)
+             (null (plist-get entry :connection))
+             (null (plist-get entry :pending))
+             (not (plist-get entry :registered))
+             (= (plist-get entry :resets) 1)
+             (= (plist-get entry :failures) 1)
+             (= (plist-get entry :list-changes) 1)
+             (= (plist-get entry :losses) 0)
+             (null (plist-get entry :input-expected))
+             (null (plist-get entry :input-terminalized))
+             (eq (plist-get entry :input-connection)
+                 (plist-get entry :transport))
+             (= (length (plist-get entry :input-pending)) 1)))
+      observations))))
+
 (ert-deftest jabber-test-sm-terminalization-does-not-mark-input-plist ()
   "Terminal retirement does not mark or detach an external plist alias."
   (dolist (entry '(active-loss nil-disconnect))
