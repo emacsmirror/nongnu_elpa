@@ -322,26 +322,34 @@ a separator rather than trusting the count would find one of them."
 ;;; Which types quote a body line that reads as their own separator
 
 (ert-deftest vm-expunge-roundtrip-test-which-types-quote-their-own-separator ()
-  "Record which folder types store a body holding their own separator raw.
+  "Record which folder types quote a body holding their own separator.
 One message, its body holding the separator of the folder it is filed in,
 with text either side of it.
 
-VM reads all four back whole, so nothing is lost here.  What differs is the
-file: a From_ folder quotes the line, `vm-munge-message-separators' turning
-`From ' into `>From ', and the other three write it as it stands.  For
-mboxcl2 that is the point of the type, its byte count saying where the
-message ends whatever the body holds (emacs-vm/vm#466).  For mmdf and babyl
-it means VM writes a folder holding a separator that no message of its own
-accounts for, which another reader of that format need not read as VM does.
+VM reads all four back whole, so nothing is lost to VM.  What differs is the
+file:
 
-Pinned rather than reported: it is the interoperability question of
-emacs-vm/vm#789, which is with the maintainer, and not a loss VM suffers."
+- From_ and mmdf quote the line, `vm-munge-message-separators' putting a `>'
+  in front of it, so no outside reader is misled;
+- mboxcl2 writes it as it stands, which is the point of the type: the byte
+  count says where the message ends whatever the body holds (emacs-vm/vm#466);
+- babyl writes it as it stands too, and that one an outside reader does
+  mis-split.  Python\'s `mailbox.Babyl\' reads such a folder as three messages
+  where VM wrote two (emacs-vm/vm#801).  VM\'s babyl munging looks for a
+  separator followed by an attribute line, `\014\\n[01],\', so a bare
+  `\037\014\' in a body is not recognised as one and is left alone.
+
+Every regexp here is anchored at line start on purpose.  Unanchored,
+`\001\001\001\001\' matches inside `>\001\001\001\001\' as well, so the count
+rises whether the line was quoted or not and the measurement cannot tell the
+two apart.  That is how this test first recorded mmdf as unquoted when it is
+not."
   (dolist (spec '((From_   "From nobody@example.com Mon Jan  1 00:00:00 2024\n"
                            "^From " quoted)
                   (mboxcl2 "From nobody@example.com Mon Jan  1 00:00:00 2024\n"
                            "^From " raw)
-                  (mmdf    "\001\001\001\001\n" "\001\001\001\001" raw)
-                  (babyl   "\037\014\n" "\037\014" raw)))
+                  (mmdf    "\001\001\001\001\n" "^\001\001\001\001" quoted)
+                  (babyl   "\037\014\n" "^\037\014" raw)))
     (let* ((type (nth 0 spec))
            (body (nth 1 spec))
            (regexp (nth 2 spec))
