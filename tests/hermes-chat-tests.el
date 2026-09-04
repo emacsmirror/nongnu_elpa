@@ -2473,6 +2473,92 @@
     (should (equal (car continued) "!"))
     (should-not (cdr continued))))
 
+(ert-deftest hermes-chat-resume-running-restores-stream-and-draft-undo ()
+  "A busy resume owns deltas and completion without a new message.start."
+  (dolist (busy '(((running . t))
+                  ((inflight . ((user . "Question"))))))
+    (let ((client (hermes-test--dashboard-client)) resolve buffer)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-notifications-notify) #'ignore)
+                ((symbol-function 'pop-to-buffer-same-window)
+                 (lambda (buffer &rest _) buffer))
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client _sid &rest args)
+                   (setq resolve (plist-get args :resolve)))))
+        (unwind-protect
+            (progn
+              (setq buffer (hermes-chat-resume-session "stored"))
+              (with-current-buffer buffer
+                (buffer-enable-undo)
+                (insert "draft")
+                (undo-boundary))
+              (funcall resolve
+                       (append busy
+                               '((session_id . "live")
+                                 (messages . (((role . "user")
+                                               (text . "Question")))))))
+              (with-current-buffer buffer
+                (should (hermes-chat--active-turn-p))
+                (should hermes-chat--pending-assistant-id)
+                (should (eq hermes-chat--process client)))
+              (dolist (text '("Remaining " "reply"))
+                (hermes-dashboard-transport--dispatch-event
+                 client (list :type 'delta :content text :session-id "live")))
+              (hermes-dashboard-transport--dispatch-event
+               client '(:type done :session-id "live"))
+              (with-current-buffer buffer
+                (let ((entries
+                       (cl-remove-if
+                        (lambda (entry) (eq (plist-get entry :role) 'status))
+                        (hermes-chat--entries))))
+                  (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                                         entries)
+                                 '(user assistant)))
+                  (should (equal (plist-get (cadr entries) :content)
+                                 "Remaining reply"))
+                  (should (eq (plist-get (cadr entries) :status) 'done)))
+                (should-not (hermes-chat--active-turn-p))
+                (should-not hermes-chat--dashboard-running-p)
+                (should-not hermes-chat--pending-assistant-id)
+                (should-not hermes-chat--process)
+                (undo 1)
+                (should (equal (hermes-chat-input-string) ""))
+                (should (string-match-p "Question" (buffer-string)))
+                (should (string-match-p "Remaining reply" (buffer-string)))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest hermes-chat-resume-stale-history-cannot-restore-turn ()
+  "A replaced transport or request cannot restore old history or busy state."
+  (dolist (replacement '(client request lifetime))
+    (let ((client (hermes-test--dashboard-client)) resolve reject buffer)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'pop-to-buffer-same-window)
+                 (lambda (buffer &rest _) buffer))
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client _sid &rest args)
+                   (setq resolve (plist-get args :resolve)
+                         reject (plist-get args :reject)))))
+        (unwind-protect
+            (progn
+              (setq buffer (hermes-chat-resume-session "stored"))
+              (with-current-buffer buffer
+                (pcase replacement
+                  ('client (setq hermes-chat--dashboard-client
+                                 (hermes-test--dashboard-client)))
+                  ('request (hermes-chat--next-transport-generation))
+                  ('lifetime (hermes-chat--invalidate-transport-state))))
+              (funcall resolve
+                       '((session_id . "old") (running . t)
+                         (messages . (((role . "user") (text . "Old"))))))
+              (funcall reject "Old error")
+              (with-current-buffer buffer
+                (should-not (hermes-chat--entries))
+                (should-not hermes-chat--dashboard-active-session-id)
+                (should-not (hermes-chat--active-turn-p))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
   "Resuming renders history and later backend-owned turns without duplicates."
   (let ((client (hermes-test--dashboard-client)))
@@ -2482,7 +2568,7 @@
               ((symbol-function 'hermes-dashboard-transport-session-resume)
                (lambda (_client _sid &rest args)
                  (funcall (plist-get args :resolve)
-                          '((session_id . "live-1")
+                          '((session_id . "live-1") (running . nil)
                             (messages . (((role . "user") (text . "hi there"))
                                          ((role . "assistant") (text . "hello back"))
                                          ((role . "tool") (name . "terminal")
@@ -2493,6 +2579,8 @@
               (should (equal (mapcar (lambda (entry) (plist-get entry :role))
                                      (hermes-chat--entries))
                              '(user assistant tool)))
+              (should-not (hermes-chat--active-turn-p))
+              (should-not hermes-chat--pending-assistant-id)
               (dolist (content '("wake one" "wake two"))
                 (hermes-dashboard-transport--dispatch-event
                  client '(:type status :event "message.start" :status "started"
