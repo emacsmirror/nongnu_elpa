@@ -538,7 +538,9 @@
                      "emacs_context"
                      "emacs_edit"
                      "emacs_job"
-                     "emacs_events")))))
+                     "emacs_events"
+                     "emacs_review_start"
+                     "emacs_review_result")))))
 
 (ert-deftest codex-ide-mcp-callable-name-display-only ()
   "Codex callable names are display-only and raw MCP names stay unchanged."
@@ -1531,6 +1533,341 @@
           (should-not (member "greet" (codex-ide-mcp-tool-names)))
           (should-error (codex-ide-mcp--handle-tools-call '(:name "greet"))))
       (codex-ide-mcp--stop-server))))
+
+;;; Review proposals
+
+(defmacro codex-ide-mcp-test--with-review-session (&rest body)
+  "Run BODY with one disposable terminal owner and isolated review state."
+  (declare (indent 0))
+  `(let* ((codex-ide--sessions (make-hash-table :test 'equal))
+          (codex-ide--active-session-ids (make-hash-table :test 'equal))
+          (codex-ide-diff--receipts (make-hash-table :test 'equal))
+          (codex-ide-diff--queued-review nil)
+          (codex-ide-diff--active nil)
+          (root (make-temp-file "codex-review-owner-" t))
+          (terminal (generate-new-buffer " *review-terminal*"))
+          (process (make-pipe-process :name "review-owner" :buffer terminal :noquery t))
+          (session (codex-ide--make-session root 1 terminal process)))
+     (unwind-protect
+         (progn
+           (with-current-buffer terminal
+             (setq-local codex-ide--session-root root codex-ide--session-id 1)
+             (codex-ide-mode 1))
+           (codex-ide--store-session session)
+           ,@body)
+       (when (fboundp 'codex-ide-diff--cancel-requests)
+         (codex-ide-diff--cancel-requests))
+       (maphash (lambda (_id receipt)
+                  (dolist (key '(:timer :start-timer))
+                    (when-let* ((timer (plist-get receipt key))) (cancel-timer timer))))
+                codex-ide-diff--receipts)
+       (when (buffer-live-p terminal) (kill-buffer terminal))
+       (when (process-live-p process) (delete-process process))
+       (delete-directory root t))))
+
+(defun codex-ide-mcp-test--review-start (terminal &optional token)
+  "Submit a disposable proposal for TERMINAL using TOKEN."
+  (codex-ide-diff--request-start (buffer-name terminal) (or token "fixture")
+                                 "fixture.el" "old" "proposal"))
+
+(ert-deftest codex-ide-mcp-review-queued-dedup-and-conflict ()
+  "Start queues one UI, retries reuse it, and changed requests are rejected."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (id (cdr (assoc "review_id" start)))
+          (receipt (gethash id codex-ide-diff--receipts)))
+     (should (equal (cdr (assoc "status" start)) "pending"))
+     (should-not (plist-get receipt :ui-owner))
+     (should (equal start (codex-ide-mcp-test--review-start terminal)))
+     (should-error (codex-ide-mcp-test--review-start terminal "different") :type 'user-error)
+     (should-error (codex-ide-diff--request-start
+                    (buffer-name terminal) "fixture" "fixture.el" "old" "changed")
+                   :type 'user-error)
+     (should (= (hash-table-count codex-ide-diff--receipts) 1)))))
+
+(ert-deftest codex-ide-mcp-review-cancel-before-ui-and-late-callback ()
+  "Cancellation before the UI timer runs is terminal, including late callbacks."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (id (cdr (assoc "review_id" start)))
+          (receipt (gethash id codex-ide-diff--receipts)))
+     (codex-ide-diff--request-result id t)
+     (codex-ide-diff--run-request receipt)
+     (codex-ide-diff--finish-request receipt 'accepted "late")
+     (should-not (plist-get receipt :ui-owner))
+     (should-not codex-ide-diff--active)
+     (should (equal (cdr (assoc "status" (codex-ide-diff--request-result id)))
+                    "cancelled")))))
+
+(ert-deftest codex-ide-mcp-review-owner-stop-cancels-queued ()
+  "Exact terminal teardown cancels a queued proposal before UI can appear."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (id (cdr (assoc "review_id" start))))
+     (codex-ide--cleanup-on-exit root 1 terminal process t)
+     (should (equal (cdr (assoc "status" (codex-ide-diff--request-result id)))
+                    "cancelled")))))
+
+(ert-deftest codex-ide-mcp-review-owner-replacement-rejects-old-buffer ()
+  "Replacing a root/id cancels its old review and rejects the shadowed buffer."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts))
+          (replacement (generate-new-buffer " *replacement-owner*"))
+          (new-process (make-pipe-process :name "replacement" :buffer replacement :noquery t)))
+     (unwind-protect
+         (progn
+           (with-current-buffer replacement
+             (setq-local codex-ide--session-root root codex-ide--session-id 1)
+             (codex-ide-mode 1))
+           (codex-ide--store-session
+            (codex-ide--make-session root 1 replacement new-process))
+           (should (eq (plist-get receipt :status) 'cancelled))
+           (should-error (codex-ide-mcp-test--review-start terminal "stale")
+                         :type 'user-error))
+       (kill-buffer replacement)
+       (when (process-live-p new-process) (delete-process new-process))))))
+
+(ert-deftest codex-ide-mcp-review-missing-cleanup-preserves-other-owner ()
+  "Repeated cleanup of an absent owner does not act as server-wide cancellation."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts)))
+     (codex-ide--cleanup-on-exit (expand-file-name "absent" root) 9)
+     (codex-ide--cleanup-on-exit (expand-file-name "absent" root) 9)
+     (should (eq (plist-get receipt :status) 'pending)))))
+
+(ert-deftest codex-ide-mcp-review-expiry-and-stale-timeout ()
+  "Expiry cancels open Ediff and stale timeout/accept callbacks cannot overwrite it."
+  (codex-ide-mcp-test--with-review-session
+   (let ((now (float-time)))
+     (cl-letf (((symbol-function 'float-time) (lambda (&optional _) now)))
+       (let* ((start (codex-ide-mcp-test--review-start terminal))
+              (id (cdr (assoc "review_id" start)))
+              (receipt (gethash id codex-ide-diff--receipts))
+              (pending-deadline (plist-get receipt :deadline)))
+         (codex-ide-diff--run-request receipt)
+         (should (buffer-live-p (plist-get (plist-get receipt :ui-owner) :control)))
+         (setq now pending-deadline)
+         (codex-ide-diff--expire-request receipt pending-deadline)
+         (should-not codex-ide-diff--active)
+         (should (eq (plist-get receipt :status) 'expired))
+         (codex-ide-diff--finish-request receipt 'accepted "late")
+         (codex-ide-diff--expire-request receipt pending-deadline)
+         (should (equal (cdr (assoc "status" (codex-ide-diff--request-result id))) "expired"))
+         (setq now (plist-get receipt :deadline))
+         (should-error (codex-ide-diff--request-result id) :type 'user-error)
+         (should-not (gethash id codex-ide-diff--receipts)))))))
+
+(ert-deftest codex-ide-mcp-review-capacity-retention-and-immutable-results ()
+  "Full capacity preserves accepted receipts and permits identical retries until age-out."
+  (codex-ide-mcp-test--with-review-session
+   (let ((now (float-time)) first second)
+     (cl-letf (((symbol-function 'float-time) (lambda (&optional _) now)))
+       (dotimes (index 16)
+         (let* ((start (codex-ide-mcp-test--review-start terminal (number-to-string index)))
+                (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts)))
+           (codex-ide-diff--finish-request receipt 'accepted "final")
+           (when (= index 0) (setq first receipt))
+           (when (= index 1) (setq second receipt))
+           (setq now (1+ now))))
+       (should-error (codex-ide-mcp-test--review-start terminal "full") :type 'user-error)
+       (should (= (hash-table-count codex-ide-diff--receipts) 16))
+       (let* ((retry (codex-ide-mcp-test--review-start terminal "0"))
+              (id (cdr (assoc "review_id" retry)))
+              (result (codex-ide-diff--request-result id t)))
+         (should (equal (cdr (assoc "status" result)) "accepted"))
+         (aset (cdr (assoc "content" result)) 0 ?x)
+         (should (equal (cdr (assoc "content" (codex-ide-diff--request-result id))) "final")))
+       (setq now (plist-get first :deadline))
+       (codex-ide-mcp-test--review-start terminal "after-expiry")
+       (should-not (gethash (plist-get first :id) codex-ide-diff--receipts))
+       (should (eq second (gethash (plist-get second :id) codex-ide-diff--receipts)))
+       (should (= (hash-table-count codex-ide-diff--receipts) 16))))))
+
+(ert-deftest codex-ide-mcp-review-bounds-owner-and-json-false ()
+  "Validate UTF-8 input size and exact owner mode; JSON false never cancels."
+  (codex-ide-mcp-test--with-review-session
+   (should-error (codex-ide-diff--request-start
+                  (buffer-name terminal) "large" "fixture" "" (make-string 524289 ?λ))
+                 :type 'user-error)
+   (should-error (codex-ide-diff--request-start " *absent*" "token" "p" "a" "b")
+                 :type 'user-error)
+   (with-current-buffer terminal (setq codex-ide-mode nil))
+   (should-error (codex-ide-mcp-test--review-start terminal) :type 'user-error)
+   (with-current-buffer terminal (setq codex-ide-mode t))
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (id (cdr (assoc "review_id" start)))
+          (result (codex-ide-mcp-test--decoded-result
+                   (codex-ide-mcp--tool-review-result (list :review_id id :cancel :json-false)))))
+     (should (equal (cdr (assoc "status" result)) "pending"))
+     (should-error (codex-ide-diff-review "a" "b" "standalone" #'ignore) :type 'user-error))))
+
+(ert-deftest codex-ide-mcp-review-server-stop-retains-terminal-results ()
+  "Server stop closes queued/open UI but retains accepted results for retries."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((done (codex-ide-mcp-test--review-start terminal "done"))
+          (done-id (cdr (assoc "review_id" done))))
+     (codex-ide-diff--finish-request (gethash done-id codex-ide-diff--receipts)
+                                     'accepted "accepted text")
+     (dolist (open '(nil t))
+       (let* ((start (codex-ide-mcp-test--review-start terminal (format "pending-%s" open)))
+              (id (cdr (assoc "review_id" start))))
+         (when open (codex-ide-diff--run-request (gethash id codex-ide-diff--receipts)))
+         (codex-ide-mcp--stop-server)
+         (should-not codex-ide-diff--active)
+         (should-not codex-ide-diff--queued-review)
+         (should (equal (cdr (assoc "status" (codex-ide-diff--request-result id))) "cancelled"))
+         (should (equal (cdr (assoc "content" (codex-ide-diff--request-result done-id)))
+                        "accepted text")))))))
+
+(ert-deftest codex-ide-mcp-review-synchronous-completion-and-owner-change ()
+  "An early callback settles once, and owner replacement forbids late acceptance."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts))
+          (handle (list 'test-handle)) cancelled)
+     (cl-letf (((symbol-function 'codex-ide-diff-review)
+                (lambda (_old _new _path callback &optional _readonly)
+                  (funcall callback 'accepted "synchronous") handle))
+               ((symbol-function 'codex-ide-diff-cancel)
+                (lambda (owner) (setq cancelled owner))))
+       (codex-ide-diff--run-request receipt))
+     (should (eq cancelled handle))
+     (should (eq (plist-get receipt :status) 'accepted))
+     (should-not (plist-get receipt :ui-owner)))
+   (let* ((start (codex-ide-mcp-test--review-start terminal "replaced"))
+          (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts)))
+     (with-current-buffer terminal (setq codex-ide--session-id 99))
+     (codex-ide-diff--finish-request receipt 'accepted "stale")
+     (should (eq (plist-get receipt :status) 'cancelled))
+     (should-not (plist-get receipt :content)))))
+
+(defun codex-ide-mcp-test--review-wire-call (modern name args)
+  "Call review tool NAME with ARGS over a new MODERN or legacy HTTP connection."
+  (let* ((params (list :name name :arguments args))
+         (request (if modern (codex-ide-mcp-test--modern-request "tools/call" params)
+                    (let ((legacy (codex-ide-mcp-test--request)))
+                      (setf (plist-get legacy :body)
+                            (json-encode (list :jsonrpc "2.0" :id 1
+                                               :method "tools/call" :params params)))
+                      legacy)))
+         (response (codex-ide-mcp-test--wire-request request))
+         (result (cdr (assoc "result" response))))
+    (should result)
+    (should-not (cdr (assoc "isError" result)))
+    (codex-ide-mcp-test--json-read
+     (cdr (assoc "text" (car (cdr (assoc "content" result))))))))
+
+(ert-deftest codex-ide-mcp-review-real-http-ediff-journey ()
+  "Both protocol modes close HTTP before a human verdict, then return exact edits."
+  (require 'ediff)
+  (codex-ide-mcp-test--with-review-session
+   (let ((codex-ide-mcp-port 0) (codex-ide-mcp--server nil)
+         (codex-ide-mcp--port nil)
+         (codex-ide-mcp--clients (make-hash-table :test 'eq))
+         (original-filter (symbol-function 'codex-ide-mcp--filter))
+         (original-review (symbol-function 'codex-ide-diff-review))
+         in-filter (ui-count 0))
+     (unwind-protect
+         (cl-letf (((symbol-function 'codex-ide-mcp--filter)
+                    (lambda (&rest args)
+                      (setq in-filter t)
+                      (unwind-protect (apply original-filter args) (setq in-filter nil))))
+                   ((symbol-function 'codex-ide-diff-review)
+                    (lambda (&rest args)
+                      (should-not in-filter)
+                      (cl-incf ui-count)
+                      (apply original-review args))))
+           (codex-ide-mcp--start-server)
+           (dolist (modern '(nil t))
+             (dolist (accept '(nil t))
+               (let* ((path (expand-file-name "target.el" root))
+                      (args (list :buffer (buffer-name terminal)
+                                  :token (format "wire-%s-%s" modern accept)
+                                  :path path :old "base\n" :new "proposal\n")))
+                 (write-region "base\n" nil path nil 'silent)
+                 (let* ((start (codex-ide-mcp-test--review-wire-call modern "emacs_review_start" args))
+                        (id (cdr (assoc "review_id" start)))
+                        (receipt (gethash id codex-ide-diff--receipts)))
+                   (should (equal (cdr (assoc "status" start)) "pending"))
+                   (codex-ide-diff--run-request receipt)
+                   (should (equal start
+                                  (codex-ide-mcp-test--review-wire-call modern "emacs_review_start" args)))
+                   (should (equal (cdr (assoc "status"
+                                              (codex-ide-mcp-test--review-wire-call
+                                               modern "emacs_review_result"
+                                               (list :review_id id :cancel :json-false)))) "pending"))
+                   (let ((owner (plist-get receipt :ui-owner)))
+                     (with-current-buffer (plist-get owner :buffer-b)
+                       (erase-buffer) (insert "user edited λ\n"))
+                     (with-current-buffer (plist-get owner :control)
+                       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+                         (call-interactively (key-binding (if accept codex-ide-diff-accept-key "q"))))))
+                   (let ((result (codex-ide-mcp-test--review-wire-call
+                                  modern "emacs_review_result" (list :review_id id))))
+                     (should (equal result (codex-ide-mcp-test--review-wire-call
+                                            modern "emacs_review_result" (list :review_id id))))
+                     (should (equal (cdr (assoc "status" result)) (if accept "accepted" "rejected")))
+                     (with-temp-buffer
+                       (insert-file-contents path)
+                       (should (equal (buffer-string) "base\n")))
+                     (when accept
+                       (should (equal (cdr (assoc "content" result)) "user edited λ\n"))
+                       ;; Applying accepted content is the caller's responsibility.
+                       (write-region (cdr (assoc "content" result)) nil path nil 'silent))
+                     (with-temp-buffer
+                       (insert-file-contents path)
+                       (should (equal (buffer-string) (if accept "user edited λ\n" "base\n")))))))))
+           (should (= ui-count 4)))
+       (codex-ide-mcp--stop-server)))))
+
+(ert-deftest codex-ide-mcp-review-server-stop-during-ui-start ()
+  "Stopping the server inside UI startup wins over its late acceptance callback."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((start (codex-ide-mcp-test--review-start terminal))
+          (receipt (gethash (cdr (assoc "review_id" start)) codex-ide-diff--receipts))
+          (handle (list 'starting-handle)) cancelled)
+     (cl-letf (((symbol-function 'codex-ide-diff-review)
+                (lambda (_old _new _path callback &optional _readonly)
+                  (codex-ide-mcp--stop-server)
+                  (funcall callback 'accepted "late") handle))
+               ((symbol-function 'codex-ide-diff-cancel)
+                (lambda (owner) (setq cancelled owner))))
+       (codex-ide-diff--run-request receipt))
+     (should (eq cancelled handle))
+     (should (eq (plist-get receipt :status) 'cancelled))
+     (should-not (plist-get receipt :content))
+     (should-not (plist-get receipt :ui-owner)))))
+
+(ert-deftest codex-ide-mcp-review-input-snapshot-and-renamed-owner ()
+  "Retries compare captured strings and owner identity rather than mutable display names."
+  (codex-ide-mcp-test--with-review-session
+   (let* ((old (copy-sequence "old"))
+          (token (copy-sequence "token"))
+          (start (codex-ide-diff--request-start (buffer-name terminal) token "p" old "new")))
+     (aset old 0 ?x)
+     (aset token 0 ?x)
+     (with-current-buffer terminal (rename-buffer " *renamed-review-owner*" t))
+     (let ((print-length 1) (print-level 1))
+       (should (equal start (codex-ide-diff--request-start
+                             (buffer-name terminal) "token" "p" "old" "new")))))))
+
+(ert-deftest codex-ide-mcp-review-prior-instance-id-is-unknown ()
+  "A restarted instance cannot resolve an earlier instance's counter ID."
+  (let (old-id)
+    (let ((codex-ide-diff--receipt-instance "first")
+          (codex-ide-diff--next-receipt 0))
+      (codex-ide-mcp-test--with-review-session
+        (setq old-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal))))))
+    (let ((codex-ide-diff--receipt-instance "second")
+          (codex-ide-diff--next-receipt 0))
+      (codex-ide-mcp-test--with-review-session
+        (let ((new-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal)))))
+          (should-not (equal old-id new-id))
+          (should-error (codex-ide-diff--request-result old-id) :type 'user-error)
+          (should (equal (cdr (assoc "status" (codex-ide-diff--request-result new-id)))
+                         "pending")))))))
 
 (provide 'codex-ide-mcp-tests)
 

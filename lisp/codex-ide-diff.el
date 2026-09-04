@@ -65,6 +65,9 @@ accept binding."
   "Counter for generic buffer naming.
 Incremented each time a generic name is produced.")
 
+(defvar codex-ide-diff--queued-review nil
+  "Receipt whose Ediff UI is queued but has not started.")
+
 (defvar codex-ide-diff--active nil
   "Current asynchronous review owner, or nil.")
 
@@ -284,7 +287,7 @@ or `rejected'/`cancelled' and nil.  FILE-PATH is only a display label;
 no target files or visiting buffers are modified.  Signal `user-error'
 when another review is active.  Setup errors cancel and are re-signaled.
 Non-nil READ-ONLY keeps the proposal read-only for boolean previews."
-  (when codex-ide-diff--active (user-error "A Codex diff review is already active"))
+  (when (or codex-ide-diff--active codex-ide-diff--queued-review) (user-error "A Codex diff review is already active"))
   (unless (and (stringp old-content) (stringp new-content)
                (stringp file-path) (functionp callback))
     (error "Expected content strings, a file label, and a callback"))
@@ -345,6 +348,185 @@ rejection or cancellation.  Never write the target file."
         (setq waiting nil)
         (codex-ide-diff-cancel owner)))
     (eq decision 'accepted)))
+
+;;; Review receipts
+
+(declare-function codex-ide--session-by-buffer "codex-ide")
+(declare-function codex-ide--session-by-id "codex-ide")
+(declare-function codex-ide--session-live-p "codex-ide")
+(defvar codex-ide-mode)
+(defvar codex-ide--session-root)
+(defvar codex-ide--session-id)
+
+(defvar codex-ide-diff--receipts (make-hash-table :test 'equal)
+  "Bounded review receipts retained independently of HTTP connections.")
+(defvar codex-ide-diff--receipt-instance
+  (format "%x-%s" (emacs-pid) (format-time-string "%s%N"))
+  "Instance namespace preventing receipt ID reuse after Emacs restarts.")
+(defvar codex-ide-diff--next-receipt 0
+  "Monotonic receipt identifier counter.")
+(defconst codex-ide-diff--receipt-limit 16
+  "Maximum pending and completed receipts retained together.")
+(defconst codex-ide-diff--receipt-lifetime 1800
+  "Seconds allowed for a pending review and for retaining its final result.")
+
+(defun codex-ide-diff--request-session (buffer)
+  "Return BUFFER's exact registered live terminal identity, or nil."
+  (when (and (buffer-live-p buffer)
+             (fboundp 'codex-ide--session-by-buffer))
+    (let ((session (codex-ide--session-by-buffer buffer)))
+      (when (and session
+                 (eq session (codex-ide--session-by-id
+                              (plist-get session :root) (plist-get session :id)))
+                 (codex-ide--session-live-p session)
+                 (buffer-local-value 'codex-ide-mode buffer)
+                 (equal (plist-get session :root)
+                        (buffer-local-value 'codex-ide--session-root buffer))
+                 (eql (plist-get session :id)
+                      (buffer-local-value 'codex-ide--session-id buffer)))
+        (list :root (copy-sequence (plist-get session :root))
+              :id (plist-get session :id) :buffer buffer
+              :process (plist-get session :process))))))
+
+(defun codex-ide-diff--request-current-p (receipt)
+  "Return non-nil when RECEIPT remains pending in the registry."
+  (and (eq receipt (gethash (plist-get receipt :id) codex-ide-diff--receipts))
+       (eq (plist-get receipt :status) 'pending)))
+
+(defun codex-ide-diff--request-owner-live-p (receipt)
+  "Return non-nil while RECEIPT's captured terminal identity is current."
+  (let ((session (plist-get receipt :session)))
+    (equal session (codex-ide-diff--request-session (plist-get session :buffer)))))
+
+(defun codex-ide-diff--request-summary (receipt)
+  "Return a fresh result object for RECEIPT."
+  (append (list (cons "review_id" (copy-sequence (plist-get receipt :id)))
+                (cons "status" (copy-sequence (symbol-name (plist-get receipt :status)))))
+          (when (eq (plist-get receipt :status) 'accepted)
+            (list (cons "content" (copy-sequence (plist-get receipt :content)))))))
+
+(defun codex-ide-diff--finish-request (receipt status &optional content)
+  "Settle pending RECEIPT with STATUS and accepted CONTENT exactly once."
+  (when (codex-ide-diff--request-current-p receipt)
+    (setq status (cond ((>= (float-time) (plist-get receipt :deadline)) 'expired)
+                       ((not (codex-ide-diff--request-owner-live-p receipt)) 'cancelled)
+                       (t status)))
+    (setf (plist-get receipt :status) status
+          (plist-get receipt :content) (when (eq status 'accepted) (copy-sequence content))
+          (plist-get receipt :deadline) (+ (float-time) codex-ide-diff--receipt-lifetime))
+    (dolist (key '(:timer :start-timer))
+      (when-let* ((timer (plist-get receipt key))) (cancel-timer timer))
+      (setf (plist-get receipt key) nil))
+    (when (eq receipt codex-ide-diff--queued-review)
+      (setq codex-ide-diff--queued-review nil))
+    (setf (plist-get receipt :timer)
+          (run-at-time codex-ide-diff--receipt-lifetime nil
+                       #'codex-ide-diff--expire-request receipt (plist-get receipt :deadline)))
+    (when-let* ((owner (plist-get receipt :ui-owner)))
+      (setf (plist-get receipt :ui-owner) nil)
+      (codex-ide-diff-cancel owner))))
+
+(defun codex-ide-diff--expire-request (receipt deadline)
+  "Expire or purge RECEIPT if its current DEADLINE has elapsed."
+  (when (and (eq receipt (gethash (plist-get receipt :id) codex-ide-diff--receipts))
+             (= deadline (plist-get receipt :deadline)))
+    (cond
+     ((>= (float-time) deadline)
+      (if (eq (plist-get receipt :status) 'pending)
+          (codex-ide-diff--finish-request receipt 'expired)
+        (when-let* ((timer (plist-get receipt :timer))) (cancel-timer timer))
+        (remhash (plist-get receipt :id) codex-ide-diff--receipts)))
+     ((and (eq (plist-get receipt :status) 'pending)
+           (not (codex-ide-diff--request-owner-live-p receipt)))
+      (codex-ide-diff--finish-request receipt 'cancelled)))))
+
+(defun codex-ide-diff--refresh-requests ()
+  "Reconcile expired receipts and stale pending terminal owners."
+  (maphash (lambda (_id receipt)
+             (codex-ide-diff--expire-request receipt (plist-get receipt :deadline)))
+           codex-ide-diff--receipts))
+
+(defun codex-ide-diff--cancel-requests (&optional buffer process)
+  "Cancel pending reviews for exact BUFFER and PROCESS, or all if BUFFER is nil."
+  (maphash (lambda (_id receipt)
+             (let ((session (plist-get receipt :session)))
+               (when (or (null buffer)
+                         (and (eq buffer (plist-get session :buffer))
+                              (eq process (plist-get session :process))))
+                 (codex-ide-diff--finish-request receipt 'cancelled))))
+           codex-ide-diff--receipts))
+
+(defun codex-ide-diff--run-request (receipt)
+  "Open RECEIPT's Ediff UI outside the HTTP process filter."
+  (when (and (codex-ide-diff--request-current-p receipt)
+             (plist-get receipt :start-timer))
+    (codex-ide-diff--refresh-requests)
+    (when (codex-ide-diff--request-current-p receipt)
+      (cancel-timer (plist-get receipt :start-timer))
+      (setf (plist-get receipt :start-timer) nil)
+      (when (eq receipt codex-ide-diff--queued-review)
+        (setq codex-ide-diff--queued-review nil))
+      (condition-case nil
+          (let* ((input (plist-get receipt :input))
+                 (owner (codex-ide-diff-review
+                         (nth 1 input) (nth 2 input) (car input)
+                         (lambda (status content)
+                           (codex-ide-diff--finish-request receipt status content)))))
+            (if (codex-ide-diff--request-current-p receipt)
+                (setf (plist-get receipt :ui-owner) owner)
+              ;; A startup callback can settle before the owner is returned.
+              (codex-ide-diff-cancel owner)))
+        ((error quit) (codex-ide-diff--finish-request receipt 'cancelled))))))
+
+(defun codex-ide-diff--request-start (buffer token path old new)
+  "Queue a review for terminal BUFFER using TOKEN, PATH, OLD and NEW text."
+  (unless (and (stringp buffer) (stringp token) (not (string-empty-p token))
+               (stringp path) (stringp old) (stringp new))
+    (user-error "Expected a terminal buffer, nonempty token, path and text strings"))
+  (when (> (+ (string-bytes (encode-coding-string old 'utf-8))
+              (string-bytes (encode-coding-string new 'utf-8))) (* 1024 1024))
+    (user-error "Review text exceeds one MiB of UTF-8 input"))
+  (codex-ide-diff--refresh-requests)
+  (let* ((session (or (codex-ide-diff--request-session (get-buffer buffer))
+                      (user-error "Buffer does not own a registered live Codex terminal")))
+         (input (list path old new))
+         (duplicate (cl-find-if
+                     (lambda (receipt)
+                       (and (equal session (plist-get receipt :session))
+                            (equal token (plist-get receipt :token))))
+                     (hash-table-values codex-ide-diff--receipts))))
+    (if duplicate
+        (progn
+          (unless (equal input (plist-get duplicate :input))
+            (user-error "Review token was already used with different input"))
+          (codex-ide-diff--request-summary duplicate))
+      (when (or codex-ide-diff--active codex-ide-diff--queued-review)
+        (user-error "A Codex diff review is already queued or active"))
+      (when (>= (hash-table-count codex-ide-diff--receipts) codex-ide-diff--receipt-limit)
+        (user-error "Review receipt capacity is full; wait for retention to expire"))
+      (let ((receipt (list :id (format "review-%s-%d" codex-ide-diff--receipt-instance
+                                         (cl-incf codex-ide-diff--next-receipt))
+                           :session session :token (copy-sequence token)
+                           :input (mapcar #'copy-sequence input)
+                           :status 'pending :content nil :ui-owner nil
+                           :start-timer nil :timer nil
+                           :deadline (+ (float-time) codex-ide-diff--receipt-lifetime))))
+        (puthash (plist-get receipt :id) receipt codex-ide-diff--receipts)
+        (setq codex-ide-diff--queued-review receipt)
+        (setf (plist-get receipt :timer)
+              (run-at-time codex-ide-diff--receipt-lifetime nil
+                           #'codex-ide-diff--expire-request receipt (plist-get receipt :deadline))
+              (plist-get receipt :start-timer)
+              (run-at-time 0 nil #'codex-ide-diff--run-request receipt))
+        (codex-ide-diff--request-summary receipt)))))
+
+(defun codex-ide-diff--request-result (id &optional cancel)
+  "Return retained review ID's result; non-nil CANCEL cancels pending review."
+  (codex-ide-diff--refresh-requests)
+  (let ((receipt (or (gethash id codex-ide-diff--receipts)
+                     (user-error "Unknown or expired review ID: %s" id))))
+    (when cancel (codex-ide-diff--finish-request receipt 'cancelled))
+    (codex-ide-diff--request-summary receipt)))
 
 (provide 'codex-ide-diff)
 

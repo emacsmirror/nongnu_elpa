@@ -338,7 +338,11 @@ Add a stable root identity when another project occupies the base name."
 
 (defun codex-ide--store-session (session)
   "Store SESSION in the live session table."
-  (let ((root (plist-get session :root)))
+  (let* ((root (plist-get session :root))
+         (previous (codex-ide--session-by-id root (plist-get session :id))))
+    (when (and previous (not (equal previous session)))
+      (codex-ide-diff--cancel-requests (plist-get previous :buffer)
+                                       (plist-get previous :process)))
     (puthash root (cons session (gethash root codex-ide--sessions))
              codex-ide--sessions)))
 
@@ -914,6 +918,7 @@ Guard reentry for this target while allowing other sessions to clean up."
                                (get-buffer-process buffer)))))
         (when (and (or (not expected-buffer) (eq buffer expected-buffer))
                    (or (not expected-process) (eq process expected-process)))
+          (when buffer (codex-ide-diff--cancel-requests buffer process))
           (codex-ide--remove-session directory session-id)
           (when (process-live-p process)
             (delete-process process))

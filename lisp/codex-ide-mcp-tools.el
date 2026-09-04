@@ -26,6 +26,7 @@
 (require 'subr-x)
 (require 'xref)
 (require 'codex-ide-mcp-core)
+(require 'codex-ide-diff)
 (require 'codex-ide-mcp-treesit)
 
 ;;; Harness state
@@ -945,6 +946,20 @@ Already-terminal jobs are left unchanged and emit no new events."
     (codex-ide-mcp--bounded-integer
      (codex-ide-mcp--object-get args "limit") 100 1))))
 
+(defun codex-ide-mcp--tool-review-start (args)
+  "Queue the proposal in ARGS without waiting for a human decision."
+  (codex-ide-mcp--json-text-result
+   (apply #'codex-ide-diff--request-start
+          (mapcar (lambda (key) (codex-ide-mcp--object-get args key))
+                  '("buffer" "token" "path" "old" "new")))))
+
+(defun codex-ide-mcp--tool-review-result (args)
+  "Return ARGS' retained review result, optionally cancelling pending UI."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-diff--request-result
+    (codex-ide-mcp--object-get args "review_id")
+    (eq t (codex-ide-mcp--object-get args "cancel")))))
+
 ;;; Tool registry
 
 (defconst codex-ide-mcp--tools
@@ -1080,7 +1095,22 @@ Already-terminal jobs are left unchanged and emit no new events."
          :annotations (list (cons "readOnlyHint" t)
                             (cons "idempotentHint" t)
                             (cons "openWorldHint" :json-false))
-         :function #'codex-ide-mcp--tool-events))
+         :function #'codex-ide-mcp--tool-events)
+   (list :name "emacs_review_start"
+         :description "Propose one file for editable Ediff review.  Supply the explicit live Codex terminal buffer and a retry token.  Await emacs_review_result acceptance; apply exactly its returned content only if the base is unchanged, otherwise re-review.  This tool never writes the target file or enforces other file writes."
+         :args '((:name "buffer" :type string :description "Registered live Codex terminal buffer name.")
+                 (:name "token" :type string :description "Unique retry token for this proposal and owner.")
+                 (:name "path" :type string :description "Proposed target path, used as a display label.")
+                 (:name "old" :type string :description "Original file text.")
+                 (:name "new" :type string :description "Proposed replacement text."))
+         :annotations '(("idempotentHint" . t) ("openWorldHint" . :json-false))
+         :function #'codex-ide-mcp--tool-review-start)
+   (list :name "emacs_review_result"
+         :description "Fetch a retained review result: pending, accepted with exact edited content, rejected, cancelled, or expired.  Repeat reads are safe; optionally cancel a pending review."
+         :args '((:name "review_id" :type string :description "ID returned by emacs_review_start.")
+                 (:name "cancel" :type boolean :optional t :description "Cancel if still pending."))
+         :annotations '(("idempotentHint" . t) ("openWorldHint" . :json-false))
+         :function #'codex-ide-mcp--tool-review-result))
   "Registered MCP harness tools.")
 
 (defvar codex-ide-mcp--custom-tools nil

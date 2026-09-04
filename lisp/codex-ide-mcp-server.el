@@ -460,7 +460,7 @@ that limit return the symbol `too-large'."
        (signal (car err) (cdr err))))))
 
 (defun codex-ide-mcp--stop-server ()
-  "Stop the local MCP HTTP server and clear harness job state."
+  "Stop the MCP server, cancel pending reviews, and clear harness jobs."
   (when codex-ide-mcp--server
     (ignore-errors (delete-process codex-ide-mcp--server))
     (setq codex-ide-mcp--server nil
@@ -469,6 +469,7 @@ that limit return the symbol `too-large'."
              (ignore-errors (delete-process proc)))
            codex-ide-mcp--clients)
   (clrhash codex-ide-mcp--clients)
+  (codex-ide-diff--cancel-requests)
   (when (fboundp 'codex-ide-harness-reset)
     (codex-ide-harness-reset))
   (codex-ide-debug "Codex MCP tools server stopped"))
