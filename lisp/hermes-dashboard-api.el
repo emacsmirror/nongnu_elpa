@@ -603,9 +603,10 @@ CANCEL-SETTER replaces CANCEL-EXPECTED while this request owns its slot."
    :body (plist-get request :body)
    :secrets (plist-get request :secrets)))
 
-(defun hermes-dashboard-transport--http-json-request-async (request)
+(defun hermes-dashboard-transport--http-json-request-async
+    (request &optional cancel-setter)
   "Send REQUEST, a REST request plist, asynchronously.
-Return a promise of the response plist."
+Return a promise of the response plist.  CANCEL-SETTER owns cancellation."
   (let ((timeout (plist-get request :timeout)))
     (apply #'hermes-dashboard-transport--http-json-async
            (plist-get request :url)
@@ -614,7 +615,8 @@ Return a promise of the response plist."
                   :headers (plist-get request :headers)
                   :body (plist-get request :body)
                   :secrets (plist-get request :secrets))
-            (and timeout (list :timeout timeout))))))
+            (and timeout (list :timeout timeout))
+            (and cancel-setter (list :cancel-setter cancel-setter))))))
 
 
 
@@ -843,9 +845,10 @@ Legacy unencoded JSON secrets remain readable."
 (defun hermes-dashboard-transport--native-owner-current-p (owner-current-p)
   "Return non-nil when optional OWNER-CURRENT-P still owns native auth."
   (or (null owner-current-p)
-      (condition-case nil
-          (funcall owner-current-p)
-        (error nil))))
+      (and (functionp owner-current-p)
+           (condition-case nil
+               (funcall owner-current-p)
+             ((error quit) nil)))))
 
 (defun hermes-dashboard-transport--native-token-memory-key (base-url)
   "Return the memory-cache key for BASE-URL."
@@ -2227,39 +2230,45 @@ redacted secret list."
           :secrets (list password cookies ticket))))
 
 (defun hermes-dashboard-transport--remote-basic-ticket-async
-    (host port base-url password login-response)
-  "Return a promise of ticket WebSocket auth from LOGIN-RESPONSE cookies.
-HOST, PORT, and BASE-URL build the URL; PASSWORD is redacted from errors."
-  (let ((cookies (hermes-dashboard-transport--response-cookie-header
-                  login-response)))
-    (if (not cookies)
-        (hermes--promise-rejected
-         "Hermes dashboard basic login did not return session cookies")
-      (hermes--promise-map
-       (hermes-dashboard-transport--http-json-async
-        (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
-        :method "POST"
-        :headers `(("Cookie" . ,cookies))
-        :secrets (list password cookies))
-       (lambda (ticket-response)
-         (hermes-dashboard-transport--basic-ticket-auth
-          host port base-url password cookies ticket-response))))))
+    (host port base-url password login-response &optional cancel-setter owner-current-p)
+  "Return ticket auth for HOST, PORT, BASE-URL from LOGIN-RESPONSE cookies.
+PASSWORD is redacted; CANCEL-SETTER and OWNER-CURRENT-P own deferred effects."
+  (if (not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+      (hermes--promise-rejected "Dashboard authentication was superseded")
+    (let ((cookies (hermes-dashboard-transport--response-cookie-header login-response)))
+      (if (not cookies)
+          (hermes--promise-rejected
+           "Hermes dashboard basic login did not return session cookies")
+        (hermes--promise-map
+         (hermes-dashboard-transport--http-json-async
+          (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
+          :method "POST" :headers `(("Cookie" . ,cookies))
+          :secrets (list password cookies) :cancel-setter cancel-setter)
+         (lambda (ticket-response)
+           (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+             (user-error "Dashboard authentication was superseded"))
+           (hermes-dashboard-transport--basic-ticket-auth
+            host port base-url password cookies ticket-response)))))))
 
 (defun hermes-dashboard-transport--remote-basic-auth-async
-    (host port base-url status &optional credentials)
-  "Return a promise of basic-auth WebSocket auth for HOST, PORT, BASE-URL, STATUS.
-Optional CREDENTIALS is a validated username/password plist.  A rejected
-promise reports any failure, so password login and WebSocket ticket round-trips
-never block Emacs."
+    (host port base-url status &optional credentials cancel-setter owner-current-p)
+  "Return basic auth for HOST, PORT, BASE-URL and STATUS asynchronously.
+CREDENTIALS optionally supplies validated credentials.  CANCEL-SETTER and
+OWNER-CURRENT-P own credential selection and the login/ticket exchange."
   (condition-case err
-      (let* ((request (hermes-dashboard-transport--basic-login-request
-                       base-url status credentials))
-             (password (car (plist-get request :secrets))))
-        (hermes--promise-then
-         (hermes-dashboard-transport--http-json-request-async request)
-         (lambda (login-response)
-           (hermes-dashboard-transport--remote-basic-ticket-async
-            host port base-url password login-response))))
+      (progn
+        (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+          (user-error "Dashboard authentication was superseded"))
+        (let* ((request (hermes-dashboard-transport--basic-login-request
+                         base-url status credentials))
+               (password (car (plist-get request :secrets))))
+          (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+            (user-error "Dashboard authentication was superseded"))
+          (hermes--promise-then
+           (hermes-dashboard-transport--http-json-request-async request cancel-setter)
+           (lambda (login-response)
+             (hermes-dashboard-transport--remote-basic-ticket-async
+              host port base-url password login-response cancel-setter owner-current-p)))))
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-token-auth-async
@@ -2273,53 +2282,39 @@ network; a missing token rejects the promise."
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-auth-async
-    (host port base-url method &optional token interactive cancel-setter
-          owner-current-p)
-  "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
-Mirrors the previous synchronous resolution without blocking.  INTERACTIVE
-permits native login; CANCEL-SETTER owns native startup work.  OWNER-CURRENT-P
-guards native effects when non-nil."
-  (pcase method
-    ('token (hermes-dashboard-transport--remote-token-auth-async
-             host port base-url token))
-    ('basic (hermes--promise-then
-             (hermes-dashboard-transport--remote-status-async base-url)
-             (lambda (status)
-               (hermes-dashboard-transport--remote-basic-auth-async
-                host port base-url status))))
-    ('native (hermes--promise-then
-              (hermes-dashboard-transport--remote-status-async
-               base-url cancel-setter)
-              (lambda (status)
-                (hermes-dashboard-transport--remote-native-auth-async
-                 host port base-url status nil interactive cancel-setter
-                 owner-current-p))))
-    ('auto (hermes--promise-then
-            (hermes-dashboard-transport--remote-status-async
-             base-url cancel-setter)
-            (lambda (status)
-              (pcase (hermes-dashboard-transport--preferred-auto-auth
-                      base-url status)
-                ('token
-                 (hermes-dashboard-transport--remote-token-auth-async
-                  host port base-url token))
-                (`(basic . ,credentials)
-                 (hermes-dashboard-transport--remote-basic-auth-async
-                  host port base-url status credentials))
-                ('basic
-                 (hermes-dashboard-transport--remote-basic-auth-async
-                  host port base-url status))
-                ('native
-                 (hermes-dashboard-transport--remote-native-auth-async
-                  host port base-url status nil interactive cancel-setter
-                  owner-current-p))
-                (_ (condition-case err
-                       (hermes-dashboard-transport--unsupported-remote-auth
-                        base-url)
-                     (error (hermes--promise-rejected
-                             (error-message-string err)))))))))
-    (_ (hermes--promise-rejected
-        (format "Unknown Hermes dashboard remote auth method: %S" method)))))
+    (host port base-url method &optional token interactive cancel-setter owner-current-p)
+  "Return WebSocket auth for HOST, PORT, BASE-URL, METHOD and TOKEN.
+INTERACTIVE permits native login.  CANCEL-SETTER owns exact cancellation;
+OWNER-CURRENT-P guards every auth stage when non-nil."
+  (cond
+   ((not (memq method '(token basic native auto)))
+    (hermes--promise-rejected
+     (format "Unknown Hermes dashboard remote auth method: %S" method)))
+   ((not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+    (hermes--promise-rejected "Dashboard authentication was superseded"))
+   (t
+    (if (eq method 'token)
+        (hermes-dashboard-transport--remote-token-auth-async host port base-url token)
+      (hermes--promise-then
+       (hermes-dashboard-transport--remote-status-async base-url cancel-setter)
+       (lambda (status)
+         (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+           (user-error "Dashboard authentication was superseded"))
+         (let ((selected (if (eq method 'auto)
+                             (hermes-dashboard-transport--preferred-auto-auth base-url status)
+                           method)))
+           (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+             (user-error "Dashboard authentication was superseded"))
+           (pcase selected
+             ('token (hermes-dashboard-transport--remote-token-auth-async
+                      host port base-url token))
+             ((or 'basic `(basic . ,_))
+              (hermes-dashboard-transport--remote-basic-auth-async
+               host port base-url status (and (consp selected) (cdr selected))
+               cancel-setter owner-current-p))
+             ('native (hermes-dashboard-transport--remote-native-auth-async
+                       host port base-url status nil interactive cancel-setter owner-current-p))
+             (_ (hermes-dashboard-transport--unsupported-remote-auth base-url))))))))))
 
 (defun hermes-dashboard-transport--kanban-events-plist (auth since board)
   "Return the kanban events URL plist derived from AUTH for SINCE and BOARD.

@@ -536,9 +536,16 @@ emitted its own transport error event."
     (setf (hermes-dashboard-transport-client-startup-cancel client) nil)
     (funcall cancel)))
 
-(defun hermes-dashboard-transport--startup-cancel-setter (client expected next)
-  "Replace CLIENT's startup cancellation owner from EXPECTED with NEXT."
-  (when (eq (hermes-dashboard-transport-client-startup-cancel client) expected)
+(defun hermes-dashboard-transport--startup-cancel-setter
+    (client expected next &optional owner-current-p)
+  "Replace CLIENT's EXPECTED cancellation handle with NEXT.
+OWNER-CURRENT-P gates acquisition.  Stale release owns only its exact handle."
+  (when (and (or (null expected) (functionp expected))
+             (if next
+                 (and (functionp next)
+                      (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+               (functionp expected))
+             (eq (hermes-dashboard-transport-client-startup-cancel client) expected))
     (setf (hermes-dashboard-transport-client-startup-cancel client) next)))
 
 (defun hermes-dashboard-transport--stop-snapshot
@@ -766,7 +773,7 @@ MANUAL starts immediately; RETRY retains readiness; MAXIMUM bounds attempts."
         (hermes-dashboard-transport--arm-ready-timeout client)))
     (when (funcall current)
       (if manual
-          (hermes-dashboard-transport--reconnect-attempt client attempt generation maximum)
+          (hermes-dashboard-transport--reconnect-attempt client attempt generation maximum t)
         (hermes-dashboard-transport--schedule-reconnect client attempt generation maximum)))))
 
 (defun hermes-dashboard-transport-reconnect (client &optional message)
@@ -820,29 +827,63 @@ Reconnect only while at least one buffer is attached and reconnect is enabled."
         (hermes-dashboard-transport--reconnect-current-p client generation attempt)))))
 
 (defun hermes-dashboard-transport--reconnect-attempt
-    (client attempt &optional generation maximum)
-  "Dial CLIENT's stored URL for ATTEMPT under GENERATION and MAXIMUM.
+    (client attempt &optional generation maximum interactive)
+  "Authenticate and dial CLIENT for ATTEMPT under GENERATION and MAXIMUM.
+INTERACTIVE permits login only for the first manual attempt.
 Opening does not settle readiness or schedule another attempt."
-  (let ((generation (or generation (hermes-dashboard-transport-client-generation client)))
-        (maximum (or maximum hermes-dashboard-transport-reconnect-max-attempts)))
-    (when (and (hermes-dashboard-transport--reconnect-current-p client generation attempt)
+  (let* ((generation (or generation (hermes-dashboard-transport-client-generation client)))
+         (maximum (or maximum hermes-dashboard-transport-reconnect-max-attempts))
+         (current (lambda () (hermes-dashboard-transport--reconnect-current-p
+                              client generation attempt)))
+         settled)
+    (when (and (funcall current)
                (hermes-dashboard-transport-client-reconnecting-p client))
       (if (or (not maximum) (>= attempt maximum))
           (hermes-dashboard-transport--finalize-reconnect
            client "Hermes dashboard reconnect failed")
-        (condition-case _err
-            (when-let* ((socket (hermes-dashboard-transport--open-owned-websocket
-                                 client (hermes-dashboard-transport--client-websocket-url client)
-                                 generation)))
-              (if (hermes-dashboard-transport--reconnect-current-p client generation attempt)
-                  (setf (hermes-dashboard-transport-client-websocket client) socket)
-                (when (fboundp 'websocket-close)
-                  (hermes-dashboard-transport--attempt #'websocket-close socket))))
-          (error
-           (when (hermes-dashboard-transport--reconnect-current-p client generation attempt)
-             (setf (hermes-dashboard-transport-client-reconnect-attempts client) (1+ attempt))
-             (hermes-dashboard-transport--schedule-reconnect
-              client (1+ attempt) generation maximum))))))))
+        (cl-labels
+            ((fail (_reason)
+               (unless settled
+                 (setq settled t)
+                 (when (funcall current)
+                   (setf (hermes-dashboard-transport-client-reconnect-attempts client) (1+ attempt))
+                   (hermes-dashboard-transport--schedule-reconnect
+                    client (1+ attempt) generation maximum))))
+             (open (auth)
+               (unless settled
+                 (when (funcall current)
+                   (condition-case err
+                       (progn
+                         (when auth (hermes-dashboard-transport--install-auth client auth))
+                         (when-let* ((socket (hermes-dashboard-transport--open-owned-websocket
+                                              client (hermes-dashboard-transport--client-websocket-url client)
+                                              generation)))
+                           (if (funcall current)
+                               (setf (hermes-dashboard-transport-client-websocket client) socket)
+                             (when (fboundp 'websocket-close)
+                               (hermes-dashboard-transport--attempt #'websocket-close socket))))
+                         (setq settled t))
+                     (error (fail err)))))))
+          (condition-case err
+              (if (and (hermes-dashboard-transport-client-base-url client)
+                       (not (hermes-dashboard-transport-client-credential-reusable-p client)))
+                  (hermes--promise-catch
+                   (hermes--promise-then
+                    (hermes-dashboard-transport--remote-auth-async
+                     (hermes-dashboard-transport-client-host client)
+                     (hermes-dashboard-transport-client-port client)
+                     (hermes-dashboard-transport-client-base-url client)
+                     (or (hermes-dashboard-transport-client-auth-method client) 'auto)
+                     (hermes-dashboard-transport-client-auth-token client)
+                     (and interactive (= attempt 0))
+                     (lambda (expected next)
+                       (hermes-dashboard-transport--startup-cancel-setter
+                        client expected next (lambda () (and (not settled) (funcall current)))))
+                     (lambda () (and (not settled) (funcall current))))
+                    #'open)
+                   #'fail)
+                (open nil))
+            (error (fail err))))))))
 
 (defun hermes-dashboard-transport--finalize-reconnect (client message)
   "Report terminal reconnect MESSAGE and stop CLIENT."
@@ -1364,22 +1405,26 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
       (hermes-dashboard-transport--arm-ready-timeout client))
     client))
 
+(defun hermes-dashboard-transport--install-auth (client auth)
+  "Install the complete AUTH projection on CLIENT without callbacks."
+  (setf (hermes-dashboard-transport-client-token client)
+        (plist-get auth :token)
+        (hermes-dashboard-transport-client-websocket-url client)
+        (plist-get auth :url)
+        (hermes-dashboard-transport-client-redacted-websocket-url client)
+        (plist-get auth :redacted-url)
+        (hermes-dashboard-transport-client-secrets client)
+        (plist-get auth :secrets)
+        (hermes-dashboard-transport-client-credential-kind client)
+        (plist-get auth :kind)
+        (hermes-dashboard-transport-client-credential-reusable-p client)
+        (plist-get auth :reusable-p)))
+
 (defun hermes-dashboard-transport--remote-connect (client auth)
   "Store AUTH on CLIENT, announce connecting, and open its WebSocket.
 AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
   (let ((generation (hermes-dashboard-transport-client-generation client)))
-    (setf (hermes-dashboard-transport-client-token client)
-          (plist-get auth :token)
-          (hermes-dashboard-transport-client-websocket-url client)
-          (plist-get auth :url)
-          (hermes-dashboard-transport-client-redacted-websocket-url client)
-          (plist-get auth :redacted-url)
-          (hermes-dashboard-transport-client-secrets client)
-          (plist-get auth :secrets)
-          (hermes-dashboard-transport-client-credential-kind client)
-          (plist-get auth :kind)
-          (hermes-dashboard-transport-client-credential-reusable-p client)
-          (plist-get auth :reusable-p))
+    (hermes-dashboard-transport--install-auth client auth)
     (hermes-dashboard-transport--dispatch-event
      client (hermes-dashboard-transport--remote-connect-event
              (plist-get auth :redacted-url)))
