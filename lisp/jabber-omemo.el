@@ -1851,7 +1851,8 @@ of date, and pre-fetches sessions for open chat buffers."
   "Discard OMEMO work not owned by JC's fresh recovery queue."
   (let* ((state-data (fsm-get-state-data jc))
          (entries (and (plist-get state-data :sm-fresh-recovery)
-                       (plist-get state-data :sm-pending-queue)))
+                       (append (plist-get state-data :nil-entry-pending)
+                               (plist-get state-data :sm-pending-queue))))
          (callbacks (delq nil (mapcar
                               (lambda (entry)
                                 (and (keywordp (car-safe entry))
