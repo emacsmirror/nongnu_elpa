@@ -563,6 +563,66 @@ one function."
       (should (equal "just a body" (and (stringp got)
                                         (string-trim-right got "\n+")))))))
 
+
+;;; Sending a digest (emacs-vm/vm#804)
+
+(defun vm-digest-test--preamble-lines (type)
+  "Send a two-message digest of TYPE with a preamble, count its lines.
+The preamble format is a literal marker, so what is counted cannot be the
+encapsulated messages' own text: with `%s' in it, a preamble line and the
+subject of the message it names read the same."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-send-digest" t)))
+         (inbox (expand-file-name "inbox" dir))
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-digest-send-type type)
+         (vm-digest-preamble-format "PREAMBLEMARK")
+         (vm-digest-center-preamble nil)
+         (vm-mail-mode-hook nil)
+         (vm-send-digest-hook nil)
+         (before (buffer-list))
+         (count 0))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'vm-present-current-message) #'ignore)
+                  ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+          (with-temp-buffer
+            (dolist (n '(1 2))
+              (insert (format "From s@example.com Mon Jan  1 00:0%d:00 2024\n" n)
+                      "From: s@example.com\nTo: me@example.com\n"
+                      (format "Subject: msg%d\n" n)
+                      "Date: Mon, 1 Jan 2024 10:00:00 +0000\n\nbody\n\n"))
+            (write-region (point-min) (point-max) inbox nil 'quiet))
+          (vm-visit-folder inbox)
+          (setq vm-message-pointer vm-message-list)
+          ;; the prefix argument is what asks for a preamble
+          (vm-send-digest t)
+          (save-excursion
+            (goto-char (point-min))
+            (while (search-forward "PREAMBLEMARK" nil t)
+              (setq count (1+ count)))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))
+    count))
+
+(ert-deftest vm-digest-test-every-digest-type-writes-a-preamble ()
+  "REGRESSION: a nil `vm-digest-send-type' digest gets its preamble too.
+
+emacs-vm/vm#804.  The nil arm of the cond in `vm-send-digest' walked the
+message list by cutting it down, and the next line reads that same variable
+to build the preamble, so `C-u M-x vm-send-digest' wrote none at all for that
+one type.  The other three arms leave the list alone.
+
+All four types, since what is being pinned is that they agree."
+  (dolist (type '("mime" "rfc934" "rfc1153" nil))
+    (should (equal (cons type 2)
+                   (cons type (vm-digest-test--preamble-lines type))))))
+
 (provide 'vm-digest-test)
 
 ;;; vm-digest-test.el ends here
