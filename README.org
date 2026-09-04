@@ -1,7 +1,6 @@
+* IMPORTANT!!!
 
-*NOTICE:* Indentation has temporarily been disabled by default. SEE
-THE [[p:indent][INDENTATION]] SECTION for why this was needed and what the plan is.  TLDR
-indentation is going through a full rewrite.
+This repo is being sunseted, please check out the new fork by Dominik at [[https://github.com/dschrempf/haskell-ts-mode][github]].
 
 * Contributing
 
