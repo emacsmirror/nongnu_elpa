@@ -43,8 +43,7 @@
 
 (defconst vm-interop-test--known-disagreements
   '(("mboxcl2" . "a From_ line")
-    ("mboxcl2" . "a From_ line first")
-    ("babyl"   . "a babyl separator"))
+    ("mboxcl2" . "a From_ line first"))
   "The cells where an outside reader is expected to disagree with VM.
 
 The two mboxcl2 ones are the type doing its job: it stores a body as it
@@ -52,9 +51,10 @@ arrived and puts the length in a header, so a reader that ignores
 Content-Length splits on the `From ' line.  The manual's mbox section says
 so, and this is that claim measured rather than asserted.
 
-The babyl one is a defect, emacs-vm/vm#801: VM quotes a body separator for
-From_ and for mmdf and does not for babyl, so `mailbox.Babyl' finds three
-messages where VM filed two.  When that is fixed this entry comes out.")
+babyl was here too until emacs-vm/vm#801: VM quoted a body separator for
+From_ and for mmdf and not for babyl, so `mailbox.Babyl\' found three messages
+where VM filed two.  It is quoted now and the entry is gone, which is what
+this list is for.")
 
 (defun vm-interop-test--python-p ()
   "Whether python3 is here with its `mailbox' module."
@@ -141,18 +141,16 @@ does."
   (skip-unless (vm-interop-test--python-p))
   (vm-interop-test--check 'mboxcl2))
 
-(ert-deftest vm-interop-test-babyl-mis-splits-on-a-separator-in-a-body ()
-  "A babyl folder VM writes is mis-split where a body holds `\\037\\014'.
+(ert-deftest vm-interop-test-babyl-folders-read-the-same-outside ()
+  "Every babyl folder VM writes holds two messages for Python as well.
 
-emacs-vm/vm#801.  Python's `mailbox.Babyl' finds three messages where VM
-filed two, and VM's own reader finds two, so nothing inside VM notices.  VM
-quotes such a line for From_ and for mmdf; for babyl
-`vm-find-leading-message-separator' wants a separator followed by an
-attribute line, `\\014\\n[01],', so a bare one in a body is not recognised and
-`vm-munge-message-separators' leaves it alone.
-
-Pinned as it stands.  When #801 is decided this test is the one to change,
-and the entry in `vm-interop-test--known-disagreements' with it."
+Including a body holding the babyl separator, which is emacs-vm/vm#801.  That
+went out unquoted until the fix: `mailbox.Babyl' found three messages where VM
+filed two, and VM's own reader found two, so nothing inside VM noticed.
+`vm-find-leading-message-separator' wants a separator followed by an attribute
+line, so a bare one in a body was invisible to it and
+`vm-munge-message-separators' left it alone.  It searches for the separator
+directly for babyl now."
   (skip-unless (vm-interop-test--python-p))
   (vm-interop-test--check 'babyl))
 

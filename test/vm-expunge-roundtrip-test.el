@@ -333,11 +333,10 @@ file:
   in front of it, so no outside reader is misled;
 - mboxcl2 writes it as it stands, which is the point of the type: the byte
   count says where the message ends whatever the body holds (emacs-vm/vm#466);
-- babyl writes it as it stands too, and that one an outside reader does
-  mis-split.  Python\'s `mailbox.Babyl\' reads such a folder as three messages
-  where VM wrote two (emacs-vm/vm#801).  VM\'s babyl munging looks for a
-  separator followed by an attribute line, `\014\\n[01],\', so a bare
-  `\037\014\' in a body is not recognised as one and is left alone.
+- babyl quotes it since emacs-vm/vm#801.  It did not before: an outside
+  reader mis-split such a folder, Python\'s `mailbox.Babyl\' finding three
+  messages where VM wrote two, because VM\'s babyl munging looked for a
+  separator followed by an attribute line and a bare one in a body has none.
 
 Every regexp here is anchored at line start on purpose.  Unanchored,
 `\001\001\001\001\' matches inside `>\001\001\001\001\' as well, so the count
@@ -349,7 +348,7 @@ not."
                   (mboxcl2 "From nobody@example.com Mon Jan  1 00:00:00 2024\n"
                            "^From " raw)
                   (mmdf    "\001\001\001\001\n" "^\001\001\001\001" quoted)
-                  (babyl   "\037\014\n" "^\037\014" raw)))
+                  (babyl   "\037\014\n" "^\037\014" quoted)))
     (let* ((type (nth 0 spec))
            (body (nth 1 spec))
            (regexp (nth 2 spec))
