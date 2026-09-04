@@ -726,6 +726,9 @@ Return the new request context."
   :rows #'hermes-onboarding--provider-account-rows
   :on-result (lambda (result)
                (setq hermes-onboarding--provider-account-result result))
+  :on-mode (lambda ()
+             (setq-local hermes-browser--snapshot-variables
+                         '(hermes-onboarding--provider-account-result)))
   :keys ("RET" #'hermes-onboarding-provider-account-act
          "c" #'hermes-onboarding-provider-account-act
          "d" #'hermes-onboarding-provider-account-disconnect

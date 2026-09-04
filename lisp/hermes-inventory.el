@@ -512,7 +512,8 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
 
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
-  :interactive nil)
+  :interactive nil
+  (setq-local hermes-browser--snapshot-variables '(hermes-memory--status)))
 
 (defun hermes-memory--provider-name-p (name)
   "Return non-nil when NAME is safe for a memory provider route."

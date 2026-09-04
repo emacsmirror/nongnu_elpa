@@ -361,6 +361,8 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
 (define-derived-mode hermes-mcp-mode tabulated-list-mode "Hermes MCP"
   "Major mode for browsing Hermes MCP servers."
   :interactive nil
+  (setq-local hermes-browser--snapshot-variables
+              '(hermes-mcp--servers hermes-mcp--test-results))
   (hermes-mcp--ensure-state)
   (setq tabulated-list-format
         [("Name" 24 t) ("Type" 8 t) ("Enabled" 8 t)

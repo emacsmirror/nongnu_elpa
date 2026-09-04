@@ -302,8 +302,9 @@ dropped connection, instead of permanently killing the tail."
 (defun hermes-kanban--events-retarget (slug cursor)
   "Retarget an enabled live tail to SLUG, seeding it from CURSOR."
   (when (and hermes-kanban--events-tail
-             (not (hermes-kanban--events-tail-current-p
-                   hermes-kanban--events-tail slug)))
+             (or (not (hermes-kanban--events-tail-active hermes-kanban--events-tail))
+                 (not (hermes-kanban--events-tail-current-p
+                       hermes-kanban--events-tail slug))))
     (hermes-kanban--events-disconnect hermes-kanban--events-tail)
     (setq hermes-kanban--events-tail
           (hermes-kanban--events-tail-create

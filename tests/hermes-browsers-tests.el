@@ -15,6 +15,190 @@
   :rows (lambda (result)
           (mapcar (lambda (name) (list name (vector name))) result)))
 
+(ert-deftest hermes-browser-retarget-removes-actionable-rows ()
+  "Every retained list rejects A's rows as soon as it is retargeted to B."
+  (dolist (case '((hermes-profiles-mode hermes-profiles-delete)
+                  (hermes-sessions-mode hermes-sessions-delete)
+                  (hermes-cron-mode hermes-cron-remove)
+                  (hermes-rollback-mode hermes-rollback-restore)
+                  (hermes-subagents-mode hermes-subagents-interrupt)
+                  (hermes-inventory-mode hermes-inventory-disable)
+                  (hermes-mcp-mode hermes-mcp-test)
+                  (hermes-messaging-mode hermes-messaging-toggle)
+                  (hermes-provider-accounts-mode
+                   hermes-onboarding-provider-account-act)
+                  (hermes-kanban-boards-mode hermes-kanban-archive-board)
+                  (hermes-kanban-mode hermes-kanban-delete)
+                  (hermes-kanban-diagnostics-mode hermes-kanban-show)))
+    (with-temp-buffer
+      (funcall (car case))
+      (hermes-browser--own-instance '("A" . "https://a.example.test"))
+      (setq tabulated-list-format [("Name" 20 t)]
+            tabulated-list-entries '(("same-name" ["same-name"])))
+      (tabulated-list-print)
+      (goto-char (point-min))
+      (should (equal (tabulated-list-get-id) "same-name"))
+      (hermes-browser--own-instance '("B" . "https://b.example.test"))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (&rest _) (ert-fail "Stale row acquired B client")))
+                ((symbol-function 'hermes-kanban--api)
+                 (lambda (&rest _) (ert-fail "Stale row reached B API")))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+        (should-error (funcall (cadr case)) :type 'user-error))
+      ;; Sorting/resizing must not resurrect A's entries either.
+      (should-not tabulated-list-entries)
+      (tabulated-list-print)
+      (should-not (tabulated-list-get-id)))))
+
+(ert-deftest hermes-browser-retarget-pending-and-failed-fetch ()
+  "A delayed or rejected B fetch leaves no A rows, even after late A replies."
+  (let* ((instance '("A" . "https://a.example.test"))
+         (pending (hermes--promise-make))
+         (hermes-browser-test--fetch-function
+          (lambda () (hermes--promise-resolved '("same-name")))))
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'client)))
+      (unwind-protect
+          (progn
+            (hermes-list-browseridentity)
+            (setq hermes-browser-test--fetch-function (lambda () pending))
+            (hermes-list-browseridentity)
+            (let ((old pending))
+              (setq instance '("B" . "https://b.example.test")
+                    pending (hermes--promise-make))
+              (hermes-list-browseridentity)
+              (with-current-buffer "*Hermes Browser Identity*"
+                (should-not tabulated-list-entries))
+              (hermes--promise-resolve old '("late-A"))
+              (hermes--promise-reject pending "B unavailable")
+              (with-current-buffer "*Hermes Browser Identity*"
+                (should-not tabulated-list-entries))
+              (setq hermes-browser-test--fetch-function
+                    (lambda () (hermes--promise-resolved '("same-name"))))
+              (hermes-list-browseridentity)
+              (with-current-buffer "*Hermes Browser Identity*"
+                (should (equal (caar tabulated-list-entries) "same-name"))
+                (should (equal hermes-instance instance)))))
+        (when (get-buffer "*Hermes Browser Identity*")
+          (kill-buffer "*Hermes Browser Identity*"))))))
+
+(ert-deftest hermes-browser-retarget-clears-registered-snapshots ()
+  "Only a changed instance clears each mode's cached result data."
+  (dolist (mode '(hermes-sessions-mode hermes-mcp-mode hermes-messaging-mode
+                 hermes-provider-accounts-mode hermes-cron-mode
+                 hermes-kanban-mode hermes-memory-status-mode))
+    (with-temp-buffer
+      (funcall mode)
+      (hermes-browser--own-instance '("A" . "https://a.example.test"))
+      (should hermes-browser--snapshot-variables)
+      (dolist (variable hermes-browser--snapshot-variables)
+        (set variable 'old-snapshot))
+      (hermes-browser--own-instance '("A" . "https://a.example.test"))
+      (dolist (variable hermes-browser--snapshot-variables)
+        (should (eq (symbol-value variable) 'old-snapshot)))
+      (hermes-browser--own-instance '("B" . "https://b.example.test"))
+      (dolist (variable hermes-browser--snapshot-variables)
+        (should-not (symbol-value variable))))))
+
+(ert-deftest hermes-browser-retarget-mcp-same-name-authority ()
+  "MCP actions wait for B rows and do not inherit A's same-name test cache."
+  (let* ((instance '("A" . "https://a.example.test"))
+         (pending (hermes--promise-make))
+         (response (hermes--promise-resolved
+                    '((servers . (((name . "same") (enabled . t)))))))
+         mutations)
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'client))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (method path &optional body _query &rest _)
+                 (if (equal method "GET") response
+                   (push (list hermes-instance method path body) mutations)
+                   (hermes--promise-resolved nil)))))
+      (unwind-protect
+          (progn
+            (hermes-list-mcp)
+            (with-current-buffer hermes-mcp-buffer-name
+              (puthash "same" '((ok . t) (tool_count . 99))
+                       hermes-mcp--test-results))
+            (setq instance '("B" . "https://b.example.test") response pending)
+            (hermes-list-mcp)
+            (with-current-buffer hermes-mcp-buffer-name
+              (should-error (hermes-mcp-toggle) :type 'user-error)
+              (should-error (hermes-mcp-test) :type 'user-error))
+            (hermes--promise-reject pending "B unavailable")
+            (with-current-buffer hermes-mcp-buffer-name
+              (should-error (hermes-mcp-toggle) :type 'user-error))
+            (should-not mutations)
+            (setq response (hermes--promise-resolved
+                            '((servers . (((name . "same")
+                                           (enabled . :false)))))))
+            (hermes-list-mcp)
+            (with-current-buffer hermes-mcp-buffer-name
+              (goto-char (point-min))
+              (should-not (gethash "same" hermes-mcp--test-results))
+              (hermes-mcp-toggle))
+            (should (equal mutations
+                           (list (list instance "PUT" "/servers/same/enabled"
+                                       '((enabled . t)))))))
+        (when (get-buffer hermes-mcp-buffer-name)
+          (kill-buffer hermes-mcp-buffer-name))))))
+
+(ert-deftest hermes-browser-retarget-kanban-pending-context ()
+  "A pending board switch drops A's tail and uses B's requested board context."
+  (let ((instance '("B" . "https://b.example.test"))
+        (pending (hermes--promise-make))
+        tail queries)
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (_method _path &optional _body query &rest _)
+                 (push query queries)
+                 pending)))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Kanban*")
+              (hermes-kanban-mode)
+              (hermes-browser--own-instance '("A" . "https://a.example.test"))
+              (setq hermes-kanban--slug "old-board"
+                    hermes-kanban--name "Old board"
+                    tail (hermes-kanban--events-tail-create
+                          :buffer (current-buffer) :slug "old-board"
+                          :instance hermes-instance)
+                    hermes-kanban--events-tail tail))
+            (hermes-kanban--render-board "new-board" "New board" t)
+            (with-current-buffer "*Hermes Kanban*"
+              (should-not (hermes-kanban--events-tail-active tail))
+              (should (eq hermes-kanban--events-tail tail))
+              (should (equal hermes-kanban--slug "new-board"))
+              (should (equal hermes-kanban--name "New board"))
+              (hermes-kanban--revert))
+            (should (equal queries '(((board . "new-board"))
+                                     ((board . "new-board")))))
+            (hermes--promise-reject pending "B unavailable")
+            ;; Returning to A after B failed must restart the suspended tail,
+            ;; even though its stored instance and slug already match A.
+            (let (connected)
+              (cl-letf (((symbol-function 'hermes-kanban--events-connect)
+                         (lambda (new-tail) (setq connected new-tail))))
+                (hermes-kanban--display-board
+                 nil "old-board" "Old board" t
+                 '("A" . "https://a.example.test")))
+              (should connected)
+              (should-not (eq connected tail))
+              (should (hermes-kanban--events-tail-active connected)))
+            (setq instance '("A" . "https://a.example.test")
+                  pending (hermes--promise-make))
+            (hermes-kanban--render-board "another-board" "Another" t)
+            (with-current-buffer "*Hermes Kanban*"
+              ;; Same-instance refreshes retain their displayed context
+              ;; until replacement rows arrive.
+              (should (equal hermes-kanban--slug "old-board"))
+              (should (hermes-kanban--events-tail-active
+                       hermes-kanban--events-tail))))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
 (ert-deftest hermes-browser-command-pins-resolved-instance ()
   "A browser command resolves once and uses that instance for its client."
   (let ((instance '("remote" . "https://hermes.example.test"))
