@@ -149,7 +149,7 @@
 
 (defun codex-ide-harness--buffer-for-args (args &optional live-only)
   "Return the buffer selected by ARGS.
-When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
+When LIVE-ONLY is non-nil, require an explicit buffer or open file path."
   (let ((buffer (codex-ide-mcp--object-get args "buffer"))
         (path (codex-ide-mcp--object-get args "path")))
     (cond
@@ -159,6 +159,7 @@ When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
       (if live-only
           (codex-ide-mcp--buffer-for-path path)
         (find-file-noselect (expand-file-name path))))
+     (live-only (user-error "Edit requires an explicit buffer or path"))
      (t (current-buffer)))))
 
 (defun codex-ide-harness--directory-for-args (args buffer)
@@ -626,7 +627,8 @@ When INDENT is non-nil, indent the inserted region."
     (list beg new-end)))
 
 (defun codex-ide-harness-edit (args)
-  "Apply a structured edit described by ARGS to a live Emacs buffer.
+  "Apply a structured edit described by ARGS to an explicitly named buffer.
+ARGS must specify a buffer name or open file path.
 Roll back buffer text changes if editing or indentation exits abnormally."
   (let ((operation (codex-ide-mcp--object-get args "operation"))
         (text (codex-ide-mcp--object-get args "text"))
@@ -990,7 +992,8 @@ Already-terminal jobs are left unchanged and emit no new events."
                             (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-context)
    (list :name "emacs_edit"
-         :description "Apply a structured edit to a live Emacs buffer."
+         :description "Edit a live buffer.  Specify buffer or path explicitly."
+         :required-any '("buffer" "path")
          :args (list (list :name "operation"
                            :type 'string
                            :description "insert, replace, or delete.")

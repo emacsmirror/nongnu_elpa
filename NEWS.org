@@ -2,6 +2,9 @@
 
 * Unreleased
 
+- Validate supplied MCP argument types before invoking tools, and require
+  an explicit buffer or path for structured edits.
+
 - Support stateless MCP 2026-07-28 while preserving legacy initialization.
 
 - Roll back structured MCP edits when editing or indentation fails.

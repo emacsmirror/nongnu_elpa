@@ -55,23 +55,41 @@
           (list (cons "name" (plist-get tool :name))
                 (cons "description" (plist-get tool :description))
                 (cons "inputSchema"
-                      (list (cons "type" "object")
-                            (cons "properties"
-                                  (or properties (make-hash-table :test 'equal)))
-                            (cons "required" (vconcat required))
-                            (cons "additionalProperties" :json-false)))
+                      (append (list (cons "type" "object")
+                                    (cons "properties"
+                                          (or properties (make-hash-table :test 'equal)))
+                                    (cons "required" (vconcat required))
+                                    (cons "additionalProperties" :json-false))
+                              (when-let* ((targets (plist-get tool :required-any)))
+                                (list (cons "anyOf"
+                                            (vconcat (mapcar
+                                                      (lambda (name)
+                                                        (list (cons "required" (vector name))))
+                                                      targets)))))))
                 (and-let* ((annotations (plist-get tool :annotations)))
                   (cons "annotations" annotations))))))
 
-(defun codex-ide-mcp--validate-required-args (tool args)
-  "Signal `user-error' when TOOL required arguments are absent from ARGS."
+(defun codex-ide-mcp--argument-type-p (value type)
+  "Return non-nil when VALUE has the declared JSON TYPE."
+  (pcase type
+    ('string (stringp value))
+    ('integer (integerp value))
+    ('number (numberp value))
+    ('boolean (memq value '(t :json-false)))
+    (_ (error "Unsupported MCP argument type: %s" type))))
+
+(defun codex-ide-mcp--validate-args (tool args)
+  "Signal `user-error' when TOOL's ARGS omit or mistype declared fields."
   (dolist (arg (plist-get tool :args))
-    (when (and (not (plist-get arg :optional))
-               (not (codex-ide-mcp--object-has-key-p
-                     args (plist-get arg :name))))
-      (user-error "Tool %s requires argument %s"
-                  (plist-get tool :name)
-                  (plist-get arg :name)))))
+    (let* ((name (plist-get arg :name))
+           (present (codex-ide-mcp--object-has-key-p args name)))
+      (cond
+       ((and (not present) (not (plist-get arg :optional)))
+        (user-error "Tool %s requires argument %s" (plist-get tool :name) name))
+       ((and present
+             (not (codex-ide-mcp--argument-type-p
+                   (codex-ide-mcp--object-get args name) (plist-get arg :type))))
+        (user-error "Argument %s must have type %s" name (plist-get arg :type)))))))
 
 ;;; JSON-RPC dispatch
 
@@ -101,7 +119,7 @@
       (user-error "Unknown MCP tool: %s" name))
     (condition-case err
         (progn
-          (codex-ide-mcp--validate-required-args tool args)
+          (codex-ide-mcp--validate-args tool args)
           (funcall (plist-get tool :function) args))
       (error
        (codex-ide-mcp--text-error-result (error-message-string err))))))

@@ -1317,6 +1317,86 @@
         (dolist (buffer (seq-difference (buffer-list) before))
           (kill-buffer buffer))))))
 
+(ert-deftest codex-ide-mcp-edit-invalid-args-preserve-buffer ()
+  "Malformed edit fields and missing targets never change a buffer."
+  (dolist (modern '(nil t))
+    (dolist (fields '((:start "1") (:line "1") (:column "0")
+                      (:end 1.5) (:end_line "1") (:end_column "0")
+                      (:indent "false") (:indent nil) (:buffer 12)
+                      (:path 12) (:directory 12) (:text 12)
+                      (:buffer "") (:buffer nil) (:buffer "   ")))
+      (with-temp-buffer
+        (insert "original")
+        (let* ((args (append fields
+                             (unless (plist-member fields :buffer)
+                               (list :buffer (buffer-name)))
+                             (unless (plist-member fields :text) '(:text "x"))
+                             '(:operation "insert")))
+               (params (list :name "emacs_edit" :arguments args))
+               (request (if modern
+                            (codex-ide-mcp-test--modern-request "tools/call" params)
+                          (let ((legacy (codex-ide-mcp-test--request)))
+                            (setf (plist-get legacy :body)
+                                  (json-encode (list :jsonrpc "2.0" :id 42
+                                                     :method "tools/call"
+                                                     :params params)))
+                            legacy)))
+               (reply (cadr (codex-ide-mcp-test--http-response request)))
+               (result (codex-ide-mcp--object-get reply "result")))
+          (should (eq (codex-ide-mcp--object-get result "isError") t))
+          (should (equal (buffer-string) "original")))))))
+
+(ert-deftest codex-ide-mcp-types-checked-before-handler ()
+  "Reject mistyped fields across all tools before invoking their handlers."
+  (let* ((calls 0)
+         (codex-ide-mcp--tools
+          (mapcar (lambda (tool)
+                    (plist-put (copy-sequence tool) :function
+                               (lambda (_) (setq calls (1+ calls)))))
+                  codex-ide-mcp--tools)))
+    (dolist (params '((:name "emacs_execute" :arguments (:code 12))
+                      (:name "emacs_context" :arguments (:messages "1"))
+                      (:name "emacs_job" :arguments (:action "start" :command 12))
+                      (:name "emacs_events" :arguments (:since "1"))))
+      (should (eq (codex-ide-mcp--object-get
+                   (codex-ide-mcp--handle-tools-call params) "isError") t)))
+    (should (= calls 0))))
+
+(ert-deftest codex-ide-mcp-edit-requires-explicit-target ()
+  "An untargeted edit fails before changing the selected buffer."
+  (with-temp-buffer
+    (insert "original")
+    (should-error (codex-ide-harness-edit
+                   '(:operation "insert" :text "x" :indent :json-false))
+                  :type 'user-error)
+    (should (equal (buffer-string) "original"))))
+
+(ert-deftest codex-ide-mcp-edit-explicit-target-and-false ()
+  "An explicit target wins over current buffer, and false skips indentation."
+  (let ((target (generate-new-buffer " *codex-target-test*")))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "selected")
+          (with-current-buffer target
+            (setq-local indent-region-function
+                        (lambda (&rest _) (error "Must not indent"))))
+          (let ((result (codex-ide-mcp--handle-tools-call
+                         (list :name "emacs_edit" :arguments
+                               (list :operation "insert" :text "target"
+                                     :buffer (buffer-name target)
+                                     :indent :json-false)))))
+            (should (eq (codex-ide-mcp--object-get result "isError") :json-false))
+            (should (equal (buffer-string) "selected"))
+            (should (equal (with-current-buffer target (buffer-string)) "target"))))
+      (kill-buffer target))))
+
+(ert-deftest codex-ide-mcp-edit-schema-advertises-target ()
+  "Edit discovery requires either a buffer or path."
+  (let* ((tool (codex-ide-mcp--tool->mcp (codex-ide-mcp--tool-by-name "emacs_edit")))
+         (schema (codex-ide-mcp--object-get tool "inputSchema")))
+    (should (equal (codex-ide-mcp--object-get schema "anyOf")
+                   [(("required" . ["buffer"])) (("required" . ["path"]))]))))
+
 (provide 'codex-ide-mcp-tests)
 
 ;;; codex-ide-mcp-tests.el ends here

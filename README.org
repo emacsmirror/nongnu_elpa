@@ -52,6 +52,9 @@
   addresses.
 + Commands: =codex-ide-mcp-start=, =codex-ide-mcp-stop=,
   =codex-ide-mcp-status=, =codex-ide-mcp-install-codex-config=.
++ Structured edits require an explicit =buffer= name or open file =path=.
+  Supplied tool arguments must match their advertised types; for example,
+  positions are integers and =indent= is a JSON boolean.
 + Default port is ephemeral (=codex-ide-mcp-port= 0). Persistent Codex
   config only stays reliable with a fixed port.
 + Disable auto registration with =(setq codex-ide-mcp-enabled nil)=.
