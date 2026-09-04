@@ -22,6 +22,12 @@
 | =M-x codex-ide-send-prompt= | Send a minibuffer prompt into the active session |
 | =M-x codex-ide-menu= | Popup menu (sessions, config, MCP, debug) |
 
+** Saved sessions
++ =codex-ide-resume-session-scan-limit= limits matching unique sessions
+  offered by the picker (default 200), after filtering by project.
++ If the project has no saved sessions, the picker offers other projects.
++ Metadata lines larger than one MiB produce an explicit error.
+
 ** Terminal scrolling
 + With Eat, =C-c C-e= enters its read-only Emacs mode for ordinary scrolling,
   movement, search, and selection.
@@ -35,6 +41,10 @@
 + Disable with =(setq codex-ide-context-auto-start nil)=.
 
 ** MCP tools
++ Supports stateless MCP =2026-07-28= requests and the =2025-06-18=
+  initialization flow for existing clients, on the same endpoint.
++ Modern clients can discover capabilities with =server/discover= or call
+  tools directly, with protocol metadata and matching routing headers.
 + When =codex-ide-mcp-enabled= is non-nil (default), session start
   registers a transient local MCP URL via Codex =-c= overrides.
 + The bridge can evaluate Elisp, edit buffers, and run shell commands. It

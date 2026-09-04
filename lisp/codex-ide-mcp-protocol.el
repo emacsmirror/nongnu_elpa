@@ -114,6 +114,27 @@
     ("tools/call" (codex-ide-mcp--handle-tools-call params))
     (_ (user-error "Unsupported MCP method: %s" method))))
 
+(defun codex-ide-mcp--modern-result (method result)
+  "Add modern protocol fields to METHOD's RESULT."
+  (append (list (cons "resultType" "complete")
+                (cons "_meta"
+                      (list (cons "io.modelcontextprotocol/serverInfo"
+                                  (codex-ide-mcp--object-get
+                                   (codex-ide-mcp--handle-initialize nil)
+                                   "serverInfo")))))
+          (when (member method '("server/discover" "tools/list"))
+            '(("ttlMs" . 0) ("cacheScope" . "private")))
+          result))
+
+(defun codex-ide-mcp--modern-dispatch (method params)
+  "Dispatch modern METHOD with PARAMS."
+  (if (equal method "server/discover")
+      (list (cons "supportedVersions" codex-ide-mcp--supported-versions)
+            (cons "capabilities"
+                  (codex-ide-mcp--object-get
+                   (codex-ide-mcp--handle-initialize nil) "capabilities")))
+    (codex-ide-mcp--dispatch method params)))
+
 (defun codex-ide-mcp--valid-id-p (id)
   "Return non-nil when ID is a supported JSON-RPC identifier."
   (or (stringp id) (numberp id)))

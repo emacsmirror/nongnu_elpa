@@ -2594,6 +2594,104 @@ region, where the scrollback-browsing rule alone would strand it."
       (delete-directory project t)
       (delete-directory other t))))
 
+(ert-deftest codex-ide-saved-session-sort-reads-each-timestamp-once ()
+  "Sorting rollout files does not repeatedly query their timestamps."
+  (let ((directory (make-temp-file "codex-ide-rollouts-" t))
+        (attributes (symbol-function 'file-attributes))
+        (calls (make-hash-table :test 'equal)))
+    (unwind-protect
+        (let ((files (cl-loop for n from 1 to 5
+                              for file = (expand-file-name
+                                          (format "%d.jsonl" n) directory)
+                              do (write-region "" nil file nil 'silent)
+                              do (set-file-times file (seconds-to-time n))
+                              collect file)))
+          (cl-letf (((symbol-function 'file-attributes)
+                     (lambda (file &rest args)
+                       (when (member file files)
+                         (puthash file (1+ (gethash file calls 0)) calls))
+                       (apply attributes file args))))
+            (should (equal (codex-ide--newest-rollout-files directory 2)
+                           (reverse (last files 2)))))
+          (dolist (file files)
+            (should (= (gethash file calls 0) 1))))
+      (delete-directory directory t))))
+
+(ert-deftest codex-ide-saved-session-large-metadata ()
+  "Read complete UTF-8 metadata across chunks and ignore later events."
+  (let ((file (make-temp-file "codex-ide-rollout-")))
+    (unwind-protect
+        (dolist (ending '("" "\n{broken later event"))
+          (with-temp-file file
+            (insert (json-encode
+                     `((type . "session_meta")
+                       (payload . ((id . "large")
+                                   (cwd . "/tmp/δοκιμή")
+                                   (instructions . ,(make-string 9000 ?λ))))))
+                    ending))
+          (should (equal (codex-ide--json-field
+                          (codex-ide--rollout-session-meta file) "cwd")
+                         "/tmp/δοκιμή")))
+      (delete-file file))))
+
+(ert-deftest codex-ide-saved-session-metadata-boundaries ()
+  "Accept complete metadata at chunk and size boundaries."
+  (let ((file (make-temp-file "codex-ide-rollout-"))
+        (line "{\"type\":\"session_meta\",\"payload\":{\"id\":\"boundary\"}}"))
+    (unwind-protect
+        (progn
+          (dolist (size (list 8191 8192 8193 (* 1024 1024)))
+            (dolist (ending '("" "\n"))
+              (with-temp-file file
+                (insert line (make-string (- size (length line)) ?\s) ending))
+              (should (equal (codex-ide--json-field
+                              (codex-ide--rollout-session-meta file) "id")
+                             "boundary"))))
+          (dolist (invalid '("" "   " "{broken" "{\"type\":\"event\"}"))
+            (with-temp-file file (insert invalid))
+            (should-not (codex-ide--rollout-session-meta file))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-saved-session-oversized-metadata ()
+  "Report metadata exceeding the size bound instead of silently skipping."
+  (let ((file (make-temp-file "codex-ide-rollout-")))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert (make-string (1+ (* 1024 1024)) ?x)))
+          (should-error (codex-ide--rollout-session-meta file)
+                        :type 'user-error))
+      (delete-file file))))
+
+(ert-deftest codex-ide-saved-session-project-limit ()
+  "Count matching unique sessions, preserving newest order and fallback."
+  (let* ((dir (make-temp-file "codex-ide-rollouts-" t))
+         (codex-ide-sessions-directory dir)
+         (codex-ide-resume-session-scan-limit 2))
+    (unwind-protect
+        (progn
+          (cl-loop for (id cwd) in '(("old" "/tmp/project")
+                                     ("middle" "/tmp/project")
+                                     ("middle" "/tmp/project")
+                                     ("new" "/tmp/other")
+                                     ("newest" "/tmp/other"))
+                   for n from 1
+                   for file = (expand-file-name (format "%s.jsonl" n) dir)
+                   do (with-temp-file file
+                        (insert (json-encode
+                                 `((type . "session_meta")
+                                   (payload . ((id . ,id) (cwd . ,cwd)))))))
+                   do (set-file-times file (seconds-to-time n)))
+          (should (equal (mapcar #'car (codex-ide--saved-session-candidates
+                                        "/tmp/project"))
+                         '("middle" "old")))
+          (should (equal (mapcar #'car (codex-ide--saved-session-candidates))
+                         '("newest" "new")))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt collection &rest _) (car collection))))
+            (should (equal (codex-ide--read-saved-session-id "/tmp/absent")
+                           "newest"))))
+      (delete-directory dir t))))
+
 (ert-deftest codex-ide-stop-active-only-contract ()
   "Stop kills only the active session buffer for a project root."
   (let ((root (file-name-as-directory

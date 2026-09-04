@@ -78,7 +78,9 @@
   :group 'codex-ide)
 
 (defcustom codex-ide-resume-session-scan-limit 200
-  "Maximum number of newest rollout files scanned for resume candidates."
+  "Maximum number of matching saved sessions offered for resume.
+Non-positive values include all matches.  Files from other projects and
+duplicate session IDs do not count toward this limit."
   :type 'integer
   :group 'codex-ide)
 
@@ -421,26 +423,44 @@ folding is pure and does not touch the shell."
     (or (cdr (assoc name object))
         (cdr (assq (intern name) object))))))
 
+(defun codex-ide--rollout-first-line (file)
+  "Read the first UTF-8 line from FILE, bounded to one MiB.
+Signal a user error when the first line exceeds the bound."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((limit (* 1024 1024))
+          (offset 0)
+          end done)
+      (while (not done)
+        (goto-char (point-max))
+        (let ((count (cadr (insert-file-contents-literally
+                            file nil offset (min (+ offset 8192)
+                                                 (1+ limit))))))
+          (goto-char (1+ offset))
+          (setq end (search-forward "\n" nil t)
+                offset (+ offset count)
+                done (or end (= count 0)))
+          (when (> (if end (- end 2) offset) limit)
+            (user-error "Rollout metadata exceeds %s bytes: %s" limit file))))
+      (decode-coding-string
+       (buffer-substring-no-properties (point-min)
+                                       (if end (1- end) (point-max)))
+       'utf-8))))
+
 (defun codex-ide--rollout-session-meta (file)
-  "Return session_meta payload alist from rollout FILE, or nil."
+  "Return session_meta payload alist from rollout FILE, or nil.
+Signal a user error when the metadata line exceeds one MiB."
   (when (and (stringp file) (file-readable-p file))
-    (with-temp-buffer
-      (insert-file-contents file nil 0 8192)
-      (goto-char (point-min))
-      (when-let* ((line (buffer-substring-no-properties
-                         (line-beginning-position)
-                         (line-end-position)))
-                  ((not (string-empty-p (string-trim line))))
-                  (parsed (ignore-errors (json-parse-string
-                                          (string-trim line)
-                                          :object-type 'alist
-                                          :array-type 'list
-                                          :null-object nil
-                                          :false-object nil)))
-                  ((equal (codex-ide--json-field parsed "type")
-                          "session_meta"))
-                  (payload (codex-ide--json-field parsed "payload")))
-        payload))))
+    (when-let* ((line (codex-ide--rollout-first-line file))
+                (parsed (ignore-errors (json-parse-string
+                                        line
+                                        :object-type 'alist
+                                        :array-type 'list
+                                        :null-object nil
+                                        :false-object nil)))
+                ((equal (codex-ide--json-field parsed "type")
+                        "session_meta")))
+      (codex-ide--json-field parsed "payload"))))
 
 (defun codex-ide--saved-session-candidate (file directory)
   "Return (ID . ANNOTATION) for rollout FILE when it matches DIRECTORY.
@@ -463,34 +483,41 @@ DIRECTORY may be nil to accept any cwd."
                "  "))))))
 
 (defun codex-ide--newest-rollout-files (directory limit)
-  "Return up to LIMIT newest *.jsonl files under DIRECTORY."
+  "Return up to LIMIT newest *.jsonl files under DIRECTORY.
+A nil or non-positive LIMIT includes all files."
   (when (and (stringp directory) (file-directory-p directory))
-    (let ((files (directory-files-recursively directory "\\.jsonl\\'")))
-      (setq files
-            (sort files
-                  (lambda (a b)
-                    (time-less-p
-                     (file-attribute-modification-time (file-attributes b))
-                     (file-attribute-modification-time (file-attributes a))))))
+    (let* ((dated (cl-loop for file in (directory-files-recursively
+                                        directory "\\.jsonl\\'")
+                           for attrs = (file-attributes file)
+                           when attrs
+                           collect (cons file
+                                         (file-attribute-modification-time
+                                          attrs))))
+           (files (mapcar #'car (sort dated (lambda (a b)
+                                             (time-less-p (cdr b) (cdr a)))))))
       (if (and (integerp limit) (> limit 0) (> (length files) limit))
           (seq-subseq files 0 limit)
         files))))
 
 (defun codex-ide--saved-session-candidates (&optional directory)
   "Return alist of (SESSION-ID . ANNOTATION) for DIRECTORY.
-When DIRECTORY is nil, include sessions from any cwd.  Newest rollout
-files are preferred up to `codex-ide-resume-session-scan-limit'."
+When DIRECTORY is nil, include sessions from any cwd.  Newest matching
+sessions are preferred up to `codex-ide-resume-session-scan-limit'."
   (let ((seen (make-hash-table :test 'equal))
+        (limit codex-ide-resume-session-scan-limit)
         candidates)
-    (dolist (file (codex-ide--newest-rollout-files
-                   codex-ide-sessions-directory
-                   codex-ide-resume-session-scan-limit))
-      (when-let* ((candidate (codex-ide--saved-session-candidate
-                              file directory))
-                  (id (car candidate))
-                  ((not (gethash id seen))))
-        (puthash id t seen)
-        (push candidate candidates)))
+    (catch 'complete
+      (dolist (file (codex-ide--newest-rollout-files
+                     codex-ide-sessions-directory nil))
+        (when-let* ((candidate (codex-ide--saved-session-candidate
+                                file directory))
+                    (id (car candidate))
+                    ((not (gethash id seen))))
+          (puthash id t seen)
+          (push candidate candidates)
+          (when (and (integerp limit) (> limit 0)
+                     (>= (hash-table-count seen) limit))
+            (throw 'complete nil)))))
     (nreverse candidates)))
 
 (defun codex-ide--read-saved-session-id (&optional directory)

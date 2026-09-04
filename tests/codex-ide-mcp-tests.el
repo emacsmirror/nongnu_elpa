@@ -232,17 +232,6 @@
                    '("content-type" . "text/plain")))
                  '(415 . "Content-Type must be application/json"))))
 
-(ert-deftest codex-ide-mcp-request-error-rejects-protocol-version ()
-  "Request validation rejects unsupported MCP protocol versions."
-  (should (equal (codex-ide-mcp--request-error
-                  (codex-ide-mcp-test--request
-                   '("mcp-protocol-version" . "bogus")))
-                 '(400 . "Unsupported MCP-Protocol-Version: bogus")))
-  (should-not (codex-ide-mcp--request-error
-               (codex-ide-mcp-test--request
-                (cons "mcp-protocol-version"
-                      codex-ide-mcp--protocol-version)))))
-
 (ert-deftest codex-ide-mcp-start-server-rejects-non-loopback-host ()
   "Server startup rejects a non-loopback bind address."
   (let ((codex-ide-mcp-host "0.0.0.0")
@@ -965,6 +954,156 @@
       (should (= (cdr (assoc "code" (cdr (assoc "error" response))))
                  -32600)))))
 
+(defun codex-ide-mcp-test--modern-request (method &optional params)
+  "Build a modern HTTP request for METHOD with PARAMS."
+  (list :method "POST" :path "/mcp"
+        :headers (append (copy-tree '(("host" . "127.0.0.1")
+                           ("content-type" . "application/json")
+                           ("mcp-protocol-version" . "2026-07-28")))
+                         (list (cons "mcp-method" method))
+                         (when (equal method "tools/call")
+                           (list (cons "mcp-name" (plist-get params :name)))))
+        :body (json-encode
+               (list :jsonrpc "2.0" :id 42 :method method
+                     :params (append params
+                                     (list :_meta
+                                           (list :io.modelcontextprotocol/protocolVersion
+                                                 "2026-07-28"
+                                                 :io.modelcontextprotocol/clientCapabilities
+                                                 (make-hash-table))))))))
+
+(defun codex-ide-mcp-test--http-response (request)
+  "Return (STATUS BODY) produced by HTTP REQUEST."
+  (let (sent)
+    (cl-letf (((symbol-function 'codex-ide-mcp--send-json)
+               (lambda (_proc status body) (setq sent (list status body))))
+              ((symbol-function 'codex-ide-mcp--selected-buffer)
+               #'current-buffer))
+      (codex-ide-mcp--handle-http-request 'client request))
+    sent))
+
+(ert-deftest codex-ide-mcp-modern-discovery-and-inline-tools ()
+  "Modern tools work before discovery, with complete cacheable results."
+  (dolist (method '("tools/list" "server/discover"))
+    (pcase-let* ((`(,status ,body) (codex-ide-mcp-test--http-response
+                                  (codex-ide-mcp-test--modern-request method)))
+                 (result (alist-get "result" body nil nil #'equal)))
+      (should (= status 200))
+      (should (= (alist-get "id" body nil nil #'equal) 42))
+      (should (equal (alist-get "resultType" result nil nil #'equal) "complete"))
+      (should (equal (alist-get "ttlMs" result nil nil #'equal) 0))
+      (should (equal (alist-get "cacheScope" result nil nil #'equal) "private"))
+      (should (codex-ide-mcp--object-get
+               (codex-ide-mcp--object-get result "_meta")
+               "io.modelcontextprotocol/serverInfo"))
+      (if (equal method "tools/list")
+          (should (vectorp (alist-get "tools" result nil nil #'equal)))
+        (should (equal (alist-get "supportedVersions" result nil nil #'equal)
+                       ["2026-07-28" "2025-06-18"]))))))
+
+(ert-deftest codex-ide-mcp-modern-rejections-do-not-call-tools ()
+  "Invalid modern metadata and routing never execute a tool."
+  (let ((calls 0))
+    (cl-letf (((symbol-function 'codex-ide-mcp--handle-tools-call)
+               (lambda (_) (cl-incf calls) '(("content" . [])))))
+      (dolist (case '((header "mcp-method" nil -32020)
+                      (header "mcp-method" "tools/list" -32020)
+                      (header "mcp-name" nil -32020)
+                      (header "mcp-name" "other" -32020)
+                      (header "mcp-name" "=?base64?!!!?=" -32020)
+                      (header "mcp-protocol-version" nil -32020)
+                      (header "mcp-protocol-version" "2025-06-18" -32020)
+                      (meta :io.modelcontextprotocol/protocolVersion nil -32602)
+                      (meta :io.modelcontextprotocol/clientCapabilities nil -32602)
+                      (meta :io.modelcontextprotocol/clientCapabilities [] -32602)))
+        (let* ((request (codex-ide-mcp-test--modern-request
+                         "tools/call" '(:name "test")))
+               (field (nth 1 case))
+               (value (nth 2 case)))
+          (if (eq (car case) 'header)
+              (setf (alist-get field (plist-get request :headers) nil nil #'equal)
+                    value)
+            (let* ((message (let ((json-object-type 'plist))
+                              (json-read-from-string (plist-get request :body))))
+                   (meta (plist-get (plist-get message :params) :_meta)))
+              (setf (plist-get meta field) value)
+              (setf (plist-get request :body) (json-encode message))))
+          (pcase-let ((`(,status ,body) (codex-ide-mcp-test--http-response request)))
+            (should (= status 400))
+            (should (= (codex-ide-mcp--object-get
+                        (codex-ide-mcp--object-get body "error") "code")
+                       (nth 3 case))))))
+      (should (= calls 0)))))
+
+(ert-deftest codex-ide-mcp-modern-malformed-body-does-not-call-tools ()
+  "Malformed IDs and trailing JSON never execute tools."
+  (let ((calls 0))
+    (cl-letf (((symbol-function 'codex-ide-mcp--handle-tools-call)
+               (lambda (_) (cl-incf calls))))
+      (dolist (suffix '(" {}" " garbage"))
+        (let ((request (codex-ide-mcp-test--modern-request "tools/call" '(:name "test"))))
+          (setf (plist-get request :body) (concat (plist-get request :body) suffix))
+          (pcase-let ((`(,status ,body) (codex-ide-mcp-test--http-response request)))
+            (should (= status 400))
+            (should-not (codex-ide-mcp--object-has-key-p body "id"))
+            (should (= (codex-ide-mcp--object-get
+                        (codex-ide-mcp--object-get body "error") "code") -32700)))))
+      (dolist (replacement '("null" "1.5" "[]"))
+        (let ((request (codex-ide-mcp-test--modern-request "tools/call" '(:name "test"))))
+          (setf (plist-get request :body)
+                (replace-regexp-in-string "\"id\":42" (concat "\"id\":" replacement)
+                                          (plist-get request :body)))
+          (pcase-let ((`(,status ,body) (codex-ide-mcp-test--http-response request)))
+            (should (= status 400))
+            (should (= (codex-ide-mcp--object-get
+                        (codex-ide-mcp--object-get body "error") "code") -32600)))))
+      (should (= calls 0)))))
+
+(ert-deftest codex-ide-mcp-modern-version-and-method-errors ()
+  "Modern errors retain request identity and expose supported versions."
+  (let ((request (codex-ide-mcp-test--modern-request "tools/list")))
+    (setf (alist-get "mcp-protocol-version" (plist-get request :headers)
+                     nil nil #'equal) "2099-01-01")
+    (setf (plist-get request :body)
+          (replace-regexp-in-string "2026-07-28" "2099-01-01"
+                                    (plist-get request :body)))
+    (pcase-let* ((`(,status ,body) (codex-ide-mcp-test--http-response request))
+                 (error (codex-ide-mcp--object-get body "error"))
+                 (data (codex-ide-mcp--object-get error "data")))
+      (should (= status 400))
+      (should (= (codex-ide-mcp--object-get body "id") 42))
+      (should (= (codex-ide-mcp--object-get error "code") -32022))
+      (should (equal (codex-ide-mcp--object-get data "requested") "2099-01-01"))
+      (should (equal (codex-ide-mcp--object-get data "supported")
+                     ["2026-07-28" "2025-06-18"]))))
+  (dolist (method '("unknown" "initialize"))
+    (pcase-let ((`(,status ,body) (codex-ide-mcp-test--http-response
+                                 (codex-ide-mcp-test--modern-request method))))
+      (should (= status 404))
+      (should (= (codex-ide-mcp--object-get
+                  (codex-ide-mcp--object-get body "error") "code") -32601)))))
+
+(ert-deftest codex-ide-mcp-modern-base64-name-and-legacy-interleave ()
+  "Encoded names work and modern requests never change legacy behavior."
+  (let ((request (codex-ide-mcp-test--modern-request "tools/call" '(:name "test"))))
+    (setf (alist-get "mcp-name" (plist-get request :headers) nil nil #'equal)
+          "=?base64?dGVzdA==?=")
+    (cl-letf (((symbol-function 'codex-ide-mcp--handle-tools-call)
+               (lambda (_) (codex-ide-mcp--text-error-result "Tool failed"))))
+      (pcase-let* ((`(,status ,body) (codex-ide-mcp-test--http-response request))
+                   (result (codex-ide-mcp--object-get body "result")))
+        (should (= status 200))
+        (should (equal (codex-ide-mcp--object-get result "resultType") "complete"))
+        (should (eq (codex-ide-mcp--object-get result "isError") t))))
+    (let* ((legacy (codex-ide-mcp-test--request))
+           (_ (setf (plist-get legacy :body)
+                    "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"initialize\"}"))
+           (response (codex-ide-mcp-test--http-response legacy))
+           (result (codex-ide-mcp--object-get (cadr response) "result")))
+      (should (= (car response) 200))
+      (should (equal (codex-ide-mcp--object-get result "protocolVersion") "2025-06-18"))
+      (should-not (codex-ide-mcp--object-get result "resultType")))))
+
 (ert-deftest codex-ide-mcp-http-notification-returns-accepted ()
   "HTTP notifications receive 202 Accepted and no JSON body."
   (let (sent)
@@ -1136,6 +1275,47 @@
            (output (cdr (assoc "output" data))))
       (should (< (length output) 200))
       (should (string-match-p "truncated" output)))))
+
+(ert-deftest codex-ide-mcp-edit-rolls-back-indentation-error ()
+  "Failed indentation leaves insert and replace targets unchanged."
+  (dolist (operation '("insert" "replace"))
+    (with-temp-buffer
+      (insert "original")
+      (set-buffer-modified-p nil)
+      (setq-local indent-region-function
+                  (lambda (&rest _) (error "Indentation failed")))
+      (let ((result (codex-ide-mcp--handle-tools-call
+                     `(:name "emacs_edit" :arguments
+                       (:operation ,operation :buffer ,(buffer-name)
+                        :start 1 :end 9 :text "replacement")))))
+        (should (eq (cdr (assoc "isError" result)) t))
+        (should (equal (buffer-string) "original"))
+        (should-not (buffer-modified-p))))))
+
+(ert-deftest codex-ide-mcp-edit-rolls-back-delete-hook-error ()
+  "A change hook failure does not leave a partially applied deletion."
+  (with-temp-buffer
+    (insert "original")
+    (add-hook 'after-change-functions
+              (lambda (&rest _) (error "Change hook failed")) nil t)
+    (let ((result (codex-ide-mcp--handle-tools-call
+                   `(:name "emacs_edit" :arguments
+                     (:operation "delete" :buffer ,(buffer-name)
+                      :start 1 :end 9)))))
+      (should (eq (cdr (assoc "isError" result)) t))
+      (should (equal (buffer-string) "original")))))
+
+(ert-deftest codex-ide-mcp-execute-empty-does-not-leak-buffer ()
+  "Rejected empty scripts leave no output buffers behind."
+  (dolist (code '("" " " "; comment only"))
+    (let ((before (buffer-list)))
+      (unwind-protect
+          (progn
+            (should-error (codex-ide-harness-execute `(:code ,code))
+                          :type 'user-error)
+            (should (equal (buffer-list) before)))
+        (dolist (buffer (seq-difference (buffer-list) before))
+          (kill-buffer buffer))))))
 
 (provide 'codex-ide-mcp-tests)
 

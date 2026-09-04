@@ -68,6 +68,13 @@ Also bounds retained incomplete request pending data per client."
 (defconst codex-ide-mcp--protocol-version "2025-06-18"
   "MCP protocol version advertised by the local server.")
 
+(defconst codex-ide-mcp--modern-protocol-version "2026-07-28"
+  "MCP protocol version for self-contained requests.")
+
+(defconst codex-ide-mcp--supported-versions
+  (vector codex-ide-mcp--modern-protocol-version codex-ide-mcp--protocol-version)
+  "MCP revisions supported by the local server.")
+
 ;;; Small builders
 
 (defun codex-ide-mcp--json-false (value)

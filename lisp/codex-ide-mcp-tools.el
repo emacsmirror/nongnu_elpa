@@ -531,13 +531,12 @@ The `action' field is `references' or `apropos'."
   "Evaluate every form in ARGS's `code' field."
   (let* ((code (codex-ide-mcp--object-get args "code"))
          (forms (and (codex-ide-harness--non-empty-string-p code)
-                     (codex-ide-harness--read-forms code)))
-         (output-buffer (generate-new-buffer " *codex-harness-output*")))
+                     (codex-ide-harness--read-forms code))))
     (unless forms
       (user-error "Emacs_execute requires at least one readable form"))
-    (unwind-protect
-        (pcase-let ((`(,buffer ,directory)
-                     (codex-ide-harness--context args)))
+    (pcase-let ((`(,buffer ,directory) (codex-ide-harness--context args)))
+      (with-temp-buffer
+        (let ((output-buffer (current-buffer)))
           (with-current-buffer buffer
             (let* ((default-directory directory)
                    (capture (codex-ide-harness--execute-captured
@@ -547,8 +546,7 @@ The `action' field is `references' or `apropos'."
               (codex-ide-harness--record-event
                (if (plist-get capture :error) "execute-error" "execute")
                result)
-              result)))
-      (kill-buffer output-buffer))))
+              result)))))))
 
 ;;; Editing
 
@@ -628,7 +626,8 @@ When INDENT is non-nil, indent the inserted region."
     (list beg new-end)))
 
 (defun codex-ide-harness-edit (args)
-  "Apply a structured edit described by ARGS to a live Emacs buffer."
+  "Apply a structured edit described by ARGS to a live Emacs buffer.
+Roll back buffer text changes if editing or indentation exits abnormally."
   (let ((operation (codex-ide-mcp--object-get args "operation"))
         (text (codex-ide-mcp--object-get args "text"))
         (indent (codex-ide-harness--truthy-default args "indent" t)))
@@ -636,45 +635,46 @@ When INDENT is non-nil, indent the inserted region."
                  (codex-ide-harness--context args t)))
       (with-current-buffer buffer
         (let ((default-directory directory))
-          (pcase operation
-            ("insert"
-             (unless (stringp text)
-               (user-error "Insert requires text"))
-             (pcase-let ((`(,beg ,end)
-                          (codex-ide-harness--insert-text
-                           text
-                           (codex-ide-harness--position-from-args
-                            args "start" "line" "column" (point))
-                           indent)))
-               (codex-ide-harness--edit-result operation beg end)))
-            ("replace"
-             (unless (stringp text)
-               (user-error "Replace requires text"))
-             (let ((beg (codex-ide-harness--position-from-args
-                         args "start" "line" "column" nil))
-                   (end (codex-ide-harness--position-from-args
-                         args "end" "end_line" "end_column" nil)))
-               (unless beg
-                 (user-error "Replace requires start or line"))
-               (unless end
-                 (user-error "Replace requires end or end_line"))
-               (pcase-let ((`(,new-beg ,new-end)
-                            (codex-ide-harness--replace-range
-                             text beg end indent)))
-                 (codex-ide-harness--edit-result
-                  operation new-beg new-end))))
-            ("delete"
-             (let ((beg (codex-ide-harness--position-from-args
-                         args "start" "line" "column" nil))
-                   (end (codex-ide-harness--position-from-args
-                         args "end" "end_line" "end_column" nil)))
-               (unless beg
-                 (user-error "Delete requires start or line"))
-               (unless end
-                 (user-error "Delete requires end or end_line"))
-               (delete-region beg end)
-               (codex-ide-harness--edit-result operation beg beg)))
-            (_ (user-error "Unknown edit operation: %s" operation))))))))
+          (atomic-change-group
+            (pcase operation
+              ("insert"
+               (unless (stringp text)
+                 (user-error "Insert requires text"))
+               (pcase-let ((`(,beg ,end)
+                            (codex-ide-harness--insert-text
+                             text
+                             (codex-ide-harness--position-from-args
+                              args "start" "line" "column" (point))
+                             indent)))
+                 (codex-ide-harness--edit-result operation beg end)))
+              ("replace"
+               (unless (stringp text)
+                 (user-error "Replace requires text"))
+               (let ((beg (codex-ide-harness--position-from-args
+                           args "start" "line" "column" nil))
+                     (end (codex-ide-harness--position-from-args
+                           args "end" "end_line" "end_column" nil)))
+                 (unless beg
+                   (user-error "Replace requires start or line"))
+                 (unless end
+                   (user-error "Replace requires end or end_line"))
+                 (pcase-let ((`(,new-beg ,new-end)
+                              (codex-ide-harness--replace-range
+                               text beg end indent)))
+                   (codex-ide-harness--edit-result
+                    operation new-beg new-end))))
+              ("delete"
+               (let ((beg (codex-ide-harness--position-from-args
+                           args "start" "line" "column" nil))
+                     (end (codex-ide-harness--position-from-args
+                           args "end" "end_line" "end_column" nil)))
+                 (unless beg
+                   (user-error "Delete requires start or line"))
+                 (unless end
+                   (user-error "Delete requires end or end_line"))
+                 (delete-region beg end)
+                 (codex-ide-harness--edit-result operation beg beg)))
+              (_ (user-error "Unknown edit operation: %s" operation)))))))))
 
 (defun codex-ide-harness-insert (text &optional args)
   "Insert TEXT using optional edit ARGS."

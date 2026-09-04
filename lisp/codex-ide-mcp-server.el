@@ -48,13 +48,10 @@
     (format "http://%s:%d/mcp" host codex-ide-mcp--port)))
 
 (defun codex-ide-mcp--json-read (bytes)
-  "Decode JSON BYTES into a plist."
-  (let ((json-object-type 'plist)
-        (json-array-type 'list)
-        (json-false :json-false)
-        (json-null nil))
-    (json-read-from-string
-     (decode-coding-string bytes 'utf-8))))
+  "Decode JSON BYTES, preserving empty objects as hash tables."
+  (json-parse-string (decode-coding-string bytes 'utf-8)
+                     :object-type 'hash-table :array-type 'list
+                     :false-object :json-false :null-object nil))
 
 (defun codex-ide-mcp--status-text (status)
   "Return HTTP reason phrase for STATUS."
@@ -168,12 +165,7 @@
     '(403 . "Origin must be loopback"))
    ((not (codex-ide-mcp--json-content-type-p
           (codex-ide-mcp--header request "content-type")))
-    '(415 . "Content-Type must be application/json"))
-   ((and-let* ((version (codex-ide-mcp--header
-                         request "mcp-protocol-version")))
-      (unless (equal version codex-ide-mcp--protocol-version)
-        (cons 400 (format "Unsupported MCP-Protocol-Version: %s"
-                          version)))))))
+    '(415 . "Content-Type must be application/json"))))
 
 (defun codex-ide-mcp--content-length (request)
   "Return non-negative Content-Length for REQUEST, or nil when invalid.
@@ -237,6 +229,99 @@ that limit return the symbol `too-large'."
       (window-buffer window)
     (current-buffer)))
 
+(defun codex-ide-mcp--modern-request-p (request message)
+  "Return non-nil for a modern REQUEST or MESSAGE."
+  (let ((version (codex-ide-mcp--header request "mcp-protocol-version"))
+        (meta (codex-ide-mcp--object-get
+               (codex-ide-mcp--object-get message "params") "_meta")))
+    (or (and version (not (equal version codex-ide-mcp--protocol-version)))
+        (codex-ide-mcp--object-has-key-p
+         meta "io.modelcontextprotocol/protocolVersion")
+        (equal (codex-ide-mcp--object-get message "method") "server/discover"))))
+
+(defun codex-ide-mcp--decode-name-header (value)
+  "Decode a plain or Base64 VALUE, returning nil for malformed headers."
+  (when (and (stringp value)
+             (string-match-p "\\`[\t -~]*\\'" value)
+             (equal value (string-trim value)))
+    (if (and (string-prefix-p "=?base64?" value)
+             (string-suffix-p "?=" value))
+        (condition-case nil
+            (let* ((encoded (substring value 9 -2))
+                   (bytes (base64-decode-string encoded))
+                   (decoded (decode-coding-string bytes 'utf-8)))
+              (when (and (equal (base64-encode-string bytes t) encoded)
+                         (equal (encode-coding-string decoded 'utf-8) bytes))
+                decoded))
+          (error nil))
+      value)))
+
+(defun codex-ide-mcp--modern-header-error (request message version)
+  "Return a header error for REQUEST, MESSAGE and body VERSION, or nil."
+  (let* ((method (codex-ide-mcp--object-get message "method"))
+         (params (codex-ide-mcp--object-get message "params"))
+         (name (pcase method
+                 ((or "tools/call" "prompts/get")
+                  (codex-ide-mcp--object-get params "name"))
+                 ("resources/read" (codex-ide-mcp--object-get params "uri"))))
+         (needs-name (member method '("tools/call" "prompts/get" "resources/read"))))
+    (unless (and (equal version (codex-ide-mcp--header request "mcp-protocol-version"))
+                 (equal method (codex-ide-mcp--header request "mcp-method"))
+                 (string-match-p "\\`[!-~]+\\'" method)
+                 (or (not needs-name)
+                     (and (stringp name)
+                          (equal name (codex-ide-mcp--decode-name-header
+                                       (codex-ide-mcp--header request "mcp-name"))))))
+      "Missing, malformed or mismatched MCP routing header")))
+
+(defun codex-ide-mcp--modern-error (message code text &optional data)
+  "Return an HTTP error for MESSAGE with CODE, TEXT and optional DATA."
+  (let ((id (codex-ide-mcp--object-get message "id")))
+    (list (if (= code -32601) 404 400)
+          (append '(("jsonrpc" . "2.0"))
+                  (when (or (stringp id) (integerp id)) (list (cons "id" id)))
+                  (list (cons "error"
+                              (append (list (cons "code" code) (cons "message" text))
+                                      (when data (list (cons "data" data))))))))))
+
+(defun codex-ide-mcp--modern-request-error (request message)
+  "Return (STATUS BODY) for invalid modern REQUEST and MESSAGE, or nil."
+  (let* ((params (codex-ide-mcp--object-get message "params"))
+         (meta (codex-ide-mcp--object-get params "_meta"))
+         (version (codex-ide-mcp--object-get meta "io.modelcontextprotocol/protocolVersion"))
+         (capabilities (codex-ide-mcp--object-get meta "io.modelcontextprotocol/clientCapabilities")))
+    (cond
+     ((not (and (eq (codex-ide-mcp--message-kind message) 'request)
+                (let ((id (codex-ide-mcp--object-get message "id")))
+                  (or (stringp id) (integerp id)))))
+      (codex-ide-mcp--modern-error message -32600 "Invalid Request"))
+     ((not (and (stringp version) (hash-table-p capabilities)))
+      (codex-ide-mcp--modern-error message -32602 "Missing or invalid MCP request metadata"))
+     ((codex-ide-mcp--modern-header-error request message version)
+      (codex-ide-mcp--modern-error message -32020 "Missing, malformed or mismatched MCP routing header"))
+     ((not (equal version codex-ide-mcp--modern-protocol-version))
+      (codex-ide-mcp--modern-error
+       message -32022 "Unsupported protocol version"
+       (list (cons "supported" codex-ide-mcp--supported-versions)
+             (cons "requested" version)))))))
+
+(defun codex-ide-mcp--modern-http-response (request message)
+  "Return (STATUS BODY) for modern HTTP REQUEST carrying MESSAGE."
+  (or (codex-ide-mcp--modern-request-error request message)
+      (let ((method (codex-ide-mcp--object-get message "method"))
+            (params (codex-ide-mcp--object-get message "params")))
+        (if (not (member method '("server/discover" "tools/list" "tools/call")))
+            (codex-ide-mcp--modern-error message -32601 "Method not found")
+          (condition-case err
+              (list 200 (codex-ide-mcp--make-response
+                         (codex-ide-mcp--object-get message "id")
+                         (codex-ide-mcp--modern-result
+                          method (codex-ide-mcp--modern-dispatch method params))))
+            (user-error (codex-ide-mcp--modern-error message -32602 (error-message-string err)))
+            (error (list 200 (codex-ide-mcp--make-error-response
+                             (codex-ide-mcp--object-get message "id")
+                             -32603 (error-message-string err)))))))))
+
 (defun codex-ide-mcp--handle-http-request (proc request)
   "Handle parsed HTTP REQUEST from PROC."
   (if (not (equal (plist-get request :method) "POST"))
@@ -251,8 +336,12 @@ that limit return the symbol `too-large'."
       (condition-case err
           (let* ((message (codex-ide-mcp--json-read (plist-get request :body)))
                  (response (with-current-buffer (codex-ide-mcp--selected-buffer)
-                             (codex-ide-mcp--handle-message message))))
+                             (if (codex-ide-mcp--modern-request-p request message)
+                                 (codex-ide-mcp--modern-http-response request message)
+                               (codex-ide-mcp--handle-message message)))))
             (cond
+             ((and (consp response) (integerp (car response)))
+              (apply #'codex-ide-mcp--send-json proc response))
              ((eq response 'accepted)
               (codex-ide-mcp--send-json proc 202 nil))
              (response
@@ -260,9 +349,12 @@ that limit return the symbol `too-large'."
              (t
               (codex-ide-mcp--send-json proc 204 nil))))
         (error
-         (codex-ide-mcp--send-json
-          proc 400 (codex-ide-mcp--make-error-response
-                    nil -32700 (error-message-string err))))))))
+         (if (codex-ide-mcp--modern-request-p request nil)
+             (apply #'codex-ide-mcp--send-json proc
+                    (codex-ide-mcp--modern-error nil -32700 (error-message-string err)))
+           (codex-ide-mcp--send-json
+            proc 400 (codex-ide-mcp--make-error-response
+                      nil -32700 (error-message-string err)))))))))
 
 (defun codex-ide-mcp--client-state (proc)
   "Return accumulated state for client PROC, creating it if needed."
