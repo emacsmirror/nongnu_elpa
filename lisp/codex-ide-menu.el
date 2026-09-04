@@ -143,6 +143,7 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   "r" ("Resume last" codex-ide-resume-last)
   "R" ("Resume saved session" codex-ide-resume)
   "q" ("Stop active session" codex-ide-stop)
+  "N" ("Rename session" codex-ide-rename-session)
   :group "Navigation"
   "b" ("Switch to buffer" codex-ide-switch-to-buffer)
   "C-l" ("Switch project session" codex-ide-list-project-sessions)

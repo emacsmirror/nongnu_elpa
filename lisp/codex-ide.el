@@ -146,6 +146,12 @@ Codex IDE adds a root identity when another project already uses that name."
 (defvar codex-ide--cleanup-in-progress nil
   "Cleanup targets currently being torn down, as (ROOT ID) lists.")
 
+(defvar-local codex-ide--session-label nil
+  "Optional display label of this live session.")
+
+(defvar-local codex-ide--session-naming-base nil
+  "Unlabelled naming base retained when a session is renamed.")
+
 (defvar-local codex-ide--session-root nil
   "Project root for the Codex session in the current buffer.")
 
@@ -226,15 +232,16 @@ Prefers the current project root; falls back to `default-directory'."
 (defun codex-ide--session-base-name (buffer)
   "Return the unindexed base name established by session BUFFER."
   (with-current-buffer buffer
-    (let* ((name (buffer-name buffer))
-           (suffix (format "<%d>" codex-ide--session-id))
-           (starred-suffix (concat suffix "*")))
-      (cond
-       ((= codex-ide--session-id 1) name)
-       ((string-suffix-p starred-suffix name)
-        (concat (string-remove-suffix starred-suffix name) "*"))
-       ((string-suffix-p suffix name)
-        (string-remove-suffix suffix name))))))
+    (or codex-ide--session-naming-base
+        (let* ((name (buffer-name buffer))
+               (suffix (format "<%d>" codex-ide--session-id))
+               (starred-suffix (concat suffix "*")))
+	  (cond
+	   ((= codex-ide--session-id 1) name)
+	   ((string-suffix-p starred-suffix name)
+            (concat (string-remove-suffix starred-suffix name) "*"))
+	   ((string-suffix-p suffix name)
+            (string-remove-suffix suffix name)))))))
 
 (defun codex-ide--established-buffer-name (root)
   "Return the base name already used by a live session for ROOT."
@@ -256,12 +263,15 @@ DIRECTORY defaults to the current project and SESSION-ID defaults to 1.
 Add a stable root identity when another project occupies the base name."
   (let* ((directory (or directory (codex-ide--get-working-directory)))
          (root (file-name-as-directory (expand-file-name directory)))
-         (base-name (funcall codex-ide-buffer-name-function directory))
-         (name (or (codex-ide--established-buffer-name root)
-                   (if (codex-ide--buffer-name-conflict-p base-name root)
-                       (codex-ide--identified-buffer-name base-name root)
-                     base-name))))
-    (codex-ide--indexed-buffer-name name (or session-id 1))))
+         (id (or session-id 1))
+         (base (or (codex-ide--established-buffer-name root)
+                   (funcall codex-ide-buffer-name-function directory)))
+         (name (if (or (codex-ide--buffer-name-conflict-p base root)
+                       (codex-ide--buffer-name-conflict-p
+                        (codex-ide--indexed-buffer-name base id) root))
+                   (codex-ide--identified-buffer-name base root)
+                 base)))
+    (codex-ide--indexed-buffer-name name id)))
 
 (defun codex-ide--make-session (root id buffer process)
   "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS."
@@ -1137,6 +1147,44 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
          (directory (plist-get session :root)))
     (codex-ide--record-source-buffer directory origin)
     (codex-ide--switch-to-session session)))
+
+(defun codex-ide--set-session-label (session label)
+  "Rename SESSION using LABEL without changing its identity."
+  (let* ((buffer (plist-get session :buffer))
+         (root (plist-get session :root))
+         (id (plist-get session :id)))
+    (unless (and (codex-ide--session-live-p session)
+                 (eq session (codex-ide--session-by-id root id)))
+      (user-error "Codex session is no longer current"))
+    (when (or (string-match-p "[[:cntrl:]]" label)
+              (cl-some
+               (lambda (other)
+                 (and (not (eq session other))
+                      (equal label (buffer-local-value
+                                    'codex-ide--session-label
+                                    (plist-get other :buffer)))))
+               (codex-ide--project-sessions root)))
+      (user-error "Invalid or already used Codex session label"))
+    (with-current-buffer buffer
+      (let* ((base (codex-ide--get-buffer-name root 1))
+             (name (if (string-empty-p label)
+                       (codex-ide--indexed-buffer-name base id)
+                     (concat (string-remove-suffix "*" base) ":" label "*"))))
+	(rename-buffer name t)
+	(setq codex-ide--session-naming-base base
+              codex-ide--session-label (unless (string-empty-p label) label))))))
+
+;;;###autoload
+(defun codex-ide-rename-session (&optional label)
+  "Set the selected live session's LABEL; empty input clears it.
+Interactively, choose the target session before prompting for its label.
+Labels do not rename saved Codex conversations."
+  (interactive)
+  (let* ((session (codex-ide--target-session))
+         (current (buffer-local-value 'codex-ide--session-label
+                                      (plist-get session :buffer)))
+         (label (or label (read-string "Session label (empty clears): " current))))
+    (codex-ide--set-session-label session (string-trim label))))
 
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)

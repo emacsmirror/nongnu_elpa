@@ -2447,6 +2447,109 @@ region, where the scrollback-browsing rule alone would strand it."
         (kill-buffer buffer))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-rename-session-preserves-identity-and-recovery ()
+  "Labels survive recovery without becoming the next session's base name."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (let* ((session (cadr sessions))
+               (buffer (plist-get session :buffer))
+               (original (buffer-name buffer))
+               (third (codex-ide--get-buffer-name root 3)))
+          (with-current-buffer buffer
+            (codex-ide-rename-session "review"))
+          (should (string-match-p "review" (buffer-name buffer)))
+          (should (eq session (codex-ide--session-by-id root 2)))
+          (should (equal third (codex-ide--get-buffer-name root 3)))
+          (should (assq session
+                        (mapcar (lambda (entry) (cons (cdr entry) (car entry)))
+                                (codex-ide--session-candidates root))))
+          (remhash root codex-ide--sessions)
+          (cl-letf (((symbol-function 'codex-ide-term--configure-buffer) #'ignore))
+            (codex-ide--recover-live-session buffer))
+          (should (string-match-p "review" (buffer-name buffer)))
+          (with-current-buffer buffer
+            (codex-ide-rename-session ""))
+          (should (equal original (buffer-name buffer)))
+          (codex-ide--cleanup-on-exit root 2)
+          (should-not (buffer-live-p buffer))
+          (should (buffer-live-p (plist-get (car sessions) :buffer)))))))))
+
+(ert-deftest codex-ide-rename-session-rejects-duplicates-and-controls ()
+  "A rejected label leaves both names and processes unchanged."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (let ((first (plist-get (car sessions) :buffer))
+              (second (plist-get (cadr sessions) :buffer)))
+          (with-current-buffer first (codex-ide-rename-session "review"))
+          (with-current-buffer second
+            (let ((name (buffer-name)))
+              (should-error (codex-ide-rename-session "review") :type 'user-error)
+              (should-error (codex-ide-rename-session "bad\nname") :type 'user-error)
+              (should (equal name (buffer-name)))))
+          (should (cl-every #'codex-ide--session-live-p sessions))))))))
+
+(ert-deftest codex-ide-rename-session-scopes-labels-and-rejects-stale-owner ()
+  "Different projects may reuse labels; replaced owners cannot rename."
+  (codex-ide-test--call-with-project
+   (lambda (root-a)
+     (codex-ide-test--call-with-project
+      (lambda (root-b)
+        (codex-ide-test--call-with-sessions
+         `((,root-a 1) (,root-b 1))
+         (lambda (sessions)
+           (dolist (session sessions)
+             (codex-ide--set-session-label session "review"))
+           (let* ((old (car sessions))
+                  (buffer (plist-get old :buffer))
+                  (name (buffer-name buffer)))
+             (puthash root-a (list (copy-sequence old)) codex-ide--sessions)
+             (should-error (codex-ide--set-session-label old "stale")
+                           :type 'user-error)
+             (should (equal name (buffer-name buffer)))))))))))
+
+(ert-deftest codex-ide-rename-session-rechecks-vacated-name-collisions ()
+  "A label must not let a same-basename project steal later buffers."
+  (codex-ide-test--call-with-project
+   (lambda (parent)
+     (let ((root-a (expand-file-name "a/project/" parent))
+           (root-b (expand-file-name "b/project/" parent)))
+       (make-directory root-a t)
+       (make-directory root-b t)
+       (codex-ide-test--call-with-sessions
+        `((,root-a 1))
+        (lambda (sessions)
+          (let ((first (car sessions)) second-a first-b second-b)
+            (unwind-protect
+                (progn
+                  (codex-ide--set-session-label first "review")
+                  (setq first-b (codex-ide-test--make-session root-b 1))
+                  (codex-ide-test--store-session first-b)
+                  (setq second-b (codex-ide-test--make-session root-b 2))
+                  (codex-ide-test--store-session second-b)
+                  (setq second-a (codex-ide-test--make-session root-a 2))
+                  (codex-ide-test--store-session second-a)
+                  (should-not (eq (plist-get second-a :buffer)
+                                  (plist-get second-b :buffer)))
+                  (should (equal root-b
+                                 (buffer-local-value 'codex-ide--session-root
+                                                     (plist-get second-b :buffer))))
+                  (should (eq second-b (codex-ide--session-by-id root-b 2)))
+                  (codex-ide--set-session-label first "")
+                  (should (string-match-p
+                           (substring (secure-hash 'sha1 root-a) 0 8)
+                           (buffer-name (plist-get first :buffer))))
+                  (should (cl-every #'codex-ide--session-live-p
+                                    (list first first-b second-a second-b))))
+              (mapc (lambda (session)
+                      (when session (codex-ide-test--kill-session session)))
+                    (list first-b second-a second-b))))))))))
+
 (ert-deftest codex-ide-cleanup-keeps-buffer-live-for-backend-hooks ()
   "The session kill hook leaves the dying buffer to its remaining hooks."
   (codex-ide-test--call-with-project

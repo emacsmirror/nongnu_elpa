@@ -15,6 +15,7 @@
 | =M-x codex-ide-new-session= | Start another live session for the project |
 | =M-x codex-ide-resume-last= | =codex resume --last= |
 | =M-x codex-ide-resume= | Pick a saved session id, then =codex resume <id>= |
+| =M-x codex-ide-rename-session= | Label a live session; empty input restores automatic naming |
 | =M-x codex-ide-stop= | Stop only the *active* project session |
 | =M-x codex-ide-toggle= | Cycle live project sessions |
 | =M-x codex-ide-list-project-sessions= | Switch among project sessions |
