@@ -348,6 +348,13 @@ to find out how KEEP-LIST and DISCARD-REGEXP are used."
 		     nil :keep-list keep-list :discard-regexp discard-regexp)
 		    (vm-rfc934-char-stuff-region beg (point-max))))))
 	    (goto-char (point-max))
+	    ;; A message whose text does not end in a newline would put this
+	    ;; separator at the end of its last body line, where RFC 934 says
+	    ;; a separator is a line of its own -- and the delete below, which
+	    ;; takes the last line back to its start, then took that body line
+	    ;; with it (emacs-vm/vm#805).
+	    (unless (bolp)
+	      (insert "\n"))
 	    (insert "---------------")
 	    (setq mlist (cdr mlist)))
 	  (delete-region (point) (progn (beginning-of-line) (point)))

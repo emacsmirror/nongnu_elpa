@@ -623,6 +623,71 @@ All four types, since what is being pinned is that they agree."
     (should (equal (cons type 2)
                    (cons type (vm-digest-test--preamble-lines type))))))
 
+
+;;; Forwarding, over every value of vm-forwarding-digest-type (emacs-vm/vm#805)
+
+(defun vm-digest-test--forward (type body)
+  "Forward a message whose text is BODY as TYPE, answer the composition.
+The message declares utf-8, so a body of any bytes is labelled where it lands."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fwd" t)))
+         (inbox (expand-file-name "inbox" dir))
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-forwarding-digest-type type)
+         (vm-mail-mode-hook nil)
+         (vm-forward-message-hook nil)
+         (before (buffer-list))
+         composition)
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'vm-present-current-message) #'ignore))
+          (let ((coding-system-for-write 'utf-8)
+                (select-safe-coding-system-function nil))
+            (with-temp-buffer
+              (insert "From s@example.com Mon Jan  1 00:01:00 2024\n"
+                      "From: s@example.com\nTo: me@example.com\n"
+                      "Subject: the one\nMIME-Version: 1.0\n"
+                      "Content-Type: text/plain; charset=utf-8\n"
+                      "Content-Transfer-Encoding: 8bit\n"
+                      "Date: Mon, 1 Jan 2024 10:00:00 +0000\n\n" body "\n")
+              (write-region (point-min) (point-max) inbox nil 'quiet)))
+          (vm-visit-folder inbox)
+          (setq vm-message-pointer vm-message-list)
+          (vm-forward-message)
+          (setq composition
+                (buffer-substring-no-properties (point-min) (point-max))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))
+    composition))
+
+(ert-deftest vm-digest-test-forwarding-keeps-a-body-with-no-final-newline ()
+  "REGRESSION: an rfc934 forward does not eat the last line.
+
+emacs-vm/vm#805.  `vm-rfc934-encapsulate-messages' put its trailing separator
+at point and then deleted the last line back to its start to make room for
+the end marker.  For a message whose text does not end in a newline that
+separator was on the last body line, so the delete took the body with it and
+`after' never left the machine.
+
+Not an exotic message: `vm-text-end-of' answers text with no final newline
+whenever the body ends with a single newline in a From_ folder, that newline
+being the trailing separator.
+
+All four types, since three of them were already right and this pins that
+they agree.  The separator is checked to be on a line of its own too, which
+is what RFC 934 asks for and what the fix restores."
+  (dolist (type '("rfc934" "rfc1153" nil))
+    (let ((composition (vm-digest-test--forward type "before\nafter")))
+      (should (equal (cons type t)
+                     (cons type (and (string-match-p "^before$" composition) t))))
+      (should (equal (cons type t)
+                     (cons type (and (string-match-p "^after$" composition) t)))))))
+
 (provide 'vm-digest-test)
 
 ;;; vm-digest-test.el ends here
