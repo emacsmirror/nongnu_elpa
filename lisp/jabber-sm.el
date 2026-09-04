@@ -321,7 +321,8 @@ for malformed or impossible acknowledgements.  Return updated STATE-DATA."
 
 (defun jabber-sm--make-resume-xml (h previd)
   "Return the XML string for <resume h='H' previd='PREVID'/>."
-  (format "<resume xmlns='%s' h='%d' previd='%s'/>" jabber-sm-xmlns h previd))
+  (format "<resume xmlns='%s' h='%d' previd='%s'/>"
+          jabber-sm-xmlns h (jabber-escape-xml previd)))
 
 (defun jabber-sm--parse-enabled (stanza)
   "Parse an <enabled/> STANZA.

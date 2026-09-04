@@ -3182,6 +3182,19 @@
     (jabber-log-xml 'jc "sending" '(message))
     (should-not called)))
 
+(ert-deftest jabber-test-sm-resume-id-roundtrip ()
+  "Opaque session identifiers survive enable parsing and resume encoding."
+  (dolist (encoded '("a&apos;b&amp;c" "a&quot;b&lt;c&gt;"))
+    (let* ((enabled (with-temp-buffer
+                      (insert (format "<enabled id='%s' resume='true'/>" encoded))
+                      (car (xml-parse-region (point-min) (point-max)))))
+           (id (plist-get (jabber-sm--parse-enabled enabled) :id))
+           (resumed (with-temp-buffer
+                      (insert (jabber-sm--make-resume-xml 7 id))
+                      (car (xml-parse-region (point-min) (point-max))))))
+      (should (equal (jabber-xml-get-attribute resumed 'previd) id))
+      (should (equal (jabber-xml-get-attribute resumed 'h) "7")))))
+
 (provide 'jabber-test-sm)
 
 ;;; jabber-test-sm.el ends here
