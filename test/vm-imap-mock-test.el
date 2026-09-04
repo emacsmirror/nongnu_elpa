@@ -1373,6 +1373,71 @@ one would conclude nothing had happened."
       (should-not (vm-imap-mock-received-p mock "STORE 2:2"))
       (should (vm-imap-mock-received-p mock "CLOSE")))))
 
+
+;;; Saving the cache as Emacs is left (emacs-vm/vm#798)
+
+(ert-deftest vm-imap-mock-test-a-modified-cache-is-saved-on-exit ()
+  "REGRESSION: `vm-save-folder-caches' writes a modified IMAP cache.
+
+Issue #798.  An IMAP folder buffer is modified from the moment it is visited,
+VM keeping each message\'s state in the message, so anything but a real quit
+left the cache dirty and Emacs asked about it on exit.  The path it asks about
+is a hash of the maildrop and means nothing to the reader; answering no throws
+away the flags of everything since the last save.
+
+Measured either side of the hook, and the file is checked rather than only the
+buffer flag."
+  (vm-imap-mock-test--visiting
+      (mock :messages (list vm-imap-mock-test--alice))
+    (let ((cache (current-buffer)))
+      (should (buffer-modified-p cache))
+      (vm-save-folder-caches)
+      (should-not (buffer-modified-p cache))
+      (should (string-match-p
+               "badgers"
+               (with-temp-buffer
+                 (insert-file-contents (buffer-file-name cache))
+                 (buffer-string)))))))
+
+(ert-deftest vm-imap-mock-test-a-folder-the-reader-named-is-left-alone ()
+  "The hook saves caches and nothing else.
+
+A folder the reader chose is theirs, and Emacs asking whether to save it is
+the right thing.  Only VM\'s own cache, under a name the reader never picked,
+is written for them.  Without this the hook would be saving people\'s mail
+folders behind their backs as Emacs exits."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-own" t)))
+         (file (expand-file-name "myfolder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "From a@example.com Mon Jan  1 00:00:00 2024\n"
+                    "From: a@example.com\nSubject: mine\n\nbody\n\n"))
+          (vm-visit-folder file)
+          (let ((mine (current-buffer)))
+            (should-not (vm-cache-folder-name-p (buffer-file-name mine)))
+            (set-buffer-modified-p t)
+            (vm-save-folder-caches)
+            (should (buffer-modified-p mine))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-imap-mock-test-the-exit-hook-is-registered ()
+  "`vm-save-folder-caches' is on `kill-emacs-hook'.
+The tests above call it directly; this is what makes Emacs call it."
+  (should (memq 'vm-save-folder-caches
+                (default-value 'kill-emacs-hook))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

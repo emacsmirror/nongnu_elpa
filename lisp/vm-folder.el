@@ -7168,6 +7168,39 @@ error, and the on-disk conversion is what such a folder wants."
 		vm-global-garbage-alist)
 	  files (cdr files))))
 
+(defun vm-save-folder-caches ()
+  "Save any modified POP or IMAP folder cache, without asking.
+Run from `kill-emacs-hook'.
+
+A folder cache is VM's own file: the reader never chose it, never edited it,
+and cannot tell one from another by name, the name being a hash of the
+maildrop.  Leaving it modified hands them Emacs's own question about a path
+that means nothing to them, and answering no throws away the read and deleted
+flags of everything since the last save.  So it is written for them
+\(emacs-vm/vm#798).
+
+Only caches.  A folder the reader named themselves is theirs, and Emacs
+asking about that one is right; this does not touch it.
+
+`vm-expunge-before-save' is bound off: writing the flags out as Emacs is left
+is one thing, deleting messages unasked as the frame goes away is another."
+  (dolist (buffer (buffer-list))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+	(when (and (memq major-mode '(vm-mode vm-virtual-mode))
+		   vm-folder-access-method
+		   buffer-file-name
+		   (vm-cache-folder-name-p buffer-file-name)
+		   (buffer-modified-p))
+	  ;; Nothing here may stop Emacs from exiting.
+	  (condition-case error-data
+	      (let ((vm-expunge-before-save nil))
+		(vm-save-folder))
+	    (error
+	     (vm-warn 0 2 "%s: could not be saved on exit: %s"
+		      (buffer-name)
+		      (error-message-string error-data)))))))))
+
 (defun vm-garbage-collect-global ()
   "Carry out all the registered global garbage collection actions."
   (save-excursion
