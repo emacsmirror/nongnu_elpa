@@ -352,14 +352,25 @@ plist of captured callback effects and retry authority."
          (reset-p (not (and retrying
                             (or resumable
                                 (plist-get state-data :sm-fresh-recovery)))))
+         (fresh-loss (and retrying (not resumable)
+                          (plist-get state-data :sm-fresh-recovery)
+                          (not (plist-get state-data :session-reset-done))))
          (reset-claimed
-          (and reset-p
-               (or (not (plist-get state-data :session-reset-done))
-                   (plist-get state-data :sm-fresh-recovery))))
+          (or fresh-loss
+              (and reset-p
+                   (or (not (plist-get state-data :session-reset-done))
+                       (plist-get state-data :sm-fresh-recovery)))))
          (token (make-symbol "nil-entry"))
          entries)
     (setq state-data (plist-put state-data :connection nil))
     (setq state-data (jabber-sm--stop-r-timer state-data))
+    (when fresh-loss
+      ;; Establishment reopens the reset claim.  Convert a later session's
+      ;; work again, but leave unfinished bind retries in their owned queue.
+      (setq state-data
+            (jabber-sm--handle-failed-resume
+             (jabber-core--promote-nil-entry-pending state-data) '(failed ())))
+      (setq held nil))
     (pcase-let ((`(,detached ,captured)
                  (jabber-sm--take-pending state-data)))
       (cond
