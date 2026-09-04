@@ -3471,7 +3471,7 @@ url.el flags every 4xx/5xx via the callback status; the useless
          (key '(spawn "127.0.0.1" 9119))
          (pending (make-hash-table :test #'equal))
          (client (make-hermes-dashboard-transport-client
-                  :endpoint-key key :refcount 1 :reconnecting-p t
+                  :endpoint-key key :refcount 1 :reconnecting-p t :reconnect-attempts 1
                   :ready-promise ready :websocket 'websocket :process 'process
                   :pending pending :callback #'ignore))
          (hermes-dashboard-transport-reconnect-max-attempts 1)
