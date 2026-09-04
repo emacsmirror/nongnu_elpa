@@ -1,6 +1,6 @@
 ;;; page-break-lines.el --- Display ^L page breaks as tidy horizontal lines  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2012-2015 Steve Purcell
+;; Copyright (C) 2012-2026 Steve Purcell
 
 ;; Author: Steve Purcell <steve@sanityinc.com>
 ;; URL: https://github.com/purcell/page-break-lines
@@ -157,7 +157,7 @@ When `major-mode' is listed in `page-break-lines-modes', then
       (page-break-lines-mode 1)))
 
 ;;;###autoload
-(define-global-minor-mode global-page-break-lines-mode
+(define-globalized-minor-mode global-page-break-lines-mode
   page-break-lines-mode page-break-lines-mode-maybe
   :require 'page-break-lines
   :group 'page-break-lines)
