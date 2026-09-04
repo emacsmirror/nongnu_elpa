@@ -73,8 +73,10 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
   "Show DIFF in a dedicated `diff-mode' buffer.
 BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer.  The buffer is made
 read-only so `diff-mode' installs its navigation keymap (n/p hunks, q quits)
-instead of `view-mode' shadowing those keys."
-  (let ((buffer (get-buffer-create (or buffer-name "*Hermes Diff*"))))
+instead of `view-mode' shadowing those keys.  Each opening uses the source
+buffer's `default-directory' for native file navigation."
+  (let ((directory default-directory)
+        (buffer (get-buffer-create (or buffer-name "*Hermes Diff*"))))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -82,6 +84,7 @@ instead of `view-mode' shadowing those keys."
         (unless (string-suffix-p "\n" diff) (insert "\n")))
       (goto-char (point-min))
       (delay-mode-hooks (diff-mode))
+      (setq default-directory directory)
       (font-lock-mode 1)
       (font-lock-ensure (point-min) (point-max))
       (read-only-mode 1))
