@@ -445,12 +445,49 @@ text-property changes in the undo list."
       (remove-text-properties pos (point-max)
                               '(read-only nil front-sticky nil rear-nonsticky nil)))))
 
+(defun hermes-chat--adjust-undo-element (element deltas)
+  "Adjust draft undo ELEMENT by DELTAS, including native change groups."
+  (pcase element
+    (`(apply ,delta ,beg ,end undo--wrap-and-run-primitive-undo
+             ,inner-beg ,inner-end ,records)
+     ;; `undo-adjust-elt' leaves apply records untouched.  This native
+     ;; wrapper carries both region bounds and a nested ordinary undo log.
+     `(apply ,delta ,(undo-adjust-pos beg deltas)
+             ,(undo-adjust-pos end deltas)
+             undo--wrap-and-run-primitive-undo
+             ,(undo-adjust-pos inner-beg deltas)
+             ,(undo-adjust-pos inner-end deltas)
+             ,(mapcar (lambda (record)
+                        (hermes-chat--adjust-undo-element record deltas))
+                      records)))
+    (_ (undo-adjust-elt element deltas))))
+
+(defun hermes-chat--adjust-draft-undo (position)
+  "Rebase draft undo records after the input moved from POSITION.
+Preserve list cells: native pending undo and redo equivalences refer to
+these same tails.  Markers already follow the transcript edits themselves."
+  (let ((delta (- position (hermes-chat--input-position))))
+    (unless (zerop delta)
+      ;; Put the synthetic change before both old and new input starts:
+      ;; shrinking must not clamp old draft positions at the old boundary.
+      (let ((deltas (list (cons (1- (min position (hermes-chat--input-position)))
+                                delta)))
+            (seen (make-hash-table :test #'eq)))
+        (dolist (tail (list buffer-undo-list pending-undo-list))
+          (while (and (consp tail) (not (gethash tail seen)))
+            (puthash tail t seen)
+            (setcar tail (hermes-chat--adjust-undo-element (car tail) deltas))
+            (setq tail (cdr tail))))))))
+
 (defmacro hermes-chat--preserve-input-point (&rest body)
-  "Run BODY preserving point's offset into the writable input tail."
+  "Run transcript BODY preserving draft undo and point's input offset."
   (declare (indent 0) (debug t))
-  `(let ((offset (and (hermes-chat--point-in-input-p)
-                      (- (point) (hermes-chat--input-position)))))
-     (prog1 (progn ,@body)
+  `(let* ((position (hermes-chat--input-position))
+          (offset (and (hermes-chat--point-in-input-p)
+                       (- (point) position))))
+     (unwind-protect
+         (progn ,@body)
+       (hermes-chat--adjust-draft-undo position)
        (hermes-chat--protect-transcript)
        (when offset
          (goto-char (min (point-max)
@@ -462,6 +499,10 @@ text-property changes in the undo list."
 
 (defun hermes-chat--setup-buffer ()
   "Initialize the current buffer as an empty Hermes chat buffer."
+  ;; Selective undo owns a separate list.  Keep it local so an asynchronous
+  ;; transcript update cannot rebase another buffer's pending undo sequence.
+  (setq-local pending-undo-list nil)
+  (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
     (cl-incf hermes-chat--transport-generation)
