@@ -1438,6 +1438,116 @@ The tests above call it directly; this is what makes Emacs call it."
   (should (memq 'vm-save-folder-caches
                 (default-value 'kill-emacs-hook))))
 
+
+;;; Where a first fetch leaves the reader (emacs-vm/vm#799)
+
+(defconst vm-imap-bunch-test--count 25
+  "Messages on the server, more than a bunch of them.")
+
+(defun vm-imap-bunch-test--message (n &optional seen)
+  "Message N, marked read on the server when SEEN."
+  (let ((text (format "From: a@example.com\nTo: me@example.com\nSubject: msg %02d\n\nbody %d\n"
+                      n n)))
+    (if seen (cons text (list "\\Seen")) text)))
+
+(defmacro vm-imap-bunch-test--fetching (spec &rest body)
+  "Visit a fresh IMAP folder of `vm-imap-bunch-test--count' messages, run BODY.
+SPEC is (SEEN BUNCH): SEEN messages are already read on the server and BUNCH is
+`vm-imap-message-bunch-size'.  The cache directory is new, so this is a first
+fetch.  BODY runs with the fetch still going and may call
+`vm-imap-bunch-test--settle' to let it finish."
+  (declare (indent 1) (debug t))
+  `(vm-imap-mock-with (mock :messages
+                            (mapcar (lambda (n)
+                                      (vm-imap-bunch-test--message
+                                       n (<= n ,(car spec))))
+                                    (number-sequence 1 vm-imap-bunch-test--count)))
+     (let* ((cache (make-temp-file "vm-imap-bunch-cache" t))
+            (vm-imap-folder-cache-directory cache)
+            (vm-imap-server-timeout 20)
+            (vm-imap-message-bunch-size ,(nth 1 spec))
+            (vm-frame-per-folder nil)
+            (vm-mutable-frame-configuration nil)
+            (before (buffer-list)))
+       (unwind-protect
+           (progn
+             (vm-visit-imap-folder (vm-imap-mock-spec mock))
+             ,@body)
+         (dolist (buffer (buffer-list))
+           (unless (memq buffer before)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer))))
+         (delete-directory cache t)))))
+
+(defun vm-imap-bunch-test--settle ()
+  "Let the fetch finish."
+  (vm-imap-net-wait nil 25))
+
+(defun vm-imap-bunch-test--wait-for (n)
+  "Wait until the folder holds at least N messages."
+  (let ((tries 0))
+    (while (and (< (length vm-message-list) n) (< tries 200))
+      (setq tries (1+ tries))
+      (accept-process-output nil 0.05))))
+
+(defun vm-imap-bunch-test--at ()
+  "The number of the message the folder is on, as a number.
+`vm-number-of' answers a string."
+  (and vm-message-pointer
+       (string-to-number (vm-number-of (car vm-message-pointer)))))
+
+(ert-deftest vm-imap-mock-test-a-read-folder-opens-at-its-last-message ()
+  "REGRESSION: a fully read folder does not open at the bunch size.
+
+Issue #799, reported by @l8gravely: a folder of three hundred and ninety read
+messages opened at message ten, and at twenty when he changed
+`vm-imap-message-bunch-size' to twenty.
+
+A folder being fetched into for the first time has no current message, and a
+command typed before one is chosen fails on nil, so `vm-imap-net-assimilate'
+chooses one partway through.  With nothing new or unread to go to,
+`vm-thoughtfully-select-message' falls back to the last message there is,
+which at that moment is the last of the first bunch.  It then stood: the
+second call, with the whole folder in hand, leaves a pointer that is not nil
+alone.  And it was written to the cache as `X-VM-Bookmark', so every later
+visit opened there as well.
+
+Checked at three bunch sizes, because the number followed the option."
+  (dolist (bunch '(5 10 20))
+    (let ((vm-imap-message-bunch-size bunch))
+      (vm-imap-bunch-test--fetching (25 bunch)
+        (vm-imap-bunch-test--settle)
+        (should (equal vm-imap-bunch-test--count (length vm-message-list)))
+        (should (equal vm-imap-bunch-test--count (vm-imap-bunch-test--at)))))))
+
+(ert-deftest vm-imap-mock-test-a-first-fetch-still-goes-to-the-first-unread ()
+  "The fix does not touch the ordinary case.
+`vm-jump-to-unread-messages' is what a folder with unread mail obeys, and the
+manual describes it: the first new or unread message, whatever the bunch size.
+Nine read on the server means message ten."
+  (vm-imap-bunch-test--fetching (0 10)
+    (vm-imap-bunch-test--settle)
+    (should (equal 1 (vm-imap-bunch-test--at))))
+  (vm-imap-bunch-test--fetching (9 10)
+    (vm-imap-bunch-test--settle)
+    (should (equal 10 (vm-imap-bunch-test--at)))))
+
+(ert-deftest vm-imap-mock-test-a-reader-who-moves-during-a-fetch-is-left-there ()
+  "A message the reader went to themselves is not taken away from them.
+
+The safety half of #799.  The end of the fetch reconsiders only the message
+the fetch itself chose, which it remembers in
+`vm-imap-net-provisional-message'.  Someone who moved while the rest was
+arriving keeps where they are, in a folder where the fix would otherwise have
+sent them to the end."
+  (vm-imap-bunch-test--fetching (25 10)
+    (vm-imap-bunch-test--wait-for 3)
+    (setq vm-message-pointer (nthcdr 2 vm-message-list))
+    (should (equal 3 (vm-imap-bunch-test--at)))
+    (vm-imap-bunch-test--settle)
+    (should (equal 3 (vm-imap-bunch-test--at)))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

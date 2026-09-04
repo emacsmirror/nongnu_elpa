@@ -1277,6 +1277,12 @@ supposed to remove, arriving from the other side."
     ;; current message and a reader reading it is not to be moved.
     (when (and new-messages (null vm-message-pointer)
 	       (vm-thoughtfully-select-message))
+      ;; Remembered as a guess.  With no new or unread message to go to,
+      ;; `vm-thoughtfully-select-message' falls back to the last message there
+      ;; is, and at this point that is the last of the first bunch rather than
+      ;; the last of the folder.  `vm-imap-net-show-arrival' undoes it at the
+      ;; end of the fetch if the reader has not moved (emacs-vm/vm#799).
+      (setq vm-imap-net-provisional-message (car vm-message-pointer))
       (vm-present-current-message))
     (vm-update-summary-and-mode-line)
     (when vm-arrived-message-hook
@@ -1645,6 +1651,22 @@ synchronisation asks for: `vm-imap-save-attributes\=' with `:all-flags\='."
 (declare-function vm-present-current-message "vm-page" ())
 (declare-function vm-arrival-blurb "vm-folder" (count))
 
+(defvar vm-imap-net-provisional-message nil
+  "The message `vm-imap-net-assimilate' chose to keep the folder usable.
+
+A folder being fetched into for the first time has no current message until
+one is chosen, and a command typed before then fails on nil.  So one is chosen
+partway, from the messages that have arrived so far.  Where the folder holds
+nothing new or unread, that choice is the last message of the first bunch, and
+it used to stand: a fully read folder of three hundred and ninety opened at
+message ten, and the number followed `vm-imap-message-bunch-size'.  Worse, it
+was written to the cache as `X-VM-Bookmark', so every later visit opened there
+too (emacs-vm/vm#799).
+
+Held so that the end of the fetch can tell that choice from a message the
+reader went to themselves, and take it back if they did not.")
+(make-variable-buffer-local 'vm-imap-net-provisional-message)
+
 (defun vm-imap-net-show-arrival (folder count)
   "Say that COUNT messages arrived in FOLDER, and show one of them.
 What `vm-get-new-mail\=' does when mail arrives, done when it arrives rather
@@ -1656,6 +1678,14 @@ would have nothing to work on."
     ;; new count, as the synchronous path builds its blurb first for the same
     ;; reason.
     (let ((blurb (vm-arrival-blurb count)))
+      ;; If the reader is still sitting where the fetch put them to keep the
+      ;; folder usable, that was a guess made from part of a folder and this
+      ;; is the moment to make it again with all of it (#799).  If they have
+      ;; moved, the guess is theirs to keep and nothing here disturbs it.
+      (when (and vm-imap-net-provisional-message
+		 (eq vm-imap-net-provisional-message (car vm-message-pointer)))
+	(setq vm-message-pointer nil))
+      (setq vm-imap-net-provisional-message nil)
       (if (vm-thoughtfully-select-message)
 	  (vm-present-current-message)
 	(vm-update-summary-and-mode-line))
