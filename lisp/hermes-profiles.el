@@ -143,6 +143,10 @@ route requires both fields."
 (defvar-local hermes-profiles-soul-profile nil
   "Profile owned by the current SOUL editor buffer.")
 
+(defvar-local hermes-profiles--soul-save-pending nil
+  "Request token of the pending SOUL save, or nil.
+Reject another save until settlement rather than race remote writes.")
+
 (defvar-keymap hermes-profiles-soul-mode-map
   :parent markdown-mode-map
   "C-c C-c" #'hermes-profiles-soul-save
@@ -214,29 +218,57 @@ route requires both fields."
                      (set-buffer-modified-p nil))))))))))))
 
 (defun hermes-profiles-soul-save ()
-  "Save the current profile SOUL editor through the dashboard API."
+  "Save the current profile SOUL editor through the dashboard API.
+Reject overlapping saves; keep edits made during a save modified."
   (interactive)
   (unless (derived-mode-p 'hermes-profiles-soul-mode)
     (user-error "Not in a Hermes profile SOUL buffer"))
+  (when hermes-profiles--soul-save-pending
+    (user-error "SOUL save in progress; draft retained, save again after completion"))
   (let* ((profile hermes-profiles-soul-profile)
          (target (current-buffer))
-         (content (buffer-substring-no-properties (point-min) (point-max)))
-         (generation (hermes-browser--next-request-generation)))
+         (instance (hermes-instance-resolve))
+         (tick (buffer-chars-modified-tick))
+         (content (buffer-substring-no-properties (point-min) (point-max))))
     (unless (hermes-transport--non-empty-string profile)
       (user-error "This SOUL buffer has no profile"))
     (hermes-profiles--ensure-non-default profile "edit SOUL for")
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (hermes-profiles--api
-        client "PUT" (hermes-profiles--soul-path profile)
-        `((content . ,content))))
-     (lambda (_result)
-       (when (hermes-profiles--soul-current-p target generation profile)
-         (with-current-buffer target
-           (when (equal content
-                        (buffer-substring-no-properties (point-min) (point-max)))
-             (set-buffer-modified-p nil)))
-         (message "Hermes: saved SOUL for profile %s" profile))))))
+    (let* ((generation (hermes-browser--next-request-generation))
+           (current-p
+            (lambda ()
+              (and (hermes-profiles--soul-current-p target generation profile)
+                   (with-current-buffer target
+                     (and (eq hermes-profiles--soul-save-pending generation)
+                          (equal instance (hermes-instance-resolve)))))))
+           (release
+            (lambda ()
+              (when (buffer-live-p target)
+                (with-current-buffer target
+                  (when (eq hermes-profiles--soul-save-pending generation)
+                    (setq hermes-profiles--soul-save-pending nil))))))
+           dispatched)
+      (setq hermes-profiles--soul-save-pending generation)
+      (unwind-protect
+          (prog1
+              (hermes--promise-finally
+               (hermes-browser--run-on-client
+                (lambda (client)
+                  (hermes-profiles--api
+                   client "PUT" (hermes-profiles--soul-path profile)
+                   `((content . ,content))))
+                (lambda (_result)
+                  (when (funcall current-p)
+                    (with-current-buffer target
+                      (when (= tick (buffer-chars-modified-tick))
+                        (set-buffer-modified-p nil)))
+                    (message "Hermes: saved SOUL for profile %s" profile)))
+                (lambda (reason)
+                  (when (funcall current-p)
+                    (message "Hermes: %s" reason))))
+               release)
+            (setq dispatched t))
+        ;; Client acquisition can signal before it returns a promise.
+        (unless dispatched (funcall release))))))
 
 (defun hermes-profiles-rename (new-name)
   "Rename the profile at point to NEW-NAME."
