@@ -55,10 +55,93 @@
   (should (= (hermes-config--coerce "12" '((type . "number"))) 12))
   (should (eq (hermes-config--coerce "false" '((type . "boolean"))) :false))
   (should (eq (hermes-config--coerce "true" '((type . "bool"))) t))
-  (should (equal (hermes-config--coerce "one, two" '((type . "list")))
-                 '("one" "two")))
+  (should (equal (hermes-config--coerce "[\"one\", \"two\"]" '((type . "list")))
+                 ["one" "two"]))
   (should-error (hermes-config--coerce "twelve" '((type . "number")))
                 :type 'user-error))
+
+(ert-deftest hermes-config-list-edit-roundtrips-through-json-wire ()
+  "Accepting list input unchanged preserves elements in the actual PUT JSON."
+  (dolist (items '(nil ("") ("" "") ("one" "two")
+                  ("a,b" " leading" "trailing " "  " "")
+                  ("quote\"" "back\\slash" "line\nbreak" "tab\t" "λ")))
+    (dolist (current (list items (vconcat items)))
+      (ert-info ((format "Current value: %S" current))
+        (let (wire)
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (_prompt initial &rest _) initial))
+                    ((symbol-function 'hermes-browser--with-client)
+                     (lambda (fn) (funcall fn 'client #'ignore)))
+                    ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                     (lambda (_method _path &rest args)
+                       (setq wire (json-parse-string
+                                   (json-serialize (plist-get args :body))
+                                   :object-type 'alist))
+                       (hermes--promise-resolved '((ok . t)))))
+                    ((symbol-function 'hermes-config--fetch)
+                     (lambda (_) (hermes--promise-resolved '(nil nil nil)))))
+            (with-temp-buffer
+              (hermes-config-mode)
+              (hermes-config--render
+               (current-buffer) '((fields . ((tools . ((type . "list"))))))
+               `((tools . ,current) (model . "unchanged")) nil)
+              (search-forward "tools")
+              (hermes-config-edit)))
+          (should (equal (hermes-config--path-value wire "config.tools")
+                         (vconcat items)))
+          (should (equal (hermes-config--path-value wire "config.model")
+                         "unchanged")))))))
+
+(ert-deftest hermes-config-list-coercion-validates-json-array-shape ()
+  "Only complete JSON arrays are accepted, without discarding element types."
+  (dolist (text '("" "one,two" "[\"a\",]" "[\"a\"" "[] trailing"
+                 "[] []" "{}" "null" "false" "42" "\"text\""))
+    (ert-info ((format "Invalid list: %S" text))
+      (should-error (hermes-config--coerce text '((type . "list")))
+                    :type 'user-error)))
+  (dolist (case '((" [] " . [])
+                  ("[\"\",\"a,b\",\" x \"]" . ["" "a,b" " x "])
+                  ("[1,true,false,null,[]]" . [1 t :false :null []])))
+    (should (equal (hermes-config--coerce (car case) '((type . "list")))
+                   (cdr case)))))
+
+(ert-deftest hermes-config-list-invalid-input-never-starts-mutation ()
+  "Malformed input cannot acquire a mutation or send arbitrary text."
+  (let (requested)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "bad,input"))
+              ((symbol-function 'hermes-config--run-mutation)
+               (lambda (&rest _) (setq requested t))))
+      (with-temp-buffer
+        (hermes-config-mode)
+        (hermes-config--render
+         (current-buffer) '((fields . ((tools . ((type . "list"))))))
+         '((tools . ["old"])) nil)
+        (search-forward "tools")
+        (should-error (hermes-config-edit) :type 'user-error)
+        (should (equal hermes-config--config '((tools . ["old"]))))))
+    (should-not requested)))
+
+(ert-deftest hermes-config-list-rejects-non-list-current-values ()
+  "A schema mismatch must not turn a scalar or improper list into an array."
+  (dolist (current '("text" 42 t :null ("one" . "two")))
+    (let (prompted)
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) (setq prompted t) "[]")))
+        (should-error (hermes-config--read-value
+                       "tools" '((type . "list")) current)
+                      :type 'user-error))
+      (should-not prompted))))
+
+(ert-deftest hermes-config-scalar-input-remains-unchanged ()
+  "String and number editors keep their existing initial text and coercion."
+  (dolist (case '(("string" " a,b " " a,b ") ("number" 12 12)))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (prompt initial &rest _)
+                 (should (equal prompt "field: "))
+                 initial)))
+      (should (equal (hermes-config--read-value
+                      "field" `((type . ,(car case))) (cadr case))
+                     (caddr case))))))
 
 (ert-deftest hermes-config-edit-uses-field-schema-and-config-rest-contract ()
   "Config edit derives type from schema and PUTs the full config envelope."

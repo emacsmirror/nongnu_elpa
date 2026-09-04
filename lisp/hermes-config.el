@@ -25,7 +25,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'seq)
+(require 'json)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -270,8 +270,14 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
          ((or "nil" "false" "no" "0") :false)
          (_ (user-error "Enter true or false"))))
       ("list"
-       (seq-filter (lambda (item) (not (string-empty-p item)))
-                   (mapcar #'string-trim (split-string text ","))))
+       ;; Unlike event decoding, editing must retain [] and false/null.
+       (let ((value (condition-case nil
+                        (json-parse-string text :array-type 'array
+                                           :null-object :null
+                                           :false-object :false)
+                      (json-error (user-error "Enter a JSON array")))))
+         (unless (vectorp value) (user-error "Enter a JSON array"))
+         value))
       (_ text))))
 
 (defun hermes-config--field-schema (path)
@@ -280,12 +286,20 @@ Only one mutation may own BUFFER.  The lock covers the write and its refresh."
    (hermes-transport--get hermes-config--schema 'fields) path))
 
 (defun hermes-config--read-value (path schema current)
-  "Read config PATH using SCHEMA, with CURRENT as initial value."
+  "Read config PATH using SCHEMA, with CURRENT as initial value.
+List fields use JSON arrays, including [] for an empty list."
   (let ((type (hermes-transport--scalar-string
                (hermes-transport--get schema 'type))))
     (pcase type
       ((or "bool" "boolean")
        (if (y-or-n-p (format "Enable %s? " path)) t :false))
+      ("list"
+       (unless (or (vectorp current) (proper-list-p current))
+         (user-error "Current configuration value is not a list"))
+       (hermes-config--coerce
+        (read-string (format "%s (JSON array): " path)
+                     (json-serialize (vconcat current)))
+        schema))
       ("select"
        (completing-read (format "%s: " path)
                         (hermes-transport--get schema 'options)
