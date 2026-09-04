@@ -222,9 +222,7 @@ _XML-DATA is the ignored IQ result or error stanza."
 
 ;;;; Whitespace pings - less traffic, no error checking on our side
 ;;;
-;;; Openfire needs something like this, but I couldn't bring myself to
-;;; enable keepalive by default... Whitespace pings are light and
-;;; unobtrusive.
+;;; Whitespace pings keep NAT mappings active between response-checked pings.
 
 (defcustom jabber-whitespace-ping-interval 30
   "Send a space character to the server with this interval, in seconds.

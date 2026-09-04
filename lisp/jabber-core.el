@@ -55,6 +55,7 @@
 				       jabber-muc-self-ping-start
 				       jabber-mam-maybe-catchup
 				       jabber-whitespace-ping-start
+				       jabber-keepalive-start
 				       jabber-vcard-avatars-find-current
 				       jabber-carbons-maybe-enable
 				       jabber-sm-maybe-start)
@@ -74,7 +75,8 @@ The functions should accept one argument, the connection object."
 (defcustom jabber-post-resume-hooks '(jabber-muc-self-ping-rooms
 				      jabber-mam-maybe-catchup
 				      jabber-muc-self-ping-start
-				      jabber-whitespace-ping-start)
+				      jabber-whitespace-ping-start
+                                      jabber-keepalive-start)
   "Hooks run after successful SM stream resumption.
 These run instead of `jabber-post-connect-hooks' when the session
 was resumed rather than freshly established.  MAM catchup is needed
@@ -85,7 +87,8 @@ The functions should accept one argument, the connection object."
   :options '(jabber-muc-self-ping-rooms
 	     jabber-mam-maybe-catchup
 	     jabber-muc-self-ping-start
-	     jabber-whitespace-ping-start))
+	     jabber-whitespace-ping-start
+             jabber-keepalive-start))
 
 (defcustom jabber-pre-disconnect-hook nil
   "*Hooks run just before voluntary disconnection.

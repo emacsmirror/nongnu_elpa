@@ -506,6 +506,11 @@
                                       "Keepalive timeout"))))
       (should (equal cancelled-timers (list recurring-timer))))))
 
+(ert-deftest jabber-test-keepalive-default-session-hooks ()
+  "Default fresh and resumed sessions enable response-checked liveness."
+  (dolist (hook '(jabber-post-connect-hooks jabber-post-resume-hooks))
+    (should (memq #'jabber-keepalive-start (default-value hook)))))
+
 (provide 'jabber-test-keepalive)
 
 ;;; jabber-test-keepalive.el ends here
