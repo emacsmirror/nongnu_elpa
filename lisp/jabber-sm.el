@@ -185,6 +185,7 @@ When REJECT-STALE is non-nil, stale evidence is a protocol error."
 
 (defconst jabber-sm--initial-keys
   '(:sm-enabled nil
+                :sm-fresh-recovery nil
 		:sm-id nil
 		:sm-resume-max nil
 		:sm-outbound-count 0
@@ -242,19 +243,31 @@ Return updated STATE-DATA."
   (jabber-sm--counter-delta (plist-get state-data :sm-outbound-count)
                             (plist-get state-data :sm-last-acked)))
 
+(defun jabber-sm--blocked-room-p (state-data sexp)
+  "Return non-nil when SEXP targets a retained room in STATE-DATA."
+  (and (equal (jabber-xml-get-attribute sexp 'type) "groupchat")
+       (cl-some
+        (lambda (entry)
+          (and (keywordp (car-safe entry))
+               (equal (plist-get entry :blocked-room)
+                      (jabber-xml-get-attribute sexp 'to))))
+        (plist-get state-data :sm-pending-queue))))
+
 (defun jabber-sm--should-queue-p (state-data sexp)
-  "Return non-nil if SEXP should be queued in STATE-DATA.
-True for countable stanzas while resumed work awaits replay, or when
-ordinary back-pressure reaches its cap.  IQ stanzas bypass only the
-ordinary cap; non-stanza protocol control always bypasses both gates."
-  (and (plist-get state-data :sm-enabled)
-       (jabber-sm--stanza-p sexp)
-       (or (and (not (plist-get state-data :sm-resuming))
-                (plist-get state-data :sm-recovered-queue))
-           (and jabber-sm-max-in-flight
-                (not (eq (jabber-xml-node-name sexp) 'iq))
-                (>= (jabber-sm--in-flight-count state-data)
-                    jabber-sm-max-in-flight)))))
+  "Return non-nil if SEXP must wait for owned work in STATE-DATA.
+Fresh recovery allows bootstrap IQ and presence past blocked rooms.
+Successful resumption preserves all recovered wire order."
+  (and (jabber-sm--stanza-p sexp)
+       (or (and (plist-get state-data :sm-fresh-recovery)
+                (eq (jabber-xml-node-name sexp) 'message)
+                (plist-get state-data :sm-pending-queue))
+           (and (plist-get state-data :sm-enabled)
+                (or (and (not (plist-get state-data :sm-resuming))
+                         (plist-get state-data :sm-recovered-queue))
+                    (and jabber-sm-max-in-flight
+                         (not (eq (jabber-xml-node-name sexp) 'iq))
+                         (>= (jabber-sm--in-flight-count state-data)
+                             jabber-sm-max-in-flight)))))))
 
 (defun jabber-sm--stanza-priority (sexp)
   "Return priority for SEXP: 0 for message, 1 for iq, 2 for presence."
@@ -271,8 +284,12 @@ Return updated STATE-DATA."
   (plist-put state-data :sm-pending-queue
              (nconc (plist-get state-data :sm-pending-queue)
                     (list
-                     (if (or success-callback failure-callback)
-                         (list :priority (jabber-sm--stanza-priority sexp)
+                     (if (or success-callback failure-callback
+                             (jabber-sm--blocked-room-p state-data sexp))
+                         (list :blocked-room
+                               (and (jabber-sm--blocked-room-p state-data sexp)
+                                    (jabber-xml-get-attribute sexp 'to))
+                               :priority (jabber-sm--stanza-priority sexp)
                                :stanza sexp
                                :success success-callback
                                :failure failure-callback)
@@ -381,15 +398,28 @@ pending entries."
   (let ((h (jabber-sm--parse-handled-count stanza t)))
     (when h
       (setq state-data (jabber-sm--apply-handled-count state-data h))))
-  (let ((outbound (mapcar
-                   (lambda (entry)
-                     (cons (jabber-sm--stanza-priority (cdr entry))
-                           (cdr entry)))
-                   (plist-get state-data :sm-outbound-queue)))
-        (pending (plist-get state-data :sm-pending-queue)))
-    (setq state-data (jabber-sm--reset state-data))
-    (plist-put state-data :sm-pending-queue
-               (append outbound pending))))
+  (let* ((stanzas (append (mapcar #'cdr
+                                 (plist-get state-data :sm-outbound-queue))
+                          (plist-get state-data :sm-recovered-queue)))
+         (entries (append
+                   (mapcar (lambda (stanza)
+                             (cons (jabber-sm--stanza-priority stanza) stanza))
+                           stanzas)
+                   (plist-get state-data :sm-pending-queue)))
+         (retained
+          (mapcar
+           (lambda (entry)
+             (let ((stanza (jabber-sm--pending-stanza entry)))
+               (if (equal (jabber-xml-get-attribute stanza 'type) "groupchat")
+                   (plist-put
+                    (if (keywordp (car-safe entry)) (copy-sequence entry)
+                      (list :priority (car entry) :stanza stanza))
+                    :blocked-room (jabber-xml-get-attribute stanza 'to))
+                 entry)))
+           entries))
+         (state-data (jabber-sm--reset (copy-sequence state-data))))
+    (setq state-data (plist-put state-data :sm-fresh-recovery t))
+    (plist-put state-data :sm-pending-queue retained)))
 
 ;;; FSM routing helper
 

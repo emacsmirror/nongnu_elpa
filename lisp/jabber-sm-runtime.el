@@ -70,21 +70,28 @@ JC is the Jabber connection.  Return updated STATE-DATA."
   (let ((state-data (copy-sequence state-data)))
     (plist-put
      state-data :sm-pending-queue
-     (cl-stable-sort
-      (copy-sequence (plist-get state-data :sm-pending-queue))
-      (lambda (a b)
-        (< (jabber-sm--pending-priority a)
-           (jabber-sm--pending-priority b)))))))
+     (if (plist-get state-data :sm-fresh-recovery)
+         (plist-get state-data :sm-pending-queue)
+       (cl-stable-sort
+        (copy-sequence (plist-get state-data :sm-pending-queue))
+        (lambda (a b)
+          (< (jabber-sm--pending-priority a)
+             (jabber-sm--pending-priority b))))))))
 
 (defun jabber-sm--next-drain-entry (state-data)
   "Return the next drain entry descriptor from STATE-DATA."
   (let ((recovered (plist-get state-data :sm-recovered-queue))
-        (pending (plist-get state-data :sm-pending-queue)))
+        (pending (cl-remove-if
+                  (lambda (entry)
+                    (and (keywordp (car-safe entry))
+                         (plist-get entry :blocked-room)))
+                  (plist-get state-data :sm-pending-queue))))
     (cond
      (recovered
       (list :sm-recovered-queue (car recovered) (car recovered) nil))
      ((and pending
-           (or (null jabber-sm-max-in-flight)
+           (or (not (plist-get state-data :sm-enabled))
+               (null jabber-sm-max-in-flight)
                (< (jabber-sm--in-flight-count state-data)
                   jabber-sm-max-in-flight)))
       (let ((entry (car pending)))
@@ -96,11 +103,13 @@ JC is the Jabber connection.  Return updated STATE-DATA."
 (defun jabber-sm--commit-drain-entry (jc state-data queue-key entry sexp)
   "Commit one sent ENTRY from QUEUE-KEY when JC still owns STATE-DATA."
   (when (and (jabber-sm--drain-owner-p jc state-data)
-             (eq entry (car (plist-get state-data queue-key))))
+             (memq entry (plist-get state-data queue-key)))
     (let ((next (copy-sequence state-data)))
       (setq next
             (plist-put next queue-key
-                       (cdr (plist-get state-data queue-key))))
+                       (cl-delete entry (copy-sequence
+                                         (plist-get state-data queue-key))
+                                  :test #'eq :count 1)))
       (setq next
             (plist-put next :sm-outbound-queue
                        (copy-sequence

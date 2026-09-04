@@ -349,9 +349,13 @@ plist of captured callback effects and retry authority."
                         (not (plist-get state-data :terminalized))
                         (plist-get state-data :ever-session-established)
                         (memq fsm jabber-connections)))
-         (reset-p (not (and retrying resumable)))
+         (reset-p (not (and retrying
+                            (or resumable
+                                (plist-get state-data :sm-fresh-recovery)))))
          (reset-claimed
-          (and reset-p (not (plist-get state-data :session-reset-done))))
+          (and reset-p
+               (or (not (plist-get state-data :session-reset-done))
+                   (plist-get state-data :sm-fresh-recovery))))
          (token (make-symbol "nil-entry"))
          entries)
     (setq state-data (plist-put state-data :connection nil))
@@ -793,6 +797,36 @@ STATE-DATA is the connection state to preserve."
 		(:do-disconnect
 		 (jabber-core--active-disconnect-transition fsm state-data))))
 
+(defun jabber-core--bind-offered-p (state-data)
+  "Return non-nil if STATE-DATA offers exact resource binding."
+  (cl-some (lambda (node)
+             (equal (jabber-xml-get-xmlns node) jabber-bind-xmlns))
+           (jabber-xml-get-children
+            (plist-get state-data :stream-features) 'bind)))
+
+(defun jabber-core--fresh-bind (jc state-data failed)
+  "Convert retained work on JC before fresh binding after FAILED.
+Publish STATE-DATA ownership before reset callbacks, then reacquire it."
+  (if (not (jabber-core--bind-offered-p state-data))
+      (list nil state-data)
+    (let* ((state (get jc :state))
+           (connection (plist-get state-data :connection))
+           (converted (jabber-sm--handle-failed-resume state-data failed)))
+      (setq converted (plist-put converted :session-reset-done t))
+      (put jc :state-data converted)
+      (jabber-lifecycle-dispatch-session-reset jc)
+      (let ((current (fsm-get-state-data jc)))
+        (if (or (not (eq state (get jc :state)))
+                (not (eq connection (plist-get current :connection)))
+                (not (memq jc jabber-connections))
+                (plist-get current :terminalized))
+            (list (get jc :state) current :keep)
+          (if (eq state :bind)
+              (progn
+                (jabber--send-bind-request jc current)
+                (list (get jc :state) (fsm-get-state-data jc) :keep))
+            (list :bind (plist-put current :bind-after-sm-failure t))))))))
+
 (defun jabber--send-bind-request (jc state-data)
   "Request resource binding for JC using STATE-DATA."
   (let ((handle-bind
@@ -844,22 +878,10 @@ STATE-DATA is the connection state to preserve."
 			    (jabber-xml-child-with-xmlns stanza jabber-sm-xmlns))
 		       (list :sm-resume state-data))
 		      ;; SM resume was hoped for but server doesn't offer SM here.
-		      ((plist-get state-data :sm-resuming)
-		       (jabber-lifecycle-dispatch-session-reset fsm)
-		       (setq state-data
-			     (jabber-sm--discard-pending
-			      state-data "stream resumption unavailable"))
-		       (setq state-data (jabber-sm--reset state-data))
-		       (setq state-data (plist-put state-data :sm-resuming nil))
-		       ;; Fall through to normal bind.
-		       (if (jabber-xml-get-children stanza 'bind)
-			   (progn
-			     (jabber--send-bind-request fsm state-data)
-			     (list :bind state-data))
-			 (message "Server doesn't permit resource binding")
-			 (list nil state-data)))
+              ((plist-get state-data :sm-resuming)
+               (jabber-core--fresh-bind fsm state-data '(failed ())))
 		      ;; Normal bind flow.
-		      ((jabber-xml-get-children stanza 'bind)
+		      ((jabber-core--bind-offered-p state-data)
 		       (jabber--send-bind-request fsm state-data)
 		       (list :bind state-data))
 		      (t
@@ -981,19 +1003,7 @@ STATE-DATA is the connection state to preserve."
 			 fsm state-data err))))
 		    ((jabber-sm--failed-p stanza)
 		     (condition-case err
-			 (progn
-			   (setq state-data
-				 (jabber-sm--handle-failed-resume state-data stanza))
-			   (message
-			    "Stream Management resume failed, binding a new session")
-			   (jabber-lifecycle-dispatch-session-reset fsm)
-			   (if (jabber-xml-get-children
-				(plist-get state-data :stream-features) 'bind)
-			       (list :bind
-				     (plist-put state-data
-						:bind-after-sm-failure t))
-			     (message "Server doesn't permit resource binding")
-			     (list nil state-data)))
+                 (jabber-core--fresh-bind fsm state-data stanza)
 		       (jabber-sm-protocol-error
 			(jabber--sm-protocol-error-transition
 			 fsm state-data err))))

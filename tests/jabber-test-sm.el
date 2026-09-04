@@ -476,7 +476,8 @@
 (ert-deftest jabber-test-sm-resume-failure-binds-without-reauthentication ()
   "A failed post-SASL resume continues with resource binding."
   (let* ((msg '(message ((to . "a@x")) (body () "unacked")))
-         (fsm 'fake-jc)
+         (fsm (make-symbol "failed-resume"))
+         (jabber-connections (list fsm))
          (state-data
           (list :resource "emacs"
                 :sm-enabled t
@@ -496,6 +497,8 @@
                               (get 'jabber-connection :fsm-enter)))
          sent-iq
          stream-header-sent)
+    (put fsm :state :sm-resume)
+    (put fsm :state-data state-data)
     (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-reset)
                #'ignore)
               ((symbol-function 'jabber-send-stream-header)
@@ -3350,6 +3353,122 @@
                       (car (xml-parse-region (point-min) (point-max))))))
       (should (equal (jabber-xml-get-attribute resumed 'previd) id))
       (should (equal (jabber-xml-get-attribute resumed 'h) "7")))))
+
+(ert-deftest jabber-test-sm-fresh-recovery-keeps-tail-and-room-barrier ()
+  "Fresh recovery keeps wire order, but blocked rooms permit direct work."
+  (dolist (enabled '(nil t))
+    (let* ((jc (make-symbol "fresh"))
+           (jabber-connections (list jc))
+           (jabber-sm-max-in-flight nil)
+           (room '(message ((to . "room@example.org") (type . "groupchat"))))
+           (iq '(iq ((id . "old-iq"))))
+           (direct '(message ((to . "peer@example.org"))))
+           (state (jabber-sm--reset nil))
+           sent)
+      (setq state (plist-put state :sm-outbound-queue (list (cons 1 room))))
+      (setq state (plist-put state :sm-outbound-count 1))
+      (setq state (plist-put state :sm-recovered-queue (list iq)))
+      (setq state (jabber-sm--enqueue-pending state direct))
+      (setq state (jabber-sm--handle-failed-resume state '(failed ())))
+      (should (equal (mapcar #'jabber-sm--pending-stanza
+                            (plist-get state :sm-pending-queue))
+                     (list room iq direct)))
+      (setq state (plist-put state :sm-enabled enabled))
+      (setq state (plist-put state :connection 'transport))
+      (jabber-test-sm--install-drain-state jc state)
+      (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+                 (lambda (_jc stanza) (push stanza sent))))
+        (jabber-sm--drain-pending jc state))
+      (should (equal (reverse sent) (list iq direct)))
+      (should (equal (mapcar #'jabber-sm--pending-stanza
+                            (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+                     (list room))))))
+
+(ert-deftest jabber-test-sm-fresh-fallback-requires-exact-bind ()
+  "Missing or wrong namespace bind does not convert or reset retained work."
+  (dolist (feature '(nil (bind ((xmlns . "wrong")))
+                        (other ((xmlns . "urn:ietf:params:xml:ns:xmpp-bind")))))
+    (dolist (source '(:bind :sm-resume))
+      (let* ((jc (make-symbol "no-bind"))
+             (jabber-connections (list jc))
+             (state (jabber-sm--reset nil))
+             (features `(features () ,@(when feature (list feature))))
+             (resets 0)
+             (jabber-lifecycle-session-reset-functions
+              (list (lambda (_jc) (cl-incf resets)))))
+        (setq state (plist-put state :sm-enabled t))
+        (setq state (plist-put state :sm-resuming t))
+        (setq state (plist-put state :sm-id "old"))
+        (setq state (plist-put state :stream-features features))
+        (setq state (plist-put state :sm-outbound-queue '((1 message ()))))
+        (put jc :name 'jabber-connection)
+        (put jc :state source)
+        (put jc :state-data state)
+        (cl-letf (((symbol-function 'jabber--send-bind-request)
+                   (lambda (&rest _) (ert-fail "Unexpected bind"))))
+          (let ((result
+                 (funcall (gethash source (get 'jabber-connection :fsm-event))
+                          jc state
+                          (list :stanza (if (eq source :bind) features
+                                          '(failed ((xmlns . "urn:xmpp:sm:3")))))
+                          #'ignore)))
+            (should-not (car result))
+            (should (plist-get (cadr result) :sm-id))
+            (should (plist-get (cadr result) :sm-outbound-queue))
+            (should (= resets 0))))))))
+
+(ert-deftest jabber-test-sm-fresh-reset-reentry-keeps-current-owner ()
+  "Reset hooks may cancel, replace transport, or enqueue behind old work."
+  (dolist (action '(cancel replace enqueue))
+    (let* ((jc (make-symbol "reset-owner"))
+           (jabber-connections (list jc))
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (old '(message ((to . "peer@example.org") (id . "old"))))
+           (new '(message ((to . "peer@example.org") (id . "new"))))
+           (state (jabber-sm--reset nil))
+           (failures 0) (binds 0) observations
+           (jabber-lifecycle-session-reset-functions
+            (list (lambda (connection)
+                    (push (plist-get (fsm-get-state-data connection)
+                                     :sm-pending-queue) observations)
+                    (when (= (length observations) 1)
+                      (pcase action
+                      ('cancel (jabber-disconnect-one connection))
+                      ('replace
+                       (put connection :state :connecting)
+                       (put connection :state-data
+                            (list :connection 'successor :sm-pending-queue
+                                  (list (cons 0 new)))))
+                      ('enqueue (jabber-send-sexp connection new))))))))
+      (setq state (plist-put state :connection 'old-transport))
+      (setq state (plist-put state :stream-features
+                             `(features () (bind ((xmlns . ,jabber-bind-xmlns))))))
+      (setq state (jabber-sm--enqueue-pending
+                   state old nil (lambda (_reason) (cl-incf failures))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :sm-resume)
+      (put jc :state-data state)
+      (cl-letf (((symbol-function 'jabber--send-bind-request)
+                 (lambda (&rest _) (cl-incf binds)))
+                ((symbol-function 'jabber-send-stream-header) #'ignore))
+        (fsm-send-sync jc '(:stanza (failed ((xmlns . "urn:xmpp:sm:3")))))
+        (should (car (last observations)))
+        (pcase action
+          ('cancel
+           (should-not (memq jc jabber-connections))
+           (should-not (get jc :state))
+           (should (= failures 1))
+           (should (= binds 0)))
+          ('replace
+           (should (eq (get jc :state) :connecting))
+           (should (eq (plist-get (fsm-get-state-data jc) :connection) 'successor))
+           (should (= binds 0)))
+          ('enqueue
+           (should (eq (get jc :state) :bind))
+           (should (= binds 1))
+           (should (equal (mapcar #'jabber-sm--pending-stanza
+                                 (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+                          (list old new)))))))))
 
 (provide 'jabber-test-sm)
 

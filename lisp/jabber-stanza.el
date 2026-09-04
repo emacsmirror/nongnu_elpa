@@ -117,6 +117,8 @@ Set to a string to also append XML input and output to that file."
           failure-callback (error-message-string err))
        (signal (car err) (cdr err))))))
 
+(declare-function jabber-sm--schedule-drain "jabber-sm-runtime" (jc state-data))
+
 (defun jabber-send-sexp
     (jc sexp &optional success-callback failure-callback)
   "Send SEXP on JC with SM back-pressure and transport callbacks."
@@ -125,6 +127,9 @@ Set to a string to also append XML input and output to that file."
         (progn
           (jabber-sm--enqueue-pending
            state-data sexp success-callback failure-callback)
+          (when (and (plist-get state-data :sm-fresh-recovery)
+                     (eq (get jc :state) :session-established))
+            (jabber-sm--schedule-drain jc state-data))
           (when (eq (jabber-xml-node-name sexp) 'message)
             (message "SM: message queued (waiting for server ack, %d pending)"
                      (length (plist-get state-data :sm-pending-queue)))))

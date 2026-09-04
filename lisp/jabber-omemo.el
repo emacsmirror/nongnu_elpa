@@ -1559,6 +1559,7 @@ envelope (e.g. XEP-0308 replace)."
                 (jabber-omemo--send-operation-finish
                  operation 'failure reason))
             raw-failed)))
+    (plist-put operation :transport-success succeeded)
     (condition-case err
         (jabber-omemo--ensure-sessions
          jc recipient
@@ -1679,6 +1680,7 @@ envelope."
                 (jabber-omemo--send-operation-finish
                  operation 'failure reason))
             raw-failed)))
+    (plist-put operation :transport-success succeeded)
     (if (null bare-jids)
         (progn
           (funcall failed
@@ -1846,14 +1848,48 @@ of date, and pre-fetches sessions for open chat buffers."
   (clrhash jabber-omemo--sent-muc-plaintexts))
 
 (defun jabber-omemo--session-reset (jc)
-  "Discard pending OMEMO work belonging to logical session JC."
-  (jabber-omemo--fail-send-operations
-   jc "OMEMO: connection reset before the message was sent")
-  (maphash
-   (lambda (key _value)
-     (when (eq jc (car key))
-       (remhash key jabber-omemo--sent-muc-plaintexts)))
-   jabber-omemo--sent-muc-plaintexts))
+  "Discard OMEMO work not owned by JC's fresh recovery queue."
+  (let* ((state-data (fsm-get-state-data jc))
+         (entries (and (plist-get state-data :sm-fresh-recovery)
+                       (plist-get state-data :sm-pending-queue)))
+         (callbacks (delq nil (mapcar
+                              (lambda (entry)
+                                (and (keywordp (car-safe entry))
+                                     (plist-get entry :success)))
+                              entries)))
+         (operations (copy-sequence
+                      (gethash jc jabber-omemo--pending-send-operations)))
+         (discarded-echoes
+          (cl-remove-if-not
+           (lambda (key)
+             (and (eq jc (car key))
+                  (not (cl-some
+                        (lambda (entry)
+                          (let* ((stanza (jabber-sm--pending-stanza entry))
+                                 (room (jabber-xml-get-attribute stanza 'to))
+                                 (nick (or (jabber-muc-nickname room jc)
+                                           (cadr (assoc room
+                                             (gethash
+                                              (jabber-connection-bare-jid jc)
+                                              jabber-muc--rooms-before-disconnect))))))
+                            (and nick
+                                 (equal (jabber-xml-get-attribute stanza 'type)
+                                        "groupchat")
+                                 (jabber-xml-child-with-xmlns
+                                  stanza jabber-omemo-xmlns)
+                                 (equal key
+                                        (jabber-omemo--muc-echo-key
+                                         jc room (concat room "/" nick)
+                                         (jabber-xml-get-attribute stanza 'id))))))
+                        entries))))
+           (hash-table-keys jabber-omemo--sent-muc-plaintexts))))
+    ;; Claim old echo disposal before callbacks can create successor work.
+    (dolist (key discarded-echoes)
+      (remhash key jabber-omemo--sent-muc-plaintexts))
+    (dolist (operation operations)
+      (unless (memq (plist-get operation :transport-success) callbacks)
+        (jabber-omemo--send-operation-finish
+         operation 'failure "OMEMO: connection reset before the message was sent")))))
 
 ;;; XEP-0454: aesgcm file upload
 
