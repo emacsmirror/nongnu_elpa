@@ -3530,9 +3530,10 @@ ambient value of fill-column.   A nil value suppresses centering."
   "*Header to insert into messages burst from a digest.
 Value should be a format string of the same type as `vm-summary-format'
 that describes a header to be inserted into each message burst from a
-digest.  The format string must end with a newline."
+digest.  The format string must end with a newline.
+A value of nil inserts no such header."
   :group 'vm-digest
-  :type 'string)
+  :type '(choice (const :tag "None" nil) string))
 
 (defcustom vm-digest-burst-type "guess"
   "*Value specifies the default digest type offered by `vm-burst-digest'
