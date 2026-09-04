@@ -317,6 +317,165 @@
       (vm-mime-qp-decode-region (point-min) (point-max))
       (should (equal (buffer-string) original)))))
 
+(defconst vm-mime-test--codec-payloads
+  (list (cons "plain ascii"      "hello there\n")
+        (cons "trailing space"   "a line with a trailing space \nnext\n")
+        (cons "trailing tab"     "a line with a trailing tab\t\nnext\n")
+        (cons "an = sign"        "1 = 2 maybe\n")
+        (cons "a From_ line"
+              "before\nFrom nobody@example.com Mon Jan  1 00:00:00 2024\nafter\n")
+        (cons "a dot line"       "before\n.\nafter\n")
+        (cons "76 characters"    (concat (make-string 76 ?x) "\n"))
+        (cons "77 characters"    (concat (make-string 77 ?x) "\n"))
+        (cons "1000 characters"  (concat (make-string 1000 ?y) "\n"))
+        (cons "8-bit bytes"      (unibyte-string ?a ?\s ?b 195 182 ?d ?y 10))
+        (cons "every byte"       (apply #'unibyte-string
+                                        (append (number-sequence 1 255) (list 10))))
+        (cons "a CR"             "before\r\nafter\n")
+        (cons "no final newline" "no newline at the end")
+        (cons "empty"            ""))
+  "Payloads to put through a transfer encoding and back.
+
+Bytes, not characters: `unibyte-string' rather than a literal, because a
+literal above 127 is read as a character and a codec answers bytes, so the
+two compare unequal however well the codec did.  That cost an hour.
+
+The awkward ones are here on purpose: trailing whitespace, which
+quoted-printable has to encode or a gateway will strip it; a line of exactly
+76 and one of 77, which is where the fold falls; an `=' and a `From ' line,
+which are what the encodings quote; a bare CR; and no final newline.")
+
+(defun vm-mime-test--transfer-encode (encoding text)
+  "The wire form of TEXT under ENCODING, `base64' or `quoted-printable'."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert text)
+    (if (eq encoding 'base64)
+        (vm-mime-base64-encode-region (point-min) (point-max))
+      (vm-mime-qp-encode-region (point-min) (point-max)))
+    (buffer-substring-no-properties (point-min) (point-max))))
+
+(defun vm-mime-test--transfer-round-trip (encoding text &optional crlf)
+  "Encode TEXT under ENCODING and decode it again, answering what comes back.
+CRLF asks base64 for the line endings a part carries on the wire, which is
+the path emacs-vm/vm#792 broke: without it the bug is invisible here, since
+the marker it turned on only matters where the CRLF conversion inserts."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert text)
+    (if (eq encoding 'base64)
+        (progn
+          (vm-mime-base64-encode-region (point-min) (point-max) crlf)
+          (vm-mime-base64-decode-region (point-min) (point-max) crlf))
+      (vm-mime-qp-encode-region (point-min) (point-max))
+      (quoted-printable-decode-region (point-min) (point-max)))
+    (buffer-substring-no-properties (point-min) (point-max))))
+
+(defun vm-mime-test--longest-line (text)
+  "The length of the longest line in TEXT."
+  (apply #'max 0 (mapcar #'length (split-string text "\n"))))
+
+(ert-deftest vm-mime-test-a-transfer-encoding-gives-every-byte-back ()
+  "Both transfer encodings return each payload byte for byte.
+
+Fourteen payloads by two encodings by the two line endings, including all
+255 byte values in one part.  A part that does not come back as it went in
+is mail that arrives wrong, and emacs-vm/vm#792 was one: a base64 text part
+went out a newline short.  The CRLF half is what reaches that: with LF alone
+the marker #792 turned on never matters, and a mutation reintroducing it
+passes this test."
+  (dolist (encoding '(base64 quoted-printable))
+    (dolist (crlf '(nil t))
+      (dolist (spec vm-mime-test--codec-payloads)
+        (should (equal (list encoding crlf (car spec) (cdr spec))
+                       (list encoding crlf (car spec)
+                             (vm-mime-test--transfer-round-trip
+                              encoding (cdr spec) crlf))))))))
+
+(ert-deftest vm-mime-test-a-transfer-encoding-folds-to-76-characters ()
+  "Neither transfer encoding writes a line past the 76 of RFC 2045.
+
+Lossless is not the same as legal: a part that decodes correctly here can
+still be one a gateway wraps, and a wrapped base64 line does not decode at
+all.  The 1000-character payload is the one that shows it, and the 76 and 77
+are where the fold falls."
+  (dolist (encoding '(base64 quoted-printable))
+    (dolist (spec vm-mime-test--codec-payloads)
+      (let ((longest (vm-mime-test--longest-line
+                      (vm-mime-test--transfer-encode encoding (cdr spec)))))
+        (should (equal (list encoding (car spec) t)
+                       (list encoding (car spec) (<= longest 76))))))))
+
+(defconst vm-mime-test--encoding-choice-payloads
+  (list (cons "plain ascii"      "hello there\n")
+        (cons "a From_ line"
+              "before\nFrom nobody@example.com Mon Jan  1 00:00:00 2024\nafter\n")
+        (cons "a dot line"       "before\n.\nafter\n")
+        (cons "8-bit bytes"      (unibyte-string ?a ?\s ?b 195 182 ?d ?y 10))
+        (cons "a NUL"            (unibyte-string ?a 0 ?b 10))
+        (cons "a CR"             "before\r\nafter\n")
+        (cons "a 1000 char line" (concat (make-string 1000 ?y) "\n"))
+        (cons "every byte"       (apply #'unibyte-string
+                                        (append (number-sequence 1 255) (list 10)))))
+  "Bodies that reach each arm of `vm-mime-transfer-encode-region'.
+A NUL and a CR are what makes VM call a part binary, a thousand-character
+line is past the 998 of RFC 5322, and a `From ' or a lone dot are the two
+lines it armors.")
+
+(defun vm-mime-test--decode-by-name (name)
+  "Decode the whole buffer by the transfer encoding NAME."
+  (cond ((equal name "base64")
+         (vm-mime-base64-decode-region (point-min) (point-max) t))
+        ((equal name "quoted-printable")
+         (quoted-printable-decode-region (point-min) (point-max)))))
+
+(defun vm-mime-test--choose-and-encode (option armor text)
+  "Let VM choose an encoding for TEXT and apply it, then decode it again.
+OPTION is `vm-mime-8bit-text-transfer-encoding' and ARMOR is
+`vm-mime-composition-armor-from-lines'.  Answers (ENCODING . CAME-BACK)."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert text)
+    (let* ((vm-mime-8bit-text-transfer-encoding option)
+           (vm-mime-composition-armor-from-lines armor)
+           (chosen (vm-determine-proper-content-transfer-encoding
+                    (point-min) (point-max)))
+           (used (vm-mime-transfer-encode-region
+                  chosen (point-min) (point-max) t)))
+      (vm-mime-test--decode-by-name used)
+      (cons used (buffer-substring-no-properties (point-min) (point-max))))))
+
+(ert-deftest vm-mime-test-whatever-encoding-vm-picks-carries-the-body ()
+  "The body survives whichever encoding VM chooses for it.
+
+Eight bodies by the three values of `vm-mime-8bit-text-transfer-encoding' by
+the two of `vm-mime-composition-armor-from-lines'.  What is pinned is the
+invariant rather than any one choice: decoding by the name
+`vm-mime-transfer-encode-region' answers gives the bytes back.
+
+The choice is checked in two places where it is not free.  A `From ' line
+goes out as it stands when armoring is off, which is the default and is what
+`vm-mime-composition-armor-from-lines' documents, and is armored when it is
+on.  A body over the line length limit goes quoted-printable whatever the
+option says, because base64 would make the rest of the part unreadable to
+anyone looking at the message as it was sent."
+  (dolist (option '(quoted-printable base64 8bit))
+    (dolist (armor '(nil t))
+      (dolist (spec vm-mime-test--encoding-choice-payloads)
+        (let ((got (vm-mime-test--choose-and-encode option armor (cdr spec))))
+          (should (equal (list option armor (car spec) (cdr spec))
+                         (list option armor (car spec) (cdr got))))))))
+  ;; the two choices that are not free
+  (should (equal "7bit"
+                 (car (vm-mime-test--choose-and-encode
+                       'quoted-printable nil "before\nFrom x@example.com\n"))))
+  (should (equal "quoted-printable"
+                 (car (vm-mime-test--choose-and-encode
+                       'quoted-printable t "before\nFrom x@example.com\n"))))
+  (should (equal "quoted-printable"
+                 (car (vm-mime-test--choose-and-encode
+                       'base64 nil (concat (make-string 1000 ?y) "\n"))))))
+
 (ert-deftest vm-mime-test-qp-encode-preserves-ascii ()
   "Test quoted-printable preserves ASCII text."
   (with-temp-buffer
