@@ -1475,26 +1475,35 @@ visible while reading."
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session over the dashboard and render its prior messages."
   (with-current-buffer buffer
-    (let ((lifetime hermes-chat--lifecycle-generation)
-          (client
-           (hermes-chat--dashboard-start
-            (hermes-chat--transport-callback
-             buffer nil t (hermes-chat--next-transport-generation)))))
+    (let* ((lifetime hermes-chat--lifecycle-generation)
+           (generation (hermes-chat--next-transport-generation))
+           (client (hermes-chat--dashboard-start
+                    (hermes-chat--transport-callback buffer nil t generation)))
+           (current-p
+            (lambda ()
+              (and (hermes-chat--dashboard-context-current-p client lifetime)
+                   (hermes-chat--current-transport-generation-p generation)))))
       (hermes-dashboard-transport-session-resume
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)
        :profile hermes-chat--profile
        :resolve (lambda (result)
-                  (hermes-chat--in-lifetime buffer lifetime
-                    (hermes-chat--dashboard-record-session client result)
-                    (hermes-chat--render-history
-                     (hermes-transport--get result 'messages))
-                    (hermes-chat--dashboard-restore-pending-clarify result)))
+                  (hermes-chat--in-buffer buffer
+                    (when (funcall current-p)
+                      (hermes-chat--dashboard-record-session client result)
+                      (hermes-chat--render-history
+                       (hermes-transport--get result 'messages))
+                      (when (hermes-chat--dashboard-result-live-turn-p result)
+                        (hermes-chat--dashboard-restore-inflight-turn client)
+                        (hermes-chat--dashboard-bind-stream-callback
+                         client hermes-chat--pending-assistant-id))
+                      (hermes-chat--dashboard-restore-pending-clarify result))))
        :reject (lambda (message)
-                 (hermes-chat--in-lifetime buffer lifetime
-                   (hermes-chat--insert-local-status
-                    (format "Could not load Hermes session history: %s" message)
-                    'error)))))))
+                 (hermes-chat--in-buffer buffer
+                   (when (funcall current-p)
+                     (hermes-chat--insert-local-status
+                      (format "Could not load Hermes session history: %s" message)
+                      'error))))))))
 
 (defun hermes-chat-resume-session (session-id &optional title profile instance)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
