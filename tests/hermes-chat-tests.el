@@ -293,6 +293,151 @@
        (insert "draft")
        (should buffer-undo-list)))))
 
+(defun hermes-test--draft-undo-command (command)
+  "Run undo COMMAND with the relevant command-loop bookkeeping."
+  (let ((this-command command))
+    (funcall command 1)
+    (setq last-command this-command))
+  (undo-boundary))
+
+(ert-deftest hermes-chat-draft-undo-survives-transcript-mutations ()
+  "Transcript changes preserve draft edits and native pending undo/redo."
+  (dolist (mutation '(insert grow shrink remove expand collapse))
+    (dolist (pending '(nil undo redo))
+      (ert-info ((format "mutation=%s pending=%s" mutation pending))
+        (let ((undo-in-region nil)
+              (last-command nil)
+              (pending-undo-list nil)
+              (undo-equiv-table (make-hash-table :test #'eq)))
+          (hermes-test-with-chat-buffer
+           (hermes-chat--insert-entry
+            (hermes-chat--make-entry 'tool "first\nsecond\nthird" 'done "entry"))
+           (when (eq mutation 'collapse)
+             (hermes-chat--toggle-entry-expanded "entry"))
+           (setq buffer-undo-list nil)
+           (insert "draft α\n")
+           (undo-boundary)
+           (insert "tail")
+           (undo-boundary)
+           ;; A deletion exercises signed string-position records as well
+           ;; as insertion ranges and native redo equivalence links.
+           (delete-char -2)
+           (undo-boundary)
+           (when pending
+             (hermes-test--draft-undo-command #'undo-only)
+             (should (equal (hermes-chat-input-string) "draft α\ntail")))
+           (when (eq pending 'redo)
+             (hermes-test--draft-undo-command #'undo-redo)
+             (should (equal (hermes-chat-input-string) "draft α\nta")))
+           (pcase mutation
+             ('insert
+              (hermes-chat--insert-entry
+               (hermes-chat--make-entry 'assistant "New streamed answer" 'streaming "new")))
+             ('grow
+              (hermes-chat--update-entry
+               "entry" (lambda (entry)
+                         (hermes-chat--entry-with entry :content "A much longer first line\nmore"))))
+             ('shrink
+              (hermes-chat--update-entry
+               "entry" (lambda (entry)
+                         (hermes-chat--entry-with entry :content "x"))))
+             ('remove (hermes-chat--remove-entry "entry"))
+             (_ (hermes-chat--toggle-entry-expanded "entry")))
+           (let ((transcript (buffer-substring (point-min) hermes-chat--input-marker))
+                 (entries (copy-tree (hermes-chat--entries))))
+             (unless (eq pending 'undo)
+               (hermes-test--draft-undo-command #'undo-only)
+               (should (equal (hermes-chat-input-string) "draft α\ntail")))
+             (hermes-test--draft-undo-command #'undo-only)
+             (should (equal (hermes-chat-input-string) "draft α\n"))
+             (hermes-test--draft-undo-command #'undo-only)
+             (should (equal (hermes-chat-input-string) ""))
+             (dolist (draft '("draft α\n" "draft α\ntail" "draft α\nta"))
+               (hermes-test--draft-undo-command #'undo-redo)
+               (should (equal (hermes-chat-input-string) draft)))
+             (should (equal-including-properties
+                      transcript (buffer-substring (point-min) hermes-chat--input-marker)))
+             (should (equal entries (hermes-chat--entries)))
+             (should-not (text-property-not-all (point-min) hermes-chat--input-marker 'read-only t))
+             (should-not (get-text-property hermes-chat--input-marker 'read-only))
+             (should (<= hermes-chat--input-marker (point)))
+             (insert "!")
+             (should (equal (hermes-chat-input-string) "draft α\nta!")))))))))
+
+(ert-deftest hermes-chat-draft-grouped-undo-survives-streaming ()
+  "Native combined edits retain their nested undo records across streaming."
+  (let ((undo-in-region nil)
+        (last-command nil)
+        (pending-undo-list nil)
+        (undo-equiv-table (make-hash-table :test #'eq)))
+    (hermes-test-with-chat-buffer
+     (setq buffer-undo-list nil)
+     (combine-change-calls (point) (point)
+       (insert "draft")
+       (put-text-property (- (point) 5) (point) 'face 'bold))
+     (undo-boundary)
+     (hermes-chat--insert-entry
+      (hermes-chat--make-entry 'assistant "streamed" 'streaming "reply"))
+     (let ((transcript (buffer-substring (point-min) hermes-chat--input-marker)))
+       (hermes-test--draft-undo-command #'undo-only)
+       (should (equal (hermes-chat-input-string) ""))
+       (should (equal-including-properties
+                transcript (buffer-substring (point-min) hermes-chat--input-marker)))
+       (hermes-chat--update-entry
+        "reply" (lambda (entry) (hermes-chat--entry-with entry :content "x")))
+       (setq transcript (buffer-substring (point-min) hermes-chat--input-marker))
+       (hermes-test--draft-undo-command #'undo-redo)
+       (should (equal (hermes-chat-input-string) "draft"))
+       (should (eq (get-text-property hermes-chat--input-marker 'face) 'bold))
+       (should (equal-including-properties
+                transcript (buffer-substring (point-min) hermes-chat--input-marker)))))))
+
+(ert-deftest hermes-chat-draft-selective-undo-survives-streaming ()
+  "A pending native selective undo list follows the same moving draft."
+  (let ((undo-in-region nil)
+        (last-command nil)
+        (pending-undo-list nil)
+        (undo-equiv-table (make-hash-table :test #'eq))
+        (transient-mark-mode t))
+    (hermes-test-with-chat-buffer
+     (setq buffer-undo-list nil)
+     (insert "one")
+     (undo-boundary)
+     (insert "two")
+     (undo-boundary)
+     (push-mark hermes-chat--input-marker t t)
+     (hermes-test--draft-undo-command #'undo-only)
+     (should (equal (hermes-chat-input-string) "one"))
+     (hermes-chat--insert-entry
+      (hermes-chat--make-entry 'assistant "streamed answer" 'streaming "reply"))
+     (let ((transcript (buffer-substring (point-min) hermes-chat--input-marker)))
+       (hermes-test--draft-undo-command #'undo-only)
+       (should (equal (hermes-chat-input-string) ""))
+       (should (equal-including-properties
+                transcript (buffer-substring (point-min) hermes-chat--input-marker)))))))
+
+(ert-deftest hermes-chat-draft-undo-reset-is-buffer-local ()
+  "Reset drops stale draft history without touching another buffer's undo."
+  (let ((undo-in-region nil)
+        (last-command nil)
+        (pending-undo-list (list '(10 . 20)))
+        (undo-equiv-table (make-hash-table :test #'eq)))
+    (hermes-test-with-chat-buffer
+     (insert "old draft")
+     (undo-boundary)
+     (hermes-test--draft-undo-command #'undo-only)
+     (hermes-chat--setup-buffer)
+     (should-not buffer-undo-list)
+     (should-not pending-undo-list)
+     (insert "new draft")
+     (undo-boundary)
+     (setq last-command nil)
+     (hermes-chat--insert-entry
+      (hermes-chat--make-entry 'assistant "new session reply" 'streaming "reply"))
+     (hermes-test--draft-undo-command #'undo-only)
+     (should (equal (hermes-chat-input-string) "")))
+    (should (equal pending-undo-list '((10 . 20))))))
+
 (ert-deftest hermes-chat-renders-status-and-progress-events ()
   (let (callback)
     (hermes-test-with-chat-buffer
