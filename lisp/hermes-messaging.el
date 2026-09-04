@@ -478,6 +478,8 @@ accepted.  Arbitrary runtime error text is never displayed."
 (define-derived-mode hermes-messaging-mode tabulated-list-mode "Hermes Messaging"
   "Major mode for profile-scoped Hermes messaging platforms."
   :interactive nil
+  (setq-local hermes-browser--snapshot-variables
+              '(hermes-messaging--platforms))
   (unless (hash-table-p hermes-messaging--platforms)
     (setq hermes-messaging--platforms (make-hash-table :test #'equal)))
   (setq tabulated-list-format

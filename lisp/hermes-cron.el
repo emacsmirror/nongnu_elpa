@@ -614,6 +614,7 @@ The first render only records a baseline so pre-existing failures do not alert."
 
 (defun hermes-cron--maybe-start-auto-refresh ()
   "Start a per-buffer cron auto-refresh timer when one is configured."
+  (setq-local hermes-browser--snapshot-variables '(hermes-cron--seen-runs))
   (when (and (natnump hermes-cron-auto-refresh-interval)
              (> hermes-cron-auto-refresh-interval 0)
              (not hermes-cron--auto-refresh-timer))

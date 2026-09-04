@@ -183,6 +183,9 @@ client just for the listing."
   :fetch #'hermes-sessions--fetch
   :rows #'hermes-sessions--result-rows
   :on-result #'hermes-sessions--record-result
+  :on-mode (lambda ()
+             (setq-local hermes-browser--snapshot-variables
+                         '(hermes-sessions--session-map)))
   :keys ("RET" #'hermes-sessions-open
          "v" #'hermes-sessions-view
          "r" #'hermes-sessions-rename

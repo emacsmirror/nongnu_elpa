@@ -626,6 +626,9 @@ the board detail buffer shows the most recently created tasks at the top."
   "Major mode for browsing a single Hermes Kanban board."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-kanban--revert)
+  (setq-local hermes-browser--snapshot-variables
+              '(hermes-kanban--assignees hermes-kanban--latest-event-id
+                hermes-kanban--orchestration-mode mode-line-process))
   (add-hook 'kill-buffer-hook #'hermes-kanban--events-teardown nil t)
   (add-hook 'change-major-mode-hook #'hermes-kanban--events-teardown nil t)
   (add-hook 'window-size-change-functions
@@ -702,6 +705,12 @@ that task after rendering."
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-mode)
         (hermes-kanban-mode))
+      (unless (equal hermes-instance instance)
+        (when hermes-kanban--events-tail
+          (hermes-kanban--events-disconnect hermes-kanban--events-tail))
+        ;; With A's rows invalidated, refresh and board-wide commands must
+        ;; use B's requested board even while its fetch remains pending.
+        (setq hermes-kanban--slug slug hermes-kanban--name name))
       (hermes-browser--own-instance instance))
     (hermes-kanban--then
      (let ((hermes-kanban--request-owner target))

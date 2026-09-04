@@ -270,11 +270,25 @@
              (hermes-instance--valid-p hermes-instance))
     (format " Hermes instance: %s " (hermes-instance-name hermes-instance))))
 
+(defvar-local hermes-browser--snapshot-variables nil
+  "Buffer-local cache variables to clear when the browser changes instance.
+Browser modes register snapshot data here, not filters or request parameters.
+Tabulated rows and their rendered text are always invalidated together.")
+
 (defun hermes-browser--own-instance (instance)
-  "Make the current browser buffer own INSTANCE."
+  "Make the current browser buffer own INSTANCE.
+Invalidate the previous instance's rows and registered caches first."
   (when (and (hermes-instance--valid-p hermes-instance)
              (not (equal hermes-instance instance)))
-    (hermes-browser--next-request-generation))
+    (hermes-browser--next-request-generation)
+    (when (or (derived-mode-p 'tabulated-list-mode)
+              hermes-browser--snapshot-variables)
+      (dolist (variable hermes-browser--snapshot-variables)
+        (set (make-local-variable variable) nil))
+      (when (derived-mode-p 'tabulated-list-mode)
+        (setq tabulated-list-entries nil))
+      (let ((inhibit-read-only t))
+        (erase-buffer))))
   (setq-local hermes-instance instance)
   (setq-local header-line-format
               '(:eval (hermes-browser--instance-header-line))))
