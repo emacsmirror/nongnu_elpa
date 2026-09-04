@@ -598,6 +598,162 @@
                                   :sm-recovered-queue))
                   msg)))))
 
+(ert-deftest jabber-test-sm-resume-hook-sends-follow-recovered-work ()
+  "New countable sends from resume hooks cannot overtake recovered wire order."
+  (dolist (cap '(nil 1 40))
+    (let* ((jabber-sm-max-in-flight cap)
+           (jc (make-symbol "resume-order"))
+           (old '(presence ((id . "old"))))
+           (new '(message ((id . "new"))))
+           (iq '(iq ((id . "new-iq") (type . "get"))))
+           (control '(r ((xmlns . "urn:xmpp:sm:3"))))
+           sent scheduled
+           (state-data
+            (list :connection 'transport :sm-enabled t :sm-id "s1"
+                  :sm-outbound-count 1 :sm-last-acked 0
+                  :sm-outbound-queue (list (cons 1 old))
+                  :sm-recovered-queue nil :sm-pending-queue nil
+                  :send-function (lambda (_transport xml) (push xml sent))
+                  :sm-resuming t))
+           (jabber-connections (list jc))
+           (jabber-post-resume-hooks
+            (list (lambda (fsm)
+                    (jabber-send-sexp fsm new)
+                    (jabber-send-sexp fsm iq)
+                    (jabber-send-sexp fsm control)))))
+      (put jc :name 'jabber-connection)
+      (put jc :state :sm-resume)
+      (put jc :state-data state-data)
+      (cl-letf (((symbol-function 'jabber-sm--start-r-timer)
+                 (lambda (_jc data) data))
+                ((symbol-function 'jabber-sm--schedule-drain)
+                 (lambda (_jc data) (setq scheduled data))))
+        (fsm-send-sync
+         jc `(:stanza (resumed ((xmlns . ,jabber-sm-xmlns)
+                                (h . "0") (previd . "s1"))))))
+      (should (eq (get jc :state) :session-established))
+      (should (equal sent (list (jabber-sexp2xml control))))
+      (should (equal (mapcar #'jabber-sm--pending-stanza
+                             (plist-get scheduled :sm-pending-queue))
+                     (list new iq)))
+      (jabber-sm--drain-pending jc scheduled)
+      (should (equal (cadr (reverse sent))
+                     (concat (jabber-sexp2xml old)
+                             (jabber-sm--make-request-xml))))
+      (if (eql cap 1)
+          (should (= (length sent) 2))
+        (should (= (length sent) 4))))))
+
+(ert-deftest jabber-test-sm-raw-send-revalidates-handoff-owner ()
+  "Logging and serialization cannot redirect a stale stanza to a successor."
+  (dolist (boundary '(logging serialization))
+    (dolist (replacement '(state transport sender))
+      (let* ((jc (make-symbol "handoff-owner"))
+             (old (make-symbol "old-transport"))
+             (new (make-symbol "new-transport"))
+             sent
+             (sender (lambda (transport xml) (push (list transport xml) sent)))
+             (sd (list :connection old :send-function sender))
+             (replace-owner
+              (lambda ()
+                (pcase replacement
+                  ('state (put jc :state-data (copy-sequence sd)))
+                  ('transport (plist-put sd :connection new))
+                  ('sender (plist-put sd :send-function #'ignore)))))
+             (jabber-debug-log-xml t)
+             (jabber-stanza-log-function
+              (lambda (&rest _)
+                (when (eq boundary 'logging) (funcall replace-owner))))
+             (serialize (symbol-function 'jabber-sexp2xml)))
+        (put jc :state-data sd)
+        (cl-letf (((symbol-function 'jabber-sexp2xml)
+                   (lambda (sexp)
+                     (when (eq boundary 'serialization) (funcall replace-owner))
+                     (funcall serialize sexp))))
+          (should-error (jabber-send-sexp--raw jc '(message ((id . "old"))))))
+        (should-not sent)))))
+
+(ert-deftest jabber-test-sm-drain-logger-cannot-write-or-recover-successor ()
+  "A logger replacing the transport leaves queued work and the successor alone."
+  (dolist (replace-state '(nil t))
+    (let* ((jc (make-symbol "drain-logger"))
+           (jabber-connections (list jc))
+           (old (make-symbol "old-transport"))
+           (new (make-symbol "new-transport"))
+           (stanza '(message ((id . "retained"))))
+           writes recovery
+           (sd (list :connection old :sm-enabled t
+                     :sm-outbound-count 0 :sm-last-acked 0
+                     :sm-outbound-queue nil :sm-recovered-queue (list stanza)
+                     :sm-pending-queue nil
+                     :send-function (lambda (&rest args) (push args writes))))
+           (jabber-debug-log-xml t)
+           (jabber-stanza-log-function
+            (lambda (&rest _)
+              (let ((current (fsm-get-state-data jc)))
+                (when replace-state
+                  (setq current (copy-sequence current))
+                  (put jc :state-data current))
+                (plist-put current :connection new)))))
+      (jabber-test-sm--install-drain-state jc sd)
+      (cl-letf (((symbol-function 'fsm-send)
+                 (lambda (&rest args) (push args recovery))))
+        (jabber-sm--drain-pending jc sd))
+      (should-not writes)
+      (should-not recovery)
+      (should (eq (plist-get (fsm-get-state-data jc) :connection) new))
+      (should (equal (plist-get (fsm-get-state-data jc) :sm-recovered-queue)
+                     (list stanza)))
+      (should (= (plist-get (fsm-get-state-data jc) :sm-outbound-count) 0)))))
+
+(ert-deftest jabber-test-sm-drain-handoff-failure-requests-recovery ()
+  "Every failed replay position retains its tail and requests transport recovery."
+  (dolist (fail-at '(1 2 3))
+    (let* ((jc (make-symbol "replay-failure"))
+           (jabber-connections (list jc))
+           (jabber-auto-reconnect t)
+           (jabber-lost-connection-hooks nil)
+           (jabber-lifecycle-connection-list-changed-functions nil)
+           (jabber-lifecycle-session-reset-functions nil)
+           (stanzas '((message ((id . "one")))
+                      (message ((id . "two")))
+                      (presence ((id . "three")))))
+           (attempts 0)
+           recovery
+           (sd (list :username "user" :server "example.org" :resource "emacs"
+                     :ever-session-established t :connection 'transport
+                     :sm-enabled t :sm-id "s1" :sm-resume-allowed t
+                     :sm-outbound-count 0 :sm-last-acked 0
+                     :sm-outbound-queue nil :sm-recovered-queue stanzas
+                     :sm-pending-queue nil
+                     :send-function
+                     (lambda (_transport _xml)
+                       (when (= (cl-incf attempts) fail-at)
+                         (error "Transport failed"))))))
+      (jabber-test-sm--install-drain-state jc sd)
+      (cl-letf (((symbol-function 'fsm-send)
+                 (lambda (fsm event &optional _callback)
+                   (setq recovery (list fsm event)))))
+        (jabber-sm--drain-pending jc sd))
+      (setq sd (fsm-get-state-data jc))
+      (should (= (plist-get sd :sm-outbound-count) (1- fail-at)))
+      (should (equal (plist-get sd :sm-recovered-queue)
+                     (nthcdr (1- fail-at) stanzas)))
+      (should (eq (car recovery) jc))
+      (should (equal (seq-take (cadr recovery) 2)
+                     '(:connection-dead transport)))
+      (unwind-protect
+          (progn
+            (apply #'fsm-send-sync recovery)
+            (should-not (get jc :state))
+            (should (plist-get (fsm-get-state-data jc) :sm-resuming))
+            (should (timerp (get jc :timeout)))
+            (should-not (plist-get (fsm-get-state-data jc)
+                                   :disconnection-expected))
+            (should (equal (plist-get (fsm-get-state-data jc) :sm-recovered-queue)
+                           (nthcdr (1- fail-at) stanzas))))
+        (fsm-stop-timer jc)))))
+
 (ert-deftest jabber-test-sm-session-entry-reentry-preserves-terminal-state ()
   "A resume hook disconnect cannot be overwritten or schedule a stale drain."
   (let* ((jc (make-symbol "session-enter-disconnect"))

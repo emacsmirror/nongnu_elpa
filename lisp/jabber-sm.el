@@ -244,16 +244,17 @@ Return updated STATE-DATA."
 
 (defun jabber-sm--should-queue-p (state-data sexp)
   "Return non-nil if SEXP should be queued in STATE-DATA.
-True when SM is enabled, SEXP is a countable stanza, back-pressure
-is enabled, and the in-flight count has reached the cap.
-IQ stanzas always bypass the gate since they have their own
-timeout handling and are useless when stale."
-  (and jabber-sm-max-in-flight
-       (plist-get state-data :sm-enabled)
+True for countable stanzas while resumed work awaits replay, or when
+ordinary back-pressure reaches its cap.  IQ stanzas bypass only the
+ordinary cap; non-stanza protocol control always bypasses both gates."
+  (and (plist-get state-data :sm-enabled)
        (jabber-sm--stanza-p sexp)
-       (not (eq (jabber-xml-node-name sexp) 'iq))
-       (>= (jabber-sm--in-flight-count state-data)
-           jabber-sm-max-in-flight)))
+       (or (and (not (plist-get state-data :sm-resuming))
+                (plist-get state-data :sm-recovered-queue))
+           (and jabber-sm-max-in-flight
+                (not (eq (jabber-xml-node-name sexp) 'iq))
+                (>= (jabber-sm--in-flight-count state-data)
+                    jabber-sm-max-in-flight)))))
 
 (defun jabber-sm--stanza-priority (sexp)
   "Return priority for SEXP: 0 for message, 1 for iq, 2 for presence."

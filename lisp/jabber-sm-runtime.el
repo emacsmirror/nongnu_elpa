@@ -117,7 +117,8 @@ JC is the Jabber connection.  Return updated STATE-DATA."
     (let ((continue t))
       (while (and continue (jabber-sm--drain-owner-p jc state-data))
         (if-let* ((descriptor (jabber-sm--next-drain-entry state-data)))
-            (pcase-let ((`(,queue-key ,entry ,sexp ,success) descriptor))
+            (pcase-let ((`(,queue-key ,entry ,sexp ,success) descriptor)
+                        (connection (plist-get state-data :connection)))
               (condition-case nil
                   (progn
                     (jabber-send-sexp--raw jc sexp)
@@ -131,7 +132,11 @@ JC is the Jabber connection.  Return updated STATE-DATA."
                       (setq continue nil)))
                 ((error quit)
                  (message "SM: queue drain write failed")
-                 (setq continue nil))))
+                 (setq continue nil)
+                 (when (and (jabber-sm--drain-owner-p jc state-data)
+                            (eq connection (plist-get state-data :connection)))
+                   (fsm-send jc (list :connection-dead connection
+                                      "Stream Management replay write failed"))))))
           (setq continue nil))))))
 
 (defun jabber-sm--schedule-drain (jc state-data)

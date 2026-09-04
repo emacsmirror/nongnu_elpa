@@ -68,21 +68,29 @@ Set to a string to also append XML input and output to that file."
 
 (defun jabber-send-sexp--raw (jc sexp)
   "Send SEXP to JC without updating Stream Management state."
-  (condition-case err
-      (jabber-log-xml jc "sending" sexp)
-    (error
-     (ding)
-     (message "Couldn't write XML log: %s" (error-message-string err))
-     (sit-for 2)))
-  (let* ((xml (jabber-sexp2xml sexp))
-         (state-data (fsm-get-state-data jc))
-         (sm-countable (and (plist-get state-data :sm-enabled)
-                            (jabber-sm--stanza-p sexp))))
-    (jabber-send-string
-     jc
-     (if sm-countable
-         (concat xml (jabber-sm--make-request-xml))
-       xml))))
+  (let* ((state-data (fsm-get-state-data jc))
+         (connection (plist-get state-data :connection))
+         (send-function (plist-get state-data :send-function)))
+    (condition-case err
+        (jabber-log-xml jc "sending" sexp)
+      (error
+       (ding)
+       (message "Couldn't write XML log: %s" (error-message-string err))
+       (sit-for 2)))
+    (let* ((xml (jabber-sexp2xml sexp))
+           (sm-countable (and (plist-get state-data :sm-enabled)
+                              (jabber-sm--stanza-p sexp)))
+           (wire (if sm-countable
+                     (concat xml (jabber-sm--make-request-xml))
+                   xml)))
+      ;; Logging and serialization can run Lisp which replaces the stream.
+      ;; Never acquire a successor transport for this already selected stanza.
+      (unless (and connection
+                   (eq state-data (fsm-get-state-data jc))
+                   (eq connection (plist-get state-data :connection))
+                   (eq send-function (plist-get state-data :send-function)))
+        (error "Connection changed before stanza handoff"))
+      (funcall send-function connection wire))))
 
 (defun jabber-sm--run-pending-callback (callback &optional argument)
   "Run CALLBACK with optional ARGUMENT without disrupting send state."
