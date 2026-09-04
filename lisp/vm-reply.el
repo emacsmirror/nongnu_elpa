@@ -1697,13 +1697,16 @@ included in the digest."
 	      mlist vm-rfc1153-digest-headers
 	      vm-rfc1153-digest-discard-header-regexp))
             ((equal vm-digest-send-type nil)
-             (while mlist
+             ;; Walked with `dolist', not by cutting `mlist' down: the
+             ;; preamble below reads `mlist' after this, and an arm that
+             ;; consumed it left every nil-type digest with no preamble at
+             ;; all (emacs-vm/vm#804).
+             (dolist (m mlist)
                (vm-no-frills-encapsulate-message
-                (car mlist) 
+                m
 		(append vm-forwarded-headers vm-forwarded-mime-headers)
                 vm-unforwarded-header-regexp) ; nil?
-	       (insert "\n")
-               (setq mlist (cdr mlist)))))
+	       (insert "\n"))))
 
       (goto-char start)
       (setq mp mlist)
