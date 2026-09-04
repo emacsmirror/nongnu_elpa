@@ -697,6 +697,67 @@
         (when (and proc (buffer-live-p (process-buffer proc)))
           (kill-buffer (process-buffer proc)))))))
 
+;;; Transport event ownership
+
+(ert-deftest jabber-conn-test-stale-sentinel-preserves-successor ()
+  "A late sentinel cannot close a successor, including virtual transports."
+  (let ((jabber-connections nil)
+        (jabber-lost-connection-hooks nil))
+    (cl-letf (((symbol-function 'jabber-network-connect) #'ignore)
+              ((symbol-function 'jabber-send-stream-header) #'ignore)
+              ((symbol-function 'jabber-lifecycle-dispatch-session-reset)
+               #'ignore)
+              ((symbol-function
+                'jabber-lifecycle-dispatch-connection-list-changed) #'ignore))
+      (let* ((fsm (start-jabber-connection
+                   "romeo" "example.com" "emacs"
+                   nil "secret" nil nil 'starttls))
+             (old (make-symbol "old-transport"))
+             (current (make-symbol "current-virtual-transport")))
+        (fsm-send-sync fsm (list :connected current))
+        (let ((state-data (fsm-get-state-data fsm)))
+          (fsm-send-sync fsm (list :sentinel old "closed\n"))
+          (should (eq (get fsm :state) :connected))
+          (should (eq (fsm-get-state-data fsm) state-data))
+          (should-not (plist-get state-data :disconnection-reason)))
+        (fsm-send-sync fsm (list :sentinel current "closed\n"))
+        (should-not (get fsm :state))
+        (should (equal (plist-get (fsm-get-state-data fsm)
+                                 :disconnection-reason)
+                       "closed"))))))
+
+(ert-deftest jabber-conn-test-stale-filter-preserves-parse-buffers ()
+  "Old transport data is ignored before insertion or XML parser effects."
+  (let ((old-buffer (generate-new-buffer " *jabber-old-filter*"))
+        (new-buffer (generate-new-buffer " *jabber-new-filter*"))
+        old current parsed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-network-connect) #'ignore)
+                  ((symbol-function 'jabber-send-stream-header) #'ignore)
+                  ((symbol-function 'jabber-filter)
+                   (lambda (process _fsm) (push process parsed))))
+          (setq old (make-pipe-process :name "jabber-old" :buffer old-buffer))
+          (setq current (make-pipe-process :name "jabber-new" :buffer new-buffer))
+          (let ((fsm (start-jabber-connection
+                      "romeo" "example.com" "emacs"
+                      nil "secret" nil nil 'starttls)))
+            (fsm-send-sync fsm (list :connected current))
+            (fsm-send-sync fsm (list :filter old "<message/>"))
+            (should-not parsed)
+            (should (equal (with-current-buffer old-buffer (buffer-string)) ""))
+            (should (equal (with-current-buffer new-buffer (buffer-string)) ""))
+            (fsm-send-sync fsm (list :filter current "<presence/>"))
+            (should (equal parsed (list current)))
+            (should (equal (with-current-buffer new-buffer (buffer-string))
+                           "<presence/>"))
+            (set-process-sentinel current #'ignore)))
+      (when old (delete-process old))
+      (when current
+        (set-process-sentinel current #'ignore)
+        (delete-process current))
+      (kill-buffer old-buffer)
+      (kill-buffer new-buffer))))
+
 ;;; Failed async connection cleanup
 
 (ert-deftest jabber-conn-test-failed-target-kills-process-buffer ()

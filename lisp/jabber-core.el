@@ -517,20 +517,21 @@ accepted after an earlier retry claim out of late terminal settlement."
 (defsubst jabber-fsm-handle-sentinel (state-data event)
   "Handle sentinel EVENT, updating STATE-DATA."
   ;; We do the same thing for every state, so avoid code duplication.
-  (let* ((string (car (cddr event)))
-	 ;; The event string sometimes (always?) has a trailing
-	 ;; newline, that we don't care for.
-	 (trimmed-string
-	  (if (eq ?\n (aref string (1- (length string))))
-	      (substring string 0 -1)
-	    string))
-	 (new-state-data
-	  ;; If we already know the reason (e.g. a stream error), don't
-	  ;; overwrite it.
-	  (if (plist-get state-data :disconnection-reason)
-	      state-data
-	    (plist-put state-data :disconnection-reason trimmed-string))))
-    (list nil new-state-data)))
+  (when (eq (cadr event) (plist-get state-data :connection))
+    (let* ((string (car (cddr event)))
+	   ;; The event string sometimes (always?) has a trailing
+	   ;; newline, that we don't care for.
+	   (trimmed-string
+	    (if (eq ?\n (aref string (1- (length string))))
+		(substring string 0 -1)
+	      string))
+	   (new-state-data
+	    ;; If we already know the reason (e.g. a stream error), don't
+	    ;; overwrite it.
+	    (if (plist-get state-data :disconnection-reason)
+		state-data
+	      (plist-put state-data :disconnection-reason trimmed-string))))
+      (list nil new-state-data))))
 
 (defun jabber--sm-protocol-error-transition (fsm state-data err)
   "Return a closed-stream transition for SM protocol ERR on FSM.
@@ -1168,14 +1169,15 @@ Call this function after disconnection."
 
 (defun jabber-pre-filter (process string fsm)
   "Append STRING from PROCESS to FSM's parse buffer."
-  (with-current-buffer (process-buffer process)
-    ;; Append new data
-    (goto-char (point-max))
-    (insert string)
+  (when (eq process (plist-get (fsm-get-state-data fsm) :connection))
+    (with-current-buffer (process-buffer process)
+      ;; Append new data only from the transport that owns this stream.
+      (goto-char (point-max))
+      (insert string)
 
-    (unless jabber-core--filtering
-      (let ((jabber-core--filtering t))
-	(jabber-filter process fsm)))))
+      (unless jabber-core--filtering
+        (let ((jabber-core--filtering t))
+          (jabber-filter process fsm))))))
 
 (defun jabber-filter (process fsm)
   "Parse complete XML stanzas from PROCESS buffer and dispatch to FSM."
