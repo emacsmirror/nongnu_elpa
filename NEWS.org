@@ -1,6 +1,10 @@
 #+title: simple-httpd.el - News
 #+language: en
 
+* Development
+
+- Minor cleanup and documentation updates.
+
 * Version 1.6 (2026-05-19)
 
 - Depend on Compat, update for new Emacs versions.
