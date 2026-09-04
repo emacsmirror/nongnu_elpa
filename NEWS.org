@@ -1,7 +1,7 @@
 #+title: simple-httpd.el - News
 #+language: en
 
-* Development
+* Version 1.7 (2026-09-04)
 
 - Minor cleanup and documentation updates.
 
