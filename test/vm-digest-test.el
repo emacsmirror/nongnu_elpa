@@ -407,6 +407,162 @@ the messages rather than text between separators."
               (should (string-match-p "message/rfc822" made))
               (should (string-match-p "first enclosed" made)))))))))
 
+
+;;; What a digest does to a body that looks like a separator
+;;
+;; The tests above check that the messages come back and that their subjects
+;; are right.  These check the bodies come back byte for byte, over the bodies
+;; that hold, or nearly hold, a separator of the format being used.  A digest
+;; that loses a line of someone's mail is the failure worth catching here.
+
+(defconst vm-digest-test--separator (make-string 30 ?-)
+  "The line RFC 1153 separates messages with, and RFC 934 in VM's writer.")
+
+(defconst vm-digest-test--round-trip-bodies
+  (list (cons "plain"           "just a body\n")
+        (cons "the separator"   (concat "before\n" vm-digest-test--separator "\nafter\n"))
+        (cons "the prologue"    (concat "before\n" (make-string 70 ?-) "\nafter\n"))
+        (cons "a quoted separator"
+              (concat "before\n " (make-string 29 ?-) "\nafter\n"))
+        (cons "a leading dash"  "before\n-not a separator\nafter\n")
+        (cons "a dash space"    "before\n- quoted already\nafter\n")
+        (cons "the epilogue"    "before\nEnd of this Digest\nafter\n")
+        (cons "a From_ line"
+              "before\nFrom nobody@example.com Mon Jan  1 00:00:00 2024\nafter\n")
+        (cons "a MIME boundary" "before\n--=-=-=\nafter\n"))
+  "Bodies to send through a digest and back.")
+
+(defconst vm-digest-test--known-round-trip-changes
+  '(("rfc934"  . "a From_ line")
+    ("rfc1153" . "a From_ line")
+    ("rfc1153" . "a quoted separator"))
+  "The cells where the body does not come back as it went in.
+
+The two From_ ones are correct and must not be fixed.  A burst files its
+messages into the folder, and in a From_ folder a body line beginning
+`From ' has to be quoted or it would end the message.  VM writes `>From ',
+which is mboxo and is what the manual's mbox section describes; leaving it
+alone would corrupt the folder instead, which is worse.
+
+The rfc1153 one is a real loss.  RFC 1153 defines no quoting, so the space
+for the first hyphen is VM's own invention, and it is not reversible: a body
+line that already reads as a space and twenty-nine hyphens is not quoted on
+the way in and is unquoted on the way out, so it comes back as the separator
+itself.  See emacs-vm/vm#803.")
+
+(defun vm-digest-test--encapsulate (type messages)
+  "Answer the digest of TYPE holding MESSAGES.
+MESSAGES is captured by the caller: `vm-message-list' is buffer-local and
+reads as nil inside the temp buffer built here."
+  (with-temp-buffer
+    (if (equal type "rfc934")
+        (vm-rfc934-encapsulate-messages messages '("From" "Subject" "Date") nil)
+      (vm-rfc1153-encapsulate-messages messages '("From" "Subject" "Date") nil))
+    (buffer-string)))
+
+(defun vm-digest-test--body-of (m)
+  "The text of message M, as it sits in its folder."
+  (with-current-buffer (vm-buffer-of m)
+    (save-restriction
+      (widen)
+      (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))))
+
+(defun vm-digest-test--round-trip (type body)
+  "Send BODY through a digest of TYPE and back, and answer the body it becomes."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-digest-rt" t)))
+         (inbox (expand-file-name "inbox" dir))
+         (digest-file (expand-file-name "digest" dir))
+         (vm-digest-identifier-header-format nil)
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
+         result)
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'vm-present-current-message) #'ignore))
+          (write-region
+           (concat "From sender@example.com Mon Jan  1 00:01:00 2024\n"
+                   "From: sender@example.com\nTo: me@example.com\n"
+                   "Subject: the one enclosed\n"
+                   "Date: Mon, 1 Jan 2024 10:00:00 +0000\n\n" body "\n")
+           nil inbox nil 'quiet)
+          (vm-visit-folder inbox)
+          (setq vm-message-pointer vm-message-list)
+          (let ((digest (vm-digest-test--encapsulate type vm-message-list)))
+            (write-region
+             (concat "From list@example.com Mon Jan  1 00:00:00 2024\n"
+                     "From: list@example.com\nSubject: the digest\n"
+                     "Date: Mon, 1 Jan 2024 12:00:00 +0000\n\n" digest "\n")
+             nil digest-file nil 'quiet))
+          (vm-visit-folder digest-file)
+          (setq vm-message-pointer vm-message-list)
+          (vm-burst-digest type)
+          (setq result (if (cdr vm-message-list)
+                           (vm-digest-test--body-of (cadr vm-message-list))
+                         :nothing-was-burst)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))
+    result))
+
+(defun vm-digest-test--changed-cells (type)
+  "The bodies TYPE does not give back as they went in."
+  (let ((found nil))
+    (dolist (spec vm-digest-test--round-trip-bodies)
+      (let ((got (vm-digest-test--round-trip type (cdr spec))))
+        (unless (equal (and (stringp got) (string-trim-right got "\n+"))
+                       (string-trim-right (cdr spec) "\n+"))
+          (push (car spec) found))))
+    (nreverse found)))
+
+(defun vm-digest-test--expected-changes (type)
+  "The labels TYPE is expected to change, from the known list."
+  (delq nil (mapcar (lambda (cell)
+                      (and (equal (car cell) type) (cdr cell)))
+                    vm-digest-test--known-round-trip-changes)))
+
+(ert-deftest vm-digest-test-an-rfc934-round-trip-changes-only-the-From_-line ()
+  "Every body comes back byte for byte from an RFC 934 digest but one.
+
+RFC 934 quotes any line beginning with a hyphen and unquotes it again, so a
+body holding the separator, the prologue rule or an already quoted line all
+survive.  The exception is `From ' at the start of a line, which the From_
+folder the burst files into has to quote and which nothing unquotes."
+  (should (equal (vm-digest-test--expected-changes "rfc934")
+                 (vm-digest-test--changed-cells "rfc934"))))
+
+(ert-deftest vm-digest-test-an-rfc1153-round-trip-loses-a-quoted-separator ()
+  "An RFC 1153 digest gives every body back but two, and says which.
+
+The `From ' line is the same one RFC 934 changes and is correct.  The other
+is emacs-vm/vm#803: VM quotes the separator by putting a space where its
+first hyphen was, and unquotes anything that reads that way, so a body line
+that already read that way comes back as the separator itself.  This test is
+what will fail if the quoting is ever made reversible."
+  (should (equal (sort (vm-digest-test--expected-changes "rfc1153") #'string<)
+                 (sort (vm-digest-test--changed-cells "rfc1153") #'string<))))
+
+(ert-deftest vm-digest-test-bursting-works-with-no-identifier-header ()
+  "REGRESSION: `vm-digest-identifier-header-format' nil does not break bursting.
+
+emacs-vm/vm#802.  nil means insert no identifying header, which is what the
+option's own guard in `vm-rfc1153-or-rfc934-burst-message' says and what the
+MIME burster does in both of its places.  The insert was unguarded, so a
+reader who did not want an `X-Digest:' header got
+
+    Wrong type argument: char-or-string-p, nil
+
+and nothing burst at all.  Checked on both types, since both go through that
+one function."
+  (dolist (type '("rfc934" "rfc1153"))
+    (let ((got (vm-digest-test--round-trip type "just a body\n")))
+      (should (equal "just a body" (and (stringp got)
+                                        (string-trim-right got "\n+")))))))
+
 (provide 'vm-digest-test)
 
 ;;; vm-digest-test.el ends here

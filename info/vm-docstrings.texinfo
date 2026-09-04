@@ -325,6 +325,7 @@ Header to insert into messages burst from a digest.
 Value should be a format string of the same type as @code{vm-summary-format}
 that describes a header to be inserted into each message burst from a
 digest.  The format string must end with a newline.
+A value of nil inserts no such header.
 
 Default value: @code{"X-Digest: %s\\n"}
 @end defopt

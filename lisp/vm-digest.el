@@ -553,7 +553,11 @@ RFC 1153.  Otherwise assume RFC 934 digests."
 		 ;; eat trailing newlines
 		 (while (= (following-char) ?\n)
 		   (delete-char 1))
-		 (insert ident-header))
+		 ;; nil means insert no identifying header, which is what the
+		 ;; option's own guard above says and what the MIME burster
+		 ;; does in both of its places (emacs-vm/vm#802)
+		 (when ident-header
+		   (insert ident-header)))
 	       ;; try to match message separator and repeat.
 	       (setq match (re-search-forward separator-regexp nil t)))
 	     ;; from the last separator to eof is the digest epilogue.
