@@ -556,27 +556,29 @@ re-registers."
           (or (and instance (hermes-instance-url instance))
               hermes-dashboard-transport-url)))
     (setf (hermes-capabilities--provider-generation provider) generation)
-    (hermes--promise-then
-     (funcall hermes-capabilities--url-function)
-     (lambda (auth)
-       (when (hermes-capabilities--current-generation-p provider generation)
-         (setf (hermes-capabilities--provider-socket provider)
-               (funcall hermes-capabilities--open-function
-                        (plist-get auth :url)
-                        (plist-get auth :redacted-url)
-                        (plist-get auth :secrets)
-                        :on-message
-                        (lambda (text)
-                          (when (hermes-capabilities--current-generation-p
-                                 provider generation)
-                            (hermes-capabilities--handle-message provider text)))
-                        :on-close
-                        (lambda ()
-                          (hermes-capabilities--on-down provider generation))
-                        :on-error
-                        (lambda (msg)
-                          (hermes-capabilities--on-down
-                           provider generation msg))))))
+    ;; Catch the child promise too: socket construction can signal after auth.
+    (hermes--promise-catch
+     (hermes--promise-then
+      (funcall hermes-capabilities--url-function)
+      (lambda (auth)
+        (when (hermes-capabilities--current-generation-p provider generation)
+          (setf (hermes-capabilities--provider-socket provider)
+                (funcall hermes-capabilities--open-function
+                         (plist-get auth :url)
+                         (plist-get auth :redacted-url)
+                         (plist-get auth :secrets)
+                         :on-message
+                         (lambda (text)
+                           (when (hermes-capabilities--current-generation-p
+                                  provider generation)
+                             (hermes-capabilities--handle-message provider text)))
+                         :on-close
+                         (lambda ()
+                           (hermes-capabilities--on-down provider generation))
+                         :on-error
+                         (lambda (msg)
+                           (hermes-capabilities--on-down
+                            provider generation msg)))))))
      (lambda (reason)
        (when (hermes-capabilities--current-generation-p provider generation)
          (message "Hermes capabilities: connect failed: %s" reason)
