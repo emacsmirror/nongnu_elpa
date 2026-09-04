@@ -14,6 +14,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'codex-ide-diff)
+(require 'ediff)
 
 ;;; Pure builder tests
 
@@ -69,183 +70,340 @@
       (when (buffer-live-p (car pair)) (kill-buffer (car pair)))
       (when (buffer-live-p (cdr pair)) (kill-buffer (cdr pair))))))
 
-(ert-deftest codex-ide-diff-build-state-shape ()
-  "Build-state returns an alist with all six keys."
-  (let* ((buf-a (get-buffer-create " *test-state-a*"))
-         (buf-b (get-buffer-create " *test-state-b*"))
-         (winconf (current-window-configuration))
-         (state (codex-ide-diff--build-state
-                 "test-tab" buf-a buf-b t winconf "old snapshot")))
+;;; Asynchronous review lifecycle
+
+(defun codex-ide-diff-test--accept (owner)
+  "Accept OWNER through the actual control-buffer command."
+  (with-current-buffer (plist-get owner :control)
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (call-interactively (key-binding codex-ide-diff-accept-key)))))
+
+(ert-deftest codex-ide-diff-review-edited-content ()
+  "Real Ediff returns exact edited text and never modifies the target."
+  (let* ((directory (make-temp-file "codex-diff-test-" t))
+         (path (expand-file-name "target.el" directory))
+         (before (buffer-list))
+         owner result live)
     (unwind-protect
         (progn
-          (should (equal "test-tab" (cdr (assq 'tab-name state))))
-          (should (eq buf-a (cdr (assq 'buffer-A state))))
-          (should (eq buf-b (cdr (assq 'buffer-B state))))
-          (should (eq t (cdr (assq 'file-exists state))))
-          (should (eq winconf (cdr (assq 'saved-winconf state))))
-          (should (equal "old snapshot"
-                         (cdr (assq 'old-content state)))))
-      (kill-buffer buf-a)
-      (kill-buffer buf-b))))
+          (write-region "disk original" nil path nil 'silent)
+          (setq live (find-file-noselect path))
+          (with-current-buffer live (insert "unsaved "))
+          (setq owner (codex-ide-diff-review
+                       "old" "proposal" path
+                       (lambda (status content) (push (list status content) result))))
+          (should-not result)
+          (with-current-buffer (plist-get owner :buffer-a)
+            (should buffer-read-only)
+            (should (equal (buffer-string) "old")))
+          (with-current-buffer (plist-get owner :buffer-b)
+            (should-not buffer-read-only)
+            (erase-buffer)
+            (insert "edited λ\n")
+            (narrow-to-region 2 3))
+          (codex-ide-diff-test--accept owner)
+          (should (equal result '((accepted "edited λ\n"))))
+          (codex-ide-diff-cancel owner)
+          (should (= (length result) 1))
+          (with-current-buffer live
+            (should (equal (buffer-string) "unsaved disk original")))
+          (with-temp-buffer
+            (insert-file-contents path)
+            (should (equal (buffer-string) "disk original")))
+          (should-not codex-ide-diff--active)
+          (dolist (buffer (buffer-list))
+            (unless (or (memq buffer before) (eq buffer live))
+              (should-not (string-match-p "\\`\\*\\(?:[Ee]diff\\|codex-ide-diff\\)" (buffer-name buffer))))))
+      (when owner (codex-ide-diff-cancel owner))
+      (when (buffer-live-p live)
+        (with-current-buffer live (set-buffer-modified-p nil))
+        (kill-buffer live))
+      (delete-directory directory t))))
 
-(ert-deftest codex-ide-diff-build-state-no-old-content ()
-  "Build-state omits old-content when not passed."
-  (let* ((buf-a (get-buffer-create " *test-state-a2*"))
-         (buf-b (get-buffer-create " *test-state-b2*"))
-         (winconf (current-window-configuration))
-         (state (codex-ide-diff--build-state
-                 "test-tab" buf-a buf-b nil winconf)))
+(ert-deftest codex-ide-diff-review-quit-cancel-and-kill ()
+  "Quit rejects; cancellation and killed review buffers never accept."
+  (dolist (action '(quit cancel control old proposal))
+    (let (owner result)
+      (unwind-protect
+          (progn
+            (setq owner (codex-ide-diff-review
+                         "old" "new" "fixture"
+                         (lambda (status content) (push (list status content) result))))
+            (pcase action
+              ('quit (with-current-buffer (plist-get owner :control)
+                       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+                         (call-interactively (key-binding "q")))))
+              ('cancel (codex-ide-diff-cancel owner))
+              (_ (kill-buffer (plist-get owner
+                                         (pcase action
+                                           ('control :control)
+                                           ('old :buffer-a)
+                                           ('proposal :buffer-b))))))
+            (when-let* ((timer (plist-get owner :timer)))
+              (should-not result)
+              (timer-event-handler timer))
+            (should (equal result (list (list (if (eq action 'quit)
+                                                  'rejected 'cancelled) nil))))
+            (dolist (key '(:control :buffer-a :buffer-b))
+              (should-not (buffer-live-p (plist-get owner key)))))
+        (when owner (codex-ide-diff-cancel owner))))))
+
+(ert-deftest codex-ide-diff-review-busy-and-stale ()
+  "A concurrent review is busy, and stale cancellation preserves its successor."
+  (let (first second result)
     (unwind-protect
         (progn
-          (should (eq nil (cdr (assq 'file-exists state))))
-          (should-not (assq 'old-content state)))
-      (kill-buffer buf-a)
-      (kill-buffer buf-b))))
+          (setq first (codex-ide-diff-review "a" "b" "one" #'ignore))
+          (should-error (codex-ide-diff-review "c" "d" "two" #'ignore)
+                        :type 'user-error)
+          (codex-ide-diff-cancel first)
+          (setq second (codex-ide-diff-review
+                        "c" "d" "two" (lambda (&rest args) (setq result args))))
+          (codex-ide-diff-cancel first)
+          (codex-ide-diff--settle first 'accepted)
+          (should (eq second codex-ide-diff--active))
+          (should-not result))
+      (when first (codex-ide-diff-cancel first))
+      (when second (codex-ide-diff-cancel second)))))
 
-;;; Cleanup tests
+(ert-deftest codex-ide-diff-review-setup-error ()
+  "A failure after allocating the Ediff control buffer releases owned resources."
+  (let ((ediff-startup-hook (list (lambda () (error "fixture failure"))))
+        result)
+    (should-error (codex-ide-diff-review
+                   "a" "b" "fixture" (lambda (&rest args) (setq result args))))
+    (should (equal result '(cancelled nil)))
+    (should-not codex-ide-diff--active)
+    (dolist (buffer (buffer-list))
+      (unless (equal (buffer-name buffer) "*Ediff Registry*")
+        (should-not (string-match-p "\\`\\*\\(?:[Ee]diff\\|codex-ide-diff\\)" (buffer-name buffer)))))))
 
-(ert-deftest codex-ide-diff-cleanup-kills-buffers ()
-  "Cleanup kills both temp buffers."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/test.el"))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t
-                 (current-window-configuration))))
-    (codex-ide-diff--cleanup state)
-    (should-not (buffer-live-p (car pair)))
-    (should-not (buffer-live-p (cdr pair)))))
+(ert-deftest codex-ide-diff-review-preserves-changed-layout ()
+  "Closing a review does not replace a subsequently arranged foreign layout."
+  (save-window-excursion
+    (let ((foreign (generate-new-buffer " *foreign*")) owner)
+      (unwind-protect
+          (progn
+            (setq owner (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+            (dolist (window (window-list))
+              (set-window-dedicated-p window nil))
+            (delete-other-windows)
+            (switch-to-buffer foreign)
+            (split-window-right)
+            (let ((config (current-window-configuration)))
+              (codex-ide-diff-cancel owner)
+              (should (window-configuration-equal-p
+                       config (current-window-configuration)))))
+        (when owner (codex-ide-diff-cancel owner))
+        (kill-buffer foreign)))))
 
-(ert-deftest codex-ide-diff-cleanup-idempotent ()
-  "Calling cleanup twice does not error."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/test2.el"))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t
-                 (current-window-configuration))))
-    (codex-ide-diff--cleanup state)
-    ;; Second call should be a no-op (no error).
-    (codex-ide-diff--cleanup state)))
+(ert-deftest codex-ide-diff-preview-read-only-boolean ()
+  "Compatibility preview keeps both buffers read-only and returns a boolean."
+  (cl-letf (((symbol-function 'recursive-edit)
+             (lambda ()
+               (with-current-buffer (plist-get codex-ide-diff--active :buffer-b)
+                 (should buffer-read-only))
+               (codex-ide-diff-test--accept codex-ide-diff--active))))
+    (should (eq t (codex-ide-diff-preview "a" "b" "fixture"))))
+  (cl-letf (((symbol-function 'recursive-edit)
+             (lambda () (codex-ide-diff-cancel codex-ide-diff--active))))
+    (should-not (codex-ide-diff-preview "a" "b" "fixture"))))
 
-(ert-deftest codex-ide-diff-cleanup-already-dead ()
-  "Cleanup is safe when a buffer is already dead."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/test3.el"))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t
-                 (current-window-configuration))))
-    (kill-buffer (car pair))
-    ;; Should not error.
-    (codex-ide-diff--cleanup state)
-    (should-not (buffer-live-p (cdr pair)))))
-
-(ert-deftest codex-ide-diff-cleanup-restores-winconf ()
-  "Cleanup calls set-window-configuration with the saved config."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/test4.el"))
-         (captured-winconf (current-window-configuration))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t captured-winconf))
-         restored-winconf)
-    (cl-letf (((symbol-function 'set-window-configuration)
-               (lambda (winconf &rest _args)
-                 (setq restored-winconf winconf))))
-      (codex-ide-diff--cleanup state))
-    (should (eq captured-winconf restored-winconf))))
-
-(ert-deftest codex-ide-diff-run-ediff-cancelled-accept-keeps-rejected ()
-  "Canceled accept attempt leaves a later reject decision rejected."
-  (require 'ediff)
-  (let ((buf-a (generate-new-buffer " *test-run-ediff-a*"))
-        (buf-b (generate-new-buffer " *test-run-ediff-b*"))
-        accept-fn
-        really-quit-called)
+(ert-deftest codex-ide-diff-review-cancelled-confirmation ()
+  "Declining acceptance leaves the proposal pending until explicit rejection."
+  (let (owner result)
     (unwind-protect
-        (with-temp-buffer
-          (cl-letf (((symbol-function 'ediff-buffers)
-                     (lambda (_a _b startup-hooks)
-                       (mapc #'funcall startup-hooks)))
-                    ((symbol-function 'local-set-key)
-                     (lambda (key fn)
-                       (when (equal key codex-ide-diff-accept-key)
-                         (setq accept-fn fn))))
-                    ((symbol-function 'y-or-n-p)
-                     (lambda (_prompt) nil))
-                    ((symbol-function 'ediff-really-quit)
-                     (lambda (&rest _args)
-                       (setq really-quit-called t)))
-                    ((symbol-function 'recursive-edit)
-                     (lambda ()
-                       (should accept-fn)
-                       (funcall accept-fn))))
-            (should (eq 'rejected
-                        (codex-ide-diff--run-ediff buf-a buf-b "tab")))
-            (should-not really-quit-called)))
-      (kill-buffer buf-a)
-      (kill-buffer buf-b))))
+        (progn
+          (setq owner (codex-ide-diff-review
+                       "a" "b" "fixture" (lambda (&rest args) (setq result args))))
+          (with-current-buffer (plist-get owner :control)
+            (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+              (call-interactively (key-binding codex-ide-diff-accept-key))))
+          (should-not result)
+          (should (eq (plist-get owner :status) 'pending)))
+      (when owner (codex-ide-diff-cancel owner)))))
 
-;;; Preview tests (ediff stubbed)
+(ert-deftest codex-ide-diff-review-callback-error-releases-owner ()
+  "A failing consumer cannot leave Ediff resources or the busy owner behind."
+  (let ((owner (codex-ide-diff-review
+                "a" "b" "fixture" (lambda (&rest _) (error "Callback fixture")))))
+    (should-error (codex-ide-diff-test--accept owner))
+    (should-not codex-ide-diff--active)
+    (dolist (key '(:control :buffer-a :buffer-b))
+      (should-not (buffer-live-p (plist-get owner key))))))
 
-(defmacro codex-ide-diff--with-stubbed-ediff (decision &rest body)
-  "Run BODY with `codex-ide-diff--run-ediff-function' returning DECISION.
-Also ensures the stub is cleared afterward."
-  (declare (indent 1))
-  `(let ((codex-ide-diff--run-ediff-function
-          (lambda (_a _b _name) ,decision)))
-     (unwind-protect
-         (progn ,@body)
-       (setq codex-ide-diff--run-ediff-function nil))))
+(ert-deftest codex-ide-diff-review-early-setup-error ()
+  "Failure during Ediff mode setup cancels and removes partially built buffers."
+  (let ((ediff-mode-hook (list (lambda () (error "Early fixture")))) result)
+    (should-error (codex-ide-diff-review
+                   "a" "b" "fixture" (lambda (&rest args) (setq result args))))
+    (should (equal result '(cancelled nil)))
+    (should-not codex-ide-diff--active)
+    (should-not (get-buffer "*Ediff Control Panel*"))
+    (should-not (get-buffer "*codex-ide-diff:fixture[old]*"))))
 
-(ert-deftest codex-ide-diff-preview-accept ()
-  "Stubbed ediff returning `accepted' yields t from --preview."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/p1.el"))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t
-                 (current-window-configuration))))
+(ert-deftest codex-ide-diff-review-restores-owned-layout ()
+  "A review whose layout remains current restores the original windows."
+  (save-window-excursion
+    (with-current-buffer (window-buffer (selected-window))
+      (let ((config (current-window-configuration))
+            (owner (codex-ide-diff-review "a" "b" "fixture" #'ignore)))
+        (codex-ide-diff-cancel owner)
+        (should (window-configuration-equal-p config (current-window-configuration)))))))
+
+(ert-deftest codex-ide-diff-review-preserves-foreign-tab ()
+  "Cancellation from a different tab preserves the selected tab and its layout."
+  (let ((foreign (generate-new-buffer " *foreign-tab*"))
+        (tab-bar-show nil)
+        (tab-bar-was-enabled tab-bar-mode) owner)
     (unwind-protect
-        (codex-ide-diff--with-stubbed-ediff 'accepted
-          (should (eq t (codex-ide-diff--preview state))))
-      (codex-ide-diff--cleanup state))))
+        (progn
+          (setq owner (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+          (tab-bar-new-tab)
+          (dolist (window (window-list)) (set-window-dedicated-p window nil))
+          (delete-other-windows)
+          (switch-to-buffer foreign)
+          (split-window-right)
+          (let ((tab (tab-bar--current-tab-find))
+                (config (current-window-configuration)))
+            (codex-ide-diff-cancel owner)
+            (should (eq tab (tab-bar--current-tab-find)))
+            (should (window-configuration-equal-p config (current-window-configuration)))))
+      (when owner (codex-ide-diff-cancel owner))
+      (tab-bar-close-tab)
+      (unless tab-bar-was-enabled (tab-bar-mode -1))
+      (kill-buffer foreign))))
 
-(ert-deftest codex-ide-diff-preview-reject ()
-  "Stubbed ediff returning `rejected' yields nil from --preview."
-  (let* ((pair (codex-ide-diff--make-temp-buffer-pair
-                "old" "new" "/tmp/p2.el"))
-         (state (codex-ide-diff--build-state
-                 "tab" (car pair) (cdr pair) t
-                 (current-window-configuration))))
+(ert-deftest codex-ide-diff-review-preserves-foreign-frame ()
+  "Closing a review from another frame preserves both frames' foreign layouts."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (selected-frame))
+         (foreign-frame (make-frame))
+         (foreign (generate-new-buffer " *foreign-frame*"))
+         owner origin-config)
     (unwind-protect
-        (codex-ide-diff--with-stubbed-ediff 'rejected
-          (should (eq nil (codex-ide-diff--preview state))))
-      (codex-ide-diff--cleanup state))))
+        (progn
+          (select-frame origin)
+          (setq owner (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+          (dolist (window (window-list)) (set-window-dedicated-p window nil))
+          (delete-other-windows)
+          (switch-to-buffer foreign)
+          (setq origin-config (current-window-configuration))
+          (select-frame foreign-frame)
+          (switch-to-buffer foreign)
+          (split-window-right)
+          (let ((config (current-window-configuration)))
+            (codex-ide-diff-cancel owner)
+            (should (eq (selected-frame) foreign-frame))
+            (should (window-configuration-equal-p config (current-window-configuration)))
+            (should (window-configuration-equal-p
+                     origin-config (with-selected-frame origin
+                                     (current-window-configuration))))))
+      (when owner (codex-ide-diff-cancel owner))
+      (when (frame-live-p foreign-frame) (delete-frame foreign-frame))
+      (kill-buffer foreign))))
 
-(ert-deftest codex-ide-diff-preview-cleans-up ()
-  "After preview via public API, temp buffers are dead."
-  (codex-ide-diff--with-stubbed-ediff 'accepted
-    (codex-ide-diff-preview "old content" "new content" "/tmp/p3.el"))
-  ;; No temp buffers should linger with the diff prefix.
-  (dolist (buf (buffer-list))
-    (should-not (string-prefix-p "*codex-ide-diff:" (buffer-name buf)))))
-
-(ert-deftest codex-ide-diff-preview-cleans-on-error ()
-  "Cleanup runs even if the stubbed ediff errors."
-  (let ((codex-ide-diff--run-ediff-function
-         (lambda (_a _b _name) (error "boom"))))
+(ert-deftest codex-ide-diff-review-teardown-error-cleans-named-auxiliary ()
+  "Fallback teardown releases auxiliary buffers referenced by their names."
+  (let* ((owner (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+         (auxiliary (with-current-buffer (plist-get owner :control)
+                      (get-buffer-create ediff-msg-buffer))))
     (unwind-protect
-        (should-error (codex-ide-diff-preview "a" "b" "/tmp/p4.el"))
-      (setq codex-ide-diff--run-ediff-function nil)))
-  (dolist (buf (buffer-list))
-    (should-not (string-prefix-p "*codex-ide-diff:" (buffer-name buf)))))
+        (progn
+          (cl-letf (((symbol-function 'ediff-really-quit)
+                     (lambda (&rest _) (error "Teardown fixture"))))
+            (codex-ide-diff-cancel owner))
+          (should-not (buffer-live-p auxiliary)))
+      (when (buffer-live-p auxiliary) (kill-buffer auxiliary))
+      (codex-ide-diff-cancel owner))))
 
-;;; Public entry point test
+(ert-deftest codex-ide-diff-review-teardown-error-cancels ()
+  "A failed native teardown cannot report an accepted proposal."
+  (let (owner result)
+    (setq owner (codex-ide-diff-review
+                 "a" "b" "fixture" (lambda (&rest args) (setq result args))))
+    (cl-letf (((symbol-function 'ediff-really-quit)
+               (lambda (&rest _) (error "Teardown fixture"))))
+      (codex-ide-diff-test--accept owner))
+    (should (equal result '(cancelled nil)))
+    (should-not (memq (plist-get owner :control) ediff-session-registry))
+    (should-not codex-ide-diff--active)
+    (dolist (key '(:control :buffer-a :buffer-b))
+      (should-not (buffer-live-p (plist-get owner key))))))
 
-(ert-deftest codex-ide-diff-preview-compose ()
-  "End-to-end public API with stubbed ediff returns the decision."
-  (codex-ide-diff--with-stubbed-ediff 'accepted
-    (should (eq t (codex-ide-diff-preview "a" "b" "/tmp/c1.el"))))
-  (codex-ide-diff--with-stubbed-ediff 'rejected
-    (should (eq nil (codex-ide-diff-preview "a" "b" "/tmp/c2.el")))))
+(ert-deftest codex-ide-diff-review-return-to-owning-tab ()
+  "Returning to the owning tab restores its original layout on acceptance."
+  (save-window-excursion
+    (let ((tab-bar-show nil)
+          (tab-bar-was-enabled tab-bar-mode)
+          config owner)
+      (unwind-protect
+          (progn
+            (tab-bar-new-tab)
+            (tab-bar-close-tab)
+            (setq config (current-window-configuration))
+            (setq owner (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+            (tab-bar-new-tab)
+            (should-not (alist-get 'codex-ide-diff-owner (tab-bar--current-tab-find)))
+            (tab-bar-close-tab)
+            (codex-ide-diff-test--accept owner)
+            (should (window-configuration-equal-p config (current-window-configuration)))
+            (should-not (alist-get 'codex-ide-diff-owner (tab-bar--current-tab-find))))
+        (when owner (codex-ide-diff-cancel owner))
+        (unless tab-bar-was-enabled (tab-bar-mode -1))))))
+
+(ert-deftest codex-ide-diff-review-setup-callback-starts-successor ()
+  "A synchronous failure callback can start a successor without stale setup hooks."
+  (let (first second failed result)
+    (let ((ediff-mode-hook
+           (list (lambda ()
+                   (unless failed
+                     (setq failed t first codex-ide-diff--active)
+                     (error "First setup fixture"))))))
+      (unwind-protect
+          (progn
+            (should-error
+             (codex-ide-diff-review
+              "a" "b" "first"
+              (lambda (&rest _)
+                (setq second (codex-ide-diff-review
+                              "c" "d" "second"
+                              (lambda (&rest args) (setq result args)))))))
+            (should-not (buffer-live-p (plist-get first :control)))
+            (should (eq second codex-ide-diff--active))
+            (codex-ide-diff-test--accept second)
+            (should (equal result '(accepted "d"))))
+        (when second (codex-ide-diff-cancel second))))))
+
+(ert-deftest codex-ide-diff-review-preserves-shared-ediff-buffers ()
+  "Native and fallback cleanup preserve another session's shared scratch buffers."
+  (let ((shared (mapcar (lambda (symbol)
+                          (let ((buffer (get-buffer-create (default-value symbol))))
+                            (with-current-buffer buffer
+                              (erase-buffer)
+                              (insert "foreign contents"))
+                            buffer))
+                        '(ediff-tmp-buffer ediff-msg-buffer ediff-debug-buffer))))
+    (unwind-protect
+        (dolist (fail '(nil t))
+          (let ((ediff-mode-hook
+                 (when fail (list (lambda () (error "Shared buffer fixture"))))))
+            (if fail
+                (should-error (codex-ide-diff-review "a" "b" "fixture" #'ignore))
+              (let ((owner (codex-ide-diff-review "a" "b" "fixture" #'ignore)))
+                (unwind-protect
+                    (progn
+                      (with-current-buffer (plist-get owner :buffer-b)
+                        (goto-char (point-max))
+                        (insert " edited"))
+                      (with-current-buffer (plist-get owner :control)
+                        (call-interactively (key-binding "!"))))
+                  (codex-ide-diff-cancel owner)))))
+          (dolist (buffer shared)
+            (should (buffer-live-p buffer))
+            (with-current-buffer buffer
+              (should (equal (buffer-string) "foreign contents")))))
+      (mapc #'kill-buffer shared))))
 
 (provide 'codex-ide-diff-tests)
-
 ;;; codex-ide-diff-tests.el ends here

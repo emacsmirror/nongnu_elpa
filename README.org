@@ -80,6 +80,17 @@ Handlers run synchronously and must return promptly.
 ;; Remove with (codex-ide-mcp-unregister-tool "greet").
 #+end_src
 
+** Ediff review
+=codex-ide-diff-review= takes old text, proposed text, a path label, and a
+callback.  It returns immediately with an owner for =codex-ide-diff-cancel=.
+Edit the proposed buffer, then use =C-c C-a= in the Ediff control buffer to
+accept, or =q= to reject.  The callback receives =(accepted final-text)=,
+=(rejected nil)=, or =(cancelled nil)=.  Only one review can be active.
+
+Review never changes the target file or its visiting buffer.  The caller
+owns applying accepted text.  =codex-ide-diff-preview= remains a synchronous
+boolean preview with both buffers read-only.
+
 ** Useful knobs
 | Variable | Default intent |
 |----------+----------------|
