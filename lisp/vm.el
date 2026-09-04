@@ -1550,6 +1550,10 @@ draft messages."
         ;; the parser with an error that says nothing about the cause (#791).
         (vm-warn-about-stale-compiled-files)
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
+        ;; A folder cache is VM's own file under a hashed name, so leaving it
+        ;; modified asks the reader about a path that means nothing to them
+        ;; (#798).  Their own folders are left for Emacs to ask about.
+        (add-hook 'kill-emacs-hook 'vm-save-folder-caches)
         ;; Offers unfinished compositions to the postponed folder as Emacs
         ;; is left, rather than leaving them to be written to files one at a
         ;; time.  Registered here rather than as vm-postpone.el loads:
