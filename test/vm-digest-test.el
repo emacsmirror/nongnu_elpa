@@ -444,11 +444,16 @@ messages into the folder, and in a From_ folder a body line beginning
 which is mboxo and is what the manual's mbox section describes; leaving it
 alone would corrupt the folder instead, which is worse.
 
-The rfc1153 one is a real loss.  RFC 1153 defines no quoting, so the space
-for the first hyphen is VM's own invention, and it is not reversible: a body
-line that already reads as a space and twenty-nine hyphens is not quoted on
-the way in and is unquoted on the way out, so it comes back as the separator
-itself.  See emacs-vm/vm#803.")
+The rfc1153 one is a real loss, and emacs-vm/vm#803 decided to keep it.  RFC
+1153 defines no quoting, so the space for the first hyphen is VM's own
+invention, and it is not reversible: a body line that already reads as a
+space and twenty-nine hyphens is not quoted on the way in and is unquoted on
+the way out, so it comes back as the separator itself.
+
+Kept because every fix changes what VM writes.  Escaping the escape makes
+digests that every older VM unstuffs wrongly, and not quoting at all turns a
+rewritten line into a split message, which is worse.  The loss needs a body
+line of exactly a space and twenty-nine hyphens.")
 
 (defun vm-digest-test--encapsulate (type messages)
   "Answer the digest of TYPE holding MESSAGES.
@@ -541,8 +546,10 @@ folder the burst files into has to quote and which nothing unquotes."
 The `From ' line is the same one RFC 934 changes and is correct.  The other
 is emacs-vm/vm#803: VM quotes the separator by putting a space where its
 first hyphen was, and unquotes anything that reads that way, so a body line
-that already read that way comes back as the separator itself.  This test is
-what will fail if the quoting is ever made reversible."
+that already read that way comes back as the separator itself.  That was
+decided and kept, so this test is what will fail if the quoting is ever made
+reversible, and whoever makes it so should reopen #803 rather than change
+the expectation here."
   (should (equal (sort (vm-digest-test--expected-changes "rfc1153") #'string<)
                  (sort (vm-digest-test--changed-cells "rfc1153") #'string<))))
 
