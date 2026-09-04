@@ -123,6 +123,28 @@ how `testcover-mark` places the splotches it shows interactively. So they are
 exact. lcov counts executions and this knows only whether a form ran, so a
 line is written as run once or not at all.
 
+**undercover.el was evaluated and not adopted** (2026-09-04). It works on VM
+and writes lcov, Coveralls, Codecov, simplecov and text reports. Against it:
+
+- it is far slower. The `--forms-coverage` pass does the whole suite in 343
+  seconds; undercover had not reached 40% of it in 600, one large-folder test
+  taking 297 seconds on its own. Both instrument through edebug, so the
+  difference is in the recording, not the approach.
+- it reports a percentage per file and no line numbers, where
+  `line-coverage-results.txt` names the lines.
+- it has no equivalent of the always-one-value signal, which is the more
+  useful half of what testcover gives.
+- its Coveralls and Codecov integration is the reason it exists, and VM has no
+  CI to send a report to.
+
+Where the two can be compared directly they agree: on `vm-misc.el` with only
+`vm-misc-test.el` run, undercover counts 1124 relevant lines and the
+testcover pass 1113, within 1%. **They disagree on coverage of that same
+input, 46% against 54%, and I did not establish why.** The line rule here
+counts a line as unreached when any form on it went unevaluated, which is the
+conservative direction, so the gap is not the way round that explains itself.
+Worth an hour if the numbers are ever used for anything that matters.
+
 `--forms-coverage` depends on edebug being able to read every file, and two
 arglists stopped it doing so (#795): `&key` in a plain `defun`, which Emacs
 Lisp does not understand, and an `&optional` with no arguments after it. Both
