@@ -1186,6 +1186,41 @@ Labels do not rename saved Codex conversations."
          (label (or label (read-string "Session label (empty clears): " current))))
     (codex-ide--set-session-label session (string-trim label))))
 
+(defun codex-ide--source-attachment ()
+  "Snapshot the region or current line with its source and line range."
+  (let* ((region (use-region-p))
+         (beg (if region (region-beginning) (line-beginning-position)))
+         (end (if region (region-end) (line-end-position)))
+         (source (or buffer-file-name (buffer-name)))
+         (text (buffer-substring-no-properties beg end))
+         (draft (format "Source: %s (lines %d-%d)\n%s" source
+                        (line-number-at-pos beg t)
+                        (line-number-at-pos (max beg (1- end)) t) text)))
+    (codex-ide-term--validate-draft draft)
+    draft))
+
+;;;###autoload
+(defun codex-ide-attach-source ()
+  "Attach the region or current line to one Codex session's draft.
+Snapshot source text and location before choosing the project session.
+Insert a literal bracketed paste without submitting or changing the kill
+ring.  Reject terminal controls except TAB and LF, and drafts over 1 MiB."
+  (interactive)
+  (let* ((draft (codex-ide--source-attachment))
+         (session (codex-ide--target-session))
+         (root (plist-get session :root))
+         (id (plist-get session :id))
+         (buffer (plist-get session :buffer))
+         (process (plist-get session :process)))
+    (unless (and (codex-ide--session-live-p session)
+                 (eq session (codex-ide--session-by-id root id))
+                 (buffer-local-value 'codex-ide-mode buffer)
+                 (equal root (buffer-local-value 'codex-ide--session-root buffer))
+                 (equal id (buffer-local-value 'codex-ide--session-id buffer)))
+      (user-error "Codex session is no longer current"))
+    (with-current-buffer buffer
+      (codex-ide-term--paste-draft process draft))))
+
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)
   "Send PROMPT to the Codex terminal for the current project.

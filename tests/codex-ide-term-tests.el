@@ -236,6 +236,55 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
+(defun codex-ide-term-test--paste-pty (backend)
+  "Verify BACKEND delivers an exact Unicode bracketed paste to a raw PTY."
+  (when (getenv "CODEX_IDE_SKIP_PTY_TESTS")
+    (ert-skip "PTY unavailable in the Nix build sandbox"))
+  (unless (executable-find "python3")
+    (ert-skip "python3 is unavailable for the raw PTY fixture"))
+  (when (and (eq backend 'vterm)
+             (not (codex-ide-term-vterm--available-p)))
+    (ert-skip "Optional vterm backend is unavailable"))
+  (let* ((codex-ide-terminal-backend backend)
+         (text "λ\ttext\nnext")
+         (wire (encode-coding-string (concat "\e[200~" text "\e[201~") 'utf-8))
+         (expected (mapconcat (lambda (byte) (format "%02x" byte)) wire ""))
+         buffer process)
+    (unwind-protect
+        (save-window-excursion
+          (setq buffer (codex-ide-term--prepare-buffer
+                        (generate-new-buffer-name " *codex-paste-pty*")
+                        temporary-file-directory))
+          (switch-to-buffer buffer)
+          (setq process
+                (codex-ide-term--make-process
+                 buffer (executable-find "python3")
+                 (list "-c"
+                       (concat "import os,tty\ntty.setraw(0)\n"
+                               "os.write(1,b'READY')\ndata=b''\n"
+                               "while not data.endswith(b'\\x1b[201~'):\n"
+                               " data+=os.read(0,4096)\n"
+                               "os.write(1,b'HEX:'+data.hex().encode()+b':END')\n"
+                               "os.read(0,1)\n")) nil))
+          (should (codex-ide-term-test--wait-for
+                   (lambda () (string-match-p "READY" (buffer-string)))))
+          (codex-ide-term--paste-draft process text)
+          (should (codex-ide-term-test--wait-for
+                   (lambda ()
+                     (string-match-p (concat "HEX:" expected ":END")
+                                     (buffer-string)))))
+          (should (process-live-p process)))
+      (when (and process (process-live-p process)) (delete-process process))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest codex-ide-term-paste-draft-eat-pty ()
+  "Eat preserves paste framing, LF, TAB, and UTF-8 without submitting."
+  (codex-ide-term-test--paste-pty 'eat))
+
+(ert-deftest codex-ide-term-paste-draft-vterm-pty ()
+  "Optional vterm preserves the same literal paste wire contract."
+  (codex-ide-term-test--paste-pty 'vterm))
+
 (provide 'codex-ide-term-tests)
 
 ;;; codex-ide-term-tests.el ends here

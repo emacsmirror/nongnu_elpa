@@ -20,6 +20,7 @@
 | =M-x codex-ide-toggle= | Cycle live project sessions |
 | =M-x codex-ide-list-project-sessions= | Switch among project sessions |
 | =M-x codex-ide-list-sessions= | Switch among any live sessions |
+| =M-x codex-ide-attach-source= | Attach region or current line to one session draft without submitting |
 | =M-x codex-ide-send-prompt= | Send a minibuffer prompt into the active session |
 | =M-x codex-ide-menu= | Popup menu (sessions, config, MCP, debug) |
 
@@ -135,3 +136,12 @@ See [[file:NEWS.org][NEWS.org]] for release notes.
              :repo "https://git.thanosapollo.org/emacs-codex-ide"
              :files ("lisp/*.el" "LICENSE")))
 #+end_src
+
+** Source attachments
+=codex-ide-attach-source= snapshots the region (or current line), source
+path or buffer name, and line range before choosing a project session.
+It inserts one literal bracketed paste on Eat or vterm without pressing
+Return.  Review the draft in the Codex terminal before submitting it.
+Unicode, TAB and LF are supported; other control characters and drafts
+larger than 1 MiB of UTF-8 text are rejected without changing the draft
+or kill ring.  This command targets the Codex TUI, not a shell prompt.

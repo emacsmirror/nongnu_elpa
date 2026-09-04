@@ -2866,6 +2866,112 @@ region, where the scrollback-browsing rule alone would strand it."
                               logs)))))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-attach-source-snapshots-before-targeting ()
+  "Changing source during completion cannot change the attached draft."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (target process)
+     (let* ((root temporary-file-directory)
+            (session (codex-ide--make-session root 1 target process))
+            (codex-ide--sessions (make-hash-table :test 'equal))
+            (kill-ring '("untouched")) writes)
+       (puthash root (list session) codex-ide--sessions)
+       (with-current-buffer target
+         (setq-local codex-ide-mode t codex-ide--session-root root
+                     codex-ide--session-id 1 codex-ide-term--backend 'eat))
+       (with-temp-buffer
+         (rename-buffer "source-test" t)
+         (insert "first\nλ\tsecond\nthird")
+         (goto-char 7)
+         (push-mark (point-max) t t)
+         (let ((transient-mark-mode t))
+           (cl-letf (((symbol-function 'codex-ide--target-session)
+                      (lambda (&optional _root)
+                        (erase-buffer) (insert "changed") session))
+                     ((symbol-function 'process-send-string)
+                      (lambda (proc text) (push (cons proc text) writes))))
+             (codex-ide-attach-source)))
+         (should (equal (mapcar #'cdr writes)
+                        '("\e[200~Source: source-test (lines 2-3)\nλ\tsecond\nthird\e[201~")))
+         (should (eq (caar writes) process))
+         (should (equal kill-ring '("untouched"))))))))
+
+(ert-deftest codex-ide-attach-source-targets-one-labelled-session ()
+  "The real target picker routes a current-line snapshot to one labelled owner."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (first first-process)
+     (codex-ide-test--call-with-buffer-process
+      (lambda (second second-process)
+        (let* ((root temporary-file-directory)
+               (a (codex-ide--make-session root 1 first first-process))
+               (b (codex-ide--make-session root 2 second second-process))
+               (codex-ide--sessions (make-hash-table :test 'equal))
+               (codex-ide--active-session-ids (make-hash-table :test 'equal))
+               writes)
+          (puthash root (list a b) codex-ide--sessions)
+          (dolist (session (list a b))
+            (with-current-buffer (plist-get session :buffer)
+              (setq-local codex-ide-mode t codex-ide--session-root root
+                          codex-ide--session-id (plist-get session :id)
+                          codex-ide-term--backend 'eat)))
+          (with-current-buffer second (rename-buffer "*codex:test-review*" t))
+          (with-temp-buffer
+            (setq buffer-file-name "/tmp/source.el")
+            (insert "before\nchosen line\nafter")
+            (goto-char 10)
+            (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+                       (lambda (&optional _) root))
+                      ((symbol-function 'codex-ide--recover-live-sessions) #'ignore)
+                      ((symbol-function 'completing-read)
+                       (lambda (_prompt choices &rest _)
+                         (should (= (length choices) 2))
+                         (should (assoc (buffer-name second) choices))
+                         (erase-buffer) (insert "picker changed source")
+                         (buffer-name second)))
+                      ((symbol-function 'process-send-string)
+                       (lambda (proc text) (push (cons proc text) writes))))
+              (codex-ide-attach-source))
+            (should (equal writes
+                           (list (cons second-process
+                                       "\e[200~Source: /tmp/source.el (lines 2-2)\nchosen line\e[201~")))))))))))
+
+(ert-deftest codex-ide-attach-source-rejects-controls-and-size ()
+  "Unsafe content and metadata fail before targeting or changing drafts."
+  (dolist (text '("bad\r" "bad\e[201~\r" "bad\0" "bad\177" "bad\u0085"))
+    (dolist (metadata '(nil t))
+      (with-temp-buffer
+        (let ((kill-ring '("untouched")))
+          (if metadata (setq buffer-file-name text) (insert text))
+          (cl-letf (((symbol-function 'codex-ide--target-session)
+                     (lambda (&rest _) (ert-fail "Unsafe input reached picker"))))
+            (should-error (codex-ide-attach-source) :type 'user-error))
+          (should (equal kill-ring '("untouched")))))))
+  (with-temp-buffer
+    (insert (make-string (1+ (* 1024 1024)) ?x))
+    (cl-letf (((symbol-function 'codex-ide--target-session)
+               (lambda (&rest _) (ert-fail "Oversize input reached picker"))))
+      (should-error (codex-ide-attach-source) :type 'user-error))))
+
+(ert-deftest codex-ide-attach-source-rejects-replaced-session ()
+  "A stale selection cannot send to a replacement or the previous owner."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (buffer process)
+     (let* ((session (codex-ide--make-session temporary-file-directory
+                                              1 buffer process))
+            (codex-ide--sessions (make-hash-table :test 'equal)))
+       (puthash temporary-file-directory (list (copy-sequence session))
+                codex-ide--sessions)
+       (with-current-buffer buffer
+         (setq-local codex-ide-mode t
+                     codex-ide--session-root temporary-file-directory
+                     codex-ide--session-id 1 codex-ide-term--backend 'eat))
+       (with-temp-buffer
+         (insert "draft")
+         (cl-letf (((symbol-function 'codex-ide--target-session)
+                    (lambda (&optional _) session))
+                   ((symbol-function 'process-send-string)
+                    (lambda (&rest _) (ert-fail "Stale owner received input"))))
+           (should-error (codex-ide-attach-source) :type 'user-error)))))))
+
 (provide 'codex-ide-tests)
 
 ;;; codex-ide-tests.el ends here

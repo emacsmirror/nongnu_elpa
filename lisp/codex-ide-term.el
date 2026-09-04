@@ -132,6 +132,26 @@ installed separately.  Existing sessions keep the backend that created them."
   "Send STRING to the current terminal."
   (codex-ide-term--call :send-string string))
 
+(defun codex-ide-term--validate-draft (text)
+  "Reject unsafe or oversized draft TEXT before terminal input."
+  (when (> (string-bytes (encode-coding-string text 'utf-8)) (* 1024 1024))
+    (user-error "Attachment exceeds 1 MiB of UTF-8 text"))
+  (when (string-match-p "[\0-\10\13-\37\u007f-\u009f]" text)
+    (user-error "Attachment contains terminal control characters")))
+
+(defun codex-ide-term--paste-draft (process text)
+  "Insert literal draft TEXT into the current terminal's captured PROCESS.
+Use one bracketed paste, without a Return key.  This operation targets the
+Codex TUI, whose input parser handles bracketed paste on both backends."
+  (codex-ide-term--validate-draft text)
+  (unless (and (memq (codex-ide-term--current-backend) '(eat vterm))
+               (process-live-p process)
+               (eq process (get-buffer-process (current-buffer))))
+    (user-error "Codex terminal process is no longer current"))
+  ;; Backend yank functions can fall back to unframed input before the
+  ;; terminal has seen the mode-enable sequence, turning LF into key events.
+  (process-send-string process (concat "\e[200~" text "\e[201~")))
+
 (defun codex-ide-term--send-return ()
   "Send RET to the current terminal."
   (codex-ide-term--call :send-return))

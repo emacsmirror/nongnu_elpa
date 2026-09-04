@@ -151,6 +151,7 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   "w" ("Cycle sessions" codex-ide-toggle)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)
+  "a" ("Attach source to draft" codex-ide-attach-source)
   "e" ("Send escape" codex-ide-send-escape)
   "n" ("Insert newline" codex-ide-insert-newline)
   :group "Submenus"
