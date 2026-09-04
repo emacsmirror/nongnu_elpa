@@ -1174,6 +1174,39 @@ The folder does no quoting; it does not undo quoting done elsewhere.  A
 message that has passed through a From_ folder arrives carrying whatever that
 folder added, and mboxcl2 stores it faithfully, @samp{>} and all.
 
+@item A babyl folder VM writes may not be one Rmail can open.
+@cindex babyl, quoting
+@cindex Rmail, reading a VM babyl folder
+@cindex interoperability, babyl
+VM quotes a body line that a From_ or an mmdf folder would read as a
+separator, as above.  It does not quote one that a @emph{babyl} folder would:
+a body holding the two characters that begin a babyl message, @kbd{C-_} and
+@kbd{C-l} at the start of a line, is written as it stands.
+
+VM reads such a folder back correctly, because its own reader takes those two
+characters for a separator only where a babyl attribute line follows them.
+Rmail is less forgiving and refuses the file:
+
+@example
+Search failed: ",, ?"
+@end example
+
+@noindent
+having taken the bare separator for the start of a message and then looked for
+the attribute line that is not there.  Other readers of the format differ
+again: Python's @code{mailbox.Babyl} finds one message more than VM filed.
+
+This is deliberate.  Quoting the line would make Rmail read the folder, at the
+price of a @samp{>} that nothing ever removes, on a message that had none: the
+same loss described above for From_, in a format where it does not arise
+today.  Babyl is a legacy format here, and the choice was to leave it as it
+has always been rather than buy Rmail compatibility with a permanent mark on
+the message.
+
+If you keep mail in babyl folders and want Rmail to be able to open them,
+convert them with @code{vm-change-folder-type}: an mboxcl2 folder stores a
+message exactly as it came and has none of this.
+
 @item VM keeps its own state in the messages.
 @cindex X-VM-v5-Data
 Every message carries an @code{X-VM-v5-Data} header holding its attributes,

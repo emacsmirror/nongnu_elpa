@@ -229,18 +229,16 @@ about the message may change, which is what this says."
                               (plist-get result :before)
                               (plist-get result :after))))))))
 
-(ert-deftest vm-folder-roundtrip-test-twelve-conversions-keep-a-quote ()
-  "Twelve of the hundred and twenty come back with a `>' the message lacked.
-Pinned by name so that a decision here shows up as a changed list rather than
-as a test that quietly still passes.  Each is a body the source type had no
-need to quote going to a type that does.
+(ert-deftest vm-folder-roundtrip-test-nine-conversions-keep-a-quote ()
+  "Nine of the hundred and twenty come back with a `>' the message lacked.
+Pinned by name so that a decision on emacs-vm/vm#789 shows up here as a
+changed list rather than as a test that quietly still passes.  Each is a
+body the source type had no need to quote going to a type that does.
 
-It was nine until emacs-vm/vm#801.  Quoting a babyl separator in a body,
-which is what stops another babyl reader splitting the message there, costs a
-`>' on the way through a babyl folder exactly as From_ and mmdf already cost
-one: the three new cells are all `X -> babyl -> X / a babyl separator'.  That
-is the trade #801 makes, and it is the same kind of loss emacs-vm/vm#789
-decided to accept for From_ rather than start unquoting."
+There is no babyl cell among them, and that is deliberate: VM does not quote
+a babyl separator in a body, so going through a babyl folder costs nothing
+here.  What it costs instead is that Rmail cannot open such a folder at all,
+which emacs-vm/vm#801 decided to keep and the manual now describes."
   (let (lossy)
     (vm-folder-roundtrip-test--every-conversion
      (lambda (result from to label)
@@ -248,18 +246,15 @@ decided to accept for From_ rather than start unquoting."
          (push (format "%s -> %s -> %s / %s" from to from label) lossy))
        nil))
     (should (equal (sort lossy #'string<)
-                   '("From_ -> babyl -> From_ / a babyl separator"
-                     "From_ -> mmdf -> From_ / an mmdf separator"
+                   '("From_ -> mmdf -> From_ / an mmdf separator"
                      "babyl -> From_ -> babyl / a From_ line"
                      "babyl -> From_ -> babyl / a From_ line first"
                      "babyl -> mmdf -> babyl / an mmdf separator"
                      "mboxcl2 -> From_ -> mboxcl2 / a From_ line"
                      "mboxcl2 -> From_ -> mboxcl2 / a From_ line first"
-                     "mboxcl2 -> babyl -> mboxcl2 / a babyl separator"
                      "mboxcl2 -> mmdf -> mboxcl2 / an mmdf separator"
                      "mmdf -> From_ -> mmdf / a From_ line"
-                     "mmdf -> From_ -> mmdf / a From_ line first"
-                     "mmdf -> babyl -> mmdf / a babyl separator")))))
+                     "mmdf -> From_ -> mmdf / a From_ line first")))))
 
 ;;; Saving a message from a folder of one type into another
 

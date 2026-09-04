@@ -333,10 +333,12 @@ file:
   in front of it, so no outside reader is misled;
 - mboxcl2 writes it as it stands, which is the point of the type: the byte
   count says where the message ends whatever the body holds (emacs-vm/vm#466);
-- babyl quotes it since emacs-vm/vm#801.  It did not before: an outside
-  reader mis-split such a folder, Python\'s `mailbox.Babyl\' finding three
-  messages where VM wrote two, because VM\'s babyl munging looked for a
-  separator followed by an attribute line and a bare one in a body has none.
+- babyl writes it as it stands, and an outside reader cannot cope: Rmail
+  refuses such a folder outright and Python\'s `mailbox.Babyl\' finds three
+  messages where VM wrote two.  VM\'s babyl munging looks for a separator
+  followed by an attribute line and a bare one in a body has none, so nothing
+  is quoted.  Kept deliberately, emacs-vm/vm#801 having decided to leave
+  babyl compatibility where it was and describe it in the manual instead.
 
 Every regexp here is anchored at line start on purpose.  Unanchored,
 `\001\001\001\001\' matches inside `>\001\001\001\001\' as well, so the count
@@ -348,7 +350,7 @@ not."
                   (mboxcl2 "From nobody@example.com Mon Jan  1 00:00:00 2024\n"
                            "^From " raw)
                   (mmdf    "\001\001\001\001\n" "^\001\001\001\001" quoted)
-                  (babyl   "\037\014\n" "^\037\014" quoted)))
+                  (babyl   "\037\014\n" "^\037\014" raw)))
     (let* ((type (nth 0 spec))
            (body (nth 1 spec))
            (regexp (nth 2 spec))
