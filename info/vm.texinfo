@@ -6142,11 +6142,21 @@ messages are then assimilated into the current folder as new messages.
 The original digest message is not altered, and the messages extracted
 from it are not part of the on-disk copy of the folder until a save is
 done.  You will be prompted for the type of digest to burst.  VM
-understands three formats, ``rfc934'', ``rfc1154'' and ``mime''.  If you
+understands three formats, ``rfc934'', ``rfc1153'' and ``mime''.  If you
 don't know what kind of digest you've received, type ``guess'' and VM
 will try to figure out the digest type on its own.  VM is pretty smart
 about digests and will usually make the correct choice if the digest is
 properly formatted.
+
+One line of a message body is not returned as it was sent when it travels
+in an RFC 1153 digest.  RFC 1153 defines no way to quote a separator that
+appears in a body, so VM quotes one by writing a space where its first
+hyphen was, and writes the hyphen back when bursting.  A body line that
+already reads as a space followed by 29 hyphens comes back as a separator
+line of 30 hyphens.  VM does not escape such a line, because any escape it
+invented would be misread by every other RFC 1153 reader, older versions of
+VM among them.  RFC 934 digests do not have this limit: they quote every
+line that begins with a hyphen, so the quoting quotes itself.
 
 @node Summaries, Virtual Folders, Digests, Top
 @chapter Summaries
