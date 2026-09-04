@@ -144,7 +144,7 @@ Codex IDE adds a root identity when another project already uses that name."
   "Hash table mapping project roots to active Codex session ids.")
 
 (defvar codex-ide--cleanup-in-progress nil
-  "Reentrancy guard for `codex-ide--cleanup-on-exit'.")
+  "Cleanup targets currently being torn down, as (ROOT ID) lists.")
 
 (defvar-local codex-ide--session-root nil
   "Project root for the Codex session in the current buffer.")
@@ -887,12 +887,13 @@ Used when a session is already running."
 When EXPECTED-BUFFER or EXPECTED-PROCESS is non-nil, clean up only while
 the registered session still owns those exact resources.  PRESERVE-BUFFER
 leaves the buffer alive after stopping its process and removing its record.
-Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
+Guard reentry for this target while allowing other sessions to clean up."
   (when-let* ((target (codex-ide--cleanup-target directory session-id))
               (directory (car target))
               (session-id (cadr target)))
-    (unless codex-ide--cleanup-in-progress
-      (let* ((codex-ide--cleanup-in-progress t)
+    (unless (member target codex-ide--cleanup-in-progress)
+      (let* ((codex-ide--cleanup-in-progress
+              (cons target codex-ide--cleanup-in-progress))
              (session (codex-ide--session-by-id directory session-id))
              (buffer (or (plist-get session :buffer)
                          (codex-ide--buffer-for-session directory session-id)
@@ -907,8 +908,7 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
           (when (process-live-p process)
             (delete-process process))
           (when (and (not preserve-buffer) (buffer-live-p buffer))
-            (let ((kill-buffer-hook nil)
-                  (kill-buffer-query-functions nil))
+            (let ((kill-buffer-query-functions nil))
               (kill-buffer buffer)))
           (codex-ide-debug "Cleaned up Codex session %s for %s"
                            session-id
@@ -920,7 +920,7 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id
-     (current-buffer) (get-buffer-process (current-buffer)))))
+     (current-buffer) (get-buffer-process (current-buffer)) t)))
 
 (defun codex-ide--cleanup-before-major-mode-change ()
   "Stop the current Codex session before replacing its major mode."

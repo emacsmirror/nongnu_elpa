@@ -2447,6 +2447,52 @@ region, where the scrollback-browsing rule alone would strand it."
         (kill-buffer buffer))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-cleanup-keeps-buffer-live-for-backend-hooks ()
+  "The session kill hook leaves the dying buffer to its remaining hooks."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let* ((session (car sessions))
+               (buffer (plist-get session :buffer))
+               (backend-ran nil))
+          (with-current-buffer buffer
+            (add-hook 'kill-buffer-hook
+                      (lambda ()
+                        (setq backend-ran t)
+                        (should (buffer-live-p buffer))) nil t)
+            (add-hook 'kill-buffer-hook
+                      #'codex-ide--cleanup-current-buffer-session nil t))
+          (kill-buffer buffer)
+          (should backend-ran)
+          (should-not (process-live-p (plist-get session :process)))
+          (should-not (codex-ide--session-by-id root 1))))))))
+
+(ert-deftest codex-ide-cleanup-allows-reentrant-sibling-cleanup ()
+  "A process exit during cleanup can tear down a different session."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (let* ((first (car sessions))
+               (second (cadr sessions))
+               (process (plist-get first :process))
+               (delete (symbol-function 'delete-process)))
+          (cl-letf (((symbol-function 'delete-process)
+                     (lambda (target)
+                       (when (eq target process)
+                         (codex-ide--cleanup-on-exit
+                          root (plist-get second :id)))
+                       (funcall delete target))))
+            (codex-ide--cleanup-on-exit root (plist-get first :id)))
+          (dolist (session sessions)
+            (should-not (buffer-live-p (plist-get session :buffer)))
+            (should-not (process-live-p (plist-get session :process)))
+            (should-not (codex-ide--session-by-id
+                         root (plist-get session :id))))))))))
+
 (ert-deftest codex-ide-stale-sentinel-preserves-replacement-session ()
   "An old process sentinel cannot clean up a replacement owner."
   (let ((root (file-name-as-directory
