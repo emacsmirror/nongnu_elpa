@@ -154,6 +154,61 @@ directly for babyl now."
   (skip-unless (vm-interop-test--python-p))
   (vm-interop-test--check 'babyl))
 
+
+;;; Babyl folders read by Emacs's own Rmail
+
+;; Rmail is the reference implementation of the babyl format, so what it makes
+;; of a folder VM wrote settles the question better than Python can, and it
+;; ships with Emacs so there is nothing to skip for.
+;;
+;; Rmail has not written babyl since Emacs 23, mbox being its own format now,
+;; so there is no Rmail writer to compare against.  What it still has is a
+;; reader, `rmail-convert-babyl-to-mbox', and that is the one that matters:
+;; VM's babyl folders have to be ones Rmail can open.
+
+(defun vm-interop-test--rmail-reads (folder)
+  "How many messages Rmail finds in babyl FOLDER.
+A string when Rmail refused the file, so a refusal is a result rather than an
+error here."
+  (require 'rmail)
+  (with-temp-buffer
+    (insert-file-contents folder)
+    (let ((inhibit-read-only t))
+      (condition-case error-data
+          (progn
+            (rmail-convert-babyl-to-mbox)
+            (goto-char (point-min))
+            (let ((n 0))
+              (while (re-search-forward "^From " nil t)
+                (setq n (1+ n)))
+              n))
+        (error (error-message-string error-data))))))
+
+(ert-deftest vm-interop-test-rmail-can-read-every-babyl-folder-vm-writes ()
+  "Rmail opens every babyl folder VM writes, whatever the bodies hold.
+
+emacs-vm/vm#801, and the evidence that settled it.  A body holding `\\037\\014'
+used to go out unquoted, and Rmail did not merely mis-split such a folder: it
+refused it outright with
+
+    Search failed: \",, ?\"
+
+having taken the bare separator for the start of a message and then looked for
+the attribute line that is not there.  Python's reader counted three messages
+where VM filed two; Rmail could not read the folder at all.
+
+Rmail reads the quoted form as two messages, so quoting is what makes a VM
+babyl folder openable by the program whose format it is."
+  (dolist (spec vm-interop-test--bodies)
+    (let* ((dir (file-name-as-directory (make-temp-file "vm-rmail" t)))
+           (vm-default-folder-type 'babyl))
+      (unwind-protect
+          (let ((folder (expand-file-name "archive" dir)))
+            (vm-interop-test--file-into folder (cdr spec))
+            (vm-interop-test--file-into folder "second body\n")
+            (should (equal 2 (vm-interop-test--rmail-reads folder))))
+        (delete-directory dir t)))))
+
 (provide 'vm-interop-test)
 
 ;;; vm-interop-test.el ends here
