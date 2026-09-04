@@ -290,7 +290,7 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
 
 (ert-deftest hermes-exec-test-prompt-choice-maps-decisions ()
   "`read-multiple-choice' results map to approve/deny resolution."
-  (let ((hermes-exec--active (list :buffer nil))
+  (let ((hermes-exec--active (list :id (make-symbol "request") :buffer nil))
         (noninteractive nil)
         decisions)
     (cl-letf (((symbol-function 'hermes-exec--resolve-active)
@@ -309,7 +309,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   "Trusting the session approves ordinary, but not sensitive, active requests."
   (let ((noninteractive nil)
         decisions)
-    (let ((hermes-exec--active (list :buffer nil :risk 'ordinary))
+    (let ((hermes-exec--active (list :id (make-symbol "request")
+                                    :buffer nil :risk 'ordinary))
           (hermes-exec-require-approval t))
       (cl-letf (((symbol-function 'hermes-exec--resolve-active)
                  (lambda (approve) (push approve decisions)))
@@ -317,7 +318,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
                  (lambda (&rest _) (list ?t "trust for this session"))))
         (hermes-exec--prompt-choice))
       (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)))
-    (let ((hermes-exec--active (list :buffer nil :risk 'sensitive))
+    (let ((hermes-exec--active (list :id (make-symbol "request")
+                                    :buffer nil :risk 'sensitive))
           (hermes-exec-require-approval t)
           (answers '((?t "trust for this session") (?d "deny"))))
       (cl-letf (((symbol-function 'hermes-exec--resolve-active)
@@ -334,7 +336,7 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (noninteractive nil)
         resolved)
     (unwind-protect
-        (let ((hermes-exec--active (list :buffer buffer)))
+        (let ((hermes-exec--active (list :id (make-symbol "request") :buffer buffer)))
           (cl-letf (((symbol-function 'hermes-exec--resolve-active)
                      (lambda (&rest _) (setq resolved t)))
                     ((symbol-function 'read-multiple-choice)
@@ -344,6 +346,67 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
           (should-not resolved))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
+
+(defun hermes-exec-test--stale-choice (choice)
+  "Check that CHOICE cannot affect a replacement request during the reader."
+  (hermes-exec-test--with-pending proc sent
+    (let ((hermes-exec-require-approval t)
+          (noninteractive nil)
+          evaluated viewed replacement)
+      (hermes-exec--enqueue-approval proc "request A" :risk 'ordinary)
+      (cl-letf (((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _)
+                   ;; Reuse the connection and display metadata deliberately:
+                   ;; neither identifies a particular queued request.
+                   (hermes-exec--drop-pending proc)
+                   (hermes-exec--enqueue-approval proc "request B" :risk 'ordinary)
+                   (setq replacement hermes-exec--active)
+                   (list choice)))
+                ((symbol-function 'hermes-exec--eval-with-origin)
+                 (lambda (&rest args)
+                   (push args evaluated)
+                   (list :ok t :result "stub")))
+                ((symbol-function 'pop-to-buffer)
+                 (lambda (&rest args) (push args viewed))))
+        (hermes-exec--prompt-choice))
+      (should-not evaluated)
+      (should-not sent)
+      (should-not viewed)
+      (should (eq hermes-exec-require-approval t))
+      (should (eq hermes-exec--active replacement))
+      (should (buffer-live-p (plist-get replacement :buffer))))))
+
+(ert-deftest hermes-exec-test-stale-choice-approve ()
+  (hermes-exec-test--stale-choice ?a))
+
+(ert-deftest hermes-exec-test-stale-choice-deny ()
+  (hermes-exec-test--stale-choice ?d))
+
+(ert-deftest hermes-exec-test-stale-choice-trust ()
+  (hermes-exec-test--stale-choice ?t))
+
+(ert-deftest hermes-exec-test-stale-choice-view ()
+  (hermes-exec-test--stale-choice ?v))
+
+(ert-deftest hermes-exec-test-choice-survives-metadata-replacement ()
+  "A display metadata refresh must not revoke approval of the same request."
+  (hermes-exec-test--with-pending proc sent
+    (let ((noninteractive nil)
+          evaluated)
+      (hermes-exec--enqueue-approval proc "request A" :risk 'ordinary)
+      (cl-letf (((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _)
+                   (setq hermes-exec--active (copy-sequence hermes-exec--active))
+                   (hermes-exec--refresh-active-buffer)
+                   (list ?a)))
+                ((symbol-function 'hermes-exec--eval-with-origin)
+                 (lambda (code &rest _)
+                   (setq evaluated code)
+                   (list :ok t :result "stub"))))
+        (hermes-exec--prompt-choice))
+      (should (equal evaluated "request A"))
+      (should (string-match-p "\"ok\":true" sent))
+      (should-not hermes-exec--active))))
 
 (ert-deftest hermes-exec-test-approval-keymap-keeps-yes-no-aliases ()
   "The approval buffer keeps old yes/no/quit aliases while adding char choices."

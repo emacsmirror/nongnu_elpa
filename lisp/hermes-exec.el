@@ -133,10 +133,11 @@ client has already disconnected -- e.g. when a slow approval outlives the
 bridge timeout -- rather than running the side effect on a dead socket.")
 
 (defvar hermes-exec--pending nil
-  "FIFO list of (:proc PROC :code CODE) eval requests awaiting approval.")
+  "FIFO list of (:id ID :proc PROC :code CODE) requests awaiting approval.
+ID is a unique symbol retained across display metadata updates.")
 
 (defvar hermes-exec--active nil
-  "The (:proc PROC :code CODE :buffer BUF) request whose prompt is shown, or nil.")
+  "The queued request with its approval :buffer, or nil when none is shown.")
 
 ;;; Host resolution
 
@@ -563,33 +564,40 @@ already active."
   "Prompt the user to decide on the active approval request.
 Maps `read-multiple-choice' to `hermes-exec--resolve-active'.  The \"view\"
 choice selects the approval buffer for inspection; the user can press
-\<hermes-exec-approval-mode-map>\[hermes-exec-decide] there to decide later."
-  (when (and hermes-exec--active (not noninteractive))
+\<hermes-exec-approval-mode-map>\[hermes-exec-decide] there to decide later.
+Ignore answers when the displayed request was replaced while waiting."
+  (when-let* (((not noninteractive))
+              (id (plist-get hermes-exec--active :id)))
     (let (done)
       (while (not done)
-        (pcase (car (read-multiple-choice
-                     "Hermes eval approval" (hermes-exec--approval-choices)))
-          (?a
-           (hermes-exec--resolve-active t)
-           (setq done t))
-          (?d
-           (hermes-exec--resolve-active nil)
-           (setq done t))
-          (?t
-           (hermes-exec-trust)
-           (if (eq (plist-get hermes-exec--active :risk) 'ordinary)
-               (progn
-                 (hermes-exec--resolve-active t)
-                 (setq done t))
-             (message "Trust enabled; this request still needs approve/deny")))
-          (?v
-           (let ((buffer (plist-get hermes-exec--active :buffer)))
-             (when (buffer-live-p buffer)
-               (pop-to-buffer buffer)
-               (message "Inspect request, then press %s to decide"
-                        (substitute-command-keys
-                         "\\[hermes-exec-decide]"))))
-           (setq done t)))))))
+        (let ((choice (read-multiple-choice
+                       "Hermes eval approval" (hermes-exec--approval-choices))))
+          ;; Input waits run sentinels and timers.  Display metadata may change,
+          ;; but only the exact queued request can own the answer.
+          (pcase (and (eq id (plist-get hermes-exec--active :id))
+                      (car choice))
+            (?a
+             (hermes-exec--resolve-active t)
+             (setq done t))
+            (?d
+             (hermes-exec--resolve-active nil)
+             (setq done t))
+            (?t
+             (hermes-exec-trust)
+             (if (eq (plist-get hermes-exec--active :risk) 'ordinary)
+                 (progn
+                   (hermes-exec--resolve-active t)
+                   (setq done t))
+               (message "Trust enabled; this request still needs approve/deny")))
+            (?v
+             (let ((buffer (plist-get hermes-exec--active :buffer)))
+               (when (buffer-live-p buffer)
+                 (pop-to-buffer buffer)
+                 (message "Inspect request, then press %s to decide"
+                          (substitute-command-keys
+                           "\\[hermes-exec-decide]"))))
+             (setq done t))
+            (_ (setq done t))))))))
 
 (defun hermes-exec--maybe-prompt ()
   "Defer `hermes-exec--prompt-choice' until after the network filter completes.
@@ -645,7 +653,9 @@ the request currently shown, so the queue cannot grow without bound."
                        (list :ok nil :error "Too many pending eval requests"))))
     (setq hermes-exec--pending
           (append hermes-exec--pending
-                  (list (append (list :proc proc :code code) metadata))))
+                  (list (append (list :id (make-symbol "eval-request")
+                                      :proc proc :code code)
+                                metadata))))
     (if hermes-exec--active
         (hermes-exec--refresh-active-buffer)
       (hermes-exec--show-next))))
