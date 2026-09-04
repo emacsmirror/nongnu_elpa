@@ -17,8 +17,8 @@
 ;;; Commentary:
 
 ;; Unit tests for the narrow local MCP bridge.  These tests exercise pure
-;; schema, dispatch, and command-builder integration without opening a network
-;; listener or starting Codex.
+;; schema, dispatch, command-builder integration, and disposable loopback
+;; listeners without starting Codex.
 
 ;;; Code:
 
@@ -1396,6 +1396,141 @@
          (schema (codex-ide-mcp--object-get tool "inputSchema")))
     (should (equal (codex-ide-mcp--object-get schema "anyOf")
                    [(("required" . ["buffer"])) (("required" . ["path"]))]))))
+
+(ert-deftest codex-ide-mcp-custom-registration-atomic ()
+  "Reject invalid registrations without changing either catalog."
+  (let ((codex-ide-mcp--custom-tools nil)
+        (builtins (copy-tree codex-ide-mcp--tools)))
+    (codex-ide-mcp-register-tool "custom" "Example" nil #'list)
+    (dolist (spec '(("custom" "Duplicate" nil list)
+                    ("emacs_execute" "Builtin" nil list)
+                    ("bad name" "Invalid" nil list)
+                    ("" "Invalid" nil list)
+                    ("new" nil nil list)
+                    ("new" "Invalid" nil missing-custom-handler)
+                    ("new" "Invalid" ((:name "x" :type array)) list)
+                    ("new" "Invalid" ((:name "x" :type string :enum ("x"))) list)
+                    ("new" "Invalid" ((:name "x" :type string :optional maybe)) list)
+                    ("new" "Invalid" ((:name "x" :type string)
+                                       (:name "x" :type integer)) list)))
+      (should-error (apply #'codex-ide-mcp-register-tool spec) :type 'user-error)
+      (should (equal (codex-ide-mcp-tool-names)
+                     (append (mapcar (lambda (tool) (plist-get tool :name)) builtins)
+                             '("custom")))))
+    (should-error (codex-ide-mcp-unregister-tool "emacs_execute") :type 'user-error)
+    (should (codex-ide-mcp-unregister-tool "custom"))
+    (should-not (codex-ide-mcp-unregister-tool "custom"))
+    (should (equal builtins codex-ide-mcp--tools))))
+
+(ert-deftest codex-ide-mcp-custom-explicit-arguments ()
+  "Both dispatch modes validate primitives before calling explicit handlers."
+  (let ((codex-ide-mcp--custom-tools nil)
+        (calls 0) received)
+    (codex-ide-mcp-register-tool
+     "custom" "Example"
+     '((:name "s" :type string) (:name "i" :type integer)
+       (:name "n" :type number) (:name "b" :type boolean)
+       (:name "optional" :type string :optional t))
+     (lambda (s i n b optional)
+       (setq received (list s i n b optional) calls (1+ calls))
+       "done"))
+    (dolist (dispatch '(codex-ide-mcp--dispatch codex-ide-mcp--modern-dispatch))
+      (let ((result (funcall dispatch "tools/call"
+                             '(:name "custom" :arguments
+                               (:b :json-false :n 1.5 :i 2 :s "hello")))))
+        (should (equal received '("hello" 2 1.5 :json-false nil)))
+        (should (equal (codex-ide-mcp-test--decoded-result result) "done")))
+      (dolist (bad '((:s 4 :i 2 :n 1 :b t) (:s "x" :i 2.5 :n 1 :b t)
+                     (:s "x" :i 2 :n "1" :b t) (:s "x" :i 2 :n 1 :b nil)
+                     (:s "x" :i 2 :n 1) (:s "x" :i 2 :n 1 :b t :extra 1)))
+        (should (eq t (codex-ide-mcp--object-get
+                       (funcall dispatch "tools/call"
+                                (list :name "custom" :arguments bad)) "isError")))))
+    (should (= calls 2))))
+
+(ert-deftest codex-ide-mcp-custom-schema-snapshot-and-errors ()
+  "Registration snapshots caller-owned schema and reports handler errors."
+  (let ((codex-ide-mcp--custom-tools nil)
+        (name (copy-sequence "custom"))
+        (field (copy-sequence "value")))
+    (let ((args (list (list :name field :type 'string))))
+      (codex-ide-mcp-register-tool name "Example" args
+                                   (lambda (value) (error "Handler refused %s" value)))
+      (aset name 0 ?x)
+      (aset field 0 ?x)
+      (setf (plist-get (car args) :type) 'integer))
+    (let ((names (codex-ide-mcp-tool-names)))
+      (aset (car (last names)) 0 ?z))
+    (let* ((tool (codex-ide-mcp--tool-by-name "custom"))
+           (result (codex-ide-mcp--handle-tools-call
+                    '(:name "custom" :arguments (:value "hello")))))
+      (should (equal (plist-get (car (plist-get tool :args)) :name) "value"))
+      (should (eq (codex-ide-mcp--object-get result "isError") t))
+      (should (string-match-p "Handler refused hello"
+                              (codex-ide-mcp-test--result-text result))))))
+
+(defun codex-ide-mcp-test--wire-request (request)
+  "Send REQUEST over a real loopback socket and return its JSON response."
+  (let ((body (encode-coding-string (plist-get request :body) 'utf-8))
+        (response "") client)
+    (unwind-protect
+        (progn
+          (setq client
+                (make-network-process
+                 :name "codex-custom-wire" :host "127.0.0.1"
+                 :service codex-ide-mcp--port :noquery t :coding 'binary
+                 :filter (lambda (_proc text) (setq response (concat response text)))))
+          (process-send-string
+           client (concat "POST /mcp HTTP/1.1\r\n"
+                          (mapconcat (lambda (header)
+                                       (format "%s: %s\r\n" (car header) (cdr header)))
+                                     (plist-get request :headers) "")
+                          (format "Content-Length: %d\r\n\r\n" (length body)) body))
+          (let ((deadline (+ (float-time) 3)))
+            (while (and (process-live-p client) (< (float-time) deadline))
+              (accept-process-output nil 0.01)))
+          (should (string-prefix-p "HTTP/1.1 200 " response))
+          (should (string-match "\r\n\r\n" response))
+          (codex-ide-mcp-test--json-read
+           (decode-coding-string (substring response (match-end 0)) 'utf-8)))
+      (when (process-live-p client) (delete-process client)))))
+
+(ert-deftest codex-ide-mcp-custom-http-discovery-call-remove ()
+  "Discover and call custom tools over both HTTP protocol modes."
+  (let ((codex-ide-mcp--custom-tools nil)
+        (codex-ide-mcp-port 0) (codex-ide-mcp--server nil)
+        (codex-ide-mcp--port nil)
+        (codex-ide-mcp--clients (make-hash-table :test 'eq)))
+    (unwind-protect
+        (progn
+          (codex-ide-mcp-register-tool
+           "greet" "Greet" '((:name "name" :type string))
+           (lambda (name) (concat "Hello, " name)))
+          (codex-ide-mcp--start-server)
+          (dolist (modern '(nil t))
+            (dolist (method '("tools/list" "tools/call"))
+              (let* ((params '(:name "greet" :arguments (:name "κόσμε")))
+                     (request (if modern
+                                  (codex-ide-mcp-test--modern-request method params)
+                                (let ((legacy (codex-ide-mcp-test--request)))
+                                  (setf (plist-get legacy :body)
+                                        (json-encode (list :jsonrpc "2.0" :id 1
+                                                           :method method :params params)))
+                                  legacy)))
+                     (result (cdr (assoc "result"
+                                         (codex-ide-mcp-test--wire-request request)))))
+                (if (equal method "tools/list")
+                    (should (cl-find "greet" (cdr (assoc "tools" result))
+                                     :key (lambda (tool) (cdr (assoc "name" tool)))
+                                     :test #'equal))
+                  (should (equal
+                           (json-read-from-string
+                            (cdr (assoc "text" (car (cdr (assoc "content" result))))))
+                           "Hello, κόσμε"))))))
+          (codex-ide-mcp-unregister-tool "greet")
+          (should-not (member "greet" (codex-ide-mcp-tool-names)))
+          (should-error (codex-ide-mcp--handle-tools-call '(:name "greet"))))
+      (codex-ide-mcp--stop-server))))
 
 (provide 'codex-ide-mcp-tests)
 

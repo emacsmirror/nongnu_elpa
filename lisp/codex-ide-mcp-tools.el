@@ -1083,13 +1083,104 @@ Already-terminal jobs are left unchanged and emit no new events."
          :function #'codex-ide-mcp--tool-events))
   "Registered MCP harness tools.")
 
+(defvar codex-ide-mcp--custom-tools nil
+  "Custom tool descriptors, separate from the built-in catalog.")
+
+(defun codex-ide-mcp--catalog ()
+  "Return built-in and custom tool descriptors."
+  (append codex-ide-mcp--tools codex-ide-mcp--custom-tools))
+
+(defun codex-ide-mcp--valid-tool-name-p (name)
+  "Return non-nil when NAME is a supported tool or argument name."
+  (and (stringp name) (<= 1 (length name) 128)
+       (string-match-p "\\`[a-zA-Z0-9_.-]+\\'" name)))
+
+(defun codex-ide-mcp--validate-custom-schema (args)
+  "Reject unsupported or ambiguous argument descriptors in ARGS."
+  (unless (proper-list-p args)
+    (user-error "Tool arguments must be a proper list"))
+  (let (names)
+    (dolist (arg args)
+      (unless (and (proper-list-p arg) (cl-evenp (length arg)))
+        (user-error "Tool argument must be a property list"))
+      (let (keys)
+        (cl-loop for (key _value) on arg by #'cddr do
+                 (unless (and (memq key '(:name :type :description :optional))
+                              (not (memq key keys)))
+                   (user-error "Unsupported or duplicate argument property: %s" key))
+                 (push key keys)))
+      (let ((name (plist-get arg :name)))
+        (unless (and (codex-ide-mcp--valid-tool-name-p name)
+                     (not (member name names))
+                     (memq (plist-get arg :type) '(string integer number boolean))
+                     (or (not (plist-member arg :description))
+                         (stringp (plist-get arg :description)))
+                     (memq (plist-get arg :optional) '(nil t)))
+          (user-error "Invalid tool argument descriptor: %S" arg))
+        (push name names)))))
+
+;;;###autoload
+(defun codex-ide-mcp-register-tool (name description args function)
+  "Register a custom MCP tool NAME with DESCRIPTION, ARGS and FUNCTION.
+ARGS is a list of plists with :name (string), :type (one of string,
+integer, number, boolean), optional :description (string), and :optional
+\(nil or t).  Unknown properties and duplicate argument names are errors.
+FUNCTION receives positional values in ARGS order, with nil for omitted
+optional values and t or :json-false for JSON booleans.  Its return value
+must be JSON-encodable and is returned as MCP text content.  Errors become
+MCP tool errors.  Handlers run synchronously; they must return promptly.
+Built-in and duplicate tool names cannot be registered.  Register tools
+before starting Codex; restart sessions after changing the catalog since
+clients may cache discovery.  Return NAME on success."
+  (unless (and (codex-ide-mcp--valid-tool-name-p name)
+               (stringp description) (not (string-empty-p description))
+               (functionp function))
+    (user-error "Invalid tool name, description, or function"))
+  (when (codex-ide-mcp--tool-by-name name)
+    (user-error "MCP tool already registered: %s" name))
+  (codex-ide-mcp--validate-custom-schema args)
+  (let ((schema (mapcar (lambda (arg)
+                          (cl-loop for (key value) on arg by #'cddr
+                                   append (list key (if (stringp value)
+                                                        (copy-sequence value)
+                                                      value))))
+                        args)))
+    (setq codex-ide-mcp--custom-tools
+          (append codex-ide-mcp--custom-tools
+                  (list (list :name (copy-sequence name)
+                              :description (copy-sequence description)
+                              :args schema :custom t
+                              :function
+                              (lambda (values)
+                                (codex-ide-mcp--json-text-result
+                                 (apply function
+                                        (mapcar (lambda (arg)
+                                                  (codex-ide-mcp--object-get
+                                                   values (plist-get arg :name)))
+                                                schema)))))))))
+  name)
+
+;;;###autoload
+(defun codex-ide-mcp-unregister-tool (name)
+  "Unregister custom tool NAME, returning non-nil if it existed.
+Built-ins cannot be removed.  Restart Codex sessions after catalog changes."
+  (when (cl-find name codex-ide-mcp--tools
+                 :key (lambda (tool) (plist-get tool :name)) :test #'equal)
+    (user-error "Cannot unregister built-in MCP tool: %s" name))
+  (when-let* ((tool (cl-find name codex-ide-mcp--custom-tools
+                           :key (lambda (item) (plist-get item :name))
+                           :test #'equal)))
+    (setq codex-ide-mcp--custom-tools (remq tool codex-ide-mcp--custom-tools))
+    t))
+
 (defun codex-ide-mcp-tool-names ()
   "Return the names of the local Emacs MCP tools."
-  (mapcar (lambda (tool) (plist-get tool :name)) codex-ide-mcp--tools))
+  (mapcar (lambda (tool) (copy-sequence (plist-get tool :name)))
+          (codex-ide-mcp--catalog)))
 
 (defun codex-ide-mcp--tool-by-name (name)
   "Return registered tool named NAME, or nil."
-  (cl-find name codex-ide-mcp--tools
+  (cl-find name (codex-ide-mcp--catalog)
            :key (lambda (tool) (plist-get tool :name))
            :test #'equal))
 

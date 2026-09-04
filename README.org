@@ -60,6 +60,23 @@
   config only stays reliable with a fixed port.
 + Disable auto registration with =(setq codex-ide-mcp-enabled nil)=.
 
+*** Custom tools
+Register tools before starting Codex, and restart sessions after catalog changes
+because clients may cache discovery. Built-in tools cannot be replaced or removed.
+Handlers receive positional arguments in schema order and return a JSON-encodable
+value as MCP text content. Omitted optional arguments become =nil=; JSON booleans
+are =t= and =:json-false=. Supported types: =string=, =integer=, =number=, =boolean=.
+Handlers run synchronously and must return promptly.
+
+#+begin_src emacs-lisp
+(require 'codex-ide-mcp-tools)
+(codex-ide-mcp-register-tool
+ "greet" "Return a greeting."
+ '((:name "name" :type string :description "Name to greet."))
+ (lambda (name) (concat "Hello, " name)))
+;; Remove with (codex-ide-mcp-unregister-tool "greet").
+#+end_src
+
 ** Useful knobs
 | Variable | Default intent |
 |----------+----------------|

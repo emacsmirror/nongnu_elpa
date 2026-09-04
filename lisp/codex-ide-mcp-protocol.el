@@ -78,8 +78,30 @@
     ('boolean (memq value '(t :json-false)))
     (_ (error "Unsupported MCP argument type: %s" type))))
 
+(defun codex-ide-mcp--validate-custom-fields (tool args)
+  "Reject undeclared fields in custom TOOL's ARGS."
+  (let ((keys (cond
+               ((hash-table-p args) (hash-table-keys args))
+               ((and (proper-list-p args) (keywordp (car args)))
+                (unless (cl-evenp (length args))
+                  (user-error "Tool arguments must be an object"))
+                (cl-loop for (key _value) on args by #'cddr
+                         collect (substring (symbol-name key) 1)))
+               ((and (proper-list-p args) (cl-every #'consp args))
+                (mapcar (lambda (entry)
+                          (if (symbolp (car entry))
+                              (symbol-name (car entry)) (car entry))) args))
+               (t (user-error "Tool arguments must be an object"))))
+        (names (mapcar (lambda (arg) (plist-get arg :name))
+                       (plist-get tool :args))))
+    (dolist (key keys)
+      (unless (member key names)
+        (user-error "Unknown tool argument: %s" key)))))
+
 (defun codex-ide-mcp--validate-args (tool args)
   "Signal `user-error' when TOOL's ARGS omit or mistype declared fields."
+  (when (plist-get tool :custom)
+    (codex-ide-mcp--validate-custom-fields tool args))
   (dolist (arg (plist-get tool :args))
     (let* ((name (plist-get arg :name))
            (present (codex-ide-mcp--object-has-key-p args name)))
@@ -108,7 +130,7 @@
   (list (cons "tools"
               (vconcat
                (mapcar #'codex-ide-mcp--tool->mcp
-                       codex-ide-mcp--tools)))))
+                       (codex-ide-mcp--catalog))))))
 
 (defun codex-ide-mcp--handle-tools-call (params)
   "Call an Emacs MCP tool described by PARAMS."
