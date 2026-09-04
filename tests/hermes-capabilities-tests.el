@@ -346,6 +346,79 @@ touched."
         (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
         (should (zerop reconnects))))))
 
+(ert-deftest hermes-capabilities-deferred-connect-failure-retries ()
+  "Deferred auth and socket-open failures retry with capped backoff."
+  (dolist (failure '(auth open))
+    (let* ((provider (hermes-capabilities--provider-create
+                      :buffer (current-buffer)))
+           (hermes-capabilities-backoff-base 1)
+           (hermes-capabilities-backoff-max 3)
+           (opens 0)
+           auth scheduled
+           (hermes-capabilities--url-function
+            (lambda (&rest _) (setq auth (hermes--promise-make))))
+           (hermes-capabilities--open-function
+            (lambda (&rest _) (cl-incf opens) (error "Open failed"))))
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (delay repeat function &rest args)
+                   (push (list delay repeat function args) scheduled)
+                   'retry-timer)))
+        (hermes-capabilities--connect provider)
+        (dolist (delay '(1 2 3 3))
+          ;; Resolve only after connect returned: its setup stack is gone.
+          (should (eq (hermes--promise-state auth) 'pending))
+          (if (eq failure 'auth)
+              (hermes--promise-reject auth "Auth failed")
+            (hermes--promise-resolve auth '(:url "ws://example.test")))
+          (should (hermes-capabilities--provider-active provider))
+          (should-not (hermes-capabilities--provider-socket provider))
+          (should (eq (hermes-capabilities--provider-reconnect-timer provider)
+                      'retry-timer))
+          (should (= (length scheduled) 1))
+          (pcase-let ((`(,actual ,repeat ,function ,args) (pop scheduled)))
+            (should (= actual delay))
+            (should-not repeat)
+            (apply function args)))
+        (should (= opens (if (eq failure 'open) 4 0)))))))
+
+(ert-deftest hermes-capabilities-deferred-failure-respects-owner ()
+  "Late auth and reentrant open failures cannot retry obsolete owners."
+  (dolist (boundary '(auth-success auth-failure open-failure))
+    (dolist (invalidation '(replacement teardown))
+      (let* ((provider (hermes-capabilities--provider-create
+                        :buffer (current-buffer)))
+             (opens 0)
+             auth timers
+             (hermes-capabilities--url-function
+              (lambda (&rest _) (setq auth (hermes--promise-make)))))
+        (cl-labels ((invalidate ()
+                     (if (eq invalidation 'teardown)
+                         (hermes-capabilities--teardown provider)
+                       (hermes-capabilities--connect provider))))
+          (let ((hermes-capabilities--open-function
+                 (lambda (&rest _)
+                   (cl-incf opens)
+                   (invalidate)
+                   (error "Obsolete open failed"))))
+            (cl-letf (((symbol-function 'run-at-time)
+                       (lambda (&rest args) (push args timers) 'retry-timer)))
+              (hermes-capabilities--connect provider)
+              (let ((old-auth auth))
+                (unless (eq boundary 'open-failure) (invalidate))
+                (if (eq boundary 'auth-failure)
+                    (hermes--promise-reject old-auth "Obsolete auth failed")
+                  (hermes--promise-resolve
+                   old-auth '(:url "ws://example.test"))))
+              (should (= opens (if (eq boundary 'open-failure) 1 0)))
+              (should-not timers)
+              (should-not (hermes-capabilities--provider-reconnect-timer provider))
+              (should-not (hermes-capabilities--provider-socket provider))
+              (if (eq invalidation 'replacement)
+                  (progn
+                    (should (hermes-capabilities--provider-active provider))
+                    (should (eq (hermes--promise-state auth) 'pending)))
+                (should-not (hermes-capabilities--provider-active provider))))))))))
+
 (ert-deftest hermes-capabilities-connect-uses-owner-instance-url ()
   "Connect resolves the owner buffer's instance URL, not the current buffer's."
   (let ((owner (generate-new-buffer " hermes-cap-owner"))
