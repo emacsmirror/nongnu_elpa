@@ -2155,6 +2155,39 @@
      (should (string-match-p "-old-inline" diff))
      (should (string-match-p "+new-inline" diff)))))
 
+(ert-deftest hermes-chat-diff-reuse-adopts-opening-source-directory ()
+  "Each chat opening the shared viewer supplies its own directory and diff."
+  (let (viewer)
+    (save-window-excursion
+      (unwind-protect
+          ;; Preserve remote directory spelling without invoking TRAMP handlers.
+          (let ((file-name-handler-alist nil))
+            (when (get-buffer "*Hermes Diff*")
+              (kill-buffer "*Hermes Diff*"))
+            (dolist (directory '("/tmp/project-a/" "/tmp/project-b/"
+                                 "/ssh:example.invalid:/project-c/"))
+              (hermes-test-with-chat-buffer
+               (setq default-directory directory)
+               (let ((diff (concat "--- a/source.el\n+++ b/source.el\n"
+                                   "@@ -1 +1 @@\n-old\n+" directory "\n")))
+                 (hermes-chat--insert-entry
+                  (hermes-chat--make-entry 'assistant diff 'done))
+                 (let ((source (current-buffer))
+                       (text (buffer-string)))
+                   (hermes-test--push-button-labeled "View Diff")
+                   (let ((opened (get-buffer "*Hermes Diff*")))
+                     (when viewer (should (eq opened viewer)))
+                     (setq viewer opened)
+                     (with-current-buffer opened
+                       (should (equal default-directory directory))
+                       (should (equal (buffer-string) diff))
+                       (should (derived-mode-p 'diff-mode))
+                       (should buffer-read-only)))
+                   (with-current-buffer source
+                     (should (equal default-directory directory))
+                     (should (equal (buffer-string) text))))))))
+        (when (buffer-live-p viewer) (kill-buffer viewer))))))
+
 (ert-deftest hermes-chat-diff-preserves-embedded-data-image-url ()
   "Diff buttons retain data URLs without lifting them as transcript images."
   (let ((url (concat "data:image/png;base64," (make-string 80 ?A))))
