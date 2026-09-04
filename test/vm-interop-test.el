@@ -43,7 +43,8 @@
 
 (defconst vm-interop-test--known-disagreements
   '(("mboxcl2" . "a From_ line")
-    ("mboxcl2" . "a From_ line first"))
+    ("mboxcl2" . "a From_ line first")
+    ("babyl"   . "a babyl separator"))
   "The cells where an outside reader is expected to disagree with VM.
 
 The two mboxcl2 ones are the type doing its job: it stores a body as it
@@ -51,10 +52,12 @@ arrived and puts the length in a header, so a reader that ignores
 Content-Length splits on the `From ' line.  The manual's mbox section says
 so, and this is that claim measured rather than asserted.
 
-babyl was here too until emacs-vm/vm#801: VM quoted a body separator for
-From_ and for mmdf and not for babyl, so `mailbox.Babyl\' found three messages
-where VM filed two.  It is quoted now and the entry is gone, which is what
-this list is for.")
+The babyl one is the limit emacs-vm/vm#801 decided to keep.  VM quotes a body
+separator for From_ and for mmdf and not for babyl, so `mailbox.Babyl\' finds
+three messages where VM filed two, and Rmail refuses the folder outright.
+Quoting it would have cost a `>\' on three more of the hundred and twenty
+conversion round trips, and the decision was to leave babyl compatibility
+where it has always been and describe it in the manual instead.")
 
 (defun vm-interop-test--python-p ()
   "Whether python3 is here with its `mailbox' module."
@@ -141,16 +144,18 @@ does."
   (skip-unless (vm-interop-test--python-p))
   (vm-interop-test--check 'mboxcl2))
 
-(ert-deftest vm-interop-test-babyl-folders-read-the-same-outside ()
-  "Every babyl folder VM writes holds two messages for Python as well.
+(ert-deftest vm-interop-test-babyl-disagrees-on-a-separator-in-a-body ()
+  "A babyl folder is read differently outside where a body holds the separator.
 
-Including a body holding the babyl separator, which is emacs-vm/vm#801.  That
-went out unquoted until the fix: `mailbox.Babyl' found three messages where VM
-filed two, and VM's own reader found two, so nothing inside VM noticed.
-`vm-find-leading-message-separator' wants a separator followed by an attribute
-line, so a bare one in a body was invisible to it and
-`vm-munge-message-separators' left it alone.  It searches for the separator
-directly for babyl now."
+emacs-vm/vm#801, kept deliberately.  VM quotes such a line for From_ and for
+mmdf and not for babyl: `vm-find-leading-message-separator' wants a separator
+followed by an attribute line, so a bare one in a body is invisible to it and
+`vm-munge-message-separators' leaves it alone.  `mailbox.Babyl' then finds
+three messages where VM filed two.
+
+One of the seven bodies, and no others.  Quoting it would have cost a `>' on
+three more conversion round trips, so #801 left babyl where it was and put the
+limit in the manual.  This test is the one to change if that is ever revisited."
   (skip-unless (vm-interop-test--python-p))
   (vm-interop-test--check 'babyl))
 
@@ -184,21 +189,24 @@ error here."
               n))
         (error (error-message-string error-data))))))
 
-(ert-deftest vm-interop-test-rmail-can-read-every-babyl-folder-vm-writes ()
-  "Rmail opens every babyl folder VM writes, whatever the bodies hold.
+(ert-deftest vm-interop-test-rmail-refuses-a-babyl-body-holding-a-separator ()
+  "Rmail opens every babyl folder VM writes but one, and this is the one.
 
-emacs-vm/vm#801, and the evidence that settled it.  A body holding `\\037\\014'
-used to go out unquoted, and Rmail did not merely mis-split such a folder: it
-refused it outright with
+emacs-vm/vm#801, and the measurement the decision rests on.  Rmail is the
+reference implementation of this format, and a body holding the babyl
+separator does not merely confuse it: it refuses the folder with
 
     Search failed: \",, ?\"
 
 having taken the bare separator for the start of a message and then looked for
-the attribute line that is not there.  Python's reader counted three messages
-where VM filed two; Rmail could not read the folder at all.
+the attribute line that is not there.  Every other body VM can put in a babyl
+folder reads back as the two messages VM filed.
 
-Rmail reads the quoted form as two messages, so quoting is what makes a VM
-babyl folder openable by the program whose format it is."
+Kept rather than fixed.  Quoting the line makes Rmail read it, and costs a
+`>' that nothing removes on three more of the hundred and twenty conversion
+round trips; #801 chose to leave babyl compatibility where it has always been
+and describe the limit in the manual.  So this pins the limit: if VM ever
+starts quoting, this test fails and says so."
   (dolist (spec vm-interop-test--bodies)
     (let* ((dir (file-name-as-directory (make-temp-file "vm-rmail" t)))
            (vm-default-folder-type 'babyl))
@@ -206,7 +214,11 @@ babyl folder openable by the program whose format it is."
           (let ((folder (expand-file-name "archive" dir)))
             (vm-interop-test--file-into folder (cdr spec))
             (vm-interop-test--file-into folder "second body\n")
-            (should (equal 2 (vm-interop-test--rmail-reads folder))))
+            (if (equal (car spec) "a babyl separator")
+                ;; the one Rmail will not open
+                (should (equal "Search failed: \",, ?\""
+                               (vm-interop-test--rmail-reads folder)))
+              (should (equal 2 (vm-interop-test--rmail-reads folder)))))
         (delete-directory dir t)))))
 
 (provide 'vm-interop-test)

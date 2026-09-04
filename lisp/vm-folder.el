@@ -1378,24 +1378,7 @@ as it arrived.  Issue #466."
     (if (eq folder-type 'From_)
 	(setq folder-type 'BellFrom_))
     (let ((vm-folder-type folder-type))
-      (cond ((eq folder-type 'babyl)
-	     ;; Searched for directly rather than through
-	     ;; `vm-find-leading-message-separator', which wants a separator
-	     ;; followed by an attribute line, "\014\n[01],".  A bare
-	     ;; `\037\014' in a body has no attribute line after it, so the
-	     ;; finder saw nothing and the line went out unquoted: VM read
-	     ;; such a folder back as it wrote it and every other babyl
-	     ;; reader split the message there (emacs-vm/vm#801).
-	     (setq end (vm-marker end))
-	     (goto-char start)
-	     (while (re-search-forward "^\037\014" end t)
-	       (goto-char (match-beginning 0))
-	       (insert ">")
-	       ;; past the separator, so the `>' just put in front of it does
-	       ;; not leave the search matching it again
-	       (forward-char 2))
-	     (set-marker end nil))
-	    ((memq folder-type '(From_ mmdf BellFrom_))
+      (cond ((memq folder-type '(From_ mmdf BellFrom_ babyl))
 	     (setq end (vm-marker end))
 	     (goto-char start)
 	     (while (and (vm-find-leading-message-separator)
