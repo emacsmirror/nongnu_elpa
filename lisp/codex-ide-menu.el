@@ -149,6 +149,8 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   "C-l" ("Switch project session" codex-ide-list-project-sessions)
   "l" ("Switch any session" codex-ide-list-sessions)
   "w" ("Cycle sessions" codex-ide-toggle)
+  "W" ("Toggle project panel" codex-ide-toggle-panel)
+  "A" ("Show project sessions" codex-ide-show-project-sessions)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)
   "a" ("Attach source to draft" codex-ide-attach-source)

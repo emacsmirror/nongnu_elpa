@@ -2550,6 +2550,97 @@ region, where the scrollback-browsing rule alone would strand it."
                       (when session (codex-ide-test--kill-session session)))
                     (list first-b second-a second-b))))))))))
 
+(defun codex-ide-test--call-with-panel-tabs (body)
+  "Call BODY with disposable tab and window state."
+  (require 'tab-bar)
+  (let ((tabs (frame-parameter nil 'tabs))
+        (tab-bar-mode tab-bar-mode)
+        (tab-bar-new-tab-choice "*scratch*")
+        (tab-bar-closed-tabs nil))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (set-frame-parameter nil 'tabs nil)
+          (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions) #'ignore))
+            (funcall body)))
+      (set-frame-parameter nil 'tabs tabs))))
+
+(ert-deftest codex-ide-panel-restores-live-set-and-preserves-other-project ()
+  "Hiding one project preserves others and never restores stopped sessions."
+  (codex-ide-test--call-with-project
+   (lambda (parent)
+     (let ((root (expand-file-name "project/" parent))
+           (other (expand-file-name "other/" parent)))
+       (make-directory root t)
+       (make-directory other t)
+       (codex-ide-test--call-with-sessions
+        `((,root 1) (,root 2) (,other 1))
+        (lambda (sessions)
+          (codex-ide-test--call-with-panel-tabs
+           (lambda ()
+             (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+                        (lambda () root)))
+               (codex-ide-show-project-sessions)
+               (codex-ide--show-panel-session (nth 2 sessions))
+               (should (cl-every #'codex-ide--panel-windows sessions))
+               (codex-ide-toggle-panel)
+               (should-not (codex-ide--panel-windows (car sessions)))
+               (should-not (codex-ide--panel-windows (cadr sessions)))
+               (should (codex-ide--panel-windows (nth 2 sessions)))
+               (codex-ide--cleanup-on-exit root 2)
+               (codex-ide-toggle-panel)
+               (should (codex-ide--panel-windows (car sessions)))
+               (should (codex-ide--panel-windows (nth 2 sessions)))
+               (should-not (assoc root (codex-ide--panel-state))))))))))))
+
+(ert-deftest codex-ide-panel-state-follows-tabs-through-rename-and-close ()
+  "Each tab remembers its own set independently of the displayed name."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (codex-ide-test--call-with-panel-tabs
+         (lambda ()
+           (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+                      (lambda () root)))
+             (codex-ide-show-project-sessions)
+             (codex-ide-toggle-panel)
+             (tab-bar-new-tab)
+             (should-not (assoc root (codex-ide--panel-state)))
+             (codex-ide--show-panel-session (car sessions))
+             (codex-ide-toggle-panel)
+             (tab-bar-rename-tab "renamed")
+             (should (= 1 (length (cdr (assoc root (codex-ide--panel-state))))))
+             (tab-bar-select-tab 1)
+             (should (= 2 (length (cdr (assoc root (codex-ide--panel-state))))))
+             (codex-ide-toggle-panel)
+             (should (cl-every #'codex-ide--panel-windows sessions))
+             (tab-bar-select-tab 2)
+             (codex-ide-toggle-panel)
+             (should (codex-ide--panel-windows (car sessions)))
+             (should-not (codex-ide--panel-windows (cadr sessions)))
+             (tab-bar-close-tab)
+             (tab-bar-new-tab)
+             (should-not (assoc root (codex-ide--panel-state)))))))))))
+
+(ert-deftest codex-ide-panel-capacity-preserves-existing-window ()
+  "An exhausted side-window limit cannot replace an already visible session."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (codex-ide-test--call-with-panel-tabs
+         (lambda ()
+           (let ((window-sides-slots '(nil nil 1 nil)))
+             (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+                        (lambda () root)))
+               (codex-ide--show-panel-session (car sessions))
+               (should-error (codex-ide-show-project-sessions) :type 'user-error)
+               (should (codex-ide--panel-windows (car sessions)))
+               (should-not (codex-ide--panel-windows (cadr sessions))))))))))))
+
 (ert-deftest codex-ide-cleanup-keeps-buffer-live-for-backend-hooks ()
   "The session kill hook leaves the dying buffer to its remaining hooks."
   (codex-ide-test--call-with-project

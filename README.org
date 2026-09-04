@@ -18,6 +18,8 @@
 | =M-x codex-ide-rename-session= | Label a live session; empty input restores automatic naming |
 | =M-x codex-ide-stop= | Stop only the *active* project session |
 | =M-x codex-ide-toggle= | Cycle live project sessions |
+| =M-x codex-ide-toggle-panel= | Hide or restore project session windows in this tab |
+| =M-x codex-ide-show-project-sessions= | Show all project sessions in separate side windows |
 | =M-x codex-ide-list-project-sessions= | Switch among project sessions |
 | =M-x codex-ide-list-sessions= | Switch among any live sessions |
 | =M-x codex-ide-attach-source= | Attach region or current line to one session draft without submitting |

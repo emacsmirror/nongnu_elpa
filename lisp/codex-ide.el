@@ -1103,6 +1103,90 @@ before stopping a different session."
                           (directory-file-name working-dir))))
       (codex-ide-log "No active Codex session is running in this directory"))))
 
+(defun codex-ide--panel-state (&optional root sessions)
+  "Return this tab's remembered panels, optionally storing ROOT's SESSIONS."
+  (require 'tab-bar)
+  (let* ((tab (assq 'current-tab (tab-bar-tabs)))
+         (live (codex-ide--raw-sessions))
+         (entries
+          (cl-loop for (key . saved) in (alist-get 'codex-ide-panels (cdr tab))
+                   for retained = (cl-remove-if-not
+                                   (lambda (session)
+                                     (and (memq session live)
+                                          (codex-ide--session-live-p session))) saved)
+                   when (and retained (not (equal root key)))
+                   collect (cons key retained)))
+         (entries (if (and root sessions) (cons (cons root sessions) entries) entries)))
+    ;; Tab cloning can share parameter cells: replace rather than mutate them.
+    (setcdr tab (cons (cons 'codex-ide-panels entries)
+                      (assq-delete-all 'codex-ide-panels (copy-sequence (cdr tab)))))
+    entries))
+
+(defun codex-ide--panel-windows (session)
+  "Return SESSION's visible windows in the selected frame's current tab."
+  (get-buffer-window-list (plist-get session :buffer) nil (selected-frame)))
+
+(defun codex-ide--show-panel-session (session)
+  "Show SESSION in its own side window in the current frame."
+  (let* ((buffer (plist-get session :buffer))
+         (before (window-list))
+         (saved (current-window-configuration))
+         (existing (car (codex-ide--panel-windows session)))
+         (slots (mapcar (lambda (window)
+                          (when (eq (window-parameter window 'window-side) 'right)
+                            (window-parameter window 'window-slot))) before))
+         (slot (cl-loop for number from 0 unless (memq number slots) return number))
+         (window (or existing
+                     (display-buffer
+                      buffer `((display-buffer-in-side-window)
+                               (side . right) (slot . ,slot) (window-width . 0.4))))))
+    ;; Side-window limits can make Emacs reuse an occupied slot instead of split.
+    (unless (and window (or existing (not (memq window before))))
+      (set-window-configuration saved)
+      (user-error "No room for another Codex session panel"))
+    (codex-ide-term--sync-dimensions buffer window)))
+
+;;;###autoload
+(defun codex-ide-show-project-sessions ()
+  "Show every live project session in the current tab without selecting it."
+  (interactive)
+  (let ((root (codex-ide--get-working-directory)))
+    (codex-ide--recover-live-sessions)
+    (let ((sessions (codex-ide--sorted-project-sessions root)))
+      (unless sessions (user-error "No Codex session for this project"))
+      (codex-ide--panel-state)
+      (mapc #'codex-ide--show-panel-session sessions))))
+
+;;;###autoload
+(defun codex-ide-toggle-panel ()
+  "Hide or restore the project's session windows in the current tab.
+Remember the visible set when hiding.  Restore that set when showing,
+falling back to the active session.  Other tabs and projects are unaffected."
+  (interactive)
+  (let ((root (codex-ide--get-working-directory)))
+    (codex-ide--recover-live-sessions)
+    (let* ((sessions (codex-ide--sorted-project-sessions root))
+           (visible (cl-remove-if-not #'codex-ide--panel-windows sessions))
+           (saved (cdr (assoc root (codex-ide--panel-state)))))
+      (unless sessions (user-error "No Codex session for this project"))
+      (if visible
+          (let* ((buffers (mapcar (lambda (session) (plist-get session :buffer)) sessions))
+                 (fallback (or (cl-find-if (lambda (buffer)
+                                             (and (not (memq buffer buffers))
+                                                  (not (string-prefix-p " " (buffer-name buffer)))))
+                                           (buffer-list))
+                               (get-buffer-create "*scratch*"))))
+            (codex-ide--panel-state root visible)
+            (dolist (session visible)
+              (dolist (window (codex-ide--panel-windows session))
+                (if (eq window (window-main-window))
+                    (set-window-buffer window fallback)
+                  (delete-window window)))))
+        (mapc #'codex-ide--show-panel-session
+              (or saved (list (codex-ide--active-or-first-session
+                               sessions (gethash root codex-ide--active-session-ids)))))
+        (codex-ide--panel-state root nil)))))
+
 ;;;###autoload
 (defun codex-ide-toggle ()
   "Cycle live Codex sessions for the current project."
