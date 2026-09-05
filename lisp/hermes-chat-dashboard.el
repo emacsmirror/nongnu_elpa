@@ -477,6 +477,10 @@ stops its poll) instead of being called by name from this file.")
     (setq hermes-chat--work-owner nil)
     (when owner
       (hermes-chat--work-cancel-timer owner)
+      (when-let* ((token (plist-get owner :adoption)))
+        (setf (plist-get owner :adoption) nil)
+        (hermes-dashboard-transport-cancel-owner-requests
+         (plist-get owner :client) token))
       (hermes-dashboard-transport-cancel-owner-requests
        (plist-get owner :client) owner))
     owner))
@@ -551,7 +555,7 @@ A new binding never inherits an unverified key or prior request authority."
                 :lifetime hermes-chat--lifecycle-generation
                 :instance (copy-tree hermes-instance) :profile hermes-chat--profile
                 :client client :connection (hermes-dashboard-transport-client-generation client)
-                :runtime runtime :key key :request nil :timer nil :cycle nil
+                :runtime runtime :key key :request nil :timer nil :cycle nil :adoption nil
                 :delegates nil :processes nil
                 :visible nil :view nil :view-valid-p nil :render nil :refresh nil
                 :current-p #'hermes-chat--work-current-p))
@@ -568,6 +572,50 @@ A new binding never inherits an unverified key or prior request authority."
     (add-hook 'delete-frame-functions #'hermes-chat--work-visibility)
     (hermes-chat--work-visibility)
     (hermes-chat--work-publish-detached detached)))
+
+(defun hermes-chat--work-adopt-key (owner token result)
+  "Accept RESULT's durable key only for OWNER's exact metadata read TOKEN."
+  (when (and (hermes-chat--work-current-p owner)
+             (eq token (plist-get owner :adoption)))
+    (setf (plist-get owner :adoption) nil
+          (plist-get owner :key) (hermes-transport-work-string result 'session_key))
+    (with-current-buffer (plist-get owner :buffer)
+      (hermes-chat--work-schedule owner 0)
+      (force-mode-line-update))))
+
+(defun hermes-chat--work-read-key (owner)
+  "Read OWNER's durable key without an explicit rename or runtime change.
+The backend title getter may flush an already pending session title."
+  (let* ((token (list 'work-adoption))
+         (client (plist-get owner :client))
+         (hermes-dashboard-transport-request-owner token)
+         (hermes-dashboard-transport-request-timeout 10)
+         (settle (lambda (result) (hermes-chat--work-adopt-key owner token result))))
+    (setf (plist-get owner :adoption) token)
+    (condition-case nil
+        (hermes-dashboard-transport-session-title-fetch
+         client :session-id (plist-get owner :runtime)
+         :resolve settle :reject (lambda (_error) (funcall settle nil)))
+      ((error quit)
+       (hermes-dashboard-transport-cancel-owner-requests client token)
+       (funcall settle nil)))))
+
+(defun hermes-chat--work-activate ()
+  "Activate observations for an already attached chat after ordered reload.
+Preserve existing owners, including their pollers and pending reads.  A legacy
+stored ID can be a runtime fallback, so fetch metadata with no explicit title
+to obtain the missing durable key.  The backend may flush a pending title.
+Never restart, resume, or change the chat's input."
+  (when (and (derived-mode-p 'hermes-chat-mode)
+             (not hermes-chat--work-owner)
+             hermes-chat--dashboard-session-ready-p
+             (hermes-dashboard-transport-client-p hermes-chat--dashboard-client)
+             (hermes-dashboard-transport-client-ready-p hermes-chat--dashboard-client)
+             (stringp hermes-chat--dashboard-active-session-id)
+             (not (string-empty-p hermes-chat--dashboard-active-session-id)))
+    (hermes-chat--work-bind
+     hermes-chat--dashboard-client hermes-chat--dashboard-active-session-id nil)
+    (hermes-chat--work-read-key hermes-chat--work-owner)))
 
 (defun hermes-chat--work-settle (owner context snapshot)
   "Publish SNAPSHOT only for OWNER's exact outstanding CONTEXT."

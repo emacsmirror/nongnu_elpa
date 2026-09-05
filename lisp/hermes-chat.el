@@ -1868,6 +1868,7 @@ Do not wrap into the composer or modify its draft."
     (hermes-chat-next-button)))
 
 (autoload 'hermes-chat-work "hermes-subagents" nil t)
+(autoload 'hermes-chat-workers-label "hermes-subagents")
 
 (defvar hermes-chat-actions-map)
 
@@ -1891,7 +1892,6 @@ Do not wrap into the composer or modify its draft."
   "n" ("New chat" hermes-chat)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
-  "W" ("Observed work" hermes-chat-work)
   :group "Runtime"
   "m" ("Switch model" hermes-chat-switch-model)
   "e" ("Set reasoning" hermes-chat-set-reasoning)
@@ -1903,6 +1903,7 @@ Do not wrap into the composer or modify its draft."
   "S" ("Sessions" hermes-list-sessions)
   "P" ("Queue side panel" hermes-chat-queue-panel)
   :group "Inspect"
+  "W" (#'hermes-chat-workers-label hermes-chat-work)
   "h" ("Session details" hermes-chat-session-details)
   :group "System"
   "x" ("Reconnect socket" hermes-dashboard-reconnect)

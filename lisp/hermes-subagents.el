@@ -170,6 +170,46 @@ Each active subagent's goal is indented by its spawn depth."
                                (format "%s:%s" (plist-get b :kind) (plist-get b :id)))
                (< x y)))))))
 
+(defun hermes-work--coverage (owner kind)
+  "Return OWNER's truthful observation coverage for KIND."
+  (if (hermes-work--current-p owner)
+      (or (plist-get (plist-get owner kind) :coverage) 'unknown)
+    'stale))
+
+(defun hermes-work--context-owner ()
+  "Return this chat or work view's exact owner, without following replacements."
+  (if (derived-mode-p 'hermes-work-mode) hermes-work--owner
+    (and (derived-mode-p 'hermes-chat-mode) hermes-chat--work-owner)))
+
+;;;###autoload
+(defun hermes-chat-workers-label ()
+  "Return a local Workers count for the invoking chat or its exact work view.
+Count only observed running delegates.  Qualify stale or incomplete evidence."
+  (let* ((owner (hermes-work--context-owner))
+         (source (plist-get owner :delegates))
+         (coverage (if owner (hermes-work--coverage owner :delegates) 'unknown))
+         (unknown (seq-some (lambda (row) (eq (plist-get row :state) 'unknown))
+                            (plist-get source :rows))))
+    (format "Workers (%d)%s" (hermes-chat--work-running-count source)
+            (if (and (eq coverage 'current) (not unknown)) ""
+              (format " · %s" (if (eq coverage 'current) 'unknown coverage))))))
+
+(defun hermes-work--scope-text (owner)
+  "Return full local scope and freshness details for OWNER, even when detached."
+  (concat
+   (format "Scope: runtime %s; durable key %s\n\n"
+           (plist-get owner :runtime) (or (plist-get owner :key) "unknown"))
+   (if (buffer-live-p (plist-get owner :buffer))
+       (with-current-buffer (plist-get owner :buffer)
+         (let ((hermes-chat--work-owner owner)) (hermes-chat--work-details)))
+     "Owner destroyed; observations are stale.\nDisappearance does not prove completion.")))
+
+(defun hermes-work-scope-details ()
+  "Display scope, freshness and limitations for this exact work view."
+  (interactive)
+  (let ((text (hermes-work--scope-text hermes-work--owner)))
+    (with-help-window "*Hermes Work Scope*" (princ text))))
+
 (defun hermes-work--render (owner)
   "Repaint OWNER's exact list from snapshots only, without selecting it."
   (when (hermes-work--view-p owner)
@@ -188,17 +228,17 @@ Each active subagent's goal is indented by its spawn depth."
         (tabulated-list-print t)
         (save-excursion
           (goto-char (point-min))
-          (insert (propertize "This session — observed work\n" 'face 'bold)
-                  "Observed live delegates and exact-key registered processes.\n"
-                  "Not a full work ledger; disappearance does not prove completion.\n"
-                  "RET Details · g Refresh · q Quit · i Instance subagents\n"
-                  (if (hermes-work--current-p owner) ""
-                    "Owner detached/disconnected; reopen from the attached chat.\n")
-                  (if (buffer-live-p (plist-get owner :buffer))
-                      (with-current-buffer (plist-get owner :buffer)
-                        (let ((hermes-chat--work-owner owner)) (hermes-chat--work-details)))
-                    "Owner destroyed; observations are stale.")
-                  "\n\n"))))))
+          (let ((width (window-body-width (get-buffer-window (current-buffer) t))))
+            (insert (propertize "Observed work\n" 'face 'bold)
+                    (propertize
+                     (truncate-string-to-width
+                      (format "Agents %s · Processes %s · h Scope"
+                              (hermes-work--coverage owner :delegates)
+                              (hermes-work--coverage owner :processes))
+                      width nil nil "…") 'face 'shadow)
+                    "\n")
+            (unless tabulated-list-entries
+              (insert (propertize "No work observed in these sources.\n" 'face 'shadow)))))))))
 
 (defun hermes-work--changed ()
   "Repaint the current chat's observation list after a local state change."
@@ -256,6 +296,7 @@ Each active subagent's goal is indented by its spawn depth."
                          (:exit-code . "Exit code") (:output-tail . "Backend output tail")))
           (when (plist-member row (car field))
             (insert (format "%s: %s\n" (cdr field) (or (plist-get row (car field)) "—")))))
+        (insert "\n" (hermes-work--scope-text owner))
         (special-mode)
         (goto-char (point-min)))
       (pop-to-buffer buffer))))
@@ -265,7 +306,8 @@ Each active subagent's goal is indented by its spawn depth."
   "RET" #'hermes-work-details
   "g" #'hermes-work-refresh
   "q" #'quit-window
-  "i" #'hermes-work-instance-subagents)
+  "i" #'hermes-work-instance-subagents
+  "h" #'hermes-work-scope-details)
 
 (define-derived-mode hermes-work-mode tabulated-list-mode "Observed Work"
   "Browse only one chat attachment's observed delegates and processes."
@@ -279,8 +321,9 @@ Each active subagent's goal is indented by its spawn depth."
 (defun hermes-chat-work ()
   "Browse this chat's observed work without acquiring another client."
   (interactive)
-  (let ((owner hermes-chat--work-owner))
-    (unless (hermes-work--current-p owner)
+  (let ((owner (hermes-work--context-owner)))
+    (unless (and (hermes-work--current-p owner)
+                 (or (derived-mode-p 'hermes-chat-mode) (hermes-work--view-p owner)))
       (user-error "No attached session work owner"))
     (unless (hermes-work--view-p owner)
       (let ((buffer (generate-new-buffer "*Hermes Observed Work*")))
@@ -291,7 +334,8 @@ Each active subagent's goal is indented by its spawn depth."
         (setf (plist-get owner :view) buffer
               (plist-get owner :view-valid-p) #'hermes-work--view-p
               (plist-get owner :render) #'hermes-work--render)))
-    (add-hook 'hermes-chat-state-change-hook #'hermes-work--changed nil t)
+    (with-current-buffer (plist-get owner :buffer)
+      (add-hook 'hermes-chat-state-change-hook #'hermes-work--changed nil t))
     (pop-to-buffer (plist-get owner :view))
     (hermes-work--resize (selected-window))
     (hermes-work--render owner)))

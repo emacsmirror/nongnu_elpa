@@ -408,7 +408,7 @@ lifted into inline images."
      ((eq role 'user)
       (hermes-chat--insert-user-content content))
      ((eq role 'activity)
-      (insert (propertize "(◔_◔) Reasoning\n" 'face 'shadow)))
+      (insert (propertize "Thinking…\n" 'face 'shadow)))
      ((eq role 'commentary)
       (hermes-chat--insert-commentary-content entry))
      ((eq role 'diff)
@@ -1753,24 +1753,39 @@ KIND defaults to delegates."
         source
       (plist-put (copy-sequence source) :coverage 'stale))))
 
+(defun hermes-chat--work-running-count (source)
+  "Return the observed running count in normalized SOURCE, even if stale."
+  (seq-count (lambda (row) (eq (plist-get row :state) 'running))
+             (plist-get source :rows)))
+
 (defun hermes-chat--work-label (compact)
-  "Return a truthful work label, using COMPACT notation when non-nil."
+  "Return kind-specific active counts, or nil for fully current empty work.
+Use COMPACT notation when non-nil; incomplete observations remain explicit."
   (when hermes-chat--work-owner
     (let* ((sources (mapcar #'hermes-chat--work-source '(:delegates :processes)))
-           (rows (mapcan (lambda (source)
-                           (when (memq (plist-get source :coverage) '(current partial))
-                             (copy-sequence (plist-get source :rows)))) sources))
-           (running (seq-count (lambda (row) (eq (plist-get row :state) 'running)) rows))
-           (unknown (or (seq-some (lambda (source)
-                                    (not (eq (plist-get source :coverage) 'current))) sources)
-                        (seq-some (lambda (row) (eq (plist-get row :state) 'unknown)) rows))))
-      (propertize
-       (cond ((> running 0)
-              (concat (format (if compact "W R%d" "Work %d running") running)
-                      (and unknown " ?")))
-             (unknown (if compact "W ?" "Work ?"))
-             (t (if compact "W —" "Work none observed")))
-       'face (if (> running 0) 'hermes-work-running 'hermes-work-unknown)))))
+           (counts (mapcar (lambda (source)
+                             (if (memq (plist-get source :coverage) '(current partial))
+                                 (hermes-chat--work-running-count source) 0)) sources))
+           (unknown (seq-some
+                     (lambda (source)
+                       (or (not (eq (plist-get source :coverage) 'current))
+                           (seq-some (lambda (row) (eq (plist-get row :state) 'unknown))
+                                     (plist-get source :rows)))) sources))
+           (parts (cl-mapcar
+                   (lambda (count kind)
+                     (when (> count 0)
+                       (cond
+                        (compact (format "%d%s" count kind))
+                        ((equal kind "a")
+                         (format "%s %d" (if (char-displayable-p ?🤖) "🤖" "Agents") count))
+                        (t (format "%d %s" count (if (= count 1) "process" "processes"))))))
+                   counts '("a" "p")))
+           (active (string-join (delq nil parts) " / ")))
+      (unless (and (string-empty-p active) (not unknown))
+        (propertize
+         (if (string-empty-p active) (if compact "W ?" "Work ?")
+           (concat active (and unknown " ?")))
+         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running))))))
 
 (defun hermes-chat--work-details ()
   "Return local source coverage without fetching or claiming total liveness."
@@ -1781,10 +1796,12 @@ KIND defaults to delegates."
      (mapconcat
       (lambda (kind)
         (let ((source (hermes-chat--work-source kind)))
-          (format "%s: %s%s. Observed: %s. %s"
+          (format "%s: %s%s; %d running in %d observed rows. Observed: %s. %s"
                   (if (eq kind :delegates) "Delegates" "Processes (runtime-scoped)")
                   (or (plist-get source :coverage) 'unbound)
                   (if (plist-get source :paused) "; automatic refresh paused" "")
+                  (hermes-chat--work-running-count source)
+                  (length (plist-get source :rows))
                   (if-let* ((time (plist-get source :observed)))
                       (format-time-string "%F %T" (seconds-to-time time)) "—")
                   (or (plist-get source :reason) ""))))

@@ -2069,7 +2069,7 @@
     (should (equal (mapcar (lambda (group)
                              (length (plist-get group :entries)))
                            groups)
-                   '(4 3 2 4 3 4 1 3)))
+                   '(4 3 2 3 3 4 2 3)))
     (let ((directory-entry
            (cl-find "w" entries :key (lambda (entry)
                                        (plist-get entry :key))
@@ -6376,7 +6376,7 @@
    (let ((rows (seq-filter (lambda (entry) (eq (plist-get entry :role) 'activity))
                            (hermes-chat--entries))))
      (should (= 1 (length rows)))
-     (should (string-match-p (regexp-quote "(◔_◔) Reasoning") (buffer-string)))
+     (should (string-match-p (regexp-quote "Thinking…") (buffer-string)))
      (should-not (string-match-p "spinner" (buffer-string)))
      (should (equal (plist-get (car (last (hermes-chat--entries))) :id) "a1")))
    (should-not (string-match-p "Reasoning\\|Thinking\\|Running" (hermes-chat--header-line 240)))

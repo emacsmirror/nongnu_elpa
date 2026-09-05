@@ -113,7 +113,11 @@ test-load:
 	  }; \
 	  trap cleanup 0 1 2 15; \
 	  mkdir -p "$$home" || exit 1; \
-	  printf '%s\n' "(setq hermes-review-before 'loaded)" > "$$before" || exit 1; \
+	  printf '%s\n' "(setq hermes-review-before 'loaded)" \
+	    '(defvar hermes-review-activations 0)' \
+	    '(defun hermes-chat--work-activate () (cl-incf hermes-review-activations))' \
+	    "(with-current-buffer (get-buffer-create \" *load chat*\") (setq major-mode 'hermes-chat-mode))" \
+	    > "$$before" || exit 1; \
 	  printf '%s\n' '(error "intentional load failure")' > "$$fail" || exit 1; \
 	  printf '%s\n' "(setq hermes-review-after 'loaded)" > "$$after" || exit 1; \
 	  printf '%s\n' 'EMACSCLIENT := false' > "$$conflict" || exit 1; \
@@ -127,8 +131,14 @@ test-load:
 	    EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
 	    > "$$test_root/success-output" 2>&1 || exit 1; \
 	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
-	    '(list hermes-review-before hermes-review-after)') || exit 1; \
-	  test "$$state" = '(loaded loaded)' || exit 1; \
+	    '(list hermes-review-before hermes-review-after hermes-review-activations)') || exit 1; \
+	  test "$$state" = '(loaded loaded 1)' || exit 1; \
+	  MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
+	    EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
+	    > "$$test_root/repeat-output" 2>&1 || exit 1; \
+	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
+	    '(list hermes-review-before hermes-review-after hermes-review-activations)') || exit 1; \
+	  test "$$state" = '(loaded loaded 2)' || exit 1; \
 	  HOME="$$home" emacsclient -s "$$server" --eval \
 	    "(mapc (lambda (symbol) (when (boundp symbol) (makunbound symbol))) \
 	           '(hermes-review-before hermes-review-after))" > /dev/null || exit 1; \
@@ -228,6 +238,9 @@ do-load:
 	          (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
 	                     map (boundp map) (keymapp (symbol-value map))) \
 	            (use-local-map (symbol-value map)))) \
+	        (when (and (derived-mode-p 'hermes-chat-mode) \
+	                   (fboundp 'hermes-chat--work-activate)) \
+	          (hermes-chat--work-activate)) \
 	        (when (and (derived-mode-p 'hermes-kanban-log-mode) \
 	                   (fboundp 'hermes-kanban-log--refontify-buffer)) \
 	          (hermes-kanban-log--refontify-buffer))))))" > /dev/null || exit 1; \
