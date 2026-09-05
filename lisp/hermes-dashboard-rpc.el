@@ -233,6 +233,13 @@ and REJECT receive the result or error."
 RESOLVE and REJECT receive the result or error.")
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-process-list "process.list"
+  "Send a `process.list' request for CLIENT.
+SESSION-ID selects the bound runtime session, not a process identifier.
+RESOLVE and REJECT receive the result or error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-subagent-interrupt "subagent.interrupt"
   "Send a `subagent.interrupt' request for SUBAGENT-ID on CLIENT.
 RESOLVE and REJECT receive the result or error."

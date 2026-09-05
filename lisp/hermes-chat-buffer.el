@@ -1614,10 +1614,17 @@ the header keeps the kawaii thinking status as its only live detail, while the
 transcript carries the full tool detail."
   (when-let* ((activity (hermes-transport--non-empty-string
                          (plist-get hermes-chat--status-state :activity))))
-    (if (string-prefix-p (downcase label) (downcase activity))
+    (let ((case-fold-search t))
+      (cond
+       ;; Thinking and Reasoning name the same live state, not extra detail.
+       ((and (equal label "Thinking")
+             (string-match-p
+              "\\`[^[:alpha:]]*\\(?:Thinking\\|Reasoning\\)[.…[:space:]]*\\'" activity))
+        nil)
+       ((string-prefix-p (downcase label) (downcase activity))
         (hermes-transport--non-empty-string
-         (string-trim (substring activity (length label)) "[-: ]+"))
-      activity)))
+         (string-trim (substring activity (length label)) "[-: ]+")))
+       (t activity)))))
 
 (defun hermes-chat--header-status-segment ()
   "Return the propertized status segment: icon, label, and live detail.
@@ -1705,9 +1712,10 @@ self-explanatory."
   "Face for unknown, partial or stale work observations."
   :group 'hermes)
 
-(defun hermes-chat--work-source ()
-  "Return current attachment's delegate source, or stale detached evidence."
-  (let ((source (plist-get hermes-chat--work-owner :delegates))
+(defun hermes-chat--work-source (&optional kind)
+  "Return current attachment's KIND source, or stale detached evidence.
+KIND defaults to delegates."
+  (let ((source (plist-get hermes-chat--work-owner (or kind :delegates)))
         (current-p (plist-get hermes-chat--work-owner :current-p)))
     (if (and current-p (funcall current-p hermes-chat--work-owner))
         source
@@ -1716,11 +1724,13 @@ self-explanatory."
 (defun hermes-chat--work-label (compact)
   "Return a truthful work label, using COMPACT notation when non-nil."
   (when hermes-chat--work-owner
-    (let* ((source (hermes-chat--work-source))
-           (current (memq (plist-get source :coverage) '(current partial)))
-           (rows (and current (plist-get source :rows)))
+    (let* ((sources (mapcar #'hermes-chat--work-source '(:delegates :processes)))
+           (rows (mapcan (lambda (source)
+                           (when (memq (plist-get source :coverage) '(current partial))
+                             (copy-sequence (plist-get source :rows)))) sources))
            (running (seq-count (lambda (row) (eq (plist-get row :state) 'running)) rows))
-           (unknown (or (not (eq (plist-get source :coverage) 'current))
+           (unknown (or (seq-some (lambda (source)
+                                    (not (eq (plist-get source :coverage) 'current))) sources)
                         (seq-some (lambda (row) (eq (plist-get row :state) 'unknown)) rows))))
       (propertize
        (cond ((> running 0)
@@ -1734,13 +1744,20 @@ self-explanatory."
   "Return local source coverage without fetching or claiming total liveness."
   (if (not hermes-chat--work-owner)
       "Session work: unavailable here."
-    (let ((source (hermes-chat--work-source)))
-      (format "Session work: observed delegates only; not a full work ledger.\nDelegates: %s%s. Observed: %s. %s\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion."
-              (or (plist-get source :coverage) 'unbound)
-              (if (plist-get source :paused) "; automatic refresh paused" "")
-              (if-let* ((time (plist-get source :observed)))
-                  (format-time-string "%F %T" (seconds-to-time time)) "—")
-              (or (plist-get source :reason) "")))))
+    (concat
+     "Session work: observed delegates and registered processes; not a full work ledger.\n"
+     (mapconcat
+      (lambda (kind)
+        (let ((source (hermes-chat--work-source kind)))
+          (format "%s: %s%s. Observed: %s. %s"
+                  (if (eq kind :delegates) "Delegates" "Processes (runtime-scoped)")
+                  (or (plist-get source :coverage) 'unbound)
+                  (if (plist-get source :paused) "; automatic refresh paused" "")
+                  (if-let* ((time (plist-get source :observed)))
+                      (format-time-string "%F %T" (seconds-to-time time)) "—")
+                  (or (plist-get source :reason) ""))))
+      '(:delegates :processes) "\n")
+     "\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion.")))
 
 (defun hermes-chat--header-fit (width status yolo directory optional &optional work)
   "Fit STATUS, YOLO, DIRECTORY and OPTIONAL segments within WIDTH columns.

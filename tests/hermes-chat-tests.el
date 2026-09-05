@@ -6239,6 +6239,25 @@
          (should-not (string-match-p "Error"
                                      (hermes-test--header-line-string))))))))
 
+(ert-deftest hermes-chat-header-thinking-does-not-repeat-reasoning ()
+  "The rendered thinking header omits synonymous activity, not effort settings."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--runtime-flags '(:reasoning-effort "medium"))
+   (dolist (content '("reasoning" "(◔_◔) reasoning..." "thinking" "(◔_◔) thinking..."))
+     (hermes-chat--handle-transport-event "a1" `(:type thinking :content ,content))
+     (let* ((label (hermes-chat--header-status-label 'thinking))
+            (activity (hermes-chat--thinking-activity content))
+            (header (substring-no-properties (hermes-chat--header-line 240)))
+            (cells (mapcar #'string-trim (split-string header "|"))))
+       (should (string-match-p (regexp-quote label) header))
+       (should-not (member activity cells))
+       (should (member "medium" cells))))
+   ;; Meaningful distinct activity is not a duplicate of the state label.
+   (hermes-chat--handle-transport-event
+    "a1" '(:type thinking :content "Inspecting the failing test"))
+   (should (string-match-p "Inspecting The Failing Test"
+                           (hermes-chat--header-line 240)))))
+
 (ert-deftest hermes-chat-thinking-activity-keeps-face-titlecases-verb ()
   "`thinking.delta' content keeps the kawaii face, drops dots, title-cases the verb."
   (should (equal (hermes-chat--thinking-activity "(◔_◔) pondering...")

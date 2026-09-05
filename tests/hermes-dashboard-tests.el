@@ -312,9 +312,9 @@
                      (if (equal method "delegation.status")
                          (hermes-dashboard-transport-delegation-status
                           client :resolve (lambda (value) (setq result value)))
-                       (hermes-dashboard-transport-request
-                        client method '((session_id . "runtime"))
-                        (lambda (value) (setq result value))))))
+                       (hermes-dashboard-transport-process-list
+                        client :session-id "runtime"
+                        :resolve (lambda (value) (setq result value))))))
                (old (hermes-dashboard-transport-delegation-status
                      client :resolve (lambda (value) (setq legacy value)))))
           (hermes-dashboard-transport--handle-frame

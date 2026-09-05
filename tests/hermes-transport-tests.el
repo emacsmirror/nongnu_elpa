@@ -5,6 +5,38 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-transport-work-process-exit-types ()
+  "Only integer exit evidence makes an exited process done or failed."
+  (dolist (exit '("null" "false" "true" "0.0" "\"0\"" "[]" "{}"))
+    (let* ((snapshot
+            (hermes-transport-work-processes
+             (hermes-transport-json-parse-lossless
+              (format "{\"processes\":[{\"session_id\":\"p\",\"status\":\"exited\",\"exit_code\":%s}]}" exit))))
+           (row (car (plist-get snapshot :rows))))
+      (should (eq (plist-get row :state) 'unknown))
+      (should-not (plist-get row :exit-code))
+      (should (equal (plist-get row :key) '(process . "p")))
+      (should (equal (plist-get row :status) "exited"))
+      (should (eq (plist-get snapshot :coverage) 'current)))))
+
+(ert-deftest hermes-transport-work-process-partial-metadata ()
+  "Partial arrays keep only valid positives, and optional metadata stays inert."
+  (let* ((snapshot
+          (hermes-transport-work-processes
+           (hermes-transport-json-parse-lossless
+            "{\"processes\":[null,false,7,{}, {\"session_id\":\"bad\",\"status\":false},{\"session_id\":\"dup\"},{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"unknown\"},{\"session_id\":\"live\",\"status\":\"running\",\"command\":{},\"cwd\":false,\"started_at\":null}]}")))
+         (rows (plist-get snapshot :rows))
+         (live (seq-find (lambda (row) (equal (plist-get row :id) "live")) rows)))
+    (should (eq (plist-get snapshot :coverage) 'partial))
+    (should (= (length rows) 2))
+    (should (eq (plist-get live :state) 'running))
+    (should (equal (plist-get live :command) "—"))
+    (should (equal (plist-get live :cwd) "—"))
+    (should-not (plist-get live :started))
+    (should (eq (plist-get (seq-find (lambda (row)
+                                      (equal (plist-get row :id) "unknown")) rows) :state)
+                'unknown))))
+
 (ert-deftest hermes-transport-work-delegate-shapes ()
   "Only real arrays establish coverage; bad rows cannot establish idle."
   (dolist (wire '("{}" "{\"active\":null}" "{\"active\":false}"

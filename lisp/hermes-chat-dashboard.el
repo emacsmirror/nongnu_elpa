@@ -478,18 +478,24 @@ stops its poll) instead of being called by name from this file.")
       (hermes-dashboard-transport-cancel-owner-requests
        (plist-get owner :client) owner))))
 
+(defun hermes-chat--work-source-eligible-p (owner source)
+  "Return non-nil when OWNER's SOURCE is bound and not paused."
+  (let ((binding (plist-get owner (if (eq source :delegates) :key :runtime))))
+    (and (stringp binding) (not (string-empty-p binding))
+         (not (plist-get (plist-get owner source) :paused)))))
+
 (defun hermes-chat--work-eligible-p (owner)
-  "Return non-nil when OWNER can request its delegate source."
+  "Return non-nil when OWNER can request either observation source."
   (and (hermes-chat--work-current-p owner)
-       (plist-get owner :key)
-       (not (plist-get (plist-get owner :delegates) :paused))
+       (or (hermes-chat--work-source-eligible-p owner :delegates)
+           (hermes-chat--work-source-eligible-p owner :processes))
        (hermes-dashboard-transport-client-ready-p (plist-get owner :client))
        (hermes-chat--work-visible-p owner)))
 
 (defun hermes-chat--work-schedule (owner delay)
   "Schedule OWNER's next refresh after DELAY without sending from a hook."
   (when (and (hermes-chat--work-eligible-p owner)
-             (not (plist-get owner :request))
+             (not (plist-get owner :cycle))
              (not (plist-get owner :timer)))
     (let ((token (list nil)))
       (setf (plist-get owner :timer) token)
@@ -512,8 +518,9 @@ Window hooks only arm timers; they never send requests during redisplay."
                             (hermes-chat--work-visible-p owner departing))))
           (unless (eq (not visible) (not (plist-get owner :visible)))
             (setf (plist-get owner :visible) visible)
-            (when (plist-get owner :delegates)
-              (setf (plist-get (plist-get owner :delegates) :coverage) 'stale))
+            (dolist (source '(:delegates :processes))
+              (when (plist-get owner source)
+                (setf (plist-get (plist-get owner source) :coverage) 'stale)))
             (force-mode-line-update))
           (if visible
               (hermes-chat--work-schedule owner 0)
@@ -532,7 +539,8 @@ A new binding never inherits an unverified key or prior request authority."
               :lifetime hermes-chat--lifecycle-generation
               :instance (copy-tree hermes-instance) :profile hermes-chat--profile
               :client client :connection (hermes-dashboard-transport-client-generation client)
-              :runtime runtime :key key :request nil :timer nil :delegates nil
+              :runtime runtime :key key :request nil :timer nil :cycle nil
+              :delegates nil :processes nil
               :visible nil :view nil :refresh nil
               :current-p #'hermes-chat--work-current-p))
   (let ((owner hermes-chat--work-owner))
@@ -554,11 +562,20 @@ A new binding never inherits an unverified key or prior request authority."
              (eq context (plist-get owner :request)))
     (with-current-buffer (plist-get owner :buffer)
       (setf (plist-get owner :request) nil
-            (plist-get owner :delegates) snapshot)
-      (hermes-chat--notify-state-change)
-      ;; UI hooks may replace or destroy the attachment synchronously.
-      (when (hermes-chat--work-current-p owner)
-        (hermes-chat--work-schedule owner 5)))))
+            (plist-get owner (plist-get context :source)) snapshot)
+      (let (published)
+        (unwind-protect
+            (progn
+              (hermes-chat--notify-state-change)
+              (setq published t))
+          ;; Hooks may exit nonlocally or replace the attachment.  Finish only
+          ;; this cycle on failure; a later refresh can retry both sources.
+          (when (and (hermes-chat--work-current-p owner)
+                     (eq (plist-get context :cycle) (plist-get owner :cycle)))
+            (hermes-chat--work-stage
+             owner (plist-get context :cycle)
+             (and published (eq (plist-get context :source) :delegates)
+                  :processes))))))))
 
 (defun hermes-chat--work-failed (owner context)
   "Pause OWNER's source after failure of CONTEXT, retaining only stale rows."
@@ -567,9 +584,9 @@ A new binding never inherits an unverified key or prior request authority."
     (hermes-dashboard-transport-cancel-owner-requests (plist-get owner :client) owner)
     (hermes-chat--work-settle
      owner context
-     (list :rows (plist-get (plist-get owner :delegates) :rows)
+     (list :rows (plist-get (plist-get owner (plist-get context :source)) :rows)
            :coverage 'stale :paused t :reason "Refresh failed; press g to retry"
-           :observed (plist-get (plist-get owner :delegates) :observed)))))
+           :observed (plist-get (plist-get owner (plist-get context :source)) :observed)))))
 
 (defun hermes-chat--work-received (owner context result)
   "Validate RESULT for OWNER and settle CONTEXT without affecting the turn."
@@ -577,7 +594,9 @@ A new binding never inherits an unverified key or prior request authority."
              (eq context (plist-get owner :request)))
     (let ((snapshot
            (condition-case nil
-               (hermes-transport-work-delegates result (plist-get owner :key))
+               (if (eq (plist-get context :source) :delegates)
+                   (hermes-transport-work-delegates result (plist-get owner :key))
+                 (hermes-transport-work-processes result))
              (error nil))))
       (if (not snapshot)
           (hermes-chat--work-failed owner context)
@@ -588,27 +607,50 @@ A new binding never inherits an unverified key or prior request authority."
                    "Partial inventory; press g to retry"))
         (hermes-chat--work-settle owner context snapshot)))))
 
-(defun hermes-chat--work-refresh (owner)
-  "Request one bounded delegate snapshot for eligible OWNER."
-  (when (and (hermes-chat--work-eligible-p owner)
+(defun hermes-chat--work-stage (owner cycle source)
+  "Advance OWNER's exact CYCLE to SOURCE or finish its sequential refresh."
+  (when (and (hermes-chat--work-current-p owner)
+             (eq cycle (plist-get owner :cycle))
              (not (plist-get owner :request)))
+    (cond
+     ((not (and source (hermes-chat--work-eligible-p owner)))
+      (setf (plist-get owner :cycle) nil)
+      (hermes-chat--work-schedule owner 5))
+     ((not (hermes-chat--work-source-eligible-p owner source))
+      (hermes-chat--work-stage owner cycle (and (eq source :delegates) :processes)))
+     (t (hermes-chat--work-request owner cycle source)))))
+
+(defun hermes-chat--work-request (owner cycle source)
+  "Register one bounded SOURCE request for OWNER's current CYCLE."
+  (let ((context (list :id nil :cycle cycle :source source))
+        (hermes-dashboard-transport-request-owner owner)
+        (hermes-dashboard-transport-request-timeout 10)
+        (hermes-dashboard-transport-request-lossless-result t))
+    (setf (plist-get owner :request) context)
+    (condition-case nil
+        (let ((id (apply (if (eq source :delegates)
+                             #'hermes-dashboard-transport-delegation-status
+                           #'hermes-dashboard-transport-process-list)
+                         (plist-get owner :client)
+                         :resolve (lambda (result)
+                                    (hermes-chat--work-received owner context result))
+                         :reject (lambda (_message)
+                                   (hermes-chat--work-failed owner context))
+                         (and (eq source :processes)
+                              (list :session-id (plist-get owner :runtime))))))
+          (when (and (hermes-chat--work-current-p owner)
+                     (eq context (plist-get owner :request)))
+            (setf (plist-get context :id) id)))
+      (error (hermes-chat--work-failed owner context)))))
+
+(defun hermes-chat--work-refresh (owner)
+  "Start one sequential observation cycle for eligible OWNER."
+  (when (and (hermes-chat--work-eligible-p owner)
+             (not (plist-get owner :cycle)))
     (hermes-chat--work-cancel-timer owner)
-    (let ((context (list :id nil))
-          (hermes-dashboard-transport-request-owner owner)
-          (hermes-dashboard-transport-request-timeout 10)
-          (hermes-dashboard-transport-request-lossless-result t))
-      (setf (plist-get owner :request) context)
-      (condition-case nil
-          (let ((id (hermes-dashboard-transport-delegation-status
-                     (plist-get owner :client)
-                     :resolve (lambda (result)
-                                (hermes-chat--work-received owner context result))
-                     :reject (lambda (_message)
-                               (hermes-chat--work-failed owner context)))))
-            (when (and (hermes-chat--work-current-p owner)
-                       (eq context (plist-get owner :request)))
-              (setf (plist-get context :id) id)))
-        (error (hermes-chat--work-failed owner context))))))
+    (let ((cycle (list nil)))
+      (setf (plist-get owner :cycle) cycle)
+      (hermes-chat--work-stage owner cycle :delegates))))
 
 (defun hermes-chat-work-refresh ()
   "Refresh this chat's observed work; rearm a paused source when idle.
@@ -616,10 +658,11 @@ Repeated refresh while busy coalesces; it does not authorize a later retry."
   (interactive)
   (when-let* ((owner hermes-chat--work-owner))
     (when (and (hermes-chat--work-current-p owner)
-               (not (plist-get owner :request)))
-      (when (plist-get owner :delegates)
-        (setf (plist-get (plist-get owner :delegates) :paused) nil
-              (plist-get (plist-get owner :delegates) :coverage) 'stale))
+               (not (plist-get owner :cycle)))
+      (dolist (source '(:delegates :processes))
+        (when (plist-get owner source)
+          (setf (plist-get (plist-get owner source) :paused) nil
+                (plist-get (plist-get owner source) :coverage) 'stale)))
       (hermes-chat--work-refresh owner))))
 
 (hermes-chat-register-cleanup-function #'hermes-chat--work-stop)

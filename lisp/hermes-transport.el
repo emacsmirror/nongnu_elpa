@@ -1161,5 +1161,48 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (setq roots (append (gethash id children) roots)))))
     (list :rows rows :coverage (if partial 'partial 'current))))
 
+(defun hermes-transport-work-process-row (row)
+  "Return inert display metadata and typed terminal evidence for process ROW."
+  (let ((id (hermes-transport-work-string row 'session_id))
+        (status (hermes-transport-work-string row 'status))
+        (exit (hermes-transport--get row 'exit_code)))
+    (list :key (cons 'process id) :id id :kind 'process :status status
+          :state (cond ((equal status "running") 'running)
+                       ((and (equal status "exited") (integerp exit))
+                        (if (zerop exit) 'done 'failed))
+                       (t 'unknown))
+          :exit-code (and (integerp exit) exit)
+          :command (or (hermes-transport-work-string row 'command) "—")
+          :cwd (or (hermes-transport-work-string row 'cwd) "—")
+          :output-tail (or (hermes-transport-work-string row 'output_tail) "—")
+          :started (let ((value (hermes-transport--get row 'started_at)))
+                     (and (numberp value) (>= value 0) value)))))
+
+(defun hermes-transport-work-processes (result)
+  "Project lossless session-scoped process RESULT into rows and coverage.
+Signal for invalid collections.  Exclude malformed rows and duplicate IDs,
+making coverage partial; missing terminal evidence never implies success."
+  (unless (and (hash-table-p result) (vectorp (gethash "processes" result)))
+    (error "Invalid process inventory"))
+  (let ((nodes (make-hash-table :test #'equal)) partial rows)
+    (seq-doseq (row (gethash "processes" result))
+      (let ((id (and (hash-table-p row)
+                     (hermes-transport-work-string row 'session_id))))
+        (cond
+         ((not id) (setq partial t))
+         ((gethash id nodes)
+          (puthash id 'ambiguous nodes)
+          (setq partial t))
+         ((let ((status (hermes-transport--get row 'status)))
+            (and status (not (eq status :json-null)) (not (stringp status))))
+          (puthash id 'ambiguous nodes)
+          (setq partial t))
+         (t (puthash id row nodes)))))
+    (maphash (lambda (_id row)
+               (when (hash-table-p row)
+                 (push (hermes-transport-work-process-row row) rows)))
+             nodes)
+    (list :rows rows :coverage (if partial 'partial 'current))))
+
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here
