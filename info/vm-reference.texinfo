@@ -7283,9 +7283,16 @@ The association is stored in @code{vm-pcrisis-auto-profiles-file} and in the
 future the
 stored actions will automatically run for messages to that address.
 
-REMEMBER can be set to t or @code{prompt}.  When set to @code{prompt} you will be asked if
-you want to store the association.  When set to t a new profile will be stored
-without asking.
+REMEMBER can be set to t or @code{prompt}.  When set to @code{prompt} you will be asked
+if you want to store the association.  When set to t a new profile will be
+stored without asking.
+
+Storing one writes @code{vm-pcrisis-auto-profiles-file}, which is
+@code{~/.vmpc-auto-profiles} unless you have said otherwise, and that file is then
+consulted by every later composition.  The question names it, and so does the
+message after any profile is written or removed, since with REMEMBER t there
+is no question to name it.  To be rid of a profile, answer with no actions,
+or edit the file.
 
 Set PROMPT to t and you will be prompted each time, i.e. not only for unknown
 profiles.  If you want to change the profile only explicitly, then omit the
