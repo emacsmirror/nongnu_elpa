@@ -158,7 +158,10 @@
       (should (equal (hermes-chat--header-status-label status) label))
       (should (equal (hermes-chat--status-icon status) icon))
       (should (eq (hermes-chat--status-face status) face))
-      (should (eq (hermes-chat--header-status-face status) face))
+      (should (eq (hermes-chat--header-status-face status)
+                  (cond ((equal label "Running") 'font-lock-keyword-face)
+                        ((equal label "Approval requested") 'warning)
+                        (t face))))
       (should (eq (not (null (hermes-chat--active-status-p status))) active))
       (should (eq (not (null (hermes-chat--finished-status-p status)))
                   finished)))))
@@ -2055,17 +2058,17 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Turn" "Input" "Session" "Runtime" "Workspace" "System")))
+                   '("Turn" "Input" "Commands" "Session" "Runtime" "Workspace" "Inspect" "System")))
     (should (equal (mapcar (lambda (row)
                              (mapcar (lambda (group)
                                        (plist-get group :name))
                                      row))
                            rows)
-                   '(("Turn" "Input" "Session" "Runtime" "Workspace" "System"))))
+                   '(("Turn" "Input" "Commands" "Session" "Runtime" "Workspace" "Inspect" "System"))))
     (should (equal (mapcar (lambda (group)
                              (length (plist-get group :entries)))
                            groups)
-                   '(4 4 3 3 4 3)))
+                   '(4 3 2 3 3 4 1 3)))
     (let ((directory-entry
            (cl-find "w" entries :key (lambda (entry)
                                        (plist-get entry :key))
@@ -6317,7 +6320,7 @@
                                    (plist-get (nth 1 entries) :content)))
            (should (eq (plist-get (nth 1 entries) :status) 'error))
            (should (string-match-p "Error" header))
-           (should (string-match-p "alien.signal" header)))
+           (should (string-match-p "alien.signal" (hermes-chat--session-details-text))))
          (should (cl-some (lambda (line)
                             (string-match-p "Unknown Hermes transport event: alien.signal"
                                             line))
@@ -6810,9 +6813,9 @@
    (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "claude-opus-4-8" :agent-name "planner"))
-   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (let ((header (hermes-test--header-line-string)))
-       (should (string-prefix-p " emacs-hermes  | " header))
+       (should (string-prefix-p "emacs-hermes | " header))
        (should-not (string-match-p "coder" header))
        (should-not (string-match-p "planner" header))
        (should (string-match-p "claude-opus-4-8" header))
@@ -6830,7 +6833,7 @@
              hermes-chat--working-directory "/tmp/project/"
              hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
-         (should (string-prefix-p " project  | " header))
+         (should (string-prefix-p "project | " header))
          (should-not (string-match-p "remote" header))
          (should-not (string-match-p "coder" header)))))))
 
@@ -6871,6 +6874,187 @@
    (setq hermes-chat--model nil)
    (should-not (hermes-chat--header-model-segment))))
 
+(ert-deftest hermes-chat-disconnect-header-is-warning ()
+  "Public disconnect retains identity and never presents idle readiness."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-session-id "retained-session"
+         hermes-chat--dashboard-active-session-id "live-session")
+   (hermes-chat-disconnect)
+   (should (equal hermes-chat--dashboard-session-id "retained-session"))
+   (should (string-match-p "Disconnected" (hermes-chat--header-line)))
+   (should-not (string-match-p "Idle" (hermes-chat--header-line)))
+   (should (equal (hermes-chat--status-icon 'disconnected) "!"))
+   (should (eq (hermes-chat--header-status-face 'disconnected) 'warning))))
+
+(ert-deftest hermes-chat-native-navigation-preserves-draft ()
+  "Transcript keys traverse buttons; composer motion leaves the draft intact."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry '(:id "nav-tool" :role tool :content "one\ntwo"))
+   (goto-char (point-max))
+   (insert "draft\nsecond line")
+   (let ((draft (hermes-chat-input-string))
+         (undo buffer-undo-list))
+     (goto-char (point-min))
+     (call-interactively (key-binding (kbd "TAB")))
+     (should (button-at (point)))
+     (should (equal (button-get (button-at (point)) 'help-echo) "Expand output"))
+     (call-interactively (key-binding (kbd "RET")))
+     (should (equal (button-get (button-at (point)) 'help-echo) "Collapse output"))
+     (call-interactively (key-binding (kbd "C-c C-j")))
+     (should (= (point) (point-max)))
+     (should (equal draft (hermes-chat-input-string)))
+     (should (equal undo buffer-undo-list))
+     (let (completed)
+       (cl-letf (((symbol-function 'completion-at-point)
+                  (lambda () (interactive) (setq completed t))))
+         (call-interactively (key-binding (kbd "TAB"))))
+       (should completed)))))
+
+(ert-deftest hermes-chat-header-window-details-and-literal-percent ()
+  "Each window budgets its display; full inert details remain discoverable."
+  (save-window-excursion
+    (delete-other-windows)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--working-directory "/remote/界%project-with-a-long-name/"
+           hermes-chat--model "model%with-a-long-name"
+           hermes-chat--runtime-flags '(:yolo t :fast t)
+           hermes-chat--status-state '(:status running))
+     (let* ((owner (current-buffer))
+            (wide (selected-window))
+            (narrow (split-window wide 24 'right)))
+       (set-window-buffer wide owner)
+       (set-window-buffer narrow owner)
+       (dolist (window (list wide narrow))
+         (let* ((width (window-body-width window))
+                (header (with-selected-window window (hermes-chat--header-line)))
+                (display (string-replace "%%" "%" header)))
+           (should (<= (string-width display) width))
+           (should (string-match-p "Running" display))
+           (should (string-match-p "YOLO" display))
+           (should (string-match-p (regexp-quote hermes-chat--working-directory)
+                                   (get-text-property 0 'help-echo header)))))
+       (should (string-match-p "界%%project" (hermes-chat--header-line 120)))
+       (should (eq (keymap-lookup hermes-chat-actions-map "h")
+                   #'hermes-chat-session-details))
+       (should-not (keymap-lookup hermes-chat-mode-map "C-c C-h"))
+       (unwind-protect
+           (progn
+             (call-interactively (keymap-lookup hermes-chat-actions-map "h"))
+             (with-current-buffer "*Hermes Session Details*"
+               (should (derived-mode-p 'special-mode))
+               (should buffer-read-only)
+               (should (string-match-p "model%with-a-long-name" (buffer-string)))
+               (should-not (next-button (point-min)))))
+         (when (get-buffer "*Hermes Session Details*")
+           (kill-buffer "*Hermes Session Details*")))))))
+
+(ert-deftest hermes-chat-navigation-boundaries-and-reasoning ()
+  "Reverse traversal and narrowing never wrap or change the multiline draft."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry '(:id "reason" :role commentary :content "why\nhow"))
+   (hermes-chat--insert-entry '(:id "tool" :role tool :content "one\ntwo"))
+   (goto-char (point-max))
+   (insert "draft\nuntouched")
+   (let ((draft (hermes-chat-input-string)))
+     (call-interactively (key-binding (kbd "<backtab>")))
+     (should (equal (button-get (button-at (point)) 'hermes-chat-entry-id) "tool"))
+     (let ((position (point)))
+       (should-error (call-interactively (key-binding (kbd "TAB"))) :type 'user-error)
+       (should (= position (point))))
+     (call-interactively (key-binding (kbd "<backtab>")))
+     (should (equal (button-get (button-at (point)) 'help-echo) "Expand reasoning"))
+     (call-interactively (key-binding (kbd "RET")))
+     (should (equal (button-get (button-at (point)) 'help-echo) "Collapse reasoning"))
+     (save-restriction
+       (narrow-to-region hermes-chat--input-marker (point-max))
+       (goto-char (point-min))
+       (should-error (call-interactively (key-binding (kbd "<backtab>"))) :type 'user-error))
+     (narrow-to-region (point-min) hermes-chat--input-marker)
+     (call-interactively (key-binding (kbd "C-c C-j")))
+     (should-not (buffer-narrowed-p))
+     (should (= (point) (point-max)))
+     (should (equal draft (hermes-chat-input-string))))))
+
+(ert-deftest hermes-chat-header-priority-widths ()
+  "Long identity never hides state or the active risk flag."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--working-directory (concat "/remote/" (make-string 100 ?界))
+         hermes-chat--model (make-string 100 ?m)
+         hermes-chat--runtime-flags '(:yolo t))
+   (dolist (width '(1 2 8 12 20 30 40 50 80 120))
+     (dolist (case '((ready "Ready" "RDY") (running "Running" "RUN")
+                    (error "Error" "ERR") (approval-requested "Approval" "AP?")
+                    (requested "Input" "IN?") (disconnected "Offline" "OFF")))
+       (setq hermes-chat--status-state (list :status (car case)))
+       (let ((header (hermes-chat--header-line width)))
+         (should (<= (string-width header) width))
+         (should (string-match-p (if (< width 20) "!\\|YOLO" "YOLO") header))
+         (when (>= width 8)
+           (should (string-match-p
+                    (regexp-quote
+                     (cond ((< width 12) (nth 2 case))
+                           ((and (>= width 30) (eq (car case) 'disconnected))
+                            "Disconnected")
+                           (t (nth 1 case)))) header))))))))
+
+(ert-deftest hermes-chat-header-all-states-narrow-budget ()
+  "Keep state and risk together across consecutive abbreviation boundaries."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--working-directory "/remote/界%long-directory/"
+         hermes-chat--model (make-string 100 ?m)
+         hermes-chat--goal '(:running t :turns-used 1 :max-turns 20)
+         hermes-chat--context '(:used 100 :max 200 :percent 50))
+   (dolist (yolo '(nil t))
+     (setq hermes-chat--runtime-flags (list :yolo yolo :fast t))
+     (dolist (case '((ready "Ready" "RDY") (running "Running" "RUN")
+                    (error "Error" "ERR") (approval-requested "Approval" "AP?")
+                    (requested "Input" "IN?") (disconnected "Offline" "OFF")
+                    (thinking "Thinking" "THK") (waiting "Waiting" "WAIT")
+                    (loading "Loading" "LOAD") (connecting "Connecting" "CON")
+                    (streaming "Streaming" "STR") (queued "Queued" "Q")
+                    (handoff "Handing off" "HAND") (interrupted "Interrupted" "INT")
+                    (cancelled "Cancelled" "CAN") (idle "Idle" "IDL")))
+       (setq hermes-chat--status-state (list :status (car case)))
+       (dolist (width '(8 9 10 11 12 13 14 15 16 17 18 19 20))
+         (let* ((header (hermes-chat--header-line width))
+                (display (string-replace "%%" "%" header))
+                (state-pos (string-match-p
+                            (regexp-opt (cdr case)) display))
+                (risk-pos (string-match-p "YOLO\\|Y!" display)))
+           (should (<= (string-width display) width))
+           (should state-pos)
+           (should (eq (get-text-property state-pos 'face display)
+                       (hermes-chat--header-status-face (car case))))
+           (if yolo
+               (progn
+                 (should risk-pos)
+                 (should (eq (get-text-property risk-pos 'face display)
+                             'hermes-chat-header-warning)))
+             (should-not risk-pos))))))))
+
+(ert-deftest hermes-chat-details-ignore-ambient-printer-limits ()
+  "Details and tooltip retain nested values under finite printer limits."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--runtime-flags
+         '(:reasoning-effort "high" :fast t :yolo t :extra (:nested ("runtime-end")))
+         hermes-chat--goal '(:running t :extra (:nested ("goal-end")))
+         hermes-chat--context '(:used 100 :max 200 :extra (:nested ("context-end"))))
+   (let* ((print-length nil)
+          (print-level nil)
+          (expected (mapcar (lambda (value) (format "%S" value))
+                            (list hermes-chat--runtime-flags hermes-chat--goal
+                                  hermes-chat--context))))
+     (dolist (limits '((2 nil) (nil 2) (2 2)))
+       (let* ((print-length (car limits))
+              (print-level (cadr limits))
+              (details (hermes-chat--session-details-text))
+              (tooltip (get-text-property 0 'help-echo (hermes-chat--header-line 12))))
+         (dolist (value expected)
+           (should (string-match-p (regexp-quote value) details))
+           (should (string-match-p (regexp-quote value) tooltip)))
+         (should (equal print-length (car limits)))
+         (should (equal print-level (cadr limits))))))))
+
 (ert-deftest hermes-chat-header-uses-compact-semantic-layout ()
   "The compact header orders directory, activity, runtime, and context metadata."
   (hermes-test-with-chat-buffer
@@ -6883,10 +7067,10 @@
          '(:reasoning-effort "medium" :fast t :yolo t)
          hermes-chat--context '(:used 24705 :max 500000 :percent 5)
          hermes-chat--status-state '(:status ready :activity "Ready"))
-   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
-                    (concat " emacs-hermes  |  ✓ Ready  |  grok-4.5  |  medium"
-                            "  |  fast  |  YOLO  |  25k/500k "))))))
+                    (concat "emacs-hermes | ✓ Ready | YOLO | grok-4.5 | 25k/500k"
+                            " | medium | fast"))))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
   "Directory, model, runtime flags, and context values use distinct faces."
@@ -6898,7 +7082,7 @@
          hermes-chat--runtime-flags
          '(:reasoning-effort "medium" :fast t :yolo t)
          hermes-chat--context '(:used 24705 :max 500000 :percent 5))
-   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (let ((header (hermes-chat--header-line)))
        (dolist (case '(("emacs-hermes" . hermes-chat-header-directory)
                        ("grok-4.5" . hermes-chat-header-model)
@@ -6918,14 +7102,11 @@
          hermes-chat--working-directory "/tmp/emacs-hermes/"
          hermes-chat--profile "scout"
          hermes-chat--model "grok-4.5")
-   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 10)))
-     (let* ((header (hermes-chat--header-line))
-            (directory-position (string-match-p "emacs" header)))
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 10)))
+     (let ((header (hermes-chat--header-line)))
        (should (<= (string-width header) 10))
-       (should (string-suffix-p "…" header))
-       (should directory-position)
-       (should (eq (get-text-property directory-position 'face header)
-                   'hermes-chat-header-directory))))))
+       (should-not (string-match-p "emacs" header))
+       (should (string-match-p "RDY" header))))))
 
 (ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
   "Tool lines keep the command/skill detail and carry the tool emoji."

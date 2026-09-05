@@ -300,7 +300,7 @@ one line instead of appending."
                       'face 'shadow
                       'mouse-face 'highlight
                       'follow-link t
-                      'help-echo "Toggle full output"
+                      'help-echo (if expanded "Collapse output" "Expand output")
                       'hermes-chat-entry-id (plist-get entry :id)
                       'action #'hermes-chat--toggle-entry-button)))
 
@@ -366,7 +366,7 @@ the thinking disclosure; diffs become View Diff links."
                       'face 'shadow
                       'mouse-face 'highlight
                       'follow-link t
-                      'help-echo "Toggle Hermes reasoning"
+                      'help-echo (if expanded "Collapse reasoning" "Expand reasoning")
                       'hermes-chat-entry-id (plist-get entry :id)
                       'action #'hermes-chat--toggle-entry-button))
   (insert "\n"))
@@ -1683,14 +1683,88 @@ self-explanatory."
          (hermes-chat--header-runtime-segments)
          (list (hermes-chat--header-context-segment)))))
 
-(defun hermes-chat--header-line ()
-  "Return the directory-first semantic header line for this chat."
-  (let* ((separator (propertize "  |  " 'face 'shadow))
-         (text (concat " " (string-join (hermes-chat--header-parts)
-                                         separator)
-                       " "))
-         (width (max 1 (window-total-width))))
-    (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
+(defconst hermes-chat--header-state-codes
+  '(("Ready" . "RDY") ("Running" . "RUN") ("Error" . "ERR")
+    ("Approval requested" . "AP?") ("Input requested" . "IN?")
+    ("Disconnected" . "OFF") ("Thinking" . "THK") ("Waiting" . "WAIT")
+    ("Loading" . "LOAD") ("Connecting" . "CON") ("Streaming" . "STR")
+    ("Queued" . "Q") ("Handing off" . "HAND") ("Interrupted" . "INT")
+    ("Cancelled" . "CAN") ("Idle" . "IDL"))
+  "Compact header codes, also explained in local session details.")
+
+(defun hermes-chat--header-fit (width status yolo directory optional)
+  "Fit STATUS, YOLO, DIRECTORY and OPTIONAL segments within WIDTH columns.
+Reserve state and risk before identity.  Drop optional segments whole."
+  (let* ((separator (propertize " | " 'face 'shadow))
+         (risk (and yolo (propertize (cond ((= width 1) "!")
+                                          ((or (< width 12)
+                                               (< width (+ (string-width status) 7))) "Y!")
+                                          (t "YOLO"))
+                                    'face 'hermes-chat-header-warning)))
+         (required (string-join (delq nil (list status risk))
+                                (if (< width 30) " " separator)))
+         (room (- width (string-width required) (string-width separator)))
+         (identity (and (>= width 30) (> room 3)
+                        (truncate-string-to-width directory room nil nil "…")))
+         (text (if identity (concat identity separator required) required)))
+    (if (> (string-width text) width)
+        (truncate-string-to-width (or risk status) width nil nil "")
+      (dolist (part optional)
+        (when (and part (<= (+ (string-width text) 3 (string-width part)) width))
+          (setq text (concat text separator part))))
+      text)))
+
+(defun hermes-chat--session-details-text ()
+  "Return local, full session details without fetching or interpreting paths."
+  (let ((print-length nil)
+        (print-level nil))
+    (format "Directory: %s\nParent: %s\nActivity: %s\nModel: %s\nRuntime: %S\nGoal: %S\nContext: %S\n\nReady means ready for parent input; work may still be running.\nSession work: unavailable here.\n\nCompact header codes: %s. Y! (or !) means YOLO.\n"
+            (or (hermes-chat--current-working-directory) "detached")
+            (hermes-chat--header-status-label (plist-get hermes-chat--status-state :status))
+            (or (plist-get hermes-chat--status-state :activity) "—")
+            (or hermes-chat--model "unknown") hermes-chat--runtime-flags
+            hermes-chat--goal hermes-chat--context
+            (mapconcat (lambda (entry) (format "%s=%s" (cdr entry) (car entry)))
+                       hermes-chat--header-state-codes "; "))))
+
+(defun hermes-chat-session-details ()
+  "Display full local session details, including fields omitted from the header."
+  (interactive)
+  (let ((text (hermes-chat--session-details-text)))
+    (with-help-window "*Hermes Session Details*"
+      (princ text))))
+
+(defun hermes-chat--header-line (&optional width)
+  "Return a priority-budgeted header fitting WIDTH display columns.
+During redisplay Emacs selects the window whose header is being evaluated."
+  (let* ((width (max 1 (or width (window-body-width))))
+         (state (plist-get hermes-chat--status-state :status))
+         (label (hermes-chat--header-status-label state))
+         (short (pcase label
+                  ("Approval requested" "Approval")
+                  ("Input requested" "Input") ("Disconnected" "Offline")
+                  (_ label)))
+         ;; Reserve a space and Y! before optional detail can consume room.
+         (status (propertize
+                  (cond ((or (< width 12)
+                             (< width (+ (string-width short)
+                                         (if (plist-get hermes-chat--runtime-flags :yolo)
+                                             3 0))))
+                         (or (cdr (assoc label hermes-chat--header-state-codes)) "?"))
+                        ((< width 30) short)
+                        (t (concat (hermes-chat--status-icon state) " " label)))
+                  'face (hermes-chat--header-status-face state)))
+         (runtime (hermes-chat--header-runtime-segments))
+         (text (hermes-chat--header-fit
+                width status (plist-get hermes-chat--runtime-flags :yolo)
+                (hermes-chat--header-directory-segment)
+                (append (list (hermes-chat--header-goal-segment)
+                              (hermes-chat--header-model-segment)
+                              (hermes-chat--header-context-segment))
+                        (seq-remove (lambda (part) (equal part "YOLO")) runtime)
+                        (list (hermes-chat--header-detail label))))))
+    (propertize (string-replace "%" "%%" text)
+                'help-echo (hermes-chat--session-details-text))))
 
 
 (provide 'hermes-chat-buffer)

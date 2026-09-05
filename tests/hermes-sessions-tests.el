@@ -7,7 +7,10 @@
 
 (defun hermes-sessions-test--render (sessions)
   "Render SESSIONS through the browser's `session.list' result shape."
-  (hermes-sessions--render `((sessions . ,sessions))))
+  (with-current-buffer (get-buffer-create "*Hermes Sessions*")
+    (unless (derived-mode-p 'hermes-sessions-mode)
+      (hermes-sessions-mode))
+    (hermes-sessions--render `((sessions . ,sessions)))))
 
 (ert-deftest hermes-sessions-rows-from-session-list ()
   "Session rows map the `session.list' result fields to columns."

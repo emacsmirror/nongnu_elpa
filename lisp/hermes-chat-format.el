@@ -164,7 +164,7 @@ Active statuses show a neutral dot rather than the settled checkmark."
   (let ((name (hermes-chat--status-name status)))
     (cond
      ((member name hermes-chat--ready-statuses) "✓")
-     ((or (member name hermes-chat--error-statuses) (equal name "closed")) "!")
+     ((or (member name hermes-chat--error-statuses) (member name '("closed" "disconnected"))) "!")
      (t "·"))))
 
 (defun hermes-chat--header-status-label (status)
@@ -173,7 +173,7 @@ Active statuses show a neutral dot rather than the settled checkmark."
     ((or "done" "completed" "complete" "success" "succeeded" "ready") "Ready")
     ((or "error" "failed" "failure") "Error")
     ((or "cancelled" "canceled") "Cancelled")
-    ((or "closed") "Disconnected")
+    ((or "closed" "disconnected") "Disconnected")
     ((or "interrupted") "Interrupted")
     ((or "approval-requested") "Approval requested")
     ((or "requested") "Input requested")
@@ -184,7 +184,9 @@ Active statuses show a neutral dot rather than the settled checkmark."
     ((or "streaming") "Streaming")
     ((or "handoff") "Handing off")
     ((or "started" "running" "busy" "progress" "in-progress" "preparing") "Running")
-    (_ "Idle")))
+    ("thinking" "Thinking")
+    ((or "idle" "") "Idle")
+    (_ "Unknown")))
 
 (defun hermes-chat--status-face (status)
   "Return face for transport STATUS."
@@ -192,12 +194,15 @@ Active statuses show a neutral dot rather than the settled checkmark."
     (cond
      ((member name hermes-chat--ready-statuses) 'success)
      ((member name hermes-chat--error-statuses) 'error)
-     ((equal name "closed") 'warning)
+     ((member name '("closed" "disconnected")) 'warning)
      (t 'shadow))))
 
 (defun hermes-chat--header-status-face (status)
   "Return face for STATUS in the chat header."
-  (hermes-chat--status-face status))
+  (pcase (hermes-chat--header-status-label status)
+    ((or "Running" "Thinking" "Streaming") 'font-lock-keyword-face)
+    ((or "Approval requested" "Input requested") 'warning)
+    (_ (hermes-chat--status-face status))))
 
 (defun hermes-chat--error-status (event)
   "Return terminal status to display for an error-like transport EVENT."

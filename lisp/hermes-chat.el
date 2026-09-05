@@ -1828,11 +1828,39 @@ result into the transient status text shown in the transcript."
           (hermes-transport--get result 'output))
          "No status available"))))
 
+(defun hermes-chat-go-to-composer ()
+  "Move to the end of the writable composer without changing its text."
+  (interactive)
+  (widen)
+  (goto-char (point-max)))
+
+(defun hermes-chat-next-button (&optional backward)
+  "Move to the next transcript button, or previous when BACKWARD is non-nil.
+Do not wrap into the composer or modify its draft."
+  (interactive)
+  (let ((button (if backward (previous-button (point)) (next-button (point)))))
+    (unless (and button (< (button-start button) hermes-chat--input-marker))
+      (user-error "No further transcript button"))
+    (goto-char (button-start button))))
+
+(defun hermes-chat-previous-button ()
+  "Move to the previous transcript button without changing input."
+  (interactive)
+  (hermes-chat-next-button t))
+
+(defun hermes-chat-tab ()
+  "Complete in the composer, or visit the next transcript button."
+  (interactive)
+  (if (>= (point) hermes-chat--input-marker)
+      (completion-at-point)
+    (hermes-chat-next-button)))
+
 (defvar hermes-chat-actions-map)
 
 (keymap-popup-define hermes-chat-actions-map
   "In-chat action menu for `hermes-chat-mode'."
   :description "Hermes Chat Actions"
+  :popup-key "?"
   :group "Turn"
   "s" ("Steer" hermes-chat-steer-message)
   "i" ("Interrupt" hermes-chat-interrupt)
@@ -1841,6 +1869,8 @@ result into the transient status text shown in the transcript."
   :group "Input"
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt)
+  "j" ("Go to composer" hermes-chat-go-to-composer)
+  :group "Commands"
   "c" ("Show commands" hermes-chat-show-commands)
   "r" ("Refresh commands" hermes-chat-refresh-commands)
   :group "Session"
@@ -1857,6 +1887,8 @@ result into the transient status text shown in the transcript."
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
   "P" ("Queue side panel" hermes-chat-queue-panel)
+  :group "Inspect"
+  "h" ("Session details" hermes-chat-session-details)
   :group "System"
   "x" ("Reconnect socket" hermes-dashboard-reconnect)
   "u" ("Token usage" hermes-chat-show-usage)
@@ -1867,7 +1899,11 @@ result into the transient status text shown in the transcript."
   "RET" #'hermes-chat-send
   "C-j" #'hermes-chat-newline
   "S-<return>" #'hermes-chat-newline
-  "TAB" #'completion-at-point
+  "TAB" #'hermes-chat-tab
+  "<backtab>" #'hermes-chat-previous-button
+  "<remap> <forward-button>" #'hermes-chat-next-button
+  "<remap> <backward-button>" #'hermes-chat-previous-button
+  "C-c C-j" #'hermes-chat-go-to-composer
   "M-p" #'hermes-chat-input-history-previous
   "M-n" #'hermes-chat-input-history-next
   "C-c C-i" #'hermes-chat-interrupt

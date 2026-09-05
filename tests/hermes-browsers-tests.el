@@ -15,6 +15,29 @@
   :rows (lambda (result)
           (mapcar (lambda (name) (list name (vector name))) result)))
 
+(ert-deftest hermes-browser-refresh-renamed-owner ()
+  "Delayed refresh writes only its renamed owner, never a name replacement."
+  (dolist (rename-before '(nil t))
+    (let ((owner (generate-new-buffer "*Hermes Browser Identity*"))
+          replacement callback)
+      (unwind-protect
+          (with-current-buffer owner
+            (hermes-browseridentity-mode)
+            (when rename-before (rename-buffer "*Renamed browser*" t))
+            (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                       (lambda (_fetch done) (setq callback done))))
+              (hermes-browseridentity--revert))
+            (unless rename-before (rename-buffer "*Renamed browser*" t))
+            (setq replacement (get-buffer-create "*Hermes Browser Identity*"))
+            (funcall callback '("fresh"))
+            (should (equal (caar tabulated-list-entries) "fresh"))
+            (with-current-buffer replacement (should (= (buffer-size) 0)))
+            (fundamental-mode)
+            (funcall callback '("stale"))
+            (should-not (string-match-p "stale" (buffer-string))))
+        (kill-buffer owner)
+        (when replacement (kill-buffer replacement))))))
+
 (ert-deftest hermes-browser-retarget-removes-actionable-rows ()
   "Every retained list rejects A's rows as soon as it is retargeted to B."
   (dolist (case '((hermes-profiles-mode hermes-profiles-delete)
@@ -547,7 +570,9 @@
     (setq hermes-browser-test--fetch-function (lambda () promise))
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore))))
-      (hermes-browseridentity--render '("initial"))
+      (with-current-buffer (get-buffer-create "*Hermes Browser Identity*")
+              (hermes-browseridentity-mode)
+              (hermes-browseridentity--render '("initial")))
       (with-current-buffer "*Hermes Browser Identity*"
         (hermes-browseridentity--revert))
       (kill-buffer "*Hermes Browser Identity*")
@@ -568,7 +593,9 @@
                (lambda (fn) (funcall fn 'fake-client #'ignore))))
       (unwind-protect
           (progn
-            (hermes-browseridentity--render '("initial"))
+            (with-current-buffer (get-buffer-create "*Hermes Browser Identity*")
+              (hermes-browseridentity-mode)
+              (hermes-browseridentity--render '("initial")))
             (with-current-buffer "*Hermes Browser Identity*"
               (hermes-browseridentity--revert)
               (hermes-browseridentity--revert))
@@ -597,7 +624,9 @@
                  (push (apply #'format format-string args) messages))))
       (unwind-protect
           (progn
-            (hermes-browseridentity--render '("initial"))
+            (with-current-buffer (get-buffer-create "*Hermes Browser Identity*")
+              (hermes-browseridentity-mode)
+              (hermes-browseridentity--render '("initial")))
             (with-current-buffer "*Hermes Browser Identity*"
               (hermes-browseridentity--revert)
               (hermes-browseridentity--revert))
@@ -660,8 +689,9 @@
         (should (fboundp 'hermes-browsertest-mode))
         (should (fboundp 'hermes-list-browsertest))
         (should (eq (keymap-lookup hermes-browsertest-mode-map "g") #'ignore))
-        (hermes-browsertest--render '("x" "y"))
-        (with-current-buffer "*Hermes Browser Test*"
+        (with-current-buffer (get-buffer-create "*Hermes Browser Test*")
+          (hermes-browsertest-mode)
+          (hermes-browsertest--render '("x" "y"))
           (should (derived-mode-p 'hermes-browsertest-mode))
           (should (equal tabulated-list-format [("Name" 20 t)]))
           (should (equal (mapcar #'car tabulated-list-entries) '("x" "y")))))
