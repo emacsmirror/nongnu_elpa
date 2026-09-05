@@ -1870,6 +1870,121 @@ that decision is acted on, which is the point of it."
     (should-not (string-match-p "------- end -------" got))
     (should (string-suffix-p "their body\n-- \nNEW SIG" got))))
 
+
+;;; A profile that only asks (emacs-vm/vm#809)
+
+(defconst vm-pcrisis-test--asking-actions
+  '(("from-ucsc" (med-mail-setup-sender "markd@ucsc.edu"))
+    ("ask-which-identity" (vm-pcrisis-prompt-for-profile 'prompt)))
+  "One action that sets a header and one that asks which actions to run.")
+
+(defmacro vm-pcrisis-test--asking (stored answer &rest body)
+  "Run BODY with the profile machinery stubbed.
+STORED is what the profiles file holds for the address, ANSWER what the
+reader types at the actions prompt.  `vm-pcrisis-test--asked' collects the
+questions put and `vm-pcrisis-test--saved' what was written."
+  (declare (indent 2) (debug t))
+  `(let ((vm-pcrisis-actions vm-pcrisis-test--asking-actions)
+         (vm-pcrisis-current-state 'newmail)
+         (vm-pcrisis-current-buffer 'none)
+         (vm-pcrisis-actions-to-run nil)
+         (vm-pcrisis-auto-profiles nil)
+         (vm-pcrisis-test--asked nil)
+         (vm-pcrisis-test--saved nil))
+     (cl-letf (((symbol-function 'vm-pcrisis-get-header-contents)
+                (lambda (&rest _) nil))
+               ((symbol-function 'vm-pcrisis-get-profile-for-address)
+                (lambda (&rest _) ,stored))
+               ((symbol-function 'vm-pcrisis-save-profile-for-address)
+                (lambda (address actions)
+                  (setq vm-pcrisis-test--saved (cons address actions))))
+               ((symbol-function 'vm-pcrisis-read-actions)
+                (lambda (prompt &optional _default)
+                  (push (format prompt "") vm-pcrisis-test--asked)
+                  ,answer))
+               ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+               ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+       ,@body)))
+
+(defvar vm-pcrisis-test--asked nil "Questions the stubs were asked.")
+(defvar vm-pcrisis-test--saved nil "What the stubs were told to save.")
+
+(ert-deftest vm-pcrisis-test-an-action-that-asks-is-recognised ()
+  "`vm-pcrisis-prompting-action-p' knows an action that asks from one that acts.
+It looks through the action's forms for the function, so the argument it is
+given does not matter, and the old `vmpc-' name counts too."
+  (let ((vm-pcrisis-actions
+         (append vm-pcrisis-test--asking-actions
+                 '(("old-name" (vmpc-prompt-for-profile 'prompt))
+                   ("nested" (progn (message "x")
+                                    (vm-pcrisis-prompt-for-profile t t)))))))
+    (should (vm-pcrisis-prompting-action-p "ask-which-identity"))
+    (should (vm-pcrisis-prompting-action-p "old-name"))
+    (should (vm-pcrisis-prompting-action-p "nested"))
+    (should-not (vm-pcrisis-prompting-action-p "from-ucsc"))
+    (should-not (vm-pcrisis-prompting-action-p "no such action"))))
+
+(ert-deftest vm-pcrisis-test-a-profile-that-only-asks-is-not-remembered ()
+  "REGRESSION: answering the question with the action that asks stores nothing.
+
+emacs-vm/vm#809.  Remembered as the answer to its own question, such an
+action makes a profile that asks nothing and does nothing: the lookup finds
+it, so nothing is asked, and what it queues is the asking action, which finds
+it again.  No header is ever set and the composition looks configured.  The
+reader who hit this had `(\"default\" (\"ask-which-identity\"))' in
+`~/.vmpc-auto-profiles' and no prompt from then on."
+  (vm-pcrisis-test--asking nil '("ask-which-identity")
+    (vm-pcrisis-prompt-for-profile 'prompt)
+    (should (equal nil vm-pcrisis-test--saved))
+    ;; the actions still run for this composition, only the memory is refused
+    (should (equal '("ask-which-identity") vm-pcrisis-actions-to-run))))
+
+(ert-deftest vm-pcrisis-test-a-profile-that-does-something-is-remembered ()
+  "An answer that sets a header is stored as before, alone or alongside."
+  (vm-pcrisis-test--asking nil '("from-ucsc")
+    (vm-pcrisis-prompt-for-profile 'prompt)
+    (should (equal '("default" "from-ucsc") vm-pcrisis-test--saved)))
+  (vm-pcrisis-test--asking nil '("from-ucsc" "ask-which-identity")
+    (vm-pcrisis-prompt-for-profile 'prompt)
+    (should (equal '("default" "from-ucsc" "ask-which-identity")
+                   vm-pcrisis-test--saved))))
+
+(ert-deftest vm-pcrisis-test-a-stored-profile-that-only-asks-asks-again ()
+  "REGRESSION: a profiles file written before the refusal heals itself.
+
+emacs-vm/vm#809.  The entry is dropped, the question put again, and the
+answer remembered in its place, so the reader is not left with a file that
+has to be edited by hand.  Without this the refusal would help only someone
+who had not already hit the trap."
+  (vm-pcrisis-test--asking '("ask-which-identity") '("from-ucsc")
+    (vm-pcrisis-prompt-for-profile 'prompt)
+    (should (equal 1 (length vm-pcrisis-test--asked)))
+    (should (equal '("default" "from-ucsc") vm-pcrisis-test--saved))
+    (should (equal '("from-ucsc") vm-pcrisis-actions-to-run))))
+
+(ert-deftest vm-pcrisis-test-a-stored-profile-that-acts-is-used-as-it-stands ()
+  "The ordinary case is untouched: a stored profile runs and nothing is asked."
+  (vm-pcrisis-test--asking '("from-ucsc") '("from-gmail")
+    (vm-pcrisis-prompt-for-profile 'prompt)
+    (should (equal nil vm-pcrisis-test--asked))
+    (should (equal nil vm-pcrisis-test--saved))
+    (should (equal '("from-ucsc") vm-pcrisis-actions-to-run))))
+
+(ert-deftest vm-pcrisis-test-the-actions-prompt-does-not-offer-the-asking-action ()
+  "The action that asks is not offered as an answer to its own question.
+That is how the reader came to give it, the prompt completing over every
+action name there was."
+  (let ((vm-pcrisis-actions vm-pcrisis-test--asking-actions)
+        (offered nil))
+    (cl-letf (((symbol-function 'vm-read-string)
+               (lambda (_prompt collection &rest _)
+                 (setq offered (mapcar #'car collection))
+                 "from-ucsc")))
+      (vm-pcrisis-read-actions "Actions%s: ")
+      (should (member "from-ucsc" offered))
+      (should (member "none" offered))
+      (should-not (member "ask-which-identity" offered)))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
