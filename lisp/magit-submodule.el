@@ -611,8 +611,11 @@ These sections can be expanded to show the respective commits."
       (dolist (module modules)
         (when-let* ((default-directory (expand-file-name module))
                     (_(file-exists-p (expand-file-name ".git")))
-                    (lines (magit-git-lines "-c" "push.default=current"
-                                            "log" "--oneline" range))
+                    (lines (magit-git-lines
+                            "-c" "push.default=current"
+                             "log" "--format=%h%x0c%s%x0c%D"
+                             "--decorate=full" "--decorate-refs=refs/tags/"
+                             range))
                     (count (length lines))
                     (_(> count 0)))
           (magit-insert-section
@@ -621,11 +624,12 @@ These sections can be expanded to show the respective commits."
             (magit-insert-heading count
               (propertize module 'font-lock-face 'magit-diff-file-heading))
             (dolist (line lines)
-              (string-match magit-log-module-re line)
-              (let ((rev (match-str 1 line))
-                    (msg (match-str 2 line)))
+              (pcase-let* ((`(,rev ,msg ,tags) (split-string line ""))
+                           (tags (and (not (equal tags ""))
+                                      (magit-format-ref-labels tags))))
                 (magit-insert-section (module-commit rev t)
                   (insert (propertize rev 'font-lock-face 'magit-hash) " "
+                          (if tags (concat tags " ") "")
                           (magit-log--wash-summary msg) "\n")))))))
       (magit-cancel-section 'if-empty)
       (insert ?\n))))
