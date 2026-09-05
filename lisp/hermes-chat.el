@@ -1185,19 +1185,32 @@ unconditionally, so an empty input still stops the run instead of erroring."
   "End this chat's dashboard session so a new one can be started.
 Tears down the live client when present (best effort, even when it is stale
 or in an error state) and clears the live session state.  The durable
-session key is preserved, so the conversation can still be resumed."
+session key is preserved, so the conversation can still be resumed.
+Local input is copied to an editable recovery buffer for manual sending;
+the current draft stays here.  Uncertain deliveries require history inspection."
   (interactive)
   (unless (or hermes-chat--dashboard-client
               hermes-chat--process
               hermes-chat--dashboard-active-session-id)
     (user-error "This Hermes chat has no session to disconnect"))
-  (when-let* ((assistant-id hermes-chat--pending-assistant-id))
-    (hermes-chat--mark-assistant assistant-id 'disconnected nil t))
-  (run-hooks 'hermes-chat-cleanup-functions)
-  (hermes-chat--invalidate-transport-state)
-  (hermes-chat--stop-dashboard-client)
-  (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
-  (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
+  (when hermes-chat--disconnect-in-progress
+    (user-error "Disconnect is already in progress"))
+  (let ((hermes-chat--disconnect-in-progress t))
+    (hermes-chat--capture-recovery)
+    (when (buffer-live-p hermes-chat--recovery-buffer)
+      (display-buffer hermes-chat--recovery-buffer))
+    (when-let* ((assistant-id hermes-chat--pending-assistant-id))
+      (hermes-chat--mark-assistant assistant-id 'disconnected nil t))
+    (run-hooks 'hermes-chat-cleanup-functions)
+    (hermes-chat--invalidate-transport-state t)
+    (hermes-chat--stop-dashboard-client)
+    (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
+    (when (buffer-live-p hermes-chat--recovery-buffer)
+      (hermes-chat--insert-local-status
+       (format "Input preserved in %s; resume via Sessions and send manually"
+               (buffer-name hermes-chat--recovery-buffer)))
+      (display-buffer hermes-chat--recovery-buffer))
+    (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected")))
 
 (defun hermes-chat--dashboard-client-active-turn-p (client)
   "Return non-nil when a chat sharing CLIENT has an active turn."

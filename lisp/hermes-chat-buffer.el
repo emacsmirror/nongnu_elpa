@@ -37,9 +37,11 @@
 (require 'subr-x)
 (require 'hermes-chat-format)
 (require 'hermes-chat-render)
+(require 'hermes-dashboard-api)
 
 (defvar hermes-instance)
 (defvar hermes-instances)
+(defvar hermes-chat--profile)
 
 (defmacro hermes-chat--in-buffer (buffer &rest body)
   "Evaluate BODY in BUFFER when it is live, else do nothing.
@@ -559,13 +561,106 @@ these same tails.  Markers already follow the transcript edits themselves."
     (hermes-chat--protect-transcript)
     (goto-char hermes-chat--input-marker)))
 
-(defun hermes-chat--invalidate-transport-state ()
-  "Invalidate callbacks and pending work before releasing this buffer's client."
+(defvar-local hermes-chat--recovery-buffer nil
+  "Editable document holding input preserved by explicit disconnect.")
+(defvar-local hermes-chat--recovery-copies nil
+  "Alist of occurrence identities and their last copied revisions.")
+(defvar-local hermes-chat--disconnect-in-progress nil
+  "Non-nil dynamically during explicit disconnect in this buffer.")
+
+(defun hermes-chat--recovery-records ()
+  "Return local input occurrences as (IDENTITY DISPOSITION CONTENT DISPLAY)."
+  (let* ((uncertain "Delivery uncertain — do not resend automatically")
+         (queue hermes-chat--queued-messages)
+         (contexts (delq nil (list hermes-chat--unsettled-submit-context
+                                   hermes-chat--busy-submit-context)))
+         (draft (save-restriction
+                  (widen)
+                  (hermes-chat-input-string))))
+    (append
+     (mapcar (lambda (entry)
+               (list entry
+                     (cond ((equal (plist-get entry :id)
+                                   hermes-chat--queued-submit-id) uncertain)
+                           ((plist-get entry :rejected-p)
+                            "Rejected — retained for manual recovery")
+                           (t "Never sent"))
+                     (plist-get entry :content) (plist-get entry :display)))
+             queue)
+     (cl-loop for context in (cl-delete-duplicates contexts :test #'eq)
+              unless (cl-find (plist-get context :queue-id) queue
+                              :key (lambda (entry) (plist-get entry :id))
+                              :test #'equal)
+              collect (list context uncertain (plist-get context :content)
+                            (plist-get context :display)))
+     (unless (string-empty-p draft)
+       (list (list 'draft "Draft — also remains in original chat" draft nil))))))
+
+(defun hermes-chat--capture-recovery ()
+  "Append changed local input to an editable recovery document.
+Stage all text before writing; errors and quits leave input ownership intact."
+  (let* ((live (buffer-live-p hermes-chat--recovery-buffer))
+         (copies (and live hermes-chat--recovery-copies))
+         (records (cl-remove-if
+                   (lambda (record)
+                     (equal (cdr record) (cdr (assq (car record) copies))))
+                   (hermes-chat--recovery-records)))
+         (text (mapconcat
+                (lambda (record)
+                  (pcase-let ((`(,identity ,status ,content ,display) record))
+                    (concat "\n\n" status
+                            (when (assq identity copies) " (later revision)")
+                            "\nContent:\n" content
+                            (when display (concat "\nDisplay:\n" display)))))
+                records ""))
+         (revisions (mapcar (lambda (record)
+                              (cons (car record)
+                                    (mapcar (lambda (value)
+                                              (if (stringp value)
+                                                  (copy-sequence value) value))
+                                            (cdr record))))
+                            records)))
+    (when records
+      (unless live
+        (setq text (concat
+                    (format "Hermes recovery\nSession: %s\nProfile: %s\nInstance: %s\n"
+                            hermes-chat--session-id hermes-chat--profile
+                            (hermes-instance-name hermes-instance))
+                    "Open Sessions in this instance/profile and resume this session,\n"
+                    "or use M-x hermes-chat-resume-session in that instance.\n"
+                    "Inspect history before copying selected text and explicitly sending.\n"
+                    "Never automatically resend Delivery uncertain text.\n"
+                    "This editable buffer is in-memory only; save it if needed."
+                    text)))
+      (let ((buffer (if live hermes-chat--recovery-buffer
+                      (generate-new-buffer "*Hermes recovery*")))
+            committed)
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (save-restriction
+                  (widen)
+                  (let ((inhibit-modification-hooks t))
+                    (atomic-change-group
+                      (goto-char (point-max))
+                      (insert text)))))
+              (setq hermes-chat--recovery-buffer buffer
+                    hermes-chat--recovery-copies
+                    (append revisions
+                            (cl-remove-if (lambda (copy)
+                                            (assq (car copy) revisions)) copies))
+                    committed t))
+          (unless (or committed live) (kill-buffer buffer)))))))
+
+(defun hermes-chat--invalidate-transport-state (&optional recover-input)
+  "Invalidate pending work before releasing this buffer's client.
+With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (cl-incf hermes-chat--transport-generation)
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
   (run-hooks 'hermes-chat-lifecycle-invalidation-hook)
   (when (hash-table-p hermes-chat--auto-prompt-keys)
     (clrhash hermes-chat--auto-prompt-keys))
+  (when recover-input (hermes-chat--capture-recovery))
   (setq hermes-chat--pending-assistant-id nil
         hermes-chat--queued-messages nil
         hermes-chat--queued-submit-id nil

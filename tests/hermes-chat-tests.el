@@ -6370,6 +6370,244 @@
          (should (eq (plist-get hermes-chat--status-state :status) 'disconnected))
          (should (string-match-p "Session disconnected" (buffer-string))))))))
 
+(ert-deftest hermes-chat-disconnect-recovers-full-input ()
+  "Public disconnect preserves exact occurrences without submitting anything."
+  (let ((body (concat "  λ\n" (make-string 400 ?x) "\nend  "))
+        (display " display\nnot the body \n")
+        (draft "  newer\ndraft \t")
+        (real-display (symbol-function 'display-buffer)) recovery shown)
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-buffer)
+                   (lambda (buffer &rest args)
+                     (when (string-prefix-p "*Hermes recovery" (buffer-name buffer))
+                       (setq shown buffer))
+                     (apply real-display buffer args)))
+                  ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (&rest _) (ert-fail "Unexpected submit")))
+                  ((symbol-function 'hermes-chat-resume-session)
+                   (lambda (&rest _) (ert-fail "Unexpected resume"))))
+          (hermes-test-with-chat-buffer
+           (setq hermes-chat--dashboard-active-session-id "live"
+                 hermes-chat--session-id "stored"
+                 hermes-chat--profile "test-profile"
+                 hermes-chat--input-history '("accepted")
+                 hermes-chat--queued-messages
+                 (list (hermes-chat--make-queue-entry body display)
+                       (hermes-chat--make-queue-entry body nil)
+                       (hermes-chat--make-queue-entry "rejected" "")))
+           (setf (plist-get (nth 2 hermes-chat--queued-messages) :rejected-p) t)
+           (setq hermes-chat--queued-submit-id (hermes-chat--queue-head-id)
+                 hermes-chat--unsettled-submit-context
+                 (list :queue-id hermes-chat--queued-submit-id :content body)
+                 hermes-chat--busy-submit-context
+                 (list :content "separate unresolved" :display "busy display"))
+           (insert draft)
+           (hermes-chat-disconnect)
+           (setq recovery shown)
+           (should (buffer-live-p recovery))
+           (should (string-match-p (regexp-quote (buffer-name recovery))
+                                   (buffer-string)))
+           (should (equal (hermes-chat-input-string) draft))
+           (should (equal hermes-chat--input-history '("accepted")))
+           (should (equal hermes-chat--session-id "stored"))
+           (should-not hermes-chat--dashboard-active-session-id)
+           (should-not hermes-chat--queued-messages)
+           (should-not hermes-chat--unsettled-submit-context)
+           (with-current-buffer recovery
+             (should-not buffer-read-only)
+             (goto-char (point-min))
+             (dolist (text (list "stored" "test-profile" "Sessions"
+                                 "hermes-chat-resume-session"
+                                 "Delivery uncertain" body display "Never sent" body
+                                 "Rejected" "rejected" "Display:\n\n"
+                                 "Delivery uncertain" "separate unresolved"
+                                 "busy display" "Draft" draft))
+               (should (search-forward text nil t)))
+             (should (= 2 (how-many (regexp-quote body) (point-min) (point-max))))
+             (goto-char (point-max))
+             (insert "manual edit"))))
+      (when (buffer-live-p recovery)
+        ;; The source fixture has already been killed.
+        (with-current-buffer recovery
+          (should (string-suffix-p "manual edit" (buffer-string))))
+        (kill-buffer recovery)))))
+
+(ert-deftest hermes-chat-disconnect-recovers-narrowed-draft ()
+  "Disconnect copies the full draft without changing its restricted view."
+  (dolist (bounds '((0 . 5) (6 . 12)))
+    (let ((draft "first\nSECOND-HALF\n  λ tail \t") recovery source)
+      (unwind-protect
+          (progn
+            (hermes-test-with-chat-buffer
+             (setq source (current-buffer)
+                   hermes-chat--dashboard-active-session-id "live")
+             (insert draft)
+             ;; The second view excludes the input marker as well as the suffix.
+             (narrow-to-region (+ hermes-chat--input-marker (car bounds))
+                               (+ hermes-chat--input-marker (cdr bounds)))
+             (goto-char (1+ (point-min)))
+             (let ((start (copy-marker (point-min)))
+                   (end (copy-marker (point-max)))
+                   (cursor (copy-marker (point)))
+                   (visible (buffer-string)))
+               (hermes-chat-disconnect)
+               (setq recovery hermes-chat--recovery-buffer)
+               (should (buffer-live-p recovery))
+               (should (buffer-narrowed-p))
+               (should (= (point-min) start))
+               (should (= (point-max) end))
+               (should (= (point) cursor))
+               (should (equal (buffer-string) visible))
+               (should (equal (save-restriction
+                                (widen)
+                                (hermes-chat-input-string))
+                              draft))
+               (with-current-buffer recovery
+                 (goto-char (point-min))
+                 (should (search-forward "\nContent:\n" nil t))
+                 (should (equal (buffer-substring-no-properties
+                                 (point) (point-max))
+                                draft)))))
+            (should-not (buffer-live-p source))
+            (with-current-buffer recovery
+              (should (string-suffix-p draft (buffer-string)))))
+        (when (buffer-live-p recovery) (kill-buffer recovery))))))
+
+(ert-deftest hermes-chat-disconnect-captures-hook-input-and-revisions ()
+  "Retry preserves edits, revisions and hook-added equal occurrences."
+  (let (recovery)
+    (unwind-protect
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-active-session-id "live"
+               hermes-chat--queued-messages
+               (list (hermes-chat--make-queue-entry (copy-sequence "same") nil)))
+         (insert "draft")
+         (let ((hermes-chat-cleanup-functions (list (lambda () (error "Stop")))))
+           (should-error (hermes-chat-disconnect))
+           (setq recovery hermes-chat--recovery-buffer)
+           (with-current-buffer recovery (goto-char (point-max)) (insert "USER EDIT"))
+           (let ((text (with-current-buffer recovery (buffer-string))))
+             (should-error (hermes-chat-disconnect))
+             (should (equal text (with-current-buffer recovery (buffer-string))))))
+         ;; Mutate a string in place: a retained pointer is not a revision snapshot.
+         (aset (plist-get (car hermes-chat--queued-messages) :content) 0 ?S)
+         (goto-char (point-max)) (insert " changed")
+         (let ((hermes-chat-cleanup-functions
+                (list (lambda ()
+                        (should-error (hermes-chat-disconnect) :type 'user-error)
+                        (hermes-chat--queue-content "same"))))
+               (hermes-chat-lifecycle-invalidation-hook
+                (list (lambda () (hermes-chat--queue-content "same")))))
+           (hermes-chat-disconnect))
+         (should-not hermes-chat--queued-messages)
+         (should (equal (hermes-chat-input-string) "draft changed"))
+         (with-current-buffer recovery
+           (goto-char (point-min))
+           (dolist (text '("same" "draft" "USER EDIT" "later revision" "Same"
+                           "Draft" "later revision" "draft changed"
+                           "Never sent" "same" "Never sent" "same"))
+             (should (search-forward text nil t)))))
+      (when (buffer-live-p recovery) (kill-buffer recovery)))))
+
+(ert-deftest hermes-chat-disconnect-capture-failures-retain-owners ()
+  "Creation and partial insertion errors/quits abort before input release."
+  (dolist (condition '(error quit))
+    (dolist (phase '(creation initial final))
+      (let (recovery released marked cleanup-ran caught)
+        (unwind-protect
+            (hermes-test-with-chat-buffer
+             (setq hermes-chat--dashboard-active-session-id "live"
+                   hermes-chat--queued-messages
+                   (list (hermes-chat--make-queue-entry "original" nil))
+                   hermes-chat--unsettled-submit-context (list :content "unresolved")
+                   hermes-chat--busy-submit-context (list :content "busy")
+                   hermes-chat--pending-assistant-id "assistant")
+             (insert "draft")
+             (let ((real-activate (symbol-function 'activate-change-group))
+                   (real-create (symbol-function 'generate-new-buffer))
+                   (hermes-chat-cleanup-functions (list (lambda () (setq cleanup-ran t))))
+                   (hermes-chat-lifecycle-invalidation-hook
+                    (list (lambda () (hermes-chat--queue-content "hook input")))))
+               (cl-letf (((symbol-function 'hermes-chat--stop-dashboard-client)
+                          (lambda () (setq released t)))
+                         ((symbol-function 'hermes-chat--mark-assistant)
+                          (lambda (&rest _) (setq marked t)))
+                         ((symbol-function 'generate-new-buffer)
+                          (lambda (name &rest args)
+                            (if (and (eq phase 'creation)
+                                     (string-prefix-p "*Hermes recovery" name))
+                                (signal condition '("Capture failed"))
+                              (apply real-create name args))))
+                         ((symbol-function 'activate-change-group)
+                          (lambda (handle)
+                            (funcall real-activate handle)
+                            (when (and (string-prefix-p "*Hermes recovery" (buffer-name))
+                                     (or (eq phase 'initial)
+                                         (and (eq phase 'final) cleanup-ran)))
+                                (insert "PARTIAL")
+                              (signal condition '("Capture failed"))))))
+                 (condition-case err (hermes-chat-disconnect)
+                   ((error quit) (setq caught (car err))))))
+             (should (eq caught condition))
+             (should-not released)
+             (should (eq marked (eq phase 'final)))
+             (should (eq cleanup-ran (eq phase 'final)))
+             (should-not hermes-chat--disconnect-in-progress)
+             (should hermes-chat--unsettled-submit-context)
+             (should hermes-chat--busy-submit-context)
+             (should (equal (hermes-chat-input-string) "draft"))
+             (should (equal (mapcar (lambda (e) (plist-get e :content))
+                                   hermes-chat--queued-messages)
+                            (if (eq phase 'final) '("original" "hook input")
+                              '("original"))))
+             (setq recovery hermes-chat--recovery-buffer)
+             (when (buffer-live-p recovery)
+               (with-current-buffer recovery
+                 (should-not (string-match-p "PARTIAL" (buffer-string)))))
+             (setq hermes-chat--pending-assistant-id nil)
+             (hermes-chat-disconnect)
+             (setq recovery hermes-chat--recovery-buffer)
+             (with-current-buffer recovery
+               (should-not (string-match-p "PARTIAL" (buffer-string)))
+               (should (= 1 (how-many "Content:\noriginal" (point-min) (point-max))))))
+          (when (buffer-live-p recovery) (kill-buffer recovery)))))))
+
+(ert-deftest hermes-chat-disconnect-recreates-killed-recovery ()
+  "A killed document cannot suppress still-owned input on retry."
+  (let (recovery)
+    (unwind-protect
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-active-session-id "live"
+               hermes-chat--queued-messages
+               (list (hermes-chat--make-queue-entry "retained" nil)))
+         (let ((hermes-chat-cleanup-functions (list (lambda () (error "Stop")))))
+           (should-error (hermes-chat-disconnect)))
+         (kill-buffer hermes-chat--recovery-buffer)
+         (hermes-chat-disconnect)
+         (setq recovery hermes-chat--recovery-buffer)
+         (with-current-buffer recovery
+           (should (= 1 (how-many "Content:\nretained" (point-min) (point-max))))))
+      (when (buffer-live-p recovery) (kill-buffer recovery)))))
+
+(ert-deftest hermes-chat-disconnect-empty-and-hook-only-input ()
+  "Empty input creates nothing; hooks can introduce the first recovery input."
+  (dolist (hook-input '(nil t))
+    (let (recovery)
+      (unwind-protect
+          (hermes-test-with-chat-buffer
+           (setq hermes-chat--dashboard-active-session-id "live")
+           (let ((hermes-chat-lifecycle-invalidation-hook
+                  (when hook-input (list (lambda () (hermes-chat--queue-content "late"))))))
+             (hermes-chat-disconnect))
+           (setq recovery hermes-chat--recovery-buffer)
+           (should (eq (buffer-live-p recovery) hook-input))
+           (when hook-input
+             (should (get-buffer-window recovery))
+             (should (string-match-p (regexp-quote (buffer-name recovery)) (buffer-string)))
+             (with-current-buffer recovery
+               (should (string-match-p "Content:\nlate" (buffer-string))))))
+        (when (buffer-live-p recovery) (kill-buffer recovery))))))
+
 (ert-deftest hermes-chat-disconnect-without-session-errors ()
   "Disconnect signals a user error when there is no live session."
   (hermes-test-with-chat-buffer
