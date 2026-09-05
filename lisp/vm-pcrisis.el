@@ -1252,6 +1252,51 @@ whitespace."
       (erase-buffer))
     (nreverse result)))
 
+(defconst vm-pcrisis-prompting-functions
+  '(vm-pcrisis-prompt-for-profile vmpc-prompt-for-profile)
+  "The functions that ask which actions to run.")
+
+(defun vm-pcrisis-form-mentions-p (form symbols)
+  "Whether FORM mentions any of SYMBOLS anywhere within it."
+  (cond ((memq form symbols) t)
+        ((consp form) (or (vm-pcrisis-form-mentions-p (car form) symbols)
+                          (vm-pcrisis-form-mentions-p (cdr form) symbols)))))
+
+(defun vm-pcrisis-prompting-action-p (name)
+  "Whether the action NAME asks which actions to run."
+  (vm-pcrisis-form-mentions-p (cdr (assoc name vm-pcrisis-actions))
+                              vm-pcrisis-prompting-functions))
+
+(defun vm-pcrisis-only-asks-p (actions)
+  "Whether ACTIONS is a non-empty list of nothing but actions that ask.
+Such a list is a profile that can never ask and never act (#809)."
+  (and actions
+       (not (seq-find (lambda (action)
+                        (not (vm-pcrisis-prompting-action-p action)))
+                      actions))))
+
+(defun vm-pcrisis-worth-remembering-p (actions profile)
+  "Whether ACTIONS are worth remembering as the profile for PROFILE.
+
+They are not when every one of them asks which actions to run.  Remembered as
+the answer to its own question, such an action makes a profile that asks
+nothing and does nothing: the lookup finds it, so nothing is asked, and what
+it queues is the asking action, which finds it again (emacs-vm/vm#809).  No
+header is ever set and the composition looks configured.
+
+Says so rather than refusing quietly, and answers non-nil for anything else,
+including no actions at all, which is how a profile is deleted."
+  (if (vm-pcrisis-only-asks-p actions)
+      (let ((vm-current-warning nil))
+        (vm-warn 0 2 (concat "Not remembering %s for \"%s\": that action is the "
+                             "one that asks, so remembering it would mean this "
+                             "profile never asks again and never sets anything."
+                             "  Answer with the actions to run, such as one that "
+                             "sets the From header")
+                 actions profile)
+        nil)
+    t))
+
 (defun vm-pcrisis-read-actions (prompt &optional default)
   "Read a list of actions to run and store it in `vm-pcrisis-actions-to-run'.
 The special action \"none\" will result in an empty action list."
@@ -1259,7 +1304,12 @@ The special action \"none\" will result in an empty action list."
   (let ((actions ())) ;; (read-count 0) (a nil)
     (setq actions (vm-read-string 
                    (format prompt (if default (format " %s" default) ""))
-                   (append '(("none")) vm-pcrisis-actions)
+                   ;; Without the actions that ask, which are offered as an
+                   ;; answer to their own question otherwise (#809).
+                   (append '(("none"))
+                           (seq-remove (lambda (action)
+                                         (vm-pcrisis-prompting-action-p (car action)))
+                                       vm-pcrisis-actions))
                    t))
     (if (string= actions "none")
         (setq actions nil)
@@ -1360,6 +1410,18 @@ PROMPT argument and call this function interactively in the composition buffer."
         (unless actions 
           (setq actions (vm-pcrisis-get-profile-for-address dest)))
 
+        ;; A profile stored before this was refused says "ask" and so is never
+        ;; asked: dropped here, which asks again and remembers the answer, so
+        ;; a file written by an older VM heals itself (#809).
+        (when (vm-pcrisis-only-asks-p actions)
+          (let ((vm-current-warning nil))
+            (vm-warn 0 2 (concat "The profile stored for \"%s\" is %s, the action "
+                                 "that asks, so it can never ask or set anything."
+                                 "  Asking again; the answer replaces it.  Remove "
+                                 "the entry from %s to be rid of it by hand")
+                     dest actions vm-pcrisis-auto-profiles-file))
+          (setq actions nil))
+
         ;; save action to detect a change
         (setq old-actions actions)
         
@@ -1376,8 +1438,11 @@ PROMPT argument and call this function interactively in the composition buffer."
             (setq actions (list actions)))
 
           ;; save the association of this profile with these actions
-	  ;; if applicable 
+	  ;; if applicable.  `vm-pcrisis-worth-remembering-p' keeps out the
+	  ;; profile that never asks and never acts (#809); the actions
+	  ;; themselves are left alone, so this composition still runs them.
           (if (and (not (equal old-actions actions))
+                   (vm-pcrisis-worth-remembering-p actions dest)
                    (or (eq remember t)
                        (and (eq remember 'prompt)
                             (if actions 
