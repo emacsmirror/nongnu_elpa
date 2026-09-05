@@ -415,8 +415,15 @@
     (should (equal (substring-no-properties (hermes-chat--work-label nil)) "2 processes"))
     (should (equal (substring-no-properties (hermes-chat--work-label t)) "2p"))
     (setf (plist-get (plist-get hermes-chat--work-owner :processes) :coverage) 'stale)
-    (should (equal (substring-no-properties (hermes-chat--work-label nil)) "Work ?"))
-    (should (equal (substring-no-properties (hermes-chat--work-label t)) "W ?"))))
+    (dolist (displayable '(t nil))
+      (cl-letf (((symbol-function 'char-displayable-p) (lambda (_) displayable)))
+        (dolist (compact '(t nil))
+          (let ((label (hermes-chat--work-label compact)))
+            (should (equal (substring-no-properties label)
+                           (if displayable "🤖 ?" "Agents ?")))
+            (should (eq (get-text-property 0 'face label) 'hermes-work-unknown))))))
+    (should (equal (substring-no-properties (hermes-chat--work-label nil)) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
+    (should (equal (substring-no-properties (hermes-chat--work-label t)) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))))
 
 (ert-deftest hermes-chat-work-refinement-reload-wire-and-cleanup ()
   "Metadata reads use exact runtime scope and cancel independently on teardown."
@@ -590,7 +597,7 @@
       (should (eq (plist-get (plist-get owner :delegates) :coverage) 'current))
       (should (equal (caar timers) 5))
       ;; This fixture observes delegates alone; processes remain unknown.
-      (should (equal (substring-no-properties (hermes-chat--work-label nil)) "Work ?"))
+      (should (equal (substring-no-properties (hermes-chat--work-label nil)) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
       (should-not hermes-chat--pending-assistant-id))))
 
 (ert-deftest hermes-chat-work-rebind-stale-completion ()
@@ -1328,7 +1335,7 @@
               "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
     (should (equal (substring-no-properties (hermes-chat--work-label t)) "1a ?"))
     (cl-incf (hermes-dashboard-transport-client-generation client))
-    (should (equal (substring-no-properties (hermes-chat--work-label t)) "W ?"))
+    (should (equal (substring-no-properties (hermes-chat--work-label t)) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
     (hermes-chat--work-visibility)
     (should-not (plist-get hermes-chat--work-owner :timer))))
 
@@ -3254,7 +3261,7 @@
                     (should (= draft-point (point)))
                     (should (equal (buffer-substring-no-properties
                                     (hermes-chat--input-position) (point-max)) "retained draft"))
-                    (should (equal (hermes-chat--work-label nil) "Work ?"))
+                    (should (equal (hermes-chat--work-label nil) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
                     (should (eq (get-text-property 0 'face (hermes-chat--work-label nil))
                                 'hermes-work-unknown))
                     (hermes-test--work-answer client "{\"active\":[]}")

@@ -1783,7 +1783,8 @@ Use COMPACT notation when non-nil; incomplete observations remain explicit."
            (active (string-join (delq nil parts) " / ")))
       (unless (and (string-empty-p active) (not unknown))
         (propertize
-         (if (string-empty-p active) (if compact "W ?" "Work ?")
+         (if (string-empty-p active)
+             (format "%s ?" (if (char-displayable-p ?🤖) "🤖" "Agents"))
            (concat active (and unknown " ?")))
          'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running))))))
 
