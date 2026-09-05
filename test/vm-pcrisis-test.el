@@ -1791,6 +1791,85 @@ Including a folded one, which stays folded and so stays a single field, and
                        (list (car spec) (mail-fetch-field "To"))))
         (should (vm-pcrisis-test--body-intact-p))))))
 
+
+;;; What a signature action takes to be the signature (emacs-vm/vm#808)
+
+(defconst vm-pcrisis-test--forwarded
+  (concat "here you go\n\n"
+          "------- start of forwarded message (RFC 934 encapsulation) -------\n"
+          "From: them@x.com\nSubject: theirs\n\n"
+          "their body\n-- \ntheir signature\n"
+          "------- end -------\n")
+  "A composition forwarding a message that has a signature of its own.
+Not prefixed by `vm-included-text-prefix', as quoted text in a reply is, so
+the search for the signature can reach it.")
+
+(defun vm-pcrisis-test--sign (body signature)
+  "Put BODY in a composition, run the SIGNATURE action, answer the body after."
+  (with-temp-buffer
+    (insert "To: a@x.com\nSubject: s\n" mail-header-separator "\n" body)
+    (let ((vm-pcrisis-current-buffer 'composition)
+          (vm-pcrisis-running-actions t)
+          (vm-pcrisis-expect-default-signature t)
+          (vm-pcrisis-sig-exerlay nil)
+          (vm-pcrisis-pre-sig-exerlay nil))
+      (vm-pcrisis-create-sig-and-pre-sig-exerlays)
+      (vm-pcrisis-signature signature)
+      (buffer-substring-no-properties (save-excursion (mail-text) (point))
+                                      (point-max)))))
+
+(ert-deftest vm-pcrisis-test-a-signature-is-added-where-there-is-none ()
+  "A composition with no signature gets one at the end, after a `-- ' line."
+  (let ((got (vm-pcrisis-test--sign "my note\n" "NEW SIG")))
+    (should (string-match-p "\\`my note\n" got))
+    (should (string-suffix-p "\n-- \nNEW SIG" got))))
+
+(ert-deftest vm-pcrisis-test-a-signature-replaces-the-one-already-there ()
+  "The composition's own signature is replaced, not added to."
+  (let ((got (vm-pcrisis-test--sign "my note\n-- \nold sig\n" "NEW SIG")))
+    (should (equal "my note\n-- \nNEW SIG" got))
+    (should-not (string-match-p "old sig" got))))
+
+(ert-deftest vm-pcrisis-test-a-quoted-signature-in-a-reply-is-left-alone ()
+  "A `-- ' inside quoted text is not the composition's signature.
+
+`vm-included-text-prefix' is on every line of it, so the search cannot match,
+which is what `vm-pcrisis-expect-default-signature' says.  This is that claim
+measured rather than asserted."
+  (let ((got (vm-pcrisis-test--sign
+              "my note\n> quoted text\n> -- \n> their sig\n" "NEW SIG")))
+    (should (string-match-p "> -- \n> their sig" got))
+    (should (string-suffix-p "\n-- \nNEW SIG" got))))
+
+(ert-deftest vm-pcrisis-test-a-forward-keeps-its-signature-when-the-writer-has-one ()
+  "The writer's own signature is the last one, so the forward is untouched."
+  (let ((got (vm-pcrisis-test--sign
+              (concat vm-pcrisis-test--forwarded "\n-- \nmy old sig\n") "NEW SIG")))
+    (should (string-match-p "their signature" got))
+    (should (string-match-p "------- end -------" got))
+    (should (string-suffix-p "\n-- \nNEW SIG" got))
+    (should-not (string-match-p "my old sig" got))))
+
+(ert-deftest vm-pcrisis-test-a-forward-loses-its-signature-when-the-writer-has-none ()
+  "KNOWN WRONG, and waiting on a decision: emacs-vm/vm#808.
+
+Forwarding a message that has a signature, from a composition with none of
+its own, the search back from the end reaches the forwarded message's `-- '
+and takes everything after it for the writer's signature.  The forwarded
+signature and the `------- end -------' that closes the encapsulation are
+both replaced, so the message arrives truncated with the writer's signature
+inside it.
+
+It bites the writer who has no default signature and relies on Personality
+Crisis to supply one per identity, which is what `vm-pcrisis-signature' is
+for.  Recorded rather than fixed because which line is the writer's own
+signature is a judgement: the options are on the issue.  This test fails when
+that decision is acted on, which is the point of it."
+  (let ((got (vm-pcrisis-test--sign vm-pcrisis-test--forwarded "NEW SIG")))
+    (should-not (string-match-p "their signature" got))
+    (should-not (string-match-p "------- end -------" got))
+    (should (string-suffix-p "their body\n-- \nNEW SIG" got))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
