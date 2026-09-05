@@ -1162,7 +1162,8 @@ stays available."
                               (buffer-string)))
       (should-not (string-match-p "Approval response sent" (buffer-string)))
       (should (string-match-p "Approval request no longer pending"
-                              (hermes-test--header-line-string))))))
+                              (hermes-chat--session-details-text)))
+      (should-not (string-match-p "Approval requested" (hermes-test--header-line-string))))))
 
 (ert-deftest hermes-chat-stale-approval-response-keeps-new-request ()
   (let (resolve-first)

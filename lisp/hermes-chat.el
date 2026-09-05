@@ -394,7 +394,14 @@ and `upsert-entry'.  Other types return (STATE)."
     ('goal
      (cons (hermes-chat--turn-state-put state :goal (plist-get event :goal))
            '((refresh-header))))
-    ((or 'commentary 'thinking 'diff)
+    ('thinking
+     (let ((status (hermes-chat--turn-status-state state event now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (list (cons 'refresh-header status)
+                   (cons 'reasoning-row
+                         (and (not (equal (plist-get event :event) "tool.generating"))
+                              (not (string-empty-p (or (plist-get event :content) "")))))))))
+    ((or 'commentary 'diff)
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
              (delq nil (list (cons 'refresh-header status)
@@ -419,10 +426,10 @@ and `upsert-entry'.  Other types return (STATE)."
        (cons (hermes-chat--turn-state-put state :status-state status)
              (hermes-chat--turn-suppressed-effects event status))))
     ((or 'progress 'tool)
-     (cons state (delq nil (list (hermes-chat--turn-tool-effect event)
+     (cons state (delq nil (list '(reasoning-row) (hermes-chat--turn-tool-effect event)
                                  (hermes-chat--turn-entry-effect event)))))
     ('delta
-     (cons state (list (cons 'append-delta (or (plist-get event :content) "")))))
+     (cons state (list '(reasoning-row) (cons 'append-delta (or (plist-get event :content) "")))))
     ('interim
      (cons state (list (cons 'seal-interim
                              (or (plist-get event :content) "")))))
@@ -430,6 +437,7 @@ and `upsert-entry'.  Other types return (STATE)."
 
 (defun hermes-chat--seal-interim-assistant (assistant-id content)
   "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
+  (hermes-chat--reasoning-row assistant-id nil)
   (hermes-chat--mark-assistant assistant-id 'done content t)
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (next-id (plist-get entry :id)))
@@ -472,6 +480,7 @@ stays side-effect-light."
      (setq hermes-chat--dashboard-running-p running))
     ('(drain) (hermes-chat--drain-queued-message))
     ((guard (null assistant-id)) nil)
+    (`(reasoning-row . ,active) (hermes-chat--reasoning-row assistant-id active))
     (`(upsert-entry . ,event)
      (hermes-chat--upsert-transport-entry assistant-id event))
     (`(message . ,text) (message "%s" text))
@@ -1151,6 +1160,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
     (setq hermes-chat--interrupted-assistant-id assistant-id
           hermes-chat--interrupted-events nil
           hermes-chat--interrupt-request-pending-p t)
+    (hermes-chat--reasoning-row assistant-id nil)
     (hermes-chat--mark-assistant assistant-id 'interrupted)
     (hermes-chat--insert-local-status "Interrupt requested" 'interrupted)
     (hermes-chat--set-header-state
@@ -1199,8 +1209,10 @@ the current draft stays here.  Uncertain deliveries require history inspection."
     (hermes-chat--capture-recovery)
     (when (buffer-live-p hermes-chat--recovery-buffer)
       (display-buffer hermes-chat--recovery-buffer))
+    ;; Mark before final input capture, but do not publish into work-list
+    ;; display hooks until the attachment has released its resources.
     (when-let* ((assistant-id hermes-chat--pending-assistant-id))
-      (hermes-chat--mark-assistant assistant-id 'disconnected nil t))
+      (hermes-chat--mark-assistant assistant-id 'disconnected nil t t))
     (run-hooks 'hermes-chat-cleanup-functions)
     (hermes-chat--invalidate-transport-state t)
     (hermes-chat--stop-dashboard-client)
@@ -1855,6 +1867,8 @@ Do not wrap into the composer or modify its draft."
       (completion-at-point)
     (hermes-chat-next-button)))
 
+(autoload 'hermes-chat-work "hermes-subagents" nil t)
+
 (defvar hermes-chat-actions-map)
 
 (keymap-popup-define hermes-chat-actions-map
@@ -1877,6 +1891,7 @@ Do not wrap into the composer or modify its draft."
   "n" ("New chat" hermes-chat)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
+  "W" ("Observed work" hermes-chat-work)
   :group "Runtime"
   "m" ("Switch model" hermes-chat-switch-model)
   "e" ("Set reasoning" hermes-chat-set-reasoning)
@@ -1903,6 +1918,7 @@ Do not wrap into the composer or modify its draft."
   "<backtab>" #'hermes-chat-previous-button
   "<remap> <forward-button>" #'hermes-chat-next-button
   "<remap> <backward-button>" #'hermes-chat-previous-button
+  "C-c C-w" #'hermes-chat-work
   "C-c C-j" #'hermes-chat-go-to-composer
   "M-p" #'hermes-chat-input-history-previous
   "M-n" #'hermes-chat-input-history-next

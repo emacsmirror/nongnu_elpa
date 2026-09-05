@@ -742,13 +742,13 @@
               'fake-process)))
        (insert "hi")
        (hermes-chat-send)
-       (should (string-match-p "Waiting" (hermes-test--header-line-string)))
+       (should-not (string-match-p "Waiting" (hermes-test--header-line-string)))
        (funcall callback
                 '(:type status
 			:status-key "lifecycle"
 			:status "running"
 			:content "Thinking"))
-       (should (string-match-p "Thinking" (hermes-test--header-line-string)))
+       (should-not (string-match-p "Thinking" (hermes-test--header-line-string)))
        (funcall callback
                 '(:type tool
 			:tool-call-id "tool-1"
@@ -756,14 +756,14 @@
 			:status "running"
 			:preview "make test"))
        (let ((header (hermes-test--header-line-string)))
-         (should (string-match-p "Thinking" header))
+         (should-not (string-match-p "Thinking" header))
          (should-not (string-match-p "terminal: make test" header)))
        ;; The tool stays out of the header but is still tracked for the
        ;; dashboard's per-session tool list.
        (should (hermes-chat--active-tool-summaries))
        (funcall callback '(:type done))
        (let ((header (hermes-test--header-line-string)))
-         (should (string-match-p "Ready" header))
+         (should-not (string-match-p "Ready" header))
          (should-not (string-match-p "terminal: make test" header)))))))
 
 (ert-deftest hermes-chat-rename-updates-title-not-project-identity ()
@@ -1656,7 +1656,8 @@
               :goal (:status "active" :running t
                              :turns-used 1 :max-turns 20)))
       (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
-      (should (string-match-p "Goal 1/20" (hermes-test--header-line-string)))
+      (should-not (string-match-p "Goal" (hermes-test--header-line-string)))
+      (should (equal (plist-get hermes-chat--goal :turns-used) 1))
       (should (equal hermes-chat--working-directory "/srv/project"))
       (should (equal default-directory "/tmp/local-editor/"))
       (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
@@ -1671,7 +1672,7 @@
        (hermes-chat--run-turn-reducer
         "a1" '(:type status :event "status.update" :status "goal"
                      :content "Continuing toward goal (1/20)"))
-       (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
+       (should-not (string-match-p "Ready" (hermes-test--header-line-string)))
        (should (string-match-p "Continuing toward goal" (buffer-string)))
        (should (= refreshes 1))))))
 
@@ -1745,7 +1746,7 @@
                                   (point-min) (hermes-chat--input-position))))
      (should (eq (plist-get hermes-chat--status-state :status) 'ready))
      (should (equal (plist-get hermes-chat--status-state :activity) "Ready"))
-     (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
+     (should-not (string-match-p "Ready" (hermes-test--header-line-string)))
      (should-not (string-match-p "Idle" (hermes-test--header-line-string))))))
 
 (ert-deftest hermes-chat-control-session-renders-server-originated-turn ()
@@ -2068,7 +2069,7 @@
     (should (equal (mapcar (lambda (group)
                              (length (plist-get group :entries)))
                            groups)
-                   '(4 3 2 3 3 4 1 3)))
+                   '(4 3 2 4 3 4 1 3)))
     (let ((directory-entry
            (cl-find "w" entries :key (lambda (entry)
                                        (plist-get entry :key))
@@ -3814,10 +3815,17 @@
          (hermes-chat-send)
          (hermes-test--emit-dashboard-event
           client "message.delta" '((text . "partial")))
-         (hermes-chat-interrupt)
+         (hermes-test--emit-dashboard-event client "thinking.delta" '((text . "pondering")))
+         (let ((id (concat hermes-chat--pending-assistant-id ":activity")))
+           (should (gethash id hermes-chat--nodes))
+           (hermes-chat-interrupt)
+           (should-not (gethash id hermes-chat--nodes)))
+         (hermes-test--emit-dashboard-event client "thinking.delta" '((text . "pondering")))
+         (funcall interrupt-reject "not interruptible")
+         (should (gethash (concat hermes-chat--pending-assistant-id ":activity") hermes-chat--nodes))
          (hermes-test--emit-dashboard-event
           client "message.delta" '((text . " retained")))
-         (funcall interrupt-reject "not interruptible")
+         (should-not (gethash (concat hermes-chat--pending-assistant-id ":activity") hermes-chat--nodes))
          (should-not hermes-chat--interrupted-assistant-id)
          (should (equal (plist-get (hermes-test--assistant-entry) :content)
                         "partial retained")))))))
@@ -5062,7 +5070,8 @@
                     (hermes-chat--entries)))
        (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
                       "ultra"))
-       (should (string-match-p "ultra" (hermes-test--header-line-string)))
+       (should-not (string-match-p "ultra" (hermes-test--header-line-string)))
+       (should (string-match-p "ultra" (hermes-chat--session-details-text)))
        (should-not (string-match-p "high" (hermes-test--header-line-string)))))))
 
 (ert-deftest hermes-chat-reasoning-request-projects-scope ()
@@ -6249,13 +6258,13 @@
             (activity (hermes-chat--thinking-activity content))
             (header (substring-no-properties (hermes-chat--header-line 240)))
             (cells (mapcar #'string-trim (split-string header "|"))))
-       (should (string-match-p (regexp-quote label) header))
+       (should-not (string-match-p (regexp-quote label) header))
        (should-not (member activity cells))
-       (should (member "medium" cells))))
+       (should-not (member "medium" cells))))
    ;; Meaningful distinct activity is not a duplicate of the state label.
    (hermes-chat--handle-transport-event
     "a1" '(:type thinking :content "Inspecting the failing test"))
-   (should (string-match-p "Inspecting The Failing Test"
+   (should-not (string-match-p "Inspecting The Failing Test"
                            (hermes-chat--header-line 240)))))
 
 (ert-deftest hermes-chat-thinking-activity-keeps-face-titlecases-verb ()
@@ -6268,6 +6277,122 @@
   (should (equal (hermes-chat--thinking-activity "") "Thinking"))
   (should (equal (hermes-chat--thinking-activity nil) "Thinking")))
 
+(ert-deftest hermes-chat-reasoning-row-public-lifecycle ()
+  "Public callbacks clear only the transient row, never actual commentary."
+  (dolist (terminal '((:type done :content "Answer")
+                      (:type error :content "Failure")
+                      (:type thinking :event "thinking.delta" :content "")
+                      (:type thinking :event "tool.generating" :content "Calling terminal")
+                      (:type tool :event "tool.start" :name "terminal" :status "running")
+                      (:type progress :content "Working")
+                      (:type delta :content "Answer")
+                      (:type interim :content "Interim")
+                      (:type status :status "reconnecting")
+                      (:type status :status "closed")))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+     (setq hermes-chat--pending-assistant-id "a1")
+     (let ((callback (hermes-chat--transport-callback (current-buffer) "a1" nil hermes-chat--transport-generation)))
+       (funcall callback '(:type commentary :event "reasoning.delta" :content "Actual reasoning"))
+       (funcall callback '(:type thinking :event "thinking.delta" :content "hidden"))
+       (let ((node (gethash "a1:activity" hermes-chat--nodes)))
+         (should node)
+         (funcall callback '(:type thinking :event "thinking.delta" :content "changed"))
+         (should (eq node (gethash "a1:activity" hermes-chat--nodes))))
+       (funcall callback terminal)
+       (should-not (gethash "a1:activity" hermes-chat--nodes))
+       (should (equal (plist-get (ewoc-data (gethash "a1:commentary:thinking" hermes-chat--nodes))
+                                 :content) "Actual reasoning"))
+       (should-not (string-match-p "hidden\\|changed" (buffer-string)))))))
+
+(ert-deftest hermes-chat-reasoning-row-history-windows-and-draft ()
+  "Activity updates preserve two actual history windows and narrowed draft input."
+  (save-window-excursion
+    (delete-other-windows)
+    (hermes-test-with-chat-buffer
+     (dotimes (i 60)
+       (hermes-chat--insert-entry (list :id (format "history-%s" i) :role 'assistant
+                                      :content (format "History %s\nMore history" i) :status 'done)))
+     (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+     (setq hermes-chat--pending-assistant-id "a1")
+     (goto-char (point-max))
+     (insert "draft preserved")
+     (let* ((chat (current-buffer)) (one (selected-window))
+            (two (split-window one nil 'right))
+            (callback (hermes-chat--transport-callback chat "a1" nil hermes-chat--transport-generation)))
+       (set-window-buffer one chat)
+       (set-window-buffer two chat)
+       (goto-char (point-min))
+       (forward-line 15)
+       (set-window-start one (line-beginning-position))
+       (set-window-point one (point))
+       (forward-line 20)
+       (set-window-start two (line-beginning-position))
+       (set-window-point two (point))
+       (select-window one)
+       (goto-char (window-start one))
+       (forward-line 2)
+       (redisplay t)
+       (let ((p (point)) (starts (mapcar #'window-start (list one two)))
+             (points (mapcar #'window-point (list one two))))
+         (funcall callback '(:type thinking :event "thinking.delta" :content "spinner"))
+         (funcall callback '(:type thinking :event "thinking.delta" :content "spinner"))
+         (funcall callback '(:type thinking :event "thinking.delta" :content ""))
+         (redisplay t)
+         (should (= p (point)))
+         (should (equal starts (mapcar #'window-start (list one two))))
+         (should (equal points (mapcar #'window-point (list one two)))))
+       (goto-char (point-max))
+       (backward-char 4)
+       (narrow-to-region (hermes-chat--input-position) (point-max))
+       (let ((offset (- (point) (point-min))))
+         (funcall callback '(:type thinking :event "thinking.delta" :content "spinner"))
+         (funcall callback '(:type thinking :event "thinking.delta" :content ""))
+         (should (buffer-narrowed-p))
+         (should (= offset (- (point) (point-min))))
+         (should (equal (buffer-string) "draft preserved")))))))
+
+(ert-deftest hermes-chat-reasoning-row-invalidation-and-stale-owner ()
+  "Old callbacks cannot resurrect a row after replacement or disconnect."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+   (setq hermes-chat--pending-assistant-id "a1")
+   (let ((callback (hermes-chat--transport-callback (current-buffer) "a1" nil hermes-chat--transport-generation)))
+     (funcall callback '(:type thinking :event "thinking.delta" :content "spinner"))
+     (should (gethash "a1:activity" hermes-chat--nodes))
+     (hermes-chat--invalidate-transport-state)
+     (should-not (gethash "a1:activity" hermes-chat--nodes))
+     (funcall callback '(:type thinking :event "thinking.delta" :content "late"))
+     (should-not (gethash "a1:activity" hermes-chat--nodes)))))
+
+(ert-deftest hermes-chat-quiet-header-and-owned-reasoning ()
+  "Activity is one static owner row, not header prose or hidden content."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+   (setq hermes-chat--pending-assistant-id "a1")
+   (dolist (text '("private spinner" "another spinner"))
+     (hermes-chat--handle-transport-event
+      "a1" (list :type 'thinking :event "thinking.delta" :content text)))
+   (let ((rows (seq-filter (lambda (entry) (eq (plist-get entry :role) 'activity))
+                           (hermes-chat--entries))))
+     (should (= 1 (length rows)))
+     (should (string-match-p (regexp-quote "(◔_◔) Reasoning") (buffer-string)))
+     (should-not (string-match-p "spinner" (buffer-string)))
+     (should (equal (plist-get (car (last (hermes-chat--entries))) :id) "a1")))
+   (should-not (string-match-p "Reasoning\\|Thinking\\|Running" (hermes-chat--header-line 240)))
+   (hermes-chat--handle-transport-event "a1" '(:type delta :content "Answer"))
+   (should-not (seq-find (lambda (entry) (eq (plist-get entry :role) 'activity))
+                        (hermes-chat--entries)))))
+
+(ert-deftest hermes-chat-quiet-header-ready-settings ()
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--status-state '(:status ready)
+         hermes-chat--runtime-flags '(:reasoning-effort "high" :fast t :yolo t))
+   (let ((text (hermes-chat--header-line 240)))
+     (should-not (string-match-p "Ready\\|Fast\\|high" text))
+     (should (string-match-p "YOLO" text))
+     (should-not (string-prefix-p " | " text)))))
+
 (ert-deftest hermes-chat-thinking-event-updates-header-without-entry ()
   "A `thinking' event shows the face plus verb bare and adds no transcript entry."
   (hermes-test-with-chat-buffer
@@ -6275,7 +6400,7 @@
      (hermes-chat--handle-transport-event
       "a1" '(:type thinking :content "(◔_◔) musing..."))
      (let ((header (hermes-test--header-line-string)))
-       (should (string-match-p "(◔_◔) Musing" header))
+       (should-not (string-match-p "Musing" header))
        (should-not (string-match-p "Running" header)))
      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
@@ -6838,7 +6963,7 @@
        (should-not (string-match-p "coder" header))
        (should-not (string-match-p "planner" header))
        (should (string-match-p "claude-opus-4-8" header))
-       (should (string-match-p "Ready" header))
+       (should-not (string-match-p "Ready" header))
        (should-not (string-match-p "session " header))))))
 
 (ert-deftest hermes-chat-header-omits-buffer-identity ()
@@ -6852,7 +6977,7 @@
              hermes-chat--working-directory "/tmp/project/"
              hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
-         (should (string-prefix-p "project | " header))
+         (should (string-prefix-p "project" header))
          (should-not (string-match-p "remote" header))
          (should-not (string-match-p "coder" header)))))))
 
@@ -6948,7 +7073,7 @@
                 (header (with-selected-window window (hermes-chat--header-line)))
                 (display (string-replace "%%" "%" header)))
            (should (<= (string-width display) width))
-           (should (string-match-p "Running" display))
+           (should-not (string-match-p "Running" display))
            (should (string-match-p "YOLO" display))
            (should (string-match-p (regexp-quote hermes-chat--working-directory)
                                    (get-text-property 0 'help-echo header)))))
@@ -7008,7 +7133,8 @@
        (let ((header (hermes-chat--header-line width)))
          (should (<= (string-width header) width))
          (should (string-match-p (if (< width 20) "!\\|YOLO" "YOLO") header))
-         (when (>= width 8)
+         (when (and (>= width 8)
+                    (memq (car case) '(error approval-requested requested disconnected)))
            (should (string-match-p
                     (regexp-quote
                      (cond ((< width 12) (nth 2 case))
@@ -7041,9 +7167,12 @@
                             (regexp-opt (cdr case)) display))
                 (risk-pos (string-match-p "YOLO\\|Y!" display)))
            (should (<= (string-width display) width))
-           (should state-pos)
-           (should (eq (get-text-property state-pos 'face display)
-                       (hermes-chat--header-status-face (car case))))
+           (if (memq (car case) '(error approval-requested requested disconnected interrupted cancelled))
+               (progn
+                 (should state-pos)
+                 (should (eq (get-text-property state-pos 'face display)
+                             (hermes-chat--header-status-face (car case)))))
+             (should-not state-pos))
            (if yolo
                (progn
                  (should risk-pos)
@@ -7088,8 +7217,7 @@
          hermes-chat--status-state '(:status ready :activity "Ready"))
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
-                    (concat "emacs-hermes | ✓ Ready | YOLO | grok-4.5 | 25k/500k"
-                            " | medium | fast"))))))
+                    "emacs-hermes | YOLO | grok-4.5 | 25k/500k")))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
   "Directory, model, runtime flags, and context values use distinct faces."
@@ -7105,8 +7233,6 @@
      (let ((header (hermes-chat--header-line)))
        (dolist (case '(("emacs-hermes" . hermes-chat-header-directory)
                        ("grok-4.5" . hermes-chat-header-model)
-                       ("medium" . hermes-chat-header-reasoning)
-                       ("fast" . hermes-chat-header-tier)
                        ("YOLO" . hermes-chat-header-warning)
                        ("25k/500k" . hermes-chat-header-context)))
          (let ((position (string-match-p (regexp-quote (car case)) header)))
@@ -7124,8 +7250,8 @@
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 10)))
      (let ((header (hermes-chat--header-line)))
        (should (<= (string-width header) 10))
-       (should-not (string-match-p "emacs" header))
-       (should (string-match-p "RDY" header))))))
+       (should (string-prefix-p "emacs" header))
+       (should-not (string-match-p "RDY" header))))))
 
 (ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
   "Tool lines keep the command/skill detail and carry the tool emoji."
@@ -7167,7 +7293,8 @@
   (hermes-test-with-chat-buffer
    (setq hermes-chat--goal
          '(:status "active" :running t :turns-used 3 :max-turns 20))
-   (should (string-match-p "Goal 3/20" (hermes-chat--header-line)))
+   (should-not (string-match-p "Goal" (hermes-chat--header-line)))
+   (should (string-match-p ":turns-used 3" (hermes-chat--session-details-text)))
    (setq hermes-chat--goal
          '(:status "paused" :running nil :turns-used 3 :max-turns 20))
    (should-not (string-match-p "Goal" (hermes-chat--header-line)))

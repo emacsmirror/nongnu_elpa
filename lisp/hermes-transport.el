@@ -1032,9 +1032,8 @@ an Unknown error."
        (list (hermes-dashboard-transport--payload-event
               type params payload 'commentary)))
       ;; `thinking.delta' carries the kawaii spinner status (face + verb), not
-      ;; real reasoning.  Surface it as a header-only `thinking' event so the
-      ;; live verb (e.g. "Pondering...") rotates in the status line; the chat
-      ;; layer never turns a `thinking' event into a transcript entry.
+      ;; real reasoning.  Keep its classification separate from commentary;
+      ;; the chat projects only a static, temporary activity row.
       ("thinking.delta"
        (list (hermes-dashboard-transport--payload-event
               type params payload 'thinking)))

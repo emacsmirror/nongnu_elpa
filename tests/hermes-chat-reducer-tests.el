@@ -18,7 +18,7 @@
               (list '(:status-state (:status running :activity "old"))
                     '(:type thinking :content "pondering...")
                     '(:status thinking :activity "Pondering" :updated (100 200))
-                    '(refresh-header))
+                    '(refresh-header reasoning-row))
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)
                     '(:status running :activity "Reasoning" :updated (100 200))
@@ -133,10 +133,10 @@
   (let ((state '(:status-state (:status running))))
     (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") '(0 0))))
       (should (eq (car r) state))
-      (should (equal (cdr r) '((append-delta . "hi")))))
+      (should (equal (cdr r) '((reasoning-row) (append-delta . "hi")))))
     ;; Missing content becomes the empty string.
     (let ((r (hermes-chat--turn-reduce state '(:type delta) '(0 0))))
-      (should (equal (cdr r) '((append-delta . "")))))))
+      (should (equal (cdr r) '((reasoning-row) (append-delta . "")))))))
 
 (ert-deftest hermes-chat-turn-reduce-tool-family-delta-and-transcript ()
   "Tool-like events leave the state and emit a tool delta plus an upsert-entry."
@@ -146,13 +146,13 @@
     (let ((result (hermes-chat--turn-reduce state running '(0 0))))
       (should (eq (car result) state))
       (should (equal (cdr result)
-                     (list (cons 'tool-put
+                     (list '(reasoning-row) (cons 'tool-put
                                  (cons (hermes-chat--header-tool-key running)
                                        (hermes-chat--header-tool-summary running)))
                            (cons 'upsert-entry running)))))
     (let ((result (hermes-chat--turn-reduce state done '(0 0))))
       (should (equal (cdr result)
-                     (list (cons 'tool-remove (hermes-chat--header-tool-key done))
+                     (list '(reasoning-row) (cons 'tool-remove (hermes-chat--header-tool-key done))
                            (cons 'upsert-entry done)))))
     ;; No summary -> no tool delta.
     (should-not (hermes-chat--turn-tool-effect '(:type status)))))

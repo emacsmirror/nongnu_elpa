@@ -407,6 +407,8 @@ lifted into inline images."
     (cond
      ((eq role 'user)
       (hermes-chat--insert-user-content content))
+     ((eq role 'activity)
+      (insert (propertize "(◔_◔) Reasoning\n" 'face 'shadow)))
      ((eq role 'commentary)
       (hermes-chat--insert-commentary-content entry))
      ((eq role 'diff)
@@ -657,6 +659,8 @@ Stage all text before writing; errors and quits leave input ownership intact."
 With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (cl-incf hermes-chat--transport-generation)
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
+  ;; Teardown must not publish through display hooks before resource release.
+  (hermes-chat--reasoning-row hermes-chat--pending-assistant-id nil t)
   (run-hooks 'hermes-chat-lifecycle-invalidation-hook)
   (when (hash-table-p hermes-chat--auto-prompt-keys)
     (clrhash hermes-chat--auto-prompt-keys))
@@ -699,14 +703,19 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   "Insert ENTRY into the current chat EWOC and return its node.
 With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
 agent's reply can stay last while tool/status/diff entries land above it."
-  (let ((node (hermes-chat--preserve-input-point
-               (let ((node (let ((inhibit-read-only t)
-                                 (buffer-undo-list t))
-                             (if before-node
-                                 (ewoc-enter-before hermes-chat--ewoc
-                                                    before-node entry)
-                               (ewoc-enter-last hermes-chat--ewoc entry)))))
-                 (hermes-chat--register-node entry node)))))
+  (let ((node
+         ;; Include transcript protection, but not state-change notification.
+         (let ((inhibit-modification-hooks
+                (or inhibit-modification-hooks
+                    (eq (plist-get entry :role) 'activity))))
+           (hermes-chat--preserve-input-point
+            (let ((node (let ((inhibit-read-only t)
+                              (buffer-undo-list t))
+                          (if before-node
+                              (ewoc-enter-before hermes-chat--ewoc
+                                                 before-node entry)
+                            (ewoc-enter-last hermes-chat--ewoc entry)))))
+              (hermes-chat--register-node entry node))))))
     (hermes-chat--notify-state-change)
     node))
 
@@ -714,8 +723,9 @@ agent's reply can stay last while tool/status/diff entries land above it."
   "Return chat entries from the current buffer in display order."
   (ewoc-collect hermes-chat--ewoc #'identity))
 
-(defun hermes-chat--update-entry (id function)
+(defun hermes-chat--update-entry (id function &optional quiet)
   "Update entry ID by applying FUNCTION to its entry plist.
+With QUIET, leave state-change notification to the caller.
 Return the updated entry, or nil when ID names no live entry -- callers run
 from WebSocket callbacks and timers, where the entry may already be gone
 because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
@@ -727,18 +737,23 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
                     (ewoc-set-data node entry)
                     (ewoc-invalidate hermes-chat--ewoc node)
                     entry))))
-      (hermes-chat--notify-state-change)
+      (unless quiet (hermes-chat--notify-state-change))
       entry)))
 
-(defun hermes-chat--remove-entry (id)
-  "Remove chat entry ID from the EWOC and node table."
+(defun hermes-chat--remove-entry (id &optional quiet)
+  "Remove chat entry ID from the EWOC and node table.
+With QUIET, leave state-change notification to the caller."
   (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
-    (hermes-chat--preserve-input-point
-     (let ((inhibit-read-only t)
-           (buffer-undo-list t))
-       (ewoc-delete hermes-chat--ewoc node)))
+    ;; Include transcript protection in the activity mutation, not publication.
+    (let ((inhibit-modification-hooks
+           (or inhibit-modification-hooks
+               (eq (plist-get (ewoc-data node) :role) 'activity))))
+      (hermes-chat--preserve-input-point
+       (let ((inhibit-read-only t)
+             (buffer-undo-list t))
+         (ewoc-delete hermes-chat--ewoc node))))
     (remhash id hermes-chat--nodes)
-    (hermes-chat--notify-state-change)))
+    (unless quiet (hermes-chat--notify-state-change))))
 
 (defun hermes-chat--toggle-entry-expanded (id)
   "Toggle detail expansion for entry ID."
@@ -803,9 +818,10 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
           :status status
           :content (hermes-chat--strip-session-id-lines text)))))))
 
-(defun hermes-chat--mark-assistant (assistant-id status &optional content final)
+(defun hermes-chat--mark-assistant (assistant-id status &optional content final quiet)
   "Set ASSISTANT-ID to STATUS, optionally replacing CONTENT.
-When FINAL is non-nil, strip any trailing transport metadata."
+When FINAL is non-nil, strip any trailing transport metadata.
+With QUIET, leave state-change notification to the caller."
   (hermes-chat--clear-ansi-fragment
    (hermes-chat--assistant-ansi-key assistant-id))
   (hermes-chat--update-entry
@@ -817,7 +833,8 @@ When FINAL is non-nil, strip any trailing transport metadata."
             entry
             :status status
             :content (hermes-chat--sanitize-assistant-content text final))
-         (hermes-chat--entry-with entry :status status))))))
+         (hermes-chat--entry-with entry :status status))))
+   quiet))
 
 (defun hermes-chat--normalize-for-dedup (text)
   "Return TEXT with whitespace collapsed for echo comparison."
@@ -943,8 +960,23 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   "Return ENTRY's owning assistant id from metadata, if any."
   (plist-get (plist-get entry :metadata) :assistant-id))
 
+(defun hermes-chat--reasoning-row (assistant-id active &optional quiet)
+  "Show or remove ASSISTANT-ID's static row according to ACTIVE.
+With QUIET, remove the row without publishing during teardown."
+  (when assistant-id
+    (let ((id (concat assistant-id ":activity")))
+      (if (not active)
+          (hermes-chat--remove-entry id quiet)
+        (when (and (equal assistant-id hermes-chat--pending-assistant-id)
+                   (hermes-chat--pending-assistant-node)
+                   (not (gethash id hermes-chat--nodes)))
+          (hermes-chat--insert-entry
+           (list :id id :role 'activity :assistant-id assistant-id)
+           (hermes-chat--pending-assistant-node)))))))
+
 (defun hermes-chat--settle-transport-entries (assistant-id status)
   "Set active transport entries for ASSISTANT-ID to STATUS."
+  (hermes-chat--reasoning-row assistant-id nil)
   (hermes-chat--preserve-input-point
    (let ((inhibit-read-only t)
          (buffer-undo-list t))
@@ -1766,23 +1798,25 @@ Drop optional segments whole."
   (let* ((separator (propertize " | " 'face 'shadow))
          (risk (and yolo (propertize (cond ((= width 1) "!")
                                           ((or (< width 12)
-                                               (< width (+ (string-width status) 7))) "Y!")
+                                               (< width (+ (string-width (or status "")) 7))) "Y!")
                                           (t "YOLO"))
                                     'face 'hermes-chat-header-warning)))
          (required (string-join (delq nil (list status risk))
                                 (if (< width 30) " " separator)))
-         (required (if (and work (<= (+ (string-width required) 3
+         (required (if (and work (<= (+ (string-width required)
+                                         (if (string-empty-p required) 0 3)
                                          (string-width work)) width))
-                       (concat required separator work) required))
-         (room (- width (string-width required) (string-width separator)))
-         (identity (and (>= width 30) (> room 3)
+                       (string-join (delq nil (list (unless (string-empty-p required) required) work)) separator) required))
+         (room (- width (string-width required)
+                  (if (string-empty-p required) 0 (string-width separator))))
+         (identity (and (or (>= width 30) (string-empty-p required)) (> room 0)
                         (truncate-string-to-width directory room nil nil "…")))
-         (text (if identity (concat identity separator required) required)))
+         (text (string-join (delq nil (list identity (unless (string-empty-p required) required))) separator)))
     (if (> (string-width text) width)
-        (truncate-string-to-width (or risk status) width nil nil "")
+        (truncate-string-to-width (or risk status "") width nil nil "")
       (dolist (part optional)
         (when (and part (<= (+ (string-width text) 3 (string-width part)) width))
-          (setq text (concat text separator part))))
+          (setq text (if (string-empty-p text) part (concat text separator part)))))
       text)))
 
 (defun hermes-chat--session-details-text ()
@@ -1803,9 +1837,20 @@ Drop optional segments whole."
   "Display full local session details, including fields omitted from the header."
   (interactive)
   (let ((text (hermes-chat--session-details-text))
+        (owner hermes-chat--work-owner)
         (refresh (plist-get hermes-chat--work-owner :refresh)))
     (with-help-window "*Hermes Session Details*"
-      (princ text))
+      (princ text)
+      (when owner
+        (with-current-buffer standard-output
+          (insert-text-button
+           "Browse observed work" 'follow-link t
+           'action (lambda (_button)
+                     (unless (funcall (plist-get owner :current-p) owner)
+                       (user-error "Work owner detached"))
+                     (with-current-buffer (plist-get owner :buffer)
+                       (require 'hermes-subagents)
+                       (call-interactively 'hermes-chat-work)))))))
     (with-current-buffer "*Hermes Session Details*"
       (use-local-map (copy-keymap (current-local-map)))
       (local-set-key (kbd "g") (lambda () (interactive)
@@ -1822,7 +1867,9 @@ During redisplay Emacs selects the window whose header is being evaluated."
                   ("Input requested" "Input") ("Disconnected" "Offline")
                   (_ label)))
          ;; Reserve a space and Y! before optional detail can consume room.
-         (status (propertize
+         (status (and (member label '("Disconnected" "Error" "Approval requested"
+                                      "Input requested" "Interrupted" "Cancelled"))
+                      (propertize
                   (cond ((or (< width 12)
                              (< width (+ (string-width short)
                                          (if (plist-get hermes-chat--runtime-flags :yolo)
@@ -1830,16 +1877,13 @@ During redisplay Emacs selects the window whose header is being evaluated."
                          (or (cdr (assoc label hermes-chat--header-state-codes)) "?"))
                         ((< width 30) short)
                         (t (concat (hermes-chat--status-icon state) " " label)))
-                  'face (hermes-chat--header-status-face state)))
-         (runtime (hermes-chat--header-runtime-segments))
+                  'face (hermes-chat--header-status-face state))))
          (text (hermes-chat--header-fit
                 width status (plist-get hermes-chat--runtime-flags :yolo)
                 (hermes-chat--header-directory-segment)
-                (append (list (hermes-chat--header-goal-segment)
-                              (hermes-chat--header-model-segment)
-                              (hermes-chat--header-context-segment))
-                        (seq-remove (lambda (part) (equal part "YOLO")) runtime)
-                        (list (hermes-chat--header-detail label)))
+                (list (hermes-chat--header-model-segment)
+                      (hermes-chat--header-context-segment)
+                      (and status (hermes-chat--header-detail label)))
                 (hermes-chat--work-label (< width 50)))))
     (propertize (string-replace "%" "%%" text)
                 'help-echo (hermes-chat--session-details-text))))

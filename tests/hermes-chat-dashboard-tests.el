@@ -12,6 +12,25 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(require 'hermes-subagents)
+
+(ert-deftest hermes-chat-reasoning-cleanup-rejects-reentrant-old-event ()
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+    (setq hermes-chat--pending-assistant-id "a1")
+    (let ((callback (hermes-chat--transport-callback (current-buffer) "a1" nil hermes-chat--transport-generation))
+          called)
+      (funcall callback '(:type thinking :event "thinking.delta" :content "first"))
+      (let ((hermes-chat-state-change-hook
+             (list (lambda ()
+                     (unless called
+                       (setq called t)
+                       (funcall callback '(:type thinking :event "thinking.delta" :content "late")))))))
+        (hermes-chat--cleanup-buffer))
+      (should called)
+      (should-not hermes-chat--pending-assistant-id)
+      (should-not (gethash "a1:activity" hermes-chat--nodes)))))
+
 ;;; Observed delegates
 
 (defvar hermes-test--work-processes-p nil
@@ -329,6 +348,424 @@
          (cl-letf (((symbol-function 'hermes-dashboard-transport-delegation-status) rpc))
            ,@body)))))
 
+(ert-deftest hermes-chat-reasoning-mode-exit-releases-exact-work ()
+  "Error and quit in presentation cannot strand work or damage a successor."
+  (dolist (condition '(error quit))
+    (hermes-test--with-process-wire
+      ;; Another subscriber keeps the shared client available for a successor.
+      (setf (hermes-dashboard-transport-client-refcount client) 2)
+      (hermes-chat--insert-entry
+       '(:id "a1" :role assistant :content "" :status streaming))
+      (setq hermes-chat--pending-assistant-id "a1")
+      (hermes-chat--reasoning-row "a1" t)
+      (hermes-chat-work-refresh)
+      (let* ((owner hermes-chat--work-owner)
+             (generation hermes-chat--transport-generation)
+             (callback (hermes-chat--transport-callback
+                        (current-buffer) "a1" nil generation))
+             (id (plist-get (plist-get owner :request) :id))
+             (pending (hermes-dashboard-transport-client-pending client))
+             (timer (plist-get (gethash id pending) :timer))
+             (cadence (list 'cadence))
+             cancelled caught)
+        (setf (plist-get owner :timer) (cons (list 'token) cadence))
+        (cl-letf (((symbol-function 'cancel-timer)
+                   (lambda (target) (push target cancelled))))
+          (let ((hermes-chat-state-change-hook
+                 (list (lambda () (signal condition '("Display hook failed"))))))
+            (condition-case err (fundamental-mode)
+              ((error quit) (setq caught err))))
+          (should (eq (car caught) condition))
+          (should hermes-chat--cleanup-done-p)
+          (should (> hermes-chat--transport-generation generation))
+          (should-not (hermes-chat--work-current-p owner))
+          (should-not (gethash "a1:activity" hermes-chat--nodes))
+          (should-not hermes-chat--dashboard-client)
+          (should (= (hash-table-count pending) 0))
+          (should (= (cl-count timer cancelled :test #'eq) 1))
+          (should (= (cl-count cadence cancelled :test #'eq) 1))
+          (hermes-chat--cleanup-buffer)
+          (should (= (cl-count timer cancelled :test #'eq) 1))
+          (should (= (cl-count cadence cancelled :test #'eq) 1))
+          ;; Rebind in the same buffer; late old events and deadline callbacks
+          ;; must neither recreate the row nor settle the successor request.
+          (setq hermes-chat--dashboard-client client
+                hermes-chat--dashboard-active-session-id "runtime"
+                hermes-chat--dashboard-session-ready-p t)
+          (hermes-chat--work-bind client "runtime" "A")
+          (hermes-chat-work-refresh)
+          (let* ((successor hermes-chat--work-owner)
+                 (request (plist-get successor :request))
+                 (next-id (plist-get request :id))
+                 (next-timer (plist-get (gethash next-id pending) :timer)))
+            (should request)
+            (funcall callback '(:type thinking :event "thinking.delta" :content "late"))
+            (hermes-test--work-reply client id "{\"active\":[]}")
+            (apply (cadr timer) (nth 2 timer))
+            (hermes-chat--cleanup-buffer)
+            (should (eq successor hermes-chat--work-owner))
+            (should (eq request (plist-get successor :request)))
+            (should (eq next-timer (plist-get (gethash next-id pending) :timer)))
+            (should (= (hash-table-count pending) 1))
+            (should-not (memq next-timer cancelled))
+            (should-not (gethash "a1:activity" hermes-chat--nodes))
+            (hermes-chat--work-stop)))))))
+
+(ert-deftest hermes-work-activity-mutation-is-local ()
+  "Activity insertion/deletion is inert; ordinary input still runs change hooks."
+  (dolist (condition '(error quit replace nil))
+    (hermes-test--with-process-wire
+      (setf (hermes-dashboard-transport-client-refcount client) 2)
+      (setq hermes-chat--dashboard-token
+            (hermes-dashboard-transport-subscribe client #'ignore))
+      (hermes-chat--insert-entry
+       '(:id "a1" :role assistant :content "" :status streaming))
+      (setq hermes-chat--pending-assistant-id "a1")
+      (let* ((owner hermes-chat--work-owner)
+             (token hermes-chat--dashboard-token)
+             (nodes hermes-chat--nodes)
+             (pending (hermes-dashboard-transport-client-pending client))
+             fired caught cancelled)
+        (hermes-chat-work-refresh)
+        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"processes\":[]}")
+        (let ((cadence (cdr (plist-get owner :timer))))
+          (hermes-chat-work-refresh)
+          (let* ((id (plist-get (plist-get owner :request) :id))
+                 (deadline (plist-get (gethash id pending) :timer))
+                 (hook (lambda (&rest _)
+                         (setq fired t)
+                         (pcase condition
+                           ((or 'error 'quit) (signal condition '("Chat change")))
+                           ('replace (fundamental-mode))))))
+            (setf (plist-get owner :timer) (cons (list 'queued) cadence))
+            (add-hook 'after-change-functions hook nil t)
+            (unwind-protect
+                (cl-letf (((symbol-function 'cancel-timer)
+                           (lambda (timer) (push timer cancelled))))
+                  (condition-case err
+                      (progn (hermes-chat--reasoning-row "a1" t)
+                             (fundamental-mode))
+                    ((error quit) (setq caught (car err))))
+                  (should-not caught)
+                  (should-not fired)
+                  (should-not (gethash "a1:activity" nodes))
+                  (should-not hermes-chat--dashboard-client)
+                  (should-not (gethash token (hermes-dashboard-transport-client-subscribers client)))
+                  (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                  (should (= (hash-table-count pending) 0))
+                  (should-not (hermes-chat--work-current-p owner))
+                  (should-not (gethash (plist-get (plist-get owner :request) :id) pending))
+                  (should-not (plist-get owner :timer))
+                  (should (= (cl-count deadline cancelled :test #'eq) 1))
+                  (should (= (cl-count cadence cancelled :test #'eq) 1))
+                  (hermes-chat--cleanup-buffer)
+                  (hermes-chat--cleanup-buffer)
+                  (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                  (should (= (cl-count deadline cancelled :test #'eq) 1))
+                  (should (= (cl-count cadence cancelled :test #'eq) 1))
+                  ;; The binding ended: ordinary buffer edits retain native hooks.
+                  (add-hook 'after-change-functions hook nil t)
+                  (condition-case err
+                      (let ((inhibit-read-only t)) (goto-char (point-max)) (insert "Input"))
+                    ((error quit) (setq caught (car err))))
+                  (should fired)
+                  (should (eq caught (and (memq condition '(error quit)) condition))))
+              (setq after-change-functions nil))))))))
+
+(ert-deftest hermes-work-terminal-mutation-settles ()
+  "List change hooks cannot interrupt terminal settlement or replace its owner."
+  (dolist (event '((:type done :content "Finished") (:type error :content "Failed")))
+    (dolist (condition '(error quit replace nil))
+      (save-window-excursion
+        (hermes-test--with-process-wire
+          (hermes-chat--insert-entry
+           '(:id "a1" :role assistant :content "" :status streaming))
+          (setq hermes-chat--pending-assistant-id "a1"
+                hermes-chat--dashboard-stream-assistant-id "a1")
+          (hermes-chat--insert-entry
+           '(:id "comment" :role commentary :content "Real commentary" :status done))
+          (hermes-chat--reasoning-row "a1" t)
+          (let ((chat (current-buffer)) (owner hermes-chat--work-owner)
+                (refs (hermes-dashboard-transport-client-refcount client))
+                view fired caught)
+            (unwind-protect
+                (progn
+                  (hermes-chat-work)
+                  (setq view (current-buffer))
+                  (add-hook 'after-change-functions
+                            (lambda (&rest _)
+                              (setq fired t)
+                              (pcase condition
+                                ((or 'error 'quit) (signal condition '("List change")))
+                                ('replace
+                                 (with-current-buffer chat
+                                   (hermes-chat--work-bind client "successor" "B"))))) nil t)
+                  (with-current-buffer chat
+                    (condition-case err (hermes-chat--handle-transport-event "a1" event)
+                      ((error quit) (setq caught (car err))))
+                    (should-not caught)
+                    (should-not fired)
+                    (should-not hermes-chat--pending-assistant-id)
+                    (should-not hermes-chat--dashboard-stream-assistant-id)
+                    (should-not (gethash "a1:activity" hermes-chat--nodes))
+                    (should (equal (plist-get (ewoc-data (gethash "comment" hermes-chat--nodes)) :content)
+                                   "Real commentary"))
+                    (should (eq owner hermes-chat--work-owner))
+                    (should (eq client hermes-chat--dashboard-client))
+                    (should (= refs (hermes-dashboard-transport-client-refcount client))))
+                  (should (eq owner (buffer-local-value 'hermes-work--owner view))))
+              (when (buffer-live-p view)
+                (with-current-buffer view (setq after-change-functions nil))
+                (kill-buffer view)))))))))
+
+(ert-deftest hermes-work-deferred-mutation-protects-successor ()
+  "A detached render cannot run change hooks mid-print or write a replaced view."
+  (dolist (condition '(error quit replace nil))
+    (save-window-excursion
+      (hermes-test--with-process-wire
+        (setf (hermes-dashboard-transport-client-refcount client) 2)
+        (let ((chat (current-buffer)) (owner hermes-chat--work-owner)
+              view fired caught)
+          (unwind-protect
+              (progn
+                (hermes-chat-work)
+                (setq view (current-buffer))
+                (with-current-buffer chat (hermes-chat--stop-dashboard-client))
+                (let ((publication
+                       (seq-find (lambda (timer)
+                                   (and (eq (cadr timer) #'hermes-work--render)
+                                        (eq (car (nth 2 timer)) owner))) timers)))
+                  (should publication)
+                  (with-current-buffer chat
+                    (setq hermes-chat--dashboard-client client
+                          hermes-chat--dashboard-active-session-id "successor"
+                          hermes-chat--dashboard-session-ready-p t)
+                    (hermes-chat--work-bind client "successor" "B")
+                    (hermes-chat-work-refresh))
+                  (let* ((successor (buffer-local-value 'hermes-chat--work-owner chat))
+                         (request (plist-get successor :request))
+                         (pending (hermes-dashboard-transport-client-pending client))
+                         (deadline (plist-get (gethash (plist-get request :id) pending) :timer))
+                         (transcript (with-current-buffer chat (buffer-string))))
+                    (with-current-buffer view
+                      (add-hook 'after-change-functions
+                                (lambda (&rest _)
+                                  (setq fired t)
+                                  (pcase condition
+                                    ((or 'error 'quit) (signal condition '("List change")))
+                                    ('replace
+                                     (setq after-change-functions nil)
+                                     (fundamental-mode)
+                                     (let ((inhibit-read-only t))
+                                       (erase-buffer) (insert "Successor view content"))))) nil t))
+                    (condition-case err (apply (cadr publication) (nth 2 publication))
+                      ((error quit) (setq caught (car err))))
+                    (should-not caught)
+                    (should-not fired)
+                    (should (hermes-work--view-p owner))
+                    (should (string-match-p "detached/disconnected"
+                                            (with-current-buffer view (buffer-string))))
+                    ;; Prove the hook is live outside package-owned rendering.
+                    (with-current-buffer view
+                      (condition-case err
+                          (let ((inhibit-read-only t)) (goto-char (point-max)) (insert "User edit"))
+                        ((error quit) (setq caught (car err))))
+                      (should fired)
+                      (should (eq caught (and (memq condition '(error quit)) condition)))
+                      (setq after-change-functions nil)
+                      (unless (eq condition 'replace)
+                        (fundamental-mode)
+                        (let ((inhibit-read-only t))
+                          (erase-buffer) (insert "Successor view content"))))
+                    (apply (cadr publication) (nth 2 publication))
+                    (should (eq (buffer-local-value 'major-mode view) 'fundamental-mode))
+                    (should-not (buffer-local-value 'hermes-work--owner view))
+                    (should (equal (with-current-buffer view (buffer-string)) "Successor view content"))
+                    (should (eq successor (buffer-local-value 'hermes-chat--work-owner chat)))
+                    (should (eq request (plist-get successor :request)))
+                    (should (eq deadline (plist-get (gethash (plist-get request :id) pending) :timer)))
+                    (should (= (hash-table-count pending) 1))
+                    (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                    (should (equal transcript (with-current-buffer chat (buffer-string)))))))
+            (when (buffer-live-p view)
+              (with-current-buffer view (setq after-change-functions nil))
+              (kill-buffer view))))))))
+
+(defun hermes-test--work-view-teardown (action condition)
+  "Exercise ACTION with an actual work list signalling CONDITION on repaint."
+  (save-window-excursion
+    (hermes-test--with-process-wire
+      (setf (hermes-dashboard-transport-client-refcount client) 2)
+      (setq hermes-chat--dashboard-token
+            (hermes-dashboard-transport-subscribe client #'ignore))
+      (hermes-chat--insert-entry
+       '(:id "a1" :role assistant :content "" :status streaming))
+      (setq hermes-chat--pending-assistant-id "a1")
+      (hermes-chat--reasoning-row "a1" t)
+      (hermes-chat-work-refresh)
+      (let* ((chat (current-buffer))
+             (owner hermes-chat--work-owner)
+             (nodes hermes-chat--nodes)
+             (token hermes-chat--dashboard-token)
+             (callback (hermes-chat--transport-callback
+                        chat "a1" nil hermes-chat--transport-generation))
+             (id (plist-get (plist-get owner :request) :id))
+             (pending (hermes-dashboard-transport-client-pending client))
+             (deadline (plist-get (gethash id pending) :timer))
+             (cadence (cdr (plist-get owner :timer)))
+             view publication cancelled caught)
+        ;; A cadence can already be queued when a manual refresh starts.
+        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"processes\":[]}")
+        (setq cadence (cdr (plist-get owner :timer)))
+        (hermes-chat-work-refresh)
+        (setq id (plist-get (plist-get owner :request) :id)
+              deadline (plist-get (gethash id pending) :timer))
+        (setf (plist-get owner :timer) (cons (list 'queued) cadence))
+        (unwind-protect
+            (progn
+              (hermes-chat-work)
+              (setq view (current-buffer))
+              (when condition
+                (add-hook 'after-change-functions
+                          (lambda (&rest _) (signal condition '("Work list display hook")))
+                          nil t))
+              (with-current-buffer chat
+                (cl-letf (((symbol-function 'cancel-timer)
+                           (lambda (timer) (push timer cancelled)))
+                          ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+                  (condition-case err (funcall action)
+                    ((error quit) (setq caught (car err))))
+                  (should-not hermes-chat--dashboard-client)
+                  (should-not caught)
+                  (should-not (gethash token (hermes-dashboard-transport-client-subscribers client)))
+                  (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                  (should-not (gethash "a1:activity" nodes))
+                  (should-not (hermes-chat--work-current-p owner))
+                  (should (= (hash-table-count pending) 0))
+                  (should (= (cl-count deadline cancelled :test #'eq) 1))
+                  (should (= (cl-count cadence cancelled :test #'eq) 1))
+                  (setq publication
+                        (seq-find (lambda (timer)
+                                    (and (eq (cadr timer) #'hermes-work--render)
+                                         (eq (car (nth 2 timer)) owner))) timers))
+                  (should publication)
+                  ;; Deferred presentation may fail, but exact release is complete.
+                  (condition-case err
+                      (apply (cadr publication) (nth 2 publication))
+                    ((error quit) (setq caught (car err))))
+                  (should-not caught)
+                  (with-current-buffer view
+                    (setq after-change-functions nil)
+                    (unless condition
+                      (should (string-match-p "detached/disconnected" (buffer-string)))))
+                  (hermes-chat--cleanup-buffer)
+                  (hermes-chat--cleanup-buffer)
+                  (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                  (should (= (cl-count deadline cancelled :test #'eq) 1))
+                  (should (= (cl-count cadence cancelled :test #'eq) 1))
+                  ;; Reuse this buffer, then deliver every captured old continuation.
+                  (unless (derived-mode-p 'hermes-chat-mode) (hermes-chat-mode))
+                  (setq hermes-chat--dashboard-client client
+                        hermes-chat--dashboard-active-session-id "runtime"
+                        hermes-chat--dashboard-session-ready-p t)
+                  (hermes-chat--work-bind client "runtime" "A")
+                  (hermes-chat-work-refresh)
+                  (let* ((successor hermes-chat--work-owner)
+                         (request (plist-get successor :request))
+                         (next-id (plist-get request :id))
+                         (next-timer (plist-get (gethash next-id pending) :timer))
+                         (transcript (buffer-string)))
+                    (should request)
+                    (funcall callback '(:type thinking :event "thinking.delta" :content "late"))
+                    (hermes-test--work-reply client id "{\"active\":[]}")
+                    (apply (cadr deadline) (nth 2 deadline))
+                    (apply (cadr cadence) (nth 2 cadence))
+                    (apply (cadr publication) (nth 2 publication))
+                    (should (eq successor hermes-chat--work-owner))
+                    (should (eq request (plist-get successor :request)))
+                    (should (eq next-timer (plist-get (gethash next-id pending) :timer)))
+                    (should (= (hash-table-count pending) 1))
+                    (should-not (memq next-timer cancelled))
+                    (should (equal transcript (buffer-string)))
+                    ;; A delayed repaint cannot write into a reused list buffer.
+                    (with-current-buffer view
+                      (fundamental-mode)
+                      (let ((inhibit-read-only t))
+                        (erase-buffer)
+                        (insert "Successor view content")))
+                    (apply (cadr publication) (nth 2 publication))
+                    (should (equal (with-current-buffer view (buffer-string))
+                                   "Successor view content"))))))
+          (when (buffer-live-p view)
+            (with-current-buffer view (setq after-change-functions nil))
+            (kill-buffer view))
+          (when (buffer-live-p chat)
+            (with-current-buffer chat (hermes-chat--stop-dashboard-client))))))))
+
+(ert-deftest hermes-work-list-mode-exit-teardown ()
+  "Mode exit releases resources before error, quit, or successful list repaint."
+  (dolist (condition '(error quit nil))
+    (hermes-test--work-view-teardown #'fundamental-mode condition)))
+
+(ert-deftest hermes-work-list-disconnect-teardown ()
+  "Disconnect releases resources before arbitrary work-list display hooks."
+  (dolist (condition '(error quit nil))
+    (hermes-test--work-view-teardown #'hermes-chat-disconnect condition)))
+
+(ert-deftest hermes-work-list-clear-teardown ()
+  "Public clear resets resources before arbitrary work-list display hooks."
+  (dolist (condition '(error quit nil))
+    (hermes-test--work-view-teardown #'hermes-chat-clear condition)))
+
+(ert-deftest hermes-work-list-reconnect-teardown ()
+  "Reconnect forgets the old owner before work-list display hooks can fail."
+  (dolist (condition '(error quit nil))
+    (save-window-excursion
+      (hermes-test--with-process-wire
+        (hermes-chat--insert-entry
+         '(:id "a1" :role assistant :content "" :status streaming))
+        (setq hermes-chat--pending-assistant-id "a1")
+        (hermes-chat--reasoning-row "a1" t)
+        (hermes-chat-work-refresh)
+        (let ((chat (current-buffer))
+              (owner hermes-chat--work-owner)
+              view caught)
+          (unwind-protect
+              (progn
+                (hermes-chat-work)
+                (setq view (current-buffer))
+                (when condition
+                  (add-hook 'after-change-functions
+                            (lambda (&rest _) (signal condition '("Work list display hook")))
+                            nil t))
+                (with-current-buffer chat
+                  (condition-case err
+                      (hermes-chat--handle-transport-event
+                       "a1" '(:type status :status "reconnecting"))
+                    ((error quit) (setq caught (car err))))
+                  (should-not caught)
+                  (should-not hermes-chat--work-owner)
+                  (should-not hermes-chat--dashboard-active-session-id)
+                  (should-not (gethash "a1:activity" hermes-chat--nodes))
+                  (should (= (hash-table-count
+                              (hermes-dashboard-transport-client-pending client)) 0))
+                  ;; Reconnect retains the shared client, unlike terminal detach.
+                  (should (eq client hermes-chat--dashboard-client))
+                  (let ((publication
+                         (seq-find (lambda (timer)
+                                     (and (eq (cadr timer) #'hermes-work--render)
+                                          (eq (car (nth 2 timer)) owner))) timers)))
+                    (should publication)
+                    (condition-case err
+                        (apply (cadr publication) (nth 2 publication))
+                      ((error quit) (setq caught (car err))))
+                    (should-not caught))))
+            (when (buffer-live-p view)
+              (with-current-buffer view (setq after-change-functions nil))
+              (kill-buffer view))))))))
+
 (defun hermes-test--work-reply (client id json)
   "Deliver JSON result for request ID through CLIENT's raw frame handler."
   (hermes-dashboard-transport--handle-frame
@@ -638,7 +1075,7 @@
       (dolist (width '(12 20 30 40 50 80 120))
         (let ((header (hermes-chat--header-line width)))
           (should (<= (string-width header) width))
-          (should (string-match-p "Ready" header))
+          (should-not (string-match-p "Ready" header))
           (when (>= width 30)
             (should (string-match-p (if (< width 50) "W R1" "Work 1 running") header)))))
       (should (eq (get-text-property 0 'face (hermes-chat--work-label nil))
@@ -2342,6 +2779,267 @@
               (should (equal hermes-chat--session-id "stored-b"))))
         (when (buffer-live-p buf-a) (kill-buffer buf-a))
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
+
+(ert-deftest hermes-work-browser-exact-owner-keys-and-snapshots ()
+  "The native list consumes real owner snapshots and never acquires a client."
+  (save-window-excursion
+    (hermes-test--with-process-wire
+      (hermes-chat-work-refresh)
+      (hermes-test--work-answer client "{\"active\":[{\"subagent_id\":\"same\",\"owner_agent_session_id\":\"A\",\"status\":\"running\",\"goal\":\"界 50% goal\"}]}")
+      (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"same\",\"status\":\"exited\",\"exit_code\":7,\"command\":\"printf done\",\"cwd\":\"/remote/inert\",\"output_tail\":\"last output\"}]}")
+      (let ((chat (current-buffer)) (owner hermes-chat--work-owner)
+            (sent (length frames)) view details instance)
+        (insert "draft text")
+        (backward-char 3)
+        (let ((offset (- (point) (hermes-chat--input-position))))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                         (lambda (&rest _) (ert-fail "Work view acquired a client"))))
+                (call-interactively (keymap-lookup hermes-chat-mode-map "C-c C-w"))
+                (setq view (current-buffer))
+                (should (derived-mode-p 'hermes-work-mode))
+                (should (eq owner hermes-work--owner))
+                (should (= 2 (length tabulated-list-entries)))
+                (should (equal (mapcar #'car tabulated-list-entries)
+                               '((delegate . "same") (process . "same"))))
+                (should (string-match-p "Not a full work ledger" (buffer-string)))
+                (should (eq (get-text-property 0 'face (aref (cadar tabulated-list-entries) 0))
+                            'hermes-work-running))
+                (rename-buffer "*renamed work view*" t)
+                (with-current-buffer chat (hermes-chat-work))
+                (should (eq view (current-buffer)))
+                (goto-char (point-min))
+                (search-forward "printf done")
+                (call-interactively (keymap-lookup hermes-work-mode-map "RET"))
+                (setq details (current-buffer))
+                (should (derived-mode-p 'special-mode))
+                (should buffer-read-only)
+                (should (string-match-p "Backend output tail: last output" (buffer-string)))
+                (should (string-match-p "Remote cwd (inert): /remote/inert" (buffer-string)))
+                (should-not (next-button (point-min)))
+                (should (= sent (length frames)))
+                (call-interactively (keymap-lookup (current-local-map) "q"))
+                (with-current-buffer view
+                  (cl-letf (((symbol-function 'hermes-list-subagents)
+                             (lambda () (interactive) (setq instance hermes-instance))))
+                    (call-interactively (keymap-lookup hermes-work-mode-map "i")))
+                  (should (equal instance (plist-get owner :instance)))
+                  (call-interactively (keymap-lookup hermes-work-mode-map "g")))
+                (should (= (1+ sent) (length frames)))
+                (with-current-buffer chat
+                  (should (equal (buffer-substring-no-properties (hermes-chat--input-position) (point-max)) "draft text"))
+                  (should (= offset (- (point) (hermes-chat--input-position))))
+                  (hermes-test--work-answer client "{\"active\":[]}")
+                  (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"same\",\"status\":\"running\"}]}"))
+                (with-current-buffer view
+                  (should (equal (tabulated-list-get-id) '(process . "same")))
+                  (should (= 1 (length tabulated-list-entries))))
+                ;; Replacement must detach, not retarget, even after renaming.
+                (with-current-buffer chat (hermes-chat--work-bind client "runtime" "B"))
+                (let ((publication
+                       (seq-find (lambda (timer)
+                                   (and (eq (cadr timer) #'hermes-work--render)
+                                        (eq (car (nth 2 timer)) owner))) timers)))
+                  (should publication)
+                  (apply (cadr publication) (nth 2 publication)))
+                (with-current-buffer view
+                  (should (string-match-p "detached/disconnected" (buffer-string)))
+                  (should (string-match-p "Stale" (buffer-string)))
+                  (should-error (hermes-work-refresh) :type 'user-error)
+                  (should-not (keymap-lookup hermes-work-mode-map "k"))))
+            (dolist (buffer (list view details))
+              (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
+
+(ert-deftest hermes-work-list-only-visibility-and-mode-replacement ()
+  "Only the exact list, not details or a reused name/mode, keeps cadence visible."
+  (save-window-excursion
+    (hermes-test--with-process-wire
+      (let ((owner hermes-chat--work-owner) view replacement)
+        (unwind-protect
+            (progn
+              (hermes-chat-work)
+              (setq view (current-buffer))
+              (delete-other-windows)
+              (should (hermes-chat--work-visible-p owner))
+              (setq replacement (generate-new-buffer "*work-details-only*"))
+              (with-current-buffer replacement (special-mode))
+              (set-window-buffer (selected-window) replacement)
+              (should-not (hermes-chat--work-visible-p owner))
+              (hermes-chat--work-visibility)
+              (should-not (plist-get owner :timer))
+              (set-window-buffer (selected-window) view)
+              (with-current-buffer view (fundamental-mode))
+              (should-not (plist-get owner :view))
+              (should-not (hermes-chat--work-visible-p owner))
+              (with-current-buffer view
+                (let ((inhibit-read-only t))
+                  (erase-buffer)
+                  (insert "unrelated replacement")))
+              (hermes-work--render owner)
+              (should (equal (with-current-buffer view (buffer-string)) "unrelated replacement")))
+          (dolist (buffer (list view replacement))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest hermes-work-details-link-and-widths ()
+  "Details open the same owner list; columns fit real windows and preserve rows."
+  (save-window-excursion
+    (hermes-test--with-process-wire
+      (hermes-chat-work-refresh)
+      (hermes-test--work-answer client "{\"active\":[]}")
+      (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\",\"command\":\"界% very long command with long description\",\"started_at\":0}]}")
+      (let ((owner hermes-chat--work-owner) view details)
+        (unwind-protect
+            (progn
+              (hermes-chat-session-details)
+              (setq details (get-buffer "*Hermes Session Details*"))
+              (with-current-buffer details
+                (goto-char (point-min))
+                (search-forward "Browse observed work")
+                (let ((button (button-at (1- (point)))))
+                  (should (equal (button-label button) "Browse observed work"))
+                  (button-activate button)))
+              (setq view (plist-get owner :view))
+              (should (buffer-live-p view))
+              (should (eq (window-buffer (selected-window)) view))
+              (with-current-buffer view
+                (dolist (width '(12 20 30 40 50 80 120))
+                  (cl-letf (((symbol-function 'window-body-width)
+                             (lambda (&rest _) width)))
+                    (hermes-work--resize (selected-window)))
+                  (hermes-work--render owner)
+                  (goto-char (point-min))
+                  (while (and (not (eobp)) (not (tabulated-list-get-id))) (forward-line))
+                  (should (equal (tabulated-list-get-id) '(process . "p")))
+                  ;; Native tabulated-list truncates with display properties,
+                  ;; leaving full cell text available to copying and help.
+                  (let ((end (line-end-position)) (columns 0))
+                    (while (< (point) end)
+                      (let* ((next (next-single-property-change (point) 'display nil end))
+                             (display (get-text-property (point) 'display)))
+                        (setq columns
+                              (pcase display
+                                (`(space :align-to ,column) column)
+                                ((pred stringp) (+ columns (string-width display)))
+                                ('nil (+ columns (string-width
+                                                  (buffer-substring-no-properties (point) next))))
+                                (_ (ert-fail (format "Unexpected display spec: %S" display)))))
+                        (goto-char next)))
+                    (should (<= columns width)))))
+              ;; Old list render must not write into a successor that steals its slot.
+              (with-current-buffer view
+                (setq hermes-work--owner nil)
+                (let ((inhibit-read-only t))
+                  (erase-buffer)
+                  (insert "Successor view content")))
+              (let ((before (with-current-buffer view (buffer-string))))
+                (hermes-work--render owner)
+                (should (equal before (with-current-buffer view (buffer-string))))))
+          (dolist (buffer (list view details))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest hermes-work-refresh-publishes-stale-before-reply ()
+  "List and owner refresh repaint retained evidence before any response."
+  (dolist (entry '(list owner))
+    (save-window-excursion
+      (hermes-test--with-process-wire
+        (hermes-chat-work-refresh)
+        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\"}]}")
+        (let ((chat (current-buffer)) (owner hermes-chat--work-owner) view details)
+          (insert "retained draft")
+          (backward-char 3)
+          (let ((draft-point (point)))
+            (unwind-protect
+                (progn
+                  (hermes-chat-work)
+                  (setq view (current-buffer))
+                  (goto-char (point-min))
+                  (search-forward "Running")
+                  (let ((row (tabulated-list-get-id)) (column (current-column))
+                        (window (selected-window)))
+                    (if (eq entry 'list)
+                        (call-interactively (keymap-lookup hermes-work-mode-map "g"))
+                      (funcall (plist-get owner :refresh)))
+                    (should (eq (current-buffer) view))
+                    (should (eq (selected-window) window))
+                    (should (equal row (tabulated-list-get-id)))
+                    (should (= column (current-column))))
+                  (should (= (length frames) 3))
+                  (let ((state (aref (cadar tabulated-list-entries) 0)))
+                    (should (equal state "Stale"))
+                    (should (eq (get-text-property 0 'face state) 'hermes-work-unknown)))
+                  (should (string-match-p "Delegates: stale" (buffer-string)))
+                  (should (string-match-p "Processes (runtime-scoped): stale" (buffer-string)))
+                  (hermes-work-refresh)
+                  (should (= (length frames) 3))
+                  (call-interactively (keymap-lookup hermes-work-mode-map "RET"))
+                  (setq details (current-buffer))
+                  (should (string-match-p "Observed process — Stale" (buffer-string)))
+                  (with-current-buffer chat
+                    (should (= draft-point (point)))
+                    (should (equal (buffer-substring-no-properties
+                                    (hermes-chat--input-position) (point-max)) "retained draft"))
+                    (should (equal (hermes-chat--work-label nil) "Work ?"))
+                    (should (eq (get-text-property 0 'face (hermes-chat--work-label nil))
+                                'hermes-work-unknown))
+                    (hermes-test--work-answer client "{\"active\":[]}")
+                    (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\"}]}"))
+                  (with-current-buffer view
+                    (should (equal (aref (cadar tabulated-list-entries) 0) "Running"))
+                    (should (string-match-p "Processes (runtime-scoped): current" (buffer-string)))))
+              (dolist (buffer (list view details))
+                (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
+
+(ert-deftest hermes-work-refresh-render-reentry-and-exits ()
+  "Freshness publication owns its cycle across reentry and nonlocal exits."
+  (dolist (action '(refresh replace kill-view error quit))
+    (save-window-excursion
+      (hermes-test--with-process-wire
+        (let ((chat (current-buffer)) (owner hermes-chat--work-owner) view rendered caught)
+          (unwind-protect
+              (progn
+                (hermes-chat-work)
+                (setq view (current-buffer))
+                (setf (plist-get owner :render)
+                      (lambda (target)
+                        (setq rendered t)
+                        (setf (plist-get target :render) #'hermes-work--render)
+                        (pcase action
+                          ('refresh (funcall (plist-get target :refresh)))
+                          ('replace
+                           (with-current-buffer chat
+                             (hermes-chat--work-bind client "runtime" "B")
+                             (hermes-chat-work-refresh)))
+                          ('kill-view (kill-buffer view))
+                          ((or 'error 'quit) (signal action '("Render failed"))))
+                        (hermes-work--render target)))
+                (condition-case condition
+                    (funcall (plist-get owner :refresh))
+                  ((error quit) (setq caught (car condition))))
+                (should rendered)
+                (with-current-buffer chat
+                  (if (memq action '(error quit))
+                      (progn
+                        (should (eq caught action))
+                        (should-not frames)
+                        (should-not (plist-get owner :cycle))
+                        (should-not (plist-get owner :request))
+                        (setf (plist-get owner :render) #'hermes-work--render)
+                        (hermes-chat-work-refresh))
+                    (should-not caught))
+                  (should (= (length frames) 1))
+                  (should (= (hash-table-count
+                              (hermes-dashboard-transport-client-pending client)) 1))
+                  (when (eq action 'replace)
+                    (should-not (eq owner hermes-chat--work-owner))
+                    (should (plist-get hermes-chat--work-owner :cycle))
+                    (should-not (plist-get owner :request)))
+                  (hermes-chat-work-refresh)
+                  (should (= (length frames) 1))
+                  (hermes-test--work-answer client "{\"active\":[]}")
+                  (hermes-test--work-answer client "{\"processes\":[]}")
+                  (should-not (plist-get hermes-chat--work-owner :cycle))))
+            (when (buffer-live-p view) (kill-buffer view))))))))
 
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
