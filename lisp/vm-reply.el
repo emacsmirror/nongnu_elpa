@@ -846,10 +846,6 @@ as replied to, forwarded, etc, if appropriate."
 	       (not (y-or-n-p "Send the message? ")))
       (error "Message not sent.")))
   (vm-mail-mode-show-headers)
-  ;; This send has not filed its copies yet.  The buffer is kept after a
-  ;; send, so a flag left over from the last one would mean this message is
-  ;; filed nowhere.
-  (setq vm-fcc-filed nil)
   (when vm-check-recipients
     (vm-mail-check-recipients))
   (when vm-check-for-empty-subject
@@ -867,7 +863,10 @@ as replied to, forwarded, etc, if appropriate."
   ;; has not already been MIME encoded.
   (when (and vm-send-using-mime
 	     (null (vm-mail-mode-get-header-contents "MIME-Version:")))
-    (when vm-do-fcc-before-mime-encode
+    ;; Guarded, or a copy filed before this point is filed again here: the
+    ;; encrypting commands file the unencoded copy when they encode, which is
+    ;; before any of this runs (emacs-vm/vm#784).
+    (when (and vm-do-fcc-before-mime-encode (not vm-fcc-filed))
       (vm-do-fcc-before-mime-encode))
     (vm-mime-encode-composition))
   (when vm-mail-reorder-message-headers
@@ -939,6 +938,14 @@ as replied to, forwarded, etc, if appropriate."
 	    (mail-send)))))
     ;; be careful, something could have killed the composition
     ;; buffer inside mail-send.
+    ;; The copies of this send are filed, so the next one is to file its own.
+    ;; Cleared here and not at the start of the send: `vm-epg-encrypt' and its
+    ;; kind file the unencoded copy when they encode, which is before any of
+    ;; this runs, and a flag cleared at the start threw that away and filed a
+    ;; second copy of the encrypted message (emacs-vm/vm#784).  The buffer is
+    ;; kept after a send, so it must be cleared somewhere: a flag left set
+    ;; would mean a message edited and sent again was filed nowhere.
+    (setq vm-fcc-filed nil)
     (when (eq (current-buffer) composition-buffer)
       (cond ((eq vm-system-state 'replying)
 	     (vm-mail-mark-replied))

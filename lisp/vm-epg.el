@@ -1635,7 +1635,8 @@ own name is a fixed one that the next vm-epg command would erase, and its
 leading space would keep it out of the buffer list."
   (let ((composition-buffer (current-buffer))
         (work-buffer (get-buffer-create " *VM-EPG-WORK*"))
-        (overwriting nil))
+        (overwriting nil)
+        (filed nil))
     (unwind-protect
         (progn
           (with-current-buffer work-buffer
@@ -1643,13 +1644,21 @@ leading space would keep it out of the buffer list."
             (erase-buffer)
             (insert-buffer-substring composition-buffer)
             (setq major-mode 'mail-mode)
-            (apply function args))
+            (apply function args)
+            (setq filed vm-fcc-filed))
           (vm-mail-mode-show-headers)
           ;; Past this point the composition no longer holds a usable copy,
           ;; so an error or a C-g must not take the work buffer with it.
           (setq overwriting t)
           (erase-buffer)
           (insert-buffer-substring work-buffer)
+          ;; Text is not all FUNCTION leaves behind: with
+          ;; `vm-do-fcc-before-mime-encode' it files this composition's Fcc
+          ;; copies, and says so in a buffer-local flag that would go with the
+          ;; work buffer.  The send then filed a second copy, of the encrypted
+          ;; message (emacs-vm/vm#784).
+          (when filed
+            (setq vm-fcc-filed t))
           (setq overwriting nil))
       (if (not overwriting)
           (kill-buffer work-buffer)
