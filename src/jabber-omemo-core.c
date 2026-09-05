@@ -14,11 +14,12 @@
 #include <emacs-module.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/random.h>
 #if defined(__ANDROID__)
 #include <unistd.h>
 #include <sys/syscall.h>
 #define getrandom(buf,buflen,flags) syscall(SYS_getrandom,buf,buflen,flags)
+#elif !defined(__OpenBSD__)
+#include <sys/random.h>
 #endif
 
 #include <mbedtls/gcm.h>
@@ -31,7 +32,13 @@ int plugin_is_GPL_compatible;
 
 int omemoRandom(void *p, size_t n)
 {
+#if defined(__OpenBSD__)
+    /* arc4random_buf fills any size and has no error return. */
+    arc4random_buf(p, n);
+    return 0;
+#else
     return getrandom(p, n, 0) != (ssize_t)n;
+#endif
 }
 
 /* Skipped-message-key registry.
@@ -434,17 +441,6 @@ F_get_bundle(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     /* Build list of (id . key) pairs for pre-keys */
     emacs_value Qcons = env->intern(env, "cons");
     emacs_value Qlist = env->intern(env, "list");
-
-    /* Count valid pre-keys first */
-    int npk = 0;
-    for (int i = 0; i < OMEMO_NUMPREKEYS; i++) {
-        /* A zeroed pre-key has id=0 and zeroed key pair; skip it */
-        uint8_t zero[32] = {0};
-        if (store->prekeys[i].id == 0 &&
-            memcmp(store->prekeys[i].kp.pub, zero, 32) == 0)
-            continue;
-        npk++;
-    }
 
     /* Build pre-keys list backwards for efficiency */
     emacs_value prekey_list = Qnil_v;
@@ -1368,12 +1364,12 @@ F_aesgcm_encrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     /* Generate random 32-byte key and 12-byte IV */
     uint8_t key[32];
     uint8_t iv[12];
-    if (getrandom(key, sizeof(key), 0) != sizeof(key)) {
+    if (omemoRandom(key, sizeof(key))) {
         free(ptbuf);
         signal_error(env, -1, "getrandom failed for key");
         return Qnil_v;
     }
-    if (getrandom(iv, sizeof(iv), 0) != sizeof(iv)) {
+    if (omemoRandom(iv, sizeof(iv))) {
         free(ptbuf);
         signal_error(env, -1, "getrandom failed for IV");
         return Qnil_v;
