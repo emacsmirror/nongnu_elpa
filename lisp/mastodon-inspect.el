@@ -45,6 +45,12 @@
   :prefix "mastodon-inspect-"
   :group 'external)
 
+(defcustom mastodon-inspect-profile-requests nil
+  "Whether to profile requests info.
+Parses outpout of function `url-debug' to list what requests a given
+timeline entails."
+  :type '(boolean))
+
 (defun mastodon-inspect--dump-json-in-buffer (name json)
   "Buffer NAME is opened and JSON in printed into it."
   (switch-to-buffer-other-window name)
@@ -118,12 +124,80 @@
   (setq mastodon-inspect--search-query-accounts-result
         (append ; convert vector to list
          (mastodon-http--get-search-json
-         (format "%s/api/v1/accounts/search" mastodon-instance-url)
-         query)
+          (format "%s/api/v1/accounts/search" mastodon-instance-url)
+          query)
          nil))
   (setq mastodon-inspect--single-account-json
-      (car mastodon-inspect--search-query-accounts-result)))
+        (car mastodon-inspect--search-query-accounts-result)))
 
+(require 'url-util)
+
+(defun mastodon-inspect-profile-requests (&optional endpoint host)
+  "Enable variable `url-debug' and call `mastodon-inspect-requests'.
+Function to insert into timeline and other view loading functions.
+Deletes contents of *URL-DEBUG* after calling `mastodon-inspect-requests'.
+ENDPOINT is a string, to create a heading for a group of
+requests.
+HOST is a top level domain to filter requests for."
+  (setq url-debug t)
+  (when (get-buffer "*URL-DEBUG*")
+    ;; before the new request: list previous set:
+    (mastodon-inspect-requests endpoint (or host
+                            (url-host
+                             (url-generic-parse-url
+                              mastodon-instance-url))))
+    (with-current-buffer "*URL-DEBUG*"
+      ;; then delete previous set:
+      (erase-buffer))))
+
+(defun mastodon-inspect-reqs-by-host (reqs host)
+  "Return only the REQS whose host equals HOST."
+  (cl-remove-if-not
+   (lambda (x) ;; list of all reqs
+     (let ((req-host (car (member-if
+                           (lambda (y) (string-prefix-p "Host: " y))
+                           x))))
+       (when req-host
+         (string= host (cadr (split-string req-host))))))
+   reqs))
+
+(defun mastodon-inspect-reqs-by-verb (reqs)
+  "Filter all REQS for their Verb/Endpoint line.
+Return a list."
+  (flatten-list
+   (mapcar
+    (lambda (x) ;; reqs list
+      (mapcar
+       (lambda (y) ;; req strs
+         (when (member (car (split-string y))
+                       '("GET" "PUT" "POST" "PATCH" "DELETE"))
+           y))
+       x))
+    reqs)))
+
+(defun mastodon-inspect-requests (&optional endpoint host)
+  "Collect recent url.el requests into a buffer.
+Filters *URL-DEBUG* for requests, dumps them into *masto-requests*. Note
+that for simplicity's sake in handling async requests, we collect all
+the requests made until just *before* the page being loaded (and since
+the last one).
+ENDPOINT is a string, to create a heading for a group of
+requests.
+HOST is a top level domain to filter requests for."
+  (with-current-buffer "*URL-DEBUG*"
+    (let* ((list (split-string (buffer-string) "http -> Request is:"))
+           (split-lists (mapcar (lambda (x)
+                                  (split-string x "\n"))
+                                list))
+           (by-host (mastodon-inspect-reqs-by-host split-lists host))
+           (verbs (mastodon-inspect-reqs-by-verb by-host)))
+      (with-current-buffer
+          (get-buffer-create "*masto-requests*")
+        (goto-char (point-max))
+        (insert
+         (format "\n\n***\nCalls *before* hitting endpoint: %s\n%s"
+                 (or endpoint "")
+                 (mapconcat #'identity verbs "\n")))))))
 
 (provide 'mastodon-inspect)
 ;;; mastodon-inspect.el ends here

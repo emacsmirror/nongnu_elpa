@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianh@disroot.org>
 ;; Maintainer: Marty Hiatt <martianh@disroot.org>
-;; Version: 2.1.1
+;; Version: 2.1.2
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -250,6 +250,11 @@ alerts."
                   collect (list 'const :tag (plist-get (cdr x) :title)
                                 :value (car x)))))))
 
+(defcustom mastodon-display-featured-tags-on-profiles t
+  "Whether to display featured tags on user profiles.
+Adds an extra request to profile viewing, so is optional."
+  :type '(boolean))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)
@@ -291,6 +296,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "C-\"")   #'mastodon-tl-jump-to-followed-tag)
     (define-key map (kbd "'")      #'mastodon-tl-followed-tags-timeline)
     (define-key map (kbd "C-'")    #'mastodon-tl-tag-group-timeline)
+    (define-key map (kbd "C-M-'")  #'mastodon-tl-tag-all-timeline)
     (define-key map (kbd "A")      #'mastodon-profile-get-toot-author)
     (define-key map (kbd "F")      #'mastodon-tl-get-federated-timeline)
     (define-key map (kbd "H")      #'mastodon-tl-get-home-timeline)
@@ -663,7 +669,13 @@ Calls `mastodon-tl--get-buffer-type', which see."
     (emojify-mode t)
     (when mastodon-toot--enable-custom-instance-emoji
       (mastodon-toot-enable-custom-emoji)))
-  (mastodon-profile--fetch-server-account-settings)
+  ;; FIXME: this perhaps means we never update account settings:
+  ;; i guess there is a trade-off between performance and accuracy here.
+  ;; we'd like to avoid making the request for every buffer load, but if
+  ;; we close mastodon.el, and re-open (perhaps using another client to
+  ;; change settings in the meantime, `mastodon-profile-account-settings' will
+  ;; still be non-nil, so this will not update?)
+  (mastodon-profile--fetch-server-account-settings :noforce)
   (when (and mastodon-tl--highlight-current-toot
              (fboundp #'cursor-face-highlight-mode))
     (cursor-face-highlight-mode)) ; 29.1

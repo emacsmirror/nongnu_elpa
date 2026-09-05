@@ -194,6 +194,7 @@
 | SPC        | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |            | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
 |            | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
+| C-M-'      | mastodon-tl-tag-all-timeline                     | Load a timeline of all tags in `mastodon-tl--tags-groups'.                     |
 | C-'        | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
 | T          | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
 | S          | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
@@ -298,7 +299,7 @@
 |            | mastodon-views-view-instance-description-brief   | View brief details of the instance the current post's author is on.            |
 |            | mastodon-views-view-list-timeline                | Prompt for a list and view its timeline.                                       |
 | g, X       | mastodon-views-view-lists                        | Show the user's lists in a new buffer.                                         |
-|            | mastodon-views-view-own-collection               | Prompt for a collection of yours and view it.                                  |
+| `          | mastodon-views-view-own-collection               | Prompt for a collection of yours and view it.                                  |
 |            | mastodon-views-view-own-instance                 | View details of your own instance.                                             |
 |            | mastodon-views-view-own-instance-brief           | View brief details of your own instance.                                       |
 |            | mastodon-views-view-profile-collection           | Prompt for a user profile collection and view it.                              |
@@ -308,21 +309,29 @@
 * mastodon custom variables index
  
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Custom variable" "Description") :exports results
-  (let (rows)
-    (mapatoms
-     (lambda (symbol)
-       (when (and (string-match "^mastodon"
-                                (symbol-name symbol))
-                  (custom-variable-p symbol))
-         (let* ((doc (car (split-string
-                           (or (get (indirect-variable symbol)
-                                    'variable-documentation)
-                               (get symbol 'variable-documentation)
-                               "")
-                           "\n"))))
-           (push `(,symbol ,doc) rows)
-           rows))))
-    (sort rows (lambda (x y) (string-lessp (car x) (car y)))))
+  (defun var-get-doc (symbol)
+    (or (get (indirect-variable symbol)
+             'variable-documentation)
+        (get symbol 'variable-documentation)
+        ""))
+
+  (defun var-doc (symbol)
+    (let ((str (var-get-doc symbol)))
+      (car (split-string str "\n"))))
+
+  (defun do-vars ()
+    (let (rows)
+      (mapatoms
+       (lambda (symbol)
+         (when (and (string-match "^mastodon"
+                                  (symbol-name symbol))
+                    (custom-variable-p symbol))
+           (let* ((doc (var-doc symbol)))
+             (push `(,symbol ,doc) rows)
+             rows))))
+      (sort rows (lambda (x y) (string-lessp (car x) (car y))))))
+
+  (do-vars)
 #+end_src
 
 #+RESULTS:
@@ -331,8 +340,10 @@
 | mastodon-active-user                               | Username of the active user.                                                 |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
+| mastodon-display-featured-tags-on-profiles         | Whether to display featured tags on user profiles.                           |
 | mastodon-group-notifications                       | Whether to use grouped notifications.                                        |
 | mastodon-images-in-notifs                          | Whether to display attached images in notifications.                         |
+| mastodon-inspect-profile-requests                  | Whether to profile requests info.                                            |
 | mastodon-instance-url                              | Base URL for the fediverse instance you want to be active.                   |
 | mastodon-media--avatar-height                      | Height of the user avatar images (if shown).                                 |
 | mastodon-media--enable-image-caching               | Whether images should be cached.                                             |
@@ -366,6 +377,7 @@
 | mastodon-tl--tags-groups                           | A list containing lists of up to four tags each.                             |
 | mastodon-tl--timeline-posts-count                  | Number of posts to display when loading a timeline.                          |
 | mastodon-tl-position-after-update                  | Defines where `point' should be located after a timeline update.             |
+| mastodon-tl-use-nerd-icons                         | Whether to use nerd icons for icons/symbols.                                 |
 | mastodon-toot--attachment-height                   | Height of the attached images preview in the toot draft buffer.              |
 | mastodon-toot--completion-style-for-mentions       | The company completion style to use for mentions.                            |
 | mastodon-toot--default-media-directory             | The default directory when prompting for a media file to upload.             |

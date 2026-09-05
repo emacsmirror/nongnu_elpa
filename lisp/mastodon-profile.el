@@ -89,6 +89,12 @@
 (autoload 'mastodon-views--end-of-table "mastodon-views")
 (autoload 'mastodon-tl--buttonify-link "mastodon-tl")
 (autoload 'mastodon-tl-read-handle-annotated "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action "mastodon-tl")
+(autoload 'mastodon-tl-next-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-previous-tab-item "mastodon-tl")
+(autoload 'mastodon-tl-do-link-action-at-point "mastodon-tl")
+(autoload 'mastodon-inspect-profile-requests "mastodon-inspect")
+(autoload 'mastodon-search-propertize-tag "mastodon-search")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -98,6 +104,8 @@
 (defvar mastodon-toot--content-nsfw)
 (defvar mastodon-tl--timeline-posts-count)
 (defvar mastodon-group-notifications)
+(defvar mastodon-inspect-profile-requests)
+(defvar mastodon-display-featured-tags-on-profiles)
 
 (defvar-local mastodon-profile--account nil
   "The data for the account being described in the current profile buffer.")
@@ -441,9 +449,10 @@ If NO-FORCE, only fetch if `mastodon-profile-account-settings' is nil."
                sk (mastodon-profile--get-source-value sk)))
             source-keys)
       ;; hack for max toot chars:
-      (mastodon-toot--get-max-toot-chars :no-toot)
+      (unless mastodon-toot--max-toot-chars
+        (mastodon-toot--get-max-toot-chars :no-toot))
       (mastodon-profile--update-preference-plist 'max_toot_chars
-                                                 mastodon-toot--max-toot-chars)
+                                 mastodon-toot--max-toot-chars)
       ;; TODO: remove now redundant vars, replace with fetchers from the plist
       (setq mastodon-toot--visibility (mastodon-profile--get-pref 'privacy)
             mastodon-toot--content-nsfw (mastodon-profile--get-pref 'sensitive))
@@ -787,8 +796,8 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
       (let* ((followsp
               (mastodon-profile--follows-p
                (list .requested_by .following .followed_by .blocked_by)))
-             (rels (mastodon-profile--relationships-get .id))
-             (langs-filtered (when-let* ((langs (alist-get 'languages rels)))
+             ;; (rels (mastodon-profile--relationships-get .id)) ;; same as relationships var?
+             (langs-filtered (when-let* ((langs .languages))
                                (concat " ("
                                        (mapconcat #'identity langs " ")
                                        ")")))
@@ -809,6 +818,34 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
            (cl-loop for x in str-list
                     collect (+ 2 (length x)))))))))
 
+(defun mastodon-profile--propertize-featured-tag (str)
+  "Propertize tag STR, a tag sans hash, as a featured hashtag.
+Featured hashtags link to the user's posts containing it."
+  (propertize (concat "#" str)
+              'mouse-face 'highlight
+              'mastodon-tag str
+              'mastodon-tab-stop 'featured-hashtag
+              'item-type 'tag ; for next/prev nav
+              'help-echo (concat "Browse featured tag #" str)
+              'keymap mastodon-tl--link-keymap))
+
+(defun mastodon-profile--insert-featured-tags (tags)
+  "Insert featured TAGS.
+Insert function for `mastodon-profile--pretty-table'."
+  (let* ((names (mastodon-tl--map-alist 'name tags))
+         (names-rows (seq-partition names 4)))
+    (mastodon-profile--pretty-table
+     (lambda ()
+       (insert
+        (mapconcat
+         (lambda (row)
+           (mapconcat #'mastodon-profile--propertize-featured-tag
+                      row " | "))
+         names-rows
+         "\n")))
+     ;; 3+ for padding + #:
+     (+ 3 (apply #'max (mapcar #'length names))))))
+
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
              &optional no-reblogs headers no-replies only-media tag max-id
@@ -821,6 +858,8 @@ ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
 MAX-ID is a flag to include the max_id pagination parameter.
 SKIP-PINNED means don't display pinned toots."
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests))
   (let-alist account
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
@@ -854,7 +893,8 @@ SKIP-PINNED means don't display pinned toots."
                            (cdr response))))
            (fields (mastodon-profile--fields-get account))
            (pinned (mastodon-profile--get-statuses-pinned account))
-           (relationships (mastodon-profile--relationships-get .id)))
+           (relationships (mastodon-profile--relationships-get .id))
+           (featured-tags (mastodon-profile--get-featured-tags .id)))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-profile-mode)
         (setq mastodon-profile--account account)
@@ -900,6 +940,9 @@ SKIP-PINNED means don't display pinned toots."
                            .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
+          (when (and featured-tags
+                     mastodon-display-featured-tags-on-profiles)
+            (mastodon-profile--insert-featured-tags featured-tags))
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create

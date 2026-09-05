@@ -329,20 +329,24 @@ If NOTE is non-nil, include user's profile note. This is also
   (let ((tags-list (mapcar #'mastodon-search--get-hashtag-info tags)))
     (mastodon-search--print-tags-list tags-list)))
 
+(defun mastodon-search-propertize-tag (str)
+  "Propertize tag STR, a tag sans hash."
+  (propertize (concat "#" str)
+              'face '(:box t)
+              'mouse-face 'highlight
+              'mastodon-tag str
+              'mastodon-tab-stop 'hashtag
+              'item-type 'tag ; for next/prev nav
+              'byline t ; for next/prev nav
+              'help-echo (concat "Browse tag #" str)
+              'keymap mastodon-tl--link-keymap))
+
 (defun mastodon-search--print-tags-list (tags-list)
   "Insert a propertized list of TAGS-LIST."
   (cl-loop for el in tags-list
            do (insert
                " : "
-               (propertize (concat "#" (car el))
-                           'face '(:box t)
-                           'mouse-face 'highlight
-                           'mastodon-tag (car el)
-                           'mastodon-tab-stop 'hashtag
-                           'item-type 'tag ; for next/prev nav
-                           'byline t ; for next/prev nav
-                           'help-echo (concat "Browse tag #" (car el))
-                           'keymap mastodon-tl--link-keymap)
+               (mastodon-search-propertize-tag (car el))
                " : \n\n")))
 
 (defun mastodon-search--get-user-info (account)

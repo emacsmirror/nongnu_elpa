@@ -98,6 +98,8 @@
 (autoload 'mastodon-search--print-tags "mastodon-search")
 (autoload 'mastodon-profile-show-user "mastodon-profile")
 (autoload 'mastodon-toot--own-toot-p "mastodon-toot")
+(autoload 'mastodon-inspect-profile-requests "mastodon-tl")
+(autoload 'mastodon-profile-open-statuses-tagged "mastodon-profile")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
@@ -112,10 +114,10 @@
 (defvar mastodon-instance-url)
 (defvar mastodon-toot-timestamp-format)
 (defvar shr-use-fonts)  ;; declare it since Emacs24 didn't have this
-(defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
 (defvar mastodon-media--sensitive-image-data)
 (defvar mastodon-media--attachments)
+(defvar mastodon-inspect-profile-requests)
 
 
 ;;; CUSTOMIZES
@@ -274,6 +276,13 @@ re-load mastodon.el, or restart Emacs."
 (defcustom mastodon-tl--tag-timeline-tags nil
   "A list of up to four tags for use with `mastodon-tl-followed-tags-timeline'."
   :type '(repeat string))
+
+(defcustom mastodon-tl--tags-groups nil
+  "A list containing lists of up to four tags each.
+You can load a tag timeline list with one of these by calling
+`mastodon-tl-tag-group-timeline'."
+  :group 'mastodon-tl
+  :type '(repeat (list string string string string)))
 
 (defcustom mastodon-tl--load-full-sized-images-in-emacs t
   "Whether to load full-sized images inside Emacs.
@@ -643,17 +652,20 @@ With a double PREFIX arg, limit results to your own instance."
     (message "Loading timeline for #%s..." tag)
     (mastodon-tl--show-tag-timeline prefix tag)))
 
+(defun mastodon-tl-tag-prefix-arg (prefix)
+  "Handle PREFIX arg for tag timelines."
+  `(("limit" . ,mastodon-tl--timeline-posts-count)
+    ,@(when (equal prefix '(4))
+        '(("only_media" . "true")))
+    ,@(when (equal prefix '(16))
+        '(("local" . "true")))))
+
 (defun mastodon-tl--show-tag-timeline (&optional prefix tag)
   "Opens a new buffer showing the timeline of posts with hastag TAG.
 If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
-  (let ((params
-         `(("limit" . ,mastodon-tl--timeline-posts-count)
-           ,@(when (eq prefix 4)
-               '(("only_media" . "true")))
-           ,@(when (eq prefix 16)
-               '(("local" . "true"))))))
+  (let ((params (mastodon-tl-tag-prefix-arg prefix)))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
@@ -869,22 +881,30 @@ If it is a boost, return \\='$username boosted'."
                      'face 'mastodon-boosted-face
                      'continued-thread t
                      'help-echo "Browse thread"))
-          (let-alist (mastodon-tl--acc-by-id reply-acc-id)
-            (let ((name (or .display_name .username)))
-              (concat (mastodon-tl--symbol 'reply)
-                      (mastodon-tl--buttonify-link
-                       " in reply to "
-                       'face 'mastodon-boosted-face
-                       'continued-thread t
-                       'help-echo "Browse thread")
-                      (mastodon-tl--buttonify-link name
-                                        'face 'mastodon-display-name-face
-                                        'keymap mastodon-tl--link-keymap
-                                        'mastodon-tab-stop 'user-handle
-                                        'shr-url .url
-                                        'mastodon-handle (concat "@" .acct)
-                                        'mouse-face 'highlight)
-                      "\n"))))))
+          ;; try to extract reply account data from mentions:
+          (let ((mention (car
+                          (member-if
+                           (lambda (x)
+                             (string= reply-acc-id (alist-get 'id x)))
+                           (alist-get 'mentions toot)))))
+            (let-alist (or mention
+                           ;; if not, fetch account by id:
+                           (mastodon-tl--acc-by-id reply-acc-id))
+              (let ((name (or .display_name .username)))
+                (concat (mastodon-tl--symbol 'reply)
+                        (mastodon-tl--buttonify-link
+                         " in reply to "
+                         'face 'mastodon-boosted-face
+                         'continued-thread t
+                         'help-echo "Browse thread")
+                        (mastodon-tl--buttonify-link name
+                                          'face 'mastodon-display-name-face
+                                          'keymap mastodon-tl--link-keymap
+                                          'mastodon-tab-stop 'user-handle
+                                          'shr-url .url
+                                          'mastodon-handle (concat "@" .acct)
+                                          'mouse-face 'highlight)
+                        "\n")))))))
      (t ""))))
 
 (defun mastodon-tl-continued-thread-load ()
@@ -1376,6 +1396,9 @@ Used for hitting RET on a given link."
                         (mastodon-url-lookup (get-text-property pos 'shr-url)))
                        (t
                         (error "Unable to find account"))))))))
+          ((eq link-type 'featured-hashtag)
+           (mastodon-profile-open-statuses-tagged
+            (get-text-property pos 'mastodon-tag)))
           ((eq link-type 'shr-url)
            (mastodon-url-lookup (get-text-property pos 'shr-url)))
           ((eq link-type 'read-more)
@@ -2563,6 +2586,9 @@ call this function after it is set or use something else."
            'local)
           ((mastodon-tl--endpoint-str-= "timelines/public")
            'federated)
+          ;; tags all, must precede tag-timeline:
+          ((string-suffix-p "-tags-all*" (buffer-name))
+           'hashtags-all)
           ((mastodon-tl--endpoint-str-= "timelines/tag/" :prefix)
            'tag-timeline)
           ((mastodon-tl--endpoint-str-= "timelines/list/" :prefix)
@@ -2886,6 +2912,8 @@ programmatically and not crash into
   ;; this function's var must not be id as the above macro binds id and
   ;; even if we provide the arg (e.g. url-lookup), the macro definition
   ;; overrides it, making the optional arg unusable!
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests "thread"))
   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
          (type
           (if (and (mastodon-tl--buffer-type-eq 'notifications)
@@ -3479,13 +3507,6 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
                      tags)))
     (mastodon-tl--show-tag-timeline prefix selection)))
 
-(defcustom mastodon-tl--tags-groups nil
-  "A list containing lists of up to four tags each.
-You can load a tag timeline list with one of these by calling
-`mastodon-tl-tag-group-timeline'."
-  :group 'mastodon-tl
-  :type '(repeat (list string string string string)))
-
 (defun mastodon-tl-tag-group-timeline (&optional prefix)
   "Load a timeline of a tag group from `mastodon-tl--tags-groups'.
 PREFIX is for `mastodon-tl--show-tag-timeline', which see."
@@ -3500,6 +3521,61 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
            (choice (completing-read "Tag group: " list-strs))
            (choice-list (cdr (assoc choice list-strs #'equal))))
       (mastodon-tl--show-tag-timeline prefix choice-list))))
+
+(defun mastodon-tl--tag-group-tl (tags prefix params)
+  "Return data for TAGS, a group of max 4 tags.
+PREFIX is for setting optional params with `mastodon-tl-tag-prefix-arg'.
+PARAMS is any (e.g. update) params to send."
+  ;; FIXME: max_id (pagination)
+  (let* ((url (mastodon-http--api
+               (concat "timelines/tag/" (car tags))))
+         (params (append (mastodon-tl-tag-prefix-arg prefix)
+                         (mastodon-http--build-array-params-alist
+                          "any[]" (cdr tags))
+                         params)))
+    (mastodon-http--get-json url params)))
+
+(defun mastodon-tl-ts-sort-pred (x y)
+  "Predicate for sorting toots by recency.
+X and Y are list elements (toots).
+We convert and compare their created_at values."
+  (> (time-to-seconds
+      (date-to-time
+       (alist-get 'created_at x)))
+     (time-to-seconds
+      (date-to-time
+       (alist-get 'created_at y)))))
+
+(defun mastodon-tl-tags-all-data (&optional prefix params)
+  "Return tags data for all tags in `mastodon-tl-tags-groups'.
+PREFIX is for `mastodon-tl-tag-group-tl'.
+PARAMS is any (e.g. update) params to send."
+  (apply #'append ;; flatten result by one layer of nesting
+         (mapcar (lambda (x)
+                   (mastodon-tl--tag-group-tl x prefix params)) ;; get data
+                 mastodon-tl--tags-groups)))
+
+(defun mastodon-tl-tag-all-timeline (&optional prefix)
+  "Load a timeline of all tags in `mastodon-tl--tags-groups'.
+This will probably be quite slow, as it makes one request for every 4
+tags followed. For a faster alternative, consider `mastodon-tl-tag-group-timeline',
+which loads just one group of 4 tags.
+Returns up to 20 items for every 4 tags followed.
+Pagination (adding more items at bottom of buffer) works, but because we
+do the requests then sort by recency client-side, items will not be in
+strictly reverse chronological order."
+  (interactive "P")
+  (if (not mastodon-tl--tags-groups)
+      (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
+    (let* ((data (mastodon-tl-tags-all-data prefix))
+           (sorted (cl-sort data #'mastodon-tl-ts-sort-pred)))
+      (mastodon-tl--init-sync
+       "tags-all"
+       (concat "timelines/tag/" (caar mastodon-tl--tags-groups))
+       #'mastodon-tl--timeline nil
+       ;; update params
+       (mastodon-tl-tag-prefix-arg prefix)
+       nil nil nil nil sorted))))
 
 
 ;;; REPORT TO MODERATORS
@@ -3715,6 +3791,8 @@ and profile pages when showing followers or accounts followed."
 (defun mastodon-tl--more ()
   "Append older toots to timeline, asynchronously."
   (message "Loading...")
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests "TL more"))
   (if (mastodon-tl--use-link-header-p)
       ;; link-header paginate:
       ;; can't build a URL with --more-json-async, endpoint/id:
@@ -3740,6 +3818,8 @@ and profile pages when showing followers or accounts followed."
             (mastodon-tl--endpoint)
             (mastodon-tl--update-params) nil
             'mastodon-tl--more* (current-buffer) (point)))
+          ((mastodon-tl--buffer-type-eq 'hashtags-all)
+           (mastodon-tl-tags-all-more))
           (t ;; max_id paginate (timelines, items with ids/timestamps):
            (let ((max-id (mastodon-tl--oldest-id))
                  (params (mastodon-tl--update-params)))
@@ -3748,6 +3828,18 @@ and profile pages when showing followers or accounts followed."
               max-id params nil
               'mastodon-tl--more*
               (current-buffer) (point) nil max-id))))))
+
+(defun mastodon-tl-tags-all-more ()
+  "More function for all tags view.
+Calls `mastodon-tl-tags-all-data' with pagiation params, then calls
+`mastodon-tl-more*'."
+  (let* ((max-id (mastodon-tl--oldest-id))
+         (params (append `(("max_id" . ,max-id))
+                         (mastodon-tl--update-params)))
+         (data (cl-sort (mastodon-tl-tags-all-data nil params)
+                        #'mastodon-tl-ts-sort-pred)))
+    (mastodon-tl--more* data (current-buffer)
+             (point) nil max-id)))
 
 (defun mastodon-tl--more*
     (response buffer point-before &optional headers max-id)
@@ -4032,6 +4124,8 @@ NO-BYLINE means just insert toot body, used for announcements."
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
+    (when mastodon-inspect-profile-requests
+      (mastodon-inspect-profile-requests endpoint))
     (funcall
      (if headers
          #'mastodon-http--get-response-async
@@ -4079,7 +4173,7 @@ NO-BYLINE means just insert toot body, used for announcements."
 
 (defun mastodon-tl--init-sync
     (buffer-name endpoint update-function &optional note-type params
-                 headers view-name binding-str endpoint-version)
+                 headers view-name binding-str endpoint-version data)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to receive more toots.
 Runs synchronously.
@@ -4089,17 +4183,20 @@ HEADERS are any headers to send in the request.
 VIEW-NAME is a string, to be used as a heading for the view.
 BINDING-STR is a string explaining any bindins in the view, it can have
 formatting for `substitute-command-keys'.
-ENDPOINT-VERSION is a string, format Vx, e.g. V2."
+ENDPOINT-VERSION is a string, format Vx, e.g. V2.
+Use DATA rather than doing requests if present."
   ;; Used by `mastodon-notifications-get' and in views.el
+  (when mastodon-inspect-profile-requests
+    (mastodon-inspect-profile-requests endpoint))
   (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
                           "types[]" (list note-type))))
          (params (append notes-params params))
-         (url (mastodon-http--api endpoint endpoint-version))
+         (url (unless data (mastodon-http--api endpoint endpoint-version)))
          (buffer (concat "*mastodon-" buffer-name "*"))
-         (response (mastodon-http--get-response url params))
-         (json (car response))
-         (headers (when headers (cdr response)))
+         (response (unless data (mastodon-http--get-response url params)))
+         (json (or data (car response)))
+         (headers (unless data (when headers (cdr response))))
          (link-header (when headers
                         (mastodon-tl--get-link-header-from-response headers))))
     (with-mastodon-buffer buffer #'mastodon-mode nil
