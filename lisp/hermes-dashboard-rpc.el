@@ -291,7 +291,7 @@ RESOLVE and REJECT receive the asynchronous result or error."
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-process-stop "process.stop"
-  "Send `process.stop' for CLIENT to terminate running background processes.
+  "Send `process.stop' for CLIENT to stop processes across all instance chats.
 RESOLVE and REJECT receive the asynchronous result or error.  This stops
 background/tool processes; it does not interrupt the current model turn -- use
 `hermes-dashboard-transport-session-interrupt' for that.")

@@ -84,6 +84,12 @@
   (and-let* ((name (hermes-chat--scalar-string value)))
     (hermes-transport--non-empty-string (string-remove-prefix "/" name))))
 
+(defun hermes-chat--command-pair-description (pair)
+  "Return PAIR description, accounting for native command behavior."
+  (if (equal (hermes-chat--command-name (hermes-chat--pair-command pair)) "stop")
+      "Confirm stopping all processes in the connected Hermes instance (all chats)"
+    (hermes-chat--scalar-string (hermes-chat--pair-description pair))))
+
 (defun hermes-chat--catalog-pairs-candidates (pairs)
   "Return (NAME . DESCRIPTION) cells for catalog PAIRS."
   (delq nil
@@ -91,8 +97,7 @@
          (lambda (pair)
            (when-let* ((name (hermes-chat--command-name
                               (hermes-chat--pair-command pair))))
-             (cons name (hermes-chat--scalar-string
-                         (hermes-chat--pair-description pair)))))
+             (cons name (hermes-chat--command-pair-description pair))))
          (hermes-chat--listify pairs))))
 
 (defun hermes-chat--catalog-candidates (result)
@@ -742,7 +747,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
 (defun hermes-chat--format-command-pair (pair)
   "Return a readable catalog line for PAIR."
   (let ((name (hermes-chat--scalar-string (hermes-chat--pair-command pair)))
-        (desc (hermes-chat--scalar-string (hermes-chat--pair-description pair))))
+        (desc (hermes-chat--command-pair-description pair)))
     (string-join (delq nil (list name desc)) " — ")))
 
 (defun hermes-chat--format-command-category (category)

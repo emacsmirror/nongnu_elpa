@@ -1249,25 +1249,42 @@ the current draft stays here.  Uncertain deliveries require history inspection."
 (defalias 'hermes-reconnect #'hermes-dashboard-reconnect)
 
 (defun hermes-chat-stop-processes ()
-  "Stop background/tool processes for this chat via `process.stop'.
-This does not interrupt the current model turn -- use `hermes-chat-interrupt'
+  "Confirm stopping all processes in the connected Hermes instance.
+This affects background/tool processes across all chats, not just this chat.
+It does not interrupt the current model turn; use `hermes-chat-interrupt'
 for that."
   (interactive)
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support stopping processes"))
-  (let ((buffer (current-buffer))
-        (lifetime hermes-chat--lifecycle-generation))
-    (hermes-dashboard-transport-process-stop
-     hermes-chat--dashboard-client
-     :resolve (lambda (result)
-                (hermes-chat--in-lifetime buffer lifetime
-                  (hermes-chat--insert-local-status
-                   (format "Stopped %s background process(es)"
-                           (or (hermes-transport--get result 'killed) 0))
-                   'done)))
-     :reject (lambda (message)
-               (hermes-chat--in-lifetime buffer lifetime
-                 (hermes-chat--command-error message))))))
+  (let* ((buffer (current-buffer))
+         (client hermes-chat--dashboard-client)
+         (context (hermes-chat--command-context client))
+         (connection (hermes-dashboard-transport-client-generation client))
+         (current-p
+          (lambda ()
+            (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (and (hermes-chat--command-context-current-p context)
+                        (hermes-chat--dashboard-session-attached-p)
+                        (= connection
+                           (hermes-dashboard-transport-client-generation
+                            client))))))))
+    (when (and (yes-or-no-p
+                "Stop all background/tool processes in the connected Hermes instance (all chats)? ")
+               (funcall current-p))
+      (hermes-dashboard-transport-process-stop
+       client
+       :resolve (lambda (result)
+                  (when (funcall current-p)
+                    (with-current-buffer buffer
+                      (hermes-chat--insert-local-status
+                       (format "Stopped %s background process(es) across all chats"
+                               (or (hermes-transport--get result 'killed) 0))
+                       'done))))
+       :reject (lambda (message)
+                 (when (funcall current-p)
+                   (with-current-buffer buffer
+                     (hermes-chat--command-error message))))))))
 
 (defun hermes-chat--reset-transcript ()
   "Tear down the live session and re-initialize this chat buffer empty.

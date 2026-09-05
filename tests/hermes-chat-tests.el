@@ -47,7 +47,8 @@
   "Bare callbacks from lifetime A cannot mutate same-buffer lifetime B."
   (let ((client (hermes-test--dashboard-client))
         catalog-resolve stop-resolve background-resolve model-rejects model-resolves provider-candidate)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-commands-catalog)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'hermes-dashboard-transport-commands-catalog)
                (lambda (_client &rest args) (setq catalog-resolve (plist-get args :resolve))))
               ((symbol-function 'hermes-dashboard-transport-process-stop)
                (lambda (_client &rest args) (setq stop-resolve (plist-get args :resolve))))
@@ -4237,6 +4238,164 @@
   (should-not (hermes-chat--native-slash-handler "definitely-not-a-command"))
   (should-not (hermes-chat--native-slash-handler nil)))
 
+(ert-deftest hermes-chat-stop-confirmation-scope-and-ownership ()
+  "Global stop requires consent for the exact attachment, including callbacks."
+  (dolist (change '(cancel accept client session connection lifetime))
+    (let ((client (hermes-test--dashboard-client)) frames prompt)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "chat-A"
+             hermes-chat--dashboard-session-ready-p t)
+       (let ((hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text)
+                (push (hermes-transport-json-parse text) frames))))
+         (cl-letf (((symbol-function 'yes-or-no-p)
+                    (lambda (text)
+                      (setq prompt text)
+                      (pcase change
+                        ('client (setq hermes-chat--dashboard-client
+                                       (hermes-test--dashboard-client)))
+                        ('session (setq hermes-chat--dashboard-active-session-id "chat-B"))
+                        ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+                        ('lifetime (setq hermes-chat--lifecycle-generation (list 'replacement))))
+                      (not (eq change 'cancel)))))
+           (hermes-chat-stop-processes)))
+       (should (string-match-p "all chats" (or prompt "")))
+       (should (string-match-p "connected Hermes instance" prompt))
+       (if (eq change 'accept)
+           (progn
+             (should (= (length frames) 1))
+             (should (equal (hermes-transport--get (car frames) 'method) "process.stop"))
+             (should-not (hermes-transport--get
+                          (hermes-transport--get (car frames) 'params) 'session_id)))
+         (should-not frames))))))
+
+(ert-deftest hermes-chat-stop-shared-instance-consent ()
+  "One chat's confirmed stop is explicitly shared by both attached owners."
+  (let ((client (hermes-test--dashboard-client)) frames consent)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "chat-A"
+           hermes-chat--dashboard-session-ready-p t)
+     (let ((origin (current-buffer)))
+       (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client client
+              hermes-chat--dashboard-active-session-id "chat-B"
+              hermes-chat--dashboard-session-ready-p t)
+        (let ((peer (current-buffer))
+              (hermes-dashboard-transport-websocket-send-function
+               (lambda (_socket text)
+                 (push (hermes-transport-json-parse text) frames))))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (prompt)
+                       (should (string-match-p "all chats" prompt))
+                       consent)))
+            (with-current-buffer origin
+              (hermes-chat-stop-processes)
+              (should-not frames)
+              (setq consent t)
+              (hermes-chat-stop-processes)))
+          (should (= (length frames) 1))
+          (should (equal (hermes-transport--get (car frames) 'method) "process.stop"))
+          (should (eq client (buffer-local-value 'hermes-chat--dashboard-client peer)))
+          (should (equal (buffer-local-value 'hermes-chat--dashboard-active-session-id peer)
+                         "chat-B"))))))))
+
+(ert-deftest hermes-chat-stop-stale-completions ()
+  "Both stop completions leave a successor attachment's transcript untouched."
+  (dolist (change '(client session connection lifetime))
+    (let ((client (hermes-test--dashboard-client)) callbacks)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "chat-A"
+             hermes-chat--dashboard-session-ready-p t)
+       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+                 ((symbol-function 'hermes-dashboard-transport-process-stop)
+                  (lambda (target &rest args)
+                    (should (eq target client))
+                    (setq callbacks args))))
+         (hermes-chat-stop-processes))
+       (pcase change
+         ('client (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)))
+         ('session (setq hermes-chat--dashboard-active-session-id "chat-B"))
+         ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+         ('lifetime (setq hermes-chat--lifecycle-generation (list 'replacement))))
+       (let ((before (buffer-string)))
+         (funcall (plist-get callbacks :resolve) '((killed . 2)))
+         (funcall (plist-get callbacks :reject) "old failure")
+         (should (equal before (buffer-string))))))))
+
+(ert-deftest hermes-chat-stop-help-names-instance-scope ()
+  "Catalog help and completion must not inherit misleading backend wording."
+  (let ((pair '("/stop" "Stop processes for this chat")))
+    (should (string-match-p "all.*connected Hermes instance"
+                            (hermes-chat--format-command-pair pair)))
+    (should (string-match-p "all.*connected Hermes instance"
+                            (cdar (hermes-chat--catalog-pairs-candidates (list pair)))))))
+
+(ert-deftest hermes-chat-idle-automatic-close-retires-work ()
+  "Real socket loss retires idle observation; readiness does not resume it."
+  (let ((client (hermes-test--dashboard-client)) cancelled resumed)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (&rest _) (setq resumed t)))
+              ((symbol-function 'hermes-dashboard-transport-cancel-owner-requests)
+               (lambda (_client owner) (push owner cancelled))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client)
+       (hermes-chat--dashboard-record-session
+        client '((session_id . "runtime-A") (session_key . "durable-A")))
+       (let ((owner hermes-chat--work-owner)
+             (hermes-dashboard-transport-schedule-function (lambda (&rest _) nil)))
+         (should owner)
+         (should (hermes-chat--work-current-p owner))
+         (should-not hermes-chat--pending-assistant-id)
+         (setf (hermes-dashboard-transport-client-refcount client) 1)
+         (hermes-dashboard-transport--handle-socket-down client "Socket closed")
+         (should (memq owner cancelled))
+         (should-not hermes-chat--work-owner)
+         (should-not (plist-get owner :timer))
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not hermes-chat--dashboard-session-ready-p)
+         (should (equal hermes-chat--session-id "durable-A"))
+         (setf (hermes-dashboard-transport-client-websocket client) 'replacement-socket)
+         (hermes-dashboard-transport--handle-frame
+          client "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"gateway.ready\"}}")
+         (should-not resumed)
+         (should-not hermes-chat--work-owner)
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not hermes-chat--dashboard-session-ready-p)
+         (should (equal hermes-chat--session-id "durable-A"))
+         (hermes-chat--dashboard-record-session
+          client '((session_id . "runtime-B") (session_key . "durable-A")))
+         (should-not (eq owner hermes-chat--work-owner))
+         (should (hermes-chat--work-current-p hermes-chat--work-owner)))))))
+
+(ert-deftest hermes-chat-idle-process-exit-retires-work ()
+  "A real terminal process-exit event also retires a nil-assistant attachment."
+  (let ((client (hermes-test--dashboard-client)) cancelled)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-cancel-owner-requests)
+               (lambda (_client owner) (push owner cancelled))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client)
+       (hermes-chat--dashboard-record-session
+        client '((session_id . "runtime-A") (session_key . "durable-A")))
+       (let ((owner hermes-chat--work-owner)
+             (hermes-dashboard-transport-process-live-p-function (lambda (_) nil)))
+         (setf (hermes-dashboard-transport-client-process client) 'exited-child)
+         (hermes-dashboard-transport--handle-process-exit
+          client 'exited-child
+          (hermes-dashboard-transport-client-process-generation client))
+         (should (hermes-dashboard-transport-client-stopping-p client))
+         (should (memq owner cancelled))
+         (should-not hermes-chat--work-owner)
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should-not hermes-chat--dashboard-session-ready-p)
+         (should (equal hermes-chat--session-id "durable-A")))))))
+
 (ert-deftest hermes-chat-slash-stop-calls-process-stop ()
   "/stop runs the process.stop RPC rather than forwarding to the agent."
   (let ((client (hermes-test--dashboard-client))
@@ -4254,7 +4413,8 @@
               ((symbol-function 'hermes-dashboard-transport-process-stop)
                (lambda (_c &rest args)
                  (setq stopped (1+ stopped))
-                 (funcall (plist-get args :resolve) '((killed . 2))))))
+                 (funcall (plist-get args :resolve) '((killed . 2)))))
+              ((symbol-function 'yes-or-no-p) (lambda (_) t)))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (insert "go")

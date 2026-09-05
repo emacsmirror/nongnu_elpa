@@ -96,6 +96,51 @@
     (should (equal (substring-no-properties (hermes-chat--work-label nil))
                    "1 process ?"))))
 
+(ert-deftest hermes-chat-work-new-busy-session-adopts-late-key ()
+  "Cadence obtains a late durable key without duplicate reads or turn mutation."
+  (hermes-test--with-process-wire
+    (hermes-chat--work-bind client "runtime" nil)
+    (setq hermes-chat--pending-assistant-id "busy-turn"
+          hermes-chat--dashboard-running-p t)
+    (let ((owner hermes-chat--work-owner))
+      (cl-labels
+          ((title-frames ()
+             (seq-filter
+              (lambda (frame) (equal (hermes-transport--get frame 'method) "session.title"))
+              (mapcar #'hermes-dashboard-transport--decode-frame frames)))
+           (tick ()
+             (let ((timer (cdr (plist-get owner :timer))))
+               (should (= (car timer) 5))
+               (apply (cadr timer) (nth 2 timer)))))
+        (hermes-chat--work-refresh owner)
+        (should (= (length (title-frames)) 1))
+        (let* ((frame (car (title-frames)))
+               (id (hermes-transport--get frame 'id))
+               (pending (gethash id (hermes-dashboard-transport-client-pending client))))
+          (should (equal (hermes-transport--get frame 'params) '((session_id . "runtime"))))
+          (should (= (car (plist-get pending :timer)) 10))
+          (hermes-test--work-answer client "{\"processes\":[]}")
+          (tick)
+          (should (= (length (title-frames)) 1))
+          (hermes-test--work-answer client "{\"processes\":[]}")
+          (hermes-test--work-reply client id "{\"session_key\":null}")
+          (should-not (plist-get owner :key))
+          (tick)
+          (should (= (length (title-frames)) 2))
+          (hermes-test--work-reply
+           client (hermes-transport--get (car (title-frames)) 'id)
+           "{\"session_key\":\"A\"}")
+          (hermes-test--work-answer client "{\"processes\":[]}")
+          (tick)
+          (should (= (length (title-frames)) 2))
+          (should (eq (plist-get (plist-get owner :request) :source) :delegates))
+          (hermes-test--work-answer client "{\"active\":[]}")
+          (should (eq (plist-get (plist-get owner :delegates) :coverage) 'current))
+          (should (equal (plist-get owner :key) "A"))
+          (should (equal hermes-chat--pending-assistant-id "busy-turn"))
+          (should hermes-chat--dashboard-running-p)
+          (should (eq owner hermes-chat--work-owner)))))))
+
 (ert-deftest hermes-chat-work-process-deadline-and-rebind ()
   "A held process request times out, and an old process cannot mutate a rebind."
   (hermes-test--with-process-wire

@@ -678,6 +678,12 @@ Never restart, resume, or change the chat's input."
       (setf (plist-get owner :cycle) nil)
       (hermes-chat--work-schedule owner 5))
      ((not (hermes-chat--work-source-eligible-p owner source))
+      ;; New sessions may acquire their durable key after the first turn starts.
+      ;; Retry on the existing cadence, with only one bounded metadata read.
+      (when (and (eq source :delegates)
+                 (not (plist-get owner :key))
+                 (not (plist-get owner :adoption)))
+        (hermes-chat--work-read-key owner))
       (hermes-chat--work-stage owner cycle (and (eq source :delegates) :processes)))
      (t (hermes-chat--work-request owner cycle source)))))
 
@@ -1477,6 +1483,14 @@ shared client."
                        (and (not (hermes-chat--dashboard-control-error-event-p
                                   event))
                             (hermes-chat--dashboard-event-for-session-p event))))
+          ;; Terminal teardown reports an error after detaching the client.
+          ;; Project it as connection loss even when no assistant owns a turn.
+          (when (and dashboard-p
+                     (eq (plist-get event :type) 'error)
+                     (hermes-dashboard-transport-client-stopping-p
+                      hermes-chat--dashboard-client))
+            (setq event (list :type 'status :status "closed"
+                              :content (plist-get event :content))))
           (unless (and dashboard-p
                        (funcall hermes-chat--busy-submit-event-function event))
             (if (and dashboard-p
@@ -1485,17 +1499,19 @@ shared client."
               (when dashboard-p
                 (hermes-chat--dashboard-start-server-turn
                  hermes-chat--dashboard-client event))
-              (when-let* ((target-id
-                           (if dashboard-p
-                               (hermes-chat--dashboard-event-assistant-id
-                                assistant-id event)
-                             assistant-id)))
-                (if (and dashboard-p
-                         (hermes-chat--dashboard-suppressed-content-event-p
-                          event))
-                    (hermes-chat--handle-suppressed-dashboard-terminal-event
-                     target-id event)
-                  (hermes-chat--handle-transport-event target-id event))))))))))
+              (let ((target-id
+                     (if dashboard-p
+                         (hermes-chat--dashboard-event-assistant-id assistant-id event)
+                       assistant-id)))
+                ;; Socket loss also retires an idle attachment with no turn.
+                (when (or target-id
+                          (and dashboard-p
+                               (hermes-chat--closed-status-event-p event)))
+                  (if (and dashboard-p
+                           (hermes-chat--dashboard-suppressed-content-event-p event))
+                      (hermes-chat--handle-suppressed-dashboard-terminal-event
+                       target-id event)
+                    (hermes-chat--handle-transport-event target-id event)))))))))))
 
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
