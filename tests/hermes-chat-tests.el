@@ -2670,7 +2670,9 @@
 (ert-deftest hermes-chat-resume-stale-history-cannot-restore-turn ()
   "A replaced transport or request cannot restore old history or busy state."
   (dolist (replacement '(client request lifetime))
-    (let ((client (hermes-test--dashboard-client)) resolve reject buffer)
+    (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+          (hermes-dashboard-transport-idle-close-delay nil)
+          (client (hermes-test--dashboard-client)) resolve reject buffer)
       (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
                  (lambda (&rest _) client))
                 ((symbol-function 'pop-to-buffer-same-window)
@@ -2683,6 +2685,12 @@
             (progn
               (setq buffer (hermes-chat-resume-session "stored"))
               (with-current-buffer buffer
+                (should (eq hermes-chat--dashboard-client client))
+                (should (= (hash-table-count hermes-dashboard-transport--clients) 1))
+                (should (= (hermes-dashboard-transport-client-refcount client) 1))
+                (should (= (hash-table-count
+                            (hermes-dashboard-transport-client-subscribers client))
+                           1))
                 (pcase replacement
                   ('client (setq hermes-chat--dashboard-client
                                  (hermes-test--dashboard-client)))
@@ -2696,7 +2704,35 @@
                 (should-not (hermes-chat--entries))
                 (should-not hermes-chat--dashboard-active-session-id)
                 (should-not (hermes-chat--active-turn-p))))
-          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+          (when (buffer-live-p buffer) (kill-buffer buffer))
+          ;; Replacing the buffer-local client deliberately orphans this owner.
+          (when (eq replacement 'client)
+            (hermes-dashboard-transport-stop client)))
+        (should (zerop (hash-table-count hermes-dashboard-transport--clients)))
+        (should (zerop (hermes-dashboard-transport-client-refcount client)))
+        (should (hermes-dashboard-transport-client-stopping-p client))
+        (should (zerop (hash-table-count
+                        (hermes-dashboard-transport-client-subscribers client))))))))
+
+(ert-deftest hermes-chat-resume-stale-history-preserves-ambient-client ()
+  "The stale-history fixture neither borrows nor disposes an ambient client."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client)))
+      (unwind-protect
+          (progn
+            (should (eq (hermes-dashboard-transport-acquire) client))
+            (funcall (ert-test-body
+                      (ert-get-test
+                       'hermes-chat-resume-stale-history-cannot-restore-turn)))
+            (should (= (hash-table-count hermes-dashboard-transport--clients) 1))
+            (should (eq (gethash (hermes-dashboard-transport-client-endpoint-key client)
+                                 hermes-dashboard-transport--clients)
+                        client))
+            (should (= (hermes-dashboard-transport-client-refcount client) 1))
+            (should (hermes-dashboard-transport--client-viable-p client)))
+        (hermes-dashboard-transport-stop client)))))
 
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
   "Resuming renders history and later backend-owned turns without duplicates."
