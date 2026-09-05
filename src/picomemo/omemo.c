@@ -164,6 +164,7 @@ struct ProtobufField {
 };
 
 #define PB_REQUIRED (1 << 3)
+#define PB_REPEATED (1 << 4)
 #define PB_UINT32   0
 #define PB_LEN      2
 
@@ -223,7 +224,11 @@ static bool ParseProtobuf(const uint8_t *s, size_t n,
   uint32_t v;
   const uint8_t *e = s + n;
   uint32_t found = 0;
+  uint32_t fixed[16];
   ASSERT(nfields <= 16);
+  // Preserve schema constraints separately from parsed repeated values.
+  for (int i = 0; i < nfields; i++)
+    fixed[i] = fields[i].v;
   while (s < e) {
     // This is actually a varint, but we only support id < 16 and return
     // an error otherwise, so we don't have to account for multiple-byte
@@ -236,8 +241,10 @@ static bool ParseProtobuf(const uint8_t *s, size_t n,
     found |= 1 << id;
     if (!(s = ParseVarInt(s, e, &v)))
       return true;
-    // If field is fixed size, enforce it
-    if (fields[id].v && v != fields[id].v)
+    // Repeated entries may vary in length; other duplicate checks stay intact.
+    uint32_t expected = (fields[id].type & PB_REPEATED)
+                            ? fixed[id] : fields[id].v;
+    if (expected && v != expected)
       return true;
     fields[id].v = v;
     if (type == PB_LEN) {
@@ -623,8 +630,11 @@ static int EncryptKeyImpl(struct omemoSession *session,
   msg->n += FormatMessageHeader(
       msg->p + msg->n, session->state.ns, session->state.pn,
       session->state.dhs.pub, keyn + GetPad(keyn));
-  msg->n +=
+  int encrypted =
       Encrypt(msg->p + msg->n, key, keyn, kdfout->cipher, kdfout->iv);
+  if (encrypted < 0)
+    return encrypted;
+  msg->n += encrypted;
 #ifdef OMEMO2
   msg->p[19] = msg->n - 20;
   TRY(GetMac(msg->p + 2, session->identity, session->remoteidentity,
@@ -1192,7 +1202,7 @@ int omemoDeserializeStore(const uint8_t *p, size_t n,
       [10] = {PB_REQUIRED | PB_LEN, 32},
       [11] = {PB_REQUIRED | PB_LEN, 64},
       [12] = {PB_REQUIRED | PB_UINT32},
-      [13] = {/*PB_REQUIRED |*/ PB_LEN},
+      [13] = {PB_REPEATED | PB_LEN},
   };
   if (ParseProtobuf(p, n, fields, 14))
     return OMEMO_EPROTOBUF;

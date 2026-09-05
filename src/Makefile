@@ -29,7 +29,18 @@ endif
 $(INSTALL_DIR)/$(TARGET): $(TARGET)
 	cp $< $@
 
+# Standalone fault injection; never linked into the Emacs module.
+TEST_TARGET = omemo-c-test
+$(TEST_TARGET): ../tests/omemo-c-test.c $(filter-out jabber-omemo-core.c,$(SRCS)) picomemo/omemo.h picomemo/driver.h
+	$(CC) $(CFLAGS) -UNDEBUG $(TEST_CFLAGS) -o $@ $< $(filter-out jabber-omemo-core.c,$(SRCS)) $(MBED_FLAGS) -Wl,--wrap=mbedtls_aes_crypt_cbc
+
+check: $(TEST_TARGET)
+	./$(TEST_TARGET) encrypt
+	./$(TEST_TARGET) store
+
+.PHONY: check
+
 clean:
-	rm -f $(TARGET) $(INSTALL_DIR)/$(TARGET)
+	rm -f $(TARGET) $(INSTALL_DIR)/$(TARGET) $(TEST_TARGET)
 
 .PHONY: all clean
