@@ -96,7 +96,7 @@ Manual non-nil values remain valid.  Consumption clears before configuration.")
 
 (defvar jabber-muc--session-passwords (make-hash-table :test #'equal)
   "In-memory room passwords keyed by (JC GROUP).
-A nil value marks a password rejected for the current session.")
+A nil value records a passwordless actual join or a rejected password.")
 
 (defun jabber-muc--session-password (jc group)
   "Return in-memory or bookmarked password for GROUP on JC."
@@ -724,21 +724,24 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
   "Remember participating in GROUP under NICKNAME via JC."
   (jabber-muc-join-set group jc nickname))
 
-(defun jabber-muc-remove-groupchat (group &optional jc)
+(defun jabber-muc-remove-groupchat (group &optional jc request)
   "Remove GROUP from internal bookkeeping.
-If JC is given, only remove that connection's entry."
-  (when (and jc
-             (fboundp 'jabber-message-correct--muc-room-leave))
-    (jabber-message-correct--muc-room-leave jc group))
+If JC is given, only remove that connection's entry.
+REQUEST, when non-nil, guards the terminal caller's remaining effects."
   (jabber-muc-leave-remove group jc)
-  (jabber-mam--cancel-muc-query group)
   ;; Only clear participants when no account remains in the room.
   (unless (jabber-muc-joined-p group)
     (let ((whichparticipants (assoc group jabber-muc-participants)))
       (setq jabber-muc-participants
 	    (delq whichparticipants jabber-muc-participants)))
     (remhash group jabber-muc--room-jids)
-    (remhash group jabber-muc--nonanonymous-rooms)))
+    (remhash group jabber-muc--nonanonymous-rooms))
+  (when (and jc
+             (fboundp 'jabber-message-correct--muc-room-leave))
+    (jabber-message-correct--muc-room-leave jc group))
+  (when request (jabber-muc--check-intent request))
+  (jabber-mam--cancel-muc-query group)
+  (when request (jabber-muc--check-intent request)))
 
 (cl-defun jabber-muc-connection-closed
     (bare-jid &optional (preserve-for-reconnect-p t))
@@ -749,7 +752,9 @@ when PRESERVE-FOR-RECONNECT-P is non-nil so non-bookmarked rooms can be
 rejoined.  It defaults to non-nil for compatibility with old one-argument
 callers.  When multiple accounts share a room, only the disconnecting account's
 entry is removed."
-  (let (snapshot)
+  (let ((snapshot (and preserve-for-reconnect-p
+                       (copy-sequence
+                        (gethash bare-jid jabber-muc--rooms-before-disconnect)))))
     (dolist (room (jabber-muc-active-rooms))
       (let* ((entries (jabber-muc-room-entries room))
              (match (cl-find bare-jid entries
@@ -758,6 +763,7 @@ entry is removed."
                                          (jabber-connection-bare-jid (car e))))
                              :test #'string=)))
         (when match
+          (setq snapshot (assoc-delete-all room snapshot))
           (push (list room (cdr match)
                       (gethash (list (car match) room)
                                jabber-muc--session-passwords))
@@ -1463,7 +1469,7 @@ Return t after synchronous completion, or :cancelled when superseded."
             (aset request 6 (list 'jabber-muc--config-arm jc group))
             (setq jabber-muc--auto-configure (aref request 6)))))
       ;; Publish bookkeeping before handoff, but never roll it back afterward.
-      (jabber-muc--remember-password jc group password)
+      (puthash (list jc group) password jabber-muc--session-passwords)
       (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
       (jabber-muc--check-intent request)
       (jabber-send-sexp jc stanza)
@@ -1511,28 +1517,37 @@ JC is the Jabber connection."
   (jabber-send-sexp jc
                     `(presence ((to . ,(format "%s/%s" group nickname))))))
 
+(defun jabber-muc--retire-room (jc group)
+  "Retire GROUP's ordinary membership and reconnect intent on JC.
+The caller reserves native continuation authority before this local commit."
+  (jabber-muc-leave-remove group jc)
+  (let* ((bare-jid (jabber-connection-bare-jid jc))
+         (snapshot (cl-remove
+                    group (gethash bare-jid jabber-muc--rooms-before-disconnect)
+                    :key #'car :test #'equal)))
+    (if snapshot
+        (puthash bare-jid snapshot jabber-muc--rooms-before-disconnect)
+      (remhash bare-jid jabber-muc--rooms-before-disconnect)))
+  (jabber-muc--forget-password jc group)
+  (jabber-muc--autojoin-dequeue jc group))
+
 (defun jabber-muc-leave (jc group)
   "Leave groupchat GROUP.
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
-  (jabber-muc--invalidate-intent jc group)
-  (let ((nick (jabber-muc-nickname group jc)))
-    ;; send unavailable presence to our own nick in room
-    (jabber-send-sexp jc
-		      `(presence ((to . ,(format "%s/%s" group nick))
-				  (type . "unavailable")))))
-  (jabber-muc--autojoin-dequeue jc group)
-  (let* ((bare-jid (jabber-connection-bare-jid jc))
-         (snapshot (cl-delete
-                    group (gethash bare-jid jabber-muc--rooms-before-disconnect)
-                    :key #'car :test #'string=)))
-    (if snapshot
-        (puthash bare-jid snapshot jabber-muc--rooms-before-disconnect)
-      (remhash bare-jid jabber-muc--rooms-before-disconnect)))
-  (jabber-muc--forget-password jc group)
-  (when jabber-bookmarks-auto-add
-    (jabber-bookmarks--retract-one jc group)))
+  (let ((nick (jabber-muc-nickname group jc))
+        (request (jabber-muc--reserve-intent jc group)))
+    (jabber-muc--retire-room jc group)
+    (jabber-muc--with-intent request
+      ;; Address the old membership even though it is already retired.
+      (jabber-send-sexp jc
+                        `(presence ((to . ,(format "%s/%s" group nick))
+                                    (type . "unavailable"))))
+      (jabber-muc--check-intent request)
+      (when jabber-bookmarks-auto-add
+        (jabber-bookmarks--retract-one jc group))
+      t)))
 
 
 (defvar-local jabber-muc-names--group nil
@@ -2183,28 +2198,39 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                             (jabber-muc--format-actor-reason actor reason)))
                    (t
                     "You have left the chatroom"))))
-    (when (and (string= type "error")
-               error-node
-               (eq (jabber-error-condition error-node) 'not-authorized))
-      (jabber-muc--reject-password jc group))
-    (when leavingp
-      (jabber-muc-remove-groupchat group jc))
-    ;; If there is no buffer for this groupchat, don't bother
-    ;; creating one just to tell that user left the room.
-    (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
-      (if buffer
-          (with-current-buffer buffer
-            (jabber-chat-buffer-with-scrolltobottom
-              (jabber-maybe-print-rare-time
-               (jabber-chat-ewoc-enter
-                (list (if (string= type "error")
-                          :muc-error
-                        :muc-notice)
-                      message
-                      :time (current-time))))))
-        (message "%s: %s" (jabber-jid-displayname group) message)))
-    ;; Stagger: skip failed room and try the next one.
-    ;; Defer via timer so Emacs can redisplay between joins.
+    (cl-flet
+        ((effects (request)
+           (when (and (string= type "error")
+                      error-node
+                      (eq (jabber-error-condition error-node) 'not-authorized))
+             (jabber-muc--reject-password jc group))
+           (when leavingp
+             (jabber-muc-remove-groupchat group jc request))
+           ;; Do not create a buffer just to report a departure.
+           (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
+             (when request (jabber-muc--check-intent request))
+             (if buffer
+                 (with-current-buffer buffer
+                   (jabber-chat-buffer-with-scrolltobottom
+                     (let ((node (jabber-chat-ewoc-enter
+                                  (list (if (string= type "error")
+                                            :muc-error
+                                          :muc-notice)
+                                        message :time (current-time)))))
+                       (when request (jabber-muc--check-intent request))
+                       (jabber-maybe-print-rare-time node))))
+               (let ((name (jabber-jid-displayname group)))
+                 (when request (jabber-muc--check-intent request))
+                 (message "%s: %s" name message))))))
+      (if leavingp
+          (let ((request (jabber-muc--reserve-intent jc group)))
+            (jabber-muc--with-intent request
+              (jabber-muc--retire-room jc group)
+              (effects request)
+              t))
+        (effects nil)))
+    ;; This account wakeup is independent of the retired room's lease.
+    ;; Cancellation by a successor must not strand unrelated queued rooms.
     (when (string= type "error")
       (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
 
