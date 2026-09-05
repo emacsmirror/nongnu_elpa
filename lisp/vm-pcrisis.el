@@ -509,6 +509,20 @@ start and end of the overlay/extent."
   (vm-make-extent startpos endpos))
 
 
+(defconst vm-pcrisis-forwarding-terminator-regexp
+  "^\\(------- end\\|End of this Digest\\)"
+  "A line VM writes to close forwarded text.
+The three encapsulations it writes end with `------- end -------\=' for RFC
+934, `------- end of forwarded message -------\=' for the plain one, and
+`End of this Digest\=' for RFC 1153.  VM writes these itself, so this is
+exact for VM's own forwards, which is what it is used on.")
+
+(defun vm-pcrisis-forwarded-text-ends-after (position)
+  "Whether a line closing forwarded text appears after POSITION."
+  (save-excursion
+    (goto-char position)
+    (and (re-search-forward vm-pcrisis-forwarding-terminator-regexp nil t) t)))
+
 (defun vm-pcrisis-create-sig-and-pre-sig-exerlays ()
   "Create the extents in which the pre-sig and sig can reside.
 Or overlays, in the case of GNU Emacs.  Thus, exerlays."
@@ -532,6 +546,7 @@ Or overlays, in the case of GNU Emacs.  Thus, exerlays."
   (vm-pcrisis-set-exerlay-insertion-types 'vm-pcrisis-sig-exerlay t nil)
 
   ;; deal with signatures inserted by other things than vm-pcrisis:
+
   (if vm-pcrisis-expect-default-signature
       (save-excursion
 	(let ((p-max (point-max))
@@ -549,6 +564,15 @@ Or overlays, in the case of GNU Emacs.  Thus, exerlays."
 	    (goto-char body-start)
 	    (if (looking-at "-- \n")
 		(setq sig-start body-start)))
+	  ;; A forwarded message's own signature is not prefixed the way quoted
+	  ;; text in a reply is, so the search reaches it, and a composition
+	  ;; with no signature of its own took it for one: the forwarded
+	  ;; signature and the line closing the encapsulation were both
+	  ;; replaced, and the writer's signature ended up inside the forwarded
+	  ;; message (#808).  A candidate with such a line after it is not this
+	  ;; composition's; one below that line still is.
+	  (when (and sig-start (vm-pcrisis-forwarded-text-ends-after sig-start))
+	    (setq sig-start nil))
 	  (if sig-start
 	      (vm-pcrisis-move-exerlay vm-pcrisis-sig-exerlay sig-start p-max))))))
   
