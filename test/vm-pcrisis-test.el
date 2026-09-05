@@ -1629,6 +1629,168 @@ no checker at all."
                                 (symbol-name variable)))))
         (set variable nil)))))
 
+
+;;; The header actions, over the values that broke them (emacs-vm/vm#807)
+
+(defconst vm-pcrisis-test--body "the body\nsecond line\n"
+  "What must still be there after any header action.")
+
+(defmacro vm-pcrisis-test--in-a-composition (headers &rest body)
+  "Run BODY in a buffer holding HEADERS, the separator and a known body.
+`vm-pcrisis-current-buffer' is set so the actions agree to act."
+  (declare (indent 1) (debug t))
+  `(with-temp-buffer
+     (insert ,headers mail-header-separator "\n" vm-pcrisis-test--body)
+     (let ((vm-pcrisis-current-buffer 'composition)
+           (vm-pcrisis-running-actions t))
+       ,@body)))
+
+(defun vm-pcrisis-test--header-block ()
+  "The composition's headers, without the separator."
+  (car (split-string (buffer-substring-no-properties (point-min) (point-max))
+                     (concat "\n" mail-header-separator))))
+
+(defun vm-pcrisis-test--body-intact-p ()
+  "Whether the body is still what it was."
+  (let ((separator (concat "\n" (regexp-quote mail-header-separator) "\n"))
+        (text (buffer-substring-no-properties (point-min) (point-max))))
+    (and (string-match separator text)
+         (equal vm-pcrisis-test--body (substring text (match-end 0))))))
+
+(defconst vm-pcrisis-test--three-headers
+  "To: someone@example.com\nSubject: a subject\nFrom: old@example.com\n"
+  "An ordinary composition's headers.")
+
+(ert-deftest vm-pcrisis-test-deleting-a-subject-holding-a-colon-clears-it ()
+  "REGRESSION: a value holding a colon and a space is deleted whole.
+
+emacs-vm/vm#807.  `vm-pcrisis-delete-header' looked back for a colon and a
+space with no bound, and stopped at the last one inside the value, so
+deleting a subject of \"Re: your note\" left \"Re: \" behind.  A rule that
+rewrites the Subject of a reply then wrote the new subject after the old
+prefix, and every reply has that prefix."
+  (vm-pcrisis-test--in-a-composition
+      "To: a@x.com\nSubject: Re: your note\nFrom: old@example.com\n"
+    (vm-pcrisis-delete-header "Subject")
+    (should (equal "" (mail-fetch-field "Subject")))
+    (should (vm-pcrisis-test--body-intact-p)))
+  ;; and what a reader actually runs into, through the substitution
+  (vm-pcrisis-test--in-a-composition
+      "To: a@x.com\nSubject: Re: your note\nFrom: old@example.com\n"
+    (vm-pcrisis-substitute-header "Subject" "replaced")
+    (should (equal "replaced" (mail-fetch-field "Subject")))))
+
+(ert-deftest vm-pcrisis-test-deleting-a-spaceless-header-leaves-the-one-above ()
+  "REGRESSION: a colon with no space after it does not eat the field before.
+
+emacs-vm/vm#807.  A colon with no space is legal RFC 5322 and the unbounded
+search ran past it into the field above, deleting that field's contents and
+this field's name along the way.  Measured before the fix: deleting Subject
+from a composition of To, Subject, From left the To header empty and no
+Subject header at all, which is a recipient silently dropped."
+  (vm-pcrisis-test--in-a-composition
+      "To: a@x.com\nSubject:\nFrom: old@example.com\n"
+    (vm-pcrisis-delete-header "Subject")
+    (should (equal "a@x.com" (mail-fetch-field "To")))
+    (should (equal "old@example.com" (mail-fetch-field "From")))
+    (should (string-match-p "^Subject:" (vm-pcrisis-test--header-block)))
+    (should (vm-pcrisis-test--body-intact-p))))
+
+(ert-deftest vm-pcrisis-test-deleting-the-first-header-does-not-fail ()
+  "REGRESSION: nothing behind the field is not an error.
+
+emacs-vm/vm#807.  With the field first in the block and no space after its
+colon there was no earlier colon and space to find, and the action died with
+\"Search failed\" partway through a composition."
+  (vm-pcrisis-test--in-a-composition
+      "Subject:\nTo: a@x.com\n"
+    (vm-pcrisis-delete-header "Subject")
+    (should (equal "a@x.com" (mail-fetch-field "To")))
+    (should (vm-pcrisis-test--body-intact-p))))
+
+(ert-deftest vm-pcrisis-test-deleting-a-header-works-wherever-it-sits ()
+  "First, middle and last, with and without the field itself."
+  (dolist (field '("To" "Subject" "From"))
+    (vm-pcrisis-test--in-a-composition vm-pcrisis-test--three-headers
+      (vm-pcrisis-delete-header field)
+      (should (equal (list field "") (list field (mail-fetch-field field))))
+      (should (vm-pcrisis-test--body-intact-p)))
+    (vm-pcrisis-test--in-a-composition vm-pcrisis-test--three-headers
+      (vm-pcrisis-delete-header field t)
+      (should (equal (list field nil) (list field (mail-fetch-field field))))
+      (should (vm-pcrisis-test--body-intact-p)))))
+
+(ert-deftest vm-pcrisis-test-deleting-a-folded-header-takes-all-of-it ()
+  "A folded field begins several lines above where point ends up."
+  (vm-pcrisis-test--in-a-composition
+      "To: a@x.com,\n\tb@x.com\nSubject: s\nFrom: old@example.com\n"
+    (vm-pcrisis-delete-header "To")
+    (should (equal "" (mail-fetch-field "To")))
+    (should (equal "s" (mail-fetch-field "Subject")))
+    (should (vm-pcrisis-test--body-intact-p))))
+
+(defconst vm-pcrisis-test--header-values
+  (list (cons "plain"          "new@example.com")
+        (cons "empty"          "")
+        (cons "a colon"        "New: value")
+        (cons "leading space"  " new@example.com")
+        ;; Decoded, because the buffer is multibyte: a literal of raw bytes
+        ;; goes in as those bytes and comes back as characters, and the two
+        ;; compare unequal while printing the same.
+        (cons "8-bit"          (decode-coding-string "Ren\303\251 <rene@example.com>"
+                                                     'utf-8))
+        (cons "300 characters" (make-string 300 ?x))
+        (cons "a tab"          "new@example.com\tmore"))
+  "Values to put in a header, awkward on purpose.")
+
+(ert-deftest vm-pcrisis-test-a-header-action-leaves-the-composition-whole ()
+  "Whatever goes in a header, the separator and the body are untouched.
+
+Three actions by seven values.  A composition whose separator has been
+disturbed does not send as the writer meant: everything below it is body, so
+a lost separator makes headers into text and a doubled one makes text into
+headers."
+  (dolist (action '(vm-pcrisis-substitute-header
+                    vm-pcrisis-insert-header
+                    vm-pcrisis-add-header))
+    (dolist (spec vm-pcrisis-test--header-values)
+      (vm-pcrisis-test--in-a-composition vm-pcrisis-test--three-headers
+        (funcall action "From" (cdr spec))
+        (should (equal (list action (car spec) t)
+                       (list action (car spec) (vm-pcrisis-test--body-intact-p))))
+        ;; exactly one separator line, still
+        (should (equal (list action (car spec) 1)
+                       (list action (car spec)
+                             (how-many (concat "^" (regexp-quote mail-header-separator) "$")
+                                       (point-min) (point-max)))))))))
+
+(ert-deftest vm-pcrisis-test-substituting-a-header-sets-just-that-header ()
+  "The value that goes in is the value that comes out, and the rest stand."
+  (dolist (spec vm-pcrisis-test--header-values)
+    (vm-pcrisis-test--in-a-composition vm-pcrisis-test--three-headers
+      (vm-pcrisis-substitute-header "From" (cdr spec))
+      (should (equal (list (car spec) (string-trim (cdr spec)))
+                     (list (car spec) (or (mail-fetch-field "From") ""))))
+      (should (equal "someone@example.com" (mail-fetch-field "To")))
+      (should (equal "a subject" (mail-fetch-field "Subject"))))))
+
+(ert-deftest vm-pcrisis-test-a-replied-header-is-copied-as-it-stood ()
+  "A header taken from the message being replied to arrives intact.
+
+Including a folded one, which stays folded and so stays a single field, and
+8-bit text, which is carried as the bytes it was."
+  (dolist (spec (list (cons "plain" "Alice <alice@example.com>")
+                      (cons "folded" "a@x.com,\n\tb@x.com")
+                      (cons "8-bit" (decode-coding-string
+                                     "Ren\303\251 <rene@example.com>" 'utf-8))))
+    (vm-pcrisis-test--in-a-composition vm-pcrisis-test--three-headers
+      (let ((vm-pcrisis-current-state 'reply)
+            (vm-pcrisis-saved-headers-alist (list (cons "From" (cdr spec)))))
+        (vm-pcrisis-substitute-replied-header "To" "From")
+        (should (equal (list (car spec) (cdr spec))
+                       (list (car spec) (mail-fetch-field "To"))))
+        (should (vm-pcrisis-test--body-intact-p))))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here

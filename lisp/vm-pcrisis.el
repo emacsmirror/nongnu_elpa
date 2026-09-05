@@ -601,20 +601,42 @@ indistinguishable from having worked: #540 was a report of exactly that."
 			  " (vm-pcrisis-mode 1)")
 		  action))))
 
+(defconst vm-pcrisis-header-start-regexp "^[^ \t\n:]+:"
+  "A line that begins a header field, as opposed to continuing one.
+A continuation line begins with whitespace, so this cannot match one.")
+
+(defun vm-pcrisis-header-contents-start (entire)
+  "Move to the start of the field point is in, and answer where to delete from.
+Point is anywhere in the field, which for a folded one is several lines below
+where it begins.  With ENTIRE the answer is the start of the field, otherwise
+the start of its contents."
+  (unless (re-search-backward vm-pcrisis-header-start-regexp nil t)
+    (error (concat "No header field around point in this composition, so"
+		   " there is nothing to delete: the buffer does not hold"
+		   " the headers Personality Crisis expects")))
+  (if entire
+      (match-beginning 0)
+    (goto-char (match-end 0))
+    (skip-chars-forward " \t")
+    (point)))
+
 (defun vm-pcrisis-delete-header (hdrfield &optional entire)
   "Delete the contents of a HDRFIELD in the current mail message.
-If ENTIRE is specified and non-nil, deletes the header field as well."
+If ENTIRE is specified and non-nil, deletes the header field as well.
+
+The field is found by looking back for the line that begins it, not by
+looking back for a colon and a space anywhere behind point.  That search was
+unbounded and went wrong three ways (emacs-vm/vm#807).  It stopped inside a
+value that held one, so deleting a subject of Re: your note left the Re: part
+behind and a substitution wrote it in front of the new subject.  A field
+written with no space after its colon sent the search back into the field
+before it, whose contents were deleted along with this one.  And where that
+field was the first in the block, it signalled Search failed."
   (if (vm-pcrisis-composition-buffer-p 'vm-pcrisis-delete-header)
       (save-excursion
-	(let ((start) (end))
-	  (mail-position-on-field hdrfield)
-	  (if entire
-	      (setq end (+ (point) 1))
-	    (setq end (point)))
-	  (re-search-backward ": ")
-	  (if entire
-	      (setq start (progn (beginning-of-line) (point)))
-	    (setq start (+ (point) 2)))
+	(mail-position-on-field hdrfield)
+	(let* ((end (if entire (1+ (point)) (point)))
+	       (start (vm-pcrisis-header-contents-start entire)))
 	  (delete-region start end)))))
 
 
