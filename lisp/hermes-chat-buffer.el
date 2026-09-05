@@ -480,18 +480,20 @@ these same tails.  Markers already follow the transcript edits themselves."
             (setq tail (cdr tail))))))))
 
 (defmacro hermes-chat--preserve-input-point (&rest body)
-  "Run transcript BODY preserving draft undo and point's input offset."
+  "Run transcript BODY preserving restriction, draft undo and input offset."
   (declare (indent 0) (debug t))
-  `(let* ((position (hermes-chat--input-position))
-          (offset (and (hermes-chat--point-in-input-p)
-                       (- (point) position))))
-     (unwind-protect
-         (progn ,@body)
-       (hermes-chat--adjust-draft-undo position)
-       (hermes-chat--protect-transcript)
-       (when offset
-         (goto-char (min (point-max)
-                         (+ (hermes-chat--input-position) offset)))))))
+  `(save-restriction
+     (widen)
+     (let* ((position (hermes-chat--input-position))
+            (offset (and (hermes-chat--point-in-input-p)
+                         (- (point) position))))
+       (unwind-protect
+           (progn ,@body)
+         (hermes-chat--adjust-draft-undo position)
+         (hermes-chat--protect-transcript)
+         (when offset
+           (goto-char (min (point-max)
+                           (+ (hermes-chat--input-position) offset))))))))
 
 (defun hermes-chat--separator ()
   "Return a full-width rule string separating the transcript from the input."

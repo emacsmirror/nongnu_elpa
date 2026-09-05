@@ -364,6 +364,112 @@
              (insert "!")
              (should (equal (hermes-chat-input-string) "draft α\nta!")))))))))
 
+(ert-deftest hermes-chat-narrowed-transcript-mutations ()
+  "Transcript edits preserve a narrowed draft, point, protection and undo."
+  (dolist (bounds '((0 . 7) (1 . 6)))
+    (dolist (mutation '(insert grow shrink remove))
+      (ert-info ((format "bounds=%S mutation=%s" bounds mutation))
+        (let ((last-command nil)
+              (undo-in-region nil)
+              (undo-equiv-table (make-hash-table :test #'eq)))
+          (hermes-test-with-chat-buffer
+           (hermes-chat--insert-entry
+            (hermes-chat--make-entry 'assistant "old transcript" 'streaming "reply"))
+           (setq buffer-undo-list nil)
+           (insert "draft α")
+           (undo-boundary)
+           (narrow-to-region (+ hermes-chat--input-marker (car bounds))
+                             (+ hermes-chat--input-marker (cdr bounds)))
+           (goto-char (+ hermes-chat--input-marker 3))
+           (pcase mutation
+             ('insert
+              (hermes-chat--insert-entry
+               (hermes-chat--make-entry 'assistant "new" 'streaming "new")
+               (gethash "reply" hermes-chat--nodes)))
+             ('grow
+              (hermes-chat--update-entry
+               "reply" (lambda (entry)
+                         (hermes-chat--entry-with entry :content "a longer streamed transcript"))))
+             ('shrink
+              (hermes-chat--update-entry
+               "reply" (lambda (entry) (hermes-chat--entry-with entry :content "x"))))
+             ('remove (hermes-chat--remove-entry "reply")))
+           (should (buffer-narrowed-p))
+           (should (= (point-min) (+ hermes-chat--input-marker (car bounds))))
+           (should (= (point-max) (+ hermes-chat--input-marker (cdr bounds))))
+           (should (= (point) (+ hermes-chat--input-marker 3)))
+           (save-restriction
+             (widen)
+             (should (equal (hermes-chat-input-string) "draft α"))
+             (let* ((contents (mapcar (lambda (entry) (plist-get entry :content))
+                                      (hermes-chat--entries)))
+                    (expected (pcase mutation
+                                ('insert '("new" "old transcript"))
+                                ('grow '("a longer streamed transcript"))
+                                ('shrink '("x")))))
+               (should (equal contents expected))
+               (should (= (hash-table-count hermes-chat--nodes) (length expected)))
+               (should (equal (buffer-substring-no-properties
+                               (point-min) hermes-chat--input-marker)
+                              (concat (mapconcat (lambda (text) (concat text "\n"))
+                                                 expected "")
+                                      "\n \n"))))
+             (should-not (text-property-not-all
+                          (point-min) hermes-chat--input-marker 'read-only t))
+             (should-not (get-text-property hermes-chat--input-marker 'read-only)))
+           ;; Undo the whole draft with its exact composer boundary accessible.
+           (widen)
+           (narrow-to-region hermes-chat--input-marker (point-max))
+           (hermes-test--draft-undo-command #'undo-only)
+           (should (equal (buffer-string) ""))
+           (hermes-test--draft-undo-command #'undo-redo)
+           (should (equal (buffer-string) "draft α"))))))))
+
+(ert-deftest hermes-chat-narrowed-empty-composer-streaming ()
+  "An empty composer remains empty as its preceding transcript is replaced."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry
+    (hermes-chat--make-entry 'assistant "old" 'streaming "reply"))
+   (narrow-to-region hermes-chat--input-marker hermes-chat--input-marker)
+   (dolist (content '("a longer answer" "x" ""))
+     (hermes-chat--update-entry
+      "reply" (lambda (entry) (hermes-chat--entry-with entry :content content)))
+     (should (buffer-narrowed-p))
+     (should (= (point-min) hermes-chat--input-marker))
+     (should (= (point-max) hermes-chat--input-marker))
+     (should (= (point) hermes-chat--input-marker)))
+   (hermes-chat--remove-entry "reply")
+   (hermes-chat--insert-entry
+    (hermes-chat--make-entry 'assistant "new" 'streaming "new"))
+   (should (= (point-min) hermes-chat--input-marker))
+   (should (= (point-max) hermes-chat--input-marker))
+   (insert "draft")
+   (should (equal (buffer-string) "draft"))))
+
+(ert-deftest hermes-chat-narrowed-mutation-error-restores-restriction ()
+  "An error after transcript mutation still restores draft bounds and point."
+  (hermes-test-with-chat-buffer
+   (insert "draft")
+   (narrow-to-region hermes-chat--input-marker (point-max))
+   (goto-char (+ (point-min) 2))
+   (should-error
+    (hermes-chat--preserve-input-point
+      (hermes-chat--insert-entry
+       (hermes-chat--make-entry 'assistant "answer" 'streaming "reply"))
+      (error "Mutation interrupted"))
+    :type 'error)
+   (should (buffer-narrowed-p))
+   (should (= (point-min) hermes-chat--input-marker))
+   (should (= (point) (+ (point-min) 2)))
+   (should (equal (buffer-string) "draft"))
+   (save-restriction
+     (widen)
+     (should (equal (mapcar (lambda (entry) (plist-get entry :content))
+                           (hermes-chat--entries))
+                    '("answer")))
+     (should-not (text-property-not-all
+                  (point-min) hermes-chat--input-marker 'read-only t)))))
+
 (ert-deftest hermes-chat-draft-grouped-undo-survives-streaming ()
   "Native combined edits retain their nested undo records across streaming."
   (let ((undo-in-region nil)
