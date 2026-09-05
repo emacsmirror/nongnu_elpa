@@ -1692,9 +1692,60 @@ self-explanatory."
     ("Cancelled" . "CAN") ("Idle" . "IDL"))
   "Compact header codes, also explained in local session details.")
 
-(defun hermes-chat--header-fit (width status yolo directory optional)
+(defvar-local hermes-chat--work-owner nil
+  "Exact attachment owning observed work, requests and cadence timer.")
+
+(defface hermes-work-running
+  '((t :inherit font-lock-keyword-face))
+  "Face for currently observed running work."
+  :group 'hermes)
+
+(defface hermes-work-unknown
+  '((t :inherit shadow))
+  "Face for unknown, partial or stale work observations."
+  :group 'hermes)
+
+(defun hermes-chat--work-source ()
+  "Return current attachment's delegate source, or stale detached evidence."
+  (let ((source (plist-get hermes-chat--work-owner :delegates))
+        (current-p (plist-get hermes-chat--work-owner :current-p)))
+    (if (and current-p (funcall current-p hermes-chat--work-owner))
+        source
+      (plist-put (copy-sequence source) :coverage 'stale))))
+
+(defun hermes-chat--work-label (compact)
+  "Return a truthful work label, using COMPACT notation when non-nil."
+  (when hermes-chat--work-owner
+    (let* ((source (hermes-chat--work-source))
+           (current (memq (plist-get source :coverage) '(current partial)))
+           (rows (and current (plist-get source :rows)))
+           (running (seq-count (lambda (row) (eq (plist-get row :state) 'running)) rows))
+           (unknown (or (not (eq (plist-get source :coverage) 'current))
+                        (seq-some (lambda (row) (eq (plist-get row :state) 'unknown)) rows))))
+      (propertize
+       (cond ((> running 0)
+              (concat (format (if compact "W R%d" "Work %d running") running)
+                      (and unknown " ?")))
+             (unknown (if compact "W ?" "Work ?"))
+             (t (if compact "W —" "Work none observed")))
+       'face (if (> running 0) 'hermes-work-running 'hermes-work-unknown)))))
+
+(defun hermes-chat--work-details ()
+  "Return local source coverage without fetching or claiming total liveness."
+  (if (not hermes-chat--work-owner)
+      "Session work: unavailable here."
+    (let ((source (hermes-chat--work-source)))
+      (format "Session work: observed delegates only; not a full work ledger.\nDelegates: %s%s. Observed: %s. %s\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion."
+              (or (plist-get source :coverage) 'unbound)
+              (if (plist-get source :paused) "; automatic refresh paused" "")
+              (if-let* ((time (plist-get source :observed)))
+                  (format-time-string "%F %T" (seconds-to-time time)) "—")
+              (or (plist-get source :reason) "")))))
+
+(defun hermes-chat--header-fit (width status yolo directory optional &optional work)
   "Fit STATUS, YOLO, DIRECTORY and OPTIONAL segments within WIDTH columns.
-Reserve state and risk before identity.  Drop optional segments whole."
+Reserve state and risk, then WORK, before identity.
+Drop optional segments whole."
   (let* ((separator (propertize " | " 'face 'shadow))
          (risk (and yolo (propertize (cond ((= width 1) "!")
                                           ((or (< width 12)
@@ -1703,6 +1754,9 @@ Reserve state and risk before identity.  Drop optional segments whole."
                                     'face 'hermes-chat-header-warning)))
          (required (string-join (delq nil (list status risk))
                                 (if (< width 30) " " separator)))
+         (required (if (and work (<= (+ (string-width required) 3
+                                         (string-width work)) width))
+                       (concat required separator work) required))
          (room (- width (string-width required) (string-width separator)))
          (identity (and (>= width 30) (> room 3)
                         (truncate-string-to-width directory room nil nil "…")))
@@ -1718,21 +1772,27 @@ Reserve state and risk before identity.  Drop optional segments whole."
   "Return local, full session details without fetching or interpreting paths."
   (let ((print-length nil)
         (print-level nil))
-    (format "Directory: %s\nParent: %s\nActivity: %s\nModel: %s\nRuntime: %S\nGoal: %S\nContext: %S\n\nReady means ready for parent input; work may still be running.\nSession work: unavailable here.\n\nCompact header codes: %s. Y! (or !) means YOLO.\n"
+    (format "Directory: %s\nParent: %s\nActivity: %s\nModel: %s\nRuntime: %S\nGoal: %S\nContext: %S\n\nReady means ready for parent input; work may still be running.\n%s\n\nCompact header codes: %s. Y! (or !) means YOLO.\n"
             (or (hermes-chat--current-working-directory) "detached")
             (hermes-chat--header-status-label (plist-get hermes-chat--status-state :status))
             (or (plist-get hermes-chat--status-state :activity) "—")
             (or hermes-chat--model "unknown") hermes-chat--runtime-flags
             hermes-chat--goal hermes-chat--context
+            (hermes-chat--work-details)
             (mapconcat (lambda (entry) (format "%s=%s" (cdr entry) (car entry)))
                        hermes-chat--header-state-codes "; "))))
 
 (defun hermes-chat-session-details ()
   "Display full local session details, including fields omitted from the header."
   (interactive)
-  (let ((text (hermes-chat--session-details-text)))
+  (let ((text (hermes-chat--session-details-text))
+        (refresh (plist-get hermes-chat--work-owner :refresh)))
     (with-help-window "*Hermes Session Details*"
-      (princ text))))
+      (princ text))
+    (with-current-buffer "*Hermes Session Details*"
+      (use-local-map (copy-keymap (current-local-map)))
+      (local-set-key (kbd "g") (lambda () (interactive)
+                                (when refresh (funcall refresh)))))))
 
 (defun hermes-chat--header-line (&optional width)
   "Return a priority-budgeted header fitting WIDTH display columns.
@@ -1762,7 +1822,8 @@ During redisplay Emacs selects the window whose header is being evaluated."
                               (hermes-chat--header-model-segment)
                               (hermes-chat--header-context-segment))
                         (seq-remove (lambda (part) (equal part "YOLO")) runtime)
-                        (list (hermes-chat--header-detail label))))))
+                        (list (hermes-chat--header-detail label)))
+                (hermes-chat--work-label (< width 50)))))
     (propertize (string-replace "%" "%%" text)
                 'help-echo (hermes-chat--session-details-text))))
 

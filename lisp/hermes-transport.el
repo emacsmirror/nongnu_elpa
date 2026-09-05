@@ -1097,5 +1097,69 @@ notices instead of flattening them to plain status text."
       (when-let* ((value (hermes-transport--get payload (car field))))
         (setq event (plist-put event (cdr field) value))))))
 
+;;; Observed work projections
+
+(defun hermes-transport-work-string (object field)
+  "Return a nonempty string from OBJECT's FIELD, or nil."
+  (let ((value (hermes-transport--get object field)))
+    (and (stringp value) (not (string-empty-p value)) value)))
+
+(defun hermes-transport-work-delegate-row (row)
+  "Return inert display metadata for the validated delegate ROW."
+  (let ((id (hermes-transport-work-string row 'subagent_id))
+        (status (hermes-transport-work-string row 'status)))
+    (list :key (cons 'delegate id) :id id :kind 'delegate
+          :status status :state (if (equal status "running") 'running 'unknown)
+          :parent (hermes-transport-work-string row 'parent_id)
+          :owner (hermes-transport-work-string row 'owner_agent_session_id)
+          :goal (or (hermes-transport-work-string row 'goal) "—")
+          :model (or (hermes-transport-work-string row 'model) "—")
+          :started (let ((value (hermes-transport--get row 'started_at)))
+                     (and (numberp value) (>= value 0) value)))))
+
+(defun hermes-transport-work-delegates (result key)
+  "Project lossless delegation RESULT for verified durable session KEY.
+Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
+ambiguous IDs and their traversal edges; malformed rows make coverage partial."
+  (unless (and (stringp key) (not (string-empty-p key))
+               (hash-table-p result) (vectorp (gethash "active" result)))
+    (error "Invalid delegate inventory or unbound durable key"))
+  (let ((nodes (make-hash-table :test #'equal))
+        (children (make-hash-table :test #'equal))
+        (seen (make-hash-table :test #'equal))
+        partial roots rows)
+    (seq-doseq (row (gethash "active" result))
+      (let ((id (and (hash-table-p row)
+                     (hermes-transport-work-string row 'subagent_id))))
+        (cond
+         ((not id) (setq partial t))
+         ((gethash id nodes)
+          (puthash id 'ambiguous nodes)
+          (setq partial t))
+         ((cl-some
+           (lambda (field)
+             (let ((value (hermes-transport--get row field)))
+               (and value (not (eq value :json-null))
+                    (not (hermes-transport-work-string row field)))))
+           '(parent_id owner_agent_session_id status))
+          (puthash id 'ambiguous nodes)
+          (setq partial t))
+         (t (puthash id row nodes)))))
+    (maphash
+     (lambda (id row)
+       (when (hash-table-p row)
+         (when (equal (hermes-transport-work-string row 'owner_agent_session_id) key)
+           (push id roots))
+         (when-let* ((parent (hermes-transport-work-string row 'parent_id)))
+           (push id (gethash parent children)))))
+     nodes)
+    (while roots
+      (let* ((id (pop roots)) (row (gethash id nodes)))
+        (when (and (hash-table-p row) (not (gethash id seen)))
+          (puthash id t seen)
+          (push (hermes-transport-work-delegate-row row) rows)
+          (setq roots (append (gethash id children) roots)))))
+    (list :rows rows :coverage (if partial 'partial 'current))))
+
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here

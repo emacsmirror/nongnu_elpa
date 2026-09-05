@@ -5,6 +5,46 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-transport-work-delegate-shapes ()
+  "Only real arrays establish coverage; bad rows cannot establish idle."
+  (dolist (wire '("{}" "{\"active\":null}" "{\"active\":false}"
+                  "{\"active\":{}}" "{\"active\":0}" "[]"))
+    (should-error
+     (hermes-transport-work-delegates
+      (hermes-transport-json-parse-lossless wire) "A")))
+  (should (equal (hermes-transport-work-delegates
+                  (hermes-transport-json-parse-lossless "{\"active\":[]}") "A")
+                 '(:rows nil :coverage current)))
+  (should (eq (plist-get (hermes-transport-work-delegates
+                         (hermes-transport-json-parse-lossless
+                          "{\"active\":[null,false,{},7]}") "A") :coverage)
+              'partial)))
+
+(ert-deftest hermes-transport-work-delegate-graph ()
+  "Explicit same-snapshot paths, not global counts, attribute delegates."
+  (let* ((rows (mapcar #'hermes-transport-json-parse-lossless
+                      '("{\"subagent_id\":\"root\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}"
+                        "{\"subagent_id\":\"child\",\"parent_id\":\"root\",\"status\":\"running\"}"
+                        "{\"subagent_id\":\"leaf\",\"parent_id\":\"child\",\"status\":\"mystery\"}"
+                        "{\"subagent_id\":\"foreign\",\"owner_agent_session_id\":\"B\",\"goal\":\"SECRET\"}"
+                        "{\"subagent_id\":\"orphan\",\"parent_id\":\"absent\"}"
+                        "{\"subagent_id\":\"c1\",\"parent_id\":\"c2\"}"
+                        "{\"subagent_id\":\"c2\",\"parent_id\":\"c1\"}")))
+         (result (make-hash-table :test #'equal)))
+    (dolist (order (list rows (reverse rows) (append (cdr rows) (list (car rows)))))
+      (puthash "active" (vconcat order) result)
+      (let ((snapshot (hermes-transport-work-delegates result "A")))
+        (should (equal (sort (mapcar (lambda (row) (plist-get row :id))
+                                    (plist-get snapshot :rows)) #'string<)
+                       '("child" "leaf" "root")))
+        (should-not (string-match-p "SECRET" (prin1-to-string snapshot)))))
+    (puthash "active" (vconcat rows (list (cadr rows))) result)
+    (let ((snapshot (hermes-transport-work-delegates result "A")))
+      (should (eq (plist-get snapshot :coverage) 'partial))
+      (should (equal (mapcar (lambda (row) (plist-get row :id))
+                            (plist-get snapshot :rows)) '("root"))))
+    (should-error (hermes-transport-work-delegates result nil))))
+
 (ert-deftest hermes-transport-w0-lossless-json-types ()
   "Lossless parsing preserves every JSON type without altering legacy parsing."
   (let* ((wire "{\"array\":[],\"object\":{},\"null\":null,\"false\":false,\"true\":true,\"number\":0,\"text\":\"\"}")

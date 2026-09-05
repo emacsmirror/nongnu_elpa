@@ -12,6 +12,427 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+;;; Observed delegates
+
+(defmacro hermes-test--with-work (&rest body)
+  "Run BODY with a visible, bound chat and captured delegate completions."
+  (declare (indent 0) (debug t))
+  `(let ((client (hermes-test--dashboard-client)) calls timers)
+     (setf (hermes-dashboard-transport-client-ready-p client) t)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-delegation-status)
+                (lambda (_client &rest args)
+                  (push args calls)
+                  (should (= hermes-dashboard-transport-request-timeout 10))
+                  (should hermes-dashboard-transport-request-lossless-result)
+                  (length calls)))
+               ((symbol-function 'run-at-time)
+                (lambda (delay _repeat fn &rest args)
+                  (let ((timer (list delay fn args)))
+                    (push timer timers) timer)))
+               ((symbol-function 'cancel-timer) #'ignore))
+       (save-window-excursion
+         (hermes-test-with-chat-buffer
+          (switch-to-buffer (current-buffer))
+          (setq hermes-chat--dashboard-client client
+                hermes-chat--dashboard-active-session-id "runtime"
+                hermes-chat--dashboard-session-ready-p t)
+          (hermes-chat--work-bind client "runtime" "A")
+          ,@body)))))
+
+(ert-deftest hermes-chat-work-bounded-pause-refresh ()
+  "A failed source pauses, busy refresh coalesces, normal turns retain ownership."
+  (hermes-test--with-work
+    (let ((owner hermes-chat--work-owner))
+      (hermes-chat--work-refresh owner)
+      (should (= (length calls) 1))
+      (hermes-chat-work-refresh)
+      (cl-incf hermes-chat--transport-generation)
+      (should (hermes-chat--work-current-p owner))
+      (funcall (plist-get (car calls) :reject) "arbitrary failure")
+      (should-not (plist-get owner :request))
+      (should (plist-get (plist-get owner :delegates) :paused))
+      (should-not (plist-get owner :timer))
+      (hermes-chat--work-refresh owner)
+      (should (= (length calls) 1))
+      (hermes-chat-work-refresh)
+      (should (= (length calls) 2))
+      (funcall (plist-get (car calls) :resolve)
+               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+      (should (eq (plist-get (plist-get owner :delegates) :coverage) 'current))
+      (should (equal (caar timers) 5))
+      (should (string-match-p "none observed" (hermes-chat--work-label nil)))
+      (should-not hermes-chat--pending-assistant-id))))
+
+(ert-deftest hermes-chat-work-rebind-stale-completion ()
+  "A stale completion cannot settle or publish into a new attachment."
+  (hermes-test--with-work
+    (hermes-chat--work-refresh hermes-chat--work-owner)
+    (let ((old (car calls)) (owner hermes-chat--work-owner))
+      (hermes-chat--work-bind client "runtime" "B")
+      (hermes-chat--work-refresh hermes-chat--work-owner)
+      (let ((request (plist-get hermes-chat--work-owner :request)))
+        (funcall (plist-get old :resolve)
+                 (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+        (should-not (hermes-chat--work-current-p owner))
+        (should (eq request (plist-get hermes-chat--work-owner :request)))
+        (should-not (plist-get hermes-chat--work-owner :delegates))))))
+
+(defmacro hermes-test--with-work-wire (&rest body)
+  "Run BODY with real typed requests/raw responses and fake socket/timers."
+  (declare (indent 0) (debug t))
+  `(let ((rpc (symbol-function 'hermes-dashboard-transport-delegation-status))
+         (hermes-dashboard-transport-request-timeout nil)
+         frames events)
+     (hermes-test--with-work
+       (let ((hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text) (push text frames))))
+         (setf (hermes-dashboard-transport-client-callback client)
+               (lambda (event) (push event events)))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-delegation-status) rpc))
+           ,@body)))))
+
+(defun hermes-test--work-reply (client id json)
+  "Deliver JSON result for request ID through CLIENT's raw frame handler."
+  (hermes-dashboard-transport--handle-frame
+   client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"result\":%s}" id json)))
+
+(ert-deftest hermes-chat-work-real-wire-validation ()
+  "Serialized shapes establish current, partial, or stale, never invented idle."
+  (hermes-test--with-work-wire
+    (dolist (case '(("{\"active\":[]}" current nil)
+                    ("{}" stale t) ("{\"active\":null}" stale t)
+                    ("{\"active\":false}" stale t) ("{\"active\":{}}" stale t)
+                    ("{\"active\":7}" stale t) ("{\"active\":[null]}" partial t)
+                    ("{\"active\":[{\"subagent_id\":\"x\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"},false]}" partial t)))
+      (hermes-chat-work-refresh)
+      (let* ((owner hermes-chat--work-owner)
+             (id (plist-get (plist-get owner :request) :id))
+             (pending (gethash id (hermes-dashboard-transport-client-pending client))))
+        (should (equal (hermes-transport--get
+                        (hermes-dashboard-transport--decode-frame (car frames)) 'method)
+                       "delegation.status"))
+        (should (eq (plist-get pending :owner) owner))
+        (should (plist-get pending :lossless-result))
+        (should (= (car (plist-get pending :timer)) 10))
+        (hermes-test--work-reply client id (car case))
+        (let ((source (plist-get owner :delegates)))
+          (should (eq (plist-get source :coverage) (cadr case)))
+          (should (eq (plist-get source :paused) (nth 2 case)))
+          (should-not (plist-get owner :request))
+          (when (nth 2 case)
+            (should-not (plist-get owner :timer))
+            (should (string-match-p "?" (hermes-chat--work-label nil)))))))
+    (should (equal (substring-no-properties (hermes-chat--work-label nil))
+                   "Work 1 running ?"))
+    (should-not events)
+    (should-not hermes-chat--pending-assistant-id)))
+
+(ert-deftest hermes-chat-work-real-errors-pause ()
+  "All message-only RPC failures pause locally without settling the parent."
+  (hermes-test--with-work-wire
+    (dolist (code '(-32601 4001 5010 -32603))
+      (hermes-chat-work-refresh)
+      (let ((id (plist-get (plist-get hermes-chat--work-owner :request) :id)))
+        (hermes-dashboard-transport--handle-frame
+         client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":%s,\"message\":\"foreign secret\"}}"
+                        id code)))
+      (should (plist-get (plist-get hermes-chat--work-owner :delegates) :paused))
+      (should-not (plist-get hermes-chat--work-owner :timer))
+      (should-not (string-match-p "foreign secret" (hermes-chat--work-details))))
+    (should-not events)))
+
+(ert-deftest hermes-chat-work-real-timeout-and-late-response ()
+  "Global nil still yields ten seconds, and late success cannot affect a new cycle."
+  (hermes-test--with-work-wire
+    (hermes-chat-work-refresh)
+    (let* ((owner hermes-chat--work-owner)
+           (id (plist-get (plist-get owner :request) :id))
+           (timer (plist-get (gethash id (hermes-dashboard-transport-client-pending client))
+                             :timer)))
+      (should (= (car timer) 10))
+      (apply (cadr timer) (nth 2 timer))
+      (should-not (gethash id (hermes-dashboard-transport-client-pending client)))
+      (should (plist-get (plist-get owner :delegates) :paused))
+      (hermes-chat-work-refresh)
+      (let ((request (plist-get owner :request)))
+        (hermes-test--work-reply client id "{\"active\":[]}")
+        (should (eq request (plist-get owner :request)))
+        (should (eq (plist-get (plist-get owner :delegates) :coverage) 'stale))))
+    (should-not events)))
+
+(ert-deftest hermes-chat-work-readiness-deadline-and-drop ()
+  "Held readiness remains bounded; dropping an owner before ready suppresses send."
+  (dolist (drop '(nil t))
+    (hermes-test--with-work-wire
+      (let (ready)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport--when-ready)
+                   (lambda (_client resolve _reject) (setq ready resolve))))
+          (hermes-chat-work-refresh))
+        (let* ((owner hermes-chat--work-owner)
+               (id (plist-get (plist-get owner :request) :id))
+               (timer (plist-get (gethash id (hermes-dashboard-transport-client-pending client))
+                                 :timer)))
+          (should (= (car timer) 10))
+          (if drop (hermes-chat--work-stop)
+            (apply (cadr timer) (nth 2 timer)))
+          (funcall ready)
+          (should-not frames)
+          (should-not (gethash id (hermes-dashboard-transport-client-pending client))))))))
+
+(ert-deftest hermes-chat-work-synchronous-failures ()
+  "Synchronous readiness rejection and send errors leave no wedged context."
+  (dolist (failure '(ready send signal))
+    (hermes-test--with-work-wire
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--when-ready)
+                 (lambda (_client resolve reject)
+                   (pcase failure
+                     ('ready (funcall reject "not ready"))
+                     ('signal (error "registration failed"))
+                     (_ (funcall resolve))))))
+        (let ((hermes-dashboard-transport-websocket-send-function
+               (lambda (&rest _) (error "send failed"))))
+          (hermes-chat-work-refresh)))
+      (should-not (plist-get hermes-chat--work-owner :request))
+      (should (plist-get (plist-get hermes-chat--work-owner :delegates) :paused))
+      (should-not (plist-get hermes-chat--work-owner :timer))
+      (should-not events))))
+
+(ert-deftest hermes-chat-work-ui-reentry-and-generation ()
+  "An old finalizer cannot arm cadence or publish after a UI hook replaces owner."
+  (hermes-test--with-work
+    (hermes-chat-work-refresh)
+    (let ((old hermes-chat--work-owner) (resolve (plist-get (car calls) :resolve)))
+      (cl-letf (((symbol-function 'hermes-chat--notify-state-change)
+                 (lambda ()
+                   (hermes-chat--work-bind client "runtime" "B")
+                   (hermes-chat-work-refresh))))
+        (funcall resolve (hermes-transport-json-parse-lossless "{\"active\":[]}")))
+      (should-not (plist-get old :timer))
+      (should (plist-get hermes-chat--work-owner :request))
+      (should-not (plist-get hermes-chat--work-owner :delegates))
+      (cl-incf hermes-chat--work-generation)
+      (funcall (plist-get (car calls) :resolve)
+               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+      (should-not (plist-get hermes-chat--work-owner :delegates)))))
+
+(ert-deftest hermes-chat-work-synchronous-ready-drops-owner ()
+  "A readiness callback can destroy the owner before the wrapper returns its ID."
+  (hermes-test--with-work-wire
+    (let ((owner hermes-chat--work-owner))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--when-ready)
+                 (lambda (_client resolve _reject)
+                   (hermes-chat--work-stop)
+                   (funcall resolve))))
+        (hermes-chat--work-refresh owner))
+      (should-not frames)
+      (should-not hermes-chat--work-owner)
+      (should-not (plist-get (plist-get owner :request) :id))
+      (should (= (hash-table-count (hermes-dashboard-transport-client-pending client)) 0)))))
+
+(ert-deftest hermes-chat-work-binding-is-durable-not-runtime ()
+  "Session binding records only session_key, never the runtime fallback."
+  (hermes-test--with-work
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+      (hermes-chat--dashboard-record-session client '((session_id . "runtime")))
+      (should-not (plist-get hermes-chat--work-owner :key))
+      (hermes-chat-work-refresh)
+      (should-not calls)
+      (hermes-chat--dashboard-record-session
+       client '((session_id . "runtime") (session_key . "A")))
+      (should (equal (plist-get hermes-chat--work-owner :key) "A"))
+      (hermes-chat-work-refresh)
+      (should (= (length calls) 1))
+      (hermes-chat--dashboard-record-session
+       client '((session_id . "runtime") (stored_session_id . "A")))
+      (should-not (plist-get hermes-chat--work-owner :key))
+      (should-not (plist-get hermes-chat--work-owner :delegates)))))
+
+(ert-deftest hermes-chat-work-two-chats-one-client ()
+  "A and B receive the same global wire inventory but keep exact owned rows."
+  (hermes-test--with-work-wire
+    (let ((a (current-buffer)) (owner-a hermes-chat--work-owner)
+          (b (generate-new-buffer " *work B*"))
+          (wire "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"},{\"subagent_id\":\"b\",\"owner_agent_session_id\":\"B\",\"status\":\"running\",\"goal\":\"private B\"}]}"))
+      (unwind-protect
+          (progn
+            (hermes-chat-work-refresh)
+            (set-window-buffer (split-window-right) b)
+            (with-current-buffer b
+              (hermes-chat-mode)
+              (setq hermes-chat--dashboard-client client
+                    hermes-chat--dashboard-active-session-id "runtime-B"
+                    hermes-chat--dashboard-session-ready-p t)
+              (hermes-chat--work-bind client "runtime-B" "B")
+              (hermes-chat-work-refresh)
+              (let ((owner-b hermes-chat--work-owner))
+                (hermes-test--work-reply client
+                                        (plist-get (plist-get owner-a :request) :id) wire)
+                (hermes-test--work-reply client
+                                        (plist-get (plist-get owner-b :request) :id) wire)
+                (should (equal (mapcar (lambda (row) (plist-get row :id))
+                                      (plist-get (plist-get owner-b :delegates) :rows)) '("b")))
+                (with-current-buffer a
+                  (should (equal (mapcar (lambda (row) (plist-get row :id))
+                                        (plist-get (plist-get owner-a :delegates) :rows)) '("a")))
+                  (should-not (string-match-p "private B"
+                                              (prin1-to-string (plist-get owner-a :delegates))))))))
+        (kill-buffer b)))))
+
+(ert-deftest hermes-chat-work-window-removal-and-reentry ()
+  "Actual last-window removal cancels cadence; reentry schedules without sending."
+  (hermes-test--with-work
+    (let ((chat (current-buffer)) (owner hermes-chat--work-owner))
+      (hermes-chat-work-refresh)
+      (funcall (plist-get (car calls) :resolve)
+               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+      (let ((old-timer (cdr (plist-get owner :timer)))
+            (other (split-window-right)))
+        (set-window-buffer other chat)
+        (set-window-buffer (selected-window) (get-buffer-create " *work hidden*"))
+        (delete-window other)
+        ;; Run the same default hook dispatched by window-state redisplay.
+        (run-hook-with-args 'pre-redisplay-functions (selected-window))
+        (should-not (plist-get owner :timer))
+        (should (eq (plist-get (plist-get owner :delegates) :coverage) 'stale))
+        (apply (cadr old-timer) (nth 2 old-timer))
+        (should (= (length calls) 1))
+        (set-window-buffer (selected-window) chat)
+        (run-hook-with-args 'pre-redisplay-functions (selected-window))
+        (should (= (length calls) 1))
+        (let ((timer (cdr (plist-get owner :timer))))
+          (should (= (car timer) 0))
+          (apply (cadr timer) (nth 2 timer)))
+        (should (= (length calls) 2))
+        (set-window-buffer (selected-window) (get-buffer-create " *work hidden*"))
+        (run-hook-with-args 'pre-redisplay-functions (selected-window))
+        (funcall (plist-get (car calls) :reject) "failed while hidden")
+        (set-window-buffer (selected-window) chat)
+        (run-hook-with-args 'pre-redisplay-functions (selected-window))
+        (should-not (plist-get owner :timer))
+        (should (= (length calls) 2)))
+      (kill-buffer " *work hidden*"))))
+
+(ert-deftest hermes-chat-work-frame-visibility-notifications ()
+  "Focus and redisplay notifications reconcile visibility without sending RPCs."
+  (dolist (notification '(focus redisplay))
+    (hermes-test--with-work
+      (let ((owner hermes-chat--work-owner)
+            (visible t)
+            (notify (if (eq notification 'focus)
+                        (lambda () (funcall after-focus-change-function))
+                      (lambda ()
+                        (run-hook-with-args 'pre-redisplay-functions
+                                            (selected-window))))))
+        (hermes-chat-work-refresh)
+        (funcall (plist-get (car calls) :resolve)
+                 (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+        (let ((old-timer (cdr (plist-get owner :timer))))
+          (cl-letf (((symbol-function 'frame-visible-p) (lambda (&rest _) visible)))
+            (setq visible 'icon)
+            (funcall notify)
+            (should-not (plist-get owner :timer))
+            (should (eq (plist-get (plist-get owner :delegates) :coverage) 'stale))
+            (apply (cadr old-timer) (nth 2 old-timer))
+            (should (= (length calls) 1))
+            (setq visible t)
+            (funcall notify)
+            (should (= (length calls) 1))
+            (let ((timer (cdr (plist-get owner :timer))))
+              (should (= (car timer) 0))
+              (funcall notify)
+              (should (eq timer (cdr (plist-get owner :timer))))
+              (apply (cadr timer) (nth 2 timer)))
+            (should (= (length calls) 2))))))))
+
+(ert-deftest hermes-chat-work-connection-turn-and-cleanup ()
+  "Normal turns preserve snapshots, but disconnect/reset/mode exit release ownership."
+  (dolist (end '(disconnect reset mode kill))
+    (hermes-test--with-work-wire
+      (hermes-chat-work-refresh)
+      (let* ((owner hermes-chat--work-owner)
+             (id (plist-get (plist-get owner :request) :id))
+             (foreign (list 'unrelated))
+             (other-id (let ((hermes-dashboard-transport-request-owner foreign))
+                         (hermes-dashboard-transport-request client "other" nil #'ignore #'ignore))))
+        (rename-buffer (generate-new-buffer-name " *renamed owner*"))
+        (cl-incf hermes-chat--transport-generation)
+        (should (hermes-chat--work-current-p owner))
+        (pcase end
+          ('disconnect (hermes-chat--forget-live-dashboard-session))
+          ('reset (hermes-chat--reset-transcript))
+          ('mode (fundamental-mode))
+          ('kill (kill-buffer (current-buffer))))
+        (should-not (hermes-chat--work-current-p owner))
+        (should-not (gethash id (hermes-dashboard-transport-client-pending client)))
+        ;; Work cleanup itself never cancels requests owned by another feature.
+        ;; Full chat teardown may close an unshared client, so check disconnect here.
+        (when (eq end 'disconnect)
+          (should (gethash other-id (hermes-dashboard-transport-client-pending client))))
+        (hermes-test--work-reply client id "{\"active\":[]}")
+        (should-not (plist-get owner :timer))))))
+
+(ert-deftest hermes-chat-work-connection-change-makes-header-unknown ()
+  "Connection generation mismatch suppresses even previously positive counts."
+  (hermes-test--with-work
+    (hermes-chat-work-refresh)
+    (funcall (plist-get (car calls) :resolve)
+             (hermes-transport-json-parse-lossless
+              "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
+    (should (equal (substring-no-properties (hermes-chat--work-label t)) "W R1"))
+    (cl-incf (hermes-dashboard-transport-client-generation client))
+    (should (equal (substring-no-properties (hermes-chat--work-label t)) "W ?"))
+    (hermes-chat--work-visibility)
+    (should-not (plist-get hermes-chat--work-owner :timer))))
+
+(ert-deftest hermes-chat-work-header-and-details-preserve-draft ()
+  "Ready and work coexist without render I/O, point movement or draft changes."
+  (hermes-test--with-work
+    (hermes-chat--set-header-state :status 'ready)
+    (insert "unsent draft")
+    (let ((text (buffer-string)) (point (point))
+          (chat (current-buffer))
+          (window (selected-window))
+          (help-map (copy-keymap help-mode-map)))
+      (hermes-chat-work-refresh)
+      (funcall (plist-get (car calls) :resolve)
+               (hermes-transport-json-parse-lossless
+                "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
+      (dolist (width '(12 20 30 40 50 80 120))
+        (let ((header (hermes-chat--header-line width)))
+          (should (<= (string-width header) width))
+          (should (string-match-p "Ready" header))
+          (when (>= width 30)
+            (should (string-match-p (if (< width 50) "W R1" "Work 1 running") header)))))
+      (should (eq (get-text-property 0 'face (hermes-chat--work-label nil))
+                  'hermes-work-running))
+      (should (string-match-p "not a full work ledger" (hermes-chat--work-details)))
+      (should (equal text (buffer-string)))
+      (should (= point (point)))
+      (should (eq window (selected-window)))
+      (should (= (length calls) 1))
+      (unwind-protect
+          (progn
+            (hermes-chat-session-details)
+            (should (equal help-map help-mode-map))
+            ;; Help display may replace the sole chat window in batch Emacs.
+            ;; Details alone must not authorize a request, even explicit g.
+            (delete-other-windows window)
+            (set-window-buffer window "*Hermes Session Details*")
+            (should-not (hermes-chat--work-visible-p hermes-chat--work-owner))
+            (with-current-buffer "*Hermes Session Details*"
+              (call-interactively (key-binding (kbd "g"))))
+            (should (= (length calls) 1))
+            (set-window-buffer (split-window-right) chat)
+            (should (hermes-chat--work-visible-p hermes-chat--work-owner))
+            (with-current-buffer "*Hermes Session Details*"
+              (call-interactively (key-binding (kbd "g"))))
+            (should (= (length calls) 2))
+            (with-current-buffer chat
+              (should (equal text (buffer-string)))
+              (should (= point (point)))))
+        (when (get-buffer "*Hermes Session Details*")
+          (kill-buffer "*Hermes Session Details*"))))))
+
 ;;; Shared-socket runtime isolation
 
 (defun hermes-test--resolve-new-dashboard-session (_client &rest args)
