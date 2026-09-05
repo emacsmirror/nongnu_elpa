@@ -190,9 +190,12 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
          (coverage (if owner (hermes-work--coverage owner :delegates) 'unknown))
          (unknown (seq-some (lambda (row) (eq (plist-get row :state) 'unknown))
                             (plist-get source :rows))))
-    (format "Workers (%d)%s" (hermes-chat--work-running-count source)
-            (if (and (eq coverage 'current) (not unknown)) ""
-              (format " · %s" (if (eq coverage 'current) 'unknown coverage))))))
+    (concat "Workers "
+            (propertize (number-to-string (hermes-chat--work-running-count source))
+                        'face 'keymap-popup-value)
+            (unless (and (eq coverage 'current) (not unknown))
+              (propertize (format " · %s" (if (eq coverage 'current) 'unknown coverage))
+                          'face 'hermes-work-unknown)))))
 
 (defun hermes-work--scope-text (owner)
   "Return full local scope and freshness details for OWNER, even when detached."
