@@ -298,7 +298,8 @@ List fields use JSON arrays, including [] for an empty list."
          (user-error "Current configuration value is not a list"))
        (hermes-config--coerce
         (read-string (format "%s (JSON array): " path)
-                     (json-serialize (vconcat current)))
+                     (json-serialize (vconcat current) :false-object :false
+                                     :null-object :null))
         schema))
       ("select"
        (completing-read (format "%s: " path)

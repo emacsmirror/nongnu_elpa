@@ -659,5 +659,117 @@
   "Buffer kill releases writes and authoritative reads before settlement."
   (hermes-config-tests--assert-teardown-releases-client 'kill))
 
+(defun hermes-config-test--response (text)
+  "Settle a real HTTP response containing TEXT without network access."
+  (let ((promise (hermes--promise-make)))
+    (with-temp-buffer
+      (insert "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" text)
+      (hermes-dashboard-transport--settle-http-response
+       promise nil (current-buffer) "https://example.test/api/config" nil))
+    promise))
+
+(defun hermes-config-test--json-value (value)
+  "Return order-independent VALUE while keeping JSON container types distinct."
+  (cond
+   ((hash-table-p value)
+    (cons 'object
+          (mapcar (lambda (key)
+                    (cons key (hermes-config-test--json-value (gethash key value))))
+                  (sort (hash-table-keys value) #'string<))))
+   ((vectorp value)
+    (cons 'array (mapcar #'hermes-config-test--json-value value)))
+   (t value)))
+
+(ert-deftest hermes-config-lossless-http-edit-wire ()
+  "Both auth paths preserve every untouched JSON type in serialized PUTs."
+  (dolist (token '(nil "test-token"))
+    (dolist (edit '(("model" "string" "new" "\"new\"")
+                    ("enabled" "boolean" nil "false")
+                    ("off" "boolean" t "true")
+                    ("tools" "list" "[]" "[]")
+                    ("tools" "list" "[false,null,[],{},[\"x\"]]"
+                     "[false,null,[],{},[\"x\"]]")
+                    ("nested.neighbors" "list" unchanged
+                     "[false,null,[],{},[\"x\"]]")
+                    ("nested.value" "number" "7" "7")))
+      (let* ((text "{\"model\":\"old\",\"enabled\":true,\"off\":false,\"optional\":null,\"empty\":[],\"tools\":[\"one\",\"two\"],\"object\":{},\"nested\":{\"value\":1,\"neighbors\":[false,null,[],{},[\"x\"]]}}")
+             (client (make-hermes-dashboard-transport-client
+                      :token token :base-url "https://example.test"))
+             wire fetched
+             (hermes-dashboard-transport-http-request-async-function
+              (lambda (_url &rest args)
+                (if (equal (plist-get args :method) "PUT")
+                    (progn (setq wire (plist-get args :data))
+                           (hermes-config-test--response "{\"ok\":true}"))
+                  (hermes-config-test--response text)))))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _)
+                     (hermes--promise-resolved
+                      '(:base-url "https://example.test" :headers nil))))
+                  ((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn client #'ignore)))
+                  ((symbol-function 'read-string)
+                   (lambda (_prompt initial &rest _)
+                     (if (eq (nth 2 edit) 'unchanged) initial (nth 2 edit))))
+                  ((symbol-function 'y-or-n-p) (lambda (&rest _) (nth 2 edit)))
+                  ((symbol-function 'hermes-config--fetch)
+                   (lambda (_) (hermes--promise-rejected "refresh failed"))))
+          (hermes--promise-then
+           (hermes-dashboard-transport-api-request-async
+            "GET" "/api/config" :client client)
+           (lambda (value) (setq fetched value)))
+          (should fetched)
+          (with-temp-buffer
+            (hermes-config-mode)
+            (hermes-config--render
+             (current-buffer)
+             `((fields . ((,(intern (car edit)) . ((type . ,(nth 1 edit)))))))
+             fetched nil)
+            (search-forward (car edit))
+            (hermes-config-edit)
+            (should wire)
+            (should hermes-config--refresh-required)
+            (should-not hermes-config--mutation-in-flight)
+            (should-error (hermes-config-edit) :type 'user-error)))
+        ;; Compare independently parsed JSON structurally, ignoring object order.
+        (let* ((expected (json-parse-string text))
+               (parts (split-string (car edit) "\\."))
+               (parent (if (cdr parts) (gethash (car parts) expected) expected)))
+          (puthash (car (last parts)) (json-parse-string (nth 3 edit)) parent)
+          (should (equal (hermes-config-test--json-value
+                          (gethash "config" (json-parse-string wire)))
+                         (hermes-config-test--json-value expected))))))))
+
+(ert-deftest hermes-config-lossless-rejects-unproven-response ()
+  "Missing raw JSON and malformed or non-object payloads never enable edits."
+  (dolist (token '(nil "test-token"))
+    (dolist (text '(nil "{" "[]" "null" "false" "{} trailing"))
+      (let* ((client (make-hermes-dashboard-transport-client
+                      :token token :base-url "https://example.test"))
+             written accepted rejected
+             (hermes-dashboard-transport-http-request-async-function
+              (lambda (_url &rest args)
+                (when (equal (plist-get args :method) "PUT") (setq written t))
+                (hermes--promise-resolved
+                 (list :status 200 :body '((model . "lossy")) :body-text text)))))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _)
+                     (hermes--promise-resolved '(:base-url "https://example.test")))))
+          (with-temp-buffer
+            (hermes-config-mode)
+            (hermes--promise-then
+             (hermes-dashboard-transport-api-request-async "GET" "/api/config"
+                                                            :client client)
+             (lambda (config)
+               (setq accepted t)
+               (hermes-config--render
+                (current-buffer) '((fields . ((model . ((type . "string"))))))
+                config nil))
+             (lambda (_) (setq rejected t)))
+            (should rejected)
+            (should-not accepted)
+            (should-error (hermes-config-edit) :type 'user-error)
+            (should-not written)))))))
+
 (provide 'hermes-config-tests)
 ;;; hermes-config-tests.el ends here

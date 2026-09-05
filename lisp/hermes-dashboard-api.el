@@ -564,7 +564,8 @@ It is called with URL and keyword arguments :method, :headers, :data, and
 Called with URL and keyword arguments :method, :headers, :data, and :secrets.
 Caller-specific overrides add :timeout or the paired :cancel-setter and
 :cancel-expected keywords.  The function returns a promise of the response
-plist.")
+plist.  Editable config GET responses must retain the raw JSON in `:body-text';
+a parsed `:body' alone cannot preserve the types needed for a full-config PUT.")
 
 (cl-defun hermes-dashboard-transport--http-json
     (url &key (method "GET") headers body secrets)
@@ -587,7 +588,8 @@ CANCEL-SETTER replaces CANCEL-EXPECTED while this request owns its slot."
          (append
           (list :method method
                 :headers (append '(("Accept" . "application/json")) headers)
-                :data (and body (json-serialize body))
+                :data (and body (json-serialize body :false-object :false
+                                                :null-object :null))
                 :secrets secrets)
           (and timeout (list :timeout timeout))
           (and cancel-setter
@@ -1881,6 +1883,19 @@ with the synchronous path, and re-resolved when the configured URL changes."
        (setq hermes-dashboard-transport--api-auth auth)
        auth))))
 
+(defun hermes-dashboard-transport--api-response-body (method path response)
+  "Project RESPONSE for REST METHOD PATH without losing editable JSON types."
+  (if (and (equal method "GET") (equal path "/api/config"))
+      (let ((text (plist-get response :body-text)))
+        ;; Never reconstruct editable configuration from the lossy event body.
+        (unless (and (stringp text) (string-match-p "\\`[ \t\r\n]*{" text))
+          (error "Dashboard configuration requires a raw JSON object"))
+        (condition-case nil
+            (json-parse-string text :object-type 'alist :array-type 'array
+                               :false-object :false :null-object :null)
+          (json-error (error "Dashboard configuration is not valid JSON"))))
+    (plist-get response :body)))
+
 (cl-defun hermes-dashboard-transport--api-request-1-async
     (method path &key body query headers secrets timeout retry base-url)
   "Return a promise of dashboard REST METHOD PATH using resolved auth.
@@ -1899,7 +1914,8 @@ authentication and retries to that dashboard endpoint."
          (hermes--promise-catch
           (hermes--promise-map
 	   (hermes-dashboard-transport--http-json-request-async request)
-           (lambda (response) (plist-get response :body)))
+           (lambda (response)
+             (hermes-dashboard-transport--api-response-body method path response)))
           (lambda (reason)
             (if (and retry (hermes-dashboard-transport--auth-error-p reason))
                 (progn
@@ -1922,7 +1938,8 @@ BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request."
      (hermes-dashboard-transport--api-client-auth client)
      method path :body body :query query :headers headers :secrets secrets
      :timeout timeout))
-   (lambda (response) (plist-get response :body))))
+   (lambda (response)
+     (hermes-dashboard-transport--api-response-body method path response))))
 
 (cl-defun hermes-dashboard-transport-api-request-async
     (method path &key body query headers secrets client timeout)
