@@ -324,7 +324,20 @@ Crisis did not insert."
 ;; -------------------------------------------------------------------
 
 (defun vm-pcrisis-my-identities (&rest identities)
-  "Setup pcrisis with the given IDENTITIES."
+  "Set up Personality Crisis with the given IDENTITIES, replacing what is there.
+
+Each of IDENTITIES becomes an action that puts that address in the `From\='
+header, and a composition asks which one to use, remembering the answer for
+that correspondent.  It asks every time, including for a correspondent it
+already has a profile for, since it installs `vm-pcrisis-prompt-for-profile\='
+with its PROMPT argument set.
+
+This is a quick start for someone with no rules, not something to add to
+rules of your own: `vm-pcrisis-conditions\=', `vm-pcrisis-actions\=' and
+`vm-pcrisis-default-rules\=' are assigned outright, so anything set in them
+before this call is discarded.  For a set of identities chosen by a rule,
+write the rules instead, and use `vm-pcrisis-none-true-yet\=' for the
+fallback."
   (setq vm-pcrisis-conditions    '(("always true" t))
         vm-pcrisis-default-rules '(("always true" "prompt for a profile"))
         vm-pcrisis-actions       '(("prompt for a profile" 
@@ -1829,6 +1842,172 @@ as VM defines them."
     (if vm-pcrisis-mode
         (advice-add (car pair) :around (cdr pair))
       (advice-remove (car pair) (cdr pair)))))
+
+(defconst vm-pcrisis-rule-variables
+  '(vm-pcrisis-default-rules vm-pcrisis-reply-rules vm-pcrisis-forward-rules
+    vm-pcrisis-resend-rules vm-pcrisis-mail-rules vm-pcrisis-newmail-rules
+    vm-pcrisis-automorph-rules)
+  "Every variable that holds condition-action rules.")
+
+(defun vm-pcrisis-names-in (entries)
+  "The names ENTRIES defines, an entry being (NAME FORM...)."
+  (delq nil (mapcar (lambda (entry) (and (consp entry) (stringp (car entry))
+                                         (car entry)))
+                    entries)))
+
+(defun vm-pcrisis-repeated (names)
+  "The members of NAMES that appear more than once."
+  (let (seen repeated)
+    (dolist (name names)
+      (if (member name seen)
+          (unless (member name repeated) (push name repeated))
+        (push name seen)))
+    (nreverse repeated)))
+
+(defun vm-pcrisis-offer (names)
+  "NAMES as a sentence fragment listing what is defined."
+  (if names
+      (concat "one of " (mapconcat (lambda (n) (format "%S" n)) names ", "))
+    "nothing: the variable is empty"))
+
+(defun vm-pcrisis-check-entries (variable what)
+  "Report entries of VARIABLE that are not (NAME FORM...), WHAT naming them."
+  (let ((n 0) problems)
+    (dolist (entry (symbol-value variable))
+      (setq n (1+ n))
+      (unless (and (consp entry) (stringp (car entry)))
+        (push (format (concat "Entry %d of %s is not a %s: %S.  Each entry is a "
+                              "list whose first element is a string naming it.")
+                      n variable what entry)
+              problems)))
+    (nreverse problems)))
+
+(defun vm-pcrisis-check-repeats (variable what)
+  "Report names VARIABLE defines twice, WHAT naming them."
+  (mapcar (lambda (name)
+            (format (concat "%s defines the %s %S more than once.  Only the "
+                            "first is ever used; remove the later one or "
+                            "rename it.")
+                    variable what name))
+          (vm-pcrisis-repeated (vm-pcrisis-names-in (symbol-value variable)))))
+
+(defun vm-pcrisis-check-rule-condition (rule variable conditions)
+  "Report a RULE in VARIABLE whose condition is not among CONDITIONS."
+  (let ((name (car rule)))
+    (unless (member name conditions)
+      (list (format (concat "Rule %S in %s is keyed on the condition %S, which "
+                            "vm-pcrisis-conditions does not define, so the rule "
+                            "never runs.  Define that condition, or key the rule "
+                            "on %s.  For a rule that runs when nothing else "
+                            "matched, define a condition calling "
+                            "`vm-pcrisis-none-true-yet' and key it on that.")
+                    rule variable name (vm-pcrisis-offer conditions))))))
+
+(defun vm-pcrisis-check-rule-actions (rule variable actions)
+  "Report the actions of RULE in VARIABLE that are not among ACTIONS."
+  (delq nil
+        (mapcar (lambda (name)
+                  (unless (and (stringp name) (member name actions))
+                    (format (concat "Rule %S in %s names the action %S, which "
+                                    "vm-pcrisis-actions does not define, so "
+                                    "nothing happens when its condition is "
+                                    "true.  Define that action, or name %s.")
+                            rule variable name (vm-pcrisis-offer actions))))
+                (cdr rule))))
+
+(defun vm-pcrisis-check-rules (variable conditions actions)
+  "Report the rules of VARIABLE naming a condition or action that is not defined."
+  (let (problems)
+    (dolist (rule (symbol-value variable))
+      (when (and (consp rule) (stringp (car rule)))
+        (setq problems
+              (append problems
+                      (vm-pcrisis-check-rule-condition rule variable conditions)
+                      (vm-pcrisis-check-rule-actions rule variable actions)))))
+    problems))
+
+(defun vm-pcrisis-fallback-p (entry)
+  "Whether ENTRY is a bare `vm-pcrisis-none-true-yet' condition.
+One given exceptions is not bare: it is meant to ignore those and can stand
+anywhere."
+  (equal (cdr entry) '((vm-pcrisis-none-true-yet))))
+
+(defun vm-pcrisis-check-fallback-is-last ()
+  "Report a bare `vm-pcrisis-none-true-yet' condition that is not the last one."
+  (let ((entries (seq-filter (lambda (e) (and (consp e) (stringp (car e))))
+                             vm-pcrisis-conditions)))
+    (delq nil
+          (mapcar (lambda (entry)
+                    (when (and (vm-pcrisis-fallback-p entry)
+                               (not (eq entry (car (last entries)))))
+                      (format (concat "The condition %S calls "
+                                      "`vm-pcrisis-none-true-yet' but is not "
+                                      "the last in vm-pcrisis-conditions, so a "
+                                      "condition after it can be true as well "
+                                      "and this is not a fallback.  Move it to "
+                                      "the end, or name the conditions it "
+                                      "should ignore as arguments.")
+                              (car entry))))
+                  entries))))
+
+(defun vm-pcrisis-configuration-problems ()
+  "Everything wrong with the Personality Crisis configuration, as sentences.
+Answers nil when there is nothing to report."
+  (let ((conditions (vm-pcrisis-names-in vm-pcrisis-conditions))
+        (actions (vm-pcrisis-names-in vm-pcrisis-actions))
+        (problems (append (vm-pcrisis-check-entries 'vm-pcrisis-conditions "condition")
+                          (vm-pcrisis-check-entries 'vm-pcrisis-actions "action")
+                          (vm-pcrisis-check-repeats 'vm-pcrisis-conditions "condition")
+                          (vm-pcrisis-check-repeats 'vm-pcrisis-actions "action")
+                          (vm-pcrisis-check-fallback-is-last))))
+    (dolist (variable vm-pcrisis-rule-variables)
+      (setq problems (append problems
+                             (vm-pcrisis-check-entries variable "rule")
+                             (vm-pcrisis-check-rules variable conditions actions))))
+    problems))
+
+;;;###autoload
+(defun vm-pcrisis-check-configuration ()
+  "Say what is wrong with your Personality Crisis rules, and what to do about it.
+
+Checks that every rule is keyed on a condition that exists and names actions
+that exist, that no name is defined twice, that each entry has the form the
+variables want, and that a `vm-pcrisis-none-true-yet' fallback is last.
+
+The mistake worth the command is a rule keyed on a name no condition has.
+Nothing reports it and nothing runs: a fallback rule written as
+\\=(\"default\" \"from-work\") with no condition called \"default\" leaves the
+composition with `user-mail-address', which is the address most people would
+have got anyway, so it can go years unnoticed."
+  (interactive)
+  (let ((problems (vm-pcrisis-configuration-problems)))
+    (if (null problems)
+        (message "Personality Crisis: the rules are consistent")
+      (with-output-to-temp-buffer "*Personality Crisis*"
+        (princ (format "%d problem%s with the Personality Crisis rules:\n\n"
+                       (length problems) (if (cdr problems) "s" "")))
+        (dolist (problem problems)
+          (princ (concat "* " problem "\n\n")))))
+    (length problems)))
+
+;;;###autoload
+(defun vm-pcrisis-warn-if-misconfigured ()
+  "Warn in a composition about rules that cannot do what they say.
+
+On `vm-mail-mode-hook', beside `vm-pcrisis-warn-if-off', and repeating for the
+same reason: a rule that never runs looks exactly like one that ran and chose
+the address VM would have chosen anyway."
+  (let ((problems (vm-pcrisis-configuration-problems)))
+    (when problems
+      (let ((vm-current-warning nil))
+        (vm-warn 0 2 "Personality Crisis: %s%s"
+                 (car problems)
+                 (if (cdr problems)
+                     (format "  (%d more; M-x vm-pcrisis-check-configuration says what)"
+                             (length (cdr problems)))
+                   ""))))))
+
+(add-hook 'vm-mail-mode-hook #'vm-pcrisis-warn-if-misconfigured)
 
 (defun vm-pcrisis-rules-are-set-p ()
   "Whether Personality Crisis has been configured with anything to do."

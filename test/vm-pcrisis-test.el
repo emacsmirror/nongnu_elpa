@@ -1505,6 +1505,130 @@ Renaming it with the symbol would have left every reader's profiles behind."
                                  'standard-value)))
                  "~/.vmpc-auto-profiles")))
 
+
+;;; Checking a configuration (emacs-vm/vm#806)
+
+(defmacro vm-pcrisis-test--with-rules (conditions actions rules &rest body)
+  "Run BODY with only CONDITIONS, ACTIONS and RULES configured.
+Every other rule variable is emptied, so a test says what it means."
+  (declare (indent 3) (debug t))
+  `(let ((vm-pcrisis-conditions ,conditions)
+         (vm-pcrisis-actions ,actions)
+         (vm-pcrisis-default-rules ,rules)
+         (vm-pcrisis-reply-rules nil)
+         (vm-pcrisis-forward-rules nil)
+         (vm-pcrisis-resend-rules nil)
+         (vm-pcrisis-mail-rules nil)
+         (vm-pcrisis-newmail-rules nil)
+         (vm-pcrisis-automorph-rules nil))
+     ,@body))
+
+(defun vm-pcrisis-test--problem-about (problems substring)
+  "Whether one of PROBLEMS mentions SUBSTRING."
+  (and (seq-find (lambda (problem) (string-match-p (regexp-quote substring) problem))
+                 problems)
+       t))
+
+(ert-deftest vm-pcrisis-test-a-rule-on-an-undefined-condition-is-reported ()
+  "A rule keyed on a name no condition has never runs, and now says so.
+
+This is the mistake worth the checker.  A fallback written as
+\\=(\"default\" \"from-work\") with no condition called \"default\" contributes
+nothing, and the composition keeps `user-mail-address', which is the address
+most people would have got anyway.  Nothing reported it before."
+  (vm-pcrisis-test--with-rules
+      '(("work" (vm-pcrisis-folder-account-match "^work$")))
+      '(("from-work" (vm-pcrisis-substitute-header "From" "me@work.com")))
+      '(("work" "from-work") ("default" "from-work"))
+    (let ((problems (vm-pcrisis-configuration-problems)))
+      (should (equal 1 (length problems)))
+      (should (vm-pcrisis-test--problem-about problems "\"default\""))
+      ;; and it says what to do about it
+      (should (vm-pcrisis-test--problem-about problems "never runs"))
+      (should (vm-pcrisis-test--problem-about problems "vm-pcrisis-none-true-yet")))))
+
+(ert-deftest vm-pcrisis-test-a-rule-naming-an-undefined-action-is-reported ()
+  "A rule can name an action that does not exist, and then does nothing."
+  (vm-pcrisis-test--with-rules
+      '(("work" (vm-pcrisis-folder-account-match "^work$")))
+      '(("from-work" (vm-pcrisis-substitute-header "From" "me@work.com")))
+      '(("work" "from-wrok"))
+    (let ((problems (vm-pcrisis-configuration-problems)))
+      (should (equal 1 (length problems)))
+      (should (vm-pcrisis-test--problem-about problems "\"from-wrok\""))
+      ;; naming what is defined, so the typo is visible beside it
+      (should (vm-pcrisis-test--problem-about problems "\"from-work\"")))))
+
+(ert-deftest vm-pcrisis-test-a-name-defined-twice-is-reported ()
+  "`assoc' takes the first, so a second definition of a name is dead."
+  (vm-pcrisis-test--with-rules
+      '(("work" t) ("work" nil))
+      '(("ask" nil) ("ask" nil))
+      '(("work" "ask"))
+    (let ((problems (vm-pcrisis-configuration-problems)))
+      (should (equal 2 (length problems)))
+      (should (vm-pcrisis-test--problem-about problems "vm-pcrisis-conditions defines"))
+      (should (vm-pcrisis-test--problem-about problems "vm-pcrisis-actions defines")))))
+
+(ert-deftest vm-pcrisis-test-a-fallback-that-is-not-last-is-reported ()
+  "`vm-pcrisis-none-true-yet' is only a fallback where nothing follows it.
+
+Given exceptions it is not reported, since naming the conditions to ignore is
+how it is meant to stand in the middle."
+  (vm-pcrisis-test--with-rules
+      '(("catch-all" (vm-pcrisis-none-true-yet))
+        ("work" (vm-pcrisis-folder-account-match "^work$")))
+      '(("ask" (vm-pcrisis-prompt-for-profile 'prompt)))
+      '(("catch-all" "ask") ("work" "ask"))
+    (should (vm-pcrisis-test--problem-about (vm-pcrisis-configuration-problems)
+                                            "is not the last")))
+  (vm-pcrisis-test--with-rules
+      '(("catch-all" (vm-pcrisis-none-true-yet "work"))
+        ("work" (vm-pcrisis-folder-account-match "^work$")))
+      '(("ask" (vm-pcrisis-prompt-for-profile 'prompt)))
+      '(("catch-all" "ask") ("work" "ask"))
+    (should (equal nil (vm-pcrisis-configuration-problems)))))
+
+(ert-deftest vm-pcrisis-test-an-entry-of-the-wrong-form-is-reported ()
+  "An entry that is not (NAME FORM...) is named by its position."
+  (vm-pcrisis-test--with-rules
+      '("work" ("real" t))
+      '(("ask" nil))
+      '(("real" "ask"))
+    (should (vm-pcrisis-test--problem-about (vm-pcrisis-configuration-problems)
+                                            "Entry 1 of vm-pcrisis-conditions"))))
+
+(ert-deftest vm-pcrisis-test-a-consistent-configuration-is-quiet ()
+  "Nothing is reported for rules that can do what they say.
+The checker runs at every composition, so a false report would be worse than
+no checker at all."
+  (vm-pcrisis-test--with-rules
+      '(("work" (vm-pcrisis-folder-account-match "^work$"))
+        ("nothing matched" (vm-pcrisis-none-true-yet)))
+      '(("from-work" (vm-pcrisis-substitute-header "From" "me@work.com"))
+        ("ask" (vm-pcrisis-prompt-for-profile 'prompt)))
+      '(("work" "from-work") ("nothing matched" "ask"))
+    (should (equal nil (vm-pcrisis-configuration-problems)))))
+
+(ert-deftest vm-pcrisis-test-an-empty-configuration-is-quiet ()
+  "Someone who has not configured Personality Crisis is not told off."
+  (vm-pcrisis-test--with-rules nil nil nil
+    (should (equal nil (vm-pcrisis-configuration-problems)))))
+
+(ert-deftest vm-pcrisis-test-every-rule-variable-is-checked ()
+  "The check covers each of the seven rule variables, not only the default one."
+  (should (equal 7 (length vm-pcrisis-rule-variables)))
+  (dolist (variable vm-pcrisis-rule-variables)
+    (vm-pcrisis-test--with-rules '(("work" t)) '(("ask" nil)) nil
+      (set variable '(("no such condition" "ask")))
+      (unwind-protect
+          (should (equal (list variable t)
+                         (list variable
+                               (vm-pcrisis-test--problem-about
+                                (vm-pcrisis-configuration-problems)
+                                (symbol-name variable)))))
+        (set variable nil)))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
