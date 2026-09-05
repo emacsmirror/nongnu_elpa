@@ -1255,6 +1255,30 @@ echo is received, so the cache is normally near-empty.")
   "Return the sent-plaintext cache key for JC, GROUP, FROM, and ID."
   (list jc group from id))
 
+(defun jabber-omemo--current-echo-key (jc stanza)
+  "Return JC's exact existing echo key for encrypted STANZA."
+  (when (and jc (equal (jabber-xml-get-attribute stanza 'type) "groupchat")
+             (eq (car-safe (jabber-xml-child-with-xmlns stanza jabber-omemo-xmlns))
+                 'encrypted))
+    (let* ((room (jabber-xml-get-attribute stanza 'to))
+           (nick (or (jabber-muc-nickname room jc)
+                     (cadr (assoc room (gethash (jabber-connection-bare-jid jc)
+                                               jabber-muc--rooms-before-disconnect)))))
+           (key (and nick (jabber-omemo--muc-echo-key
+                           jc room (concat room "/" nick)
+                           (jabber-xml-get-attribute stanza 'id)))))
+      (cl-find key (hash-table-keys jabber-omemo--sent-muc-plaintexts)
+               :test #'equal))))
+
+(defun jabber-omemo--move-echo (entry nick)
+  "Move ENTRY's current echo to NICK, or dispose it when NICK is nil."
+  (when-let* ((key (plist-get entry :echo-key))
+              (body (gethash key jabber-omemo--sent-muc-plaintexts)))
+    (remhash key jabber-omemo--sent-muc-plaintexts)
+    (when nick
+      (setcar (nthcdr 2 key) (concat (nth 1 key) "/" nick))
+      (puthash key body jabber-omemo--sent-muc-plaintexts))))
+
 (defun jabber-omemo--detect-encrypted (xml-data)
   "Detect OMEMO encryption in XML-DATA.
 Returns a detection plist or nil."
@@ -1731,10 +1755,13 @@ No local echo: the MUC server mirrors the message back."
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
          (id (or id (format "emacs-msg-%.6f" (float-time))))
-         (nick (jabber-muc-nickname group jc))
+         (nick (or (jabber-muc-nickname group jc)
+                   (plist-get (jabber-sm--room-attempt (fsm-get-state-data jc) group)
+                              :nick)))
          (echo-key (and nick
                         (jabber-omemo--muc-echo-key
                          jc group (concat group "/" nick) id)))
+         (jabber-omemo--sending-echo-key echo-key)
          (_ (when echo-key
               (puthash echo-key body jabber-omemo--sent-muc-plaintexts)))
          (failed
@@ -1750,7 +1777,8 @@ No local echo: the MUC server mirrors the message back."
                            ,encrypted-xml
                            ,(jabber-hints-store)
                            ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO")
-                           ,@extra-elements)))
+                           ,@extra-elements))
+         (jabber-omemo--sending-stanza stanza))
     (condition-case err
         (progn
           (when (buffer-live-p buffer)
@@ -1866,22 +1894,12 @@ of date, and pre-fetches sessions for open chat buffers."
              (and (eq jc (car key))
                   (not (cl-some
                         (lambda (entry)
-                          (let* ((stanza (jabber-sm--pending-stanza entry))
-                                 (room (jabber-xml-get-attribute stanza 'to))
-                                 (nick (or (jabber-muc-nickname room jc)
-                                           (cadr (assoc room
-                                             (gethash
-                                              (jabber-connection-bare-jid jc)
-                                              jabber-muc--rooms-before-disconnect))))))
-                            (and nick
-                                 (equal (jabber-xml-get-attribute stanza 'type)
-                                        "groupchat")
-                                 (jabber-xml-child-with-xmlns
-                                  stanza jabber-omemo-xmlns)
-                                 (equal key
-                                        (jabber-omemo--muc-echo-key
-                                         jc room (concat room "/" nick)
-                                         (jabber-xml-get-attribute stanza 'id))))))
+                          (equal key
+                                 (if (and (keywordp (car-safe entry))
+                                          (plist-member entry :echo-key))
+                                     (plist-get entry :echo-key)
+                                   (jabber-omemo--current-echo-key
+                                    jc (jabber-sm--pending-stanza entry)))))
                         entries))))
            (hash-table-keys jabber-omemo--sent-muc-plaintexts))))
     ;; Claim old echo disposal before callbacks can create successor work.

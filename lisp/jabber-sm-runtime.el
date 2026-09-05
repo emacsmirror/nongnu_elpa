@@ -32,8 +32,11 @@
   "Fail ENTRIES independently with REASON."
   (dolist (entry entries)
     (when (keywordp (car-safe entry))
-      (jabber-sm--run-pending-callback
-       (plist-get entry :failure) reason))))
+      (when (fboundp 'jabber-omemo--move-echo)
+        (jabber-omemo--move-echo entry nil))
+      (when (functionp (plist-get entry :failure))
+        (jabber-sm--run-pending-callback
+         (plist-get entry :failure) reason)))))
 
 (defun jabber-sm--discard-pending (state-data reason)
   "Detach and fail pending entries in STATE-DATA with REASON."
@@ -83,12 +86,14 @@ JC is the Jabber connection.  Return updated STATE-DATA."
   (let ((recovered (plist-get state-data :sm-recovered-queue))
         (pending (cl-remove-if
                   (lambda (entry)
-                    (and (keywordp (car-safe entry))
-                         (plist-get entry :blocked-room)))
+                    (jabber-sm--entry-blocked-p state-data entry))
                   (plist-get state-data :sm-pending-queue))))
     (cond
      (recovered
-      (list :sm-recovered-queue (car recovered) (car recovered) nil))
+      (let ((entry (car recovered)))
+        (list :sm-recovered-queue entry
+              (if (keywordp (car-safe entry))
+                  (jabber-sm--pending-stanza entry) entry) nil)))
      ((and pending
            (or (not (plist-get state-data :sm-enabled))
                (null jabber-sm-max-in-flight)
@@ -114,7 +119,8 @@ JC is the Jabber connection.  Return updated STATE-DATA."
             (plist-put next :sm-outbound-queue
                        (copy-sequence
                         (plist-get state-data :sm-outbound-queue))))
-      (setq next (jabber-sm--count-outbound next sexp))
+      (setq next (jabber-sm--count-outbound
+                  next sexp (and (keywordp (car-safe entry)) entry)))
       (put jc :state-data next)
       next)))
 

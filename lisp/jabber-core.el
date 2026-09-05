@@ -1038,7 +1038,12 @@ Publish STATE-DATA ownership before reset callbacks, then reacquire it."
 			  (plist-put state-data :nil-entry-token nil))
 		    (setq state-data
 			  (plist-put state-data :nil-entry-pending nil))
+		    ;; Establish retry eligibility before callback-capable bootstrap.
+		    (setq state-data
+			  (plist-put state-data :ever-session-established t))
 		    (put fsm :state-data state-data)
+                    (let ((connection (plist-get state-data :connection))
+                          (session (plist-get state-data :session-id)))
 		    (if (plist-get state-data :sm-resumed)
 			;; On SM resume, the session was never lost; skip roster fetch
 			;; and bookmark prefetch.  Run resume-specific hooks (MAM
@@ -1049,20 +1054,22 @@ Publish STATE-DATA ownership before reset callbacks, then reacquire it."
 			    (setq state-data (jabber-sm--start-r-timer fsm state-data)))
 			  (setq state-data (plist-put state-data :sm-resumed nil))
 			  (put fsm :state-data state-data)
-			  (jabber-lifecycle--dispatch-contained
-			   'jabber-post-resume-hooks fsm))
+                          (when (fboundp 'jabber-muc--resume-attempts)
+                            (jabber-muc--resume-attempts fsm))
+                          (setq state-data (fsm-get-state-data fsm))
+                          (jabber-lifecycle--dispatch-contained
+                           'jabber-post-resume-hooks fsm))
 		      ;; Normal connect: feature modules fetch initial session data.
 		      (jabber-lifecycle-dispatch-session-bootstrap fsm))
 		    (let ((current (fsm-get-state-data fsm)))
 		      (if (or (not (eq (get fsm :state) :session-established))
-			      (not (eq current state-data))
+                              (not (eq connection (plist-get current :connection)))
+                              (not (equal session (plist-get current :session-id)))
 			      (not (memq fsm jabber-connections)))
 			  (list current :keep)
-			(setq state-data
-			      (plist-put state-data :ever-session-established t))
-			(put fsm :state-data state-data)
-			(jabber-sm--schedule-drain fsm state-data)
-			(list state-data nil))))
+                        ;; Bootstrap may publish fresh state within this session.
+                        (jabber-sm--schedule-drain fsm current)
+                        (list current nil)))))
 
 (define-state jabber-connection :session-established
 	      (fsm state-data event _callback)
