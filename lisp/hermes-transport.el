@@ -406,13 +406,23 @@ EVENT-NAME supplies an SSE event name when RAW came from an `event:' line."
 
 (defun hermes-transport-json-parse (string)
   "Parse STRING as JSON with the shared alist/list option set.
-All hermes-el JSON parsing goes through this so objects, arrays, null, and
-false decode identically everywhere."
+Legacy responses and events use this representation.  Inventory callers
+can opt into `hermes-transport-json-parse-lossless' at request registration."
   (json-parse-string string
                      :object-type 'alist
                      :array-type 'list
                      :null-object nil
                      :false-object nil))
+
+(defun hermes-transport-json-parse-lossless (string)
+  "Parse STRING as JSON without conflating empty collections, null or false.
+Return objects as hash tables, arrays as vectors, null as `:json-null',
+false as `:json-false', and other scalar values unchanged."
+  (json-parse-string string
+                     :object-type 'hash-table
+                     :array-type 'array
+                     :null-object :json-null
+                     :false-object :json-false))
 
 (defun hermes-transport--json-read (string)
   "Parse STRING as JSON and return (t . VALUE), or nil on failure."

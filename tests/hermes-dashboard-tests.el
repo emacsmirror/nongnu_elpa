@@ -283,6 +283,196 @@
        (error . ((message . "boom")))))
     (should (string-match-p "boom" rejected))))
 
+;; W0 proves the invocation contract that the observation owner will use.
+(defvar hermes-dashboard-transport-request-lossless-result)
+
+(defun hermes-test--inventory-request (client &rest callbacks)
+  "Request CLIENT inventory with finite deadline and lossless CALLBACKS."
+  (let ((hermes-dashboard-transport-request-timeout 10)
+        (hermes-dashboard-transport-request-lossless-result t))
+    (apply #'hermes-dashboard-transport-delegation-status client callbacks)))
+
+(ert-deftest hermes-dashboard-w0-wire-fidelity-and-legacy ()
+  "Opt-in survives registration; concurrent legacy results keep their shape."
+  (dolist (method '("delegation.status" "process.list"))
+    (dolist (body '("{}" "{\"active\":[]}" "{\"active\":null}"
+                    "{\"active\":false}" "{\"active\":{}}"
+                    "{\"active\":7}" "{\"active\":[{},null,false,[],7]}"
+                    "{\"active\":[{\"subagent_id\":\"a\",\"status\":\"running\"}]}"))
+      (let* ((wire (if (equal method "process.list")
+                       (replace-regexp-in-string "active" "processes" body)
+                     body))
+             (client (hermes-test--dashboard-client))
+             (hermes-dashboard-transport-request-timeout nil)
+             (hermes-dashboard-transport-websocket-send-function #'ignore)
+             legacy result events)
+        (setf (hermes-dashboard-transport-client-callback client)
+              (lambda (event) (push event events)))
+        (let* ((id (let ((hermes-dashboard-transport-request-lossless-result t))
+                     (if (equal method "delegation.status")
+                         (hermes-dashboard-transport-delegation-status
+                          client :resolve (lambda (value) (setq result value)))
+                       (hermes-dashboard-transport-request
+                        client method '((session_id . "runtime"))
+                        (lambda (value) (setq result value))))))
+               (old (hermes-dashboard-transport-delegation-status
+                     client :resolve (lambda (value) (setq legacy value)))))
+          (hermes-dashboard-transport--handle-frame
+           client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"result\":%s}" id wire))
+          (hermes-dashboard-transport--handle-frame
+           client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"result\":%s}" old wire))
+          (should (hash-table-p result))
+          (should (equal wire (json-serialize
+                               result :null-object :json-null
+                               :false-object :json-false)))
+          (should (equal legacy (hermes-transport-json-parse wire)))
+          (should (= 0 (hash-table-count
+                        (hermes-dashboard-transport-client-pending client))))
+          (should-not events))))))
+
+(ert-deftest hermes-dashboard-w0-synchronous-response-and-method-gate ()
+  "Pending metadata exists before send; unrelated methods stay legacy."
+  (let* ((client (hermes-test--dashboard-client))
+         (hermes-dashboard-transport-request-timeout nil)
+         result observed
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text)
+            (let* ((frame (hermes-transport-json-parse text))
+                   (id (alist-get 'id frame)))
+              (push (copy-sequence
+                     (gethash id (hermes-dashboard-transport-client-pending client)))
+                    observed)
+              (hermes-dashboard-transport--handle-frame
+               client (format "{\"id\":%S,\"result\":{\"active\":[]}}" id))))))
+    (let ((hermes-dashboard-transport-request-lossless-result t))
+      (hermes-test--inventory-request
+       client :resolve (lambda (value) (setq result value)))
+      (should (hash-table-p result))
+      (should (plist-get (car observed) :lossless-result))
+      (should (timerp (plist-get (car observed) :timer)))
+      (should-not (memq (plist-get (car observed) :timer) timer-list))
+      (hermes-dashboard-transport-session-list
+       client :resolve (lambda (value) (setq result value)))
+      (should (equal result '((active))))
+      (should-not (plist-get (car observed) :lossless-result)))
+    (should (= 0 (hash-table-count
+                  (hermes-dashboard-transport-client-pending client))))))
+
+(ert-deftest hermes-dashboard-w0-handled-errors-and-raw-required ()
+  "Wire errors stay message-only; decoded inventory frames reject locally."
+  (dolist (failure '(-32601 4001 5010 -32603 decoded parse))
+    (let* ((client (hermes-test--dashboard-client))
+           (hermes-dashboard-transport-request-timeout nil)
+           (hermes-dashboard-transport-websocket-send-function #'ignore)
+           rejects events resolves)
+      (setf (hermes-dashboard-transport-client-callback client)
+            (lambda (event) (push event events)))
+      (let ((id (let ((hermes-dashboard-transport-request-lossless-result t))
+                  (hermes-dashboard-transport-delegation-status
+                   client :resolve (lambda (_) (setq resolves t))
+                   :reject (lambda (message) (push message rejects))))))
+        (cond
+         ((eq failure 'decoded)
+          (hermes-dashboard-transport--handle-frame
+           client `((id . ,id) (result . ((active))))))
+         ((eq failure 'parse)
+          (cl-letf (((symbol-function 'hermes-transport-json-parse-lossless)
+                     (lambda (_) (error "Invalid lossless JSON"))))
+            (hermes-dashboard-transport--handle-frame
+             client (format "{\"id\":%S,\"result\":{}}" id))))
+         (t
+          (hermes-dashboard-transport--handle-frame
+           client (format "{\"id\":%S,\"error\":{\"code\":%s,\"message\":\"no inventory\"}}"
+                          id failure))))
+        (should (= 1 (length rejects)))
+        (should (stringp (car rejects)))
+        (when (integerp failure) (should (equal (car rejects) "no inventory")))
+        (should-not resolves)
+        (should-not events)
+        (should (= 0 (hash-table-count
+                      (hermes-dashboard-transport-client-pending client))))))))
+
+(ert-deftest hermes-dashboard-w0-deadline-and-cancellation ()
+  "Existing timer bounds readiness/response and never settles a successor."
+  (dolist (phase '(ready response cancel send-failure disconnect))
+    (let* ((client (hermes-test--dashboard-client))
+           (ready (hermes--promise-make))
+           (owner (list 'inventory))
+           (hermes-dashboard-transport-request-owner owner)
+           (hermes-dashboard-transport-request-timeout nil)
+           timers cancelled sent rejects resolves events
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (&rest _)
+              (push t sent)
+              (when (eq phase 'send-failure) (error "Send failed")))))
+      (setf (hermes-dashboard-transport-client-callback client)
+            (lambda (event) (push event events)))
+      (when (eq phase 'ready)
+        (setf (hermes-dashboard-transport-client-ready-p client) nil
+              (hermes-dashboard-transport-client-ready-promise client) ready))
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (delay repeat fn &rest args)
+                   (let ((timer (list delay repeat fn args)))
+                     (push timer timers) timer)))
+                ((symbol-function 'cancel-timer)
+                 (lambda (timer) (push timer cancelled))))
+        (let* ((id (hermes-test--inventory-request
+                    client :resolve (lambda (_) (push t resolves))
+                    :reject (lambda (message) (push message rejects))))
+               (deadline (car timers)))
+          (should-not hermes-dashboard-transport-request-timeout)
+          (should (= 1 (length timers)))
+          (should (= 10 (car deadline)))
+          (should-not (cadr deadline))
+          (should (eq (nth 2 deadline)
+                      #'hermes-dashboard-transport--on-request-timeout))
+          (pcase phase
+            ('cancel
+             (should (= 1 (hermes-dashboard-transport-cancel-owner-requests
+                            client owner)))
+             (should (= 0 (hermes-dashboard-transport-cancel-owner-requests
+                            client owner))))
+            ('disconnect
+             (hermes-dashboard-transport--reject-pending-requests client "Disconnected"))
+            ('send-failure nil)
+            (_ (apply (nth 2 deadline) (nth 3 deadline))))
+          (should (memq deadline cancelled))
+          (should (= (if (eq phase 'cancel) 0 1) (length rejects)))
+          (let* ((hermes-dashboard-transport-request-owner (list 'successor))
+                 (hermes-dashboard-transport-websocket-send-function #'ignore)
+                 (next (hermes-test--inventory-request client :resolve #'ignore))
+                 (pending (hermes-dashboard-transport-client-pending client))
+                 (successor (gethash next pending)))
+            ;; An already queued timeout and late reply cannot take NEXT.
+            (apply (nth 2 deadline) (nth 3 deadline))
+            (hermes-dashboard-transport--handle-frame
+             client (format "{\"id\":%S,\"result\":{\"active\":[]}}" id))
+            (hermes--promise-resolve ready client)
+            (should (eq successor (gethash next pending)))
+            (should (= 1 (hash-table-count pending)))
+            (should-not resolves)
+            (should-not events)
+            (when (eq phase 'ready) (should-not sent))
+            (should (= (if (eq phase 'cancel) 0 1) (length rejects)))
+            (hermes-dashboard-transport-cancel-owner-requests
+             client hermes-dashboard-transport-request-owner)
+            (should (= 0 (hash-table-count pending)))
+            (should (= 2 (length cancelled)))))))))
+
+(ert-deftest hermes-dashboard-w0-unowned-and-event-frames-stay-legacy ()
+  "Unknown replies never reparse; notifications use the original decoder."
+  (let* ((client (hermes-test--dashboard-client))
+         seen reparsed
+         (wire "{\"method\":\"event\",\"params\":{\"type\":\"test\",\"payload\":{\"a\":[],\"b\":false}}}"))
+    (cl-letf (((symbol-function 'hermes-transport-json-parse-lossless)
+               (lambda (_) (setq reparsed t) (error "Unexpected parse")))
+              ((symbol-function 'hermes-dashboard-transport--handle-event-frame)
+               (lambda (_client frame) (setq seen frame))))
+      (hermes-dashboard-transport--handle-frame client "{\"id\":999,\"result\":{}}")
+      (hermes-dashboard-transport--handle-frame client wire)
+      (should (equal seen (hermes-transport-json-parse wire)))
+      (should-not reparsed))))
+
 (ert-deftest hermes-dashboard-transport-call-rejects-on-timeout ()
   "A call rejects its promise when the request times out."
   (let* ((client (hermes-test--dashboard-client))

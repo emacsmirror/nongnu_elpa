@@ -5,6 +5,24 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-transport-w0-lossless-json-types ()
+  "Lossless parsing preserves every JSON type without altering legacy parsing."
+  (let* ((wire "{\"array\":[],\"object\":{},\"null\":null,\"false\":false,\"true\":true,\"number\":0,\"text\":\"\"}")
+         (value (hermes-transport-json-parse-lossless wire)))
+    (should (hash-table-p value))
+    (should (equal (gethash "array" value) []))
+    (should (hash-table-p (gethash "object" value)))
+    (should (= 0 (hash-table-count (gethash "object" value))))
+    (should (eq (gethash "null" value) :json-null))
+    (should (eq (gethash "false" value) :json-false))
+    (should (eq (gethash "true" value) t))
+    (should (= (gethash "number" value) 0))
+    (should (equal (gethash "text" value) ""))
+    (should (eq (gethash "absent" value :missing) :missing))
+    (should (equal (hermes-transport-json-parse wire)
+                   '((array) (object) (null) (false) (true . t)
+                     (number . 0) (text . ""))))))
+
 (ert-deftest hermes-transport-dashboard-shows-review-summary ()
   "`review.summary' becomes a status event carrying its text, not an Unknown event."
   (let (events)

@@ -98,6 +98,15 @@ Use nil to disable per-request timeouts."
 (defvar hermes-dashboard-transport-request-owner nil
   "Identity attached to requests for scoped cancellation by their caller.")
 
+(defvar hermes-dashboard-transport-request-lossless-result nil
+  "Non-nil requests lossless inventory results at request registration.
+Only `delegation.status' and `process.list' honor this option.  Bind it
+around the typed RPC invocation, together with the request owner and a
+10-second `hermes-dashboard-transport-request-timeout', even if the user's
+ordinary timeout is nil.  Registration captures both options before waiting
+for readiness.  Other requests and notifications keep their legacy decoding.
+See `hermes-transport-json-parse-lossless' for the result representation.")
+
 (defcustom hermes-dashboard-transport-idle-close-delay nil
   "Seconds to keep a shared dashboard client alive after its last reference.
 When the last chat buffer detaches, the shared WebSocket and any spawned
@@ -1114,7 +1123,10 @@ id."
          (frame (hermes-dashboard-transport--jsonrpc-request id method params))
          (timer (hermes-dashboard-transport--arm-request-timer client id method)))
     (puthash id (list :method method :resolve resolve :reject reject :timer timer
-                      :owner hermes-dashboard-transport-request-owner)
+                      :owner hermes-dashboard-transport-request-owner
+                      :lossless-result
+                      (and hermes-dashboard-transport-request-lossless-result
+                           (member method '("delegation.status" "process.list"))))
              pending)
     (hermes-dashboard-transport--when-ready
      client
@@ -1683,17 +1695,33 @@ client is transport-only and must not accumulate session identity from
 socket would clobber each other's session state."
   nil)
 
-(defun hermes-dashboard-transport--resolve-response (client frame)
-  "Resolve CLIENT's pending request represented by response FRAME."
+(defun hermes-dashboard-transport--response-result (frame text request)
+  "Return (t . RESULT) or (nil . MESSAGE) for FRAME, TEXT and REQUEST.
+An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
+  (if (not (plist-get request :lossless-result))
+      (cons t (hermes-transport--get frame 'result))
+    (condition-case nil
+        (progn
+          (unless (stringp text)
+            (error "Missing serialized inventory response"))
+          (cons t (gethash "result" (hermes-transport-json-parse-lossless text))))
+      (error (cons nil "Invalid serialized Hermes inventory response")))))
+
+(defun hermes-dashboard-transport--resolve-response (client frame &optional text)
+  "Resolve CLIENT's pending request represented by FRAME and original TEXT."
   (let* ((id (hermes-dashboard-transport--frame-id frame))
-         (pending (and id (hermes-dashboard-transport--take-pending client id)))
+         (table (hermes-dashboard-transport-client-pending client))
+         (pending (and id table (gethash id table)))
          (method (plist-get pending :method)))
     (when pending
-      (let ((result (hermes-transport--get frame 'result))
+      (let ((decoded (hermes-dashboard-transport--response-result frame text pending))
             (resolve (plist-get pending :resolve)))
-        (hermes-dashboard-transport--store-session-result client method result)
-        (when resolve
-          (funcall resolve result))))))
+        (hermes-dashboard-transport--take-pending client id)
+        (if (car decoded)
+            (progn
+              (hermes-dashboard-transport--store-session-result client method (cdr decoded))
+              (when resolve (funcall resolve (cdr decoded))))
+          (hermes-dashboard-transport--reject-pending-request client pending (cdr decoded)))))))
 
 (defun hermes-dashboard-transport--reject-response (client frame)
   "Reject CLIENT's pending request represented by error response FRAME."
@@ -1773,7 +1801,7 @@ socket would clobber each other's session state."
   (condition-case err
       (let ((frame (hermes-dashboard-transport--decode-frame text)))
         (pcase (hermes-dashboard-transport--frame-kind frame)
-          ('response (hermes-dashboard-transport--resolve-response client frame))
+          ('response (hermes-dashboard-transport--resolve-response client frame text))
           ('error-response (hermes-dashboard-transport--reject-response client frame))
           ('event (hermes-dashboard-transport--handle-event-frame client frame))
           (_ (hermes-dashboard-transport--emit-error
