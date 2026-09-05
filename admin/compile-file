@@ -1,0 +1,30 @@
+;;; compile-file --- Fatal-warning compiler entry point -*- lexical-binding: t; -*-
+
+;; Run only via check-compile, in a fresh batch Emacs for each source file.
+(require 'bytecomp)
+(require 'comp)
+
+(setq jabber-db-path nil
+      native-comp-jit-compilation nil
+      native-comp-deferred-compilation nil
+      byte-compile-error-on-warn t
+      byte-compile-warnings t)
+
+(let* ((file (getenv "JABBER_COMPILE_FILE"))
+       (output (getenv "JABBER_COMPILE_OUTPUT"))
+       (byte-compile-dest-file-function (lambda (_) (concat output ".elc"))))
+  ;; Also catch warnings emitted through `display-warning', not just bytecomp.
+  (advice-add 'display-warning :before
+              (lambda (_type message &rest _) (error "%s" message)))
+  (if (equal (getenv "JABBER_COMPILE_MODE") "byte")
+      (unless (byte-compile-file file)
+        (error "Byte compilation failed: %s" file))
+    (unless (and (fboundp 'native-comp-available-p)
+                 (native-comp-available-p))
+      (error "Native compilation is required for this gate"))
+    (unless (native-compile file (concat output ".eln"))
+      (error "Native compilation failed: %s" file)))
+  (unless (file-regular-p (concat output
+                                 (if (equal (getenv "JABBER_COMPILE_MODE") "byte")
+                                     ".elc" ".eln")))
+    (error "Compiler produced no artifact: %s" file)))

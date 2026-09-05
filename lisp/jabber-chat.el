@@ -2291,9 +2291,10 @@ not `jabber-image-max-bytes'."
         (setq candidate (ewoc-next jabber-chat-ewoc candidate))))
     found))
 
-(defun jabber-chat--handle-link-preview (result url token node buffer)
-  "Cache preview RESULT for URL and redraw NODE in BUFFER.
-TOKEN identifies the request so stale callbacks cannot replace newer state."
+(defun jabber-chat--handle-link-preview (result url token _node buffer)
+  "Cache preview RESULT for URL and redraw its waiting messages.
+TOKEN identifies the request so stale callbacks cannot replace newer state.
+Report the result in BUFFER.  _NODE is retained for existing callbacks."
   (when (equal (jabber-link-preview-get url) token)
     (jabber-link-preview-put url result)
     (jabber-chat--redraw-link-preview-waiters url)

@@ -37,6 +37,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-jid)
+(require 'jabber-state)
 (require 'jabber-xml)
 (require 'rx)
 (require 'subr-x)

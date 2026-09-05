@@ -82,11 +82,16 @@
                        (equal (dom-attr candidate attribute) value))
                      (dom-by-tag dom 'meta))))
     (dom-attr node 'content)))
+;; Emacs 29 and 30 have only the older DOM text API.
+(defalias 'jabber-link-preview--dom-text
+  (symbol-function (if (fboundp 'dom-inner-text) 'dom-inner-text 'dom-texts))
+  "Return the textual content of a DOM node.")
+
 (defun jabber-link-preview--title (dom)
   "Return the preferred title from DOM."
   (or (jabber-link-preview--meta-content dom 'property "og:title")
       (when-let* ((node (car (dom-by-tag dom 'title))))
-        (dom-texts node))))
+        (jabber-link-preview--dom-text node))))
 (defun jabber-link-preview--absolute-url (url base-url)
   "Resolve URL against BASE-URL, returning nil when URL is empty."
   (when-let* ((url (jabber-link-preview--clean-text url)))

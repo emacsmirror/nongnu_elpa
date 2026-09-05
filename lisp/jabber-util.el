@@ -31,6 +31,7 @@
 
 (require 'cl-lib)
 (require 'crm)
+(require 'jabber-jid)
 (require 'jabber-muc-state)
 (require 'jabber-presence-display)
 (require 'jabber-state)
@@ -150,14 +151,6 @@ JID must be a string."
   (when (string-match "\\(.*\\)@.*\\(/.*\\)?" jid)
     (match-string 1 jid)))
 
-(defun jabber-jid-user (jid)
-  "Return the user portion (username@server) of JID.
-JID must be a string."
-  ;;transports don't have @, so don't require it
-  ;;(string-match ".*@[^/]*" jid)
-  (string-match "[^/]*" jid)
-  (match-string 0 jid))
-
 (defun jabber-jid-server (jid)
   "Return the server portion of JID."
   (string-match "^\\(.*@\\)?\\([^@/]+\\)\\(/.*\\)?$" jid)
@@ -188,12 +181,6 @@ Use the name according to roster or else the JID if none set."
                        (cl-return (plist-get bm :name)))))
                  jabber-bookmarks))
       (jabber-jid-displayname string)))
-
-(defun jabber-jid-resource (jid)
-  "Return the resource portion of a JID, or nil if there is none.
-JID must be a string."
-  (when (string-match "^\\(\\([^/]*@\\)?[^/]*\\)/\\(.*\\)" jid)
-    (match-string 3 jid)))
 
 (defvar jabber-jid-obarray)
 (defun jabber-jid-symbol (jid)

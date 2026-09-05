@@ -25,7 +25,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl-lib))
+(require 'cl-lib)
 (require 'jabber-disco)
 (require 'jabber-core)
 (require 'jabber-chat)

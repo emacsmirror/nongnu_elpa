@@ -1,0 +1,26 @@
+;;; check-package-lint --- Installed dependency catalog -*- lexical-binding: t; -*-
+
+(require 'package)
+(require 'cl-lib)
+(package-initialize)
+(require 'package-lint)
+
+;; Nix trivialBuild libraries are loadable without package.el registration.
+;; Read their real source headers rather than assuming an archive or version.
+(dolist (name '(fsm keymap-popup))
+  (let* ((library (locate-library (concat (symbol-name name) ".el") t))
+         (descriptor
+          (with-temp-buffer
+            (unless library (error "Missing dependency source: %s" name))
+            (insert-file-contents library)
+            (package-buffer-info))))
+    (unless (eq name (package-desc-name descriptor))
+      (error "Wrong dependency source: %s" library))
+    (setf (alist-get name package-alist) (list descriptor))))
+(setq package-lint-main-file "lisp/jabber.el"
+      package-lint-batch-fail-on-warnings t)
+;; package-lint initializes again; preserve the verified installed catalog.
+(kill-emacs
+ (if (cl-letf (((symbol-function 'package-initialize) #'ignore))
+       (package-lint-batch-and-exit-1 command-line-args-left))
+     0 1))

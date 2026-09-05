@@ -1,10 +1,10 @@
 .PHONY: all build dev autoload module compile lint lint-check-declare lint-checkdoc \
         lint-test-autoloads \
-        lint-package-lint lint-relint lint-test-compile lint-native-comp \
+        lint-package-lint lint-relint lint-test-compile lint-byte-comp lint-native-comp lint-compile-check \
         clean clean-elc clean-module install uninstall check test test-oneshot test-debian \
         release-check load \
         do-build do-dev do-compile do-lint do-module do-test do-test-oneshot do-test-summary \
-        do-lint-check-declare do-lint-checkdoc do-lint-native-comp
+        do-lint-check-declare do-lint-checkdoc do-lint-byte-comp do-lint-native-comp
 
 NIX := $(shell command -v nix 2>/dev/null)
 
@@ -104,7 +104,7 @@ compile:
 
 do-compile: autoload
 	$(EMACS_CMD) $(EMACS_OPTS) -L . -L lisp \
-	--eval="(setq print-length nil load-prefer-newer t)" \
+	--eval="(setq jabber-db-path nil print-length nil load-prefer-newer t byte-compile-error-on-warn t)" \
 	-f batch-byte-compile lisp/*.el
 
 lint-check-declare:
@@ -125,10 +125,9 @@ do-lint-checkdoc:
 	done
 
 lint-package-lint:
-	$(EMACS_CMD) $(EMACS_OPTS) \
-	--eval='(package-initialize)' --eval="(require 'package-lint)" \
-	--eval="(setq package-lint-main-file \"lisp/jabber.el\")" \
-        -f 'package-lint-batch-and-exit' $(wildcard lisp/*.el)
+	@set -e; for file in lisp/*.el; do \
+	  $(EMACS_CMD) $(EMACS_OPTS) -l admin/check-package-lint "$$file"; \
+	done
 
 lint-relint:
 	$(EMACS_CMD) $(EMACS_OPTS) \
@@ -137,33 +136,32 @@ lint-relint:
 
 lint-test-compile:
 	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
+	--eval="(setq jabber-db-path nil byte-compile-error-on-warn t)" \
 	-f batch-byte-compile admin/*.el tests/*.el
 
 lint-test-autoloads:
 	@$(EMACS_CMD) $(EMACS_OPTS) --script admin/check-test-autoloads tests/*.el
 
-lint-native-comp: autoload
+lint-byte-comp:
+	@$(ENV_MAKE) do-lint-byte-comp
+
+do-lint-byte-comp:
+	EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" ./admin/check-compile byte
+
+lint-native-comp:
 	@$(ENV_MAKE) do-lint-native-comp
 
 do-lint-native-comp:
-	@fails=0; \
-	for file in lisp/*.el ; do \
-	  case "$$file" in *autoloads*) continue;; esac; \
-	  output=$$($(EMACS_CMD) $(EMACS_OPTS) -L lisp \
-	    --eval="(native-compile \"$$file\")" 2>&1); \
-	  matched=$$(echo "$$output" | grep "is not known to be defined" || true); \
-	  if [ -n "$$matched" ]; then \
-	    echo "$$matched"; \
-	    fails=1; \
-	  fi; \
-	done; \
-	exit $$fails
+	EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" ./admin/check-compile native
+
+lint-compile-check:
+	EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" ./admin/test-compile-check
 
 lint:
 	@$(ENV_MAKE) do-lint
 
 do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint \
-         lint-test-compile lint-test-autoloads
+         lint-test-compile lint-test-autoloads do-lint-byte-comp do-lint-native-comp lint-compile-check
 
 test:
 	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test

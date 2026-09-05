@@ -1,0 +1,40 @@
+#!/bin/sh
+# Compile each library in a fresh Emacs, with source-only package dependencies.
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mode=${1:?Expected byte or native}
+shift
+case "$mode" in byte|native) ;; *) exit 2 ;; esac
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+mkdir -p "$work/lisp" "$work/home"
+cp "$root"/lisp/*.el "$work/lisp/"
+# No generated autoloads, bytecode or native cache may conceal a missing require.
+rm -f "$work/lisp/jabber-autoloads.el"
+if [ "$#" -eq 0 ]; then
+    set -- "$work"/lisp/*.el
+fi
+for file do
+    name=$(basename -- "$file")
+    if [ "$file" != "$work/lisp/$name" ]; then
+        cp "$file" "$work/lisp/$name"
+    fi
+    rm -f "$work/output.elc" "$work/output.eln"
+    printf '%s compile: %s\n' "$mode" "$name"
+    status=0
+    HOME="$work/home" XDG_CACHE_HOME="$work/home/cache" \
+    XDG_CONFIG_HOME="$work/home/config" XDG_DATA_HOME="$work/home/data" \
+    XDG_STATE_HOME="$work/home/state" \
+    JABBER_COMPILE_MODE="$mode" JABBER_COMPILE_FILE="$work/lisp/$name" \
+    JABBER_COMPILE_OUTPUT="$work/output" \
+    ${EMACS_CMD:-emacs} ${EMACS_OPTS:--Q --batch} -L "$work/lisp" \
+        -l "$root/admin/compile-file" > "$work/compiler.log" 2>&1 || status=$?
+    cat "$work/compiler.log"
+    [ "$status" -eq 0 ] || exit "$status"
+    # Macro expansion during dependency loading can report warnings directly.
+    if LC_ALL=C grep -Eq '(^|: )(Warning|Error):' "$work/compiler.log"; then
+        exit 1
+    fi
+    case "$mode" in byte) artifact="$work/output.elc" ;; native) artifact="$work/output.eln" ;; esac
+    test -s "$artifact" || { printf 'Compiler produced no artifact: %s\n' "$name" >&2; exit 1; }
+done

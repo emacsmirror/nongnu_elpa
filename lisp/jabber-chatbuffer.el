@@ -34,6 +34,8 @@
 (require 'jabber-muc-protocol)
 (require 'help-at-pt)
 
+(defvar jabber-message-thread-id) ; jabber-message-thread requires this library.
+
 (defcustom jabber-scrolltobottom-all nil
   "Non-nil means explicit input recentering affects all chat windows.
 When `jabber-chat-buffer-recenter-input' is called, recenter all

@@ -116,6 +116,7 @@
           };
         in {
           inherit emacs emacsWithPackages keymapPopup omemoModule;
+          compiler = mkTests { pname = "emacs-jabber-compiler"; target = "do-lint-byte-comp do-lint-native-comp lint-compile-check lint-package-lint"; };
           # Per-file: one Emacs per test file (fast, good isolation).
           tests = mkTests { pname = "emacs-jabber-tests"; target = "test"; };
           # Combined: every file in one Emacs, suite run twice -- mirrors
@@ -147,6 +148,7 @@
         let jabber = mkJabber system;
         in {
           omemo-module = jabber.full.omemoModule;
+          compiler = jabber.full.compiler;
           # Test matrix: {full, nox} x {per-file, combined-twice}.
           test = jabber.full.tests;
           test-nox = jabber.nox.tests;

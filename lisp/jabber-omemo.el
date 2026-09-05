@@ -90,6 +90,7 @@ rotation, so in-flight pre-key messages still decrypt."
 (defvar jabber-message-reply--jid)      ; jabber-message-reply.el
 (defvar jabber-message-reply--fallback-text) ; jabber-message-reply.el
 (defvar jabber-message-reply--thread)   ; jabber-message-reply.el
+(defvar jabber-muc--rooms-before-disconnect) ; jabber-muc requires jabber-core.
 (defvar jabber-message-thread-id)       ; jabber-message-thread.el
 (defvar jabber-message-thread-parent-id) ; jabber-message-thread.el
 
@@ -510,22 +511,22 @@ publish-options alist, and XML-DATA is the error IQ stanza."
          (condition (and err (jabber-error-condition err))))
     (if (eq condition 'conflict)
         (if (gethash node jabber-omemo--reconfigured-nodes)
-            (warn "jabber-omemo: giving up on %s (already reconfigured)" label)
+            (warn "Jabber-omemo: giving up on %s (already reconfigured)" label)
           (puthash node t jabber-omemo--reconfigured-nodes)
           (message "OMEMO: publish-options conflict for %s, retrying" label)
           (jabber-pubsub-publish
            jc nil node item-id payload nil #'ignore
            (lambda (_jc xml-data2 _closure)
-             (warn "jabber-omemo: failed to publish %s (retry): %s"
+             (warn "Jabber-omemo: failed to publish %s (retry): %s"
                    label (jabber-parse-error
                           (jabber-iq-error xml-data2)))))
           (jabber-pubsub-configure-node
            jc nil node options nil
            (lambda (_jc xml-data2 _closure)
-             (warn "jabber-omemo: failed to reconfigure %s node: %s"
+             (warn "Jabber-omemo: failed to reconfigure %s node: %s"
                    label (jabber-parse-error
                           (jabber-iq-error xml-data2))))))
-      (warn "jabber-omemo: failed to publish %s: %s"
+      (warn "Jabber-omemo: failed to publish %s: %s"
             label (if err (jabber-parse-error err) "unknown error")))))
 
 (defun jabber-omemo--publish-device-list (jc device-ids)
@@ -755,7 +756,7 @@ On error, calls (funcall CALLBACK nil)."
                         (jabber-omemo--parse-bundle-xml bundle-el))))
          (funcall callback parsed)))
      (lambda (_jc xml-data _closure)
-       (warn "jabber-omemo: failed to fetch bundle for %s device %d: %s"
+       (warn "Jabber-omemo: failed to fetch bundle for %s device %d: %s"
              jid device-id
              (jabber-parse-error
               (jabber-iq-error xml-data)))

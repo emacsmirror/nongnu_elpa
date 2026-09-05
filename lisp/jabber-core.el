@@ -271,7 +271,12 @@ override the defaults from `jabber-account-list'."
 				     network-server port connection-type proxy)
 	    jabber-connections))))
 
-(define-state-machine jabber-connection
+;; fsm 0.2.1 emits the obsolete `cl-gensym' in its constructor.
+;; Expand that call to its Emacs 29+ replacement, without changing fsm globally.
+(cl-macrolet ((jabber--define-state-machine (&rest args)
+               (cl-subst 'gensym 'cl-gensym
+                         (macroexpand-1 `(define-state-machine ,@args)))))
+  (jabber--define-state-machine jabber-connection
 		      :start ((username server resource
 					registerp password
 					network-server port connection-type
@@ -296,7 +301,7 @@ override the defaults from `jabber-account-list'."
 					     :encrypted (eq connection-type 'ssl)
 					     :network-server network-server
 					     :port port
-					     :proxy proxy))))))
+					     :proxy proxy)))))))
 
 (defun jabber-core--close-transport (connection)
   "Close exact CONNECTION and its buffer without aborting cleanup."
@@ -1107,7 +1112,9 @@ Publish STATE-DATA ownership before reset callbacks, then reacquire it."
 		      (jabber-process-stream-error stanza state-data)
 		      (progn
 			(jabber-process-input fsm stanza)
-			(list :session-established state-data :keep)))))))
+                        ;; Roster hooks can publish a copy and start the SM
+                        ;; timer there.  Never restore the pre-callback plist.
+			(list (get fsm :state) (fsm-get-state-data fsm) :keep)))))))
 
 		(:roster-update
 		 ;; Batch up roster updates

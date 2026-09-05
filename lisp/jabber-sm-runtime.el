@@ -206,22 +206,34 @@ JC is the Jabber connection.  Return updated STATE-DATA."
   "Request an acknowledgement from JC."
   (jabber-send-string jc (jabber-sm--make-request-xml)))
 
-(defun jabber-sm--r-timer-function (jc)
-  "Request an acknowledgement from JC and check for a stall."
-  (when (memq jc jabber-connections)
+(defun jabber-sm--r-timer-owner-p (jc timer connection)
+  "Return non-nil if JC still owns TIMER on active SM CONNECTION."
+  (let ((state-data (fsm-get-state-data jc)))
+    (and timer
+         (eq timer (plist-get state-data :sm-r-timer))
+         (eq connection (plist-get state-data :connection))
+         (plist-get state-data :sm-enabled)
+         (jabber-sm--drain-owner-p jc state-data))))
+
+(defun jabber-sm--r-timer-function (jc timer connection)
+  "Request an acknowledgement from JC for owned TIMER and CONNECTION."
+  (if (not (jabber-sm--r-timer-owner-p jc timer connection))
+      (cancel-timer timer)
     (condition-case err
         (progn
           (jabber-sm--request-ack jc)
-          (jabber-sm--check-stall jc))
+          (when (jabber-sm--r-timer-owner-p jc timer connection)
+            (jabber-sm--check-stall jc)))
       (error
        (message "SM: ack timer failed: %s" (error-message-string err))))))
 
 (defun jabber-sm--start-r-timer (jc state-data)
-  "Start the acknowledgement request timer for JC in STATE-DATA."
-  (jabber-sm--stop-r-timer state-data)
+  "Start JC's acknowledgement timer and return updated STATE-DATA."
+  (setq state-data (jabber-sm--stop-r-timer state-data))
   (let ((timer (run-with-timer jabber-sm-request-interval
-                               jabber-sm-request-interval
-                               #'jabber-sm--r-timer-function jc)))
+                               jabber-sm-request-interval #'ignore)))
+    (timer-set-function timer #'jabber-sm--r-timer-function
+                        (list jc timer (plist-get state-data :connection)))
     (plist-put state-data :sm-r-timer timer)))
 
 (defun jabber-sm--stop-r-timer (state-data)
@@ -234,8 +246,9 @@ JC is the Jabber connection.  Return updated STATE-DATA."
 (defun jabber-sm-maybe-start (jc)
   "Start the Stream Management acknowledgement timer for JC when enabled."
   (let ((state-data (fsm-get-state-data jc)))
-    (when (plist-get state-data :sm-enabled)
-      (jabber-sm--start-r-timer jc state-data))))
+    (when (and (plist-get state-data :sm-enabled)
+               (jabber-sm--drain-owner-p jc state-data))
+      (put jc :state-data (jabber-sm--start-r-timer jc state-data)))))
 
 (provide 'jabber-sm-runtime)
 

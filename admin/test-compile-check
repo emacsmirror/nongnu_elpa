@@ -1,0 +1,55 @@
+#!/bin/sh
+# Exercise both real compilers and propagation of a failed Emacs process.
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+printf '%s\n' ';;; good.el -*- lexical-binding: t; -*-' \
+    '(require (quote jabber-xml))' \
+    '(defun good () "Read a stanza tag." (jabber-xml-node-name (quote (message nil))))' > "$work/good.el"
+printf '%s\n' ';;; warning.el -*- lexical-binding: t; -*-' \
+    '(defun warning () "Return an unbound value." compile-check-unbound)' > "$work/warning.el"
+printf '%s\n' ';;; broken.el -*- lexical-binding: t; -*-' \
+    '(eval-when-compile (error "Compiler fixture failure"))' > "$work/broken.el"
+printf '%s\n' ';;; unknown.el -*- lexical-binding: t; -*-' \
+    '(defun unknown () "Call a missing function." (compile-check-unknown))' > "$work/unknown.el"
+printf '%s\n' ';;; warning-api.el -*- lexical-binding: t; -*-' \
+    '(eval-when-compile (display-warning (quote compiler) "Compiler warning API fixture"))' > "$work/warning-api.el"
+printf '%s\n' ';;; diagnostic.el -*- lexical-binding: t; -*-' \
+    '(eval-when-compile (message "Warning: Compiler diagnostic fixture"))' > "$work/diagnostic.el"
+for mode in byte native; do
+    "$root/admin/check-compile" "$mode" "$work/good.el"
+    for file in warning unknown warning-api diagnostic broken; do
+        if "$root/admin/check-compile" "$mode" "$work/$file.el" > "$work/$mode-$file.log" 2>&1; then
+            printf 'FAIL: %s compiler accepted %s\n' "$mode" "$file" >&2
+            exit 1
+        fi
+        case "$file" in
+            diagnostic) grep -q 'Compiler diagnostic fixture' "$work/$mode-$file.log" ;;
+            warning-api) grep -q 'Compiler warning API fixture' "$work/$mode-$file.log" ;;
+            unknown) grep -q 'compile-check-unknown' "$work/$mode-$file.log" ;;
+            warning) grep -q 'compile-check-unbound' "$work/$mode-$file.log" ;;
+            broken) grep -q 'Compiler fixture failure' "$work/$mode-$file.log" ;;
+        esac
+    done
+    if EMACS_CMD=false "$root/admin/check-compile" "$mode" "$work/good.el"; then
+        printf 'FAIL: %s compiler process failure was ignored\n' "$mode" >&2
+        exit 1
+    fi
+    if EMACS_CMD=true "$root/admin/check-compile" "$mode" "$work/good.el" > "$work/no-artifact.log" 2>&1; then
+        printf 'FAIL: %s compiler produced no artifact but passed\n' "$mode" >&2
+        exit 1
+    fi
+    grep -q 'Compiler produced no artifact' "$work/no-artifact.log"
+    printf 'PASS: %s artifact, missing function, free variable, warning API, compiler error, process failure\n' "$mode"
+done
+
+printf '%s\n' '(require (quote comp))' \
+    '(fset (quote native-comp-available-p) (lambda () nil))' > "$work/no-native.el"
+if EMACS_OPTS="${EMACS_OPTS:--Q --batch} -l $work/no-native.el" \
+    "$root/admin/check-compile" native "$work/good.el" > "$work/no-native.log" 2>&1; then
+    printf 'FAIL: unsupported native compiler was accepted\n' >&2
+    exit 1
+fi
+grep -q 'Native compilation is required' "$work/no-native.log"
+printf 'PASS: unsupported native compiler fails explicitly\n'

@@ -2429,7 +2429,7 @@ entry with JC=nil."
     (dolist (condition '(nil error quit))
       (jabber-test-muc-with-native-room
         (let ((send (symbol-function 'jabber-send-sexp))
-              fired new-arm new-owner caught)
+              fired new-arm caught)
           (cl-letf (((symbol-function 'jabber-send-sexp)
                      (lambda (account stanza)
                        (funcall send account stanza)
@@ -2449,7 +2449,7 @@ entry with JC=nil."
             (if successor
                 (should (eq jabber-muc--auto-configure new-arm))
               (should (eq (not jabber-muc--auto-configure) (and condition t)))))
-          (should (eq (cdr (assoc room (get jc 'jabber-muc--join-intents))) new-owner))
+          (should-not (cdr (assoc room (get jc 'jabber-muc--join-intents))))
           (should (= (length published) (if successor 1 (if condition 0 1)))))))))
 
 (ert-deftest jabber-test-muc-native-consumed-unwind ()
