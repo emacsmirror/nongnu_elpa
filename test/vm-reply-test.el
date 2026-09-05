@@ -981,10 +981,10 @@ it in the folder was misplaced."
   "REGRESSION: sending a kept composition again files another copy.
 VM keeps the composition buffer after a send, so this is the ordinary way to
 correct a message and send it once more.  `vm-fcc-filed' is what stops the
-copy being filed twice *within* one send; left set from the last one it
-meant the next send filed nowhere and said nothing.  Goes through
-`vm-mail-send' rather than around it, because the clearing lives there --
-calling `vm-do-fcc-in-composition' directly would pass either way."
+copy being filed twice for one send; left set afterwards it would mean the
+next send filed nowhere and said nothing.  Goes through `vm-mail-send'
+rather than around it, because the clearing lives there: calling
+`vm-do-fcc-in-composition' directly would pass either way."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
          (folder (expand-file-name "archive" dir)))
     (unwind-protect
@@ -1004,7 +1004,11 @@ calling `vm-do-fcc-in-composition' directly would pass either way."
                       ((symbol-function 'vm-keep-mail-buffer) #'ignore)
                       ((symbol-function 'vm-display) #'ignore))
               (vm-mail-send)
-              (should vm-fcc-filed)
+              ;; Cleared at the end of the send, not at the start of the
+              ;; next: a copy filed before the send began counts, which is
+              ;; how an encrypting command's copy stops the send filing a
+              ;; second one (emacs-vm/vm#784).
+              (should-not vm-fcc-filed)
               ;; edit it and send it again
               (goto-char (point-max))
               (insert "a correction\n")
@@ -2371,6 +2375,89 @@ must still put it in front of them."
                             (with-current-buffer buffer
                               (derived-mode-p 'mail-mode)))
                           now))))))
+
+
+;;; Filing a copy exactly once (emacs-vm/vm#784)
+
+(defun vm-reply-test--messages-in (file)
+  "How many messages FILE holds, counted by their envelope lines."
+  (if (not (file-exists-p file))
+      0
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (let ((count 0))
+        (while (re-search-forward "^From " nil t)
+          (setq count (1+ count)))
+        count))))
+
+(defun vm-reply-test--send-with-fcc (early edit-and-send-again)
+  "Compose with an Fcc and send, answering how many copies were filed.
+EARLY files before the send, which is what `vm-epg-encrypt' does when it
+encodes.  EDIT-AND-SEND-AGAIN sends a second time, which must file again.
+`mail-send' is stubbed: what is under test is the filing, not the sending."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc-once" t)))
+         (fcc (expand-file-name "archive" dir))
+         (before (buffer-list))
+         (vm-do-fcc-before-mime-encode t)
+         (vm-send-using-mime t)
+         (vm-confirm-mail-send nil)
+         (vm-check-recipients nil)
+         (vm-check-for-empty-subject nil)
+         (vm-mail-send-hook nil)
+         (mail-send-hook nil)
+         (vm-dont-ask-coding-system-question t)
+         (select-safe-coding-system-function nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'mail-send) #'ignore)
+                  ((symbol-function 'vm-mail-mark-sent) #'ignore))
+          (with-temp-buffer
+            (mail-mode)
+            (insert "To: someone@example.com\nSubject: s\nFcc: " fcc "\n"
+                    mail-header-separator "\nthe body\n")
+            (when early
+              (vm-do-fcc-in-composition))
+            (vm-mail-send)
+            (when edit-and-send-again
+              (goto-char (point-max))
+              (insert "an afterthought\n")
+              (vm-mail-send))
+            (vm-reply-test--messages-in fcc)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-a-copy-filed-before-the-send-is-not-filed-again ()
+  "REGRESSION: an Fcc copy filed before the send is not filed a second time.
+
+emacs-vm/vm#784, reported against encryption: with
+`vm-do-fcc-before-mime-encode' set, `vm-epg-encrypt' files the unencoded copy
+when it encodes, and the send then filed the encrypted message as well, so
+the folder held both.
+
+Two causes, and both are here.  The call to `vm-do-fcc-before-mime-encode'
+inside `vm-mail-send' had no guard, so it filed again even where the flag
+said the copy had gone.  And `vm-fcc-filed' was cleared at the start of the
+send, which threw away what an encrypting command had done moments before it.
+
+Checked without gpg: what matters is a copy filed before the send, and any
+command that encodes early does that."
+  (should (equal 1 (vm-reply-test--send-with-fcc nil nil)))
+  (should (equal 1 (vm-reply-test--send-with-fcc t nil))))
+
+(ert-deftest vm-reply-test-a-second-send-files-its-own-copy ()
+  "A message edited and sent again is filed again.
+
+This is why `vm-fcc-filed' has to be cleared somewhere: VM keeps the
+composition buffer after a send, and a flag left set would mean the second
+send filed nothing.  Cleared at the end of the send rather than the start,
+which is what leaves a copy filed by an earlier command counted."
+  (should (equal 2 (vm-reply-test--send-with-fcc nil t)))
+  (should (equal 2 (vm-reply-test--send-with-fcc t t))))
 
 (provide 'vm-reply-test)
 
