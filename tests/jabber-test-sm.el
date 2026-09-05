@@ -1334,6 +1334,41 @@
     (should-not (jabber-sm--should-queue-p
                  sd '(r ((xmlns . "urn:xmpp:sm:3")))))))
 
+(ert-deftest jabber-test-sm-broadcast-presence-is-not-recovery-join ()
+  "Broadcast presence has no room recipient and obeys ordinary SM limits."
+  (dolist (stanza '((presence () (priority () "10"))
+                    (presence ((type . "unavailable")))
+                    (presence () (x ((xmlns . "http://jabber.org/protocol/muc"))))))
+    (let ((jabber-sm-max-in-flight 1)
+          (sd (list :sm-enabled t :sm-outbound-count 0 :sm-last-acked 0)))
+      (should-not (jabber-sm--recovery-join-p sd stanza))
+      (should-not (jabber-sm--should-queue-p sd stanza))
+      (plist-put sd :sm-outbound-count 1)
+      (should (jabber-sm--should-queue-p sd stanza))
+      (plist-put sd :sm-enabled nil)
+      (should-not (jabber-sm--should-queue-p sd stanza)))))
+
+(ert-deftest jabber-test-sm-broadcast-presence-reaches-transport ()
+  "Established sessions actually send broadcast presence through the FSM."
+  (dolist (enabled '(nil t))
+    (let* ((jc (make-symbol "broadcast-presence"))
+           (jabber-connections (list jc))
+           (jabber-debug-log-xml nil)
+           (fsm-debug nil)
+           (sent nil)
+           (sd (list :connection 'transport
+                     :send-function (lambda (_connection wire) (push wire sent))
+                     :sm-enabled enabled :sm-outbound-count 0 :sm-last-acked 0)))
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data sd)
+      (jabber-send-sexp-if-connected jc '(presence () (priority () "10")))
+      (should (equal sent
+                     (list (concat "<presence><priority>10</priority></presence>"
+                                   (when enabled (jabber-sm--make-request-xml))))))
+      (should (= (plist-get (fsm-get-state-data jc) :sm-outbound-count)
+                 (if enabled 1 0))))))
+
 (ert-deftest jabber-test-sm-enqueue-pending ()
   "Enqueue appends to pending queue as (priority . sexp) pairs."
   (let* ((sd (list :sm-pending-queue nil))

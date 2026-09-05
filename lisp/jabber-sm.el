@@ -295,6 +295,8 @@ transport callbacks are never retained after handoff."
 (defun jabber-sm--recovery-join-p (state-data sexp)
   "Return non-nil if SEXP is join/nick presence needed to unblock STATE-DATA."
   (and (eq (jabber-xml-node-name sexp) 'presence)
+       ;; Broadcast availability has no recipient and cannot recover a room.
+       (jabber-xml-get-attribute sexp 'to)
        (or (jabber-xml-child-with-xmlns sexp "http://jabber.org/protocol/muc")
            (let* ((to (jabber-xml-get-attribute sexp 'to))
                   (attempt (jabber-sm--room-attempt state-data (jabber-jid-user to))))
