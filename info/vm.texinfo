@@ -5035,16 +5035,27 @@ The file @file{~/.vmpc-auto-profiles} keeps its name as well, being a file
 and not a symbol.
 
 @findex vm-pcrisis-my-identities
-As a quick start, you can add a line to define your email identities:
+As a quick start, one line defines a set of identities:
 
 @lisp
 (vm-pcrisis-my-identities "me@@work.com" "me@@home.net" "me@@other.org")
 @end lisp
 
-@noindent This sets up each email address as a ``From'' header option.  When
-you compose a message to an unknown recipient, Personality Crisis will prompt you to
-choose which identity to use.  For more control, use the condition-action
-rules described below.
+@noindent It makes each address an action that sets the ``From'' header, and
+asks which one to use as a composition begins, remembering the answer for that
+correspondent in @file{~/.vmpc-auto-profiles}.  It asks on every composition,
+including one to a correspondent it has already been told about.
+
+@quotation Warning
+This call replaces your configuration rather than adding to it.  It assigns
+@code{vm-pcrisis-conditions}, @code{vm-pcrisis-actions} and
+@code{vm-pcrisis-default-rules} outright, so any rules set before it are
+discarded, and any set after it replace what it installed.  It is for someone
+who has no rules of their own.  Use the condition-action rules below instead
+of it, not as well as it.
+@end quotation
+
+For more control, use those rules.
 
 @vindex vm-pcrisis-conditions
 @vindex vm-pcrisis-actions
@@ -5160,6 +5171,36 @@ complex conditions from simpler ones.
 This condition returns true if none of the conditions that came before it
 in @code{vm-pcrisis-conditions} have returned true.  This is useful as a fallback
 to prompt for a profile when no other conditions match.
+
+Conditions are evaluated in the order written, so this one goes last:
+
+@example
+(setq vm-pcrisis-conditions
+      '(("work" (vm-pcrisis-folder-account-match "^work$"))
+        ("home" (vm-pcrisis-folder-account-match "^home$"))
+        ("nothing matched" (vm-pcrisis-none-true-yet))))
+
+(setq vm-pcrisis-actions
+      '(("from-work" (vm-pcrisis-substitute-header "From" "me@@work.com"))
+        ("from-home" (vm-pcrisis-substitute-header "From" "me@@home.net"))
+        ("ask" (vm-pcrisis-prompt-for-profile 'prompt))))
+
+(setq vm-pcrisis-default-rules
+      '(("work" "from-work")
+        ("home" "from-home")
+        ("nothing matched" "ask")))
+@end example
+
+@noindent Composing in either account sets the matching address; anywhere else
+asks which of the actions to run, and offers to remember the answer for that
+correspondent.  Name an ordinary action instead of @code{ask} to fall back to
+a fixed identity without being asked.
+
+A rule is keyed on the name of a condition, and a rule naming something that
+is not a condition never runs.  A fallback written as a rule called
+@code{"default"} with no condition of that name does nothing at all.  The
+command @code{vm-pcrisis-check-configuration} reports such a rule; see
+Checking Your Rules below.
 @end table
 
 @noindent The conditions are just normal functions.  So, you can combine
@@ -5312,6 +5353,109 @@ To use automorph, bind it to a key in @code{vm-mail-mode-map}:
 @lisp
 (define-key vm-mail-mode-map [tab] 'vm-pcrisis-tab-header-or-tab-stop)
 @end lisp
+
+@section Examples
+
+@noindent
+One identity per @acronym{IMAP} account, with a prompt for anywhere else.
+Conditions are evaluated in the order written, so the fallback goes last:
+
+@example
+(setq vm-pcrisis-conditions
+      '(("work" (vm-pcrisis-folder-account-match "^work$"))
+        ("home" (vm-pcrisis-folder-account-match "^home$"))
+        ("nothing matched" (vm-pcrisis-none-true-yet))))
+
+(setq vm-pcrisis-actions
+      '(("from-work" (vm-pcrisis-substitute-header "From" "me@@work.com"))
+        ("from-home" (vm-pcrisis-substitute-header "From" "me@@home.net"))
+        ("ask" (vm-pcrisis-prompt-for-profile 'prompt))))
+
+(setq vm-pcrisis-default-rules
+      '(("work" "from-work")
+        ("home" "from-home")
+        ("nothing matched" "ask")))
+@end example
+
+@noindent
+Reply from whichever of your addresses the mail was sent to, wherever it is
+filed:
+
+@example
+(setq vm-pcrisis-conditions
+      '(("to-work" (vm-pcrisis-header-match "To\\|Cc" "me@@work\\.com"))
+        ("to-home" (vm-pcrisis-header-match "To\\|Cc" "me@@home\\.net"))))
+
+(setq vm-pcrisis-reply-rules
+      '(("to-work" "from-work")
+        ("to-home" "from-home")))
+@end example
+
+@noindent
+Setting @code{vm-pcrisis-reply-rules} at all means
+@code{vm-pcrisis-default-rules} is not consulted for replies.  The choice is
+per variable, not per rule: a state either has its own rules or falls back to
+the default ones.
+
+@noindent
+More than one action for a condition, a signature beside the address:
+
+@example
+(setq vm-pcrisis-actions
+      '(("work"
+         (vm-pcrisis-substitute-header "From" "me@@work.com")
+         (vm-pcrisis-substitute-header "Organization" "Work")
+         (vm-pcrisis-signature "~/.signature-work"))))
+
+(setq vm-pcrisis-default-rules '(("to-work" "work")))
+@end example
+
+@noindent
+Conditions are ordinary Lisp, so they combine:
+
+@example
+(setq vm-pcrisis-conditions
+      '(("work but not the list"
+         (and (vm-pcrisis-header-match "To\\|Cc" "me@@work\\.com")
+              (not (vm-pcrisis-header-match "To\\|Cc" "everyone@@work\\.com"))))
+        ("either address"
+         (or (vm-pcrisis-other-cond "to-work")
+             (vm-pcrisis-other-cond "to-home")))))
+@end example
+
+@section Checking Your Rules
+
+@findex vm-pcrisis-check-configuration
+Rules are data, so a mistake in them is not a Lisp error and nothing stops.
+@kbd{M-x vm-pcrisis-check-configuration} reads what you have set and says what
+cannot work, and what to do about each:
+
+@itemize @bullet
+@item a rule keyed on a condition that is not defined, which never runs
+@item a rule naming an action that is not defined, which does nothing
+@item a condition or an action defined twice, where only the first is used
+@item an entry that is not a list beginning with a name
+@item a @code{vm-pcrisis-none-true-yet} condition that is not the last one,
+which makes it not a fallback
+@end itemize
+
+@noindent
+The first of those is the one worth the command.  A fallback written as
+
+@example
+(setq vm-pcrisis-default-rules
+      '(("work" "from-work")
+        ("default" "from-home")))     ; no condition is called "default"
+@end example
+
+@noindent
+contributes nothing, so the composition keeps @code{user-mail-address}.  That
+is the address most people would have got anyway, which is why such a rule can
+sit in an init file for years.
+
+@findex vm-pcrisis-warn-if-misconfigured
+The same check runs as each composition begins and warns about the first thing
+it finds, so a broken rule is noticed where it matters rather than at startup.
 
 @section Debugging Personality Crisis
 

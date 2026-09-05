@@ -8,6 +8,22 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `M-x vm-pcrisis-check-configuration` says what is wrong with your
+    Personality Crisis rules and what to do about each (emacs-vm/vm#806).
+    Rules are data, so a mistake in them is not a Lisp error and nothing
+    stops: a rule keyed on a condition that is not defined never runs, one
+    naming an action that is not defined does nothing, and a name defined
+    twice loses its second definition.
+
+    The first of those is why the command exists.  A fallback written as
+    `("default" "from-home")` with no condition called "default" contributes
+    nothing, so the composition keeps `user-mail-address`, which is the
+    address most people would have got anyway.  Such a rule can sit in an
+    init file for years.
+
+    The same check runs as each composition begins and warns about the first
+    thing it finds.
+
   * A long header is folded, and a long encoded word is split
     (emacs-vm/vm#794).  VM wrote every header on one line however long it
     grew, so a subject of any length went out past what RFC 5322 allows: 78

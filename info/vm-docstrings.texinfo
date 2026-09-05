@@ -8521,6 +8521,24 @@ Build list of true conditions and store it in the variable
 
 @end macro
 
+@macro vmdocvmpcrisischeckconfiguration
+@deffn Command vm-pcrisis-check-configuration
+@findex vm-pcrisis-check-configuration
+Say what is wrong with your Personality Crisis rules, and what to do about it.
+
+Checks that every rule is keyed on a condition that exists and names actions
+that exist, that no name is defined twice, that each entry has the form the
+variables want, and that a @code{vm-pcrisis-none-true-yet} fallback is last.
+
+The mistake worth the command is a rule keyed on a name no condition has.
+Nothing reports it and nothing runs: a fallback rule written as
+("default" "from-work") with no condition called "default" leaves the
+composition with @code{user-mail-address}, which is the address most people would
+have got anyway, so it can go years unnoticed.
+@end deffn
+
+@end macro
+
 @macro vmdocvmpcrisisfixautoprofilesfile
 @deffn Command vm-pcrisis-fix-auto-profiles-file
 @findex vm-pcrisis-fix-auto-profiles-file
