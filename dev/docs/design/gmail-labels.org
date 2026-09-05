@@ -53,6 +53,16 @@ Implemented and on develop.
 - =vm-imap-note-dropped-flags= warns once per session that the server
   accepted a keyword and discarded it, naming the label.  The manual says so
   under Gmail.  Before it, the loss was silent.
+- =vm-imap-net-tell-about-keywords= says the same thing before the store
+  rather than after it, when the mailbox did not offer \* in PERMANENTFLAGS.
+  Once per folder, and only where a label is actually being sent, so a reader
+  who sets none is never told.  It changes nothing: the label still goes and
+  is still lost.
+
+  Why both: the first needs a round trip and a keyword to come back missing,
+  by which time the reader has moved on.  The second says it while the label
+  is still in front of them, at the cost of resting on what the server
+  advertised rather than on what it did.
 - =vm-imap-mailbox-carries-keywords-p= decides whether the server's flag list
   is a statement about labels at all.  It answers whether any message in the
   mailbox carries a keyword; where none does, the read-back leaves the
@@ -66,9 +76,11 @@ What the heuristic costs: on a mailbox where no message carries a keyword, a
 label removed in another client lingers until some message there has one.
 What the previous behaviour cost was the reader's labels.
 
-Why not PERMANENTFLAGS, which is the protocol's own answer: a server may leave
-a keyword out of it and store the keyword anyway, or advertise \* and keep
-nothing.  What Gmail does is still unmeasured.  See the open questions.
+Why PERMANENTFLAGS warns and does not decide: a server may leave a keyword out
+of it and store the keyword anyway, or advertise \* and keep nothing.  So it is
+good enough to say something to the reader and not good enough to change what
+VM stores, which is why =vm-imap-net-tell-about-keywords= is worded as what the
+server said.  What Gmail does is still unmeasured.  See the open questions.
 
 ** The constraint on any store
 
