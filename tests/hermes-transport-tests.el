@@ -2519,6 +2519,96 @@ other's session."
                 (hermes-dashboard-transport-client-pending client))
                0))))
 
+(defun hermes-test--jsonrpc-response (client id errorp)
+  "Feed CLIENT a serialized response for ID, with an error when ERRORP."
+  (hermes-dashboard-transport--handle-frame
+   client (hermes-dashboard-transport--encode-frame
+           `((jsonrpc . "2.0") (id . ,id)
+             ,(if errorp '(error . ((code . -32601) (message . "old failure")))
+                '(result . ((ok . t))))))))
+
+(defun hermes-test--jsonrpc-retired-response (retirement)
+  "Check late success and error isolation after RETIREMENT."
+  (dolist (errorp '(nil t))
+    (ert-info ((format "%s, late error: %s" retirement errorp))
+      (let* (events cancelled timers (old-calls 0) (new-calls 0)
+             (hermes-dashboard-transport-request-timeout 60)
+             (hermes-dashboard-transport-websocket-send-function #'ignore)
+             (client (make-hermes-dashboard-transport-client
+                      :callback (lambda (event) (push event events))))
+             (owner (list 'old))
+             (hermes-dashboard-transport-request-owner owner))
+        (cl-letf (((symbol-function 'run-at-time)
+                   (lambda (&rest _) (let ((timer (list 'timer)))
+                                       (push timer timers) timer)))
+                  ((symbol-function 'cancel-timer)
+                   (lambda (timer) (push timer cancelled))))
+          (let ((old (if (eq retirement 'unknown) "unknown-id"
+                       (hermes-dashboard-transport-request
+                        client "prompt.submit" nil
+                        (lambda (_) (cl-incf old-calls))
+                        (lambda (_) (cl-incf old-calls))))))
+            (pcase retirement
+              ('success (hermes-test--jsonrpc-response client old nil))
+              ('reject (hermes-test--jsonrpc-response client old t))
+              ('timeout (hermes-dashboard-transport--on-request-timeout client old))
+              ('cancel (hermes-dashboard-transport-cancel-owner-requests client owner)))
+            (should (= old-calls (if (memq retirement '(cancel unknown)) 0 1)))
+            (should (equal cancelled timers))
+            (let* ((prior old-calls)
+                   (new (hermes-dashboard-transport-request
+                         client "prompt.submit" nil
+                         (lambda (_) (cl-incf new-calls))
+                         (lambda (_) (cl-incf new-calls))))
+                   (pending (hermes-dashboard-transport-client-pending client))
+                   (record (gethash new pending))
+                   (timer (plist-get record :timer))
+                   (prior-timers timers) (prior-cancelled cancelled))
+              (hermes-dashboard-transport-subscribe-session
+               client (hermes-dashboard-transport-subscribe
+                       client (lambda (event) (push event events))) "successor-session")
+              (hermes-test--jsonrpc-response client old errorp)
+              (should (= old-calls prior))
+              (should (= new-calls 0))
+              (should (eq record (gethash new pending)))
+              (should (eq timer (plist-get record :timer)))
+              (should (eq timers prior-timers))
+              (should (eq cancelled prior-cancelled))
+              (should (= (hash-table-count pending) 1))
+              (should-not events))))))))
+
+(ert-deftest hermes-transport-dashboard-jsonrpc-retired-success ()
+  (hermes-test--jsonrpc-retired-response 'success))
+(ert-deftest hermes-transport-dashboard-jsonrpc-retired-reject ()
+  (hermes-test--jsonrpc-retired-response 'reject))
+(ert-deftest hermes-transport-dashboard-jsonrpc-retired-timeout ()
+  (hermes-test--jsonrpc-retired-response 'timeout))
+(ert-deftest hermes-transport-dashboard-jsonrpc-retired-cancel ()
+  (hermes-test--jsonrpc-retired-response 'cancel))
+(ert-deftest hermes-transport-dashboard-jsonrpc-retired-unknown ()
+  (hermes-test--jsonrpc-retired-response 'unknown))
+
+(ert-deftest hermes-transport-dashboard-jsonrpc-diagnostic-once-and-unsolicited ()
+  (let* (events
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function #'ignore)
+         (client (make-hermes-dashboard-transport-client
+                  :callback (lambda (event) (push event events))))
+         (id (hermes-dashboard-transport-request client "ping")))
+    (hermes-test--jsonrpc-response client id t)
+    (should (equal (plist-get (car events) :method) "ping"))
+    (should (equal (plist-get (car events) :code) -32601))
+    (should (equal (plist-get (car events) :content) "old failure"))
+    (should (= (length events) 1))
+    (hermes-test--jsonrpc-response client id t)
+    (should (= (length events) 1))
+    (should (= (hash-table-count (hermes-dashboard-transport-client-pending client)) 0))
+    (hermes-dashboard-transport--handle-frame
+     client "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"error\",\"payload\":{\"message\":\"global failure\"}}}")
+    (should (= (length events) 2))
+    (should (eq (plist-get (car events) :type) 'error))
+    (should (equal (plist-get (car events) :content) "global failure"))))
+
 (ert-deftest hermes-transport-dashboard-jsonrpc-send-failure-clears-pending ()
   (let (rejected events)
     (let* ((client (make-hermes-dashboard-transport-client
