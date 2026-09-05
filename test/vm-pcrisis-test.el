@@ -1985,6 +1985,82 @@ action name there was."
       (should (member "none" offered))
       (should-not (member "ask-which-identity" offered)))))
 
+
+;;; Saying where a profile goes (emacs-vm/vm#810)
+
+(ert-deftest vm-pcrisis-test-the-question-names-where-the-answer-is-kept ()
+  "REGRESSION: the confirmation says a file is written, and which.
+
+emacs-vm/vm#810.  \"Always run ... for ...?\" said nothing about writing
+`vm-pcrisis-auto-profiles-file', so a reader who answered it had no idea
+state had been created.  That is how the profile of emacs-vm/vm#809 sat
+unnoticed across a restart."
+  (let ((questions nil))
+    (cl-letf (((symbol-function 'vm-pcrisis-get-header-contents) (lambda (&rest _) nil))
+              ((symbol-function 'vm-pcrisis-get-profile-for-address) (lambda (&rest _) nil))
+              ((symbol-function 'vm-pcrisis-save-auto-profiles) #'ignore)
+              ((symbol-function 'vm-pcrisis-read-actions) (lambda (&rest _) '("from-ucsc")))
+              ((symbol-function 'y-or-n-p) (lambda (q) (push q questions) t)))
+      (let ((vm-pcrisis-actions vm-pcrisis-test--asking-actions)
+            (vm-pcrisis-current-state 'newmail)
+            (vm-pcrisis-current-buffer 'none)
+            (vm-pcrisis-actions-to-run nil)
+            (vm-pcrisis-auto-profiles nil))
+        (vm-pcrisis-prompt-for-profile 'prompt)))
+    (should (equal 1 (length questions)))
+    (should (string-match-p (regexp-quote (vm-pcrisis-where-profiles-are-kept))
+                            (car questions)))))
+
+(ert-deftest vm-pcrisis-test-the-delete-question-names-the-file-too ()
+  "Clearing a profile says where it is being cleared from."
+  (let ((questions nil))
+    (cl-letf (((symbol-function 'vm-pcrisis-get-header-contents) (lambda (&rest _) nil))
+              ((symbol-function 'vm-pcrisis-get-profile-for-address)
+               (lambda (&rest _) '("from-ucsc")))
+              ((symbol-function 'vm-pcrisis-save-auto-profiles) #'ignore)
+              ((symbol-function 'vm-pcrisis-read-actions) (lambda (&rest _) nil))
+              ((symbol-function 'yes-or-no-p) (lambda (q) (push q questions) t)))
+      (let ((vm-pcrisis-actions vm-pcrisis-test--asking-actions)
+            (vm-pcrisis-current-state 'newmail)
+            (vm-pcrisis-current-buffer 'none)
+            (vm-pcrisis-actions-to-run nil)
+            (vm-pcrisis-auto-profiles nil))
+        ;; the second argument asks again even though a profile is known,
+        ;; which is what reaches the delete question
+        (vm-pcrisis-prompt-for-profile 'prompt t)))
+    (should (equal 1 (length questions)))
+    (should (string-match-p (regexp-quote (vm-pcrisis-where-profiles-are-kept))
+                            (car questions)))))
+
+(ert-deftest vm-pcrisis-test-writing-a-profile-says-so ()
+  "REGRESSION: every write says what it wrote and where.
+
+emacs-vm/vm#810.  With REMEMBER t nothing is asked at all, which is what
+`vm-pcrisis-my-identities' installs, so without this the file appears with no
+notice of any kind."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-pcrisis-save-auto-profiles) #'ignore)
+              ((symbol-function 'vm-inform)
+               (lambda (_level &rest args) (push (apply #'format args) said))))
+      (let ((vm-pcrisis-auto-profiles nil))
+        (vm-pcrisis-save-profile-for-address "someone@example.com" '("from-ucsc"))
+        (vm-pcrisis-save-profile-for-address "someone@example.com" nil)))
+    (setq said (reverse said))
+    (should (equal 2 (length said)))
+    (should (string-match-p "Remembered" (nth 0 said)))
+    (should (string-match-p "Removed" (nth 1 said)))
+    (dolist (message said)
+      (should (string-match-p (regexp-quote "someone@example.com") message))
+      (should (string-match-p (regexp-quote (vm-pcrisis-where-profiles-are-kept))
+                              message)))))
+
+(ert-deftest vm-pcrisis-test-where-profiles-are-kept-covers-the-bbdb ()
+  "Profiles can live in the BBDB instead of a file, and the name says so."
+  (let ((vm-pcrisis-auto-profiles-file "~/.vmpc-auto-profiles"))
+    (should (equal "~/.vmpc-auto-profiles" (vm-pcrisis-where-profiles-are-kept))))
+  (let ((vm-pcrisis-auto-profiles-file 'BBDB))
+    (should (equal "the BBDB" (vm-pcrisis-where-profiles-are-kept)))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here

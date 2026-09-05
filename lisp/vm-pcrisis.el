@@ -1176,6 +1176,12 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
     prof))
 
 
+(defun vm-pcrisis-where-profiles-are-kept ()
+  "A name for wherever profiles are kept, for saying so in a message."
+  (if (eq vm-pcrisis-auto-profiles-file 'BBDB)
+      "the BBDB"
+    (abbreviate-file-name (expand-file-name vm-pcrisis-auto-profiles-file))))
+
 (defun vm-pcrisis-save-profile-for-address (addr actions)
   "Save the association ADDR => ACTIONS."
   (let ((today (vm-pcrisis-gregorian-days))
@@ -1220,7 +1226,15 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
       (setq vm-pcrisis-auto-profiles (delete nil vm-pcrisis-auto-profiles)))
 
     ;; save the file 
-    (vm-pcrisis-save-auto-profiles)))
+    (vm-pcrisis-save-auto-profiles)
+    ;; Said because this is state the reader did not ask for by name, and with
+    ;; REMEMBER t nothing asked them at all: #810 was a reader who found a
+    ;; profile in a file they did not know existed (emacs-vm/vm#809).
+    (if actions
+        (vm-inform 5 "Remembered %s for \"%s\" in %s"
+                   actions addr (vm-pcrisis-where-profiles-are-kept))
+      (vm-inform 5 "Removed the profile for \"%s\" from %s"
+                 addr (vm-pcrisis-where-profiles-are-kept)))))
 
 
 (defun vm-pcrisis-string-extract-address (str)
@@ -1373,9 +1387,16 @@ The association is stored in `vm-pcrisis-auto-profiles-file' and in the
 future the
 stored actions will automatically run for messages to that address.
 
-REMEMBER can be set to t or `prompt'.  When set to `prompt' you will be asked if
-you want to store the association.  When set to t a new profile will be stored
-without asking.
+REMEMBER can be set to t or `prompt'.  When set to `prompt' you will be asked
+if you want to store the association.  When set to t a new profile will be
+stored without asking.
+
+Storing one writes `vm-pcrisis-auto-profiles-file', which is
+`~/.vmpc-auto-profiles' unless you have said otherwise, and that file is then
+consulted by every later composition.  The question names it, and so does the
+message after any profile is written or removed, since with REMEMBER t there
+is no question to name it.  To be rid of a profile, answer with no actions,
+or edit the file.
 
 Set PROMPT to t and you will be prompted each time, i.e. not only for unknown
 profiles.  If you want to change the profile only explicitly, then omit the
@@ -1447,12 +1468,14 @@ PROMPT argument and call this function interactively in the composition buffer."
                        (and (eq remember 'prompt)
                             (if actions 
                                 (y-or-n-p 
-				 (format "Always run %s for \"%s\"? "
-					 actions dest))
+				 (format "Always run %s for \"%s\"?  (kept in %s) "
+					 actions dest
+					 (vm-pcrisis-where-profiles-are-kept)))
                               (if (vm-pcrisis-get-profile-for-address dest)
                                   (yes-or-no-p 
-				   (format "Delete profile for \"%s\"? "
-					   dest)))))))
+				   (format "Delete the profile for \"%s\" from %s? "
+					   dest
+					   (vm-pcrisis-where-profiles-are-kept))))))))
               (vm-pcrisis-save-profile-for-address dest actions))
           
           ;; TODO: understand when vm-pcrisis-prompt-for-profile has to run actions 

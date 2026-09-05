@@ -5312,6 +5312,28 @@ to the same recipient:
 (vm-pcrisis-prompt-for-profile t)      ; prompt and remember automatically
 (vm-pcrisis-prompt-for-profile 'prompt) ; prompt and ask whether to remember
 @end example
+
+@vindex vm-pcrisis-auto-profiles-file
+@noindent
+Remembering writes @code{vm-pcrisis-auto-profiles-file}, which is
+@file{~/.vmpc-auto-profiles} unless you say otherwise, and every later
+composition consults it.  The question names that file, and so does the
+message after any profile is written or removed, which is the only notice
+the @code{t} form gives since it asks nothing.  To be rid of a profile,
+answer the question with no actions, or edit the file.
+
+@noindent
+Answer with an action that sets something, never with the name of this action
+itself.  Remembering the asking action makes a profile that means ``ask'' and
+so is never asked: the lookup finds it, nothing is prompted, and what it runs
+is the action that would have prompted.  VM refuses such an answer, and drops
+such a profile if an older VM wrote one.
+
+@noindent
+The profile is keyed on an address taken from the message being replied to,
+so a composition with no parent message has none and falls back to
+@code{vm-pcrisis-default-profile}, the string @code{"default"}.  One answer
+then covers every composition of that kind rather than one correspondent.
 @end table
 
 @vindex vm-pcrisis-current-state
