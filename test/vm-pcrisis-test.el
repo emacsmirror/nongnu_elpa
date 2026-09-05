@@ -1850,25 +1850,36 @@ measured rather than asserted."
     (should (string-suffix-p "\n-- \nNEW SIG" got))
     (should-not (string-match-p "my old sig" got))))
 
-(ert-deftest vm-pcrisis-test-a-forward-loses-its-signature-when-the-writer-has-none ()
-  "KNOWN WRONG, and waiting on a decision: emacs-vm/vm#808.
+(ert-deftest vm-pcrisis-test-a-forward-keeps-its-signature-when-the-writer-has-none ()
+  "REGRESSION: the forwarded message's signature is not the writer's.
 
-Forwarding a message that has a signature, from a composition with none of
-its own, the search back from the end reaches the forwarded message's `-- '
-and takes everything after it for the writer's signature.  The forwarded
-signature and the `------- end -------' that closes the encapsulation are
-both replaced, so the message arrives truncated with the writer's signature
-inside it.
+emacs-vm/vm#808.  A forwarded message's own signature is not prefixed the way
+quoted text in a reply is, so the search back from the end reached it, and a
+composition with no signature of its own took it for one.  The forwarded
+signature and the line closing the encapsulation were both replaced, so the
+message went out truncated with the writer's signature inside it.
 
-It bites the writer who has no default signature and relies on Personality
-Crisis to supply one per identity, which is what `vm-pcrisis-signature' is
-for.  Recorded rather than fixed because which line is the writer's own
-signature is a judgement: the options are on the issue.  This test fails when
-that decision is acted on, which is the point of it."
-  (let ((got (vm-pcrisis-test--sign vm-pcrisis-test--forwarded "NEW SIG")))
-    (should-not (string-match-p "their signature" got))
-    (should-not (string-match-p "------- end -------" got))
-    (should (string-suffix-p "their body\n-- \nNEW SIG" got))))
+A candidate with a line closing forwarded text after it is now refused, and
+the new signature is appended at the end where it belongs.  Checked on all
+three encapsulations VM writes, since each closes with a different line."
+  (dolist (spec (list (cons vm-pcrisis-test--forwarded "------- end -------")
+                      (cons (concat "here you go\n"
+                                    "------- start of forwarded message -------\n"
+                                    "their body\n-- \ntheir signature\n"
+                                    "------- end of forwarded message -------\n")
+                            "------- end of forwarded message -------")
+                      (cons (concat "here you go\n" (make-string 30 ?-) "\n\n"
+                                    "their body\n-- \ntheir signature\n"
+                                    (make-string 30 ?-) "\n\nEnd of this Digest\n"
+                                    "******************\n")
+                            "End of this Digest")))
+    (let ((got (vm-pcrisis-test--sign (car spec) "NEW SIG")))
+      (should (equal (list (cdr spec) t)
+                     (list (cdr spec) (and (string-match-p "their signature" got) t))))
+      (should (equal (list (cdr spec) t)
+                     (list (cdr spec)
+                           (and (string-match-p (regexp-quote (cdr spec)) got) t))))
+      (should (string-suffix-p "\n-- \nNEW SIG" got)))))
 
 
 ;;; A profile that only asks (emacs-vm/vm#809)
