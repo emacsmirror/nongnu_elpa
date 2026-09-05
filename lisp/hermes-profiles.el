@@ -175,12 +175,30 @@ Reject another save until settlement rather than race remote writes.")
   "Return the SOUL API path for PROFILE."
   (format "/%s/soul" (url-hexify-string profile)))
 
-(defun hermes-profiles--soul-current-p (buffer generation profile)
-  "Return non-nil when BUFFER still owns GENERATION and PROFILE."
+(defun hermes-profiles--soul-buffer (profile instance)
+  "Return the editor owned by PROFILE and INSTANCE, creating one if needed."
+  (or (seq-find
+       (lambda (buffer)
+         (with-current-buffer buffer
+           (and (derived-mode-p 'hermes-profiles-soul-mode)
+                (equal hermes-profiles-soul-profile profile)
+                (equal hermes-instance instance))))
+       (buffer-list))
+      (let ((buffer (generate-new-buffer
+                     (hermes-profiles--soul-buffer-name profile instance))))
+        (with-current-buffer buffer
+          (hermes-profiles-soul-mode)
+          (setq hermes-instance (copy-tree instance t)
+                hermes-profiles-soul-profile (copy-sequence profile)))
+        buffer)))
+
+(defun hermes-profiles--soul-current-p (buffer generation profile instance)
+  "Return non-nil when BUFFER still owns GENERATION, PROFILE and INSTANCE."
   (and (hermes-browser--request-current-mode-p
         buffer generation 'hermes-profiles-soul-mode)
        (with-current-buffer buffer
-         (equal hermes-profiles-soul-profile profile))))
+         (and (equal hermes-profiles-soul-profile profile)
+              (equal hermes-instance instance)))))
 
 (defun hermes-profiles-edit-soul ()
   "Open the selected non-default profile's SOUL.md for editing."
@@ -189,15 +207,7 @@ Reject another save until settlement rather than race remote writes.")
         (profile (tabulated-list-get-id)))
     (unless profile (user-error "No profile on this line"))
     (hermes-profiles--ensure-non-default profile "edit SOUL for")
-    (let ((target (get-buffer-create
-                   (hermes-profiles--soul-buffer-name profile instance))))
-      (with-current-buffer target
-        (unless (derived-mode-p 'hermes-profiles-soul-mode)
-          (hermes-profiles-soul-mode))
-        (hermes-browser--own-instance instance)
-        (setq hermes-profiles-soul-profile profile
-              header-line-format
-              '(:eval (hermes-profiles--soul-header-line))))
+    (let ((target (hermes-profiles--soul-buffer profile instance)))
       (pop-to-buffer target)
       (unless (with-current-buffer target (buffer-modified-p))
         (let ((generation
@@ -209,7 +219,7 @@ Reject another save until settlement rather than race remote writes.")
               client "GET" (hermes-profiles--soul-path profile)))
            (lambda (result)
              (when (hermes-profiles--soul-current-p
-                    target generation profile)
+                    target generation profile instance)
                (with-current-buffer target
                  (unless (buffer-modified-p)
                    (let ((inhibit-read-only t))
@@ -219,7 +229,8 @@ Reject another save until settlement rather than race remote writes.")
 
 (defun hermes-profiles-soul-save ()
   "Save the current profile SOUL editor through the dashboard API.
-Reject overlapping saves; keep edits made during a save modified."
+Reject unavailable owners and overlapping saves without discarding the draft.
+Keep edits made during a save modified."
   (interactive)
   (unless (derived-mode-p 'hermes-profiles-soul-mode)
     (user-error "Not in a Hermes profile SOUL buffer"))
@@ -227,19 +238,22 @@ Reject overlapping saves; keep edits made during a save modified."
     (user-error "SOUL save in progress; draft retained, save again after completion"))
   (let* ((profile hermes-profiles-soul-profile)
          (target (current-buffer))
-         (instance (hermes-instance-resolve))
+         (instance hermes-instance)
          (tick (buffer-chars-modified-tick))
          (content (buffer-substring-no-properties (point-min) (point-max))))
+    (unless (and (hermes-instance--valid-p instance)
+                 (member instance (hermes-instance-configured)))
+      (user-error "SOUL instance unavailable; draft retained"))
     (unless (hermes-transport--non-empty-string profile)
       (user-error "This SOUL buffer has no profile"))
     (hermes-profiles--ensure-non-default profile "edit SOUL for")
     (let* ((generation (hermes-browser--next-request-generation))
            (current-p
             (lambda ()
-              (and (hermes-profiles--soul-current-p target generation profile)
+              (and (hermes-profiles--soul-current-p
+                    target generation profile instance)
                    (with-current-buffer target
-                     (and (eq hermes-profiles--soul-save-pending generation)
-                          (equal instance (hermes-instance-resolve)))))))
+                     (eq hermes-profiles--soul-save-pending generation)))))
            (release
             (lambda ()
               (when (buffer-live-p target)
