@@ -2,6 +2,52 @@
 
 * Unreleased
 
+* Version 0.5.0 (2026-09-05)
+
+- Added =C-c C-w= (=hermes-chat-work=) to inspect a chat's observed delegates
+  and registered background processes in a native tabulated list.  =RET= opens
+  details, =g= refreshes, =h= explains scope, and =i= opens instance-wide
+  subagents.  The view reports stale or incomplete observations; it is not a
+  complete work history, and disappearance does not imply completion.
+- Kept idle chat headers quiet and showed observed running delegates as
+  =🤖 N=, with an =Agents N= fallback when the selected frame cannot display
+  the icon.  The actions menu's Inspect group shows =Workers N= with a
+  separately styled count.  Unknown or stale observations use =🤖 ?= rather
+  than implying zero workers.  Narrow headers preserve attention states and
+  YOLO warnings before optional details.
+- Replaced repeated reasoning updates with a temporary =Thinking…= row that
+  disappears when tools or replies arrive.  Added transcript-button navigation
+  with =TAB= and =S-TAB=, and =C-c C-j= to return to the composer; =TAB= still
+  completes text in the composer.
+- Activated work observation for already attached chats after =make load=,
+  without restarting their sessions or changing drafts.  Existing observation
+  requests and timers are preserved.
+- Preserved draft undo and narrowing while the transcript updates, and kept
+  native diff navigation relative to the chat that opened the diff.
+- Restored running turns when resuming saved sessions.  Fixed submission
+  settlement when a turn finishes before its acknowledgement, and retained
+  rejected queued messages without automatically retrying them.
+- Explicit disconnect now copies unsent, rejected, and delivery-uncertain input
+  into an editable recovery buffer while keeping the current chat draft.
+  Resume through Sessions, inspect history, then select and send text manually.
+  Recovery buffers are in memory only; save them if needed.
+- Reacquired authentication for replacement WebSockets and kept reconnect
+  callbacks tied to their current connection.  Late responses to retired
+  requests no longer report errors against newer work.  Capability providers
+  now retry socket-construction failures after authentication.
+- Made =/stop= explicitly instance-wide and required confirmation before
+  stopping processes across chats.  Confirmation cannot affect a replacement
+  connection or session.
+- Fixed idle-chat cleanup after an unexpected connection loss and worker
+  discovery when a new chat initially lacks a durable session key.
+- Cleared browser rows and cached snapshots when switching instances.  SOUL
+  editors retain their original instance and profile, reject overlapping
+  saves, and keep edits made during a save marked as modified.
+- Changed configuration list editing to JSON arrays, preserving empty arrays,
+  nested values, booleans, nulls, and strings containing commas.  Bound eval
+  approval answers to the request actually shown, so an expired prompt cannot
+  approve its replacement.
+
 * Version 0.4.3 (2026-09-01)
 
 - Kept project-chat names tied to their launch root while separating editor
