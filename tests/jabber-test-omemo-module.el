@@ -169,6 +169,22 @@
     (jabber-omemo--refill-pre-keys ptr)
     (should t)))
 
+(ert-deftest jabber-test-omemo-module-refilled-store-varint-round-trip ()
+  "Normal pre-key replacement survives the ID 127/128 size boundary."
+  (let ((store (jabber-omemo--deserialize-store (jabber-omemo--setup-store))))
+    (dotimes (_ 28)
+      (let ((id (caar (plist-get (jabber-omemo--get-bundle store) :pre-keys))))
+        (should (jabber-omemo--remove-pre-key store id))
+        (jabber-omemo--refill-pre-keys store)))
+    (let* ((ids (mapcar #'car (plist-get (jabber-omemo--get-bundle store)
+                                        :pre-keys)))
+           (blob (jabber-omemo--serialize-store store))
+           (restored (jabber-omemo--deserialize-store blob)))
+      (should (memq 128 ids))
+      (should (seq-some (lambda (id) (< id 128)) ids))
+      ;; Compare as a boolean so ERT never prints serialized key material.
+      (should (eq t (string= blob (jabber-omemo--serialize-store restored)))))))
+
 ;;; Group 5: Message encrypt/decrypt
 
 (ert-deftest jabber-test-omemo-module-encrypt-returns-plist ()
