@@ -1548,6 +1548,72 @@ sent them to the end."
     (vm-imap-bunch-test--settle)
     (should (equal 3 (vm-imap-bunch-test--at)))))
 
+
+;;; Saying when a server will not keep a label (emacs-vm/vm#601)
+
+(defun vm-imap-mock-test--label-and-save (label)
+  "Put LABEL on the first message and send the flags, answering what was said.
+The warning is the point, so `vm-net-warn' is captured rather than displayed."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-net-warn)
+               (lambda (_level &rest args) (push (apply #'format args) said))))
+      (setq vm-message-pointer vm-message-list)
+      (vm-add-message-labels label 1)
+      (vm-imap-net-save-attributes)
+      (vm-imap-net-wait nil 10))
+    (nreverse said)))
+
+(ert-deftest vm-imap-mock-test-a-server-that-drops-labels-says-so ()
+  "A label sent to a server that keeps no keywords is reported, not lost quietly.
+
+emacs-vm/vm#601.  A server whose PERMANENTFLAGS does not offer `\\*' keeps no
+keywords of its own.  It takes the STORE and answers OK all the same, so
+nothing fails and nothing is refused: the label is simply gone the next time
+the mailbox is read.  Gmail is such a server.
+
+Said where a label is at risk rather than at every visit, so a reader who
+sets none is never told, and once a folder rather than once a message."
+  (let ((vm-imap-mock-permanent-flags
+         "\\Answered \\Flagged \\Deleted \\Seen \\Draft"))
+    (vm-imap-mock-test--visiting (mock :messages (list "From: a@b\n\nbody\n"))
+      (let ((said (vm-imap-mock-test--label-and-save "urgent")))
+        (should (equal 1 (length said)))
+        (should (string-match-p "urgent" (car said)))
+        (should (string-match-p "PERMANENTFLAGS" (car said)))
+        ;; and it does not say it twice for the same folder
+        (should (equal nil (vm-imap-mock-test--label-and-save "later")))))))
+
+(ert-deftest vm-imap-mock-test-a-server-that-keeps-labels-says-nothing ()
+  "The ordinary server advertises `\\*' and nothing is said.
+A false warning would be worse than none: it would teach the reader to ignore
+the real one."
+  (vm-imap-mock-test--visiting (mock :messages (list "From: a@b\n\nbody\n"))
+    (should (equal nil (vm-imap-mock-test--label-and-save "urgent")))))
+
+(ert-deftest vm-imap-mock-test-a-system-flag-is-not-a-label ()
+  "Marking a message read on such a server says nothing.
+Only keywords are at risk; the system flags are in PERMANENTFLAGS by name."
+  (let ((vm-imap-mock-permanent-flags
+         "\\Answered \\Flagged \\Deleted \\Seen \\Draft"))
+    (vm-imap-mock-test--visiting (mock :messages (list "From: a@b\n\nbody\n"))
+      (let ((said nil))
+        (cl-letf (((symbol-function 'vm-net-warn)
+                   (lambda (_level &rest args) (push (apply #'format args) said))))
+          (setq vm-message-pointer vm-message-list)
+          (vm-set-labels (car vm-message-list) nil)
+          (vm-set-unread-flag (car vm-message-list) nil)
+          (vm-set-attribute-modflag-of (car vm-message-list) t)
+          (vm-imap-net-save-attributes)
+          (vm-imap-net-wait nil 10))
+        (should (equal nil said))))))
+
+(ert-deftest vm-imap-mock-test-which-flags-count-as-labels ()
+  "A system flag begins with a backslash; a label is anything else."
+  (should (equal '("urgent" "work")
+                 (vm-imap-net-keywords-in '("\\Seen" "urgent" "\\Deleted" "work"))))
+  (should (equal nil (vm-imap-net-keywords-in '("\\Seen" "\\Deleted"))))
+  (should (equal nil (vm-imap-net-keywords-in nil))))
+
 (provide 'vm-imap-mock-test)
 
 ;;; vm-imap-mock-test.el ends here

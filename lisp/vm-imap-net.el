@@ -435,6 +435,16 @@ connection is authenticated, and several advertise fewer before it."
   "The number TOKEN is, read from the process buffer."
   (string-to-number (buffer-substring (nth 1 token) (nth 2 token))))
 
+(defun vm-imap-net-flag-names (list)
+  "The flags of a parsed FLAGS or PERMANENTFLAGS response, as strings.
+Must be called with the process buffer current, the tokens holding positions
+in it."
+  (delq nil (mapcar (lambda (token)
+                      (and (eq (car token) 'atom)
+                           (buffer-substring-no-properties (nth 1 token)
+                                                           (nth 2 token))))
+                    (cdr list))))
+
 (iter-defun vm-imap-net-select (mailbox &optional examine)
   "Select MAILBOX, or EXAMINE it, and answer with what the server said of it.
 The answer is (COUNT RECENT UID-VALIDITY READ-WRITE CAN-DELETE
@@ -454,7 +464,12 @@ PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
 			(setq uid-validity
 			      (buffer-substring (nth 1 token) (nth 2 token)))))
 		     ((vm-imap-response-matches contents 'PERMANENTFLAGS 'list)
-		      (setq permanent-flags (nth 1 contents))))))
+		      ;; As strings, here, while the tokens' buffer positions
+		      ;; are still good: they point into the process buffer,
+		      ;; so a folder that kept the tokens could not read them
+		      ;; again, and the folder does keep these (#601).
+		      (setq permanent-flags
+			    (vm-imap-net-flag-names (nth 1 contents)))))))
 	    ((vm-imap-response-matches response '* 'FLAGS 'list)
 	     (setq flags (nth 2 response)))
 	    ((vm-imap-response-matches response '* 'atom 'EXISTS)
@@ -873,6 +888,7 @@ with: the connection arrived authenticated."
 (declare-function vm-set-folder-imap-can-delete "vm-folder" (value))
 (declare-function vm-set-folder-imap-body-peek "vm-folder" (value))
 (declare-function vm-set-folder-imap-permanent-flags "vm-folder" (value))
+(declare-function vm-folder-imap-permanent-flags "vm-folder" ())
 (declare-function vm-set-folder-imap-uid-list "vm-folder" (value))
 (declare-function vm-set-folder-imap-uid-obarray "vm-folder" (value))
 (declare-function vm-set-folder-imap-flags-obarray "vm-folder" (value))
@@ -1582,6 +1598,61 @@ every flag is re-signalled, which leaves the message pending for a later try
       (signal (car failure) (cdr failure)))
     accepted))
 
+(defvar vm-imap-net-told-about-keywords nil
+  "Whether this folder has already said its server will not keep keywords.
+Buffer-local to the folder, and said once a session rather than once a label:
+a folder of four hundred messages would otherwise say it four hundred times.")
+(make-variable-buffer-local 'vm-imap-net-told-about-keywords)
+
+(defun vm-imap-net-keywords-in (flags)
+  "The members of FLAGS that are keywords rather than system flags.
+A system flag begins with a backslash; anything else is a keyword of the
+server's own, which is what a VM label becomes."
+  (seq-remove (lambda (flag) (string-prefix-p "\\" flag)) flags))
+
+(defun vm-imap-net-keeps-keywords-p ()
+  "Whether this folder's server said it keeps keywords of its own.
+That is the `\\*' of PERMANENTFLAGS, RFC 3501 6.3.1.  Answers t when the
+folder has no PERMANENTFLAGS recorded, so nothing is claimed about a server
+that did not say."
+  (let ((permanent (vm-folder-imap-permanent-flags)))
+    (or (null permanent)
+        (and (member "\\*" permanent) t))))
+
+(defun vm-imap-net-tell-about-keywords (folder flags)
+  "Say once that FOLDER's server will not keep the keywords in FLAGS.
+
+A server that does not advertise `\\*' in PERMANENTFLAGS is saying it keeps
+no keywords of its own.  It takes the STORE all the same and answers OK, so
+nothing here fails and nothing is refused: the label is simply not there the
+next time the mailbox is read.  Gmail is such a server, which is
+emacs-vm/vm#601.
+
+Worded as what the server said rather than as a certainty, because
+PERMANENTFLAGS can be wrong both ways: a server may leave a keyword out of it
+and store the keyword anyway, or advertise `\\*' and keep nothing.  That is
+why it warns and changes nothing.
+
+`vm-imap-note-dropped-flags\=' says the same thing after the fact, having seen
+a keyword come back missing.  This says it at the moment the label is sent,
+which is where the reader still has the label in front of them.
+
+Said where a label is actually at risk rather than at every visit, so a
+reader who sets none is not told about a limit that does not touch them."
+  (when (buffer-live-p folder)
+    (with-current-buffer folder
+      (let ((keywords (vm-imap-net-keywords-in flags)))
+        (when (and keywords
+                   (not vm-imap-net-told-about-keywords)
+                   (not (vm-imap-net-keeps-keywords-p)))
+          (setq vm-imap-net-told-about-keywords t)
+          (vm-net-warn 1 (concat "%s: this server does not offer \\* in"
+                                 " PERMANENTFLAGS, which is how it says it"
+                                 " keeps no labels of its own, so %s may be"
+                                 " gone when the folder is read again")
+                       (buffer-name folder)
+                       (mapconcat #'identity keywords ", ")))))))
+
 (iter-defun vm-imap-net-save-message-flags (folder message)
   "Send MESSAGE's flags to the server, and note what it took.
 Answers t when something was sent.  The change itself is worked out in the
@@ -1599,6 +1670,10 @@ path uses; only the sending of it is here."
 	 (flags- (nth 3 changes)))
     (when number
       (when flags+
+	;; A server that does not advertise \* takes a keyword and does not
+	;; keep it, so nothing fails here and the label is gone by the next
+	;; read.  Said before the STORE, since the STORE will answer OK (#601).
+	(vm-imap-net-tell-about-keywords folder flags+)
 	;; only what the server took goes in the cache, or the next sync would
 	;; think a refused flag was already there
 	(nconc cached-flags

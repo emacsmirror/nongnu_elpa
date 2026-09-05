@@ -8,6 +8,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * VM says when an IMAP server will not keep a label (emacs-vm/vm#601).  A
+    server whose PERMANENTFLAGS does not offer `\*` keeps no keywords of its
+    own, and Gmail is one.  It takes the STORE and answers OK all the same,
+    so nothing failed and nothing was refused: the label was simply gone the
+    next time the mailbox was read.
+
+    Said once per folder, and only where a label is actually being sent, so a
+    reader who sets none is never told about a limit that does not touch
+    them.  The label is still lost; what changes is that the loss is no
+    longer silent.
+
   * `M-x vm-pcrisis-check-configuration` says what is wrong with your
     Personality Crisis rules and what to do about each (emacs-vm/vm#806).
     Rules are data, so a mistake in them is not a Lisp error and nothing

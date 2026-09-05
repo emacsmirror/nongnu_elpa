@@ -331,12 +331,20 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
        (concat (format "* %d EXISTS\r\n" (length messages))
 	       "* 0 RECENT\r\n"
 	       "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n"
-	       "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)]\r\n"
+	       (format "* OK [PERMANENTFLAGS (%s)]\r\n"
+		       vm-imap-mock-permanent-flags)
 	       "* OK [UIDVALIDITY 1000]\r\n"
 	       (format "* OK [UIDNEXT %d]\r\n" (vm-imap-mock-uid-next mock))
 	       (format "%s OK [%s] %s completed\r\n" tag
 		       (if examine "READ-ONLY" "READ-WRITE")
 		       (if examine "EXAMINE" "SELECT")))))))
+
+(defvar vm-imap-mock-permanent-flags
+  "\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*"
+  "What the mock answers for PERMANENTFLAGS at SELECT.
+The `\\*\=' at the end is the server saying it keeps keywords of its own.
+Bind this without it for a server that does not, which is what Gmail
+answers and what makes a label set in VM disappear (emacs-vm/vm#601).")
 
 (defun vm-imap-mock--fetch (mock process tag spec items by-uid)
   "Answer a FETCH or UID FETCH of SPEC for ITEMS."
