@@ -1707,7 +1707,8 @@ socket would clobber each other's session state."
       (when-let* ((reject (plist-get pending :reject)))
         (setq handled t)
         (funcall reject message)))
-    (unless handled
+    ;; Like successful responses, errors need a pending request owner.
+    (when (and pending (not handled))
       (hermes-dashboard-transport--emit-error client message method code))))
 
 (defun hermes-dashboard-transport--complete-ready (client frame)
