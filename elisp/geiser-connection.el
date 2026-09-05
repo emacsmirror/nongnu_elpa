@@ -160,7 +160,7 @@
     new))
 
 (defun geiser-con--has-entered-debugger (con answer)
-  (when-let ((p (car (last (split-string answer "\n" t)))))
+  (when-let* ((p (car (last (split-string answer "\n" t)))))
     (geiser-con--connection-update-debugging con p))
   (geiser-con--connection-is-debugging con))
 
@@ -272,7 +272,7 @@
 
 (defun geiser-con--interrupt (con)
   "Interrupt any request being currently in process."
-  (when-let (proc (and con (geiser-con--connection-process con)))
+  (when-let* ((proc (and con (geiser-con--connection-process con))))
     (when (process-live-p proc)
       (interrupt-process proc))))
 

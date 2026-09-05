@@ -1,6 +1,6 @@
 ;;; geiser-edit.el --- Scheme edit locations  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009, 2010, 2012, 2013, 2019-2025 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009, 2010, 2012, 2013, 2019-2026 Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -60,7 +60,7 @@ or following links in error buffers.")
   (cdr (assoc "name" loc)))
 
 (defsubst geiser-edit--location-file (loc)
-  (when-let ((file-name (cdr (assoc "file" loc))))
+  (when-let* ((file-name (cdr (assoc "file" loc))))
     (concat (or (file-remote-p default-directory) "")
             file-name)))
 
@@ -140,7 +140,7 @@ or following links in error buffers.")
          (forward-line (max 0 (1- line))))
         ((numberp pos) (goto-char pos)))
   (if (not col)
-      (when-let (pos (car (geiser-edit--find-def symbol)))
+      (when-let* ((pos (car (geiser-edit--find-def symbol))))
         (goto-char pos))
     (beginning-of-line)
     (forward-char col)

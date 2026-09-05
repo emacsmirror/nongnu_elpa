@@ -56,7 +56,7 @@ used to discover a buffer's project."
 
 (defun geiser-repl-project-root ()
   "Use project.el, to determine a buffer's project root."
-  (when-let (p (project-current)) (project-root p)))
+  (when-let* ((p (project-current))) (project-root p)))
 
 (geiser-custom--defcustom geiser-repl-current-project-function
     #'geiser-repl-project-root
@@ -615,12 +615,12 @@ to standard output face."
 (defvar geiser-repl--last-scm-buffer)
 
 (defun geiser-repl--set-default-directory ()
-  (when-let (root (funcall geiser-repl-current-project-function))
+  (when-let* ((root (funcall geiser-repl-current-project-function)))
     (setq-local default-directory root)))
 
 (defun geiser-repl--set-up-load-path ()
   (when geiser-repl-add-project-paths
-    (when-let (root (funcall geiser-repl-current-project-function))
+    (when-let* ((root (funcall geiser-repl-current-project-function)))
       (dolist (p (cond ((eq t geiser-repl-add-project-paths) '("."))
                        ((listp geiser-repl-add-project-paths)
                         geiser-repl-add-project-paths)))
@@ -816,8 +816,8 @@ If SAVE-HISTORY is non-nil, save CMD in the REPL history."
       (when (buffer-live-p geiser-repl--connection-buffer)
         (kill-buffer geiser-repl--connection-buffer)
         (setq geiser-repl--connection-buffer nil)
-        (when-let (a (geiser-repl--connection-address
-                      geiser-impl--implementation))
+        (when-let* ((a (geiser-repl--connection-address
+                        geiser-impl--implementation)))
           (delete-file a))))
     (dolist (buffer (buffer-list))
       (when (buffer-live-p buffer)
@@ -1209,7 +1209,7 @@ over a Unix-domain socket."
   (or geiser-repl--arglist (geiser-repl--arglist impl)))
 
 (defun geiser-repl--call-in-repl (cmd)
-  (when-let (b (geiser-repl--repl/impl geiser-impl--implementation))
+  (when-let* ((b (geiser-repl--repl/impl geiser-impl--implementation)))
     (save-window-excursion
       (with-current-buffer b (funcall cmd)))))
 

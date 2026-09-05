@@ -1,6 +1,6 @@
 ;;; geiser-doc.el --- Accessing scheme-provided documentation  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2016, 2021-2022, 2024 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009-2016, 2021-2022, 2024, 2026 Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -185,9 +185,9 @@ value if the default action should be skipped.")
 (defun geiser-doc-goto-source (&rest _)
   "Go to the definition of this item."
   (interactive)
-  (when-let (link geiser-doc--buffer-link)
+  (when-let* ((link geiser-doc--buffer-link))
     (with--geiser-implementation (geiser-doc--link-impl link)
-      (if-let (target (geiser-doc--link-target link))
+      (if-let* ((target (geiser-doc--link-target link)))
           (geiser-edit-symbol target nil (point-marker))
         (geiser-edit-module (geiser-doc--link-module link))))))
 
@@ -200,7 +200,7 @@ value if the default action should be skipped.")
 (defun geiser-doc-goto-manual (&rest _)
   "Go to the manual for this item."
   (interactive)
-  (when-let (link geiser-doc--buffer-link)
+  (when-let* ((link geiser-doc--buffer-link))
     (let ((tm (geiser-doc--link-target link))
           (mod (geiser-doc--link-module link))
           (impl (geiser-doc--link-impl link)))

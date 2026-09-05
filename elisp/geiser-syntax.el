@@ -1,6 +1,6 @@
 ;;; geiser-syntax.el --- Utilities for parsing scheme syntax  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2016, 2019-2022 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009-2016, 2019-2022, 2026 Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -194,7 +194,7 @@ implementation-specific entries for font-lock-keywords.")
 
 (defun geiser-syntax--read/ex-symbol ()  ;; #{foo bar}# style symbols
   (let ((tk (geiser-syntax--read/matching "{" "}")))
-    (when-let (c (geiser-syntax--read/next-char))
+    (when-let* ((c (geiser-syntax--read/next-char)))
       (when (char-equal ?\# c)
         (geiser-syntax--read/next-char)
         (cons 'atom (make-symbol (format "#{%s}#" tk)))))))
