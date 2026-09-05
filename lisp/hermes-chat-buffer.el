@@ -123,6 +123,8 @@ without each one repeating the liveness guard."
   "Side-panel buffer displaying this chat buffer's queued messages.")
 (defvar-local hermes-chat-queue-panel--owner nil
   "Chat buffer whose FIFO is displayed by this queue panel.")
+(defvar-local hermes-chat-queue-panel--attachment nil
+  "Owner lifetime, client and session captured when opening this panel.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-create-model nil
@@ -1098,7 +1100,8 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
   "Return a queued message entry for CONTENT and DISPLAY."
   (list :id (hermes-chat--next-id 'queue)
         :content content
-        :display display))
+        :display display
+        :rejected-p nil))
 
 (defun hermes-chat--queue-head-id ()
   "Return the id of the first queued message, or nil."
@@ -1142,6 +1145,7 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
     (entry-id user-id assistant-id message)
   "Retain queue ENTRY-ID after MESSAGE, rolling back USER-ID and ASSISTANT-ID."
   (when (hermes-chat--queue-submit-current-p entry-id)
+    (setf (plist-get (car hermes-chat--queued-messages) :rejected-p) t)
     (setq hermes-chat--queued-submit-id nil
           hermes-chat--dashboard-running-p nil)
     (when (equal hermes-chat--pending-assistant-id assistant-id)
@@ -1155,15 +1159,20 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
     (hermes-chat--rollback-queued-turn user-id assistant-id)
     (hermes-chat--insert-local-status
      (format "Queued message retained: %s" message) 'error)
+    (hermes-chat--queue-panel-refresh-if-live)
     (hermes-chat--set-header-state
      :status 'error :activity "Queued message was not sent")))
 
-(defun hermes-chat--drain-queued-message ()
-  "Submit one queued message after the active turn settles."
+(defun hermes-chat--drain-queued-message (&optional retry-entry)
+  "Submit one queued message after the active turn settles.
+Only an explicit RETRY-ENTRY identical to the head may retry a rejection."
   (when (and hermes-chat--queued-messages
+             (or (not (plist-get (car hermes-chat--queued-messages) :rejected-p))
+                 (eq retry-entry (car hermes-chat--queued-messages)))
              (not (hermes-chat--active-turn-p))
              (funcall hermes-chat--queue-drain-ready-function))
     (let ((entry (car hermes-chat--queued-messages)))
+      (setf (plist-get entry :rejected-p) nil)
       (setq hermes-chat--queued-submit-id (plist-get entry :id))
       (condition-case err
           (funcall hermes-chat--submit-function
@@ -1171,15 +1180,18 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
                    (plist-get entry :display)
                    entry)
         (error
+         (setf (plist-get entry :rejected-p) t)
          (setq hermes-chat--queued-submit-id nil)
          (hermes-chat--command-error (error-message-string err)))))))
 
-(defun hermes-chat--clear-submit-context (context)
-  "Clear CONTEXT when it is still the unresolved dashboard submission."
+(defun hermes-chat--clear-submit-context (context &optional no-drain)
+  "Clear CONTEXT when it is still the unresolved dashboard submission.
+When NO-DRAIN is non-nil, retain queued input without retrying it."
   (when (eq context hermes-chat--unsettled-submit-context)
     (setq hermes-chat--unsettled-submit-context nil
           hermes-chat--prepared-submit-assistant-id nil)
-    (hermes-chat--drain-queued-message)))
+    (unless no-drain
+      (hermes-chat--drain-queued-message))))
 
 (defun hermes-chat--queue-content (content &optional note display)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.
@@ -1230,7 +1242,11 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
         (cl-loop for entry in entries
                  for index from 1
                  do (let ((start (point)))
-                      (insert (format "%d. %s\n" index
+                      (insert (format "%d. %s%s\n" index
+                                      (if (plist-get entry :rejected-p)
+                                          (propertize "Rejected [r: Retry queued message] "
+                                                      'face 'error)
+                                        "")
                                       (hermes-chat--preview
                                        (plist-get entry :content))))
                       (add-text-properties
@@ -1282,6 +1298,30 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
           (seq-remove (lambda (entry) (equal (plist-get entry :id) id))
                       hermes-chat--queued-messages))
     (hermes-chat--insert-local-status "Queued message removed" 'done)))
+
+(defun hermes-chat-queue-panel-retry ()
+  "Retry the rejected FIFO head at point when its chat is idle and attached.
+Refuse stale panels and busy or disconnected owners without clearing the pause."
+  (interactive)
+  (let ((owner (hermes-chat--queue-panel-owner))
+        (panel (current-buffer))
+        (attachment hermes-chat-queue-panel--attachment)
+        (id (hermes-chat--queue-panel-entry-id)))
+    (with-current-buffer owner
+      (unless (and (eq panel hermes-chat--queue-panel-buffer)
+                   (eql (nth 0 attachment) hermes-chat--lifecycle-generation)
+                   (eq (nth 1 attachment) hermes-chat--dashboard-client)
+                   (equal (nth 2 attachment) hermes-chat--dashboard-active-session-id))
+        (user-error "Queue owner changed; reopen the queue panel"))
+      (let ((entry (car hermes-chat--queued-messages)))
+        (unless (and (equal id (plist-get entry :id))
+                     (plist-get entry :rejected-p))
+          (user-error "Select the rejected first queued message"))
+        (when (or (hermes-chat--active-turn-p)
+                  (not (funcall hermes-chat--queue-drain-ready-function)))
+          (user-error "The owning Hermes chat is busy or disconnected"))
+        (hermes-chat--drain-queued-message entry)))
+    (hermes-chat-queue-panel-refresh)))
 
 (defun hermes-chat-queue-panel-edit ()
   "Edit the queued message at point."
@@ -1340,6 +1380,7 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
   :parent special-mode-map
   "g" #'hermes-chat-queue-panel-refresh
   "e" #'hermes-chat-queue-panel-edit
+  "r" #'hermes-chat-queue-panel-retry
   "u" #'hermes-chat-queue-panel-move-up
   "d" #'hermes-chat-queue-panel-move-down
   "D" #'hermes-chat-queue-panel-remove
@@ -1355,12 +1396,16 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (let* ((owner (current-buffer))
+         (attachment (list hermes-chat--lifecycle-generation
+                           hermes-chat--dashboard-client
+                           hermes-chat--dashboard-active-session-id))
          (buffer (get-buffer-create
                   (format "*Hermes Queue: %s*" (buffer-name owner)))))
     (setq hermes-chat--queue-panel-buffer buffer)
     (with-current-buffer buffer
       (hermes-chat-queue-panel-mode)
-      (setq hermes-chat-queue-panel--owner owner)
+      (setq hermes-chat-queue-panel--owner owner
+            hermes-chat-queue-panel--attachment attachment)
       (hermes-chat-queue-panel-refresh))
     (display-buffer buffer
                     '((display-buffer-in-side-window)

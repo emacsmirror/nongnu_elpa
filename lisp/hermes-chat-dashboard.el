@@ -574,8 +574,9 @@ so a new session can be started afterwards."
   (when-let* ((context hermes-chat--unsettled-submit-context)
               ((equal assistant-id hermes-chat--prepared-submit-assistant-id))
               ((memq (plist-get event :type) '(done error))))
-    (setf (plist-get context :post-start-terminal-p) t)
-    (hermes-chat--clear-submit-context context)))
+    ;; Terminal evidence prevents a late queued acknowledgement from reviving
+    ;; this turn; only the request response may release its FIFO ownership.
+    (setf (plist-get context :post-start-terminal-p) t)))
 
 (defun hermes-chat--server-queued-prior-event-p (assistant-id event)
   "Return non-nil when EVENT predates ASSISTANT-ID's server-queued turn."

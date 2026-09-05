@@ -806,8 +806,8 @@ extends the input instead of prepending a blank line to it."
          (eq (plist-get context :client) hermes-chat--dashboard-client)
          (equal (plist-get context :session-id)
                 hermes-chat--dashboard-active-session-id)
-         (equal (plist-get context :assistant-id)
-                hermes-chat--pending-assistant-id)
+         ;; The assistant may finish before the submit RPC acknowledges it.
+         ;; Request identity and generation, not its pending node, own settlement.
          (and hermes-chat--nodes
               (gethash (plist-get context :user-id) hermes-chat--nodes))
          (or (null queue-id)
@@ -829,23 +829,23 @@ extends the input instead of prepending a blank line to it."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
-        (hermes-chat--clear-submit-context context)
         (hermes-chat--queue-submit-rejected
          (plist-get context :queue-id)
          (plist-get context :user-id)
          (plist-get context :assistant-id)
-         message)))))
+         message)
+        (hermes-chat--clear-submit-context context t)))))
 
 (defun hermes-chat--submit-reject-callback (buffer context)
   "Return BUFFER callback rejecting the turn described by CONTEXT."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
-        (hermes-chat--clear-submit-context context)
         (setq hermes-chat--dashboard-running-p nil)
         (hermes-chat--handle-transport-event
          (plist-get context :assistant-id)
-         (list :type 'error :content message))))))
+         (list :type 'error :content message))
+        (hermes-chat--clear-submit-context context)))))
 
 (defun hermes-chat--begin-pending-turn (user-entry assistant-entry context)
   "Insert USER-ENTRY and ASSISTANT-ENTRY, then activate CONTEXT."
@@ -894,7 +894,6 @@ extends the input instead of prepending a blank line to it."
         (user-id (plist-get context :user-id))
         (assistant-id (plist-get context :assistant-id))
         (message (error-message-string err)))
-    (hermes-chat--clear-submit-context context)
     (when (plist-get context :dashboard-p)
       (setq hermes-chat--dashboard-running-p nil))
     (if queue-id
@@ -902,6 +901,7 @@ extends the input instead of prepending a blank line to it."
          queue-id user-id assistant-id message)
       (hermes-chat--handle-transport-event
        assistant-id (list :type 'error :content message)))
+    (hermes-chat--clear-submit-context context queue-id)
     (message "Hermes transport failed: %s" message)))
 
 (defun hermes-chat--make-submit-context (content display queue-entry user assistant)

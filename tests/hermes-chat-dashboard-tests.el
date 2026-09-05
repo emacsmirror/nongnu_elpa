@@ -55,6 +55,305 @@
                    '("http://127.0.0.1:9119"
                      "https://hermes.example.test")))))
 
+(defmacro hermes-test--with-submit-wire (&rest body)
+  "Run BODY with an attached chat and captured production RPC frames."
+  (declare (indent 0) (debug t))
+  `(let* ((client (hermes-test--dashboard-client))
+          (hermes-transport-send-function #'hermes-transport-send)
+          (hermes-dashboard-transport-request-timeout nil)
+          frames
+          (hermes-dashboard-transport-websocket-send-function
+           (lambda (_socket text)
+             (push (hermes-dashboard-transport--decode-frame text) frames))))
+     (setf (hermes-dashboard-transport-client-ready-p client) t)
+     (cl-letf (((symbol-function 'hermes-chat--maybe-refresh-session-title) #'ignore)
+               ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+       (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client client
+              hermes-chat--dashboard-active-session-id "sid"
+              hermes-chat--dashboard-session-ready-p t)
+        ,@body))))
+
+(defun hermes-test--submit-wire-event (client type &optional payload)
+  "Deliver TYPE and PAYLOAD through CLIENT's production JSON parser."
+  (hermes-dashboard-transport--handle-frame
+   client (hermes-dashboard-transport--encode-frame
+           `((jsonrpc . "2.0") (method . "event")
+             (params . ((type . ,type) (session_id . "sid")
+                        (payload . ,payload)))))))
+
+(defun hermes-test--submit-wire-reply (client request &optional reject status)
+  "Deliver CLIENT's response to REQUEST, with optional REJECT or STATUS."
+  (hermes-dashboard-transport--handle-frame
+   client (hermes-dashboard-transport--encode-frame
+           `((jsonrpc . "2.0") (id . ,(alist-get 'id request))
+             ,(if reject
+                  '(error . ((code . -32000) (message . "submit rejected")))
+                `(result . ((status . ,(or status "accepted")))))))))
+
+(defun hermes-test--terminal-before-submit-ack (queued)
+  "Prove terminal-before-ack settlement for a normal or QUEUED submission."
+  (dolist (terminal '("message.complete" "error"))
+    (hermes-test--with-submit-wire
+     (if queued
+         (progn
+           (hermes-chat--queue-content "first\nfull body")
+           (hermes-chat--drain-queued-message))
+       (insert "first\nfull body")
+       (hermes-chat-send))
+     (let ((request (car frames))
+           (context hermes-chat--unsettled-submit-context))
+       (should (equal (alist-get 'method request) "prompt.submit"))
+       (should (eq (not (null (plist-get context :queue-id))) queued))
+       (hermes-chat-queue-message "second\nfull body")
+       (hermes-chat-queue-message "third\nfull body")
+       (let ((suffix (last hermes-chat--queued-messages 2)))
+         (hermes-test--submit-wire-event client "message.start")
+         (hermes-test--submit-wire-event client terminal '((text . "finished")))
+         (hermes-test--submit-wire-event client terminal '((text . "duplicate")))
+         (should-not hermes-chat--pending-assistant-id)
+         (should (eq context hermes-chat--unsettled-submit-context))
+         (hermes-test--submit-wire-reply client request)
+         (should-not (eq context hermes-chat--unsettled-submit-context))
+         (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+         (should (eq suffix hermes-chat--queued-messages))
+         (should (equal (hermes-test--queued-contents)
+                        '("second\nfull body" "third\nfull body")))
+         (should (= (length frames) 2))
+         (let ((successor hermes-chat--unsettled-submit-context))
+           (should successor)
+           (should (equal (plist-get successor :content) "second\nfull body"))
+           (hermes-test--submit-wire-reply client request)
+           (should (eq successor hermes-chat--unsettled-submit-context))
+           (should (eq suffix hermes-chat--queued-messages)))
+         (hermes-test--submit-wire-reply client (car frames))
+         (should (equal (hermes-test--queued-contents) '("third\nfull body")))
+         (hermes-test--submit-wire-event client "message.complete")
+         (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+         (should (= (length frames) 3))
+         (should (equal (mapcar (lambda (frame)
+                                  (alist-get 'text (alist-get 'params frame)))
+                                (reverse frames))
+                        '("first\nfull body" "second\nfull body" "third\nfull body"))))))))
+
+(ert-deftest hermes-chat-dashboard-terminal-before-submit-ack-normal ()
+  "Normal terminal-before-ack releases the request and advances FIFO once."
+  (hermes-test--terminal-before-submit-ack nil))
+
+(ert-deftest hermes-chat-dashboard-terminal-before-submit-ack-queued ()
+  "Queued terminal-before-ack accepts the exact FIFO head once."
+  (hermes-test--terminal-before-submit-ack t))
+
+(ert-deftest hermes-chat-dashboard-submit-terminal-orderings ()
+  "Acceptance, terminal and idle settle once in each valid finite ordering."
+  (dolist (order '((ack terminal idle) (terminal ack idle)
+                   (terminal idle ack)))
+    (dolist (status '("accepted" "queued"))
+      (hermes-test--with-submit-wire
+       (hermes-chat--queue-content "first")
+       (hermes-chat--drain-queued-message)
+       (let ((request (car frames))
+             (assistant hermes-chat--pending-assistant-id))
+         ;; Idle then start is the existing authoritative boundary separating a
+         ;; server-queued turn from the prior turn's output.
+         (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+         (hermes-test--submit-wire-event client "message.start")
+         (dolist (step order)
+           (pcase step
+             ('ack (hermes-test--submit-wire-reply client request nil status))
+             ('terminal (hermes-test--submit-wire-event client "message.complete"))
+             ('idle (hermes-test--submit-wire-event
+                     client "session.info" '((running . :false))))))
+         (should-not hermes-chat--unsettled-submit-context)
+         (should-not hermes-chat--queued-messages)
+         (should-not hermes-chat--queued-submit-id)
+         (should-not hermes-chat--pending-assistant-id)
+         (should-not hermes-chat--server-queued-assistant-id)
+         (should (eq (plist-get (ewoc-data (gethash assistant hermes-chat--nodes))
+                               :status) 'done))
+         (hermes-test--submit-wire-reply client request nil status)
+         (should-not (hermes-chat--active-turn-p))
+         (should (= (length frames) 1)))))))
+
+(ert-deftest hermes-chat-dashboard-terminal-before-submit-reject ()
+  "Late rejection settles its request without sending or losing retained input."
+  (dolist (queued '(nil t))
+    (hermes-test--with-submit-wire
+     (if queued
+         (progn
+           (hermes-chat--queue-content "first")
+           (hermes-chat--drain-queued-message))
+       (insert "first") (hermes-chat-send))
+     (let* ((request (car frames))
+            (reject (plist-get
+                     (gethash (alist-get 'id request)
+                              (hermes-dashboard-transport-client-pending client))
+                     :reject))
+            (context hermes-chat--unsettled-submit-context))
+       (hermes-chat-queue-message "second")
+       (hermes-test--submit-wire-event client "message.complete")
+       (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+       (hermes-test--submit-wire-reply client request t)
+       (should-not (eq context hermes-chat--unsettled-submit-context))
+       (if queued
+           (progn
+             (should (equal (hermes-test--queued-contents) '("first" "second")))
+             (should-not hermes-chat--queued-submit-id)
+             (should-not hermes-chat--pending-assistant-id)
+             (should (= (length frames) 1)))
+         ;; The next accepted input may progress, but old rejection must not
+         ;; clear the new turn's running state after dispatching it.
+         (should (= (length frames) 2))
+         (should hermes-chat--dashboard-running-p)
+         (should hermes-chat--pending-assistant-id)
+         (should (equal (plist-get hermes-chat--unsettled-submit-context :content)
+                        "second")))
+       (let ((before (copy-tree (hermes-chat--entries)))
+             (owner hermes-chat--unsettled-submit-context))
+         (funcall reject "late duplicate rejection")
+         (should (equal before (hermes-chat--entries)))
+         (should (eq owner hermes-chat--unsettled-submit-context)))))))
+
+(defun hermes-test--rejected-head-retry (terminal)
+  "Prove explicit retry after rejection, with optional preceding TERMINAL."
+    (hermes-test--with-submit-wire
+     (hermes-chat--queue-content "first\n  exact body  " nil "compact")
+     (hermes-chat--drain-queued-message)
+     (hermes-chat-queue-message "second\nbody")
+     (insert "newer draft\n  intact  ")
+     (let ((request (car frames))
+           (head (car hermes-chat--queued-messages))
+           (suffix (cdr hermes-chat--queued-messages))
+           (draft (buffer-substring-no-properties
+                   hermes-chat--input-marker (point-max))))
+       (when terminal
+         (hermes-test--submit-wire-event client "message.complete"))
+       (hermes-test--submit-wire-reply client request t)
+       (dotimes (_ 3)
+         (hermes-test--submit-wire-event client "session.info" '((running . :false))))
+       (should (= (length frames) 1))
+       (should (eq head (car hermes-chat--queued-messages)))
+       (should (eq suffix (cdr hermes-chat--queued-messages)))
+       (should (plist-get head :rejected-p))
+       (should-not hermes-chat--unsettled-submit-context)
+       (let ((panel (save-window-excursion (hermes-chat-queue-panel))))
+         (unwind-protect
+             (progn
+               (with-current-buffer panel
+                 (should (string-match-p "Retry queued message" (buffer-string)))
+                 (call-interactively (keymap-lookup hermes-chat-queue-panel-mode-map "r")))
+               (should (= (length frames) 2))
+               (should-not (plist-get head :rejected-p))
+               (should (equal (alist-get 'text (alist-get 'params (car frames)))
+                              "first\n  exact body  "))
+               (with-current-buffer panel
+                 (should-error (hermes-chat-queue-panel-retry) :type 'user-error))
+               (should (= (length frames) 2))
+               (should (equal draft (buffer-substring-no-properties
+                                     hermes-chat--input-marker (point-max))))
+               (hermes-test--submit-wire-reply client (car frames))
+               (should (eq suffix hermes-chat--queued-messages)))
+           (kill-buffer panel))))))
+
+(ert-deftest hermes-chat-dashboard-rejected-head-requires-explicit-retry ()
+  "Reject then idle never sends again until an explicit panel retry."
+  (hermes-test--rejected-head-retry nil))
+
+(ert-deftest hermes-chat-dashboard-terminal-rejected-head-requires-explicit-retry ()
+  "Terminal, reject then idle never sends again until an explicit panel retry."
+  (hermes-test--rejected-head-retry t))
+
+(ert-deftest hermes-chat-dashboard-rejected-retry-refuses-invalid-owner ()
+  "Busy, detached and stale panels preserve the rejected entry and draft."
+  (dolist (change '(busy detached lifetime client session panel mode))
+    (hermes-test--with-submit-wire
+     (hermes-chat--queue-content "first\nexact")
+     (hermes-chat--drain-queued-message)
+     (hermes-test--submit-wire-reply client (car frames) t)
+     (insert "draft")
+     (let ((panel (save-window-excursion (hermes-chat-queue-panel)))
+           (head (car hermes-chat--queued-messages)))
+       (unwind-protect
+           (progn
+             (pcase change
+               ('busy (setq hermes-chat--dashboard-running-p t))
+               ('detached (setq hermes-chat--dashboard-session-ready-p nil))
+               ('lifetime (setq hermes-chat--lifecycle-generation 'changed))
+               ('client (setq hermes-chat--dashboard-client
+                              (hermes-test--dashboard-client)))
+               ('session (setq hermes-chat--dashboard-active-session-id "other"))
+               ('panel (setq hermes-chat--queue-panel-buffer nil))
+               ('mode (setq major-mode 'fundamental-mode)))
+             (with-current-buffer panel
+               (should-error (call-interactively
+                              (keymap-lookup hermes-chat-queue-panel-mode-map "r"))
+                             :type 'user-error))
+             (should (eq head (car hermes-chat--queued-messages)))
+             (should (plist-get head :rejected-p))
+             (should (equal "first\nexact" (plist-get head :content)))
+             (should (equal "draft" (hermes-chat-input-string)))
+             (should (= (length frames) 1)))
+         (kill-buffer panel))))))
+
+(ert-deftest hermes-chat-dashboard-rejected-edit-and-remove-preserve-pause ()
+  "Editing and removing a suffix cannot silently resend the rejected head."
+  (hermes-test--with-submit-wire
+   (hermes-chat--queue-content "first")
+   (hermes-chat--drain-queued-message)
+   (hermes-chat-queue-message "second")
+   (hermes-test--submit-wire-reply client (car frames) t)
+   (let ((panel (save-window-excursion (hermes-chat-queue-panel))))
+     (unwind-protect
+         (progn
+           (with-current-buffer panel
+             (cl-letf (((symbol-function 'read-string-from-buffer)
+                        (lambda (&rest _) "edited\nbody")))
+               (call-interactively #'hermes-chat-queue-panel-edit))
+             (forward-line 1)
+             (call-interactively #'hermes-chat-queue-panel-remove))
+           (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+           (should (= (length frames) 1))
+           (should (equal (hermes-test--queued-contents) '("edited\nbody")))
+           (should (plist-get (car hermes-chat--queued-messages) :rejected-p))
+           (with-current-buffer panel
+             (call-interactively #'hermes-chat-queue-panel-remove))
+           (hermes-test--submit-wire-event client "session.info" '((running . :false)))
+           (should-not hermes-chat--queued-messages)
+           (should (= (length frames) 1)))
+       (kill-buffer panel)))))
+
+(ert-deftest hermes-chat-dashboard-submit-replaced-owner ()
+  "Old wire responses cannot settle changed context, lifetime or connection."
+  (dolist (replacement '(context lifetime generation client session))
+    (dolist (reject '(nil t))
+      (hermes-test--with-submit-wire
+       (hermes-chat--queue-content "owned head")
+       (hermes-chat--drain-queued-message)
+       (hermes-chat-queue-message "untouched suffix")
+       (let ((request (car frames)))
+         (hermes-test--submit-wire-event client "message.complete")
+         (pcase replacement
+           ('context (setq hermes-chat--unsettled-submit-context
+                           (copy-sequence hermes-chat--unsettled-submit-context)))
+           ('lifetime (setq hermes-chat--lifecycle-generation (list 'replacement)))
+           ('generation (hermes-chat--next-transport-generation))
+           ('client (setq hermes-chat--dashboard-client
+                          (hermes-test--dashboard-client)))
+           ('session (setq hermes-chat--dashboard-active-session-id "replacement")))
+         (let ((owner hermes-chat--unsettled-submit-context)
+               (queue hermes-chat--queued-messages)
+               (before (copy-tree (hermes-chat--entries)))
+               (header (copy-tree hermes-chat--status-state)))
+           (hermes-test--submit-wire-reply client request reject "queued")
+           (should (eq owner hermes-chat--unsettled-submit-context))
+           (should (eq queue hermes-chat--queued-messages))
+           (should (equal (hermes-test--queued-contents)
+                          '("owned head" "untouched suffix")))
+           (should (equal before (hermes-chat--entries)))
+           (should (equal header hermes-chat--status-state))
+           (should-not hermes-chat--pending-assistant-id)
+           (should (= (length frames) 1))))))))
+
 (ert-deftest hermes-chat-dashboard-parses-vanilla-goal-status ()
   "Vanilla `/goal status' output becomes compact header state."
   (should

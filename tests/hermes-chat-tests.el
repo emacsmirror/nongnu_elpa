@@ -3116,8 +3116,11 @@
          (hermes-test--emit-dashboard-event client "message.start" nil)
          (hermes-test--emit-dashboard-event
           client "message.complete" '((status . "done")))
+         ;; Terminal output alone does not acknowledge the submit request.
+         (funcall (cdr (assoc "first" resolves)) '((status . "accepted")))
          (insert "second")
          (hermes-chat-send)
+         (should (assoc "second" resolves))
          (let ((before-entries (copy-tree (hermes-chat--entries)))
                (before-queue (copy-tree hermes-chat--queued-messages))
                (before-assistant hermes-chat--pending-assistant-id)
