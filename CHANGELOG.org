@@ -1,5 +1,27 @@
 #+TITLE: Changelog
 
+* [0.13.3]
+#+date: 2026-09-05
+
+** Added
+- Automatically preview shared links locally when URL expansion is enabled
+
+** Fixes
+- Reconnect failed transports after wake and check keepalive responses for new
+  and resumed sessions
+- Preserve Stream Management replay order, validate handled counts, and ignore
+  stale transport input and lifecycle callbacks
+- Preserve room recovery state, encrypted messages, and local echoes across
+  reconnects, including nickname and credential ownership
+- Propagate picomemo encryption errors instead of reporting success
+- Restore serialized picomemo stores after refilling prekeys
+- Fix compiler dependencies and check every library with isolated byte and
+  native compilation, including regression tests for compiler failures
+- Cancel orphaned Stream Management timers and bind callbacks to their owning
+  connection state
+- Retire stale Stream Management requests during TLS negotiation
+- Fix OMEMO random generation and shared-module linking on OpenBSD
+
 * [0.13.2]
 #+date: 2026-08-28
 
