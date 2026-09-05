@@ -1,5 +1,13 @@
 #+TITLE: Changelog
 
+* [0.14.0]
+#+date: 2026-09-05
+
+** Fixes
+- Restore broadcast presence after connection.  A room-recovery check rejected
+  presence without a recipient, leaving the client unavailable to the server:
+  contacts appeared offline and incoming messages could require archive sync
+
 * [0.13.3]
 #+date: 2026-09-05
 
