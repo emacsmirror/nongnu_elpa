@@ -70,7 +70,8 @@ Keys are group JID strings, values are t.")
 
 (defvar-local jabber-muc--auto-configure nil
   "When non-nil, automatically open the config form on room creation.
-Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
+Native creates install an identity-bearing (TAG JC ROOM) permission.
+Manual non-nil values remain valid.  Consumption clears before configuration.")
 
 (defvar-local jabber-muc--config-connection nil
   "Connection associated with the current room configuration form.")
@@ -405,7 +406,12 @@ These fields are about your account:
 
 %a   Your bare JID (account)
 %u   Your username
-%s   Your server"
+%s   Your server
+
+Names shared by different connections or rooms cannot be reused while
+another scope has pending automatic configuration.  Use distinct names
+or retry after its room-creation event consumes that permission.  The
+default %a separates distinct accounts, not connections to one account."
   :type 'string
   :group 'jabber-chat)
 
@@ -557,12 +563,26 @@ live buffer."
             (setq found buffer))))
       (unless ambiguous found))))
 
+(defun jabber-muc--foreign-arm-p (arm jc group)
+  "Return non-nil if package ARM belongs to another JC or GROUP."
+  (and (eq (car-safe arm) 'jabber-muc--config-arm)
+       (not (and (eq (nth 1 arm) jc) (equal (nth 2 arm) group)))))
+
+(defun jabber-muc--check-buffer-arm (buffer jc group)
+  "Reject BUFFER when its configuration permission is foreign to JC/GROUP."
+  (when (and (buffer-live-p buffer)
+             (jabber-muc--foreign-arm-p
+              (buffer-local-value 'jabber-muc--auto-configure buffer) jc group))
+    (user-error "MUC buffer has pending configuration for another connection or room; use a distinct groupchat buffer name")))
+
 (defun jabber-muc-create-buffer (jc group)
   "Prepare a buffer for chatroom GROUP.
-This function is idempotent.
+This function is idempotent.  Pending foreign configuration rejects reuse;
+choose a distinct groupchat buffer name.
 
 JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-muc-get-buffer group jc))
+    (jabber-muc--check-buffer-arm (current-buffer) jc group)
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
 
@@ -594,7 +614,8 @@ JC is the Jabber connection."
 
       (jabber-chat-buffer-recenter-input))
 
-    ;; Make sure the connection variable is up to date.
+    ;; Setup can reenter and install a foreign permission.
+    (jabber-muc--check-buffer-arm (current-buffer) jc group)
     (setq jabber-buffer-connection jc)
     (jabber-buffer-registry-register
      'muc (jabber-muc--buffer-key jc group))
@@ -758,6 +779,7 @@ entry is removed."
 
 (defun jabber-muc--session-reset (jc)
   "Clear room state belonging to the lost logical session on JC."
+  (jabber-muc--invalidate-intent jc)
   (let* ((state-data (fsm-get-state-data jc))
          (preserve-for-reconnect-p
           (and jabber-auto-reconnect
@@ -1211,6 +1233,63 @@ Includes joined rooms and bookmarked rooms for this connection."
             (puthash jid t rooms)))))
     (hash-table-keys rooms)))
 
+(defun jabber-muc--invalidate-intent (jc &optional group)
+  "Invalidate native requests and package permissions for JC and GROUP.
+Without GROUP, invalidate all rooms on JC.  Preserve manual permissions."
+  (put jc 'jabber-muc--join-intents
+       (and group (assoc-delete-all group (get jc 'jabber-muc--join-intents))))
+  (dolist (buffer (if group (list (jabber-muc-find-buffer group jc)) (buffer-list)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (let ((arm jabber-muc--auto-configure))
+          (when (and (eq (car-safe arm) 'jabber-muc--config-arm)
+                     (eq (nth 1 arm) jc)
+                     (or (null group) (equal (nth 2 arm) group)))
+            (setq jabber-muc--auto-configure nil)))))))
+
+(defun jabber-muc--reserve-intent (jc group)
+  "Reserve a unique native request for exact JC and GROUP."
+  (jabber-muc--invalidate-intent jc group)
+  (let* ((data (fsm-get-state-data jc))
+         (request (vector jc group (plist-get data :connection)
+                          (plist-get data :session-id)
+                          (plist-get data :nil-entry-token) nil nil)))
+    (push (cons group request) (get jc 'jabber-muc--join-intents))
+    request))
+
+(defun jabber-muc--check-intent (request)
+  "Exit the native continuation if REQUEST is no longer eligible."
+  (let* ((jc (aref request 0)) (data (fsm-get-state-data jc)))
+    (unless (and (eq request (cdr (assoc (aref request 1)
+                                        (get jc 'jabber-muc--join-intents))))
+                 (jabber-connection-active-p jc)
+                 (not (plist-get data :registerp))
+                 (eq (aref request 2) (plist-get data :connection))
+                 (equal (aref request 3) (plist-get data :session-id))
+                 (eq (aref request 4) (plist-get data :nil-entry-token)))
+      (throw 'jabber-muc--cancelled :cancelled))))
+
+(defmacro jabber-muc--with-intent (request &rest body)
+  "Run BODY under REQUEST, retiring only its own state on unwind."
+  (declare (indent 1) (debug (form body)))
+  (let ((result (make-symbol "result")) (owner (make-symbol "owner")))
+    `(let ((,owner ,request) ,result)
+       (unwind-protect
+           (setq ,result
+                 (catch 'jabber-muc--cancelled
+                   (jabber-muc--check-intent ,owner)
+                   ,@body))
+         (unless (eq ,result :pending)
+           (let ((jc (aref ,owner 0)) (group (aref ,owner 1)))
+             (when (eq ,owner (cdr (assoc group (get jc 'jabber-muc--join-intents))))
+               (put jc 'jabber-muc--join-intents
+                    (assoc-delete-all group (get jc 'jabber-muc--join-intents)))))
+           (unless (eq ,result t)
+             (when (and (aref ,owner 6) (buffer-live-p (aref ,owner 5)))
+               (with-current-buffer (aref ,owner 5)
+                 (when (eq jabber-muc--auto-configure (aref ,owner 6))
+                   (setq jabber-muc--auto-configure nil))))))))))
+
 (defun jabber-muc-join (jc group nickname &optional popup)
   "Join GROUP as NICKNAME, or change nick.
 In interactive calls, or if POPUP is non-nil, switch to the
@@ -1230,33 +1309,45 @@ JC is the Jabber connection."
              (or (jabber-muc-nickname group account)
                  (jabber-muc-read-my-nickname account group)))
            t)))
-  ;; Remove from autojoin queue to prevent double-join.
-  (jabber-muc--autojoin-dequeue jc group)
-  (cond
-   ;; Already joined: open buffer, sync and verify membership.
-   ((jabber-muc-joined-p group jc)
-    (when popup
-      (switch-to-buffer (jabber-muc-create-buffer jc group)))
-    (jabber-mam-muc-joined jc group)
-    (jabber-muc--self-ping-one jc group))
-   ;; Skip disco check if configured.
-   (jabber-muc-disable-disco-check
-    (let ((password (jabber-muc--session-password jc group)))
-      (when (and popup (not password))
-        (setq password (read-passwd (format "Password for %s: " group)))
-        (when (string-empty-p password)
-          (setq password nil)))
-      (jabber-muc--send-join-presence jc group nickname password popup)))
-   (t
-    (jabber-disco-get-info jc group nil #'jabber-muc--disco-callback
-			   (list group nickname popup)))))
+  (let ((request (jabber-muc--reserve-intent jc group)))
+    (jabber-muc--with-intent request
+      (jabber-muc--autojoin-dequeue jc group)
+      (jabber-muc--check-intent request)
+      (cond
+       ;; Already joined: open buffer, sync and verify membership.
+       ((jabber-muc-joined-p group jc)
+	(when popup
+          (let ((buffer (jabber-muc-create-buffer jc group)))
+            (jabber-muc--check-intent request)
+            (switch-to-buffer buffer)))
+	(jabber-muc--check-intent request)
+	(jabber-mam-muc-joined jc group)
+	(jabber-muc--check-intent request)
+	(jabber-muc--self-ping-one jc group)
+	(jabber-muc--check-intent request)
+	t)
+       ;; Skip disco check if configured.
+       (jabber-muc-disable-disco-check
+	(let ((password (jabber-muc--session-password jc group)))
+	  (when (and popup (not password))
+            (setq password (read-passwd (format "Password for %s: " group)))
+            (when (string-empty-p password)
+              (setq password nil)))
+	  (jabber-muc--check-intent request)
+	  (jabber-muc--send-join-presence jc group nickname password popup nil request)))
+       (t
+	(jabber-disco-get-info jc group nil #'jabber-muc--disco-callback
+                               (list group nickname popup request))
+	:pending)))))
 
 ;;;###autoload
 (defun jabber-muc-create (jc group nickname)
   "Create a new MUC room and open its configuration form.
 Send join presence to GROUP with NICKNAME.  When the server
 confirms creation (status 201), the room configuration form
-opens automatically.
+opens automatically.  Pending foreign configuration in a shared buffer
+signals `user-error'; use distinct groupchat buffer names or retry after
+the original creation event consumes its permission.
 
 JC is the Jabber connection."
   (interactive
@@ -1271,8 +1362,12 @@ JC is the Jabber connection."
           (name   (read-string "Room name: "))
           (group  (concat name "@" server)))
      (list account group (jabber-muc-read-my-nickname account ""))))
-  (jabber-muc--send-join-presence jc group nickname nil t t)
-  (jabber-bookmarks--publish-one jc group nickname))
+  (let ((request (jabber-muc--reserve-intent jc group)))
+    (jabber-muc--with-intent request
+      (jabber-muc--send-join-presence jc group nickname nil t t request)
+      (jabber-muc--check-intent request)
+      (jabber-bookmarks--publish-one jc group nickname)
+      t)))
 
 ;;;###autoload
 (defun jabber-muc-switch-to (group)
@@ -1294,72 +1389,91 @@ Prompt with completion for joined rooms only."
 
 (defun jabber-muc--disco-callback (jc closure result)
   "Disco callback for MUC join.
-JC is the Jabber connection.  CLOSURE is (GROUP NICKNAME POPUP).
+JC is the Jabber connection.  CLOSURE is (GROUP NICKNAME POPUP REQUEST),
+or the legacy three-element form, which reserves fresh ownership.
 RESULT is the disco#info result."
-  (pcase-let ((`(,group ,nickname ,popup) closure))
-    (let* ((v (jabber-muc--validate-disco-result result))
-           (status (plist-get v :status)))
-      (pcase status
-        ('not-found
-         (unless (or jabber-silent-mode
-                     (y-or-n-p (format "%s doesn't exist.  Create it? "
-                                       (jabber-jid-displayname group))))
-           (error "Non-existent groupchat")))
-        ('error
-         (message "Couldn't query groupchat: %s" (plist-get v :error-msg)))
-        ('not-conference
-         (message "%s is not a conference service" (jabber-jid-displayname group))))
-      (unless (eq status 'not-conference)
-        (let* ((features (plist-get v :features))
-               (password (jabber-muc--session-password jc group))
-               (rejected-p (jabber-muc--password-rejected-p jc group)))
-          (when (and (not password)
-                     (or (member "muc_passwordprotected" features)
-                         (and popup rejected-p)))
-            (setq password
-                  (read-passwd (format "Password for %s: "
-                                       (jabber-jid-displayname group)))))
-          (when (member "muc_nonanonymous" features)
-            (puthash group t jabber-muc--nonanonymous-rooms))
-          (jabber-muc--send-join-presence jc group nickname password popup))))))
+  (pcase-let* ((`(,group ,nickname ,popup . ,tail) closure)
+               (request (or (car tail) (jabber-muc--reserve-intent jc group))))
+    (jabber-muc--with-intent request
+      (let* ((v (jabber-muc--validate-disco-result result))
+             (status (plist-get v :status)))
+	(pcase status
+          ('not-found
+           (unless (or jabber-silent-mode
+                       (y-or-n-p (format "%s doesn't exist.  Create it? "
+					 (jabber-jid-displayname group))))
+             (error "Non-existent groupchat")))
+          ('error
+           (message "Couldn't query groupchat: %s" (plist-get v :error-msg)))
+          ('not-conference
+           (message "%s is not a conference service" (jabber-jid-displayname group))))
+	(unless (eq status 'not-conference)
+          (let* ((features (plist-get v :features))
+		 (password (jabber-muc--session-password jc group))
+		 (rejected-p (jabber-muc--password-rejected-p jc group)))
+            (when (and (not password)
+                       (or (member "muc_passwordprotected" features)
+                           (and popup rejected-p)))
+              (setq password
+                    (read-passwd (format "Password for %s: "
+					 (jabber-jid-displayname group)))))
+            (jabber-muc--check-intent request)
+            (when (member "muc_nonanonymous" features)
+              (puthash group t jabber-muc--nonanonymous-rooms))
+            (jabber-muc--send-join-presence jc group nickname password popup nil request)))
+	t))))
 
 (defalias 'jabber-muc-join-2 #'jabber-muc--disco-callback)
 
 (defun jabber-muc--send-join-presence (jc group nickname password popup
-                                          &optional auto-configure)
-  "Send MUC join presence for GROUP with NICKNAME.
-PASSWORD is the room password, or nil.  When POPUP is non-nil,
-switch to the MUC buffer.  When AUTO-CONFIGURE is non-nil, set
-`jabber-muc--auto-configure' in the buffer so the config form
-opens on room creation.
-
-JC is the Jabber connection."
-  (jabber-muc--remember-password jc group password)
-  ;; Remember that this is a groupchat _before_ sending the stanza.
-  ;; The response might come quicker than you think.
-  (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
-
-  (jabber-send-sexp jc
-		    `(presence ((to . ,(format "%s/%s" group nickname)))
-			       (x ((xmlns . ,jabber-muc-xmlns))
-				  (history ((maxchars . "0")))
-				  ,@(when password
-				      `((password () ,password))))
-			       ,@(jabber-presence-children jc)))
-
-  ;; There, stanza sent.  Now we just wait for the MUC service to
-  ;; mirror the stanza.  This is handled in
-  ;; `jabber-muc-process-presence', where a buffer will be created for
-  ;; the room.
-
-  ;; But if the user interactively asked to join, he/she probably
-  ;; wants the buffer to pop up right now.
-  (when popup
-    (let ((buffer (jabber-muc-create-buffer jc group)))
+                                       &optional auto-configure request)
+  "Send MUC join presence for GROUP with NICKNAME on JC.
+PASSWORD is the room password, or nil.  POPUP selects the MUC buffer.
+AUTO-CONFIGURE arms configuration on room creation.  REQUEST carries
+native ownership; absent REQUEST reserves and retires a fresh owner.
+Return t after synchronous completion, or :cancelled when superseded."
+  (if (null request)
+      (let ((owner (jabber-muc--reserve-intent jc group)))
+        (jabber-muc--with-intent owner
+          (jabber-muc--send-join-presence
+           jc group nickname password popup auto-configure owner)))
+    (jabber-muc--check-intent request)
+    (let ((stanza `(presence ((to . ,(format "%s/%s" group nickname)))
+                            (x ((xmlns . ,jabber-muc-xmlns))
+                               (history ((maxchars . "0")))
+                               ,@(when password `((password () ,password))))
+                            ,@(jabber-presence-children jc)))
+          buffer)
+      (jabber-muc--check-intent request)
+      ;; A create response must already have a registered, armed destination.
       (when auto-configure
+        (setq buffer (jabber-muc-create-buffer jc group))
+        (jabber-muc--check-intent request)
+        (unless (and (buffer-live-p buffer)
+                     (eq (buffer-local-value 'jabber-buffer-connection buffer) jc)
+                     (equal (buffer-local-value 'jabber-group buffer) group))
+          (throw 'jabber-muc--cancelled :cancelled)))
+      (jabber-muc--check-buffer-arm
+       (or buffer (get-buffer (jabber-muc-get-buffer group jc))) jc group)
+      (jabber-muc--check-intent request)
+      (when buffer
         (with-current-buffer buffer
-          (setq jabber-muc--auto-configure t)))
-      (switch-to-buffer buffer))))
+          (unless jabber-muc--auto-configure
+            (aset request 5 buffer)
+            (aset request 6 (list 'jabber-muc--config-arm jc group))
+            (setq jabber-muc--auto-configure (aref request 6)))))
+      ;; Publish bookkeeping before handoff, but never roll it back afterward.
+      (jabber-muc--remember-password jc group password)
+      (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
+      (jabber-muc--check-intent request)
+      (jabber-send-sexp jc stanza)
+      (jabber-muc--check-intent request)
+      (when popup
+        (unless buffer (setq buffer (jabber-muc-create-buffer jc group)))
+        (jabber-muc--check-intent request)
+        (switch-to-buffer buffer)
+        (jabber-muc--check-intent request))
+      t)))
 
 (defalias 'jabber-muc-join-3 #'jabber-muc--send-join-presence)
 
@@ -1402,6 +1516,7 @@ JC is the Jabber connection."
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
+  (jabber-muc--invalidate-intent jc group)
   (let ((nick (jabber-muc-nickname group jc)))
     ;; send unavailable presence to our own nick in room
     (jabber-send-sexp jc
@@ -2176,19 +2291,21 @@ come from the stanza."
      (list :muc-notice notice
            :time (current-time)))))
 
-(defun jabber-muc--enter-extra-notices (nickname status-codes)
+(defun jabber-muc--enter-extra-notices (jc group nickname status-codes)
   "Insert extra ewoc notices for STATUS-CODES into the current MUC buffer.
-NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
+JC and GROUP identify the originating event; NICKNAME is its user.
+Assumes `jabber-chat-ewoc' is current."
   (mapc #'jabber-muc--insert-notice
         (jabber-muc--status-notices status-codes))
   (when (member jabber-muc-status-nick-modified status-codes)
     (jabber-muc--insert-notice
      (concat "Your nick was changed to " nickname " by the server")))
   (when (member jabber-muc-status-room-created status-codes)
-    (if jabber-muc--auto-configure
+    (if (and jabber-muc--auto-configure
+             (not (jabber-muc--foreign-arm-p jabber-muc--auto-configure jc group)))
         (progn
           (setq jabber-muc--auto-configure nil)
-          (jabber-muc-get-config jabber-buffer-connection jabber-group))
+          (jabber-muc-get-config jc group))
       (jabber-muc--insert-notice
        (jabber-muc--room-created-message)))))
 
@@ -2277,7 +2394,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       ;; whether there was an affiliation delta report.
       (when self-p
         (with-current-buffer buffer
-          (jabber-muc--enter-extra-notices nickname status-codes)
+          (jabber-muc--enter-extra-notices jc group nickname status-codes)
           (when (and (eq jabber-chat-encryption 'omemo)
                      (fboundp 'jabber-omemo--prefetch-muc-sessions))
             (jabber-omemo--prefetch-muc-sessions jc group))

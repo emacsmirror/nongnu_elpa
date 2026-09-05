@@ -10,6 +10,10 @@
 
 ;; Pre-define variables that jabber-muc.el expects at load time
 ;; from jabber-core.el and jabber-chat.el:
+(defvar jabber-silent-mode nil)
+(defvar jabber-current-status nil)
+(defvar jabber-current-show nil)
+(defvar jabber-current-priority nil)
 (defvar jabber-body-printers nil)
 (defvar jabber-message-chain nil)
 (defvar jabber-presence-chain nil)
@@ -21,6 +25,19 @@
 (require 'jabber-alert)
 (require 'jabber-muc)
 (require 'jabber-muc-nick-completion)
+
+(defmacro jabber-test-muc-with-active-jc (account &rest body)
+  "Run BODY with ACCOUNT active, restoring its symbol properties afterward."
+  (declare (indent 1))
+  `(let* ((account ,account)
+          (properties (copy-sequence (symbol-plist account)))
+          (jabber-connections (list account)))
+     (unwind-protect
+         (progn
+           (put account :state :session-established)
+           (put account :state-data '(:username "test" :server "example.org"))
+           ,@body)
+       (setplist account properties))))
 
 (defmacro jabber-test-muc-with-rooms (rooms &rest body)
   "Run BODY with ROOMS as active groupchats.
@@ -436,19 +453,20 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-create-sets-auto-configure ()
   "jabber-muc-create sends join presence with auto-configure."
-  (let ((join-args nil))
-    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (jc group nickname password popup &optional auto-configure)
-                 (setq join-args
-                       (list jc group nickname password popup auto-configure))))
-              ((symbol-function 'jabber-bookmarks--publish-one)
-               #'ignore))
-      (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
-    (should join-args)
-    ;; auto-configure (6th) should be t
-    (should (nth 5 join-args))
-    ;; popup (5th) should be t
-    (should (nth 4 join-args))))
+  (jabber-test-muc-with-active-jc 'fake-jc
+    (let ((join-args nil))
+      (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (jc group nickname password popup &optional auto-configure _request)
+                   (setq join-args
+			 (list jc group nickname password popup auto-configure))))
+		((symbol-function 'jabber-bookmarks--publish-one)
+		 #'ignore))
+	(jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
+      (should join-args)
+      ;; auto-configure (6th) should be t
+      (should (nth 5 join-args))
+      ;; popup (5th) should be t
+      (should (nth 4 join-args)))))
 
 (ert-deftest jabber-test-muc-auto-configure-opens-config ()
   "Status 201 with auto-configure flag calls jabber-muc-get-config."
@@ -461,7 +479,7 @@ entry with JC=nil."
                (lambda (jc group)
                  (setq config-called (cons jc group)))))
       (jabber-muc--enter-extra-notices
-       "mynick" (list jabber-muc-status-room-created)))
+       'fake-jc "room@conference.example.com" "mynick" (list jabber-muc-status-room-created)))
     (should (equal config-called '(fake-jc . "room@conference.example.com")))
     (should-not jabber-muc--auto-configure)))
 
@@ -476,7 +494,7 @@ entry with JC=nil."
               ((symbol-function 'jabber-muc--room-created-message)
                (lambda () "room created message")))
       (jabber-muc--enter-extra-notices
-       "mynick" (list jabber-muc-status-room-created)))
+       'fake-jc "room@conference.example.com" "mynick" (list jabber-muc-status-room-created)))
     (should notice-entered)
     (should (eq :muc-notice (car notice-entered)))))
 
@@ -533,17 +551,18 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-create-skips-disco ()
   "jabber-muc-create sends join presence directly without disco."
-  (let ((join-called nil)
-        (disco-called nil))
-    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (&rest _args) (setq join-called t)))
-              ((symbol-function 'jabber-disco-get-info)
-               (lambda (&rest _args) (setq disco-called t)))
-              ((symbol-function 'jabber-bookmarks--publish-one)
-               #'ignore))
-      (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
-    (should join-called)
-    (should-not disco-called)))
+  (jabber-test-muc-with-active-jc 'fake-jc
+    (let ((join-called nil)
+          (disco-called nil))
+      (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (&rest _args) (setq join-called t)))
+		((symbol-function 'jabber-disco-get-info)
+		 (lambda (&rest _args) (setq disco-called t)))
+		((symbol-function 'jabber-bookmarks--publish-one)
+		 #'ignore))
+	(jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
+      (should join-called)
+      (should-not disco-called))))
 
 ;;; Group 14: OMEMO session prefetch on participant join
 
@@ -832,71 +851,74 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-disable-disco-uses-bookmarked-password ()
   "The no-disco join path falls back to a bookmarked password."
-  (let ((jabber-muc-disable-disco-check t)
-        (jabber-muc--session-passwords (make-hash-table :test #'equal))
-        conference-args
-        args)
-    (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
-              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
-              ((symbol-function 'jabber-get-conference-data)
-               (lambda (&rest values)
-                 (setq conference-args values)
-                 "secret"))
-              ((symbol-function 'read-passwd)
-               (lambda (&rest _) (ert-fail "password prompt called")))
-              ((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (&rest values) (setq args values))))
-      (jabber-muc-join 'jc "room@conference.example.com" "nick"))
-    (should-not (gethash '(jc "room@conference.example.com")
-                         jabber-muc--session-passwords))
-    (should (equal '(jc "room@conference.example.com" nil :password)
-                   conference-args))
-    (should (equal '(jc "room@conference.example.com" "nick" "secret" nil)
-                   args))))
+  (jabber-test-muc-with-active-jc 'jc
+    (let ((jabber-muc-disable-disco-check t)
+          (jabber-muc--session-passwords (make-hash-table :test #'equal))
+          conference-args
+          args)
+      (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+		((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+		((symbol-function 'jabber-get-conference-data)
+		 (lambda (&rest values)
+                   (setq conference-args values)
+                   "secret"))
+		((symbol-function 'read-passwd)
+		 (lambda (&rest _) (ert-fail "password prompt called")))
+		((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (&rest values) (setq args values))))
+	(jabber-muc-join 'jc "room@conference.example.com" "nick"))
+      (should-not (gethash '(jc "room@conference.example.com")
+                           jabber-muc--session-passwords))
+      (should (equal '(jc "room@conference.example.com" nil :password)
+                     conference-args))
+      (should (equal '(jc "room@conference.example.com" "nick" "secret" nil)
+                     (seq-take args 5))))))
 
 (ert-deftest jabber-test-muc-prompted-password-survives-self-ping-rejoin ()
   "A prompted room password is retained for forced self-ping rejoin."
-  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
-        (jabber-pending-groupchats (make-hash-table :test #'eq))
-        (jabber-jid-obarray (make-vector 127 0))
-        sent)
-    (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
-               (lambda (_result)
-                 '(:status ok :features ("muc_passwordprotected"))))
-              ((symbol-function 'read-passwd) (lambda (&rest _) "secret"))
-              ((symbol-function 'jabber-presence-children) (lambda (_jc) nil))
-              ((symbol-function 'jabber-send-sexp)
-               (lambda (_jc stanza) (push stanza sent)))
-              ((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
-              ((symbol-function 'jabber-iq-error) (lambda (_xml) '(error nil)))
-              ((symbol-function 'jabber-error-condition)
-               (lambda (_error) 'not-acceptable)))
-      (jabber-muc--disco-callback
-       'jc '("room@example.org" "nick" nil) '(iq nil))
-      (should (equal "secret"
-                     (gethash '(jc "room@example.org")
-                              jabber-muc--session-passwords)))
-      (jabber-muc--self-ping-failed
-       'jc '(iq nil) '("room@example.org" . "nick")))
-    (should (= 2 (length sent)))
-    (dolist (presence sent)
-      (should (equal "secret"
-                     (jabber-xml-path presence '(x password "")))))))
+  (jabber-test-muc-with-active-jc 'jc
+    (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+          (jabber-pending-groupchats (make-hash-table :test #'eq))
+          (jabber-jid-obarray (make-vector 127 0))
+          sent)
+      (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
+		 (lambda (_result)
+                   '(:status ok :features ("muc_passwordprotected"))))
+		((symbol-function 'read-passwd) (lambda (&rest _) "secret"))
+		((symbol-function 'jabber-presence-children) (lambda (_jc) nil))
+		((symbol-function 'jabber-send-sexp)
+		 (lambda (_jc stanza) (push stanza sent)))
+		((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
+		((symbol-function 'jabber-iq-error) (lambda (_xml) '(error nil)))
+		((symbol-function 'jabber-error-condition)
+		 (lambda (_error) 'not-acceptable)))
+	(jabber-muc--disco-callback
+	 'jc '("room@example.org" "nick" nil) '(iq nil))
+	(should (equal "secret"
+                       (gethash '(jc "room@example.org")
+				jabber-muc--session-passwords)))
+	(jabber-muc--self-ping-failed
+	 'jc '(iq nil) '("room@example.org" . "nick")))
+      (should (= 2 (length sent)))
+      (dolist (presence sent)
+	(should (equal "secret"
+                       (jabber-xml-path presence '(x password ""))))))))
 
 (ert-deftest jabber-test-muc-disable-disco-empty-password-stays-nil ()
   "An empty no-disco password prompt keeps the passwordless join shape."
-  (let ((jabber-muc-disable-disco-check t)
-        (jabber-muc--session-passwords (make-hash-table :test #'equal))
-        sent-password)
-    (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
-              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
-              ((symbol-function 'jabber-get-conference-data) #'ignore)
-              ((symbol-function 'read-passwd) (lambda (&rest _) ""))
-              ((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (_jc _group _nick password _popup &optional _configure)
-                 (setq sent-password password))))
-      (jabber-muc-join 'jc "room@example.org" "nick" t)
-      (should-not sent-password))))
+  (jabber-test-muc-with-active-jc 'jc
+    (let ((jabber-muc-disable-disco-check t)
+          (jabber-muc--session-passwords (make-hash-table :test #'equal))
+          sent-password)
+      (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+		((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+		((symbol-function 'jabber-get-conference-data) #'ignore)
+		((symbol-function 'read-passwd) (lambda (&rest _) ""))
+		((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (_jc _group _nick password _popup &optional _configure _request)
+                   (setq sent-password password))))
+	(jabber-muc-join 'jc "room@example.org" "nick" t)
+	(should-not sent-password)))))
 
 (ert-deftest jabber-test-muc-session-password-cleared-on-leave ()
   "Leaving a room clears its in-memory password."
@@ -926,17 +948,18 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-disco-preserves-invited-password ()
   "Disco joins use a direct invitation password even without a feature flag."
-  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
-        sent-password)
-    (jabber-muc--remember-password 'jc "room@example.org" "secret")
-    (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
-               (lambda (_result) '(:status ok :features nil)))
-              ((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (_jc _group _nick password _popup &optional _configure)
-                 (setq sent-password password))))
-      (jabber-muc--disco-callback
-       'jc '("room@example.org" "romeo" nil) nil)
-      (should (equal sent-password "secret")))))
+  (jabber-test-muc-with-active-jc 'jc
+    (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+          sent-password)
+      (jabber-muc--remember-password 'jc "room@example.org" "secret")
+      (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
+		 (lambda (_result) '(:status ok :features nil)))
+		((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (_jc _group _nick password _popup &optional _configure _request)
+                   (setq sent-password password))))
+	(jabber-muc--disco-callback
+	 'jc '("room@example.org" "romeo" nil) nil)
+	(should (equal sent-password "secret"))))))
 
 (ert-deftest jabber-test-muc-session-password-is-account-scoped ()
   "Passwords for the same room do not cross account boundaries."
@@ -951,56 +974,58 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-rejected-session-password-prompts-for-replacement ()
   "A rejected session password prompts without changing other cached secrets."
-  (let ((jabber-muc-disable-disco-check nil)
-        (jabber-muc--session-passwords (make-hash-table :test #'equal))
-        (room "room@example.org")
-        (bookmark-reads 0)
-        prompt
-        sent)
-    (puthash (list 'jc room) "rejected" jabber-muc--session-passwords)
-    (puthash '(jc "other@example.org") "other-room"
-             jabber-muc--session-passwords)
-    (puthash '(other-jc "room@example.org") "other-account"
-             jabber-muc--session-passwords)
-    (cl-letf (((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
-              ((symbol-function 'jabber-muc-get-buffer)
-               (lambda (&rest _) " *missing-muc-test*"))
-              ((symbol-function 'run-with-timer) #'ignore)
-              ((symbol-function 'message) #'ignore)
-              ((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
-              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
-              ((symbol-function 'jabber-muc--validate-disco-result)
-               (lambda (_result) '(:status no-disco :features nil)))
-              ((symbol-function 'jabber-disco-get-info)
-               (lambda (jc _group _node callback closure)
-                 (funcall callback jc closure nil)))
-              ((symbol-function 'jabber-get-conference-data)
-               (lambda (&rest _)
-                 (setq bookmark-reads (1+ bookmark-reads))
-                 "bookmarked"))
-              ((symbol-function 'read-passwd)
-               (lambda (&rest _)
-                 (setq prompt t)
-                 "replacement"))
-              ((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (&rest args) (setq sent args))))
-      (jabber-muc--process-self-leave
-       'jc room "error" nil
-       `(error ((code . "401"))
-               (not-authorized ((xmlns . ,jabber-stanzas-xmlns))))
-       nil nil)
-      (should-not (gethash (list 'jc room) jabber-muc--session-passwords
-                           'missing))
-      (should (equal "other-room"
-                     (gethash '(jc "other@example.org")
-                              jabber-muc--session-passwords)))
-      (should (equal "other-account"
-                     (gethash '(other-jc "room@example.org")
-                              jabber-muc--session-passwords)))
-      (jabber-muc-join 'jc room "nick" t))
-    (should prompt)
-    (should (zerop bookmark-reads))
-    (should (equal '(jc "room@example.org" "nick" "replacement" t) sent))))
+  (jabber-test-muc-with-active-jc 'jc
+    (let ((jabber-muc-disable-disco-check nil)
+          (jabber-muc--session-passwords (make-hash-table :test #'equal))
+          (room "room@example.org")
+          (bookmark-reads 0)
+          prompt
+          sent)
+      (puthash (list 'jc room) "rejected" jabber-muc--session-passwords)
+      (puthash '(jc "other@example.org") "other-room"
+               jabber-muc--session-passwords)
+      (puthash '(other-jc "room@example.org") "other-account"
+               jabber-muc--session-passwords)
+      (cl-letf (((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
+		((symbol-function 'jabber-muc-get-buffer)
+		 (lambda (&rest _) " *missing-muc-test*"))
+		((symbol-function 'run-with-timer) #'ignore)
+		((symbol-function 'message) #'ignore)
+		((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+		((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+		((symbol-function 'jabber-muc--validate-disco-result)
+		 (lambda (_result) '(:status no-disco :features nil)))
+		((symbol-function 'jabber-disco-get-info)
+		 (lambda (jc _group _node callback closure)
+                   (funcall callback jc closure nil)))
+		((symbol-function 'jabber-get-conference-data)
+		 (lambda (&rest _)
+                   (setq bookmark-reads (1+ bookmark-reads))
+                   "bookmarked"))
+		((symbol-function 'read-passwd)
+		 (lambda (&rest _)
+                   (setq prompt t)
+                   "replacement"))
+		((symbol-function 'jabber-muc--send-join-presence)
+		 (lambda (&rest args) (setq sent args))))
+	(jabber-muc--process-self-leave
+	 'jc room "error" nil
+	 `(error ((code . "401"))
+		 (not-authorized ((xmlns . ,jabber-stanzas-xmlns))))
+	 nil nil)
+	(should-not (gethash (list 'jc room) jabber-muc--session-passwords
+                             'missing))
+	(should (equal "other-room"
+                       (gethash '(jc "other@example.org")
+				jabber-muc--session-passwords)))
+	(should (equal "other-account"
+                       (gethash '(other-jc "room@example.org")
+				jabber-muc--session-passwords)))
+	(jabber-muc-join 'jc room "nick" t))
+      (should prompt)
+      (should (zerop bookmark-reads))
+      (should (equal '(jc "room@example.org" "nick" "replacement" t)
+                     (seq-take sent 5))))))
 
 (ert-deftest jabber-test-muc-unrelated-error-preserves-session-password ()
   "A non-authorization MUC error preserves the cached session password."
@@ -1343,7 +1368,7 @@ entry with JC=nil."
                (lambda (notice)
                  (push notice notices))))
       (jabber-muc--enter-extra-notices
-       "me"
+       nil "room@example.org" "me"
        (list jabber-muc-status-nonanonymous
              jabber-muc-status-logging-enabled
              jabber-muc-status-now-nonanonymous))
@@ -1883,6 +1908,1028 @@ entry with JC=nil."
               ((symbol-function 'jabber-connection-active-p)
                (lambda (jc) (eq jc 'live-jc))))
       (should (eq (jabber-muc--config-active-connection) 'live-jc)))))
+
+(defmacro jabber-test-muc-with-native-intent (&rest body)
+  "Run BODY with isolated native join state and captured synthetic sends."
+  (declare (indent 0))
+  `(let ((jc (make-symbol "native-jc"))
+         (other (make-symbol "native-other"))
+         (room "room@example.org")
+         (jabber-db-path nil)
+         (jabber-current-status nil)
+         (jabber-current-show nil)
+         (jabber-current-priority nil)
+         (jabber-muc-disable-disco-check nil)
+         (jabber-muc--rooms (make-hash-table :test #'equal))
+         (jabber-muc--session-passwords (make-hash-table :test #'equal))
+         (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+         (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+         (jabber-pending-groupchats (make-hash-table :test #'eq))
+         (jabber-jid-obarray (make-vector 127 0))
+         (jabber-bookmarks-auto-add nil)
+         replies sent)
+     (let ((jabber-connections (list jc other)))
+       (dolist (account (list jc other))
+	 (put account :state :session-established)
+	 (put account :state-data
+              (list :connection (make-symbol "transport") :session-id "session")))
+       (cl-letf (((symbol-function 'jabber-disco-get-info)
+                  (lambda (account _group _node callback closure)
+                    (setq replies (append replies
+                                          (list (lambda (result)
+                                                  (funcall callback account closure result)))))))
+		 ((symbol-function 'jabber-muc--validate-disco-result)
+                  (lambda (result) (or result '(:status ok))))
+		 ((symbol-function 'jabber-get-conference-data) #'ignore)
+		 ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+		 ((symbol-function 'jabber-muc-create-buffer)
+                  (lambda (&rest _) (current-buffer)))
+		 ((symbol-function 'switch-to-buffer) #'ignore)
+		 ((symbol-function 'jabber-presence-children) #'ignore)
+		 ((symbol-function 'jabber-connection-bare-jid)
+                  (lambda (account) (symbol-name account)))
+		 ((symbol-function 'jabber-send-sexp)
+                  (lambda (account stanza)
+                    (push (list account (jabber-xml-get-attribute stanza 'to)
+				(jabber-xml-get-attribute stanza 'type)) sent))))
+	 ,@body))))
+
+(ert-deftest jabber-test-muc-native-intent-latest-reply-orders ()
+  "Only the latest native request sends, in either discovery reply order."
+  (dolist (order '((0 1) (1 0)))
+    (jabber-test-muc-with-native-intent
+      (jabber-muc-join jc room "old")
+      (jabber-muc-join jc room "new")
+      (dolist (index order) (funcall (nth index replies) nil))
+      (should (equal sent (list (list jc "room@example.org/new" nil)))))))
+
+(ert-deftest jabber-test-muc-native-intent-prompt-reentry ()
+  "Password and create prompts cannot revive a superseded request."
+  (dolist (result '((:status ok :features ("muc_passwordprotected"))
+                    (:status not-found)))
+    (jabber-test-muc-with-native-intent
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _)
+                   (jabber-muc-join jc room "new") "secret"))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (&rest _)
+                   (jabber-muc-join jc room "new") t)))
+        (jabber-muc-join jc room "old")
+        (funcall (car replies) result)
+        (should-not sent)
+        (funcall (cadr replies) nil)
+        (should (equal sent (list (list jc "room@example.org/new" nil))))))))
+
+(ert-deftest jabber-test-muc-native-intent-retirement ()
+  "Direct send, leave and logical reset retire outstanding discovery."
+  (dolist (action '(direct leave reset))
+    (jabber-test-muc-with-native-intent
+      (jabber-muc-join jc room "old")
+      (pcase action
+        ('direct (jabber-muc-join-3 jc room "direct" nil nil))
+        ('leave (jabber-muc-leave jc room))
+        ('reset (jabber-muc--session-reset jc)))
+      (let ((before (copy-tree sent)))
+        (funcall (car replies) nil)
+        (should (equal sent before))))))
+
+(ert-deftest jabber-test-muc-native-intent-context-replaced ()
+  "A replaced transport or logical session blocks late and nested sends."
+  (dolist (field '(:connection :session-id :nil-entry-token))
+    (dolist (during-prompt '(nil t))
+      (jabber-test-muc-with-native-intent
+        (cl-flet ((replace-context ()
+                    (put jc :state-data
+                         (plist-put (fsm-get-state-data jc) field
+                                    (make-symbol "successor")))))
+          (cl-letf (((symbol-function 'read-passwd)
+                     (lambda (&rest _) (replace-context) "secret")))
+            (jabber-muc-join jc room "old")
+            (unless during-prompt (replace-context))
+            (funcall (car replies)
+                     (when during-prompt
+                       '(:status ok :features ("muc_passwordprotected"))))
+            (should-not sent)))))))
+
+(ert-deftest jabber-test-muc-native-intent-independent-scopes ()
+  "A newer request leaves another room and another account untouched."
+  (jabber-test-muc-with-native-intent
+    (jabber-muc-join jc room "old")
+    (jabber-muc-join other room "other")
+    (jabber-muc-join jc "second@example.org" "second")
+    (jabber-muc-join jc room "new")
+    (dolist (reply replies) (funcall reply nil))
+    (should (equal (reverse sent)
+                   (list (list other "room@example.org/other" nil)
+                         (list jc "second@example.org/second" nil)
+                         (list jc "room@example.org/new" nil))))))
+
+(ert-deftest jabber-test-muc-native-intent-joined-preserved ()
+  "An already joined command opens, syncs and pings without new presence."
+  (jabber-test-muc-with-native-intent
+    (let (effects)
+      (jabber-muc-join jc room "old")
+      (jabber-muc-join-set room jc "joined")
+      (cl-letf (((symbol-function 'jabber-muc-create-buffer)
+                 (lambda (&rest _) (current-buffer)))
+                ((symbol-function 'switch-to-buffer)
+                 (lambda (&rest _) (push 'open effects)))
+                ((symbol-function 'jabber-mam-muc-joined)
+                 (lambda (&rest _) (push 'sync effects)))
+                ((symbol-function 'jabber-muc--self-ping-one)
+                 (lambda (&rest _) (push 'ping effects))))
+        (jabber-muc-join jc room "joined" t))
+      (funcall (car replies) nil)
+      (should-not sent)
+      (should (equal effects '(ping sync open)))
+      (should (equal (jabber-muc-nickname room jc) "joined")))))
+
+(ert-deftest jabber-test-muc-native-intent-legacy-context ()
+  "Legacy callback aliases capture context before prompting."
+  (jabber-test-muc-with-native-intent
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest _)
+                 (put jc :state-data '(:connection replacement)) "secret")))
+      (jabber-muc-join-2 jc (list room "old" nil)
+                         '(:status ok :features ("muc_passwordprotected")))
+      (should-not sent))))
+
+(ert-deftest jabber-test-muc-native-intent-no-disco-reentry ()
+  "A no-disco password prompt cannot replace a nested newer join."
+  (jabber-test-muc-with-native-intent
+    (let ((jabber-muc-disable-disco-check t))
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _)
+                   (jabber-muc-join jc room "new") "old-secret")))
+        (jabber-muc-join jc room "old" t))
+      (should (equal sent (list (list jc "room@example.org/new" nil)))))))
+
+(ert-deftest jabber-test-muc-native-intent-pending-reply-orders ()
+  "Latest discovery also wins while an earlier join presence is pending."
+  (dolist (order '((0 1) (1 0)))
+    (jabber-test-muc-with-native-intent
+      (jabber-muc-join-3 jc room "pending" nil nil)
+      (setq sent nil)
+      (jabber-muc-join jc room "old")
+      (jabber-muc-join jc room "new")
+      (dolist (index order) (funcall (nth index replies) nil))
+      (should (equal sent (list (list jc "room@example.org/new" nil)))))))
+
+(ert-deftest jabber-test-muc-native-intent-completion-retires-owner ()
+  "Completion and cancellation release only the request that completed."
+  (dolist (outcome '(success not-conference quit error))
+    (jabber-test-muc-with-native-intent
+      (cl-letf (((symbol-function 'read-passwd)
+                 (lambda (&rest _) (signal outcome nil))))
+        (jabber-muc-join jc room "nick")
+        (condition-case nil
+            (funcall (car replies)
+                     (pcase outcome
+                       ('success '(:status ok))
+                       ('not-conference '(:status not-conference))
+                       (_ '(:status ok :features ("muc_passwordprotected")))))
+          ((error quit) nil)))
+      (should-not (get jc 'jabber-muc--join-intents)))))
+
+(ert-deftest jabber-test-muc-native-intent-construction-successor ()
+  "Real presence hooks cannot hand off an old join after a newer one."
+  (let ((dispatcher (symbol-function 'jabber-presence-children)))
+    (dolist (entry '(disco no-disco direct))
+      (dolist (complete '(nil t))
+        (jabber-test-muc-with-native-intent
+          (let ((jabber-presence-element-functions
+                 (list (lambda (_account)
+                         (let ((jabber-presence-element-functions nil)
+                               (jabber-muc-disable-disco-check nil))
+                           (jabber-muc-join jc room "new")
+                           (when complete (funcall (car (last replies)) nil)))
+                         nil))))
+            (cl-letf (((symbol-function 'jabber-presence-children) dispatcher))
+              (pcase entry
+                ('disco
+                 (jabber-muc-join jc room "old")
+                 (funcall (car replies) nil))
+                ('no-disco
+                 (let ((jabber-muc-disable-disco-check t))
+                   (jabber-muc-join jc room "old")))
+                ('direct (jabber-muc-join-3 jc room "old" "old-secret" nil)))
+              (unless complete
+                (should-not sent)
+                (let ((jabber-presence-element-functions nil))
+                  (funcall (car (last replies)) nil)))))
+          (should (equal sent (list (list jc "room@example.org/new" nil))))
+          (should (equal (gethash (jabber-jid-symbol room)
+                                  jabber-pending-groupchats) "new"))
+          (should-not (jabber-muc--session-password jc room))
+          (should-not (get jc 'jabber-muc--join-intents)))))))
+
+(ert-deftest jabber-test-muc-native-intent-construction-cancelled ()
+  "Context changes and cancellation in real presence hooks prevent writes."
+  (let ((dispatcher (symbol-function 'jabber-presence-children)))
+    (dolist (entry '(disco no-disco direct))
+      (dolist (action '(:connection :session-id :nil-entry-token leave reset))
+        (jabber-test-muc-with-native-intent
+          (let ((jabber-presence-element-functions
+                 (list (lambda (_account)
+                         (pcase action
+                           ('leave (jabber-muc-leave jc room))
+                           ('reset (jabber-muc--session-reset jc))
+                           (_ (put jc :state-data
+                                   (plist-put (fsm-get-state-data jc) action
+                                              (make-symbol "replacement")))))
+                         nil))))
+            (cl-letf (((symbol-function 'jabber-presence-children) dispatcher)
+                      ((symbol-function 'read-passwd)
+                       (lambda (&rest _) "old-secret")))
+              (pcase entry
+                ('disco
+                 (jabber-muc-join jc room "old")
+                 (funcall (car replies)
+                          '(:status ok :features ("muc_passwordprotected"))))
+                ('no-disco
+                 (let ((jabber-muc-disable-disco-check t))
+                   (jabber-muc-join jc room "old" t)))
+                ('direct (jabber-muc-join-3 jc room "old" "old-secret" nil)))))
+          (should-not (seq-find (lambda (send) (null (nth 2 send))) sent))
+          (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats))
+          (should-not (jabber-muc--session-password jc room))
+          (should-not (get jc 'jabber-muc--join-intents)))))))
+
+(defun jabber-test-muc-native-create-completion (phase action)
+  "Exercise native creation interrupted at PHASE by ACTION."
+  (require 'jabber-bookmarks)
+  (let ((dispatcher (symbol-function 'jabber-presence-children)))
+    (jabber-test-muc-with-native-intent
+      (with-temp-buffer
+        (let ((buffer (current-buffer))
+              (jabber-bookmarks (make-hash-table :test #'equal))
+              publications callbacks opened created interrupted)
+          (cl-labels
+              ((interrupt (where)
+                 (when (and (eq phase where) (not interrupted))
+                   (setq interrupted t)
+                   (pcase action
+                     ('join (jabber-muc-join jc room "new"))
+                     ('leave (jabber-muc-leave jc room))
+                     ('reset (jabber-muc--session-reset jc))
+                     ((or 'error 'quit)
+                      (jabber-muc-join jc room "new")
+                      (signal action nil))))))
+            (let ((jabber-presence-element-functions
+                   (list (lambda (_) (interrupt 'presence) nil))))
+              (cl-letf (((symbol-function 'jabber-presence-children) dispatcher)
+                        ((symbol-function 'jabber-bookmarks--legacy-p) (lambda (_) nil))
+                        ((symbol-function 'jabber-bookmarks2--publish)
+                         (lambda (_jc bookmark success _failure)
+                           (push bookmark publications)
+                           (push success callbacks)))
+                        ((symbol-function 'jabber-bookmarks--refresh-buffer) #'ignore)
+                        ((symbol-function 'jabber-send-sexp)
+                         (lambda (account stanza)
+                           (push (list account (jabber-xml-get-attribute stanza 'to)
+                                       (jabber-xml-get-attribute stanza 'type)) sent)
+                           (interrupt 'send)))
+                        ((symbol-function 'jabber-muc-create-buffer)
+                         (lambda (account target)
+                           (setq created t)
+                           (with-current-buffer buffer
+                             (setq-local jabber-buffer-connection account)
+                             (setq-local jabber-group target))
+                           (interrupt 'buffer) buffer))
+                        ((symbol-function 'switch-to-buffer)
+                         (lambda (&rest _) (setq opened t) (interrupt 'switch))))
+                (let ((caught nil))
+                  (condition-case err
+                      (jabber-muc-create jc room "old")
+                    ((error quit) (setq caught (car err))))
+                  (should (eq caught (and (memq action '(error quit)) action))))
+                (if phase
+                    (progn
+                      (should-not publications)
+                      (should-not jabber-muc--auto-configure)
+                      (when (memq phase '(presence send buffer))
+                        (should-not opened))
+                      (when (eq phase 'presence) (should-not created)))
+                  (should opened)
+                  (should jabber-muc--auto-configure)
+                  (should (equal (mapcar (lambda (bm) (plist-get bm :nick))
+                                         publications) '("old"))))
+                ;; Only real transport handoffs may have a success callback.
+                (dolist (callback callbacks) (funcall callback jc nil nil))
+                (let ((jabber-presence-element-functions nil))
+                  (dolist (reply replies) (funcall reply nil)))
+                (cond
+                 ((or (eq action 'join) (memq action '(error quit)))
+                  (should (equal (gethash (jabber-jid-symbol room)
+                                          jabber-pending-groupchats) "new"))
+                  (should (equal (car sent) (list jc "room@example.org/new" nil))))
+                 ((null phase)
+                  (should (equal (gethash (jabber-jid-symbol room)
+                                          jabber-pending-groupchats) "old")))
+                 ((eq phase 'presence)
+                  (should-not (seq-find (lambda (send) (null (nth 2 send))) sent)))))
+              (should-not (get jc 'jabber-muc--join-intents)))))))))
+
+(ert-deftest jabber-test-muc-native-create-construction-cancelled ()
+  "An obsolete create never publishes a bookmark that can revive it."
+  (dolist (action '(join leave reset))
+    (jabber-test-muc-native-create-completion 'presence action)))
+
+(ert-deftest jabber-test-muc-native-create-post-callback-cancelled ()
+  "Send and UI reentry suppress obsolete configuration and publication."
+  (dolist (phase '(send buffer switch))
+    (dolist (action '(join leave reset))
+      (jabber-test-muc-native-create-completion phase action))))
+
+(ert-deftest jabber-test-muc-native-create-errors-preserve-successor ()
+  "Errors and quits propagate without retiring a nested successor."
+  (dolist (phase '(presence send buffer switch))
+    (dolist (action '(error quit))
+      (jabber-test-muc-native-create-completion phase action))))
+
+(ert-deftest jabber-test-muc-native-create-success ()
+  "Successful creation opens, configures and publishes through real callbacks."
+  (jabber-test-muc-native-create-completion nil nil))
+
+(defmacro jabber-test-muc-with-native-room (&rest body)
+  "Run BODY with real native buffers and isolated external effects."
+  (declare (indent 0))
+  `(let* ((jc (make-symbol "room-a"))
+          (other (make-symbol "room-b"))
+          (room "native@example.org")
+          (jabber-connections (list jc other))
+          (jabber-db-path nil)
+          (jabber-groupchat-buffer-format " *native-%n-%a*")
+          (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+          (jabber-muc--rooms (make-hash-table :test #'equal))
+          (jabber-muc--session-passwords (make-hash-table :test #'equal))
+          (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+          (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+          (jabber-muc-participants nil)
+          (jabber-pending-groupchats (make-hash-table :test #'eq))
+          (jabber-jid-obarray (make-vector 127 0))
+          (jabber-bookmarks-auto-add nil)
+          (jabber-presence-element-functions nil)
+          (jabber-chat-mode-hook nil)
+          (before (buffer-list))
+          sent published config)
+     (dolist (account jabber-connections)
+       (put account :state :session-established)
+       (put account :state-data
+            (list :connection (make-symbol "transport") :session-id "session"
+                  :username (symbol-name account) :server "example.org")))
+     (save-window-excursion
+       (unwind-protect
+           (cl-letf (((symbol-function 'jabber-send-sexp)
+                      (lambda (account stanza) (push (list account stanza) sent)))
+                     ((symbol-function 'jabber-send-iq)
+                      (lambda (account target type query callback context &rest _)
+                        (when (equal (jabber-xml-get-attribute query 'xmlns)
+                                     jabber-muc-xmlns-owner)
+                          (push (list account target type callback context
+                                      jabber-muc--auto-configure) config))))
+                     ((symbol-function 'jabber-bookmarks--publish-one)
+                      (lambda (&rest args) (push args published)))
+                     ((symbol-function 'jabber-mam-muc-joined) #'ignore)
+                     ((symbol-function 'run-with-timer) #'ignore))
+             ,@body)
+         (dolist (buffer (seq-difference (buffer-list) before))
+           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(defun jabber-test-muc-native-201 (jc room)
+  "Deliver real self-presence creating ROOM on JC."
+  (jabber-muc-process-presence
+   jc `(presence ((from . ,(concat room "/nick")))
+                 (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                    (item ((affiliation . "owner") (role . "moderator")))
+                    (status ((code . "110")))
+                    (status ((code . "201")))))))
+
+(ert-deftest jabber-test-muc-native-room-collision ()
+  "Real constructor rejects a foreign arm before any rebind or handoff."
+  (jabber-test-muc-with-native-room
+    (let ((jabber-groupchat-buffer-format " *native-%n*"))
+      (jabber-muc-create jc room "nick")
+      (let* ((buffer (jabber-muc-find-buffer room jc))
+             (arm (buffer-local-value 'jabber-muc--auto-configure buffer))
+             (keys (buffer-local-value 'jabber-buffer-registry--keys buffer)))
+        (should-error (jabber-muc-create other room "other") :type 'user-error)
+        (should-error (jabber-muc-create-buffer other room) :type 'user-error)
+        (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+        (should (eq jc (buffer-local-value 'jabber-buffer-connection buffer)))
+        (should (equal keys (buffer-local-value 'jabber-buffer-registry--keys buffer)))
+        (should (= (length sent) 1))
+        (should (= (length published) 1))
+        (should-not (get other 'jabber-muc--join-intents))
+        ;; Historical aliases can route presence without constructing a buffer.
+        (jabber-buffer-registry-register
+         'muc (jabber-muc--buffer-key other room) buffer)
+        (jabber-test-muc-native-201 other room)
+        (should-not config)
+        (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+        (jabber-test-muc-native-201 jc room)
+        (should (= (length config) 1))
+        (should (eq (caar config) jc))
+        (should-not (nth 5 (car config)))
+        (jabber-test-muc-native-201 jc room)
+        (should (= (length config) 1))
+        (jabber-muc-create other room "retry")
+        (should (= (length published) 2))
+        (jabber-test-muc-native-201 other room)
+        (should (= (length config) 2))))))
+
+(ert-deftest jabber-test-muc-native-room-progress ()
+  "201 during send, constructor reentry or real switching is positive progress."
+  (dolist (phase '(send constructor switch))
+    (jabber-test-muc-with-native-room
+      (let ((send (symbol-function 'jabber-send-sexp))
+            fired)
+        (cl-labels ((deliver ()
+                      (unless fired
+                        (setq fired t)
+                        (when (eq phase 'constructor)
+                          (jabber-muc-create-buffer jc room))
+                        (jabber-test-muc-native-201 jc room))))
+          (let ((buffer-list-update-hook
+                 (when (eq phase 'switch)
+                   (list (lambda ()
+                           (when (and (equal jabber-group room)
+                                      (eq jabber-buffer-connection jc)
+                                      sent)
+                             (deliver)))))))
+            (cl-letf (((symbol-function 'jabber-send-sexp)
+                       (lambda (account stanza)
+                         (funcall send account stanza)
+                         (unless (eq phase 'switch) (deliver)))))
+              (jabber-muc-create jc room "nick")))
+          (should fired)
+          (should (= (length config) 1))
+          (should-not (nth 5 (car config)))
+          (should (= (length published) 1))
+          (with-current-buffer (jabber-muc-find-buffer room jc)
+            (should-not jabber-muc--auto-configure))
+          (should-not (get jc 'jabber-muc--join-intents)))))))
+
+(ert-deftest jabber-test-muc-native-room-origin ()
+  "Notice reentry cannot change the account or room of a config request."
+  (dolist (manual '(nil t manual))
+    (jabber-test-muc-with-native-room
+      (jabber-muc-create jc room "nick")
+      (let* ((buffer (jabber-muc-find-buffer room jc))
+             (insert (symbol-function 'jabber-chat-ewoc-enter)))
+        (with-current-buffer buffer
+          (when manual (setq jabber-muc--auto-configure manual)))
+        (cl-letf (((symbol-function 'jabber-chat-ewoc-enter)
+                   (lambda (&rest args)
+                     (prog1 (apply insert args)
+                       (setq jabber-buffer-connection other
+                             jabber-group "another@example.org")))))
+          (jabber-test-muc-native-201 jc room))
+        (should (= (length config) 1))
+        (should (eq (caar config) jc))
+        (should (equal (cadar config) room))
+        (should (equal (nth 4 (car config)) (list buffer room)))
+        (should-not (nth 5 (car config)))))))
+
+(ert-deftest jabber-test-muc-native-room-setup-collision ()
+  "Setup reentry cannot install a foreign arm before a final rebind."
+  (jabber-test-muc-with-native-room
+    (let ((setup (symbol-function 'jabber-chat-mode-setup)) foreign)
+      (cl-letf (((symbol-function 'jabber-chat-mode-setup)
+                 (lambda (&rest args)
+                   (apply setup args)
+                   (setq foreign (list 'jabber-muc--config-arm other room))
+                   (setq jabber-muc--auto-configure foreign
+                         jabber-buffer-connection other))))
+        (should-error (jabber-muc-create jc room "nick") :type 'user-error))
+      (with-current-buffer (get-buffer (jabber-muc-get-buffer room jc))
+        (should (eq jabber-buffer-connection other))
+        (should (eq jabber-muc--auto-configure foreign))
+        (should-not jabber-buffer-registry--keys))
+      (should-not sent)
+      (should-not published))))
+
+(ert-deftest jabber-test-muc-native-intent-joined-constructor-reentry ()
+  "A joined room's yielding constructor cannot open a superseded intent."
+  (jabber-test-muc-with-native-intent
+    (jabber-muc-join-set room jc "joined")
+    (let (effects)
+      (cl-letf (((symbol-function 'jabber-muc-create-buffer)
+                 (lambda (&rest _)
+                   (jabber-muc-leave jc room)
+                   (current-buffer)))
+                ((symbol-function 'switch-to-buffer)
+                 (lambda (&rest _) (push 'open effects)))
+                ((symbol-function 'jabber-mam-muc-joined)
+                 (lambda (&rest _) (push 'sync effects)))
+                ((symbol-function 'jabber-muc--self-ping-one)
+                 (lambda (&rest _) (push 'ping effects))))
+        (jabber-muc-join jc room "joined" t))
+      (should-not effects))))
+
+(ert-deftest jabber-test-muc-native-constructor-entry-effects ()
+  "Reject foreign permission before mode callbacks, not merely final rebind."
+  (jabber-test-muc-with-native-room
+    (let* ((buffer (get-buffer-create (jabber-muc-get-buffer room jc)))
+           (arm (list 'jabber-muc--config-arm other room))
+           entered
+           (jabber-chat-mode-hook (list (lambda () (setq entered t)))))
+      (with-current-buffer buffer
+        (setq-local jabber-muc--auto-configure arm)
+        (setq-local jabber-buffer-connection other))
+      (condition-case nil
+          (jabber-muc-create-buffer jc room)
+        (user-error nil))
+      (should-not entered)
+      (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+      (should (eq other (buffer-local-value 'jabber-buffer-connection buffer)))
+      (should-not (buffer-local-value 'jabber-buffer-registry--keys buffer)))))
+
+(ert-deftest jabber-test-muc-native-create-arm-unwind ()
+  "Old cancellation, error and quit preserve a new create's exact permission."
+  (dolist (successor '(nil completed))
+    (dolist (condition '(nil error quit))
+      (jabber-test-muc-with-native-room
+        (let ((send (symbol-function 'jabber-send-sexp))
+              fired new-arm new-owner caught)
+          (cl-letf (((symbol-function 'jabber-send-sexp)
+                     (lambda (account stanza)
+                       (funcall send account stanza)
+                       (unless fired
+                         (setq fired t)
+                         (when successor
+                           (jabber-muc-create jc room "successor")
+                           (setq new-arm
+                                 (buffer-local-value 'jabber-muc--auto-configure
+                                                     (jabber-muc-find-buffer room jc))))
+                         (when condition (signal condition '("old-create" detail)))))))
+            (condition-case err
+                (jabber-muc-create jc room "old")
+              ((error quit) (setq caught err))))
+          (should (equal caught (and condition (list condition "old-create" 'detail))))
+          (with-current-buffer (jabber-muc-find-buffer room jc)
+            (if successor
+                (should (eq jabber-muc--auto-configure new-arm))
+              (should (eq (not jabber-muc--auto-configure) (and condition t)))))
+          (should (eq (cdr (assoc room (get jc 'jabber-muc--join-intents))) new-owner))
+          (should (= (length published) (if successor 1 (if condition 0 1)))))))))
+
+(ert-deftest jabber-test-muc-native-consumed-unwind ()
+  "Consumed permissions stay consumed across later native cancellation."
+  (dolist (action '(join leave reset error quit))
+    (jabber-test-muc-with-native-room
+      (let ((send (symbol-function 'jabber-send-sexp)) fired caught)
+        (cl-letf (((symbol-function 'jabber-send-sexp)
+                   (lambda (account stanza)
+                     (funcall send account stanza)
+                     (unless fired
+                       (setq fired t)
+                       (jabber-test-muc-native-201 jc room)
+                       (pcase action
+                         ('join (let ((jabber-muc-disable-disco-check t))
+                                  (jabber-muc-join jc room "new")))
+                         ('leave (jabber-muc-leave jc room))
+                         ('reset (jabber-muc--session-reset jc))
+                         (_ (signal action '("consumed" detail))))))))
+          (condition-case err
+              (jabber-muc-create jc room "old")
+            ((error quit) (setq caught err))))
+        (should (equal caught (and (memq action '(error quit))
+                                  (list action "consumed" 'detail))))
+        (should (= (length config) 1))
+        (should-not (nth 5 (car config)))
+        (should-not published)
+        (with-current-buffer (jabber-muc-find-buffer room jc)
+          (should-not jabber-muc--auto-configure))
+        (jabber-test-muc-native-201 jc room)
+        (should (= (length config) 1))))))
+
+(ert-deftest jabber-test-muc-native-permission-invalidation ()
+  "Ordinary join, leave and reset clear only matching package permissions."
+  (dolist (kind '(nil t manual owned foreign-account foreign-room))
+    (dolist (action '(join leave reset))
+      (jabber-test-muc-with-native-room
+        (let* ((buffer (jabber-muc-create-buffer jc room))
+               (arm (pcase kind
+                      ('owned (list 'jabber-muc--config-arm jc room))
+                      ('foreign-account (list 'jabber-muc--config-arm other room))
+                      ('foreign-room (list 'jabber-muc--config-arm jc "else@example.org"))
+                      (_ kind))))
+          (with-current-buffer buffer (setq jabber-muc--auto-configure arm))
+          (pcase action
+            ('join
+             (let ((jabber-muc-disable-disco-check t))
+               (if (memq kind '(foreign-account foreign-room))
+                   (should-error (jabber-muc-join jc room "new") :type 'user-error)
+                 (jabber-muc-join jc room "new"))))
+            ('leave (jabber-muc-leave jc room))
+            ('reset (jabber-muc--session-reset jc)))
+          (with-current-buffer buffer
+            (should (eq jabber-muc--auto-configure
+                        (if (or (eq kind 'owned)
+                                (and (eq kind 'foreign-room) (eq action 'reset)))
+                            nil arm)))))))))
+
+(ert-deftest jabber-test-muc-native-scope-collisions ()
+  "Rendered collisions reject ordinary popup joins without bookkeeping."
+  (dolist (scope '(account equal-account room))
+    (jabber-test-muc-with-native-room
+      (let ((jabber-groupchat-buffer-format " *native-collision*"))
+        (when (eq scope 'equal-account)
+          (put other :state-data (copy-sequence (fsm-get-state-data jc))))
+        (jabber-muc-create jc room "first")
+        (let* ((target (if (eq scope 'room) "else@example.org" room))
+               (account (if (eq scope 'room) jc other))
+               (buffer (jabber-muc-find-buffer room jc))
+               (arm (buffer-local-value 'jabber-muc--auto-configure buffer))
+               (pending (copy-hash-table jabber-pending-groupchats))
+               (passwords (copy-hash-table jabber-muc--session-passwords))
+               opened)
+          (cl-letf (((symbol-function 'switch-to-buffer)
+                     (lambda (&rest _) (setq opened t))))
+            (should-error
+             (jabber-muc--send-join-presence account target "second" "secret" t)
+             :type 'user-error)
+            (should-error (jabber-muc-create account target "second") :type 'user-error))
+          (should-not opened)
+          (dolist (tables (list (cons pending jabber-pending-groupchats)
+                                (cons passwords jabber-muc--session-passwords)))
+            (should (= (hash-table-count (car tables)) (hash-table-count (cdr tables))))
+            (maphash (lambda (key value)
+                       (should (equal value (gethash key (cdr tables) :missing))))
+                     (car tables)))
+          (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+          (should-not (get account 'jabber-muc--join-intents))
+          (should (= (length sent) 1))
+          (should (= (length published) 1)))))))
+
+(ert-deftest jabber-test-muc-native-default-scope-progress ()
+  "Default names separate active accounts and ordinary popup joins still open."
+  (jabber-test-muc-with-native-room
+    (let ((jabber-groupchat-buffer-format (default-value 'jabber-groupchat-buffer-format)))
+      (jabber-muc-create jc room "first")
+      (jabber-muc-create other room "second")
+      (should-not (eq (jabber-muc-find-buffer room jc) (jabber-muc-find-buffer room other)))
+      (jabber-test-muc-native-201 jc room)
+      (jabber-test-muc-native-201 other room)
+      (should (equal (mapcar #'car (reverse config)) (list jc other)))
+      (should (= (length published) 2))
+      (jabber-muc--send-join-presence jc "ordinary@example.org" "nick" nil t)
+      (should (eq (current-buffer) (jabber-muc-find-buffer "ordinary@example.org" jc))))))
+
+(ert-deftest jabber-test-muc-native-setup-successor ()
+  "Same-scope setup reentry leaves only the nested create's send and arm."
+  (jabber-test-muc-with-native-room
+    (let ((setup (symbol-function 'jabber-chat-mode-setup)) fired arm)
+      (cl-letf (((symbol-function 'jabber-chat-mode-setup)
+                 (lambda (&rest args)
+                   (apply setup args)
+                   (unless fired
+                     (setq fired t)
+                     (jabber-muc-create jc room "new")
+                     (setq arm jabber-muc--auto-configure)))))
+        (jabber-muc-create jc room "old"))
+      (should fired)
+      (should (= (length sent) 1))
+      (should (equal (jabber-xml-get-attribute (cadar sent) 'to) (concat room "/new")))
+      (should (= (length published) 1))
+      (should-not (get jc 'jabber-muc--join-intents))
+      (with-current-buffer (jabber-muc-find-buffer room jc)
+        (should (eq arm jabber-muc--auto-configure))))))
+
+(ert-deftest jabber-test-muc-native-config-callback-progress ()
+  "Immediate config results retain authority when real form UI reenters."
+  (dolist (outcome '(success error join create))
+    (jabber-test-muc-with-native-room
+      (let ((send (symbol-function 'jabber-send-sexp))
+            (iq (symbol-function 'jabber-send-iq))
+            (open (symbol-function 'jabber-xdata-form-open))
+            fired form-opened effects)
+        (cl-letf (((symbol-function 'jabber-send-sexp)
+                   (lambda (account stanza)
+                     (funcall send account stanza)
+                     (push (list 'send account (jabber-xml-get-attribute stanza 'to)) effects)
+                     (unless fired
+                       (setq fired t)
+                       (jabber-test-muc-native-201 jc room))))
+                  ((symbol-function 'jabber-send-iq)
+                   (lambda (account target type query callback context &rest rest)
+                     (apply iq account target type query callback context rest)
+                     (when (equal (jabber-xml-get-attribute query 'xmlns) jabber-muc-xmlns-owner)
+                       (should-not jabber-muc--auto-configure)
+                       (push (list 'config account target) effects)
+                       (if (eq outcome 'error)
+                           (funcall (car rest) account
+                                    '(iq ((type . "error"))
+                                         (error ((type . "cancel"))
+                                                (forbidden ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas")))))
+                                    (cadr rest))
+                         (funcall callback account
+                                  `(iq ((type . "result"))
+                                       (query ((xmlns . ,jabber-muc-xmlns-owner))
+                                              (x ((xmlns . ,jabber-xdata-xmlns) (type . "form"))
+                                                 (field ((var . "name") (type . "text-single"))
+                                                        (value () "Room")))))
+                                  context)))))
+                  ((symbol-function 'jabber-muc--room-created-message)
+                   (lambda () (ert-fail "Automatic configuration fell back to a manual notice")))
+                  ((symbol-function 'jabber-xdata-form-open)
+                   (lambda (&rest args)
+                     (prog1 (apply open args)
+                       (setq form-opened t)
+                       (push (list 'form jc room) effects)
+                       (pcase outcome
+                         ('join (let ((jabber-muc-disable-disco-check t))
+                                  (jabber-muc-join jc room "new")))
+                         ('create (jabber-muc-create jc room "new")))))))
+          (jabber-muc-create jc room "old"))
+        (should (eq form-opened (not (eq outcome 'error))))
+        (should (equal (seq-take (reverse effects) 2)
+                       (list (list 'send jc (concat room "/old")) (list 'config jc room))))
+        (should (= (length config) 1))
+        (should (eq (caar config) jc))
+        (should (equal (cadar config) room))
+        (should (= (length published) (if (eq outcome 'join) 0 1)))
+        (when (eq outcome 'create)
+          (should (equal (nth 2 (car published)) "new")))
+        (with-current-buffer (jabber-muc-find-buffer room jc)
+          (if (eq outcome 'create)
+              (should (eq (car-safe jabber-muc--auto-configure) 'jabber-muc--config-arm))
+            (should-not jabber-muc--auto-configure)))))))
+
+(ert-deftest jabber-test-muc-native-inverse-event-origin ()
+  "Foreign events cannot steal an arm by rebinding locals during notices."
+  (dolist (phase '(delta status))
+    (dolist (manual '(nil t manual))
+      (jabber-test-muc-with-native-room
+        (jabber-muc-create jc room "old")
+        (let* ((buffer (jabber-muc-find-buffer room jc))
+               (arm (buffer-local-value 'jabber-muc--auto-configure buffer))
+               (insert (symbol-function 'jabber-chat-ewoc-enter))
+               (notice (symbol-function 'jabber-muc--insert-notice))
+               rebound effects)
+          (jabber-buffer-registry-register 'muc (jabber-muc--buffer-key other room) buffer)
+          (with-current-buffer buffer
+            (setq jabber-buffer-connection other)
+            (when manual (setq jabber-muc--auto-configure manual)))
+          (cl-labels ((rebind ()
+                        (setq rebound t jabber-buffer-connection jc
+                              jabber-group "wrong@example.org")
+                        (push (list 'rebind other room) effects)))
+            (cl-letf (((symbol-function 'jabber-chat-ewoc-enter)
+                       (lambda (&rest args)
+                         (prog1 (apply insert args)
+                           (when (eq phase 'delta) (rebind)))))
+                      ((symbol-function 'jabber-muc--insert-notice)
+                       (lambda (&rest args)
+                         (prog1 (apply notice args)
+                           (when (eq phase 'status) (rebind))))))
+              (jabber-muc-process-presence
+               other `(presence ((from . ,(concat room "/nick")))
+                                (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                                   (item ((affiliation . "owner") (role . "moderator")))
+                                   (status ((code . "110")))
+                                   (status ((code . "170")))
+                                   (status ((code . "201"))))))))
+          (should rebound)
+          (should effects)
+          (if manual
+              (progn
+                (should (= (length config) 1))
+                (should (eq (caar config) other))
+                (should (equal (cadar config) room))
+                (should (equal (nth 4 (car config)) (list buffer room)))
+                (should-not (nth 5 (car config))))
+            (should-not config)
+            (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))))))))
+
+(ert-deftest jabber-test-muc-native-pending-create-arm-cleanup ()
+  "Stale cleanup while a new create is still sending preserves its owner."
+  (jabber-test-muc-with-native-room
+    (let ((send (symbol-function 'jabber-send-sexp)) old checked)
+      (cl-letf (((symbol-function 'jabber-send-sexp)
+                 (lambda (account stanza)
+                   (funcall send account stanza)
+                   (if (null old)
+                       (progn
+                         (setq old (cdr (assoc room (get jc 'jabber-muc--join-intents))))
+                         (jabber-muc-create jc room "new"))
+                     (let* ((owner (cdr (assoc room (get jc 'jabber-muc--join-intents))))
+                            (buffer (jabber-muc-find-buffer room jc))
+                            (arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+                       (should-not (eq old owner))
+                       (should-not (eq (aref old 6) arm))
+                       ;; Exercise the actual stale cleanup boundary while the
+                       ;; successor's public sender has not returned.
+                       (should (eq (jabber-muc--with-intent old (ert-fail "Stale body"))
+                                   :cancelled))
+                       (should (eq owner (cdr (assoc room (get jc 'jabber-muc--join-intents)))))
+                       (should (eq arm (buffer-local-value 'jabber-muc--auto-configure buffer)))
+                       (setq checked t))))))
+        (jabber-muc-create jc room "old"))
+      (should checked)
+      (should (= (length published) 1))
+      (should-not (get jc 'jabber-muc--join-intents)))))
+
+(ert-deftest jabber-test-muc-native-manual-error-unwind ()
+  "Error and quit never claim or erase pre-existing manual permissions."
+  (dolist (manual '(t manual))
+    (dolist (condition '(error quit))
+      (jabber-test-muc-with-native-room
+        (let ((buffer (jabber-muc-create-buffer jc room)) caught)
+          (with-current-buffer buffer (setq jabber-muc--auto-configure manual))
+          (cl-letf (((symbol-function 'jabber-send-sexp)
+                     (lambda (&rest _) (signal condition '("manual" detail)))))
+            (condition-case err
+                (jabber-muc-create jc room "old")
+              ((error quit) (setq caught err))))
+          (should (equal caught (list condition "manual" 'detail)))
+          (should (eq manual (buffer-local-value 'jabber-muc--auto-configure buffer)))
+          (should-not published)
+          (should-not (get jc 'jabber-muc--join-intents)))))))
+
+(ert-deftest jabber-test-muc-native-status-event-origin ()
+  "Matching and manual permissions use event authority after status notices."
+  (dolist (manual '(nil t manual))
+    (jabber-test-muc-with-native-room
+      (jabber-muc-create jc room "old")
+      (let ((buffer (jabber-muc-find-buffer room jc))
+            (insert (symbol-function 'jabber-muc--insert-notice))
+            (iq (symbol-function 'jabber-send-iq))
+            effects)
+        (with-current-buffer buffer
+          (when manual (setq jabber-muc--auto-configure manual)))
+        (cl-letf (((symbol-function 'jabber-muc--insert-notice)
+                   (lambda (&rest args)
+                     (prog1 (apply insert args)
+                       (setq jabber-buffer-connection other jabber-group "wrong@example.org")
+                       (push (list 'notice jc room) effects))))
+                  ((symbol-function 'jabber-send-iq)
+                   (lambda (account target type query &rest args)
+                     (when (equal (jabber-xml-get-attribute query 'xmlns) jabber-muc-xmlns-owner)
+                       (push (list 'config account target) effects))
+                     (apply iq account target type query args))))
+          (jabber-muc-process-presence
+           jc `(presence ((from . ,(concat room "/nick")))
+                         (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                            (item ((affiliation . "owner") (role . "moderator")))
+                            (status ((code . "110")))
+                            (status ((code . "170")))
+                            (status ((code . "201")))))))
+        (should (equal (reverse effects)
+                       (list (list 'notice jc room) (list 'config jc room))))
+        (should (= (length config) 1))
+        (should (equal (nth 4 (car config)) (list buffer room)))
+        (should-not (nth 5 (car config)))))))
+
+(ert-deftest jabber-test-muc-native-discovery-submission-unwind ()
+  "Submission failures propagate intact and cannot leave a live callback."
+  (dolist (condition '(error quit))
+    (jabber-test-muc-with-native-intent
+      (let ((submit (symbol-function 'jabber-disco-get-info)) caught)
+        (cl-letf (((symbol-function 'jabber-disco-get-info)
+                   (lambda (&rest args)
+                     (apply submit args)
+                     (signal condition '("submission" detail)))))
+          (condition-case err
+              (jabber-muc-join jc room "old")
+            ((error quit) (setq caught err))))
+        (should (equal caught (list condition "submission" 'detail)))
+        (should-not (get jc 'jabber-muc--join-intents))
+        (funcall (car replies) nil)
+        (should-not sent)
+        (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats))))))
+
+(ert-deftest jabber-test-muc-native-repeated-discovery ()
+  "A completed native closure stays inert even after a new reservation."
+  (jabber-test-muc-with-native-intent
+    (jabber-muc-join jc room "old")
+    (funcall (car replies) nil)
+    (funcall (car replies) nil)
+    (should (= (length sent) 1))
+    (jabber-muc-join jc room "new")
+    (let ((owner (cdr (assoc room (get jc 'jabber-muc--join-intents)))))
+      (funcall (car replies) nil)
+      (should (eq owner (cdr (assoc room (get jc 'jabber-muc--join-intents))))))
+    (funcall (cadr replies) nil)
+    (funcall (cadr replies) nil)
+    (should (equal (reverse sent)
+                   (list (list jc "room@example.org/old" nil)
+                         (list jc "room@example.org/new" nil))))))
+
+(ert-deftest jabber-test-muc-native-eligibility-yields ()
+  "Loss of active eligibility fences discovery, prompts and construction."
+  (let ((dispatcher (symbol-function 'jabber-presence-children)))
+    (dolist (phase '(discovery password create presence))
+      (dolist (action '(remove terminal register))
+        (jabber-test-muc-with-native-intent
+          (cl-labels ((invalidate ()
+                        (pcase action
+                          ('remove (setq jabber-connections (delq jc jabber-connections)))
+                          ('terminal (put jc :state :disconnected))
+                          ('register (put jc :state-data
+                                          (plist-put (fsm-get-state-data jc) :registerp t))))))
+            (let ((jabber-silent-mode nil)
+                  (jabber-presence-element-functions
+                   (list (lambda (_) (invalidate) nil))))
+              (cl-letf (((symbol-function 'read-passwd)
+                         (lambda (&rest _) (invalidate) "secret"))
+                        ((symbol-function 'y-or-n-p)
+                         (lambda (&rest _) (invalidate) t))
+                        ((symbol-function 'jabber-presence-children)
+                         (if (eq phase 'presence) dispatcher #'ignore)))
+                (jabber-muc-join jc room "old")
+                (when (eq phase 'discovery) (invalidate))
+                (funcall (car replies)
+                         (pcase phase
+                           ('password '(:status ok :features ("muc_passwordprotected" "muc_nonanonymous")))
+                           ('create '(:status not-found))
+                           (_ nil))))))
+          (should-not sent)
+          (should-not (get jc 'jabber-muc--join-intents))
+          (should-not (gethash room jabber-muc--nonanonymous-rooms))
+          (should-not (jabber-muc--session-password jc room))
+          (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats)))))))
+
+(ert-deftest jabber-test-muc-native-create-prompt-outcomes ()
+  "Silent creation bypasses prompting; decline and quit never hand off."
+  (dolist (outcome '(silent accept decline error quit))
+    (jabber-test-muc-with-native-intent
+      (let ((jabber-silent-mode (eq outcome 'silent)) prompted caught)
+        (cl-letf (((symbol-function 'y-or-n-p)
+                   (lambda (&rest _)
+                     (setq prompted t)
+                     (pcase outcome
+                       ((or 'error 'quit) (signal outcome '("create-prompt" detail)))
+                       (_ (eq outcome 'accept))))))
+          (jabber-muc-join jc room "nick")
+          (condition-case err
+              (funcall (car replies) '(:status not-found))
+            ((error quit) (setq caught err))))
+        (should (eq prompted (not (eq outcome 'silent))))
+        (should (equal caught
+                       (pcase outcome
+                         ('decline '(error "Non-existent groupchat"))
+                         ((or 'error 'quit) (list outcome "create-prompt" 'detail)))))
+        (should (= (length sent) (if (memq outcome '(silent accept)) 1 0)))
+        (should-not (get jc 'jabber-muc--join-intents))
+        (let ((before (copy-tree sent)))
+          (funcall (car replies) '(:status not-found))
+          (should (equal sent before)))))))
+
+(ert-deftest jabber-test-muc-native-legacy-publication ()
+  "Legacy transport and success retain native ownership after publication."
+  (require 'jabber-bookmarks)
+  (let ((publish (symbol-function 'jabber-bookmarks--publish-one)))
+    (dolist (phase '(nil presence send buffer switch publication))
+      (jabber-test-muc-with-native-room
+        (let ((jabber-bookmarks (make-hash-table :test #'equal))
+              (jabber-bookmarks--legacy-accounts (make-hash-table :test #'equal))
+              (jabber-muc-disable-disco-check t)
+              (send (symbol-function 'jabber-send-sexp))
+              (create (symbol-function 'jabber-muc-create-buffer))
+              (switch (symbol-function 'switch-to-buffer))
+              callbacks storage interrupted)
+          (puthash (jabber-connection-bare-jid jc) t jabber-bookmarks--legacy-accounts)
+          (cl-labels ((interrupt (where)
+                        (when (and (eq where phase) (not interrupted))
+                          (setq interrupted t)
+                          (jabber-muc-join jc room "new"))))
+            (let ((jabber-presence-element-functions
+                   (list (lambda (_) (interrupt 'presence) nil))))
+              (cl-letf (((symbol-function 'jabber-bookmarks--publish-one) publish)
+                        ((symbol-function 'jabber-bookmarks--refresh-buffer) #'ignore)
+                        ((symbol-function 'jabber-private-set)
+                         (lambda (account xml callback context &rest _)
+                           (push (list account xml) storage)
+                           (push (lambda () (funcall callback account nil context)) callbacks)
+                           (interrupt 'publication)))
+                        ((symbol-function 'jabber-send-sexp)
+                         (lambda (&rest args) (prog1 (apply send args) (interrupt 'send))))
+                        ((symbol-function 'jabber-muc-create-buffer)
+                         (lambda (&rest args) (prog1 (apply create args) (interrupt 'buffer))))
+                        ((symbol-function 'switch-to-buffer)
+                         (lambda (&rest args) (prog1 (apply switch args) (interrupt 'switch)))))
+                (jabber-muc-create jc room "old")
+                (should (= (length storage) (if (memq phase '(nil publication)) 1 0)))
+                (when storage
+                  (should (eq (caar storage) jc))
+                  (should (equal (cadar storage)
+                                 `(storage ((xmlns . ,jabber-bookmarks-xmlns))
+                                           (conference ((jid . ,room) (autojoin . "1"))
+                                                       (nick () "old"))))))
+                ;; Complete the real legacy save-all/publish-one/maybe-join chain.
+                (dolist (callback callbacks) (funcall callback))
+                (should (equal (mapcar (lambda (entry)
+                                         (jabber-xml-get-attribute (cadr entry) 'to))
+                                       (reverse sent))
+                               (pcase phase
+                                 ('nil (list (concat room "/old") (concat room "/old")))
+                                 ((or 'presence 'buffer) (list (concat room "/new")))
+                                 ('publication (list (concat room "/old") (concat room "/new")
+                                                     (concat room "/old")))
+                                 (_ (list (concat room "/old") (concat room "/new")))))))))
+          (should-not (get jc 'jabber-muc--join-intents)))))))
 
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here
