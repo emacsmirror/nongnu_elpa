@@ -423,10 +423,11 @@ applications that VM can invoke.  You can reload this file by typing
 @cindex example.vm
 @cindex init file, an example
 @xref{Setting Up}, for a configuration built one piece at a time.  The same
-settings in one file are installed with VM as @file{example.vm}, in its
-documentation directory beside this manual and the @file{NEWS} files.  It
-names servers and addresses that do not exist, so it is to be read and taken
-from rather than used as it stands.
+settings in one file ship with VM as @file{example.vm}: in VM's documentation
+directory where VM was installed from source, and in the package's own
+directory, @file{~/.emacs.d/elpa/vm-@var{version}/}, where it came from
+@acronym{ELPA}.  It names servers and addresses that do not exist, so it is
+to be read and taken from rather than used as it stands.
 
 @cindex key bindings, where to put them
 @cindex global-set-key, in the init file
