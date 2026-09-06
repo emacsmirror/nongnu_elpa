@@ -6408,6 +6408,25 @@
          (should-not (string-match-p "Error"
                                      (hermes-test--header-line-string))))))))
 
+(ert-deftest hermes-chat-header-brand-is-optional-first-cell ()
+  "Branding inherits the header face and never displaces existing information."
+  (hermes-test-with-chat-buffer
+    (setq hermes-chat--status-state '(:status error)
+          hermes-chat--runtime-flags '(:yolo t))
+    (dolist (width '(1 8 12 20 30 50 120 240))
+      (let ((plain (cl-letf (((symbol-function 'char-displayable-p) (lambda (_) nil)))
+                     (hermes-chat--header-line width))))
+        (cl-letf (((symbol-function 'char-displayable-p) (lambda (_) t)))
+          (let ((branded (hermes-chat--header-line width)))
+            (should (equal (substring-no-properties branded)
+                           (if (<= (+ (string-width plain) (string-width "⚕ | ")) width)
+                               (concat "⚕ | " (substring-no-properties plain))
+                             (substring-no-properties plain))))
+            (should (<= (string-width branded) width))
+            (when (string-prefix-p "⚕ | " branded)
+              (should-not (get-text-property 0 'face branded))
+              (should (eq (get-text-property 1 'face branded) 'shadow)))))))))
+
 (ert-deftest hermes-chat-header-thinking-does-not-repeat-reasoning ()
   "The rendered thinking header omits synonymous activity, not effort settings."
   (hermes-test-with-chat-buffer
@@ -7119,7 +7138,9 @@
             :model "claude-opus-4-8" :agent-name "planner"))
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (let ((header (hermes-test--header-line-string)))
-       (should (string-prefix-p "emacs-hermes | " header))
+       (should (string-prefix-p
+                (concat (and (char-displayable-p ?⚕) "⚕ | ") "emacs-hermes | ")
+                header))
        (should-not (string-match-p "coder" header))
        (should-not (string-match-p "planner" header))
        (should (string-match-p "claude-opus-4-8" header))
@@ -7137,7 +7158,8 @@
              hermes-chat--working-directory "/tmp/project/"
              hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
-         (should (string-prefix-p "project" header))
+         (should (string-prefix-p
+                  (concat (and (char-displayable-p ?⚕) "⚕ | ") "project") header))
          (should-not (string-match-p "remote" header))
          (should-not (string-match-p "coder" header)))))))
 
@@ -7377,7 +7399,8 @@
          hermes-chat--status-state '(:status ready :activity "Ready"))
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
-                    "emacs-hermes | YOLO | grok-4.5 | 25k/500k")))))
+                    (concat (and (char-displayable-p ?⚕) "⚕ | ")
+                            "emacs-hermes | YOLO | grok-4.5 | 25k/500k"))))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
   "Directory, model, runtime flags, and context values use distinct faces."
