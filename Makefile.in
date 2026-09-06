@@ -230,5 +230,5 @@ xemacs-package:
 
 ##############################################################################
 tags::
-	etags lisp/*.el contrib/*.el info/*.texinfo NEWS-*.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
+	etags lisp/*.el info/*.texinfo NEWS-*.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 

@@ -8513,6 +8513,40 @@ default value), then Emacs tries a plain text communication initially and
 upgrades it to @acronym{TLS} if the server requires @acronym{STARTTLS}.
 @end itemize
 
+@unnumberedsec Org links to messages
+@cindex Org mode
+@cindex links, from Org to a message
+@findex vm-org-open
+@findex vm-org-store-link
+A @code{vm:} link in an Org file names a folder and, after a @samp{#}, a
+message in it:
+
+@example
+[[vm:inbox#87r0abc123.fsf@@example.com][the note about the release]]
+@end example
+
+@noindent
+@kbd{C-c C-o} on it opens that folder and shows that message, and @kbd{C-c l}
+in a VM folder makes such a link to the message being read.  A prefix
+argument on the follow opens the folder read-only.
+
+Load it in your init file:
+
+@lisp
+(require 'vm-org)
+@end lisp
+
+@noindent
+Org carries no support for VM of its own, so this is it.  The folder is
+written relative to @code{vm-folder-directory} where it is under it, so a
+link made on one machine can be followed on another whose mail lives
+somewhere else, and a folder reached over @acronym{SSH} or ftp is written
+@samp{//user@@host:file} and opened through Tramp.
+
+In earlier releases this was a file in a @file{contrib} directory that
+nothing built or documented, and the storing half had stopped working when
+Org changed how a link type registers.
+
 @node Customizations, History and Administration, Configuration, Top
 @chapter Customizations
 Useful ways to customize VM.

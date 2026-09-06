@@ -35,6 +35,7 @@ SOURCES += vm-net.el
 SOURCES += vm-motion.el
 SOURCES += vm-mouse.el
 SOURCES += vm-page.el
+SOURCES += vm-org.el
 SOURCES += vm-pcrisis.el
 SOURCES += vm-pgg.el
 SOURCES += vm-postpone.el
