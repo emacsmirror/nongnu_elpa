@@ -848,6 +848,8 @@ as replied to, forwarded, etc, if appropriate."
   (vm-mail-mode-show-headers)
   (when vm-check-recipients
     (vm-mail-check-recipients))
+  (when vm-check-bcc-removal
+    (vm-mail-check-bcc-removal))
   (when vm-check-for-empty-subject
     (vm-mail-check-for-empty-subject))
   (save-excursion (run-hooks 'vm-mail-send-hook))
@@ -2575,6 +2577,28 @@ headers."
         (error "%s" errors))))
 (put 'vm-mail-check-recipients 'vm-called-by-vm t)
 
+
+(defun vm-mail-check-bcc-removal ()
+  "Refuse to send if this composition's Bcc could reach the other recipients.
+
+A Bcc header is a promise: the addresses in it are told nothing to the people
+who receive the message.  With `send-mail-function\=' set to
+`sendmail-send-it\=', VM and Emacs keep the header in the message they hand
+to `sendmail-program\=' and trust that program to take it out, because with
+-t those addresses are also how it learns whom to deliver to.  When it does
+not take it out, everyone on the message reads who was blind copied, and
+nothing has failed anywhere that anyone can see (emacs-vm/vm#815)."
+  (interactive)
+  (when (and (vm-mail-mode-get-header-contents "\\(Resent-\\)?BCC:")
+             (not (memq send-mail-function vm-senders-that-remove-bcc)))
+    (error (concat "This message has a Bcc, and %s leaves it in the message"
+                   " for the transport to remove, so whether it stays private"
+                   " is up to a program outside Emacs.  Set send-mail-function"
+                   " to smtpmail-send-it, which removes it itself, or take the"
+                   " Bcc header out, or set vm-check-bcc-removal to nil if you"
+                   " know your transport removes it")
+           send-mail-function)))
+(put 'vm-mail-check-bcc-removal 'vm-called-by-vm t)
 
 (defun vm-mail-check-for-empty-subject ()
   "Check if the subject line is empty and issue an error if so."

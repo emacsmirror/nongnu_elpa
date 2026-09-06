@@ -10462,6 +10462,24 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 
 @end macro
 
+@macro vmdocvmmailcheckbccremoval
+@deffn Command vm-mail-check-bcc-removal
+@findex vm-mail-check-bcc-removal
+Refuse to send if this composition’s Bcc could reach the other recipients.
+
+A Bcc header is a promise: the addresses in it are told nothing to the people
+who receive the message.  With @code{send-mail-function=} set to
+@code{sendmail-send-it=}, VM and Emacs keep the header in the message they hand
+to @code{sendmail-program=} and trust that program to take it out, because with
+-t those addresses are also how it learns whom to deliver to.  When it does
+not take it out, everyone on the message reads who was blind copied, and
+nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
+
+@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmailcheckforemptysubject
 @deffn Command vm-mail-check-for-empty-subject
 @findex vm-mail-check-for-empty-subject
@@ -10496,6 +10514,25 @@ Subject header.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
+
+@end macro
+
+@macro vmdocvmcheckbccremoval
+@defopt vm-check-bcc-removal
+@vindex vm-check-bcc-removal
+Non-nil means refuse to send a message whose Bcc could reach the recipients.
+
+VM refuses when a composition carries a Bcc header and @code{send-mail-function=}
+is not one of @code{vm-senders-that-remove-bcc=}.  Such a function hands the
+header to a program outside Emacs and trusts it to remove it, so the privacy
+of the Bcc rests on that program being right.  Where it is not, everyone on
+the message learns who was blind copied (emacs-vm/vm#815).
+
+Set this to nil where you know your transport removes it, and VM sends as it
+did before.  The check costs nothing when a composition has no Bcc.
+
+Default value: @code{t}
+@end defopt
 
 @end macro
 

@@ -2459,6 +2459,72 @@ which is what leaves a copy filed by an earlier command counted."
   (should (equal 2 (vm-reply-test--send-with-fcc nil t)))
   (should (equal 2 (vm-reply-test--send-with-fcc t t))))
 
+
+;;; Refusing to hand a Bcc to a transport that may leak it (emacs-vm/vm#815)
+
+(defun vm-reply-test--send-with (bcc sender check)
+  "Try to send a composition, answering `sent' or the refusal message.
+BCC puts a Bcc header on it, SENDER is `send-mail-function' and CHECK is
+`vm-check-bcc-removal'.  `mail-send' is stubbed: what is under test is
+whether VM gets that far."
+  (with-temp-buffer
+    (mail-mode)
+    (insert "To: someone@example.com\nSubject: s\n"
+            (if bcc "BCC: me@example.com,\n" "")
+            mail-header-separator "\nbody\n")
+    (let ((send-mail-function sender)
+          (vm-check-bcc-removal check)
+          (vm-confirm-mail-send nil)
+          (vm-check-recipients nil)
+          (vm-check-for-empty-subject nil)
+          (vm-mail-send-hook nil)
+          (mail-send-hook nil)
+          (vm-dont-ask-coding-system-question t)
+          (select-safe-coding-system-function nil))
+      (cl-letf (((symbol-function 'vm-display) #'ignore)
+                ((symbol-function 'mail-send) #'ignore)
+                ((symbol-function 'vm-mail-mark-sent) #'ignore)
+                ((symbol-function 'vm-rename-current-mail-buffer) #'ignore)
+                ((symbol-function 'vm-keep-mail-buffer) #'ignore))
+        (condition-case caught (progn (vm-mail-send) 'sent)
+          (error (error-message-string caught)))))))
+
+(ert-deftest vm-reply-test-a-bcc-is-not-handed-to-a-transport-that-may-leak-it ()
+  "A Bcc going out through `sendmail-send-it' stops the send.
+
+emacs-vm/vm#815, reported after a Bcc reached everyone on a message.  VM and
+Emacs keep the header in what they hand `sendmail-program', because with -t
+those addresses are how the transport learns whom to deliver to, and trust
+that program to remove it.  Where it does not, the promise a Bcc makes is
+broken and nothing anywhere reports a failure.
+
+The message names the three ways out, so a reader is not left guessing."
+  (let ((refusal (vm-reply-test--send-with t 'sendmail-send-it t)))
+    (should (stringp refusal))
+    (should (string-match-p "smtpmail-send-it" refusal))
+    (should (string-match-p "vm-check-bcc-removal" refusal))
+    (should (string-match-p "Bcc header out" refusal))))
+
+(ert-deftest vm-reply-test-a-sender-that-removes-the-bcc-itself-sends ()
+  "`smtpmail-send-it' works the recipients out first and then deletes the
+header, so there is nothing to refuse."
+  (should (equal 'sent (vm-reply-test--send-with t 'smtpmail-send-it t))))
+
+(ert-deftest vm-reply-test-a-message-with-no-bcc-is-never-refused ()
+  "The check costs a composition without a Bcc nothing at all."
+  (should (equal 'sent (vm-reply-test--send-with nil 'sendmail-send-it t))))
+
+(ert-deftest vm-reply-test-the-bcc-check-can-be-turned-off ()
+  "`vm-check-bcc-removal' nil sends as VM did before, for a reader who knows
+their transport removes it."
+  (should (equal 'sent (vm-reply-test--send-with t 'sendmail-send-it nil))))
+
+(ert-deftest vm-reply-test-an-unknown-sender-is-not-assumed-to-be-safe ()
+  "Only what is known to remove the header is treated as removing it.
+A sender VM has never heard of is refused, which is the safe direction: the
+reader is told, and can say so with `vm-check-bcc-removal'."
+  (should (stringp (vm-reply-test--send-with t 'some-unknown-send-it t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
