@@ -467,7 +467,7 @@ a part of VM the session has not touched."
     (dolist (feature features (nreverse stale))
       (let ((name (symbol-name feature)))
         (when (or (string-prefix-p "vm-" name)
-                  (member name '("vm" "tapestry" "u-vm-color")))
+                  (member name '("vm" "tapestry")))
           (let* ((el (locate-library (concat name ".el")))
                  (elc (and el (concat el "c"))))
             (when (and el elc (file-exists-p elc)

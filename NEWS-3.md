@@ -8,6 +8,26 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `u-vm-color.el` is gone (emacs-vm/vm#811).  It was bundled in 8.1.x and
+    half of it was superseded in 8.1.93a, 2010-08-28, when
+    `vm-summary-enable-faces` replaced `u-vm-color-summary-mode`; the NEWS
+    entry then told readers to delete the hook because Emacs could hang with
+    it kept.  It was never documented in the manual.
+
+    The rest of it still worked: `u-vm-color-fontify-buffer` coloured
+    headers, two levels of citation and the signature in the message body,
+    and VM has nothing of its own for citations or signatures.  Anyone who
+    had wired that up by hand loses it.  The file is in the history if it is
+    wanted back.
+
+    Removing it uncovered a fault in the build: `lisp/Makefile.in` wrote the
+    four `vm-configure-` assignments into `vm-autoloads.el` before requiring
+    the file that defines them.  `u-vm-color.el` was the only source sorting
+    before the `vm-` ones, so compiling it pulled `vm-vars` in first and the
+    whole-directory lint never saw the free variables.  The two lines are in
+    the other order now, which is the order the XEmacs rule beside it has
+    always had.
+
   * VM says when an IMAP server will not keep a label (emacs-vm/vm#601).  A
     server whose PERMANENTFLAGS does not offer `\*` keeps no keywords of its
     own, and Gmail is one.  It takes the STORE and answers OK all the same,
