@@ -317,10 +317,10 @@ thread are saved."
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs?
 
 (defun vm-save-message-text-for-type (m target-type)
-  "M\='s headers and body, quoted the way a folder of TARGET-TYPE needs.
+  "M's headers and body, quoted the way a folder of TARGET-TYPE needs.
 A body line that a folder of that type would read as a message separator is
-prefixed with \">\", which is what `vm-munge-message-separators\=' is for and
-what `vm-fcc-message-text\=' does for a composition.
+prefixed with \">\", which is what `vm-munge-message-separators' is for and
+what `vm-fcc-message-text' does for a composition.
 
 Saving wrote the bytes as they stood.  A message from a folder that had no
 need to quote them -- mboxcl2 counts its bytes, mmdf and babyl have

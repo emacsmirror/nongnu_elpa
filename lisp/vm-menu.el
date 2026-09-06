@@ -1362,7 +1362,7 @@ separate dedicated menu bar, depending on the value of
 
 (defun vm-newest-news-file (dir)
   "The newest NEWS file in DIR, or nil if it holds none.
-VM\='s history is kept in numbered files that are never renamed, so the
+VM's history is kept in numbered files that are never renamed, so the
 newest entries are in the highest-numbered one."
   (let ((files (and dir (file-directory-p dir)
 		    (directory-files dir t "\\`NEWS-[0-9]+\\.md\\'"))))
@@ -1372,7 +1372,7 @@ newest entries are in the highest-numbered one."
 
 ;;;###autoload
 (defun vm-view-news ()
-  "View the newest of VM\='s NEWS files."
+  "View the newest of VM's NEWS files."
   (interactive)
   (let ((dirs (list (and vm-configure-docdir
 			 (expand-file-name vm-configure-docdir))

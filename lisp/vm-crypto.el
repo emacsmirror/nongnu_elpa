@@ -135,7 +135,7 @@ CRAM-MD5 with an accented password computed a digest over character codes and
 the reader was told their password was incorrect (emacs-vm/vm#772).
 
 A key longer than the block size is hashed first, as RFC 2104 requires.
-Without that the padded key stayed longer than the pads and `vm-xor-string\='
+Without that the padded key stayed longer than the pads and `vm-xor-string'
 signalled \"strings not of equal length\", so a password over 64 characters
 raised an internal error rather than logging in."
   (let* ((key (vm-string-as-octets key))
@@ -155,7 +155,7 @@ raised an internal error rather than logging in."
 (defun vm-string-as-octets (string)
   "STRING as a unibyte string of the octets it stands for.
 A unibyte string is already those octets and is answered unchanged.  A
-multibyte one is encoded to UTF-8, which is what Emacs `md5\=' does with a
+multibyte one is encoded to UTF-8, which is what Emacs `md5' does with a
 multibyte string too, so the two agree."
   (if (multibyte-string-p string)
       (encode-coding-string string 'utf-8)

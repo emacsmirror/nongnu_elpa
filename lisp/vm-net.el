@@ -93,10 +93,10 @@
   '((t :inherit mode-line-emphasis))
   "Face for what a folder is doing with its server, in the mode line.
 
-Inherits `mode-line-emphasis\=', which every theme renders differently from
+Inherits `mode-line-emphasis', which every theme renders differently from
 the rest of the mode line.  For something louder, give it a background:
 
-    (set-face-attribute \='vm-net-session-face nil :background \"yellow2\")"
+    (set-face-attribute \\='vm-net-session-face nil :background \"yellow2\")"
   :group 'vm-faces)
 
 (defconst vm-net-session-words
@@ -135,7 +135,7 @@ fetch\".")
 
 For what the connection was made out of and the caller knows nothing about: a
 tunnel program to kill, a buffer of diagnostics to bury.  Kept apart from
-`finished\=', which is the caller\='s and is assigned rather than added to --
+`finished', which is the caller's and is assigned rather than added to --
 chaining onto it here was undone by the next caller that set it, and the
 tunnel stayed running."
   (push function (vm-net-session-cleanups session)))
@@ -143,7 +143,7 @@ tunnel stayed running."
 (defun vm-net--clean-up (session)
   "Run SESSION's cleanups, newest first.
 One that signals is reported and the rest still run: they are independent, and
-a cleanup that fails must not cost the caller its `finished\=' call."
+a cleanup that fails must not cost the caller its `finished' call."
   (let ((cleanups (vm-net-session-cleanups session)))
     (setf (vm-net-session-cleanups session) nil)
     (dolist (cleanup cleanups)
@@ -156,7 +156,7 @@ a cleanup that fails must not cost the caller its `finished\=' call."
 (defun vm-net--sentinel (process event)
   "Fail PROCESS's session when the connection goes, saying what EVENT was.
 
-A connection made with :nowait is not open when `make-network-process\='
+A connection made with :nowait is not open when `make-network-process'
 returns, so this is where a refused or unreachable server is heard about --
 and where a server that hangs up mid-session is, which would otherwise leave
 a generator waiting for input that cannot arrive."
@@ -173,19 +173,19 @@ a generator waiting for input that cannot arrive."
 (defvar vm-verbal-time)
 
 (defun vm-net-warn (level &rest args)
-  "Warn as `vm-warn\=' does, without stopping to be read.
+  "Warn as `vm-warn' does, without stopping to be read.
 
-The driver speaks from process filters, sentinels and timers.  `vm-warn\=' holds
-its message on screen with `sit-for\=', which there is Emacs stopped for those
+The driver speaks from process filters, sentinels and timers.  `vm-warn' holds
+its message on screen with `sit-for', which there is Emacs stopped for those
 seconds: a folder whose server refused a flag per message stopped for two
-seconds each time, four seconds to save two messages\=' flags where the work
-itself takes a tenth of one.  `sit-for\=' in a filter also runs timers and other
-filters, which is the re-entry the driver\='s own guards are there to refuse."
+seconds each time, four seconds to save two messages' flags where the work
+itself takes a tenth of one.  `sit-for' in a filter also runs timers and other
+filters, which is the re-entry the driver's own guards are there to refuse."
   (apply #'vm-warn level 0 args))
 
 (defun vm-net-inform (level &rest args)
-  "Say as `vm-inform\=' does, without stopping to be read.
-`vm-verbal-time\=' is a pause per message, which a reader may want and a process
+  "Say as `vm-inform' does, without stopping to be read.
+`vm-verbal-time' is a pause per message, which a reader may want and a process
 filter must not have: a fetch says how far it has got once per bunch."
   (let ((vm-verbal-time 0))
     (apply #'vm-inform level args)))
@@ -198,10 +198,10 @@ filter must not have: a fetch says how far it has got once per bunch."
 
 A session hands its caller either what its generator returned or the error
 that stopped it, and this is how the caller tells them apart: an error object
-is (SYMBOL . DATA) whose symbol has been through `define-error\='.
+is (SYMBOL . DATA) whose symbol has been through `define-error'.
 
-Every condition the driver puts in `vm-net-session-error\=' has to be defined
-for that to work.  `vm-net-timeout\=' was not, so a timed-out fetch was taken
+Every condition the driver puts in `vm-net-session-error' has to be defined
+for that to work.  `vm-net-timeout' was not, so a timed-out fetch was taken
 for a list of messages, and the callback that would have reported it died in
 the attempt: a POP fetch whose server went quiet left its caller waiting for
 an answer that had already come and been thrown away."
@@ -298,7 +298,7 @@ reader left it -- and only then asks the session to look."
 
 Called by the filter for every chunk, and by the watchdog.  Refuses while the
 generator is running: the watchdog fires from a timer, a timer can fire inside
-whatever the generator is doing, and `iter-next\=' on a generator that is
+whatever the generator is doing, and `iter-next' on a generator that is
 already running is an error.  A dead buffer is refused for the same kind of
 reason -- there is nothing there to read the answer out of."
   (when (and (vm-net-session-live-p session)
@@ -311,7 +311,7 @@ reason -- there is nothing there to read the answer out of."
 	(vm-net--resume session nil)))))
 
 (defconst vm-net--slice 0.05
-  "How long `vm-net--resume\=' may work before it hands Emacs back.
+  "How long `vm-net--resume' may work before it hands Emacs back.
 Twenty turns a second, which is enough that typing and redisplay do not
 stutter, and long enough that the timer between slices costs nothing next to
 the parsing done in one.")
@@ -388,21 +388,21 @@ stopped dead, until something else happened to poll it."
       (setf (vm-net-session-resuming session) nil))))
 
 
-;; The watchdog: one timer, found in `timer-list\=' rather than remembered.
+;; The watchdog: one timer, found in `timer-list' rather than remembered.
 ;;
 ;; One for all the sessions, rather than a timer armed and cancelled per
 ;; session per read.  A session was seen waiting 8.8 seconds on a three-second
-;; timeout with its own timer sitting in `timer-list\=' unrun (emacs-vm/vm#717):
+;; timeout with its own timer sitting in `timer-list' unrun (emacs-vm/vm#717):
 ;; a lost timer took away the only thing that would ever have reported the
 ;; stall, and a generator waiting for input that cannot arrive waits for ever.
 ;; This one is armed while any session is waiting and cancelled when none is,
 ;; so a lost tick costs a quarter of a second rather than a session.
 ;;
-;; Not kept in a variable, for the reason `vm-net--sessions\=' is not either: a
+;; Not kept in a variable, for the reason `vm-net--sessions' is not either: a
 ;; variable is state, and something that resets it -- the test harness restores
-;; VM\='s variables between tests -- leaves the timer running with nothing
+;; VM's variables between tests -- leaves the timer running with nothing
 ;; pointing at it, so the next session arms another.  Thirty of them were found
-;; in `timer-list\=' at once that way, and the cancel could reach none of them.
+;; in `timer-list' at once that way, and the cancel could reach none of them.
 
 (defconst vm-net--watchdog-interval 0.25
   "How often the watchdog looks at the deadlines.")
@@ -420,12 +420,12 @@ stopped dead, until something else happened to poll it."
   "Every watchdog timer that will still fire.
 
 A timer whose function signalled is left marked as having been triggered and
-is never rescheduled, and Emacs leaves it in `timer-list\=' all the same: it
+is never rescheduled, and Emacs leaves it in `timer-list' all the same: it
 sits there for ever, firing nothing.  One of those would satisfy a check for
 \"is there a watchdog?\" while no watchdog was running, and every session after
 it would wait on an answer nobody was going to look for -- which is a folder
 hung for good.  A session was seen waiting 8.8 seconds on a three-second
-timeout with its timer in `timer-list\=' unrun (emacs-vm/vm#717), and a POP
+timeout with its timer in `timer-list' unrun (emacs-vm/vm#717), and a POP
 session in a long test run waited out its whole read with the answer sitting in
 its buffer.
 
@@ -484,8 +484,8 @@ having it."
 (defun vm-net--watch-session (session now)
   "Poll SESSION, and fail it if its read ran out of time before NOW."
   (if (vm-net-session-resuming session)
-      ;; Mid-generator: polling it would be `iter-next\=' on a running
-      ;; generator, and timing it out would be `iter-close\=' on one -- which
+      ;; Mid-generator: polling it would be `iter-next' on a running
+      ;; generator, and timing it out would be `iter-close' on one -- which
       ;; errors, after the session has been marked failed and its caller told,
       ;; leaving the resume to finish it a second time.  A session still
       ;; running when its read has run out of time is a fault in the driver
@@ -578,7 +578,7 @@ What the IMAP parser wants: it re-reads from where it was and asks again."
   "A request that is satisfied straight away.
 What a generator yields to say \"I have more to do and none of it is
 waiting\": the driver takes it back at once, and the slice in
-`vm-net--resume\=' is then free to hand Emacs a turn first.  A generator that
+`vm-net--resume' is then free to hand Emacs a turn first.  A generator that
 parses a great deal of what has already arrived -- thousands of responses to
 one command -- yields this between pieces of it, so that the work is
 interruptible rather than one step that runs to the end."
@@ -642,7 +642,7 @@ which is what the blocking path does, and every one of those attempts waits."
 (defvar vm-net--probes (make-hash-table :test 'eql)
   "The connection each port is being probed with, by port.
 A probe outlives the poll that started it: a connection made with :nowait is
-not open when `make-network-process\=' returns, and the next poll is where the
+not open when `make-network-process' returns, and the next poll is where the
 answer is.")
 
 (defun vm-net-listening-p (port)

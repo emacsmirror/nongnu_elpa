@@ -6911,8 +6911,8 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
 (defun vm-mime-default-type-from-filename (file)
   "The MIME type FILE's name suggests, or nil.
 
-`vm-mime-attachment-auto-type-alist\=' first, so what the user has set there
-decides.  Failing that, `mailcap-extension-to-mime\=', which knows the
+`vm-mime-attachment-auto-type-alist' first, so what the user has set there
+decides.  Failing that, `mailcap-extension-to-mime', which knows the
 system's /etc/mime.types and Emacs's own table: an .org file is text/x-org
 there and a .patch text/x-patch, and either is better than the
 application/octet-stream the callers fall back to -- octet-stream carries no

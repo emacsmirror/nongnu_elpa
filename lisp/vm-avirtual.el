@@ -144,8 +144,8 @@
 (defconst vm-bbdb-address-headers
   '((authors "From:" "Resent-From:" "Reply-To:" "Sender:")
     (recipients "Resent-To:" "Resent-CC:" "To:" "CC:" "BCC:"))
-  "The headers each address class of the `in-bbdb\=' selector reads.
-BBDB 2.x had this as `bbdb-get-addresses-headers\=' and did the reading;
+  "The headers each address class of the `in-bbdb' selector reads.
+BBDB 2.x had this as `bbdb-get-addresses-headers' and did the reading;
 BBDB 3 has no equivalent -- its own version works from the message the MUA
 is showing, which is not what a selector needs.  Issue #567.")
 
@@ -282,7 +282,7 @@ is showing, which is not what a selector needs.  Issue #567.")
     (eq m (car vm-message-pointer))))
 
 (defun vm-bbdb-class-headers (address-class)
-  "The headers the `in-bbdb\=' selector reads for ADDRESS-CLASS.
+  "The headers the `in-bbdb' selector reads for ADDRESS-CLASS.
 Every header of every class when ADDRESS-CLASS is nil."
   (if (null address-class)
       (apply #'append (mapcar #'cdr vm-bbdb-address-headers))
@@ -293,9 +293,9 @@ Every header of every class when ADDRESS-CLASS is nil."
                           (mapcar #'car vm-bbdb-address-headers) " and ")))))
 
 (defun vm-bbdb-known-address-p (contents only-first)
-  "Whether BBDB has a record for an address in CONTENTS, a header\='s text.
+  "Whether BBDB has a record for an address in CONTENTS, a header's text.
 With ONLY-FIRST, only the first address in it is looked up, which is what
-`bbdb-get-only-first-address-p\=' asked for in BBDB 2.x."
+`bbdb-get-only-first-address-p' asked for in BBDB 2.x."
   (let ((addresses (vm-parse-addresses contents))
         (found nil))
     (when (and only-first addresses)

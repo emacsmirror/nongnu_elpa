@@ -1064,9 +1064,9 @@ one session at a time anyway."
 (defun vm-pop-get-uidl-data ()
   "Ask the server for the UID of every message, as an obarray.
 The UID is the symbol and the message number its value, which is the way
-round `vm-pop-get-synchronization-data\=' wants it.
+round `vm-pop-get-synchronization-data' wants it.
 
-The reading is `vm-pop-read-uidl-long-response\=', which is the only place
+The reading is `vm-pop-read-uidl-long-response', which is the only place
 that waits for a UIDL response.  This function had a copy of that wait loop
 and its parser, so a fix to one of them missed the other, and a rewrite of
 the network layer would have converted one and left the other blocking."

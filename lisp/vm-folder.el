@@ -804,16 +804,16 @@ name, which is what `vm-default-folder-type' is for."
 
 (defconst vm-folder-type-with-no-name-of-its-own 'From_
   "The type a folder has when its name says nothing about it.
-So it is not a type a name has to state.  `.mbox\=' is read as this and a folder
+So it is not a type a name has to state.  `.mbox' is read as this and a folder
 may be named that way, but a conversion to it does not put the extension on a
 folder that has not got one: that would rename INBOX to INBOX.mbox and take a
-`vm-primary-inbox\=' setting with it.")
+`vm-primary-inbox' setting with it.")
 
 (defun vm-folder-extension-for-type (type)
   "The file name extension a folder is named with to state TYPE, or nil.
-Mostly the reverse of `vm-folder-type-by-extension-alist\='.  Nil for a type no
+Mostly the reverse of `vm-folder-type-by-extension-alist'.  Nil for a type no
 extension names, for every type when a user has emptied that option, and for
-`vm-folder-type-with-no-name-of-its-own\=', which an extension may name without
+`vm-folder-type-with-no-name-of-its-own', which an extension may name without
 being the name that type is written under."
   (let ((type (vm-canonical-folder-type type)))
     (unless (eq type vm-folder-type-with-no-name-of-its-own)
@@ -831,8 +831,8 @@ Answers FILE itself when its name already states TYPE, so a folder the reader
 called sent.mbox is still sent.mbox after being converted to From_ rather than
 losing the extension it was given.  And when no extension names TYPE, which is
 the case for the types that have no entry, for
-`vm-folder-type-with-no-name-of-its-own\=', and for a user who has emptied
-`vm-folder-type-by-extension-alist\='."
+`vm-folder-type-with-no-name-of-its-own', and for a user who has emptied
+`vm-folder-type-by-extension-alist'."
   (if (eq (vm-folder-type-for-name file) (vm-canonical-folder-type type))
       file
     (let* ((base (if (vm-folder-type-for-name file)
@@ -903,7 +903,7 @@ comes out as the type `vm-cache-folder-type-suffix' names."
       vm-default-folder-type))
 
 (defconst vm-folder-type-examine-limit (* 8 1024 1024)
-  "How far into a folder `vm-get-folder-type\=' will read to decide its type.
+  "How far into a folder `vm-get-folder-type' will read to decide its type.
 It reads as far as the second message when the first says how long it is; a
 first message longer than this leaves the folder read as From_, which is what
 VM did with every folder before the length was looked at.")
@@ -928,14 +928,14 @@ file has to be read to see it."
   "Whether the folder at point is written with a length on every message.
 
 Point is at the start of a folder that looks like From_.  From_ and mboxcl2 are
-the same folder but for the `Content-Length\=' header, so the headers are the
-only evidence -- and one message\='s is not evidence.  Mail arrives carrying a
-`Content-Length\=' of its own, and VM gives one to each message it rewrites, so
+the same folder but for the `Content-Length' header, so the headers are the
+only evidence -- and one message's is not evidence.  Mail arrives carrying a
+`Content-Length' of its own, and VM gives one to each message it rewrites, so
 a From_ folder ends up with a few.  Read as mboxcl2, such a folder stops at the
-first message that has none: 6433 of the 6498 messages in a maintainer\='s IMAP
+first message that has none: 6433 of the 6498 messages in a maintainer's IMAP
 cache had none, and the folder would not open at all.
 
-So the first message\='s length has to say where the message ends, and then:
+So the first message's length has to say where the message ends, and then:
 
   - it ends the folder, and there is nothing else to ask.  A folder holding one
     message is all the evidence there is, which is how an FCC file starts.
@@ -945,7 +945,7 @@ So the first message\='s length has to say where the message ends, and then:
   - it lands in the middle of something, and the folder is not this type.
 
 Answering from match data is what this replaces: the search for a length could
-fail and leave the match of the `From \=' at the top of the folder standing, and
+fail and leave the match of the `From ' at the top of the folder standing, and
 that was read as a length having been found."
   (save-excursion
     (let ((case-fold-search t)
@@ -999,10 +999,10 @@ Read as the older format, which is what a cache with no type in its name is
 taken for, an mboxcl2 folder splits wherever a body line begins \"From \":
 mboxcl2 leaves those alone, the lengths delimiting instead of the separators.
 That is a message or two of nonsense in the summary rather than anything lost,
-and it is the reader\='s to settle -- by renaming the file, which is all it
+and it is the reader's to settle -- by renaming the file, which is all it
 takes when the folder really is mboxcl2, or by converting it when it is not.
 
-`vm-check-folder\=' is what settles it, and is named here because \"once you are
+`vm-check-folder' is what settles it, and is named here because \"once you are
 sure\" said no way of becoming sure.  It counts the lengths over the whole
 folder, where this looks at the first two messages, which is as much as a
 folder being visited can afford to read."
@@ -2416,7 +2416,7 @@ Answers the line without showing it, for a caller that puts it in a message
 of its own: showing it here as well printed the same counts twice, once on
 its own and once inside the line that followed it.
 
-UNLABELLED non-nil leaves the folder\='s name off the front, for a caller
+UNLABELLED non-nil leaves the folder's name off the front, for a caller
 that has named it already.  A caller that prefixed its own name to the
 labelled form printed the name twice (emacs-vm/vm#796)."
   (save-excursion
@@ -2436,7 +2436,7 @@ labelled form printed the name twice (emacs-vm/vm#796)."
 (defun vm-arrival-blurb (count)
   "What to say when COUNT messages have just arrived in the current folder.
 
-The folder is named once.  `vm-totals-blurb\=' labels itself, so the
+The folder is named once.  `vm-totals-blurb' labels itself, so the
 asynchronous IMAP and POP paths, which prefixed the folder name and then
 appended the labelled blurb, said it twice and gave the new count twice with
 it: \"folder: 1 new message.  folder: 3 messages, 1 new, 0 unread, 0
@@ -4802,11 +4802,11 @@ run `vm-expunge-folder' followed by `vm-save-folder'."
   "Give BUFFER the name FOLDER-NAME, and answer with it.  Nil stays nil.
 A folder VM is asked for by name is shown under that name even where the
 buffer for its file was made by something else -- desktop.el restoring the
-session, `recover-file\=', or a plain `find-file\=' -- since that buffer is named
+session, `recover-file', or a plain `find-file' -- since that buffer is named
 after the file.  For an IMAP or POP folder the file is the local cache,
 imap-cache-<md5>, which says nothing about which mailbox it holds.
 
-`rename-buffer\=' uniquifies, so a name already taken gets a suffix rather than
+`rename-buffer' uniquifies, so a name already taken gets a suffix rather than
 an error."
   (when buffer
     (when (and folder-name (not (equal (buffer-name buffer) folder-name)))
@@ -5320,7 +5320,7 @@ rounds after it (emacs-vm/vm#473).")
 (defvar vm-mail-checks-outstanding nil
   "The maildrops of this folder with a check still to answer.
 One check at a time for each: the timer fires every
-`vm-mail-check-interval\=' seconds, and a server slower than that would
+`vm-mail-check-interval' seconds, and a server slower than that would
 otherwise be asked again before it had answered the first time.")
 (make-variable-buffer-local 'vm-mail-checks-outstanding)
 
@@ -5379,7 +5379,7 @@ anyway, which is what the check was going to ask."
 
 (defvar vm-mail-check-failed nil
   "Whether the last check of this folder's server for new mail failed.
-The periodic check runs every `vm-mail-check-interval\=' seconds, so a
+The periodic check runs every `vm-mail-check-interval' seconds, so a
 server VM cannot ask -- most often one whose password it does not hold --
 would otherwise report the same failure for as long as Emacs runs
 (emacs-vm/vm#712).")
@@ -5391,9 +5391,9 @@ INTERACTIVE says whether a question may be asked, and is passed to CHECK.
 
 A check that is not interactive comes from the mail-check timer, which can
 neither answer a password prompt nor do anything with the same failure every
-`vm-mail-check-interval\=' seconds.  Such a failure is reported once and the
+`vm-mail-check-interval' seconds.  Such a failure is reported once and the
 folder is then left alone until a check succeeds again; set
-`vm-mail-check-interval\=' to nil to stop checking altogether."
+`vm-mail-check-interval' to nil to stop checking altogether."
   (if interactive
       (funcall check interactive)
     (condition-case err
@@ -6287,8 +6287,8 @@ none."
 (defun vm-folder-attendant-files (file)
   "The files VM keeps beside the folder FILE.
 Its index file and the message summary Thunderbird writes.  Not the backup,
-which is a reader\='s to keep, and not the auto-save file, whose name a
-reader can have moved with `auto-save-file-name-transforms\='."
+which is a reader's to keep, and not the auto-save file, whose name a
+reader can have moved with `auto-save-file-name-transforms'."
   (let ((directory (file-name-directory file))
 	(name (file-name-nondirectory file)))
     (append (when (stringp vm-index-file-suffix)
@@ -6301,7 +6301,7 @@ INTERACTIVE says whether there is anybody to ask; without one nothing is
 deleted, since a file is not removed on a guess.
 
 Asked rather than done.  The old name may be where mail is delivered, or what
-`vm-spool-files\=' or an account\='s inbox names, and a reader who keeps it is
+`vm-spool-files' or an account's inbox names, and a reader who keeps it is
 entitled to.  Said either way, because two folders holding the same mail is
 a thing to know about: VM is looking at the new one, so the old goes stale."
   (when (and old (file-exists-p old))
@@ -6320,11 +6320,11 @@ a thing to know about: VM is looking at the new one, so the old goes stale."
 
 (defun vm-folder-buffer-in-use-p (buffer)
   "Whether BUFFER is a folder somebody is reading, rather than a leftover.
-`vm-message-pointer\=' is what tells them apart.  A visit that fails partway
-leaves a `vm-mode\=' buffer without one -- holding the messages read before the
+`vm-message-pointer' is what tells them apart.  A visit that fails partway
+leaves a `vm-mode' buffer without one -- holding the messages read before the
 error, or none at all, depending on how far it got -- and that buffer is not
 one to keep, let alone to convert from.  It is also the state
-`vm-error-if-folder-not-read-through\=' refuses, and the folder whose repair is
+`vm-error-if-folder-not-read-through' refuses, and the folder whose repair is
 the on-disk conversion in the first place.
 
 A buffer with a pointer is a folder in use, and converting the file under it
@@ -6527,15 +6527,15 @@ when saving a buffer."
 
 (defun vm-cache-folders-in-the-older-format ()
   "The POP and IMAP caches on disk whose names do not state their type.
-Every cache VM creates carries `vm-cache-folder-type-suffix\=' and is written
+Every cache VM creates carries `vm-cache-folder-type-suffix' and is written
 in that type.  One without it was written by a VM that did not name its
 caches, and is read as From_, so it keeps the weakness mboxcl2 exists to
 remove: a message whose body holds a line beginning \"From \" can split it in
 two.
 
 The directories are the ones a cache name is built in:
-`vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
-`vm-folder-directory\=' and the home directory.
+`vm-imap-folder-cache-directory', `vm-pop-folder-cache-directory',
+`vm-folder-directory' and the home directory.
 
 Answers (FILES . FAULTS), FAULTS pairing each directory that could not be
 listed with what went wrong.  Collected rather than raised, for the reason the
@@ -6551,7 +6551,7 @@ search none of the others, and the reader is told which it was."
 
 (defun vm-cache-folder-directories ()
   "The directories a cache file can have been created in, each of them once.
-Once by `file-truename\=', not by the name as configured: two of these being one
+Once by `file-truename', not by the name as configured: two of these being one
 directory reached two ways is ordinary -- /tmp is a symbolic link on macOS, and
 a home directory is one on many managed systems -- and it made the cache in it
 appear twice.  The second conversion then found the file already renamed and
@@ -6613,7 +6613,7 @@ CONVERTED is how many were, FAULTS what stopped the rest."
 The tally alone where nothing went wrong.  A buffer as soon as anything did,
 because the faults are what the reader has to act on and a run of messages in
 the echo area replaces each with the next: with a dozen caches only the last
-of them would still be readable, which is why `vm-check-folder-report\=' puts
+of them would still be readable, which is why `vm-check-folder-report' puts
 its list in a buffer too."
   (let ((tally (vm-cache-conversion-tally found converted faults)))
     (if (null faults)
@@ -6637,7 +6637,7 @@ A cache VM creates now is named for its type and written as mboxcl2, where the
 end of a message is a byte count rather than a line that has to be recognised.
 A cache from before that has no such name and is read as From_, so a message
 whose body holds a line beginning \"From \" can still split it in two.  This
-converts each of those and renames it, which is `vm-change-folder-type-of-file\='
+converts each of those and renames it, which is `vm-change-folder-type-of-file'
 once per cache: the previous contents are kept in a backup file, and a cache
 that is already mboxcl2 in all but its name is only renamed.
 
@@ -6647,14 +6647,14 @@ own, so it is asked rather than assumed either way.  With a prefix argument it
 asks about each cache before converting it as well.
 
 A cache being visited cannot be converted and is reported; quit that folder
-with `vm-quit\=' and run this again.  Nothing is refetched, and a cache that
+with `vm-quit' and run this again.  Nothing is refetched, and a cache that
 cannot be read is left exactly as it was.  Where anything could not be
 converted the faults are listed in a buffer, since a run of them in the echo
 area cannot be read.
 
 The caches are looked for where their names are built, which is
-`vm-imap-folder-cache-directory\=', `vm-pop-folder-cache-directory\=',
-`vm-folder-directory\=' and the home directory."
+`vm-imap-folder-cache-directory', `vm-pop-folder-cache-directory',
+`vm-folder-directory' and the home directory."
   (interactive "P")
   (let* ((search (vm-cache-folders-in-the-older-format))
 	 (files (car search))
@@ -6695,7 +6695,7 @@ rather than the buffer -- see `vm-change-folder-type-of-file'."
 	       (buffer-name)))))
 
 (defun vm-folder-claimed-content-length (m)
-  "The octet count M\='s own `Content-Length\=' header claims, or nil if it has
+  "The octet count M's own `Content-Length' header claims, or nil if it has
 none.  What the header says, not what the body measures: the two disagreeing
 is the fault worth finding."
   (save-excursion
@@ -6707,8 +6707,8 @@ is the fault worth finding."
 	(string-to-number (match-string 1))))))
 
 (defun vm-folder-body-octets-without-trailing-newlines (m)
-  "The octets of M\='s body, not counting newlines at the end of it.
-`vm-find-trailing-message-separator\=' skips any number of newlines past the
+  "The octets of M's body, not counting newlines at the end of it.
+`vm-find-trailing-message-separator' skips any number of newlines past the
 count, on the grounds that some mailers do not count the last one, so a length
 short by them is one the reader accepts and this must not complain about."
   (let ((end (vm-text-end-of m)))
@@ -6718,7 +6718,7 @@ short by them is one the reader accepts and this must not complain about."
       (vm-message-body-octets (vm-text-of m) (point)))))
 
 (defun vm-folder-length-fits-p (m)
-  "Whether M\='s `Content-Length\=' describes its body.  Nil when it has none.
+  "Whether M's `Content-Length' describes its body.  Nil when it has none.
 A length is right when it counts the body, and accepted when it counts the
 body without the newlines at the end of it, since that is what the reader
 accepts.  Anything else is a length that does not describe the message."
@@ -6729,8 +6729,8 @@ accepts.  Anything else is a length that does not describe the message."
 	 (or (= claimed actual) (and (>= claimed least) (<= claimed actual))))))
 
 (defun vm-folder-length-fault (m number)
-  "What is wrong with M\='s `Content-Length\=', as a line, or nil if nothing is.
-NUMBER is the message\='s position in the folder, for the report."
+  "What is wrong with M's `Content-Length', as a line, or nil if nothing is.
+NUMBER is the message's position in the folder, for the report."
   (let ((claimed (vm-folder-claimed-content-length m))
 	(actual (vm-message-body-octets (vm-text-of m) (vm-text-end-of m))))
     (cond ((null claimed)
@@ -6742,7 +6742,7 @@ NUMBER is the message\='s position in the folder, for the report."
 		   number claimed actual)))))
 
 (defun vm-folder-length-faults ()
-  "Every message in this folder whose `Content-Length\=' is wrong or missing.
+  "Every message in this folder whose `Content-Length' is wrong or missing.
 A list of lines, empty for a sound folder.  Nil for a folder of any type that
 carries no such header, which has nothing to be wrong."
   (when (eq vm-folder-type 'mboxcl2)
@@ -6754,10 +6754,10 @@ carries no such header, which has nothing to be wrong."
 	  (when fault (push fault faults)))))))
 
 (defun vm-folder-length-survey ()
-  "How many messages carry a `Content-Length\=' and how many of those it fits.
+  "How many messages carry a `Content-Length' and how many of those it fits.
 A cons of the two counts.  The type is not consulted: the header is what says
 a folder is mboxcl2, so counting it over the whole folder is how a name that
-says otherwise gets checked.  `vm-folder-looks-like-mboxcl2-p\=' asks the same
+says otherwise gets checked.  `vm-folder-looks-like-mboxcl2-p' asks the same
 question of the first two messages, which is as much as a folder being visited
 can afford to read."
   (let ((carrying 0)
@@ -6770,7 +6770,7 @@ can afford to read."
 
 (defun vm-folder-mboxcl2-by-contents-p (survey held)
   "Whether the contents say mboxcl2: a length on every message, and each fits.
-SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+SURVEY is `vm-folder-length-survey' and HELD how many messages the folder
 holds.  Read as From_, such a folder splits wherever a body line begins
 \"From \", so a name that does not say mboxcl2 is worth reporting."
   (and (> held 0)
@@ -6779,7 +6779,7 @@ holds.  Read as From_, such a folder splits wherever a body line begins
 
 (defun vm-check-folder-misnamed-p (survey held)
   "Whether the contents say mboxcl2 while the folder is read as something else.
-SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+SURVEY is `vm-folder-length-survey' and HELD how many messages the folder
 holds.  The reader takes the type from the name, so this is the disagreement
 that leaves a folder read as a type it is not."
   (and (not (eq vm-folder-type 'mboxcl2))
@@ -6787,7 +6787,7 @@ that leaves a folder read as a type it is not."
 
 (defun vm-check-folder-contents-line (survey held)
   "What the contents say about the type, as a line for the report.
-SURVEY is `vm-folder-length-survey\=' and HELD how many messages the folder
+SURVEY is `vm-folder-length-survey' and HELD how many messages the folder
 holds.  A few lengths in a folder are no evidence: mail arrives carrying the
 header, and VM gives one to every message it rewrites."
   (cond ((vm-folder-mboxcl2-by-contents-p survey held)
@@ -6814,7 +6814,7 @@ HELD is how many messages the folder holds, for the count in the sentence."
 
 (defun vm-check-folder-older-cache-p ()
   "Whether this folder is a POP or IMAP cache whose name states no type.
-Every cache VM creates carries `vm-cache-folder-type-suffix\=' and is written
+Every cache VM creates carries `vm-cache-folder-type-suffix' and is written
 in that type; one without it was written before VM named its caches, so it is
 read as From_ whatever it holds.  Judged by the name, since that is what a
 cache is recognised by and what the type is read from."
@@ -6838,10 +6838,10 @@ calling it a fault."
 	  " in a backup file.  Nothing is refetched.\n\n"))
 
 (defun vm-check-folder-report (faults reader held survey)
-  "Say what `vm-check-folder\=' found.
+  "Say what `vm-check-folder' found.
 FAULTS is what the lengths said, READER how many messages walking the
 separators finds, HELD how many the folder is holding and SURVEY what
-`vm-folder-length-survey\=' counted.  A sound folder is one line in the echo
+`vm-folder-length-survey' counted.  A sound folder is one line in the echo
 area; anything else gets a buffer, since a list of messages is not something
 to read there.
 
@@ -6886,16 +6886,16 @@ what this command is asked to notice."
 
 ;;;###autoload
 (defun vm-check-folder (&optional file)
-  "Report this folder\='s type and check that it is sound, writing nothing.
+  "Report this folder's type and check that it is sound, writing nothing.
 
 With a prefix argument, or with FILE given, check a folder on disk that VM is
-not visiting -- see `vm-check-folder-of-file\='.  That is how to check a folder
+not visiting -- see `vm-check-folder-of-file'.  That is how to check a folder
 VM will not read, which is the folder most likely to want it.
 
 Says what type the folder is, what its name says it is, what its contents say
 and what the default is, how many messages it holds against how many the
 reader finds by walking the separators, and for an mboxcl2 folder whether every
-message\='s `Content-Length\=' matches its body.
+message's `Content-Length' matches its body.
 
 What the contents say is counted over every message, and the name is not
 consulted for it: the reader takes the type from the name, so a folder
@@ -6912,11 +6912,11 @@ reads the folder correctly while anything that believes the header -- which is
 what the format is for -- takes the wrong bytes.
 
 A POP or IMAP cache whose name states no type is reported too, and
-`vm-convert-caches-to-mboxcl2\=' named as what converts it.  Nothing in such a
+`vm-convert-caches-to-mboxcl2' named as what converts it.  Nothing in such a
 cache is wrong, so this is the one place a reader is told: it is read as From_,
 where a message whose body holds a line beginning \"From \" can split in two.
 
-Nothing is written.  `vm-change-folder-type\=' is the repair: converting a
+Nothing is written.  `vm-change-folder-type' is the repair: converting a
 folder to the type it already is recomputes every length."
   (interactive
    (list (when current-prefix-arg
@@ -6948,13 +6948,13 @@ folder to the type it already is recomputes every length."
 (defun vm-check-folder-of-file (file)
   "Report on the folder FILE on disk, without visiting it.  Writes nothing.
 The folder that most wants checking is one VM will not visit: a folder whose
-name says mboxcl2 and which has a message with no `Content-Length\=' is refused,
-so there is no buffer in which to check it.  `vm-mboxcl2-strict\=' is bound nil
+name says mboxcl2 and which has a message with no `Content-Length' is refused,
+so there is no buffer in which to check it.  `vm-mboxcl2-strict' is bound nil
 here, as the on-disk conversion binds it, and nothing global is left switched
 off afterwards.
 
 The type is the one the reader would take, from the name, and everything
-`vm-check-folder\=' says of a visited folder is said of this one."
+`vm-check-folder' says of a visited folder is said of this one."
   (let ((type (vm-get-folder-type file))
 	(coding-system-for-read (vm-binary-coding-system)))
     (when (memq type '(nil unknown))
@@ -7553,7 +7553,7 @@ a mixed list gets.  Issue #185."
 
 (defun vm-imap-messages-to-fetch (mlist)
   "The messages of MLIST whose bodies are to be fetched from one IMAP folder.
-Like `vm-messages-to-fetch-together\=', but a single message counts: the
+Like `vm-messages-to-fetch-together', but a single message counts: the
 driver sends one command either way, and there is no round trip to save by
 treating one differently from four."
   (let* ((wanted (seq-filter

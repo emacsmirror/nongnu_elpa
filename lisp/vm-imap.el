@@ -114,7 +114,7 @@ IMAP server, using cached data."
 (defun vm-folder-imap-cached (uid table)
   "The value UID has in TABLE, one of the folder's obarrays.
 Answers nil when the folder has no table: the server data is dropped at the
-end of a session (`vm-imap-dump-uid-seq-num-data\='), and `intern\=' with a nil
+end of a session (`vm-imap-dump-uid-seq-num-data'), and `intern' with a nil
 obarray reads the global one, so a folder with no data of its own would be
 answered out of Emacs's own symbols and out of whatever another folder had
 interned there."
@@ -1124,7 +1124,7 @@ should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
   "Prune this folder's retrieval list to the UIDS the mailbox still has.
 
 UID-VALIDITY is the mailbox's, IMAPDROP names it without its password.  Split
-out of `vm-prune-imap-retrieved-list\=' so that the pruning can be done when
+out of `vm-prune-imap-retrieved-list' so that the pruning can be done when
 the answer arrives rather than only when it was waited for."
   (let ((there (make-vector 67 0))
 	(retrieved-count (length vm-imap-retrieved-messages))
@@ -2555,7 +2555,7 @@ anything the grammar allows without knowing what it means."
       rest)))
 
 (defun vm-imap-message-item-p (token)
-  "Whether TOKEN names the item that carries a message\='s text.
+  "Whether TOKEN names the item that carries a message's text.
 The names a fetch of message text asks under, as the server answers them:
 BODY.PEEK comes back as BODY, and the section follows it in brackets."
   (and (eq (car token) 'atom)
@@ -2563,7 +2563,7 @@ BODY.PEEK comes back as BODY, and the section follows it in brackets."
 	       '("RFC822" "RFC822.HEADER" "RFC822.TEXT" "BODY"))))
 
 (defun vm-imap-fetch-response-parts (contents)
-  "The UID and the message of a FETCH response\='s CONTENTS, as (UID . TOKEN).
+  "The UID and the message of a FETCH response's CONTENTS, as (UID . TOKEN).
 Either may be nil: a response the server sent to report flags carries neither.
 
 The items are walked by name rather than matched in a fixed order, because a
@@ -3059,8 +3059,8 @@ fetches flags in addition to uid's and stores them in obarrays."
 
 (defun vm-imap-mailbox-holds-a-keyword-p (flags-obarray)
   "Whether any message in FLAGS-OBARRAY carries an IMAP keyword.
-FLAGS-OBARRAY is the folder\='s flags obarray, whose value for each UID is the
-message\='s size followed by its flags."
+FLAGS-OBARRAY is the folder's flags obarray, whose value for each UID is the
+message's size followed by its flags."
   (catch 'found
     (mapatoms (lambda (symbol)
 		(when (seq-some #'vm-imap-keyword-p (cdr (symbol-value symbol)))
@@ -3072,14 +3072,14 @@ message\='s size followed by its flags."
   "Whether this mailbox holds IMAP keywords at all, as far as VM has looked.
 
 A VM label is an IMAP keyword on the wire, and the read-back takes the
-server\='s flag list for the whole truth: a keyword it does not report is a
+server's flag list for the whole truth: a keyword it does not report is a
 label the reader has removed somewhere else.  Gmail keeps no keyword at all
 (emacs-vm/vm#601), so the read-back that follows a save erased every label the
-save had just failed to store, leaving the reader\='s labels nowhere.
+save had just failed to store, leaving the reader's labels nowhere.
 
 The answer is whether any message in the mailbox carries a keyword.  Nothing
 in the protocol answers it: a server may leave a keyword out of PERMANENTFLAGS
-and store it anyway, or advertise `\\*\=' and keep nothing, which is what Gmail
+and store it anyway, or advertise `\\*' and keep nothing, which is what Gmail
 does.  A mailbox where no message has one is a mailbox whose flag list says
 nothing about labels, and the labels are left as the folder has them.
 
@@ -3088,7 +3088,7 @@ where no message carries a keyword and another client removed the last one.
 Being wrong the other way costs the reader the labels they set.
 
 The answer is worked out once per look at the mailbox and kept in
-`vm-imap-keywords-carried\='; the current buffer is the folder."
+`vm-imap-keywords-carried'; the current buffer is the folder."
   (let ((flags-obarray (vm-folder-imap-flags-obarray)))
     (cond
      ;; nothing has been fetched, so there is nothing to go on: answer as VM
@@ -3194,9 +3194,9 @@ recorded in the undo stack."
   (concat "(" (mapconcat #'identity flags " ") ")"))
 
 (defun vm-imap-keyword-p (flag)
-  "Whether FLAG is a keyword rather than one of the protocol\='s own flags.
+  "Whether FLAG is a keyword rather than one of the protocol's own flags.
 A keyword is what a VM label is on the wire, and what a server may decline to
-keep; a flag beginning with a backslash is the protocol\='s and every server
+keep; a flag beginning with a backslash is the protocol's and every server
 has to know it."
   (not (string-prefix-p "\\" flag)))
 
@@ -3223,7 +3223,7 @@ with no flags reports an empty list, which is the very case this is here to
 catch, so \"none\" and \"did not say\" cannot share a value.  Asking costs a
 line of response per message, so it is
 asked only where there is something to check: a store of nothing but the
-protocol\='s own flags uses `.SILENT\' as before, and one that carries a
+protocol's own flags uses `.SILENT\' as before, and one that carries a
 keyword does not, because a keyword is what a server may take and discard
 (issue #601)."
   (let* ((checking (seq-some #'vm-imap-keyword-p flags))
@@ -3246,7 +3246,7 @@ keyword does not, because a keyword is what a server may take and discard
 (defun vm-imap-note-dropped-flags (wanted reported)
   "Complain about each of WANTED that REPORTED does not have, once per session.
 The server said OK and did not keep it.  REPORTED is what
-`vm-imap-store-flags-1\=' answered: nil where the server said nothing, which is
+`vm-imap-store-flags-1' answered: nil where the server said nothing, which is
 a server that did not answer the question rather than one that dropped
 anything.
 
@@ -3862,7 +3862,7 @@ expunges and which the folder carries in its `X-VM-IMAP-To-Expunge' header."
       ;; mailbox on that list, and the mail went with no confirmation
       ;; (emacs-vm/vm#752).  `vm-expunge-folder' queues every expunge here as
       ;; the reader makes it, and the folder carries the queue in its
-      ;; `X-VM-IMAP-To-Expunge\=' header, so offline work -- what the prefix
+      ;; `X-VM-IMAP-To-Expunge' header, so offline work -- what the prefix
       ;; argument is for -- is already recorded without the diff.
       (when (and do-remote-expunges vm-imap-messages-to-expunge)
 	(vm-imap-expunge-remote-messages))
@@ -4318,11 +4318,11 @@ They must all be in the same folder.  Each body is put in its own place in
 the folder as its response arrives, so the server may answer for them in any
 order; the UID in each response says which message it is.
 
-The one command is the point: fetching four bodies was four `UID FETCH\='
+The one command is the point: fetching four bodies was four `UID FETCH'
 commands and four round trips.  Issue #185.
 
 Returns the messages whose bodies arrived.  A message the server does not
-answer for keeps its `body-to-be-retrieved\=' flag, so it is asked for again
+answer for keeps its `body-to-be-retrieved' flag, so it is asked for again
 rather than being quietly left empty."
   (let* ((folder-buffer (vm-buffer-of (vm-real-message-of (car mlist))))
 	 (fetched nil))
@@ -4369,7 +4369,7 @@ rather than being quietly left empty."
 		       statblob (1+ (- (length uids) waiting)))
 		      ;; The target is chosen when the response says which
 		      ;; message it is for, and the folder is made ready for
-		      ;; it then -- see `vm-make-room-for-message-body\='.
+		      ;; it then -- see `vm-make-room-for-message-body'.
 		      (vm-imap-retrieve-to-target
 		       process
 		       (lambda (uid)
@@ -5151,7 +5151,7 @@ them."
 (defun vm-imap-show-folder-list (account mailbox-status-list filter-new)
   "Show what ACCOUNT holds: MAILBOX-STATUS-LIST is (MAILBOX MESSAGES RECENT).
 FILTER-NEW leaves out the mailboxes with nothing new in them.  Split out of
-`vm-list-imap-folders\=' so that the listing can be shown when it arrives
+`vm-list-imap-folders' so that the listing can be shown when it arrives
 rather than only when it was waited for."
   (require 'ehelp)
   (let ((sorted (sort (copy-sequence mailbox-status-list)

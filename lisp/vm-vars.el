@@ -1065,21 +1065,21 @@ not need it."
 (defcustom vm-folder-type-by-extension-alist
   '(("mboxcl2" . mboxcl2)
     ("mbox" . From_))
-  "*Alist of (EXTENSION . TYPE): the folder type a folder\='s name asks for.
-EXTENSION is matched literally against the file name\='s extension, without
-the dot, and TYPE is one of the types `vm-default-folder-type\=' accepts.
+  "*Alist of (EXTENSION . TYPE): the folder type a folder's name asks for.
+EXTENSION is matched literally against the file name's extension, without
+the dot, and TYPE is one of the types `vm-default-folder-type' accepts.
 
 This is consulted where a folder cannot say for itself what it is:
 
   - a folder that does not exist yet, or is empty, is created in the type
-    its name asks for rather than in `vm-default-folder-type\=';
+    its name asks for rather than in `vm-default-folder-type';
   - a From_ folder is read as the type its name gives.  From_ and mboxcl2
-    are the same folder but for the `Content-Length\=' header, so looking
+    are the same folder but for the `Content-Length' header, so looking
     like one is no evidence: a folder named mboxcl2 is mboxcl2, and a
     message in it that has no length is then something the reader
     complains about -- which is the use of saying so in the name.
 
-What a folder\='s own contents say is never overridden where they settle the
+What a folder's own contents say is never overridden where they settle the
 question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
 
 .mbox is From_, which is what the rest of the world means by an mbox file.
@@ -1087,7 +1087,7 @@ From_ is also the type a folder has when its name says nothing about it, so it
 is the one type an extension names without being the name that type is written
 under: a folder called sent.mbox keeps that name when converted to From_, and
 one called INBOX is not renamed INBOX.mbox by the same conversion.  See
-`vm-folder-type-with-no-name-of-its-own\='.
+`vm-folder-type-with-no-name-of-its-own'.
 
 Not .mboxcl: VM has no mboxcl type, and mboxcl quotes \"From \" lines in bodies
 where mboxcl2 does not, so reading one as the other would misread exactly
@@ -1098,7 +1098,7 @@ that it matches nothing, silently, and it can be written so that it claims
 every folder in a directory -- and a directory of nine From_ folders claimed
 as mboxcl2 is nine folders VM then refuses to read.  The cost is that a
 folder which cannot be renamed cannot be typed by its name; that is what
-`vm-default-folder-type\=' is for.
+`vm-default-folder-type' is for.
 
 Set it to nil to have names mean nothing, which is what VM did before."
   :group 'vm-folders
@@ -1737,14 +1737,14 @@ that type are assumed to be included."
 (defcustom vm-mime-complete-html-for-external-viewer t
   "*Whether to complete an HTML part before an external viewer sees it.
 Plenty of mail carries text/html that is a fragment rather than a document:
-it opens with a `<span>\=' or a `<div>\=' and has no `<html>\=' and no `<head>\='.
+it opens with a `<span>' or a `<div>' and has no `<html>' and no `<head>'.
 Nothing in such a file says what character set its bytes are in -- the
-message said so in the part\='s Content-Type header, which the file does not
+message said so in the part's Content-Type header, which the file does not
 have -- so a browser handed it guesses, and gets an accented letter or a
 curly quote wrong.
 
-With this set, VM wraps a fragment in a document that declares the part\='s
-charset before handing it over.  A part with an `<html>\=' tag of its own, or
+With this set, VM wraps a fragment in a document that declares the part's
+charset before handing it over.  A part with an `<html>' tag of its own, or
 one that declares a charset itself, is written out untouched.  The text is
 never re-encoded; only the wrapper is added.
 
@@ -1755,7 +1755,7 @@ Issue #387."
 (defcustom vm-mime-externalize-cid-references t
   "*Whether to give an external viewer the images an HTML part refers to.
 A sender who puts a picture in an HTML message attaches it as another part and
-refers to it as `cid:something\=' (RFC 2392).  VM shows such a part to an
+refers to it as `cid:something' (RFC 2392).  VM shows such a part to an
 external viewer by writing it to a file, and a browser handed that one file has
 no way to reach the rest of the message -- so it draws a broken image where the
 picture should be.
@@ -1763,7 +1763,7 @@ picture should be.
 With this set, the parts an HTML file refers to are written beside it and the
 references are rewritten to name them, so the message looks as it was meant to.
 That means the images reach the disk in the temporary directory, along with the
-HTML itself, until VM deletes them with the rest of a message\='s temporary
+HTML itself, until VM deletes them with the rest of a message's temporary
 files.  Set it to nil to send the HTML alone, as VM used to."
   :group 'vm-mime
   :type 'boolean)
@@ -5522,7 +5522,7 @@ than first.  VM commands may be called from it.
 
 If what you want is to configure VM before it starts, set variables in your
 init file or `vm-init-file' instead; and to run something when a particular
-library is loaded, `with-eval-after-load\=' is simpler than a hook."
+library is loaded, `with-eval-after-load' is simpler than a hook."
   :group 'vm-hooks
   :type 'hook)
 
@@ -7203,8 +7203,8 @@ be told from the answer to a command that has already been answered.")
 
 (defvar vm-imap-current-tag nil
   "The tag of the last command sent on this IMAP session.
-Buffer-local to a process buffer.  A response pattern written `VM\=' means
-this tag: see `vm-imap-response-matches\='.")
+Buffer-local to a process buffer.  A response pattern written `VM' means
+this tag: see `vm-imap-response-matches'.")
 
 (defvar vm-imap-read-point nil
   "Position in an IMAP process buffer where the next read must
@@ -7282,7 +7282,7 @@ complaint is made once per session rather than once per message.")
   "Whether this mailbox carries IMAP keywords, in the folder buffer.
 A cons of the flags obarray the answer was worked out from and the answer, so
 that a new obarray -- a new look at the mailbox -- is worked out again.  See
-`vm-imap-mailbox-carries-keywords-p\=', which is the only thing that reads it.")
+`vm-imap-mailbox-carries-keywords-p', which is the only thing that reads it.")
 (make-variable-buffer-local 'vm-imap-keywords-carried)
 (defvar vm-reply-list nil
   "Buffer local variable in Composition buffers that holds the set of

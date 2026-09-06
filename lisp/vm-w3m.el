@@ -200,11 +200,11 @@ If the prefix arg is given, all images are considered to be safe."
 
 (defun vm-w3m-mark-images-safe ()
   "Let emacs-w3m display the images in this buffer whatever their URLs.
-emacs-w3m records the `w3m-safe-url-regexp\=' in force when it rendered the
-text as a text property over it, and `w3m-toggle-inline-images\=' refuses to
+emacs-w3m records the `w3m-safe-url-regexp' in force when it rendered the
+text as a text property over it, and `w3m-toggle-inline-images' refuses to
 show anything whose URL does not match what it finds there.  So removing that
 property is what \"consider all images safe\" means; there is no argument for
-it, and the `w3m-safe-toggle-inline-images\=' that once took one is gone."
+it, and the `w3m-safe-toggle-inline-images' that once took one is gone."
   (let ((inhibit-read-only t)
 	(modified (buffer-modified-p)))
     (remove-text-properties (point-min) (point-max) '(w3m-safe-url-regexp nil))
