@@ -8,6 +8,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * VM colours quoted text and the signature in a message body
+    (emacs-vm/vm#811).  Set `vm-enable-body-faces`: quoted text then wears a
+    face per level of quoting, from `vm-citation-faces`, and the signature
+    wears `vm-signature-face`.  Off by default, since it changes how every
+    message looks.
+
+    This is what was worth keeping of the `u-vm-color.el` add-on removed in
+    the same release.  That had to be wired up by hand and was never
+    documented; this is in the manual, under previewing, and has faces named
+    the way the rest of VM's are.
+
   * `u-vm-color.el` is gone (emacs-vm/vm#811).  It was bundled in 8.1.x and
     half of it was superseded in 8.1.93a, 2010-08-28, when
     `vm-summary-enable-faces` replaced `u-vm-color-summary-mode`; the NEWS

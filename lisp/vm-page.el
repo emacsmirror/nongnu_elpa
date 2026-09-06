@@ -633,6 +633,69 @@ Use mouse button 3 to choose a Web browser for the URL."
           (narrow-to-region start end)
           (vm-energize-urls)))))
     
+(defconst vm-citation-prefix-regexp "[ \t]*[-A-Za-z0-9]*>[ \t]*"
+  "One level of quoting at the start of a line.
+A `>' on its own, or one behind the initials some readers put there.")
+
+(defun vm-citation-depth ()
+  "How many levels of quoting the line at point begins with.
+Point is left after the prefixes counted."
+  (let ((depth 0))
+    (while (looking-at vm-citation-prefix-regexp)
+      (goto-char (match-end 0))
+      (setq depth (1+ depth)))
+    depth))
+
+(defun vm-fontify-citations (start end)
+  "Colour quoted text between START and END, a face per level of quoting.
+The faces are `vm-citation-faces', and text quoted deeper than there are
+faces wears the last of them."
+  (when vm-citation-faces
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (let* ((line-start (point))
+               (depth (vm-citation-depth)))
+          (when (> depth 0)
+            (let ((face (nth (min (1- depth) (1- (length vm-citation-faces)))
+                             vm-citation-faces)))
+              (vm-fontify-region line-start (line-end-position) face)))
+          (forward-line 1))))))
+
+(defun vm-fontify-signature (start end)
+  "Colour the signature between START and END with `vm-signature-face'.
+The signature is what follows the last line of exactly \"-- \", which is the
+separator RFC 3676 describes.  A leading `- ' is allowed on it, that being
+what a signature quoted into a digest looks like."
+  (when vm-signature-face
+    (save-excursion
+      (goto-char end)
+      (let ((separator (re-search-backward "^\\(- \\)?-- ?$" start t)))
+        (when separator
+          (vm-fontify-region separator end vm-signature-face))))))
+
+(defun vm-fontify-region (start end face)
+  "Put FACE on the text between START and END, marked as VM's own.
+An overlay rather than a text property, and marked, so that the next message
+shown in this buffer can take it off again the way `vm-highlight-headers'
+does with the headers it puts on."
+  (let ((overlay (make-overlay start end)))
+    (overlay-put overlay 'face face)
+    (overlay-put overlay 'vm-highlight t)))
+
+(defun vm-fontify-body-maybe ()
+  "Colour quoted text and the signature of the message being shown.
+Does nothing unless `vm-enable-body-faces' says to.  Called where
+`vm-highlight-headers-maybe' is, and it removes what this leaves behind:
+both mark their overlays `vm-highlight'."
+  (when (and vm-enable-body-faces vm-message-pointer)
+    (save-restriction
+      (widen)
+      (let ((start (vm-text-of (car vm-message-pointer)))
+            (end (vm-text-end-of (car vm-message-pointer))))
+        (vm-fontify-citations start end)
+        (vm-fontify-signature start end)))))
+
 (defun vm-highlight-headers-maybe ()
   ;; highlight the headers
   (if (or vm-highlighted-header-regexp
@@ -800,6 +863,7 @@ preview or the full message, governed by the the variables
 	       (vm-decode-mime-message-headers (car vm-message-pointer))
 	       (vm-energize-urls)
 	       (vm-highlight-headers-maybe)
+	       (vm-fontify-body-maybe)
 	       (vm-energize-headers-and-xfaces))
 	   ;; restrict the things that are auto-displayed, since
 	   ;; decode-for-preview is meant to allow a numeric
@@ -836,6 +900,7 @@ preview or the full message, governed by the the variables
        ;; if no MIME decoding is needed
        (vm-energize-urls-in-message-region)
        (vm-highlight-headers-maybe)
+       (vm-fontify-body-maybe)
        (vm-energize-headers-and-xfaces))
 
      ;; 6. Go to the text of message

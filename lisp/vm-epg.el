@@ -646,6 +646,7 @@ presentation copy, leaving the folder itself unmodified.  Sets
         (delete-region (point) (point-max)))
       (vm-energize-urls-in-message-region)
       (vm-highlight-headers-maybe)
+      (vm-fontify-body-maybe)
       (vm-energize-headers-and-xfaces))))
 
 (defun vm-epg-cleartext-automode-button (label action)
