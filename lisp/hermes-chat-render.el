@@ -59,10 +59,48 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
       (plist-put metadata :expanded (cadr tail))
     metadata))
 
+(defun hermes-chat--view-table-button (button)
+  "Open the Markdown table stored on BUTTON without wrapping rows."
+  (let ((table (button-get button 'hermes-chat-table))
+        (directory default-directory)
+        (buffer (generate-new-buffer "*Hermes Table*")))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (delay-mode-hooks (markdown-view-mode))
+        (markdown-toggle-markup-hiding -1)
+        ;; Alignment and copying both need the literal markup delimiters.
+        (setq-local filter-buffer-substring-function #'buffer-substring--filter)
+        (insert (hermes-chat--fontify-markdown-string table)))
+      (setq default-directory directory)
+      (visual-line-mode -1)
+      (setq-local truncate-lines t)
+      (setq-local buffer-face-mode-face 'fixed-pitch)
+      (buffer-face-mode 1)
+      (goto-char (point-min)))
+    (pop-to-buffer buffer)
+    (set-window-hscroll (selected-window) 0)))
+
 (defun hermes-chat--insert-markdown (text)
-  "Insert TEXT fontified as markdown when it is non-empty."
-  (unless (string-empty-p text)
-    (insert (hermes-chat--fontify-markdown-string text))))
+  "Insert fontified TEXT, with native-view buttons for its tables.
+Truncation is buffer-wide in Emacs, so tables have their own viewer while
+ordinary chat prose continues to wrap."
+  (let* ((text (hermes-chat--fontify-markdown-string text))
+         (end (length text))
+         (start 0))
+    (while (< start end)
+      (let ((next (next-single-property-change
+                   start 'hermes-chat-table text end))
+            (table (get-text-property start 'hermes-chat-table text)))
+        (if table
+            (progn
+              (insert-text-button
+               "[View Table]" 'face 'link 'follow-link t
+               'help-echo "Open this table without line wrapping"
+               'hermes-chat-table table
+               'action #'hermes-chat--view-table-button)
+              (when (string-suffix-p "\n" table) (insert "\n")))
+          (insert (substring text start next)))
+        (setq start next)))))
 
 (defun hermes-chat--insert-shadow (text)
   "Insert TEXT with the `shadow' face when it is non-empty."

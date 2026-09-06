@@ -499,15 +499,26 @@ block spanning the whole region to replace with a link."
 (defun hermes-chat--align-markdown-tables ()
   "Align every markdown table in the current buffer.
 Uses `markdown-table-align', the same padding TAB/`markdown-cycle'
-applies inside a table.  Fenced code blocks stay compact."
+applies inside a table.  Store each table's original source in the
+`hermes-chat-table' text property for native viewing.  Fenced code blocks
+stay unchanged."
   (save-excursion
     (goto-char (point-min))
     (while (not (eobp))
-      (if (markdown-table-at-point-p)
-          (progn
+      (if (and (markdown-table-at-point-p)
+               ;; Native table detection misses unfinished fenced blocks.
+               (not (markdown-find-previous-block)))
+          (let* ((begin (markdown-table-begin))
+                 (source (buffer-substring-no-properties
+                          begin (markdown-table-end))))
             (condition-case nil
-                (markdown-table-align)
+                (progn
+                  ;; Native alignment measures strings, not tab stops.
+                  (untabify begin (markdown-table-end))
+                  (markdown-table-align))
               (error nil))
+            (put-text-property begin (markdown-table-end)
+                               'hermes-chat-table source)
             (goto-char (markdown-table-end)))
         (forward-line 1)))))
 

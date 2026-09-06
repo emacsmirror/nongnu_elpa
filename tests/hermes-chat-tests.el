@@ -2232,17 +2232,151 @@
     (should (string-match-p "`tdd`" s))
     (should (string-match-p "overlap" s))))
 
+(ert-deftest hermes-chat-markdown-table-view-preserves-chat ()
+  "Tables open natively without changing wrapped prose or the draft."
+  (let* ((markdown-hide-markup t)
+         (raw (concat "| Kind | Description |\n|---|---|\n"
+                      "| 界\t**bold** | " (make-string 160 ?x) " |\n"))
+         (prose (concat "Before " (make-string 160 ?p) ".\n\n"))
+         viewer)
+    (save-window-excursion
+      (unwind-protect
+          (hermes-test-with-chat-buffer
+           (let ((chat (current-buffer)))
+             (insert "Unsent draft")
+             (hermes-chat--insert-entry
+              (hermes-chat--make-entry
+               'assistant (concat prose raw "\nAfter.\n") 'done))
+             (should (derived-mode-p 'hermes-chat-mode))
+             (should visual-line-mode)
+             (should-not truncate-lines)
+             (should (equal (hermes-chat-input-string) "Unsent draft"))
+             (should (string-match-p (regexp-quote prose) (buffer-string)))
+             (should (string-match-p (regexp-quote "\nAfter.\n") (buffer-string)))
+             (set-window-buffer (selected-window) chat)
+             (goto-char (point-min))
+             (search-forward "Before ")
+             (beginning-of-line)
+             (let ((line (line-number-at-pos)))
+               (vertical-motion 1)
+               (should (= (line-number-at-pos) line)))
+             (goto-char (point-min))
+             (search-forward "[View Table]")
+             (let ((button (button-at (1- (point)))))
+               (should (equal (button-get button 'hermes-chat-table) raw))
+               (button-activate button))
+             (setq viewer (current-buffer))
+             (should-not (eq viewer chat))
+             (should (derived-mode-p 'markdown-mode))
+             (should buffer-read-only)
+             (should truncate-lines)
+             (should-not visual-line-mode)
+             (should-not (string-match-p "\t" (buffer-string)))
+             (should (string-match-p "界 +\\*\\*bold\\*\\*" (buffer-string)))
+             (should (eq (key-binding (kbd "q")) #'kill-current-buffer))
+             (let ((columns
+                    (mapcar
+                     (lambda (line)
+                       (mapcar (lambda (pos) (string-width (substring line 0 pos)))
+                               (hermes-chat-tests--pipe-columns line)))
+                     (split-string (buffer-string) "\n" t))))
+               (should (equal (nth 0 columns) (nth 1 columns)))
+               (should (equal (nth 0 columns) (nth 2 columns))))
+             (goto-char (point-min))
+             (let ((start (point)))
+               (vertical-motion 1)
+               (should (= (line-number-at-pos) 2))
+               (should (> (- (point) start) (window-body-width))))
+             (scroll-left 12)
+             (should (= (window-hscroll) 12))
+             (quit-window)
+             (with-current-buffer chat
+               (should (equal (hermes-chat-input-string) "Unsent draft")))))
+        (when (buffer-live-p viewer) (kill-buffer viewer))))))
+
+(ert-deftest hermes-chat-markdown-table-view-keeps-markup-visible-and-copyable ()
+  "Fontification keeps aligned markup visible and intact when copied."
+  (dolist (hide '(nil t))
+    (let ((markdown-hide-markup hide)
+          viewer)
+      (save-window-excursion
+        (unwind-protect
+            (with-temp-buffer
+              (hermes-chat--insert-markdown
+               "| **bold** | `code` |\n|---|---|\n| a | b |\n")
+              (button-activate (button-at (point-min)))
+              (setq viewer (current-buffer))
+              (font-lock-ensure)
+              (goto-char (point-min))
+              (while (re-search-forward "[*`]" nil t)
+                (should-not (invisible-p (1- (point)))))
+              (let ((copied (filter-buffer-substring (point-min) (point-max))))
+                (should (equal copied (buffer-string)))
+                (should (string-match-p (regexp-quote "**bold**") copied))
+                (should (string-match-p (regexp-quote "`code`") copied))))
+          (when (buffer-live-p viewer) (kill-buffer viewer)))))))
+
+(ert-deftest hermes-chat-markdown-table-view-preserves-unrelated-buffer ()
+  "Opening a table must not adopt a same-name modified file buffer."
+  (let ((notes (generate-new-buffer "*Hermes Table*"))
+        (file (expand-file-name "hermes-table-notes.txt" temporary-file-directory))
+        viewer)
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (with-current-buffer notes
+              (text-mode)
+              (setq buffer-file-name file)
+              (insert "UNSAVED USER NOTES")
+              (set-buffer-modified-p t))
+            (with-temp-buffer
+              (hermes-chat--insert-markdown "| A | B |\n|---|---|\n| one | two |\n")
+              (button-activate (button-at (point-min)))
+              (setq viewer (current-buffer)))
+            (with-current-buffer notes
+              (should (equal (buffer-string) "UNSAVED USER NOTES"))
+              (should (eq major-mode 'text-mode))
+              (should (equal buffer-file-name file))
+              (should (buffer-modified-p)))
+            (should-not (eq viewer notes))
+            (with-current-buffer viewer
+              (should (derived-mode-p 'markdown-view-mode))
+              (should-not buffer-file-name)))
+        (when (and (buffer-live-p viewer) (not (eq viewer notes)))
+          (kill-buffer viewer))
+        (with-current-buffer notes (set-buffer-modified-p nil))
+        (kill-buffer notes)))))
+
+(ert-deftest hermes-chat-markdown-unclosed-fenced-tables-stay-inline ()
+  "Settled replies retain table-like code in either unclosed fence."
+  (dolist (fence '("```" "~~~"))
+    (let* ((raw (concat fence "\n| A | B |\n|---|---|\n| one | two |\n"))
+           (formatted (hermes-chat--fontify-markdown-string raw)))
+      (should (equal (substring-no-properties formatted) raw))
+      (should-not (text-property-not-all
+                   0 (length formatted) 'hermes-chat-table nil formatted))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--insert-entry
+        (hermes-chat--make-entry 'assistant raw 'done))
+       (should (string-match-p (regexp-quote raw) (buffer-string)))
+       (should-not (next-button (point-min)))))))
+
 (ert-deftest hermes-chat-markdown-leaves-fenced-tables-alone ()
-  "A table inside a fenced code block is not padded."
-  (let* ((raw (concat "```\n"
-                      "| short | x |\n"
-                      "|---|---|\n"
-                      "| much longer cell | y |\n"
-                      "```\n"))
-         (s (substring-no-properties
-             (hermes-chat--fontify-markdown-string raw))))
-    (should (string-match-p (regexp-quote "| short | x |") s))
-    (should (string-match-p (regexp-quote "| much longer cell | y |") s))))
+  "A table inside either closed fence stays inline, unlike a table after it."
+  (dolist (fence '("```" "~~~"))
+    (let* ((table "| short | x |\n|---|---|\n| much longer cell | y |\n")
+           (raw (concat fence "\n" table fence "\n"))
+           (s (hermes-chat--fontify-markdown-string raw)))
+      (should (equal (substring-no-properties s) raw))
+      (should-not (text-property-not-all 0 (length s) 'hermes-chat-table nil s))
+      (with-temp-buffer
+        (hermes-chat--insert-markdown (concat raw "\n" table))
+        (should (string-prefix-p raw (buffer-string)))
+        (let ((button (next-button (point-min))))
+          (should button)
+          (should (> (button-start button) (length raw)))
+          (should (equal (button-get button 'hermes-chat-table) table))
+          (should-not (next-button (button-end button))))))))
 
 (ert-deftest hermes-chat-shows-inline-diff-as-view-diff-link ()
   "An inline unified diff is replaced by a View Diff link that opens the diff."
