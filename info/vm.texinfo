@@ -2897,6 +2897,32 @@ highlighted.  Highlighted headers will be displayed using the face
 specified by @code{vm-highlighted-header-face}, which defaults to the
 face @code{vm-highlighted-header}, bold, unless you customize it.
 
+@vindex vm-enable-body-faces
+@vindex vm-citation-faces
+@vindex vm-signature-face
+@cindex citations, colouring
+@cindex quoted text, colouring
+@cindex signature, colouring
+Setting @code{vm-enable-body-faces} colours the body as well: quoted text a
+face per level of quoting, and the signature its own.  It is off by default,
+since it changes how every message looks.
+
+@code{vm-citation-faces} holds the faces for quoted text, the first for text
+quoted once and so on; there are five, and text quoted deeper wears the last
+of them.  A list of one face colours every level alike, and a list of none
+turns citation colouring off while leaving the signature alone.  A line
+counts as quoted for each @samp{>} it begins with, whether or not initials
+stand in front of it, so @samp{MD> } is one level and not two.
+
+The signature is everything after the last line of exactly @samp{-- }, which
+is the separator @cite{RFC 3676} describes and what mail readers write.  It
+wears @code{vm-signature-face}, which nil turns off.
+
+In earlier releases this colouring came from a bundled add-on,
+@file{u-vm-color.el}, which had to be wired up by hand and was never
+documented here.  That is gone, and this replaces the part of it worth
+keeping.
+
 @vindex vm-preview-read-messages
 By default, VM will not preview messages that are flagged as read.  To
 have VM preview all messages, set the value of

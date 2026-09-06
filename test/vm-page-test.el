@@ -684,6 +684,92 @@ point at its end, and leaves the last page showing."
       (should (string-match-p "page three text" (buffer-string)))
       (should-not (string-match-p "page one" (buffer-string))))))
 
+
+;;; Colouring quoted text and the signature (emacs-vm/vm#811)
+
+(defconst vm-page-test--quoted-body
+  (concat "Some text.\n"
+          "> once quoted\n"
+          ">> twice quoted\n"
+          "MD> initials then quoted\n"
+          "> > > > > > deeply quoted\n"
+          "plain again\n"
+          "-- \nthe signature\nsecond line of it\n")
+  "A body with every level of quoting these tests care about, and a signature.")
+
+(defun vm-page-test--faces-put-on (text)
+  "Colour TEXT as a message body, and answer (FACE . FIRST-LINE) for each.
+Only the overlays VM marks as its own, since that is what it takes off again
+when the next message is shown."
+  (with-temp-buffer
+    (insert text)
+    (vm-fontify-citations (point-min) (point-max))
+    (vm-fontify-signature (point-min) (point-max))
+    (let (found)
+      (dolist (overlay (overlays-in (point-min) (point-max)))
+        (when (overlay-get overlay 'vm-highlight)
+          (push (cons (overlay-get overlay 'face)
+                      (buffer-substring-no-properties
+                       (overlay-start overlay)
+                       (save-excursion (goto-char (overlay-start overlay))
+                                       (line-end-position))))
+                found)))
+      (sort found (lambda (a b) (string< (cdr a) (cdr b)))))))
+
+(defun vm-page-test--face-on (text line)
+  "The face put on the line of TEXT beginning with LINE, or nil."
+  (car (seq-find (lambda (cell) (string-prefix-p line (cdr cell)))
+                 (vm-page-test--faces-put-on text))))
+
+(ert-deftest vm-page-test-quoted-text-wears-a-face-per-level ()
+  "Each level of quoting gets its own face, and deeper wears the last one.
+
+emacs-vm/vm#811.  This came from the u-vm-color add-on, which was dropped;
+the citation and signature colouring is VM's own now.  `vm-citation-faces'
+holds five by default, so text quoted six deep wears the fifth."
+  (let ((text vm-page-test--quoted-body))
+    (should (equal 'vm-citation-1 (vm-page-test--face-on text "> once")))
+    (should (equal 'vm-citation-2 (vm-page-test--face-on text ">> twice")))
+    (should (equal 'vm-citation-5 (vm-page-test--face-on text "> > > > > >")))
+    ;; the initials some readers put before the angle bracket are part of the
+    ;; prefix, not text quoted a level deeper
+    (should (equal 'vm-citation-1 (vm-page-test--face-on text "MD> initials")))
+    ;; and unquoted text is left alone
+    (should (equal nil (vm-page-test--face-on text "Some text.")))
+    (should (equal nil (vm-page-test--face-on text "plain again")))))
+
+(ert-deftest vm-page-test-the-signature-wears-its-own-face ()
+  "Everything after the last \"-- \" line is the signature.
+That is the separator RFC 3676 describes and what mail readers write."
+  (should (equal 'vm-signature
+                 (vm-page-test--face-on vm-page-test--quoted-body "-- ")))
+  ;; a body with no separator has no signature to colour
+  (should (equal nil (vm-page-test--faces-put-on "just a body\nand more\n"))))
+
+(ert-deftest vm-page-test-the-citation-faces-are-configurable ()
+  "`vm-citation-faces' decides how many levels are told apart.
+One face colours every level alike; none turns citation colouring off and
+leaves the signature alone, which is what the docstring promises."
+  (let ((vm-citation-faces '(vm-citation-1)))
+    (should (equal 'vm-citation-1
+                   (vm-page-test--face-on vm-page-test--quoted-body ">> twice"))))
+  (let ((vm-citation-faces nil))
+    (should (equal nil (vm-page-test--face-on vm-page-test--quoted-body "> once")))
+    (should (equal 'vm-signature
+                   (vm-page-test--face-on vm-page-test--quoted-body "-- ")))))
+
+(ert-deftest vm-page-test-body-faces-are-off-unless-asked-for ()
+  "`vm-fontify-body-maybe' does nothing with `vm-enable-body-faces' nil.
+Off by default because it changes how every message looks."
+  (should-not (default-value 'vm-enable-body-faces))
+  (with-temp-buffer
+    (insert vm-page-test--quoted-body)
+    (let ((vm-enable-body-faces nil)
+          (vm-message-pointer nil))
+      (vm-fontify-body-maybe))
+    (should (equal nil (seq-filter (lambda (o) (overlay-get o 'vm-highlight))
+                                   (overlays-in (point-min) (point-max)))))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here

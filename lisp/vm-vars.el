@@ -1200,6 +1200,80 @@ FSF Emacs always uses VM's builtin highlighting code."
  "Default face used to highlight headers."
  :group 'vm-faces)
 
+(defface vm-citation-1
+  '((((class color) (background light)) (:foreground "orange red"))
+    (((class color) (background dark))  (:foreground "orange red"))
+    (t (:slant italic)))
+  "The face for quoted text one level deep in a message body."
+  :group 'vm-faces)
+
+(defface vm-citation-2
+  '((((class color) (background light)) (:foreground "SlateBlue"))
+    (((class color) (background dark))  (:foreground "SkyBlue1"))
+    (t (:slant italic)))
+  "The face for quoted text two levels deep in a message body."
+  :group 'vm-faces)
+
+(defface vm-citation-3
+  '((((class color) (background light)) (:foreground "DarkGreen"))
+    (((class color) (background dark))  (:foreground "cyan"))
+    (t (:slant italic)))
+  "The face for quoted text three levels deep in a message body."
+  :group 'vm-faces)
+
+(defface vm-citation-4
+  '((((class color) (background light)) (:foreground "BlueViolet"))
+    (((class color) (background dark))  (:foreground "magenta"))
+    (t (:slant italic)))
+  "The face for quoted text four levels deep in a message body."
+  :group 'vm-faces)
+
+(defface vm-citation-5
+  '((((class color) (background light)) (:foreground "Firebrick"))
+    (((class color) (background dark))  (:foreground "firebrick1"))
+    (t (:slant italic)))
+  "The face for quoted text five levels deep in a message body."
+  :group 'vm-faces)
+
+(defcustom vm-citation-faces
+  '(vm-citation-1 vm-citation-2 vm-citation-3 vm-citation-4 vm-citation-5)
+  "*Faces for quoted text, one per level of quoting.
+The first is for text quoted once, the second for text quoted twice, and so
+on.  Text quoted deeper than there are faces here wears the last of them, so
+a list of one face colours every level alike and a list of none turns
+citation colouring off while leaving the signature face alone."
+  :group 'vm-faces
+  :type '(repeat face))
+
+(defface vm-signature
+  '((((class color) (background light)) (:foreground "Sienna" :slant italic))
+    (((class color) (background dark))  (:foreground "misty rose" :slant italic))
+    (t (:slant italic)))
+  "The face for a signature at the end of a message body."
+  :group 'vm-faces)
+
+(defcustom vm-signature-face 'vm-signature
+  "*Face for the signature at the end of a message body.
+The signature is what follows a line of exactly \"-- \", the separator
+RFC 3676 describes, which is what mail readers write.  Nil colours it not at
+all."
+  :group 'vm-faces
+  :type '(choice (const :tag "None" nil) face))
+
+(defcustom vm-enable-body-faces nil
+  "*Non-nil colours quoted text and the signature in a message body.
+
+Quoted text wears the faces of `vm-citation-faces', one per level, and the
+signature wears `vm-signature-face'.  Headers are a separate matter, decided
+by `vm-highlighted-header-regexp'.
+
+Set this in the init file.  Off by default because it changes how every
+message looks.  Before VM 8.3.3 the same colouring came from the bundled
+u-vm-color add-on, which had to be wired up by hand and is gone
+(emacs-vm/vm#811)."
+  :group 'vm-faces
+  :type 'boolean)
+
 (defcustom vm-highlighted-header-face 'vm-highlighted-header
   "*Face to be used to highlight headers.
 The headers to highlight are specified by the `vm-highlighted-header-regexp'

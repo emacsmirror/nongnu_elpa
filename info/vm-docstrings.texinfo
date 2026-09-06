@@ -1413,6 +1413,40 @@ Default value: @code{vm-attachment-button-mouse}
 
 @end macro
 
+@macro vmdocvmcitationfaces
+@defopt vm-citation-faces
+@vindex vm-citation-faces
+Faces for quoted text, one per level of quoting.
+The first is for text quoted once, the second for text quoted twice, and so
+on.  Text quoted deeper than there are faces here wears the last of them, so
+a list of one face colours every level alike and a list of none turns
+citation colouring off while leaving the signature face alone.
+
+Default value:
+@example
+(vm-citation-1 vm-citation-2 vm-citation-3 vm-citation-4 vm-citation-5)
+@end example
+@end defopt
+
+@end macro
+
+@macro vmdocvmenablebodyfaces
+@defopt vm-enable-body-faces
+@vindex vm-enable-body-faces
+Non-nil colours quoted text and the signature in a message body.
+
+Quoted text wears the faces of @code{vm-citation-faces}, one per level, and the
+signature wears @code{vm-signature-face}.  Headers are a separate matter, decided
+by @code{vm-highlighted-header-regexp}.
+
+Set this in the init file.  Off by default because it changes how every
+message looks.  Before VM 8.3.3 the same colouring came from the bundled
+u-vm-color add-on, which had to be wired up by hand and is gone
+(emacs-vm/vm#811).
+@end defopt
+
+@end macro
+
 @macro vmdocvmhighlighturlface
 @defopt vm-highlight-url-face
 @vindex vm-highlight-url-face
@@ -1457,6 +1491,19 @@ Default value: @code{vm-mime-button}
 Face used for text in MIME buttons when mouse is hovering.
 
 Default value: @code{vm-mime-button-mouse}
+@end defopt
+
+@end macro
+
+@macro vmdocvmsignatureface
+@defopt vm-signature-face
+@vindex vm-signature-face
+Face for the signature at the end of a message body.
+The signature is what follows a line of exactly "-- ", the separator
+RFC 3676 describes, which is what mail readers write.  Nil colours it not at
+all.
+
+Default value: @code{vm-signature}
 @end defopt
 
 @end macro

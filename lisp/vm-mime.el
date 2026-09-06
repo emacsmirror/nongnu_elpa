@@ -2477,6 +2477,7 @@ in the buffer.  The function is expected to make the message
 		   (delete-region (point) (point-max)))
 		 (vm-energize-urls)
 		 (vm-highlight-headers-maybe)
+		 (vm-fontify-body-maybe)
 		 (vm-energize-headers-and-xfaces))
 	     (set-buffer-modified-p modified))))
 	(with-current-buffer vm-mail-buffer
