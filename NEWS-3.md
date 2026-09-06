@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * The manual has a Setting Up chapter (emacs-vm/vm#790): a configuration
+    built one piece at a time, from making VM the mail agent Emacs uses
+    through local and server folders, the summary, viewing, composing,
+    sending, the address book and keys of your own.  It sits after Starting
+    Up, which is where a new reader is.
+
+    `example.vm` is the same settings in one file, and it now loads.  It did
+    not: `(setq vm-primary-inbox POP IMAP)` offered two alternative values as
+    if you could give both, so every setting after it was silently never
+    made.  Five bare `require` calls stopped the whole configuration where
+    they stood when a package was missing, five keys were bound to commands
+    VM does not have, and `W` was bound twice in consecutive lines.  The
+    original author's own name and address are out of it.
+
   * The keys VM 8 gives its own commands are bound (emacs-vm/vm#632).  `!`
     flags a message, `<` and `>` promote and demote a subthread, and `V O`,
     `V U`, `V D` and `V ?` do their virtual folder commands.

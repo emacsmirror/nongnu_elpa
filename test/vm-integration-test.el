@@ -1018,6 +1018,89 @@ not calls anything makes."
                               missing)))))
     missing))
 
+(defun vm-integration-test--byte-compile-in-a-subprocess (file)
+  "What byte-compiling FILE reports, or nil when it reports nothing.
+
+In a subprocess because compiling loads what the file requires, and because
+`byte-compile-file\=' writes a .elc beside its input: the copy it is given
+here is in a directory of its own.
+
+Compiling rather than reading, because reading finds only what stops the
+reader.  A form with the wrong number of arguments reads perfectly well and
+fails when it runs, which is how (setq A one two) sat in the example
+configuration: `setq\=' with an odd number of arguments, two alternative
+values offered as if you could give both."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-example" t)))
+         (copy (expand-file-name "example-config.el" dir)))
+    (unwind-protect
+        (progn
+          (copy-file file copy t)
+          (with-temp-buffer
+            (call-process
+             (expand-file-name invocation-name invocation-directory)
+             nil t nil "-Q" "--batch"
+             "-L" vm-test-lisp-dir
+             "--eval" "(require 'vm-autoloads)"
+             "--eval" (format "(byte-compile-file %S)" copy))
+            (goto-char (point-min))
+            (let (problems)
+              (while (re-search-forward "^.*\\(Warning\\|Error\\): .*$" nil t)
+                (let ((line (match-string 0)))
+                  ;; A configuration is not a library.  It has no
+                  ;; lexical-binding cookie and needs none, and it names
+                  ;; variables and functions of packages that are not
+                  ;; installed on the machine running this, each behind a
+                  ;; `(require ... nil t)\=' that decides at run time.  A
+                  ;; compiler that cannot see them says so about every one.
+                  ;;
+                  ;; What is left, and what this is for, is a form that would
+                  ;; fail when it ran whatever is installed: the wrong number
+                  ;; of arguments, a list that does not close, a macro used
+                  ;; wrongly.  Reading the file finds none of those.
+                  (unless (string-match-p
+                           (concat "lexical-binding"
+                                   "\\|assignment to free variable"
+                                   "\\|reference to free variable"
+                                   "\\|is not known to be defined")
+                           line)
+                    (push (replace-regexp-in-string
+                           (regexp-quote dir) "" line)
+                          problems))))
+              (nreverse problems))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-integration-test-the-example-configuration-compiles ()
+  "REGRESSION: example.vm has no form that would fail when it ran.
+
+emacs-vm/vm#790.  Reading it is not enough: a form with the wrong number of
+arguments reads and then fails.  `(setq vm-primary-inbox POP IMAP)\=' offered
+two alternative values as if you could give both, so loading the file
+answered
+
+    Wrong number of arguments: setq, 3
+
+and every setting after it was never made.  That is the same message the
+unclosed list gave, so fixing the list and reading the file again looked
+like a fix and was not."
+  (should (equal nil (vm-integration-test--byte-compile-in-a-subprocess
+                      vm-integration-test--example-vm))))
+
+(ert-deftest vm-integration-test-the-example-configuration-binds-real-commands ()
+  "Every command example.vm binds a key to exists.
+
+`define-key' takes the command quoted, so the check that walks calls does not
+see it: five keys were bound to commands VM does not have, and pressing one
+answered that the command was not defined."
+  (let ((missing nil))
+    (dolist (form (vm-integration-test--forms-of vm-integration-test--example-vm))
+      (when (and (consp form) (eq (car form) 'define-key))
+        (let ((command (nth 2 form)))
+          (when (and (consp command) (eq (car command) 'quote))
+            (setq command (cadr command))
+            (when (and (symbolp command) (not (fboundp command)))
+              (push command missing))))))
+    (should (equal nil (nreverse missing)))))
+
 (ert-deftest vm-integration-test-the-example-configuration-reads ()
   "REGRESSION: example.vm parses, so a reader who loads it gets a config.
 
