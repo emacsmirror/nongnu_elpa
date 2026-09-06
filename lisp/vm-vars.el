@@ -6092,6 +6092,10 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     (define-key map "s" 'vm-create-subject-virtual-folder)
     (define-key map "t" 'vm-create-text-virtual-folder)
     (define-key map "!" 'vm-create-flagged-virtual-folder)
+    (define-key map "O" 'vm-virtual-omit-message)
+    (define-key map "U" 'vm-virtual-update-folders)
+    (define-key map "D" 'vm-virtual-auto-delete-message)
+    (define-key map "?" 'vm-virtual-check-selector-interactive)
     (define-key map "n" 'vm-create-new-virtual-folder)
     (define-key map "u" 'vm-create-unseen-virtual-folder)
 
@@ -6119,11 +6123,9 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     (define-key map "\C-\M-p" 'vm-move-message-backward)
     (define-key map "\t" 'vm-goto-message-last-seen)
     (define-key map "\r" 'vm-goto-message)
-    (define-key map "\M-g" 'vm-optional-key)
     (define-key map "^" 'vm-goto-parent-message)
     (define-key map "t" 'vm-expose-hidden-headers)
     (define-key map " " 'vm-scroll-forward)
-    (define-key map "b" 'vm-optional-key)
     (define-key map "\C-?" 'vm-scroll-backward)
     (define-key map [delete] 'vm-scroll-backward)
     (define-key map [backspace] 'vm-scroll-backward)
@@ -6133,9 +6135,7 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     (define-key map "u" 'vm-undelete-message)
     (define-key map "U" 'vm-mark-message-unread)
     (define-key map "." 'vm-mark-message-read)
-    (define-key map "e" 'vm-optional-key)
     (define-key map "\C-c\C-e" 'vm-edit-message)
-    (define-key map "a" 'vm-optional-key)
     (define-key map "j" 'vm-discard-cached-data)
     (define-key map "k" 'vm-kill-subject)
     (define-key map "f" 'vm-followup)
@@ -6148,13 +6148,11 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     (define-key map "Z" 'vm-forward-message-plain)
     (define-key map "c" 'vm-continue-composing-message)
     (define-key map "@" 'vm-send-digest)
-    (define-key map "*" 'vm-optional-key)
     (define-key map "m" 'vm-mail-from-folder)
     (define-key map "g" 'vm-get-new-mail)
     (define-key map "G" 'vm-sort-messages)
     (define-key map "v" 'vm-visit-folder)
     (define-key map "s" 'vm-save-message)
-    (define-key map "w" 'vm-optional-key)
     (define-key map "A" 'vm-auto-archive-messages)
     (define-key map "S" 'vm-save-folder)
     ;; these two key bindings are experimental
@@ -6175,22 +6173,20 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
 			       "(Type # once more to expunge)")))
     (define-key map "q" 'vm-quit)
     (define-key map "x" 'vm-quit-no-change)
-    (define-key map "i" 'vm-optional-key)
     (define-key map "?" 'vm-help)
     (define-key map "\C-_" 'vm-undo)
     (define-key map [(control /)] 'vm-undo)
     (define-key map "\C-xu" 'vm-undo)
-    (define-key map "!" 'vm-optional-key)
     (define-key map "[" 'vm-move-to-previous-button)
     (define-key map "]" 'vm-move-to-next-button)
     (define-key map "\M-s" 'vm-isearch-forward)
-    (define-key map "=" 'vm-optional-key)
-    (define-key map "L" 'vm-optional-key)
-    (define-key map "\M-l" 'vm-optional-key)
     (define-key map "l" vm-mode-label-map)
     (define-key vm-mode-label-map "a" 'vm-add-message-labels)
     (define-key vm-mode-label-map "e" 'vm-add-existing-message-labels)
     (define-key vm-mode-label-map "d" 'vm-delete-message-labels)
+    (define-key map "!" 'vm-toggle-flag-message)
+    (define-key map "<" 'vm-promote-subthread)
+    (define-key map ">" 'vm-demote-subthread)
     (define-key map "V" vm-mode-virtual-map)
     (define-key map "M" vm-mode-mark-map)
     (define-key vm-mode-mark-map "N" 'vm-next-command-uses-marks)
@@ -6222,7 +6218,6 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
     (define-key map "\C-x\C-s" 'vm-save-folder)
     (define-key map "\C-x\C-w" 'vm-write-file)
     (define-key map "\C-x\C-q" 'vm-toggle-read-only)
-    (define-key map "%" 'vm-optional-key)
     (define-key map "\M-C" 'vm-show-copying-restrictions)
     (define-key map "\M-W" 'vm-show-no-warranty)
     (define-key map "\C-c\C-s" 'vm-save-all-attachments)
@@ -6266,8 +6261,13 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
 ")
 
 (defun vm-v8-key-bindings ()
-  "Install optional key bindings for VM modes, as per versions 8.2.0
-and up."
+  "Install the key bindings VM 8 gives its own commands.
+
+Nothing needs to call this: the bindings are in `vm-mode-map\=' and
+`vm-mode-virtual-map\=' to begin with.  It is here because the manual told
+readers to put it in their preferences file, back when these keys were not
+bound and typing one reported that it had an optional binding
+(emacs-vm/vm#632).  Calling it binds what is bound already."
   (interactive)
   (define-key vm-mode-map "!" 'vm-toggle-flag-message)
   (define-key vm-mode-map "<" 'vm-promote-subthread)
@@ -6280,38 +6280,6 @@ and up."
   (define-key vm-mode-virtual-map "?" 'vm-virtual-check-selector-interactive)
   )
 (defalias 'vm-current-key-bindings 'vm-v8-key-bindings)
-
-(defun vm-v7-key-bindings ()
-  "Install optional key bindings for VM modes, as per version 7.19.
-
-These key bindings are considered optional.  They can be rebound by
-the users or bound to other functions in future versions of VM."
-  (interactive)
-  (define-key vm-mode-map "<" 'vm-beginning-of-message) ; infrequent
-  (define-key vm-mode-map ">" 'vm-end-of-message) ; infrequent
-  (define-key vm-mode-map "b" 'vm-scroll-backward) ; redundant, use <BSP>
-  (define-key vm-mode-map "e" 'vm-edit-message) ; infrequent and dangerous
-  (define-key vm-mode-map "w" 'vm-save-message-sans-headers) ; infrequent
-  (define-key vm-mode-map "a" 'vm-set-message-attributes) ; infrequent
-  (define-key vm-mode-map "i" 'vm-iconify-frame) ; redundant, C-x C-z
-  (define-key vm-mode-map "*" 'vm-burst-digest) ; specialized
-  (define-key vm-mode-map "!" 'shell-command) ; Emacs has a key binding
-  (define-key vm-mode-map  "=" 'vm-summarize) ; redundant, use `h'
-  (define-key vm-mode-map "L" 'vm-load-init-file) ; infrequent
-  (define-key vm-mode-map "\M-l" 'vm-edit-init-file) ; infrequent
-  (define-key vm-mode-map "%" 'vm-change-folder-type) ; infrequent
-  (define-key vm-mode-map "\M-g" 'vm-goto-message)    ; redundant, use <RET>
-  )
-(defalias 'vm-legacy-key-bindings 'vm-v7-key-bindings)
-
-(defun vm-optional-key ()
-  "Certain VM keys have optional bindings in VM, which differ from
-version to version.  Include \"(vm-legacy-key-bindings)\" in your
-`vm-preferences-file' in order to bind them as in version 7.19.  For
-other possibilities, see the NEWS files in the VM distribution."
-  (interactive)
-  (error "This key has an optional binding in VM.  Do C-h k for help."))
-(put 'vm-optional-key 'vm-called-by-vm t)
 
 (defcustom vm-summary-enable-thread-folding nil
   "*If non-nil, enables folding of threads in VM summary

@@ -5085,12 +5085,11 @@ RET             vm-goto-message
 C-t             vm-toggle-threads-display
 C-_             vm-undo
 SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
+!               vm-toggle-flag-message
 -               negative-argument
 .               vm-mark-message-read
-=               vm-optional-key
+<               vm-promote-subthread
+>               vm-demote-subthread
 ?               vm-help
 @@               vm-send-digest
 A               vm-auto-archive-messages
@@ -5101,7 +5100,6 @@ E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
 K               vm-kill-thread-subtree
-L               vm-optional-key
 N               vm-next-message-no-skip
 O               vm-unload-message
 P               vm-previous-message-no-skip
@@ -5113,14 +5111,11 @@ Z               vm-forward-message-plain
 [               vm-move-to-previous-button
 ]               vm-move-to-next-button
 ^               vm-goto-parent-message
-a .. b          vm-optional-key
 c               vm-continue-composing-message
 d               vm-delete-message
-e               vm-optional-key
 f               vm-followup
 g               vm-get-new-mail
 h               vm-summarize
-i               vm-optional-key
 j               vm-discard-cached-data
 k               vm-kill-subject
 m               vm-mail-from-folder
@@ -5133,7 +5128,6 @@ s               vm-save-message
 t               vm-expose-hidden-headers
 u               vm-undelete-message
 v               vm-visit-folder
-w               vm-optional-key
 x               vm-quit-no-change
 z               vm-forward-message
 DEL             vm-scroll-backward
@@ -5154,8 +5148,6 @@ C-M-n           vm-move-message-forward
 C-M-p           vm-move-message-backward
 M-C             vm-show-copying-restrictions
 M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
 M-n             vm-next-unread-message
 M-p             vm-previous-unread-message
 M-r             vm-resend-bounced-message
@@ -5186,10 +5178,13 @@ V !             vm-create-flagged-virtual-folder
 V ?             vm-virtual-help
 V A             vm-create-virtual-folder-same-author
 V C             vm-create-virtual-folder
+V D             vm-virtual-auto-delete-message
 V M             vm-toggle-virtual-mirror
+V O             vm-virtual-omit-message
 V R             vm-create-virtual-folder-same-recipient
 V S             vm-create-virtual-folder-same-subject
 V T             vm-create-virtual-folder-of-threads
+V U             vm-virtual-update-folders
 V V             vm-visit-virtual-folder
 V X             vm-apply-virtual-folder
 V a             vm-create-author-virtual-folder
@@ -5280,12 +5275,11 @@ RET             vm-goto-message
 C-t             vm-toggle-threads-display
 C-_             vm-undo
 SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
+!               vm-toggle-flag-message
 -               negative-argument
 .               vm-mark-message-read
-=               vm-optional-key
+<               vm-promote-subthread
+>               vm-demote-subthread
 ?               vm-help
 @@               vm-send-digest
 A               vm-auto-archive-messages
@@ -5296,7 +5290,6 @@ E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
 K               vm-kill-thread-subtree
-L               vm-optional-key
 N               vm-next-message-no-skip
 O               vm-unload-message
 P               vm-previous-message-no-skip
@@ -5308,14 +5301,11 @@ Z               vm-forward-message-plain
 [               vm-move-to-previous-button
 ]               vm-move-to-next-button
 ^               vm-goto-parent-message
-a .. b          vm-optional-key
 c               vm-continue-composing-message
 d               vm-delete-message
-e               vm-optional-key
 f               vm-followup
 g               vm-get-new-mail
 h               vm-summarize
-i               vm-optional-key
 j               vm-discard-cached-data
 k               vm-kill-subject
 m               vm-mail-from-folder
@@ -5328,7 +5318,6 @@ s               vm-save-message
 t               vm-expose-hidden-headers
 u               vm-undelete-message
 v               vm-visit-folder
-w               vm-optional-key
 x               vm-quit-no-change
 z               vm-forward-message
 DEL             vm-scroll-backward
@@ -5349,8 +5338,6 @@ C-M-n           vm-move-message-forward
 C-M-p           vm-move-message-backward
 M-C             vm-show-copying-restrictions
 M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
 M-n             vm-next-unread-message
 M-p             vm-previous-unread-message
 M-r             vm-resend-bounced-message
@@ -5381,10 +5368,13 @@ V !             vm-create-flagged-virtual-folder
 V ?             vm-virtual-help
 V A             vm-create-virtual-folder-same-author
 V C             vm-create-virtual-folder
+V D             vm-virtual-auto-delete-message
 V M             vm-toggle-virtual-mirror
+V O             vm-virtual-omit-message
 V R             vm-create-virtual-folder-same-recipient
 V S             vm-create-virtual-folder-same-subject
 V T             vm-create-virtual-folder-of-threads
+V U             vm-virtual-update-folders
 V V             vm-visit-virtual-folder
 V X             vm-apply-virtual-folder
 V a             vm-create-author-virtual-folder
@@ -7888,21 +7878,13 @@ Default value: @code{120}
 @macro vmdocvmcurrentkeybindings
 @deffn Command vm-current-key-bindings
 @findex vm-current-key-bindings
-Install optional key bindings for VM modes, as per versions 8.2.0
-and up.
+Install the key bindings VM 8 gives its own commands.
 
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmlegacykeybindings
-@deffn Command vm-legacy-key-bindings
-@findex vm-legacy-key-bindings
-Install optional key bindings for VM modes, as per version 7.19.
-
-These key bindings are considered optional.  They can be rebound by
-the users or bound to other functions in future versions of VM.
+Nothing needs to call this: the bindings are in @code{vm-mode-map=} and
+@code{vm-mode-virtual-map=} to begin with.  It is here because the manual told
+readers to put it in their preferences file, back when these keys were not
+bound and typing one reported that it had an optional binding
+(emacs-vm/vm#632).  Calling it binds what is bound already.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -7968,24 +7950,16 @@ that no signing is done
 
 @end macro
 
-@macro vmdocvmv7keybindings
-@deffn Command vm-v7-key-bindings
-@findex vm-v7-key-bindings
-Install optional key bindings for VM modes, as per version 7.19.
-
-These key bindings are considered optional.  They can be rebound by
-the users or bound to other functions in future versions of VM.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
 @macro vmdocvmv8keybindings
 @deffn Command vm-v8-key-bindings
 @findex vm-v8-key-bindings
-Install optional key bindings for VM modes, as per versions 8.2.0
-and up.
+Install the key bindings VM 8 gives its own commands.
+
+Nothing needs to call this: the bindings are in @code{vm-mode-map=} and
+@code{vm-mode-virtual-map=} to begin with.  It is here because the manual told
+readers to put it in their preferences file, back when these keys were not
+bound and typing one reported that it had an optional binding
+(emacs-vm/vm#632).  Calling it binds what is bound already.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -8017,19 +7991,6 @@ This command runs the normal hook @code{view-mode-hook}.
 The name says it all.
 Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@end macro
-
-@macro vmdocvmoptionalkey
-@deffn Command vm-optional-key
-@findex vm-optional-key
-Certain VM keys have optional bindings in VM, which differ from
-version to version.  Include "(vm-legacy-key-bindings)" in your
-@code{vm-preferences-file} in order to bind them as in version 7.19.  For
-other possibilities, see the NEWS files in the VM distribution.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -13555,12 +13516,11 @@ RET             vm-goto-message
 C-t             vm-toggle-threads-display
 C-_             vm-undo
 SPC             vm-scroll-forward
-!               vm-optional-key
-%               vm-optional-key
-*               vm-optional-key
+!               vm-toggle-flag-message
 -               negative-argument
 .               vm-mark-message-read
-=               vm-optional-key
+<               vm-promote-subthread
+>               vm-demote-subthread
 ?               vm-help
 @@               vm-send-digest
 A               vm-auto-archive-messages
@@ -13571,7 +13531,6 @@ E               vm-expand-all-threads
 F               vm-followup-include-text
 G               vm-sort-messages
 K               vm-kill-thread-subtree
-L               vm-optional-key
 N               vm-next-message-no-skip
 O               vm-unload-message
 P               vm-previous-message-no-skip
@@ -13583,14 +13542,11 @@ Z               vm-forward-message-plain
 [               vm-move-to-previous-button
 ]               vm-move-to-next-button
 ^               vm-goto-parent-message
-a .. b          vm-optional-key
 c               vm-continue-composing-message
 d               vm-delete-message
-e               vm-optional-key
 f               vm-followup
 g               vm-get-new-mail
 h               vm-summarize
-i               vm-optional-key
 j               vm-discard-cached-data
 k               vm-kill-subject
 m               vm-mail-from-folder
@@ -13603,7 +13559,6 @@ s               vm-save-message
 t               vm-expose-hidden-headers
 u               vm-undelete-message
 v               vm-visit-folder
-w               vm-optional-key
 x               vm-quit-no-change
 z               vm-forward-message
 DEL             vm-scroll-backward
@@ -13624,8 +13579,6 @@ C-M-n           vm-move-message-forward
 C-M-p           vm-move-message-backward
 M-C             vm-show-copying-restrictions
 M-W             vm-show-no-warranty
-M-g             vm-optional-key
-M-l             vm-optional-key
 M-n             vm-next-unread-message
 M-p             vm-previous-unread-message
 M-r             vm-resend-bounced-message
@@ -13656,10 +13609,13 @@ V !             vm-create-flagged-virtual-folder
 V ?             vm-virtual-help
 V A             vm-create-virtual-folder-same-author
 V C             vm-create-virtual-folder
+V D             vm-virtual-auto-delete-message
 V M             vm-toggle-virtual-mirror
+V O             vm-virtual-omit-message
 V R             vm-create-virtual-folder-same-recipient
 V S             vm-create-virtual-folder-same-subject
 V T             vm-create-virtual-folder-of-threads
+V U             vm-virtual-update-folders
 V V             vm-visit-virtual-folder
 V X             vm-apply-virtual-folder
 V a             vm-create-author-virtual-folder

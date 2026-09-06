@@ -2980,25 +2980,16 @@ messages are highlighted using the
 @code{vm-summary-high-priority} face.  (@xref{predefined summary
 faces}.)
 
-@findex vm-current-key-bindings
-@findex vm-legacy-key-bindings
-@cindex optional key bindings
-This command has an @emph{optional} key binding, @kbd{!}, which is not
-installed by default; typing @kbd{!} without it reports that the key
-has an optional binding.  A handful of inessential bindings (@kbd{a},
-@kbd{b}, @kbd{e}, @kbd{i}, @kbd{w}, @kbd{L}, @kbd{M-l}, @kbd{!},
-@kbd{<}, @kbd{>}, @kbd{*}, @kbd{%}) were removed from the standard key
-map in version 8.2.0 because they differ from version to version.  To
-install the current set, add
+@kindex !
+It is on @kbd{!}.
 
-@example
-(vm-current-key-bindings)
-@end example
-
-@noindent
-to your @code{vm-preferences-file} (@pxref{Starting Up}), or
-@code{(vm-legacy-key-bindings)} for the version 7.19 set.  You can of
-course bind the keys to operations of your own choosing instead.
+In earlier releases it was not: @kbd{!} and a handful of others were left
+unbound because they had meant different things in different versions, and
+typing one reported that it had an optional binding you could install.  They
+are simply bound now.  @kbd{!} flags, @kbd{<} and @kbd{>} promote and demote
+a subthread, and the keys the older set used for other things
+(@kbd{a}, @kbd{b}, @kbd{e}, @kbd{i}, @kbd{w}, @kbd{L}, @kbd{M-l}, @kbd{*},
+@kbd{%}, @kbd{=}, @kbd{M-g}) are free for you to bind as you please.
 
 
 @cindex longlines.el
