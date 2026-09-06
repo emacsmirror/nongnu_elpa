@@ -10465,7 +10465,7 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 @macro vmdocvmmailcheckbccremoval
 @deffn Command vm-mail-check-bcc-removal
 @findex vm-mail-check-bcc-removal
-Refuse to send if this composition’s Bcc could reach the other recipients.
+Ask before sending if this composition’s Bcc could reach the other recipients.
 
 A Bcc header is a promise: the addresses in it are told nothing to the people
 who receive the message.  With @code{send-mail-function=} set to
@@ -10474,6 +10474,10 @@ to @code{sendmail-program=} and trust that program to take it out, because with
 -t those addresses are also how it learns whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
+
+Asks rather than refuses because a working sendmail, postfix or exim does
+remove it, and those are a great many of the people sending mail this way.
+Declining says what to change and where it is written down.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn

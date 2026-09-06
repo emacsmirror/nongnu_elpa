@@ -2579,7 +2579,7 @@ headers."
 
 
 (defun vm-mail-check-bcc-removal ()
-  "Refuse to send if this composition's Bcc could reach the other recipients.
+  "Ask before sending if this composition's Bcc could reach the other recipients.
 
 A Bcc header is a promise: the addresses in it are told nothing to the people
 who receive the message.  With `send-mail-function\=' set to
@@ -2587,17 +2587,25 @@ who receive the message.  With `send-mail-function\=' set to
 to `sendmail-program\=' and trust that program to take it out, because with
 -t those addresses are also how it learns whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
-nothing has failed anywhere that anyone can see (emacs-vm/vm#815)."
+nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
+
+Asks rather than refuses because a working sendmail, postfix or exim does
+remove it, and those are a great many of the people sending mail this way.
+Declining says what to change and where it is written down."
   (interactive)
   (when (and (vm-mail-mode-get-header-contents "\\(Resent-\\)?BCC:")
-             (not (memq send-mail-function vm-senders-that-remove-bcc)))
-    (error (concat "This message has a Bcc, and %s leaves it in the message"
-                   " for the transport to remove, so whether it stays private"
-                   " is up to a program outside Emacs.  Set send-mail-function"
-                   " to smtpmail-send-it, which removes it itself, or take the"
-                   " Bcc header out, or set vm-check-bcc-removal to nil if you"
-                   " know your transport removes it")
-           send-mail-function)))
+             (not (memq send-mail-function vm-senders-that-remove-bcc))
+             (not (y-or-n-p
+                   (format (concat "This message has a Bcc and %s leaves"
+                                   " removing it to your mail transport."
+                                   "  Send anyway? ")
+                           send-mail-function))))
+    (error (concat "Message not sent.  Set send-mail-function to"
+                   " smtpmail-send-it, which removes the Bcc itself; or take"
+                   " the Bcc header out; or set vm-check-bcc-removal to nil"
+                   " if you know your transport removes it.  See Mail Sending"
+                   " Options in the VM manual, and Setting Up for a worked"
+                   " smtpmail configuration"))))
 (put 'vm-mail-check-bcc-removal 'vm-called-by-vm t)
 
 (defun vm-mail-check-for-empty-subject ()
