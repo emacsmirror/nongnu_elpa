@@ -8,7 +8,7 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
-  * VM refuses to send a message with a `Bcc` header unless
+  * VM asks before sending a message with a `Bcc` header, unless
     `send-mail-function` removes that header itself (emacs-vm/vm#815).
     `smtpmail-send-it` does: it works out the recipients first and then
     deletes it.  `sendmail-send-it` does not and cannot, because it passes
@@ -18,8 +18,11 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
     Where that program does not, everyone on the message reads who was blind
     copied and nothing anywhere reports a failure.  That is what was
-    reported.  Set `vm-check-bcc-removal` to nil to send as before, if you
-    know your transport removes it.
+    reported.  It asks rather than refusing because a working sendmail,
+    postfix or exim does remove the header and Emacs cannot tell one of those
+    from a transport that does not; declining says what to change and where
+    the manual explains it.  Set `vm-check-bcc-removal` to nil to stop it
+    asking, if you know your transport removes it.
 
   * The manual has a Setting Up chapter (emacs-vm/vm#790): a configuration
     built one piece at a time, from making VM the mail agent Emacs uses
