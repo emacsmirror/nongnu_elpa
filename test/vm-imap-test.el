@@ -82,6 +82,41 @@
                  "imap:mail.example.com:143:inbox:cram-md5:user:secret")))
     (should (string-match ":inbox:\\*:user:" result))))
 
+(ert-deftest vm-imap-test-which-maildrops-share-a-cache ()
+  "What the cache name runs together, and what it keeps apart.
+
+The manual says only the scheme, the host, the mailbox and the login name go
+into the name.  Three of the four consequences are the point of it: `imap'
+and `imap-ssl' for one mailbox share a cache, and changing the password or
+the authentication method does not orphan one.
+
+The fourth is a restriction, emacs-vm/vm#716: two servers on one host reached
+on different ports, with the same login and mailbox, name the same file and
+so share one cache, and visiting the second gets the first one's folder.  The
+manual documents that and offers the way round it, which is giving them
+different host names, so this pins the way round it too.  The port cannot
+simply be added: every cache that exists is named without it."
+  (let ((base "imap:mail.example.com:143:inbox:login:me:pass"))
+    (dolist (spec (list (cons "another port"
+                              "imap:mail.example.com:1143:inbox:login:me:pass")
+                        (cons "imap-ssl"
+                              "imap-ssl:mail.example.com:993:inbox:login:me:pass")
+                        (cons "another password"
+                              "imap:mail.example.com:143:inbox:login:me:other")
+                        (cons "another auth method"
+                              "imap:mail.example.com:143:inbox:cram-md5:me:pass")))
+      (should (equal (list (car spec) (vm-imap-normalize-spec base))
+                     (list (car spec) (vm-imap-normalize-spec (cdr spec))))))
+    ;; and what must not be run together
+    (dolist (spec (list (cons "another host"
+                              "imap:other.example.com:143:inbox:login:me:pass")
+                        (cons "another mailbox"
+                              "imap:mail.example.com:143:archive:login:me:pass")
+                        (cons "another login"
+                              "imap:mail.example.com:143:inbox:login:you:pass")))
+      (should-not (equal (vm-imap-normalize-spec base)
+                         (vm-imap-normalize-spec (cdr spec)))))))
+
 (ert-deftest vm-imap-test-normalize-spec-standardizes-protocol ()
   "Test that normalize-spec standardizes the protocol to 'imap'."
   (let ((result (vm-imap-normalize-spec
