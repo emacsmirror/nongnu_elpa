@@ -1229,6 +1229,22 @@ can account for."
 		 "server answered with UID %s, which was not asked for" uid)))
 	  uids))
 
+(defvar vm-imap-net-provisional-message nil
+  "The message `vm-imap-net-assimilate' chose to keep the folder usable.
+
+A folder being fetched into for the first time has no current message until
+one is chosen, and a command typed before then fails on nil.  So one is chosen
+partway, from the messages that have arrived so far.  Where the folder holds
+nothing new or unread, that choice is the last message of the first bunch, and
+it used to stand: a fully read folder of three hundred and ninety opened at
+message ten, and the number followed `vm-imap-message-bunch-size'.  Worse, it
+was written to the cache as `X-VM-Bookmark', so every later visit opened there
+too (emacs-vm/vm#799).
+
+Held so that the end of the fetch can tell that choice from a message the
+reader went to themselves, and take it back if they did not.")
+(make-variable-buffer-local 'vm-imap-net-provisional-message)
+
 (defun vm-imap-net-assimilate (retrieve-list uid-validity)
   "Take the messages just written into the folder into the message list.
 The current buffer is the folder.  RETRIEVE-LIST is the entries for the
@@ -1726,21 +1742,6 @@ synchronisation asks for: `vm-imap-save-attributes' with `:all-flags'."
 (declare-function vm-present-current-message "vm-page" ())
 (declare-function vm-arrival-blurb "vm-folder" (count))
 
-(defvar vm-imap-net-provisional-message nil
-  "The message `vm-imap-net-assimilate' chose to keep the folder usable.
-
-A folder being fetched into for the first time has no current message until
-one is chosen, and a command typed before then fails on nil.  So one is chosen
-partway, from the messages that have arrived so far.  Where the folder holds
-nothing new or unread, that choice is the last message of the first bunch, and
-it used to stand: a fully read folder of three hundred and ninety opened at
-message ten, and the number followed `vm-imap-message-bunch-size'.  Worse, it
-was written to the cache as `X-VM-Bookmark', so every later visit opened there
-too (emacs-vm/vm#799).
-
-Held so that the end of the fetch can tell that choice from a message the
-reader went to themselves, and take it back if they did not.")
-(make-variable-buffer-local 'vm-imap-net-provisional-message)
 
 (defun vm-imap-net-show-arrival (folder count)
   "Say that COUNT messages arrived in FOLDER, and show one of them.

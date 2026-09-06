@@ -652,11 +652,8 @@ format:
       (setq selector (vm-virtual-get-selector
                       (vm-read-string "Virtual folder: "
                                       vm-virtual-folder-alist)))
-      (if (featurep 'xemacs)
-	  (setq function 
-		(key-or-menu-binding (read-key-sequence "VM command: ")))
-	(setq function
-		(key-binding (read-key-sequence "VM command: ")))))
+      (setq function
+	    (key-binding (read-key-sequence "VM command: "))))
 
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
 

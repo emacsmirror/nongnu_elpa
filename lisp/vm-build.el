@@ -85,8 +85,6 @@ wrong Emacs actually gets chosen."
 
 ;; Preload these to get macros right 
 (require 'sendmail)
-(when (featurep 'xemacs)
-  (require 'timer-funcs))
 
 ;; now add VM source dirs to load-path and preload some
 (setq load-path (append '("." "./lisp") load-path))
@@ -117,30 +115,13 @@ wrong Emacs actually gets chosen."
     (message "Building autoloads file %S\nin directory %S." autoloads-file source-dir)
     (load-library "autoload")
     (defvar generated-autoload-file)
-    (defvar autoload-package-name) ;; FIXME: XEmacs?
     (set-buffer (find-file-noselect autoloads-file))
     (erase-buffer)
     (setq generated-autoload-file autoloads-file)
-    (setq autoload-package-name "vm")
     (setq make-backup-files nil)
-    (if (featurep 'xemacs)
-        (progn
-          (update-autoloads-from-directory source-dir)
-          (fixup-autoload-buffer (concat (if autoload-package-name
-                                             autoload-package-name
-                                           (file-name-nondirectory defdir))
-                                         "-autoloads"))
-          (save-some-buffers t))
-      ;; GNU Emacs 21 wants some content, but 22 does not like it ...
-      (insert ";;; vm-autoloads.el --- automatically extracted autoloads  -*- lexical-binding: t; -*-\n")
-      (insert ";;\n")
-      (insert ";;; Code:\n")
-      (cond
-       ((>= emacs-major-version 22)
-	(update-directory-autoloads source-dir))
-       ((>= emacs-major-version 21)
-	(update-autoloads-from-directories source-dir))
-       (t
-	(error "Do not know how to generate autoloads"))))))
+    (insert ";;; vm-autoloads.el --- automatically extracted autoloads  -*- lexical-binding: t; -*-\n")
+    (insert ";;\n")
+    (insert ";;; Code:\n")
+    (update-directory-autoloads source-dir)))
 
 (provide 'vm-build)

@@ -57,9 +57,6 @@
 (defvar url-current-mime-type)
 (defvar url-current-mime-headers)
 
-(defvar vm-w3m-mode-map nil
-  "Keymap for w3m within VM.")
-
 (defgroup vm-w3m nil
   "w3m settings for VM."
   :group  'vm-presentation)
@@ -106,15 +103,6 @@ this variable to nil if you consider all urls to be safe."
     map )
   "Keymap for text/html parts inlined by emacs-w3m.")
 
-(eval-and-compile
-  (or (featurep 'xemacs) (>= emacs-major-version 21)
-      (defvar vm-w3m-mode-map nil
-	"Internal variable holding the keymap for text/html parts
-inlined by emacs-w3m. 
-This keymap will be bound only when Emacs 20 is running and overwritten
-by the minor-mode-keymap for emacs-w3m text, as determined by
-`vm-presentation-minor-modes'.")))
-
 (defvar w3m-display-inline-images)
 (defvar w3m-safe-url-regexp)
 ;; Declared so that binding it below is dynamic and so reaches w3m: this file
@@ -153,15 +141,7 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
 	 (keymap (and keymap-name (boundp keymap-name)
 		      (symbol-value keymap-name))))
     (when keymap
-      (if (or (featurep 'xemacs) (>= emacs-major-version 21))
-	  (list 'keymap keymap)
-	(list 'local-map
-	      (or vm-w3m-mode-map
-		  (progn
-		    (setq vm-w3m-mode-map
-			  (copy-keymap keymap))
-		    (set-keymap-parent vm-w3m-mode-map vm-mode-map)
-		    vm-w3m-mode-map)))))))
+      (list 'keymap keymap))))
 
 ;;;###autoload
 (defun vm-mime-display-internal-emacs-w3m-text/html (start end _layout)

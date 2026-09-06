@@ -713,10 +713,6 @@ message body is expanded, or the region under XEmacs."
     ;; RSTART and REND here re-expanded the whole body instead, and left a
     ;; token inserted above the body unexpanded (#777).
     (cond ((and rstart rend))
-          ((and (featurep 'xemacs)
-                (region-exists-p)
-                (eq (zmacs-region-buffer) (current-buffer)))
-           (setq rstart (region-beginning) rend (region-end)))
           (t
            (setq rstart (mail-text) rend (point-max))))
 
