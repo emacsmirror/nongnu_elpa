@@ -4342,6 +4342,26 @@ Emacs Manual} for sending email.  Therefore, Mail Mode options
 should be set to configure the mail sending.  The extra options
 provided by VM are described below.
 
+@vindex vm-check-bcc-removal
+@cindex Bcc, kept private
+@cindex blind carbon copy
+@quotation Warning
+A @code{Bcc} header promises that the addresses in it are not shown to the
+other recipients, and whether that promise is kept may be outside Emacs.
+With @code{send-mail-function} set to @code{sendmail-send-it}, Emacs leaves
+the header in the message it hands @code{sendmail-program} and trusts that
+program to take it out: it has to, because that program is passed @code{-t}
+and those addresses are also how it learns whom to deliver to.  A real
+sendmail removes it.  If yours does not, everyone on the message reads who
+was blind copied, and nothing anywhere reports a failure.
+
+So VM refuses to send a composition that has a @code{Bcc} unless
+@code{send-mail-function} is one that removes the header itself.
+@code{smtpmail-send-it} is such a function: it works out the recipients
+first and then deletes the header.  Setting @code{vm-check-bcc-removal} to
+@code{nil} sends anyway, for someone who knows their transport removes it.
+@end quotation
+
 @vmdocvmmailautosavedirectory
 
 @vindex vm-mail-header-from

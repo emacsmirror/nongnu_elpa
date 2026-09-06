@@ -7658,6 +7658,34 @@ what `vm-mail-check-recipients' looks for."
   :group 'vm-compose
   :type 'boolean)
 
+(defconst vm-senders-that-remove-bcc '(smtpmail-send-it)
+  "The `send-mail-function\=' values known to remove Bcc themselves.
+
+`smtpmail-send-it\=' works out the recipients first, in
+`smtpmail-deduce-address-list\=', and then deletes the header, in
+`smtpmail-do-bcc\='.  Nothing reaches the server carrying it.
+
+`sendmail-send-it\=' is not here and cannot be.  It passes -t and leaves the
+header in place, because with -t those addresses are how the transport
+learns to deliver to them: delete the header first and the Bcc recipients
+get nothing.  So it hands the header out and the transport is trusted to
+remove it.  A real sendmail does.  Whether the program behind
+`sendmail-program\=' does is outside Emacs.")
+
+(defcustom vm-check-bcc-removal t
+  "*Non-nil means refuse to send a message whose Bcc could reach the recipients.
+
+VM refuses when a composition carries a Bcc header and `send-mail-function\='
+is not one of `vm-senders-that-remove-bcc\='.  Such a function hands the
+header to a program outside Emacs and trusts it to remove it, so the privacy
+of the Bcc rests on that program being right.  Where it is not, everyone on
+the message learns who was blind copied (emacs-vm/vm#815).
+
+Set this to nil where you know your transport removes it, and VM sends as it
+did before.  The check costs nothing when a composition has no Bcc."
+  :group 'vm-compose
+  :type 'boolean)
+
 (defcustom vm-check-for-empty-subject t
   "*Non-nil means ask before sending a message with an empty Subject."
   :group 'vm-compose
