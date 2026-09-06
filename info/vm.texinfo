@@ -75,6 +75,7 @@ This manual corresponds to VM version @value{VERSION}.
 * Preface::             What is VM?
 * Introduction::        Overview of the VM interface.
 * Starting Up::         What happens when you start VM.
+* Setting Up::          A worked configuration, one piece at a time.
 * Navigating::  How to select messages for reading.
 * Reading Messages::    Previewing and paging through a message.
 * Sending Messages::    How to send messages from within VM.
@@ -402,7 +403,7 @@ You can associate other spool files with your primary inbox and spool
 files with other folders by setting the variable
 @code{vm-spool-files}.  @xref{Spool Files}.
 
-@node Starting Up, Navigating, Introduction, Top
+@node Starting Up, Setting Up, Introduction, Top
 @chapter Starting Up
 
 @findex vm-load-init-file
@@ -421,13 +422,11 @@ applications that VM can invoke.  You can reload this file by typing
 
 @cindex example.vm
 @cindex init file, an example
-An example is installed with VM, as @file{example.vm} in its documentation
-directory, beside this manual and the @file{NEWS} files.  It is a working
-@file{~/.vm} rather than a list of options: folder directories, spool files,
-@acronym{POP} and @acronym{IMAP} accounts, summary format, @acronym{MIME}
-converters, an identity per address, and a composition hook.  Read it for the
-form of the thing and copy the parts you want; it names servers and addresses
-that do not exist, so it is not meant to be used as it stands.
+@xref{Setting Up}, for a configuration built one piece at a time.  The same
+settings in one file are installed with VM as @file{example.vm}, in its
+documentation directory beside this manual and the @file{NEWS} files.  It
+names servers and addresses that do not exist, so it is to be read and taken
+from rather than used as it stands.
 
 @cindex key bindings, where to put them
 @cindex global-set-key, in the init file
@@ -2713,7 +2712,226 @@ Emacs's own @code{revert-buffer} is not recommended: it reads the file back
 without VM's bookkeeping, so the folder buffer and VM's idea of it part
 company.
 
-@node Navigating, Reading Messages, Starting Up, Top
+@node Setting Up, Navigating, Starting Up, Top
+@chapter Setting Up
+@cindex tutorial
+@cindex configuration, worked example
+@cindex example.vm
+
+A configuration built one piece at a time.  Each piece stands on its own, so
+take the ones you want.  Everything here goes in your @code{vm-init-file},
+normally @file{~/.vm} (@pxref{Starting Up}).
+
+The same settings, in one file you can copy, are installed as
+@file{example.vm} in VM's documentation directory.
+
+@menu
+* Mail agent::          Making VM the mail reader Emacs uses.
+* Local mail::          Folders on this machine, and where new mail arrives.
+* Server mail::         Reading mail on a POP or IMAP server.
+* Summary setup::       What the summary shows.
+* Viewing setup::       @acronym{HTML} and other parts.
+* Composing setup::     Identities, and how a composition buffer starts.
+* Sending setup::       Handing mail to a server.
+* Address book::        @acronym{BBDB}.
+* Keys of your own::    Rebinding what you use most.
+@end menu
+
+@node Mail agent, Local mail, Setting Up, Setting Up
+@section Making VM the mail reader Emacs uses
+
+@vindex mail-user-agent
+So that @kbd{C-x m} and anything else that composes mail goes through VM:
+
+@lisp
+(setq mail-user-agent 'vm-user-agent)
+@end lisp
+
+@node Local mail, Server mail, Mail agent, Setting Up
+@section Folders on this machine
+
+@vindex vm-folder-directory
+@vindex vm-primary-inbox
+@vindex vm-crash-box
+Where your folders live, which folder new mail lands in, and the file VM
+moves mail through on the way:
+
+@lisp
+(setq vm-folder-directory "~/mail/")
+(setq vm-primary-inbox "~/INBOX"
+      vm-crash-box (concat vm-primary-inbox ".crash"))
+@end lisp
+
+@vindex vm-spool-files
+@noindent
+Where new mail comes from.  Each entry is @code{(INBOX SPOOL CRASHBOX)}, and
+several may name the same inbox, so mail from more than one place collects in
+one folder:
+
+@lisp
+(setq vm-spool-files
+      (list
+       (list vm-primary-inbox "/var/spool/mail/you" vm-crash-box)
+       (list vm-primary-inbox "/var/spool/mail/you-too" vm-crash-box)
+       ;; another folder, fed from somewhere else
+       (list "spam" "~/spamdrop" (concat vm-folder-directory "spam.crash"))))
+@end lisp
+
+@noindent
+@xref{Spool Files}, for what a spool specification may be: a file, or a
+@acronym{POP} or @acronym{IMAP} maildrop.
+
+@node Server mail, Summary setup, Local mail, Setting Up
+@section Reading mail on a server
+
+@vindex vm-primary-inbox
+Point the primary inbox at the server instead of a file.  One of these, not
+both:
+
+@lisp
+(setq vm-primary-inbox "pop:pop.example.com:110:pass:you:*")
+;; or
+(setq vm-primary-inbox "imap:imap.example.com:143:inbox:login:you:*")
+@end lisp
+
+@vindex vm-imap-folder-cache-directory
+@vindex vm-pop-folder-cache-directory
+@noindent
+VM keeps a local copy of a server folder so that reading it does not mean
+fetching it again.  @xref{IMAP Cache Server}, for what that copy is and is
+not:
+
+@lisp
+(setq vm-pop-folder-cache-directory "~/mailcache/")
+(setq vm-imap-folder-cache-directory "~/mailcache/")
+@end lisp
+
+@vindex vm-imap-account-alist
+@vindex vm-pop-folder-alist
+@noindent
+Give each account a short name, and VM asks for the name rather than the
+whole specification:
+
+@lisp
+(setq vm-imap-account-alist
+      '(("imap:imap.example.com:143:*:login:you:*" "work")
+        ("imap:mail.example.net:143:*:login:you:*" "home")))
+@end lisp
+
+@node Summary setup, Viewing setup, Server mail, Setting Up
+@section What the summary shows
+
+@vindex vm-summary-format
+@vindex vm-summary-uninteresting-senders
+A summary line shows the author.  For mail you sent, the author is you, which
+tells you nothing; naming yourself here shows the recipient instead:
+
+@lisp
+(setq vm-summary-uninteresting-senders
+      (regexp-opt '("@@example.com" "Your Name")))
+@end lisp
+
+@noindent
+@code{vm-summary-format} decides the rest.  @xref{Summary Format}, for what
+the conversions mean.  Change it in a folder you already have and
+@kbd{M-x vm-fix-my-summary} rebuilds the lines that were made under the old
+one.
+
+@node Viewing setup, Composing setup, Summary setup, Setting Up
+@section Reading what arrives
+
+@vindex vm-mime-text/html-handler
+@acronym{HTML} mail is displayed by whatever
+@code{vm-mime-text/html-handler} names, and its default, @code{auto-select},
+takes the best of what you have installed.  @xref{@acronym{HTML} display}.
+
+@vindex vm-mime-type-converter-alist
+@noindent
+For types nothing displays, name a program to turn one into something that
+does:
+
+@lisp
+(setq vm-mime-type-converter-alist
+      '(("application/zip" "text/plain" "zipinfo /dev/stdin")))
+@end lisp
+
+@node Composing setup, Sending setup, Viewing setup, Setting Up
+@section Composing
+
+@findex vm-pcrisis-mode
+If you send from more than one address, Personality Crisis picks the one that
+fits each message.  @xref{Multiple Email Addresses}:
+
+@lisp
+(require 'vm-pcrisis)
+(vm-pcrisis-mode 1)
+@end lisp
+
+@vindex vm-mail-mode-hook
+@noindent
+A composition is an ordinary Emacs buffer, so set it up with a hook:
+
+@lisp
+(defun my-vm-mail-mode-hook ()
+  (setq fill-column 60
+        comment-start "> ")
+  (turn-on-auto-fill)
+  (flyspell-mode 1))
+(add-hook 'vm-mail-mode-hook 'my-vm-mail-mode-hook)
+@end lisp
+
+@node Sending setup, Address book, Composing setup, Setting Up
+@section Sending
+
+@vindex send-mail-function
+VM does not send mail; Emacs does, through @code{smtpmail.el}.
+@xref{Configuration}, for the whole of it, including what the ports mean:
+
+@lisp
+(setq send-mail-function 'smtpmail-send-it
+      smtpmail-smtp-server "smtp.example.com"
+      smtpmail-smtp-service 587
+      smtpmail-stream-type 'starttls)
+@end lisp
+
+@node Address book, Keys of your own, Sending setup, Setting Up
+@section The address book
+
+@acronym{BBDB} completes addresses as you type them and can make a record of
+everyone you reply to.  It is a separate package, so ask for it in a way that
+does not break the rest of your configuration when it is not installed:
+
+@lisp
+(when (require 'bbdb nil t)
+  (bbdb-initialize 'vm 'sendmail)
+  (bbdb-insinuate-vm)
+  (add-hook 'vm-reply-hook 'bbdb-force-record-create))
+@end lisp
+
+@noindent
+That form is worth copying for any package you are not certain of:
+@code{(require @var{feature} nil t)} answers nil rather than signalling, and
+everything that depends on it sits inside the @code{when}.  A bare
+@code{require} of something missing stops your configuration where it stands,
+and every setting after it is silently never made.
+
+@node Keys of your own,, Address book, Setting Up
+@section Keys of your own
+
+@vindex vm-mode-map
+Bind what you use most.  These are examples, not advice:
+
+@lisp
+(define-key vm-mode-map [(meta up)]   'vm-previous-unread-message)
+(define-key vm-mode-map [(meta down)] 'vm-next-unread-message)
+(define-key vm-mode-map "R"           'vm-reply-other-frame)
+(define-key vm-mode-map "f"           'vm-forward-message-other-frame)
+@end lisp
+
+@noindent
+@xref{Key Index}, for what is bound already.
+
+@node Navigating, Reading Messages, Setting Up, Top
 @chapter Navigating
 
 @findex vm-next-message
