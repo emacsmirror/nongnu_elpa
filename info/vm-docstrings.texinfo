@@ -12454,26 +12454,24 @@ substitute information about the message into the final summary line.
 
 Recognized specifiers are:
 @example
-   a - attribute indicators (always four characters wide)
-       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread,
-       read and flagged messages respectively.
-       The second char is ‘F’, ‘W’ or ‘ ’ for filed (saved) or written
-       messages.
-       The third char is ‘R’, ‘Z’ or ‘ ’ for messages replied to,
-       and forwarded messages.
-       The fourth char is ‘E’ if the message has been edited, ‘ ’ otherwise.
-   A - longer version of attributes indicators (seven characters wide)
-       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread
-       read and flagged messages respectively.
-       The second is ‘r’ or ‘ ’, for message replied to.
-       The third is ‘z’ or ‘ ’, for messages forwarded.
-       The fourth is ‘b’ or ‘ ’, for messages redistributed.
-       The fifth is ‘f’ or ‘ ’, for messages filed.
-       The sixth is ‘w’ or ‘ ’, for messages written.
-       The seventh is ‘e’ or ‘ ’, for messages that have been edited.
-   b - shorter version of attribute indicators (1 character wide)
-       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread
-       read and flagged messages respectively.
+   a - attribute indicators, four characters wide.  Each column shows the
+       first of its states that the message is in, and a space for none:
+        - column 1: D deleted, N new, U unread, ! flagged, space read
+        - column 2: F filed, W written, space neither
+        - column 3: R replied to, Z forwarded, B redistributed, space none
+        - column 4: E edited, space not edited
+   A - attribute indicators, seven characters wide.  The first column is the
+       one above; each of the rest is its own letter or a space:
+        - column 1: D deleted, N new, U unread, ! flagged, space read
+        - column 2: r replied to
+        - column 3: z forwarded
+        - column 4: b redistributed
+        - column 5: f filed
+        - column 6: w written
+        - column 7: e edited
+   b - attribute indicators, one character wide, the first column of the
+       four above:
+        - D deleted, N new, U unread, ! flagged, space read
    c - number of characters in message (ignoring headers)
    d - numeric day of month message sent
    f - author’s address

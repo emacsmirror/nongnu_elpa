@@ -112,8 +112,8 @@ for one."
 The form is //user@host:file, which is what a link made on a folder reached
 over ftp or ssh holds, and the answer is the Tramp name for it.
 
-The user is matched without the `@\=' that follows it.  The group used to
-take that in and the `@\=' was then written again, so a link naming a user
+The user is matched without the at sign that follows it.  The group used to
+take that in and the at sign was then written again, so a link naming a user
 answered //me@@host, which Tramp cannot open."
   (when (string-match "\\`//\\(?:\\([a-zA-Z]+\\)@\\)?\\([^:]+\\):\\(.*\\)"
                       folder)
