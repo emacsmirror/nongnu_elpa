@@ -965,6 +965,93 @@ and an `&optional' with no arguments after it in vm-imap.el, and between them
 they hid the two largest files in the tree (emacs-vm/vm#795)."
   (should (equal nil (vm-integration-test--instrument-in-a-subprocess))))
 
+
+;;; The example ~/.vm we install (emacs-vm/vm#790)
+
+;; Loaded so the names it uses are defined here: Personality Crisis is not
+;; pulled in by `vm' itself, and a name this Emacs has not seen looks missing.
+(require 'vm-pcrisis)
+
+(defconst vm-integration-test--example-vm
+  (expand-file-name "example.vm" (file-name-directory
+                                  (directory-file-name vm-test-lisp-dir)))
+  "The example configuration at the top of the tree.
+`make install' puts it in the doc directory beside README and the NEWS
+files, so it is something a reader is handed and may copy to `~/.vm'.")
+
+(defun vm-integration-test--forms-of (file)
+  "Every top-level form of FILE, or a string saying why they could not be read."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (goto-char (point-min))
+    (let ((forms nil))
+      (condition-case caught
+          (while t (push (read (current-buffer)) forms))
+        (end-of-file (nreverse forms))
+        (error (error-message-string caught))))))
+
+(defun vm-integration-test--names-that-are-missing (form)
+  "The VM variables set and VM functions called by FORM that do not exist.
+
+Quoted data is not walked: `esmtpmail-send-it-by-alist' holds forms naming
+`vm-pop-login' and `vm-after-pop', which are that package's vocabulary and
+not calls anything makes."
+  (let ((missing nil))
+    (cond
+     ((not (consp form)) nil)
+     ((memq (car form) '(quote function)) nil)
+     ((memq (car form) '(setq setq-default))
+      (let ((tail (cdr form)))
+        (while tail
+          (let ((symbol (car tail)))
+            (when (and (symbolp symbol)
+                       (string-prefix-p "vm" (symbol-name symbol))
+                       (not (boundp symbol)))
+              (push symbol missing)))
+          (setq missing (append (vm-integration-test--names-that-are-missing
+                                 (cadr tail))
+                                missing))
+          (setq tail (cddr tail)))))
+     (t
+      (when (and (symbolp (car form))
+                 (string-prefix-p "vm" (symbol-name (car form)))
+                 (not (fboundp (car form))))
+        (push (car form) missing))
+      (dolist (sub form)
+        (setq missing (append (vm-integration-test--names-that-are-missing sub)
+                              missing)))))
+    missing))
+
+(ert-deftest vm-integration-test-the-example-configuration-reads ()
+  "REGRESSION: example.vm parses, so a reader who loads it gets a config.
+
+emacs-vm/vm#790.  It did not.  The `vm-mime-type-converter-alist' form was
+never closed, so every form after it became an argument to that `setq' and
+loading the file answered
+
+    Wrong number of arguments: setq, 3
+
+Ten of the twenty top-level forms were swallowed, the w3m setup and the
+Personality Crisis example among them.  `make install' puts this file in the
+doc directory, so it is something a reader is handed."
+  (let ((forms (vm-integration-test--forms-of vm-integration-test--example-vm)))
+    (should (listp forms))
+    ;; and all of it, not the first few
+    (should (> (length forms) 15))))
+
+(ert-deftest vm-integration-test-the-example-configuration-names-what-exists ()
+  "Every VM variable example.vm sets and VM function it calls exists.
+
+The other half of what `not tested' meant: a configuration naming an option
+VM has renamed away is one a reader copies and then debugs."
+  (let ((forms (vm-integration-test--forms-of vm-integration-test--example-vm))
+        (missing nil))
+    (should (listp forms))
+    (dolist (form forms)
+      (setq missing (append (vm-integration-test--names-that-are-missing form)
+                            missing)))
+    (should (equal nil (delete-dups (nreverse missing))))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

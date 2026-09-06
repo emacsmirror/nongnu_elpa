@@ -131,9 +131,8 @@
         ("application/x-zip-compressed"  "text/plain" "zipinfo /dev/stdin")
         ("application/x-www-form-urlencoded"  "text/plain")
         ("message/disposition-notification"  "text/plain")
-        ("application/mac-binhex40" "application/octet-stream" "hexbin -s"))
+        ("application/mac-binhex40" "application/octet-stream" "hexbin -s")))
 
-      
 ;; Set up w3m (you should check if it exists)
 (require 'vm-w3m)
 (setq vm-included-mime-types-list
@@ -145,8 +144,18 @@
 ;;*****************************************************************************
 (setq mail-default-headers "From: Robert Widhopf-Fenk <hack@robf.de>\n")
 
-(vmpc-my-identities "me@company1.nil" "me@home.nil" "me@alterego.nil")
+;; Personality Crisis sends each message from whichever of your addresses
+;; suits it.  Switching the mode on is what installs it: loading the file
+;; alone has done nothing since VM 8.3.0.
 (require 'vm-pcrisis)
+(vm-pcrisis-mode 1)
+
+;; A quick start, for someone with no rules of their own.  It makes each
+;; address an action setting the From header and asks which to use as a
+;; composition begins.  It assigns vm-pcrisis-conditions, vm-pcrisis-actions
+;; and vm-pcrisis-default-rules outright, so write rules instead of this, not
+;; as well as it.  See the manual, Multiple Email Addresses.
+(vm-pcrisis-my-identities "me@company1.nil" "me@home.nil" "me@alterego.nil")
 
 ;;*****************************************************************************
 ;; A hook function to setup mail-composing buffers

@@ -419,6 +419,16 @@ directories that VM needs to use for its operation and the external
 applications that VM can invoke.  You can reload this file by typing
 @code{M-x vm-load-init-file} from within VM.
 
+@cindex example.vm
+@cindex init file, an example
+An example is installed with VM, as @file{example.vm} in its documentation
+directory, beside this manual and the @file{NEWS} files.  It is a working
+@file{~/.vm} rather than a list of options: folder directories, spool files,
+@acronym{POP} and @acronym{IMAP} accounts, summary format, @acronym{MIME}
+converters, an identity per address, and a composition hook.  Read it for the
+form of the thing and copy the parts you want; it names servers and addresses
+that do not exist, so it is not meant to be used as it stands.
+
 @cindex key bindings, where to put them
 @cindex global-set-key, in the init file
 @quotation Warning
