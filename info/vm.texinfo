@@ -2011,6 +2011,19 @@ scheme, the host, the mailbox and the login name go into the name, so
 @code{imap} and @code{imap-ssl} for one mailbox share a cache and changing
 your password does not orphan it.
 
+@cindex cache file, two servers on one host
+The port is left out along with them, and that is a restriction: two
+@acronym{IMAP} servers on one host, reached on different ports with the same
+login name and the same mailbox, name the same cache file and so share one.
+Visiting the second gets you the first one's folder.  Give them different
+host names, through @file{/etc/hosts} or an @acronym{SSH} tunnel on a name of
+its own, and the caches are separate again.
+
+The port cannot simply be added: every cache file that exists is named
+without it, so putting it in would rename all of them and lose what they
+hold.  A host running two mail servers on different ports for one account is
+rare enough that the caches you already have are worth more.
+
 @anchor{talking to the server}
 @unnumberedsubsec While VM is talking to the server
 
