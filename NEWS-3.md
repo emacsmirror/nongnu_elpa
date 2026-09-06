@@ -42,10 +42,18 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     `vm-v8-key-bindings` and `vm-current-key-bindings` stay, since the manual
     told readers to call them, and now bind what is bound already.
 
-  * The contrib directory is gone, and one of its six files is now part of VM
-    as `vm-org.el` (emacs-vm/vm#812).  Nothing in contrib was installed,
-    built, documented or tested, so nothing there was linted and what rotted
-    in it rotted quietly.
+  * The contrib directory is gone, and one of its files is now part of VM as
+    `vm-org.el` (emacs-vm/vm#812).  Nothing in contrib was installed, built,
+    documented or tested, so nothing there was linted and what rotted in it
+    rotted quietly.
+
+    The two patch files it also held are dropped.  `vm-mime.el-w3m.patch`
+    offered a choice between Emacs/W3 and emacs-w3m for HTML, which
+    `vm-mime-text/html-handler` has done for years over four choices rather
+    than two.  `attempted-locking.diff` added `lock-buffer` calls so that two
+    Emacsen on one folder would notice each other, and Emacs already does
+    that itself: a modified folder buffer has a `.#` lock file beside it.
+    Neither had applied to this tree since the sources moved into `lisp/`.
 
     `require` it and a `vm:` link in an Org file names a folder and a message
     in it, so `C-c C-o` opens the folder and shows that message, and `C-c l`
