@@ -5,6 +5,193 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-work-log-structured-mapping ()
+  "Only exact structured parent delegate results authorize log reads."
+  (let* ((result '((subagent_ids . ["one" "two"])
+                   (live_transcripts . ["/remote/one.log" "/remote/two.log"])))
+         (event (list :event "tool.complete" :name "delegate_task" :result result)))
+    (should (equal (hermes-work--event-log-path event "two") "/remote/two.log"))
+    (should-not (hermes-work--event-log-path event "other"))
+    (should-not (hermes-work--event-log-path
+                 (plist-put (copy-sequence event) :subagent-id "child") "one"))
+    (should (equal (hermes-work--event-log-path
+                    (list :event "tool.complete" :name "delegate_task"
+                          :result-text (json-serialize result)) "one") "/remote/one.log"))
+    (dolist (bad '(((subagent_ids "one" "one") (live_transcripts "/a" "/b"))
+                   ((subagent_ids "one" "two") (live_transcripts "/a"))
+                   ((subagent_ids . "one") (live_transcripts "/a"))))
+      (should-not (hermes-work--event-log-path
+                   (plist-put (copy-sequence event) :result bad) "one")))
+    (should-not (hermes-work--event-log-path
+                 '(:event "tool.complete" :name "terminal"
+                   :result "{\"subagent_ids\":[\"one\"],\"live_transcripts\":[\"/a\"]}") "one"))))
+
+(defun hermes-test--log-response (text)
+  "Return a managed-file fixture for UTF-8 TEXT."
+  (let ((bytes (encode-coding-string text 'utf-8)))
+    (list :size (string-bytes bytes)
+          :data_url (concat "data:application/octet-stream;base64,"
+                            (base64-encode-string bytes t)))))
+
+(ert-deftest hermes-work-log-decode-and-diff ()
+  "Decode Unicode, reject corrupt/oversize payloads and reuse real diff faces."
+  (let ((text "Assistant: λ\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"))
+    (should (equal (hermes-work-log--decode (hermes-test--log-response text)) text))
+    (should (text-property-not-all
+             0 (length text) 'face nil (hermes-kanban--render-log-content text))))
+  (should (equal (hermes-work-log--decode (hermes-test--log-response "")) ""))
+  (dolist (bad '((:size 3 :data_url "data:text/plain;base64,eA==")
+                 (:size 3000000 :data_url "data:text/plain;base64,")
+                 (:size 0 :data_url "https://other.example/log")
+                 (:size 1 :data_url "data:text/plain;base64,!!!")))
+    (should-error (hermes-work-log--decode bad))))
+
+(ert-deftest hermes-work-log-refresh-owner-and-point ()
+  "Fetch through the captured client once, preserve point, and retain failures."
+  (let* ((client (list 'exact-client))
+         (owner (list :client client :current-p (lambda (_) t)))
+         (promise (hermes--promise-make)) calls)
+    (with-temp-buffer
+      (hermes-work-log-mode)
+      (setq hermes-work-log--binding (list :owner owner :id "one" :path "/remote/log"))
+      (hermes-work-log--render "old snapshot\n")
+      (goto-char 5)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest args) (push args calls) promise)))
+        (hermes-work-log-refresh)
+        (should-error (hermes-work-log-refresh) :type 'user-error)
+        (should (= (length calls) 1))
+        (should (equal (car calls)
+                       (list "GET" "/api/files/read" :client client
+                             :query '((path . "/remote/log")) :timeout 30)))
+        (hermes--promise-resolve promise (hermes-test--log-response "new snapshot\nmore\n"))
+        (should-not hermes-work-log--request)
+        (should (= (point) 5))
+        (should buffer-read-only)
+        (should (string-match-p "may be truncated" header-line-format))
+        (setq promise (hermes--promise-make))
+        (hermes-work-log-refresh)
+        (hermes--promise-reject promise "timeout")
+        (should-not hermes-work-log--request)
+        (should (equal (buffer-string) "new snapshot\nmore\n"))
+        (should (string-match-p "Failed" header-line-format))
+        (should (equal (get-text-property 0 'help-echo header-line-format) "timeout"))))))
+
+(ert-deftest hermes-work-log-stale-completions ()
+  "Owner replacement, view replacement and killed buffers ignore late replies."
+  (dolist (change '(owner binding mode kill))
+    (let* ((current t)
+           (owner (list :current-p (lambda (_) current)))
+           (promise (hermes--promise-make))
+           (buffer (generate-new-buffer " *worker-test*")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (hermes-work-log-mode)
+            (setq hermes-work-log--binding (list :owner owner :path "/log"))
+            (hermes-work-log--render "retained")
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                       (lambda (&rest _) promise)))
+              (hermes-work-log-refresh))
+            (pcase change
+              ('owner (setq current nil))
+              ('binding (setq hermes-work-log--binding (copy-sequence hermes-work-log--binding)))
+              ('mode (fundamental-mode))
+              ('kill (kill-buffer buffer)))
+            (hermes--promise-resolve promise (hermes-test--log-response "wrong"))
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (should (equal (buffer-string) "retained")))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-work-log-keys-and-absence ()
+  "RET opens logs, metadata remains separate, and absence never fetches."
+  (should (eq (lookup-key hermes-work-mode-map (kbd "RET")) 'hermes-work-log))
+  (should (eq (lookup-key hermes-work-mode-map (kbd "d")) 'hermes-work-details))
+  (should (eq (lookup-key hermes-work-log-mode-map (kbd "g")) 'hermes-work-log-refresh))
+  (with-temp-buffer
+    (hermes-work-mode)
+    (setq hermes-work--owner (list :current-p (lambda (_) t)))
+    (let ((kind 'process) details)
+      (setq tabulated-list-format [("Worker" 20 t)]
+            tabulated-list-entries '(((process . "one") ["one"])))
+      (tabulated-list-print)
+      (goto-char (point-min))
+      (cl-letf (((symbol-function 'hermes-work--observations)
+                 (lambda (_) (list (list :key (cons kind "one") :kind kind :id "one"))))
+                ((symbol-function 'hermes-work--log-path) (lambda (&rest _) nil))
+                ((symbol-function 'hermes-work-details) (lambda () (setq details t)))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest _) (ert-fail "Unexpected network access"))))
+        (hermes-work-log)
+        (should details)
+        (setq kind 'delegate
+              tabulated-list-entries '(((delegate . "one") ["one"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (should-error (hermes-work-log) :type 'user-error)))))
+
+(ert-deftest hermes-work-log-ewoc-open-reuse-and-disappearance ()
+  "Bind from real EWOC metadata and keep an open log after the worker vanishes."
+  (let ((chat (generate-new-buffer " *parent-log-test*"))
+        (view (generate-new-buffer " *work-log-test*"))
+        (promise (hermes--promise-make)) log calls)
+    (unwind-protect
+        (with-current-buffer chat
+          (setq-local hermes-chat--ewoc (ewoc-create #'ignore))
+          (ewoc-enter-last hermes-chat--ewoc
+                           '(:role tool :metadata
+                             (:event (:event "tool.complete" :name "delegate_task"
+                                      :result ((subagent_ids "one")
+                                               (live_transcripts "/remote/log"))))))
+          (let ((owner (list :buffer chat :current-p (lambda (_) t)
+                             :delegates '(:coverage current :rows
+                                          ((:key (delegate . "one") :id "one" :kind delegate))))))
+            (should (equal (hermes-work--log-path owner "one") "/remote/log"))
+            (with-current-buffer view
+              (hermes-work-mode)
+              (setq hermes-work--owner owner
+                    tabulated-list-format [("Worker" 20 t)]
+                    tabulated-list-entries '(((delegate . "one") ["one"])))
+              (tabulated-list-print)
+              (goto-char (point-min)))
+            (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) (setq log buffer)))
+                      ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                       (lambda (&rest args) (push args calls) promise)))
+              (with-current-buffer view (hermes-work-log) (hermes-work-log))
+              (should (= (length calls) 1))
+              (should (equal (plist-get (cddar calls) :query) '((path . "/remote/log"))))
+              (setf (plist-get owner :delegates) nil)
+              ;; The selected worker need not remain in active status or EWOC.
+              (ewoc-delete hermes-chat--ewoc (ewoc-nth hermes-chat--ewoc 0))
+              (hermes--promise-resolve promise (hermes-test--log-response ""))
+              (with-current-buffer log
+                (should visual-line-mode)
+                (should-not truncate-lines)
+                (should (string-match-p "Empty snapshot" header-line-format))
+                (should (string-match-p "No log content yet" (buffer-string)))
+                (setq promise (hermes--promise-make))
+                (hermes-work-log-refresh)
+                (hermes--promise-resolve promise (hermes-test--log-response "later output"))
+                (should (equal (buffer-string) "later output"))))))
+      (kill-buffer chat)
+      (kill-buffer view)
+      (when (buffer-live-p log) (kill-buffer log)))))
+
+(ert-deftest hermes-work-log-constructor-hook-invalidates ()
+  "Mode hooks cannot redirect log requests or display invalidated views."
+  (dolist (action '(kill retarget))
+    (let ((owner (list :current-p (lambda (_) t))) created)
+      (unwind-protect
+          (let ((hermes-work-log-mode-hook
+                 (list (lambda ()
+                         (setq created (current-buffer))
+                         (if (eq action 'kill) (kill-buffer) (fundamental-mode))))))
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                       (lambda (&rest _) (ert-fail "Hook redirected a request")))
+                      ((symbol-function 'pop-to-buffer)
+                       (lambda (&rest _) (ert-fail "Displayed invalid log owner"))))
+              (hermes-work-log--open owner "hook-test" "/remote/log")))
+        (when (buffer-live-p created) (kill-buffer created))))))
+
 (defvar hermes-browser-test--fetch-function nil)
 
 (hermes-define-list-browser browseridentity

@@ -304,9 +304,196 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
         (goto-char (point-min)))
       (pop-to-buffer buffer))))
 
+;;; Worker logs
+
+(require 'hermes-kanban-log)
+
+(defconst hermes-work-log--max-bytes (* 2 1024 1024)
+  "Maximum decoded worker log size accepted for rendering.")
+
+(defvar-local hermes-work-log--binding nil
+  "Exact owner, worker and remote path for this log buffer.")
+(defvar-local hermes-work-log--request nil
+  "Unique pending request token, or nil.")
+
+(defun hermes-work--event-log-path (event id)
+  "Return ID's exact log path from a structured delegate EVENT.
+Reject malformed parallel arrays and ambiguous worker identities."
+  (when (and (equal (plist-get event :name) "delegate_task")
+             (equal (plist-get event :event) "tool.complete")
+             (not (plist-get event :subagent-id)))
+    (let* ((raw (or (plist-get event :result) (plist-get event :result-text)))
+           (result (if (stringp raw) (cdr (hermes-transport--json-read raw)) raw))
+           (ids (hermes-transport--get result 'subagent_ids))
+           (paths (hermes-transport--get result 'live_transcripts)))
+      (when (and (or (vectorp ids) (proper-list-p ids))
+                 (or (vectorp paths) (proper-list-p paths))
+                 (= (length ids) (length paths))
+                 (= (seq-count (lambda (value) (equal value id)) ids) 1))
+        (let ((path (elt paths (seq-position ids id #'equal))))
+          (and (stringp path) (not (string-empty-p path)) path))))))
+
+(defun hermes-work--log-path (owner id)
+  "Return the unambiguous remote log path for ID in OWNER's chat entries.
+Only structured parent tool results supply paths, never text or filenames."
+  (when (hermes-work--current-p owner)
+    (with-current-buffer (plist-get owner :buffer)
+      (let ((paths (delete-dups
+                    (delq nil
+                          (mapcar
+                           (lambda (entry)
+                             (hermes-work--event-log-path
+                              (plist-get (plist-get entry :metadata) :event) id))
+                           (hermes-chat--entries))))))
+        (and (= (length paths) 1) (car paths))))))
+
+(defun hermes-work-log--decode (result)
+  "Return log text from managed-file RESULT, or signal invalid data.
+The endpoint returns whole files, not a tail or a paginated transcript."
+  (let ((size (hermes-transport--get result 'size))
+        (data (hermes-transport--get result 'data_url)))
+    (unless (and (natnump size) (<= size hermes-work-log--max-bytes)
+                 (stringp data)
+                 (<= (length data) (+ 256 (* 4 (/ (+ hermes-work-log--max-bytes 2) 3))))
+                 (string-match "\\`data:[^,;]+;base64," data))
+      (error "Worker log unavailable: invalid response or exceeds 2 MiB display limit"))
+    (let ((bytes (base64-decode-string (substring data (match-end 0)))))
+      (unless (= (string-bytes bytes) size)
+        (error "Worker log changed during read or has an invalid size; refresh"))
+      (decode-coding-string bytes 'utf-8))))
+
+(defun hermes-work-log--current-p (buffer binding token)
+  "Return non-nil if BUFFER still owns BINDING and request TOKEN."
+  (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+       (eq binding (buffer-local-value 'hermes-work-log--binding buffer))
+       (eq token (buffer-local-value 'hermes-work-log--request buffer))
+       (hermes-work--current-p (plist-get binding :owner))))
+
+(defun hermes-work-log--render (text)
+  "Replace this log with rendered TEXT, preserving point and windows."
+  (let ((position (point))
+        (windows (mapcar (lambda (window) (cons window (window-start window)))
+                         (get-buffer-window-list (current-buffer) nil t))))
+    (let ((inhibit-read-only t)
+          (inhibit-modification-hooks t))
+      (erase-buffer)
+      (insert text)
+      (goto-char (min position (point-max))))
+    (dolist (entry windows)
+      (when (window-live-p (car entry))
+        (set-window-start (car entry) (min (cdr entry) (point-max)) t)))))
+
+(defun hermes-work-log-refresh ()
+  "Fetch this worker's remote log asynchronously, preserving point.
+Keep the last snapshot on failure.  Only one request may be pending per view."
+  (interactive)
+  (let* ((buffer (current-buffer))
+         (binding hermes-work-log--binding)
+         (owner (plist-get binding :owner)))
+    (unless (and (derived-mode-p 'hermes-work-log-mode)
+                 (hermes-work--current-p owner))
+      (user-error "Worker log owner detached; reopen from the attached chat"))
+    (when hermes-work-log--request (user-error "Worker log refresh already pending"))
+    (let ((token (list 'request)))
+      (setq hermes-work-log--request token
+            header-line-format "Worker log · Loading · previous snapshot retained")
+      (hermes--promise-catch
+       (hermes--promise-then
+        (condition-case err
+            (hermes-dashboard-transport-api-request-async
+             "GET" "/api/files/read" :client (plist-get owner :client)
+             :query (list (cons 'path (plist-get binding :path))) :timeout 30)
+          (error (hermes--promise-rejected (error-message-string err))))
+        (lambda (result)
+          (when (hermes-work-log--current-p buffer binding token)
+            (let ((text (hermes-kanban--render-log-content
+                         (hermes-work-log--decode result))))
+              ;; Rendering invokes mode hooks in temporary buffers.  Revalidate.
+              (when (hermes-work-log--current-p buffer binding token)
+                (with-current-buffer buffer
+                  (hermes-work-log--render
+                   (if (string-empty-p text) "No log content yet.\n" text))
+                  (setq hermes-work-log--request nil
+                        header-line-format
+                        (if (string-empty-p text) "Worker log · Empty snapshot · g Refresh"
+                          "Worker log · Snapshot; entries may be truncated · g Refresh"))))))))
+       (lambda (reason)
+         (when (hermes-work-log--current-p buffer binding token)
+           (with-current-buffer buffer
+             (let ((reason (hermes-dashboard-transport--redact-secret
+                            (format "%s" reason))))
+               (setq hermes-work-log--request nil
+                     header-line-format
+                     (propertize "Worker log · Failed · g Retry (hover for reason)"
+                                 'help-echo reason))
+               (when (= (buffer-size) 0)
+                 (hermes-work-log--render (concat "Worker log unavailable: " reason "\n\ng Retry\n")))
+               (message "Hermes worker log: %s" reason)))))))))
+
+(defun hermes-work-log--open (owner id path)
+  "Display the log for OWNER's worker ID using exact remote PATH."
+  (let ((existing
+         (seq-find
+          (lambda (buffer)
+            (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                 (let ((binding (buffer-local-value 'hermes-work-log--binding buffer)))
+                   (and (eq owner (plist-get binding :owner))
+                        (equal id (plist-get binding :id))
+                        (equal path (plist-get binding :path))))))
+          (buffer-list))))
+    (if existing (pop-to-buffer existing)
+      (let ((buffer (generate-new-buffer (format "*Hermes Worker Log: %s*" id))))
+        (with-current-buffer buffer
+          (hermes-work-log-mode)
+          (when (and (eq (current-buffer) buffer)
+                     (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                     (hermes-work--current-p owner))
+            (setq hermes-work-log--binding (list :owner owner :id id :path path)
+                  header-line-format "Worker log · Not fetched")
+            (hermes-work-log-refresh)))
+        (when (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                   (eq owner (plist-get (buffer-local-value 'hermes-work-log--binding buffer)
+                                       :owner))
+                   (hermes-work--current-p owner))
+          (pop-to-buffer buffer))))))
+
+(defun hermes-work-log ()
+  "Open the selected worker's read-only remote log, or process details.
+Use only the exact path published in this parent's structured tool result."
+  (interactive)
+  (let* ((owner hermes-work--owner)
+         (key (tabulated-list-get-id))
+         (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
+                        (hermes-work--observations owner))))
+    (unless row (user-error "No observed work on this line"))
+    (unless (hermes-work--current-p owner) (user-error "Work owner detached"))
+    (if (not (eq (plist-get row :kind) 'delegate))
+        (hermes-work-details)
+      (let* ((id (plist-get row :id))
+             (path (hermes-work--log-path owner id)))
+        (unless path
+          (user-error "No authoritative worker log path; use d for observed details"))
+        (hermes-work-log--open owner id path)))))
+
+(defvar-keymap hermes-work-log-mode-map
+  :parent special-mode-map
+  "g" #'hermes-work-log-refresh
+  "n" #'hermes-kanban-log-next-hunk
+  "p" #'hermes-kanban-log-previous-hunk)
+
+(define-derived-mode hermes-work-log-mode special-mode "Worker Log"
+  "Read a remote worker log snapshot without visiting a local file.
+The backend may truncate individual entries or expire logs.  No full-session
+history guarantee is implied.  Requests time out after 30 seconds; files over
+2 MiB are not rendered, although the API transfers the whole file."
+  (setq-local truncate-lines nil)
+  (visual-line-mode 1)
+  (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-log-refresh))))
+
 (defvar-keymap hermes-work-mode-map
   :parent tabulated-list-mode-map
-  "RET" #'hermes-work-details
+  "RET" #'hermes-work-log
+  "d" #'hermes-work-details
   "g" #'hermes-work-refresh
   "q" #'quit-window
   "i" #'hermes-work-instance-subagents
