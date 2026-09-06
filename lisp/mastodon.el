@@ -255,6 +255,12 @@ alerts."
 Adds an extra request to profile viewing, so is optional."
   :type '(boolean))
 
+(defcustom mastodon-inspect-profile-requests nil
+  "Whether to profile requests info.
+Parses outpout of function `url-debug' to list what requests a given
+timeline entails."
+  :type '(boolean))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)

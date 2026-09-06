@@ -40,17 +40,6 @@
 
 (defvar mastodon-instance-url)
 
-(defgroup mastodon-inspect nil
-  "Tools to help inspect toots."
-  :prefix "mastodon-inspect-"
-  :group 'external)
-
-(defcustom mastodon-inspect-profile-requests nil
-  "Whether to profile requests info.
-Parses outpout of function `url-debug' to list what requests a given
-timeline entails."
-  :type '(boolean))
-
 (defun mastodon-inspect--dump-json-in-buffer (name json)
   "Buffer NAME is opened and JSON in printed into it."
   (switch-to-buffer-other-window name)
