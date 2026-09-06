@@ -3550,10 +3550,11 @@ We convert and compare their created_at values."
   "Return tags data for all tags in `mastodon-tl-tags-groups'.
 PREFIX is for `mastodon-tl-tag-group-tl'.
 PARAMS is any (e.g. update) params to send."
-  (apply #'append ;; flatten result by one layer of nesting
-         (mapcar (lambda (x)
-                   (mastodon-tl--tag-group-tl x prefix params)) ;; get data
-                 mastodon-tl--tags-groups)))
+  (seq-uniq
+   (apply #'append ;; flatten result by one layer of nesting
+          (mapcar (lambda (x)
+                    (mastodon-tl--tag-group-tl x prefix params)) ;; get data
+                  mastodon-tl--tags-groups))))
 
 (defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
