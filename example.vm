@@ -116,19 +116,21 @@
 ;;*****************************************************************************
 ;; Viewing messages
 ;;
-;; HTML messages can be converted to text or the w3 resp. w3m Emacs viewers
-;; can be used for displaying. 
+;; HTML is displayed by whatever vm-mime-text/html-handler names.  Its default,
+;; auto-select, takes the best of what you have installed, so most people need
+;; set nothing here.  See the manual, HTML display.
+;;
+;; vm-mime-type-converter-alist is for the types nothing displays: name a
+;; program that turns one into something that does.
 ;;
 ;;*****************************************************************************
 
-(setq  vm-mime-type-converter-alist
-      '(("text/html" "text/plain" "lynx -force_html -dump /dev/stdin")
-        ("message/delivery-status"  "text/plain")
-        ("application/zip"  "text/plain" "listzip")
-        ("application/x-zip-compressed"  "text/plain" "zipinfo /dev/stdin")
-        ("application/x-www-form-urlencoded"  "text/plain")
-        ("message/disposition-notification"  "text/plain")
-        ("application/mac-binhex40" "application/octet-stream" "hexbin -s")))
+(setq vm-mime-type-converter-alist
+      '(("application/zip" "text/plain" "zipinfo /dev/stdin")
+        ("application/x-zip-compressed" "text/plain" "zipinfo /dev/stdin")
+        ;; these two carry no text of their own worth showing
+        ("message/delivery-status" "text/plain")
+        ("message/disposition-notification" "text/plain")))
 
 ;; Set up w3m (you should check if it exists)
 (require 'vm-w3m nil t)   ; nil t: carry on if it is not installed
