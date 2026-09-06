@@ -8,6 +8,24 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * The contrib directory is gone, and one of its six files is now part of VM
+    as `vm-org.el` (emacs-vm/vm#812).  Nothing in contrib was installed,
+    built, documented or tested, so nothing there was linted and what rotted
+    in it rotted quietly.
+
+    `require` it and a `vm:` link in an Org file names a folder and a message
+    in it, so `C-c C-o` opens the folder and shows that message, and `C-c l`
+    in a VM folder makes such a link.  Org carries no VM support of its own,
+    so this is it.  The link storing half had not worked since Org 9.3
+    removed the variable it hung on, and said nothing about it.
+
+    Dropped: `vm-sumurg.el`, which called an XEmacs-only function at top
+    level and so had never loaded on GNU Emacs; `org-html-mail.el`, which
+    needs `orgstruct-mode` and `org-export-as-html`, both gone from Org;
+    `vm-blueman.el`, a 2006 Usenet posting with no copyright statement and an
+    anonymous author; `vm-bogofilter.el`; and
+    `vm-mime-display-internal-application.el`.  They are in the history.
+
   * VM colours quoted text and the signature in a message body
     (emacs-vm/vm#811).  Set `vm-enable-body-faces`: quoted text then wears a
     face per level of quoting, from `vm-citation-faces`, and the signature
