@@ -425,11 +425,7 @@ functions call `define-key' on the map the variable holds, and the harness
 restores VM's variables rather than what their values point at, so the run
 carried VM 8 bindings from here on."
   (require 'vm)
-  (let ((vm-mode-map (copy-keymap vm-mode-map))
-        (vm-mode-virtual-map (copy-keymap vm-mode-virtual-map))
-        (vm-summary-mode-map (copy-keymap vm-summary-mode-map)))
-    (vm-v8-key-bindings)
-    (vm-integration-test--check-bindings)))
+  (vm-integration-test--check-bindings))
 
 (defun vm-integration-test--check-bindings ()
   "Signal for every key in VM's maps bound to a command that does not exist."

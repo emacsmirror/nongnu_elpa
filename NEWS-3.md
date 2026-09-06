@@ -8,6 +8,40 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * The keys VM 8 gives its own commands are bound (emacs-vm/vm#632).  `!`
+    flags a message, `<` and `>` promote and demote a subthread, and `V O`,
+    `V U`, `V D` and `V ?` do their virtual folder commands.
+
+    They were left unbound in 8.2.0 because they had meant different things
+    in different versions, and each was bound instead to a stub that reported
+    the key as having an optional binding.  So the manual gave `!` for
+    flagging a message and typing `!` answered an error.
+
+    `vm-v7-key-bindings`, its alias `vm-legacy-key-bindings` and the stub are
+    removed.  A preferences file calling either gets a void-function error
+    rather than a set of keys the manual no longer describes.  The VM 7 set,
+    to paste into your init file if you want it back:
+
+    ```elisp
+    (define-key vm-mode-map "<" 'vm-beginning-of-message)
+    (define-key vm-mode-map ">" 'vm-end-of-message)
+    (define-key vm-mode-map "b" 'vm-scroll-backward)
+    (define-key vm-mode-map "e" 'vm-edit-message)
+    (define-key vm-mode-map "w" 'vm-save-message-sans-headers)
+    (define-key vm-mode-map "a" 'vm-set-message-attributes)
+    (define-key vm-mode-map "i" 'vm-iconify-frame)
+    (define-key vm-mode-map "*" 'vm-burst-digest)
+    (define-key vm-mode-map "!" 'shell-command)
+    (define-key vm-mode-map "=" 'vm-summarize)
+    (define-key vm-mode-map "L" 'vm-load-init-file)
+    (define-key vm-mode-map "\M-l" 'vm-edit-init-file)
+    (define-key vm-mode-map "%" 'vm-change-folder-type)
+    (define-key vm-mode-map "\M-g" 'vm-goto-message)
+    ```
+
+    `vm-v8-key-bindings` and `vm-current-key-bindings` stay, since the manual
+    told readers to call them, and now bind what is bound already.
+
   * The contrib directory is gone, and one of its six files is now part of VM
     as `vm-org.el` (emacs-vm/vm#812).  Nothing in contrib was installed,
     built, documented or tested, so nothing there was linted and what rotted
