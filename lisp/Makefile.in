@@ -63,7 +63,6 @@ SOURCES += vm-w3m.el
 SOURCES += vm-version-conf.el
 
 SOURCES += tapestry.el
-SOURCES += u-vm-color.el
 
 # autoloads differ depending on emacs flavor
 emacs_AUTOLOADS = vm-autoloads.el
@@ -166,11 +165,18 @@ vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	 $(EMACS_COMP) -l autoload \
 		-f vm-built-autoloads "@abs_builddir@/$@.tmp" "`pwd`")
 	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@.tmp
+#	Before the assignments, not after: vm-vars.el is where the four
+#	vm-configure- variables are defined, and assigning to them first is an
+#	assignment to a free variable.  It went unwarned while u-vm-color.el
+#	was in SOURCES, that being the one file sorting before the vm- ones,
+#	so compiling it pulled vm-vars in first and the whole-directory lint
+#	saw the definitions anyway.  The XEmacs rule below has always had
+#	these two in this order.
+	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-datadir \"${etcdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-docdir \"${docdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-infodir \"${infodir}\")" | tr -d '\015' >> $@.tmp
-	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(provide 'vm-autoloads)" | tr -d '\015' >> $@.tmp
 	mv -f $@.tmp $@
 
