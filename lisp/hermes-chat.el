@@ -1248,6 +1248,259 @@ the current draft stays here.  Uncertain deliveries require history inspection."
 ;;;###autoload
 (defalias 'hermes-reconnect #'hermes-dashboard-reconnect)
 
+(defvar hermes-chat--dashboard-restarting nil
+  "Non-nil during synchronous shared dashboard replacement.")
+
+(defun hermes-chat--dashboard-buffers (client)
+  "Return live chat buffers sharing exact CLIENT."
+  (seq-filter (lambda (buffer)
+                (with-current-buffer buffer
+                  (and (derived-mode-p 'hermes-chat-mode)
+                       (eq client hermes-chat--dashboard-client))))
+              (buffer-list)))
+
+(defun hermes-chat--restart-current-p (owner)
+  "Return non-nil when restart OWNER still owns this chat's attachment."
+  (and (eq owner hermes-chat--session-bootstrap)
+       (hermes-chat--restart-context-current-p owner)))
+
+(defun hermes-chat--restart-context-current-p (owner &optional terminal)
+  "Return non-nil when OWNER's captured attachment still owns this chat.
+For TERMINAL settlement, allow the captured socket generation to retire."
+  (and (eq (plist-get owner :buffer) (current-buffer))
+       (hermes-chat--dashboard-context-current-p
+        (plist-get owner :client) (plist-get owner :generation))
+       (equal (plist-get owner :stored) hermes-chat--session-id)
+       (equal (plist-get owner :session-id) hermes-chat--dashboard-active-session-id)
+       (or terminal
+           (null (plist-get owner :connection))
+           (= (plist-get owner :connection)
+              (hermes-dashboard-transport-client-generation
+               (plist-get owner :client))))))
+
+(defun hermes-chat--restart-failed (owner message)
+  "Settle current restart OWNER with MESSAGE, retaining local data."
+  ;; Transport retires its generation before rejecting pending resume requests.
+  (when (and (eq owner hermes-chat--session-bootstrap)
+             (hermes-chat--restart-context-current-p owner t))
+    (setq hermes-chat--session-bootstrap nil)
+    (hermes-chat--set-header-state :status 'error :activity message)
+    (message "Hermes restart (%s): %s" (buffer-name) message)))
+
+(defun hermes-chat--restart-resumed (owner result)
+  "Attach restart OWNER to RESULT without replaying the transcript or input."
+  (when (hermes-chat--restart-current-p owner)
+    (let* ((client (plist-get owner :client))
+           (active (hermes-chat--dashboard-active-id-from-result client result))
+           (first (null (plist-get owner :session-id))))
+      (if (not active)
+          (hermes-chat--restart-failed owner "Resume returned no live session")
+        (when first
+          ;; Accept only the identity derived from this owned backend result,
+          ;; not whatever a recording callback may install in the buffer.
+          (setf (plist-get owner :session-id) active
+                (plist-get owner :stored)
+                (hermes-chat--dashboard-stored-id-from-result client result active))
+          (hermes-chat--dashboard-record-session client result))
+        (when (hermes-chat--restart-current-p owner)
+          (if (and first (hermes-transport--get result 'auto_continue))
+              ;; Cold resume may say running=false while its recovery thread
+              ;; already emitted message.start.  Bind routing first, then read
+              ;; the live session once; this never submits a continuation.
+              (hermes-chat--restart-resume owner)
+            (when (and (hermes-chat--dashboard-result-live-turn-p result)
+                       (not hermes-chat--pending-assistant-id))
+              (setq hermes-chat--dashboard-running-p t)
+              (hermes-chat--dashboard-restore-inflight-turn client))
+            (when (hermes-chat--restart-current-p owner)
+              (unless (hermes-chat--active-turn-p)
+                (hermes-chat--set-header-state
+                 :status 'ready :activity "Dashboard restarted; session resumed"))
+              (when (hermes-chat--restart-current-p owner)
+                (hermes-chat--dashboard-restore-pending-clarify result)
+                (when (hermes-chat--restart-current-p owner)
+                  (setq hermes-chat--session-bootstrap nil))))))))))
+
+(defun hermes-chat--restart-resume (owner)
+  "Resume only the original durable session for restart OWNER."
+  (when (hermes-chat--restart-current-p owner)
+    (let* ((buffer (current-buffer))
+           (client (plist-get owner :client))
+           (fail (lambda (message)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--restart-failed owner message)))))
+      (if (null (plist-get owner :stored))
+          (progn
+            (setq hermes-chat--session-bootstrap nil)
+            (hermes-chat--set-header-state :status 'ready :activity "Dashboard ready"))
+        (condition-case err
+            (hermes-dashboard-transport-session-resume
+             client (plist-get owner :stored)
+             :cols (hermes-chat--dashboard-cols) :profile hermes-chat--profile
+             :resolve
+             (lambda (result)
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--restart-resumed owner result)))
+             :reject fail)
+          ((error quit) (funcall fail (error-message-string err))))))))
+
+(defun hermes-chat--restart-prepare (record)
+  "Detach the captured attachment in RECORD and reserve it for restart."
+  (hermes-chat--in-buffer (car record)
+    (catch 'retired
+      (when (hermes-chat--restart-context-current-p (cdr record))
+        (dolist (assistant-id (delete-dups
+                               (delq nil (list hermes-chat--pending-assistant-id
+                                               hermes-chat--server-queued-assistant-id))))
+          (hermes-chat--mark-assistant assistant-id 'interrupted nil t t)
+          (hermes-chat--settle-transport-entries assistant-id 'interrupted))
+        (run-hook-wrapped
+         'hermes-chat-cleanup-functions
+         (lambda (function)
+           (funcall function)
+           (not (hermes-chat--restart-context-current-p (cdr record)))))
+        ;; Cleanup may replace this attachment or kill a later participant.
+        (when (hermes-chat--restart-context-current-p (cdr record))
+          ;; Invalidation advances the lifetime before calling its hooks.  Track
+          ;; that deliberate transition, but leave immediately on replacement.
+          (let* ((hooks hermes-chat-lifecycle-invalidation-hook)
+                 (hermes-chat-lifecycle-invalidation-hook
+                  (list (lambda ()
+                          (setf (plist-get (cdr record) :generation)
+                                hermes-chat--lifecycle-generation)
+                          (let ((hermes-chat-lifecycle-invalidation-hook hooks))
+                            (run-hook-wrapped
+                             'hermes-chat-lifecycle-invalidation-hook
+                             (lambda (function)
+                               (funcall function)
+                               (unless (hermes-chat--restart-context-current-p (cdr record))
+                                 (throw 'retired nil))
+                               nil)))))))
+            (hermes-chat--invalidate-transport-state t))
+          (unless (hermes-chat--restart-context-current-p (cdr record))
+            (throw 'retired nil))
+          (hermes-chat--clear-terminal-prompts '(:type error))
+          (unless (hermes-chat--restart-context-current-p (cdr record))
+            (throw 'retired nil))
+          (hermes-chat--clear-active-tools)
+          (setf (plist-get (cdr record) :session-id) nil)
+          (hermes-chat--forget-live-dashboard-session)
+          (unless (hermes-chat--restart-context-current-p (cdr record))
+            (throw 'retired nil))
+          (setq hermes-chat--dashboard-token nil
+                hermes-chat--dashboard-detached-assistant-id nil)
+          (let ((owner (append (hermes-chat--dashboard-begin-bootstrap
+                                hermes-chat--dashboard-client 'restart #'ignore)
+                               (list :buffer (current-buffer)
+                                     :stored hermes-chat--session-id :connection nil))))
+            ;; Publish the reservation before any display callback can fail.
+            (setcdr record owner)
+            (setq hermes-chat--session-bootstrap owner)
+            (when (buffer-live-p hermes-chat--recovery-buffer)
+              (hermes-chat--insert-local-status
+               (format "Restart: input preserved in %s; inspect history and send manually"
+                       (buffer-name hermes-chat--recovery-buffer))))
+            (when (hermes-chat--restart-current-p owner)
+              (hermes-chat--set-header-state
+               :status 'reconnecting
+               :activity (if (buffer-live-p hermes-chat--recovery-buffer)
+                             (format "Restarting; unsent input in %s (send manually)"
+                                     (buffer-name hermes-chat--recovery-buffer))
+                           "Restarting dashboard")))))))))
+
+(defun hermes-chat--restart-attach (record client)
+  "Attach restart RECORD to replacement CLIENT and await readiness."
+  (hermes-chat--in-buffer (car record)
+    (let ((owner (cdr record)))
+      (when (hermes-chat--restart-current-p owner)
+        (cl-incf (hermes-dashboard-transport-client-refcount client))
+        (setq hermes-chat--dashboard-client client)
+        (setq-local hermes-dashboard-transport-request-owner (current-buffer))
+        (setf (plist-get owner :client) client
+              (plist-get owner :connection)
+              (hermes-dashboard-transport-client-generation client))
+        (hermes-chat--ensure-idle-listener client (current-buffer))
+        (hermes--promise-then
+         (hermes-dashboard-transport-client-ready-promise client)
+         (lambda (_value)
+           (hermes-chat--in-buffer (car record)
+             (hermes-chat--restart-resume owner)))
+         (lambda (message)
+           (hermes-chat--in-buffer (car record)
+             ;; Startup failure terminally increments the connection generation.
+             (when (hermes-chat--dashboard-bootstrap-current-p owner)
+               (setf (plist-get owner :connection) nil)
+               (hermes-chat--restart-failed owner message)))))))))
+
+;;;###autoload
+(defun hermes-dashboard-restart ()
+  "Confirm restarting this chat's shared Emacs-owned dashboard.
+Stop in-flight work across all clients of that dashboard, preserve live chat
+buffers and drafts, and asynchronously resume their original durable sessions.
+Copy queued and uncertain input to editable recovery buffers; never resend it.
+The backend may automatically recover interrupted turns under its own policy.
+Blank chats remain blank.  Failed sessions remain available for manual retry.
+Remote dashboards are unsupported; use `hermes-dashboard-reconnect' instead."
+  (interactive)
+  (let* ((client hermes-chat--dashboard-client)
+         (generation (and (hermes-dashboard-transport-client-p client)
+                          (hermes-dashboard-transport-client-generation client)))
+         (buffers (hermes-chat--dashboard-buffers client)))
+    (unless (and client (eq (hermes-dashboard-transport--client-start-mode client)
+                           'spawn))
+      (user-error "Restart requires an Emacs-owned dashboard; use hermes-dashboard-reconnect for remote sockets"))
+    (when (or hermes-chat--dashboard-restarting
+              (seq-some (lambda (buffer)
+                          (with-current-buffer buffer
+                            (eq (plist-get hermes-chat--session-bootstrap :kind)
+                                'restart))) buffers))
+      (user-error "Dashboard restart is already in progress"))
+    (when (yes-or-no-p
+           (format "Restart shared dashboard (%d chats), stopping in-flight work for ALL its clients? "
+                   (length buffers)))
+      (unless (and (eq client hermes-chat--dashboard-client)
+                   (= generation (hermes-dashboard-transport-client-generation client)))
+        (user-error "Dashboard changed while confirming; try again"))
+      (let* ((hermes-chat--dashboard-restarting t)
+             (prepared nil)
+             (records
+              (mapcar (lambda (buffer)
+                        (with-current-buffer buffer
+                          (cons buffer
+                                (list :client client :buffer buffer
+                                      :generation hermes-chat--lifecycle-generation
+                                      :stored hermes-chat--session-id
+                                      :session-id hermes-chat--dashboard-active-session-id))))
+                      (hermes-chat--dashboard-buffers client))))
+        ;; Snapshot everyone before the first hook; preserve all input before
+        ;; the first destructive operation.  Failed preparation is retryable.
+        (condition-case err
+            (progn
+              (dolist (record records)
+                (hermes-chat--in-buffer (car record)
+                  (when (hermes-chat--restart-context-current-p (cdr record))
+                    (hermes-chat--capture-recovery))))
+              (mapc #'hermes-chat--restart-prepare records)
+              (setq prepared t)
+              (hermes-dashboard-transport-stop client "Dashboard explicitly restarted")
+              (let ((replacement
+                     (hermes-dashboard-transport-acquire
+                      :host (hermes-dashboard-transport-client-host client)
+                      :port (hermes-dashboard-transport-client-port client)
+                      :start-mode 'spawn :callback #'ignore)))
+                (unwind-protect
+                    (dolist (record records)
+                      (hermes-chat--restart-attach record replacement))
+                  (hermes-dashboard-transport-release replacement))))
+          ((error quit)
+           (dolist (record records)
+             (condition-case nil
+                 (hermes-chat--in-buffer (car record)
+                   (hermes-chat--restart-failed (cdr record)
+                                               (error-message-string err)))
+               ((error quit) nil)))
+           (unless prepared (signal (car err) (cdr err)))))))))
+
 (defun hermes-chat-stop-processes ()
   "Confirm stopping all processes in the connected Hermes instance.
 This affects background/tool processes across all chats, not just this chat.

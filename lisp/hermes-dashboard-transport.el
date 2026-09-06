@@ -717,7 +717,8 @@ Return captured resources, never a lease on later client state."
   (let ((snapshot (hermes-dashboard-transport--stop-snapshot client message nil)))
     (if retry
         (progn
-          (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))
+          (when (hermes-dashboard-transport-client-reconnecting-p client)
+            (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client)))
           (setq snapshot (plist-put snapshot :requests nil)
                 snapshot (plist-put snapshot :ready nil)
                 snapshot (plist-put snapshot :events nil)))
@@ -917,8 +918,12 @@ Reserve recovery before callbacks; pre-ready retries preserve unsent work."
          client message (list :type 'status :status "closed" :content message))
       (hermes-dashboard-transport--begin-reconnect
        client message nil
-       (and (hermes-dashboard-transport-client-reconnecting-p client)
-            (not (hermes-dashboard-transport-client-ready-p client)))
+       ;; The first handshake is also a readiness campaign.  A socket that
+       ;; closes before gateway.ready must not reject its existing waiters.
+       (and (not (hermes-dashboard-transport-client-ready-p client))
+            (or (hermes-dashboard-transport-client-reconnecting-p client)
+                (when-let* ((ready (hermes-dashboard-transport-client-ready-promise client)))
+                  (eq (hermes--promise-state ready) 'pending))))
        hermes-dashboard-transport-reconnect-max-attempts))))
 
 (defun hermes-dashboard-transport--default-websocket-open (url client)

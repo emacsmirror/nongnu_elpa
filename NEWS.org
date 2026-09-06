@@ -2,6 +2,14 @@
 
 * Unreleased
 
+- Added =M-x hermes-dashboard-restart= in chat buffers.  After confirming its
+  shared impact, it restarts the Emacs-owned dashboard and eagerly reattaches
+  live chats to their durable sessions without replacing buffers or drafts.
+  Queued and uncertain input is copied to editable recovery buffers for manual
+  sending.  The backend may recover interrupted turns under its own policy;
+  Emacs never resends input.  Remote dashboards are not restarted: use
+  =hermes-dashboard-reconnect= for an idle socket reconnect.
+
 * Version 0.5.0 (2026-09-05)
 
 - Added =C-c C-w= (=hermes-chat-work=) to inspect a chat's observed delegates

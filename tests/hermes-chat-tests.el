@@ -6939,6 +6939,531 @@
   (hermes-test-with-chat-buffer
    (should-error (hermes-chat-disconnect) :type 'user-error)))
 
+(defun hermes-test--with-dashboard-restart (function)
+  "Call FUNCTION with a restart fixture, faking only process and wire edges."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-idle-close-delay nil)
+         (old (make-hermes-dashboard-transport-client
+               :host "127.0.0.1" :port 9123 :endpoint-key '(spawn "127.0.0.1" 9123)
+               :process 'old-process :websocket 'old-ws :ready-p t :refcount 3
+               :ready-promise (hermes--promise-resolved t)))
+         (state (list :old old :starts 0 :frames nil :deleted nil
+                      :new nil :start-error nil :buffers nil))
+         (buffers (mapcar (lambda (_)
+                            (generate-new-buffer (hermes-test--chat-buffer-name)))
+                          '(a b blank)))
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text)
+            (push (hermes-dashboard-transport--decode-frame text)
+                  (plist-get state :frames)))))
+    (puthash '(spawn "127.0.0.1" 9123) old hermes-dashboard-transport--clients)
+    (setf (plist-get state :buffers) buffers)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'delete-process)
+               (lambda (process) (push process (plist-get state :deleted))))
+              ((symbol-function 'websocket-close) #'ignore)
+              ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (cl-incf (plist-get state :starts))
+                 (should (eq (plist-get args :start-mode) 'spawn))
+                 (should (equal (plist-get args :host) "127.0.0.1"))
+                 (should (= (plist-get args :port) 9123))
+                 (when (plist-get state :start-error) (error "Spawn failed"))
+                 (setf (plist-get state :new)
+                       (make-hermes-dashboard-transport-client
+                        :host "127.0.0.1" :port 9123 :process 'new-process
+                        :websocket 'new-ws :ready-promise (hermes--promise-make))))))
+      (unwind-protect
+          (progn
+            (cl-loop for buffer in buffers for stored in '("stored-a" "stored-b" nil)
+                     do (with-current-buffer buffer
+                          (hermes-chat-mode)
+                          (setq hermes-chat--dashboard-client old
+                                hermes-chat--resolved-start-mode 'spawn
+                                hermes-chat--session-id stored
+                                hermes-chat--dashboard-active-session-id
+                                (and stored (concat "old-" stored))
+                                hermes-chat--dashboard-session-ready-p (and stored t))
+                          (hermes-chat--ensure-idle-listener old buffer)))
+            (funcall function state))
+        (dolist (buffer buffers)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (when (buffer-live-p hermes-chat--recovery-buffer)
+                (kill-buffer hermes-chat--recovery-buffer)))
+            (kill-buffer buffer)))))))
+
+(defun hermes-test--restart-ready (state)
+  "Resolve replacement readiness in restart fixture STATE."
+  (let ((client (plist-get state :new)))
+    (setf (hermes-dashboard-transport-client-ready-p client) t)
+    (hermes--promise-resolve
+     (hermes-dashboard-transport-client-ready-promise client) client)))
+
+(defun hermes-test--restart-reply (state frame &optional failure running)
+  "Reply to FRAME in STATE with optional FAILURE or RUNNING turn."
+  (let ((stored (hermes-transport--get (alist-get 'params frame) 'session_id)))
+    (hermes-dashboard-transport--handle-frame
+     (plist-get state :new)
+     `((jsonrpc . "2.0") (id . ,(alist-get 'id frame))
+       ,(if failure `(error . ((message . ,failure)))
+          `(result . ((session_id . ,(concat "new-" stored))
+                      (resumed . ,stored) (running . ,(and running t))
+                      (inflight . ,(and running '((text . "Recovered work")))))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-reattaches-without-resending ()
+  "Restart once, eagerly resume both durable chats, and leave blank input alone."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (let* ((buffers (plist-get state :buffers))
+            (old (plist-get state :old))
+            (caller (car buffers)) old-callback lifetime position)
+       (with-current-buffer caller
+         (insert "draft α\nsecond line")
+         (backward-char 3)
+         (setq position (- (point) hermes-chat--input-marker)
+               lifetime hermes-chat--lifecycle-generation
+               old-callback (hermes-chat--transport-callback
+                             caller "interrupted" t hermes-chat--transport-generation)
+               hermes-chat--pending-assistant-id "interrupted"
+               hermes-chat--dashboard-running-p t
+               hermes-chat--queued-messages '((:id queued :content "queued exact")))
+         (hermes-chat--insert-entry
+          '(:id "interrupted" :role assistant :content "partial" :status streaming))
+         (hermes-dashboard-restart)
+         (should (equal (plist-get state :deleted) '(old-process)))
+         (should (= (plist-get state :starts) 1))
+         (should-not (eq lifetime hermes-chat--lifecycle-generation))
+         (should-not hermes-chat--pending-assistant-id)
+         (should-not hermes-chat--queued-messages)
+         (should-not hermes-chat--dashboard-running-p)
+         (should (equal (hermes-chat-input-string) "draft α\nsecond line"))
+         (should (= position (- (point) hermes-chat--input-marker)))
+         (should (string-match-p "queued exact"
+                                 (with-current-buffer hermes-chat--recovery-buffer
+                                   (buffer-string))))
+         (should-error (hermes-dashboard-restart) :type 'user-error)
+         (funcall old-callback '(:type delta :content "STALE"))
+         (should-not (string-match-p "STALE" (buffer-string))))
+       (should (hermes-dashboard-transport-client-stopping-p old))
+       (should-not (plist-get state :frames))
+       (hermes-test--restart-ready state)
+       (let ((frames (plist-get state :frames)))
+         (should (= (length frames) 2))
+         (should (equal (sort (mapcar (lambda (frame)
+                                       (should (equal (alist-get 'method frame) "session.resume"))
+                                       (hermes-transport--get (alist-get 'params frame) 'session_id))
+                                     frames) #'string<)
+                        '("stored-a" "stored-b")))
+         (dolist (frame frames) (hermes-test--restart-reply state frame)))
+       (cl-loop for buffer in buffers for stored in '("stored-a" "stored-b" nil)
+                do (with-current-buffer buffer
+                     (should (eq hermes-chat--dashboard-client (plist-get state :new)))
+                     (should (equal hermes-chat--session-id stored))
+                     (should (equal hermes-chat--dashboard-active-session-id
+                                    (and stored (concat "new-" stored))))
+                     (should-not hermes-chat--session-bootstrap)))
+       (should (= (hermes-dashboard-transport-client-refcount (plist-get state :new)) 3))
+       (should (= (length (plist-get state :frames)) 2))))))
+
+(ert-deftest hermes-chat-dashboard-restart-isolates-resume-failure-and-running ()
+  "One failed resume leaves its peer attached to backend-recovered work."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+     (hermes-test--restart-ready state)
+     (dolist (frame (plist-get state :frames))
+       (hermes-test--restart-reply
+        state frame
+        (and (equal (hermes-transport--get (alist-get 'params frame) 'session_id)
+                    "stored-a") "Missing session") t))
+     (with-current-buffer (car (plist-get state :buffers))
+       (should-not hermes-chat--dashboard-session-ready-p)
+       (should-not hermes-chat--session-bootstrap)
+       (should (equal hermes-chat--session-id "stored-a"))
+       (should (eq (plist-get hermes-chat--status-state :status) 'error)))
+     (with-current-buffer (cadr (plist-get state :buffers))
+       (should hermes-chat--dashboard-session-ready-p)
+       (should hermes-chat--pending-assistant-id)
+       (should (hermes-chat--active-turn-p)))
+     (should (= (length (plist-get state :frames)) 2)))))
+
+(ert-deftest hermes-chat-dashboard-restart-stale-responses-and-killed-buffer ()
+  "Killed and replaced chats ignore late resume results and errors."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+     (hermes-test--restart-ready state)
+     (let ((frames (plist-get state :frames)))
+       (kill-buffer (cadr (plist-get state :buffers)))
+       (with-current-buffer (car (plist-get state :buffers))
+         (hermes-chat--invalidate-transport-state)
+         (setq hermes-chat--session-id "replacement")
+         (dolist (frame frames)
+           (hermes-test--restart-reply state frame)
+           (hermes-test--restart-reply state frame "late error"))
+         (should (equal hermes-chat--session-id "replacement"))
+         (should-not hermes-chat--dashboard-active-session-id))))))
+
+(ert-deftest hermes-chat-dashboard-restart-startup-failures-are-retryable ()
+  "Both synchronous spawn errors and terminal readiness failure settle owners."
+  (dolist (synchronous '(nil t))
+    (hermes-test--with-dashboard-restart
+     (lambda (state)
+       (setf (plist-get state :start-error) synchronous)
+       (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+       (unless synchronous
+         (hermes-dashboard-transport-stop (plist-get state :new) "Startup timed out"))
+       (dolist (buffer (plist-get state :buffers))
+         (with-current-buffer buffer
+           (should-not hermes-chat--session-bootstrap)
+           (should (eq (plist-get hermes-chat--status-state :status) 'error))))
+       (should-not (plist-get state :frames))
+       (setf (plist-get state :start-error) nil)
+       (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+       (should (= (plist-get state :starts) 2))))))
+
+(ert-deftest hermes-chat-dashboard-restart-post-ready-failure-is-retryable ()
+  "Socket loss and stop settle pending resumes without submitting drafts."
+  (dolist (stop '(nil t))
+    (hermes-test--with-dashboard-restart
+     (lambda (state)
+       (let* ((buffers (plist-get state :buffers))
+              (hermes-dashboard-transport-reconnect-max-attempts 3)
+              (hermes-dashboard-transport-schedule-function (lambda (&rest _) nil)))
+         (dolist (buffer buffers)
+           (with-current-buffer buffer (insert "original draft α")))
+         (with-current-buffer (car buffers) (hermes-dashboard-restart))
+         (hermes-test--restart-ready state)
+         (should (= (length (plist-get state :frames)) 2))
+         (let ((client (plist-get state :new)))
+           (if stop
+               (hermes-dashboard-transport-stop client "Stopped during resume")
+             (hermes-dashboard-transport--handle-socket-down
+              client "Lost during resume" 'new-ws))
+           (cl-loop for buffer in buffers for stored in '("stored-a" "stored-b" nil)
+                    do (with-current-buffer buffer
+                         (should-not hermes-chat--session-bootstrap)
+                         (should (equal hermes-chat--session-id stored))
+                         (should-not hermes-chat--dashboard-active-session-id)
+                         (should (equal (hermes-chat-input-string) "original draft α"))))
+           (unless stop (hermes-test--restart-ready state))
+           (should (= (length (plist-get state :frames)) 2))
+           ;; A manual restart must be allowed, never an automatic input retry.
+           (with-current-buffer (car buffers) (hermes-dashboard-restart))
+           (should (= (plist-get state :starts) 2))
+           (hermes-test--restart-ready state)
+           (dolist (frame (seq-take (plist-get state :frames) 2))
+             (hermes-test--restart-reply state frame))
+           (cl-loop for buffer in buffers for stored in '("stored-a" "stored-b" nil)
+                    do (with-current-buffer buffer
+                         (should-not hermes-chat--session-bootstrap)
+                         (should (equal hermes-chat--session-id stored))
+                         (should (equal (hermes-chat-input-string) "original draft α"))))
+           (should (= (length (plist-get state :frames)) 4))
+           (dolist (frame (plist-get state :frames))
+             (should (equal (alist-get 'method frame) "session.resume")))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-post-ready-reject-preserves-successor ()
+  "A retired resume cannot settle a successor reservation on socket loss."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (let ((caller (car (plist-get state :buffers)))
+           (hermes-dashboard-transport-reconnect-max-attempts 3)
+           (hermes-dashboard-transport-schedule-function (lambda (&rest _) nil)))
+       (with-current-buffer caller (hermes-dashboard-restart))
+       (hermes-test--restart-ready state)
+       (with-current-buffer caller
+         (let ((successor (copy-sequence hermes-chat--session-bootstrap)))
+           ;; Identical context is insufficient: only the exact owner may settle.
+           (setq hermes-chat--session-bootstrap successor)
+           (hermes-dashboard-transport--handle-socket-down
+            (plist-get state :new) "Lost during resume" 'new-ws)
+           (hermes-test--restart-ready state)
+           (should (eq hermes-chat--session-bootstrap successor))
+           (should (equal hermes-chat--session-id "stored-a"))
+           (should-not hermes-chat--dashboard-active-session-id)))))))
+
+(ert-deftest hermes-chat-dashboard-restart-refuses-remote-and-decline ()
+  "Remote and declined restarts never stop a client or spawn anything."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers))
+       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+         (hermes-dashboard-restart))
+       (setf (hermes-dashboard-transport-client-endpoint-key (plist-get state :old))
+             "https://remote.example.test")
+       (should-error (hermes-dashboard-restart) :type 'user-error)
+       (should-not (plist-get state :deleted))
+       (should (zerop (plist-get state :starts)))))))
+
+(ert-deftest hermes-chat-dashboard-restart-observes-auto-continue-without-submit ()
+  "A cold recovery response gets one live readback, never a prompt submission."
+  (dolist (event-first '(nil t))
+    (hermes-test--with-dashboard-restart
+     (lambda (state)
+       (let* ((caller (car (plist-get state :buffers)))
+              (client nil))
+         (with-current-buffer caller (hermes-dashboard-restart))
+         (hermes-test--restart-ready state)
+         (setq client (plist-get state :new))
+         (let ((frame (seq-find
+                       (lambda (frame)
+                         (equal (hermes-transport--get (alist-get 'params frame) 'session_id)
+                                "stored-a"))
+                       (plist-get state :frames))))
+           (hermes-dashboard-transport--handle-frame
+            client `((jsonrpc . "2.0") (id . ,(alist-get 'id frame))
+                     (result . ((session_id . "new-stored-a") (resumed . "stored-a")
+                                (running . nil) (auto_continue . ((attempt . 1))))))))
+         (should (= (length (plist-get state :frames)) 3))
+         (when event-first
+           (hermes-dashboard-transport--dispatch-event
+            client '(:type status :event "message.start" :status "started"
+                     :session-id "new-stored-a")))
+         (hermes-test--restart-reply state (car (plist-get state :frames)) nil (not event-first))
+         (with-current-buffer caller
+           (should (hermes-chat--active-turn-p))
+           (should hermes-chat--pending-assistant-id)
+           (should-not hermes-chat--session-bootstrap)
+           (should-not (eq (plist-get hermes-chat--status-state :status) 'ready)))
+         (should (seq-every-p
+                  (lambda (frame) (equal (alist-get 'method frame) "session.resume"))
+                  (plist-get state :frames))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-readiness-skips-retired-owners ()
+  "Readiness cannot resume killed or repurposed chat buffers."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (let ((buffers (plist-get state :buffers)))
+       (with-current-buffer (car buffers) (hermes-dashboard-restart))
+       (kill-buffer (cadr buffers))
+       (with-current-buffer (car buffers) (fundamental-mode))
+       (hermes-test--restart-ready state)
+       (should-not (plist-get state :frames))
+       (with-current-buffer (car buffers) (should (eq major-mode 'fundamental-mode)))
+       (with-current-buffer (caddr buffers) (should-not hermes-chat--session-bootstrap))
+       (should (= (hermes-dashboard-transport-client-refcount (plist-get state :new)) 1))))))
+
+(ert-deftest hermes-chat-dashboard-restart-confirmation-revalidates-target ()
+  "Changing the shared target during confirmation never stops either owner."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers))
+       (cl-letf (((symbol-function 'yes-or-no-p)
+                  (lambda (_prompt)
+                    (cl-incf (hermes-dashboard-transport-client-generation
+                              (plist-get state :old)))
+                    t)))
+         (should-error (hermes-dashboard-restart) :type 'user-error)))
+     (should-not (plist-get state :deleted))
+     (should (zerop (plist-get state :starts))))))
+
+(ert-deftest hermes-chat-dashboard-restart-preserves-unrelated-client ()
+  "A chat detached to another endpoint is excluded from the shared restart."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (let ((peer (cadr (plist-get state :buffers)))
+           (other (make-hermes-dashboard-transport-client :refcount 1)))
+       (with-current-buffer peer (setq hermes-chat--dashboard-client other))
+       (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+       (hermes-test--restart-ready state)
+       (should (= (length (plist-get state :frames)) 1))
+       (with-current-buffer peer
+         (should (eq hermes-chat--dashboard-client other))
+         (should (equal hermes-chat--dashboard-active-session-id "old-stored-b")))
+       (should-not (hermes-dashboard-transport-client-stopping-p other))))))
+
+(ert-deftest hermes-chat-dashboard-restart-preservation-failure-does-not-stop ()
+  "Failing input capture prevents any process stop or ownership destruction."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers))
+       (setq hermes-chat--queued-messages '((:id q :content "Keep me")))
+       (cl-letf (((symbol-function 'hermes-chat--capture-recovery)
+                  (lambda () (error "Cannot preserve input"))))
+         (should-error (hermes-dashboard-restart)))
+       (should (equal hermes-chat--queued-messages '((:id q :content "Keep me"))))
+       (should (equal hermes-chat--dashboard-active-session-id "old-stored-a")))
+     (should-not (plist-get state :deleted))
+     (should (zerop (plist-get state :starts))))))
+
+(ert-deftest hermes-chat-dashboard-restart-preparation-failure-retries ()
+  "Errors and quits release earlier and partially prepared reservations."
+  (dolist (failure '(error quit))
+    (dolist (boundary '(cleanup display))
+      (hermes-test--with-dashboard-restart
+       (lambda (state)
+         (let* ((buffers (hermes-chat--dashboard-buffers (plist-get state :old)))
+                (second (cadr buffers))
+                (header (symbol-function 'hermes-chat--set-header-state)))
+           (dolist (buffer buffers)
+             (with-current-buffer buffer
+               (insert "draft retained")
+               (setq hermes-chat--queued-messages '((:id q :content "queued retained")))))
+           (unwind-protect
+               (cl-letf (((symbol-function 'hermes-chat--set-header-state)
+                          (lambda (&rest args)
+                            (if (and (eq boundary 'display) (eq (current-buffer) second)
+                                     (eq (plist-get args :status) 'reconnecting))
+                                (signal failure '("Preparation failed"))
+                              (apply header args)))))
+                 (when (eq boundary 'cleanup)
+                   (with-current-buffer second
+                     (setq-local hermes-chat-cleanup-functions
+                                 (list (lambda () (signal failure '("Cleanup failed")))))))
+                 (with-current-buffer (car buffers)
+                   (should (eq failure
+                               (condition-case err
+                                   (progn (hermes-dashboard-restart) nil)
+                                 ((error quit) (car err)))))))
+             (with-current-buffer second
+               (kill-local-variable 'hermes-chat-cleanup-functions)))
+           (should-not (plist-get state :deleted))
+           (should (zerop (plist-get state :starts)))
+           (dolist (buffer buffers)
+             (with-current-buffer buffer
+               (should-not hermes-chat--session-bootstrap)
+               (should (equal (hermes-chat-input-string) "draft retained"))
+               (should (string-match-p "queued retained"
+                                       (with-current-buffer hermes-chat--recovery-buffer
+                                         (buffer-string))))))
+           (with-current-buffer (car buffers) (hermes-dashboard-restart))
+           (hermes-test--restart-ready state)
+           (dolist (frame (plist-get state :frames))
+             (hermes-test--restart-reply state frame))
+           (should (= (plist-get state :starts) 1))
+           (should (= (length (plist-get state :frames)) 2))
+           (dolist (buffer buffers)
+             (with-current-buffer buffer
+               (should-not hermes-chat--session-bootstrap)
+               (should (eq hermes-chat--dashboard-client (plist-get state :new)))
+               (should (equal (hermes-chat-input-string) "draft retained"))))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-cleanup-preserves-successors ()
+  "Cleanup cannot seize a replacement client, session, mode, or killed peer."
+  (dolist (change '(client session mode kill-peer retarget-peer invalidation))
+    (hermes-test--with-dashboard-restart
+     (lambda (state)
+       (let* ((buffers (hermes-chat--dashboard-buffers (plist-get state :old)))
+              (caller (car buffers))
+              (target (if (memq change '(kill-peer retarget-peer)) (cadr buffers) caller))
+              (other (make-hermes-dashboard-transport-client :refcount 1))
+              after-hook)
+         (unwind-protect
+             (progn
+               (with-current-buffer caller
+                 (set (make-local-variable
+                       (if (eq change 'invalidation)
+                           'hermes-chat-lifecycle-invalidation-hook
+                         'hermes-chat-cleanup-functions))
+                      (list
+                       (lambda ()
+                         (with-current-buffer target
+                           (pcase change
+                             ('kill-peer (kill-buffer target))
+                             ('mode (fundamental-mode) (insert "Successor mode"))
+                             (_
+                              (when (memq change '(client retarget-peer invalidation))
+                                (setq hermes-chat--dashboard-client other))
+                              (setq hermes-chat--session-id "successor"
+                                    hermes-chat--dashboard-active-session-id "successor-live"
+                                    hermes-chat--queued-messages '((:content "successor queue")))))))
+                       (lambda () (setq after-hook t))))
+                 (hermes-dashboard-restart))
+               (hermes-test--restart-ready state)
+               (should (= (hermes-dashboard-transport-client-refcount
+                           (plist-get state :new)) 2))
+               ;; Mode teardown runs cleanup itself; only the outer restart
+               ;; hook traversal must stop after a plain attachment replacement.
+               (when (memq change '(client session)) (should-not after-hook))
+               (pcase change
+                 ('kill-peer (should-not (buffer-live-p target)))
+                 ('mode
+                  (with-current-buffer target
+                    (should (eq major-mode 'fundamental-mode))
+                    (should (string-match-p "Successor mode" (buffer-string)))))
+                 (_
+                  (with-current-buffer target
+                    (should (eq hermes-chat--dashboard-client
+                                (if (eq change 'session) (plist-get state :old) other)))
+                    (should (equal hermes-chat--session-id "successor"))
+                    (should (equal hermes-chat--dashboard-active-session-id "successor-live"))
+                    (should (equal hermes-chat--queued-messages '((:content "successor queue"))))
+                    (should-not hermes-chat--session-bootstrap))))
+               (should-not (hermes-dashboard-transport-client-stopping-p other)))
+           (when (buffer-live-p caller)
+             (with-current-buffer caller
+               (kill-local-variable 'hermes-chat-cleanup-functions)
+               (kill-local-variable 'hermes-chat-lifecycle-invalidation-hook)))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-adopts-canonical-resume ()
+  "Canonical durable IDs settle idle and recovering sessions without sending."
+  (dolist (auto-continue '(nil t))
+    (hermes-test--with-dashboard-restart
+     (lambda (state)
+       (let ((caller (car (plist-get state :buffers))))
+         (with-current-buffer caller (hermes-dashboard-restart))
+         (hermes-test--restart-ready state)
+         (let ((frame (seq-find
+                       (lambda (frame)
+                         (equal (hermes-transport--get (alist-get 'params frame) 'session_id)
+                                "stored-a")) (plist-get state :frames))))
+           (hermes-dashboard-transport--handle-frame
+            (plist-get state :new)
+            `((jsonrpc . "2.0") (id . ,(alist-get 'id frame))
+              (result . ((session_id . "canonical-live") (resumed . "compression-tip")
+                         (running . nil) (auto_continue . ,auto-continue))))))
+         (when auto-continue
+           (let ((frame (car (plist-get state :frames))))
+             (should (equal (hermes-transport--get (alist-get 'params frame) 'session_id)
+                            "compression-tip"))
+             (hermes-dashboard-transport--handle-frame
+              (plist-get state :new)
+              `((jsonrpc . "2.0") (id . ,(alist-get 'id frame))
+                (result . ((session_id . "canonical-live") (resumed . "compression-tip")
+                           (running . t) (inflight . ((text . "Recovered work")))))))))
+         (with-current-buffer caller
+           (should (equal hermes-chat--session-id "compression-tip"))
+           (should (equal hermes-chat--dashboard-active-session-id "canonical-live"))
+           (should-not hermes-chat--session-bootstrap)
+           (should (eq (and (hermes-chat--active-turn-p) t) auto-continue)))
+         (hermes-dashboard-transport--dispatch-event
+          (plist-get state :new)
+          '(:type status :event "message.start" :status "started" :session-id "canonical-live"))
+         (with-current-buffer caller (should hermes-chat--pending-assistant-id))
+         (should (= (length (plist-get state :frames)) (if auto-continue 3 2)))
+         (should (seq-every-p
+                  (lambda (frame) (equal (alist-get 'method frame) "session.resume"))
+                  (plist-get state :frames))))))))
+
+(ert-deftest hermes-chat-dashboard-restart-survives-pre-ready-socket-close ()
+  "A replacement handshake retry retains reservations until real readiness."
+  (hermes-test--with-dashboard-restart
+   (lambda (state)
+     (with-current-buffer (car (plist-get state :buffers)) (hermes-dashboard-restart))
+     (let* ((client (plist-get state :new))
+            (ready (hermes-dashboard-transport-client-ready-promise client))
+            (hermes-dashboard-transport-reconnect-max-attempts 3)
+            (hermes-dashboard-transport-schedule-function (lambda (&rest _) nil)))
+       (hermes-dashboard-transport--handle-socket-down client "Handshake closed" 'new-ws)
+       (should (eq ready (hermes-dashboard-transport-client-ready-promise client)))
+       (should (zerop (hermes-dashboard-transport-client-reconnect-attempts client)))
+       (hermes-dashboard-transport--handle-socket-down client "Retry handshake closed")
+       (should (= (hermes-dashboard-transport-client-reconnect-attempts client) 1))
+       (should (eq ready (hermes-dashboard-transport-client-ready-promise client)))
+       (dolist (buffer (plist-get state :buffers))
+         (with-current-buffer buffer (should hermes-chat--session-bootstrap)))
+       (hermes-test--restart-ready state)
+       (dolist (frame (plist-get state :frames)) (hermes-test--restart-reply state frame))
+       (should (= (length (plist-get state :frames)) 2))
+       (dolist (buffer (plist-get state :buffers))
+         (with-current-buffer buffer
+           (should-not hermes-chat--session-bootstrap)
+           (when hermes-chat--session-id (should hermes-chat--dashboard-session-ready-p))))))))
+
 (ert-deftest hermes-chat-dashboard-reconnect-requires-live-client ()
   "Manual reconnect rejects a chat without a live dashboard client."
   (hermes-test-with-chat-buffer
