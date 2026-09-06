@@ -3559,8 +3559,8 @@ PARAMS is any (e.g. update) params to send."
 (defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
 This will probably be quite slow, as it makes one request for every 4
-tags followed. For a faster alternative, consider `mastodon-tl-tag-group-timeline',
-which loads just one group of 4 tags.
+tags followed. For a faster alternative, consider
+`mastodon-tl-tag-group-timeline', which loads just one group of 4 tags.
 Returns up to 20 items for every 4 tags followed.
 Pagination (adding more items at bottom of buffer) works, but because we
 do the requests then sort by recency client-side, items will not be in
