@@ -2895,6 +2895,51 @@ VM does not send mail; Emacs does, through @code{smtpmail.el}.
       smtpmail-stream-type 'starttls)
 @end lisp
 
+@noindent
+@code{smtpmail-send-it} rather than @code{sendmail-send-it} because it
+removes a @code{Bcc} header itself instead of trusting a program outside
+Emacs to do it.  VM asks before sending a message with a @code{Bcc} through
+one that does not.  @xref{Sending Options}.
+
+@subheading A server for each of your addresses
+
+@vindex mail-send-hook
+@cindex SMTP, one server per identity
+@cindex identities, and which server sends them
+@code{smtpmail} has one server setting, not one per account, so sending each
+of your addresses through its own server means setting those variables as
+each message goes out.  @code{mail-send-hook} runs in the composition, just
+before it is handed over, which is where the @code{From} header is settled
+and so where the choice can be made:
+
+@lisp
+(defvar my-smtp-accounts
+  '(("@@work.com" "smtp.work.com"     587 "me@@work.com")
+    ("@@home.net" "smtp.provider.net" 587 "me")))
+
+(defun my-choose-smtp-account ()
+  "Point smtpmail at the server for the From address of this message."
+  (let ((from (or (vm-mail-mode-get-header-contents "From:") "")))
+    (dolist (account my-smtp-accounts)
+      (when (string-match-p (regexp-quote (nth 0 account)) from)
+        (setq smtpmail-smtp-server  (nth 1 account)
+              smtpmail-smtp-service (nth 2 account)
+              smtpmail-smtp-user    (nth 3 account))))))
+
+(add-hook 'mail-send-hook 'my-choose-smtp-account)
+@end lisp
+
+@noindent
+Plain @code{setq} and not @code{setq-local}: @code{smtpmail-send-it} copies
+the message into a buffer of its own and reads those variables there, so a
+value made local to the composition is not seen.  Setting them from
+@code{mail-send-hook} is still right with several compositions open at once,
+because the hook runs as each one is sent rather than as it is begun.
+
+This is the part an external program such as @command{msmtp} does for you,
+by reading the @code{From} header and choosing an account from its own
+configuration.
+
 @node Address book, Keys of your own, Sending setup, Setting Up
 @section The address book
 
@@ -4341,6 +4386,34 @@ As already mentioned, VM uses Emacs @ref{Mail Mode,,,emacs, the Gnu
 Emacs Manual} for sending email.  Therefore, Mail Mode options
 should be set to configure the mail sending.  The extra options
 provided by VM are described below.
+
+@vindex vm-check-bcc-removal
+@cindex Bcc, kept private
+@cindex blind carbon copy
+@quotation Warning
+A @code{Bcc} header promises that the addresses in it are not shown to the
+other recipients, and whether that promise is kept may be outside Emacs.
+With @code{send-mail-function} set to @code{sendmail-send-it}, Emacs leaves
+the header in the message it hands @code{sendmail-program} and trusts that
+program to take it out: it has to, because that program is passed @code{-t}
+and those addresses are also how it learns whom to deliver to.  A real
+sendmail removes it.  If yours does not, everyone on the message reads who
+was blind copied, and nothing anywhere reports a failure.
+
+So VM asks before sending a composition that has a @code{Bcc}, unless
+@code{send-mail-function} is one that removes the header itself.
+@code{smtpmail-send-it} is such a function: it works out the recipients
+first and then deletes the header.  @xref{Sending setup}, for a worked
+@code{smtpmail} configuration, including one server for each of your
+addresses.
+
+It asks rather than refusing because a working sendmail, postfix or exim
+does remove the header, and there is no way for Emacs to tell one of those
+from a transport that does not.  Answer @kbd{n} and nothing is sent; the
+message then says what to change.  Setting @code{vm-check-bcc-removal} to
+@code{nil} stops it asking at all, for someone who knows their transport
+removes it.
+@end quotation
 
 @vmdocvmmailautosavedirectory
 
