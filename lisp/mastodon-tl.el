@@ -37,6 +37,7 @@
 (require 'mastodon-iso)
 (require 'mpv nil :no-error)
 (require 'url-cache)
+(require 'compat)
 
 (autoload 'mastodon-mode "mastodon")
 (autoload 'mastodon-notifications-get "mastodon")
@@ -1675,10 +1676,10 @@ Cycles through values in `mastodon-media--attachments'."
   "Try to fetch URL from `mastodon-media--attachments'.
 The return value is that of `cl-member-if', ie if a match is found, it
 returns the match and the list of which it is the car."
-  (cl-member-if
-   (lambda (attachment)
-     (equal url (plist-get attachment :url)))
-   (cdr mastodon-media--attachments)))
+  (compat-call member-if
+    (lambda (attachment)
+      (equal url (plist-get attachment :url)))
+    (cdr mastodon-media--attachments)))
 
 (defun mastodon-tl--get-prev-image-url ()
   "Return the URL of the previous item in `mastodon-media--attachments'."
