@@ -326,17 +326,17 @@ Crisis did not insert."
 (defun vm-pcrisis-my-identities (&rest identities)
   "Set up Personality Crisis with the given IDENTITIES, replacing what is there.
 
-Each of IDENTITIES becomes an action that puts that address in the `From\='
+Each of IDENTITIES becomes an action that puts that address in the `From'
 header, and a composition asks which one to use, remembering the answer for
 that correspondent.  It asks every time, including for a correspondent it
-already has a profile for, since it installs `vm-pcrisis-prompt-for-profile\='
+already has a profile for, since it installs `vm-pcrisis-prompt-for-profile'
 with its PROMPT argument set.
 
 This is a quick start for someone with no rules, not something to add to
-rules of your own: `vm-pcrisis-conditions\=', `vm-pcrisis-actions\=' and
-`vm-pcrisis-default-rules\=' are assigned outright, so anything set in them
+rules of your own: `vm-pcrisis-conditions', `vm-pcrisis-actions' and
+`vm-pcrisis-default-rules' are assigned outright, so anything set in them
 before this call is discarded.  For a set of identities chosen by a rule,
-write the rules instead, and use `vm-pcrisis-none-true-yet\=' for the
+write the rules instead, and use `vm-pcrisis-none-true-yet' for the
 fallback."
   (setq vm-pcrisis-conditions    '(("always true" t))
         vm-pcrisis-default-rules '(("always true" "prompt for a profile"))
@@ -512,9 +512,9 @@ start and end of the overlay/extent."
 (defconst vm-pcrisis-forwarding-terminator-regexp
   "^\\(------- end\\|End of this Digest\\)"
   "A line VM writes to close forwarded text.
-The three encapsulations it writes end with `------- end -------\=' for RFC
-934, `------- end of forwarded message -------\=' for the plain one, and
-`End of this Digest\=' for RFC 1153.  VM writes these itself, so this is
+The three encapsulations it writes end with `------- end -------' for RFC
+934, `------- end of forwarded message -------' for the plain one, and
+`End of this Digest' for RFC 1153.  VM writes these itself, so this is
 exact for VM's own forwards, which is what it is used on.")
 
 (defun vm-pcrisis-forwarded-text-ends-after (position)
@@ -977,7 +977,7 @@ the signature at POS if `vm-pcrisis-sig-exerlay' is detached."
 (defun vm-pcrisis-report-an-unknown-signature ()
   "Say what to set when the composition holds a signature not ours to act on.
 Personality Crisis acts on a signature whose extent it knows, and knows one it
-did not insert only when `vm-pcrisis-expect-default-signature\=' says to look
+did not insert only when `vm-pcrisis-expect-default-signature' says to look
 for it.  Without that, a rule saying (vm-pcrisis-signature \"\") deleted
 nothing and said nothing, which is indistinguishable from having worked: #540
 was reported twice over, the second time by a reader who had the fix and not

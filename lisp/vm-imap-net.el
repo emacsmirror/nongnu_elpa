@@ -74,7 +74,7 @@ the blocking implementation.")
 
 (defvar vm-imap-net-password-key nil
   "The maildrop this session's password belongs to, without its password.
-What `vm-imap-passwords\=' is keyed by, kept so that a password the server
+What `vm-imap-passwords' is keyed by, kept so that a password the server
 has accepted can be remembered under it.")
 (make-variable-buffer-local 'vm-imap-net-password-key)
 
@@ -305,7 +305,7 @@ a transcript -- with a LOGIN's arguments left out of it."
     tag))
 
 (defvar vm-imap-net-counting nil
-  "Where `vm-imap-net-command\=' is to report its progress, or nil.
+  "Where `vm-imap-net-command' is to report its progress, or nil.
 A list (FOLDER PHASE TOTAL): the folder whose mode line says so, the word for
 what is being done, and how many responses are expected.  Bound around a
 command that answers one line per message, which is the only kind worth
@@ -331,8 +331,8 @@ order."
       ;; Yield with nothing to wait for, so that this is interruptible.  A
       ;; server answering with a response per message sends faster than they
       ;; are read, so the reads above never wait and the whole of a six
-      ;; thousand response FETCH was parsed inside one `iter-next\=' -- 0.68
-      ;; seconds of Emacs stopped, which the slice in `vm-net--resume\=' cannot
+      ;; thousand response FETCH was parsed inside one `iter-next' -- 0.68
+      ;; seconds of Emacs stopped, which the slice in `vm-net--resume' cannot
       ;; help with because it sits between steps and there was only ever one.
       ;; Measured: 78 steps for a synchronisation, 15 of them over 50ms.
       (when (> (- (float-time) worked) vm-net--slice)
@@ -354,12 +354,12 @@ order."
 
 (defun vm-imap-net-logout ()
   "Say LOGOUT, without waiting to be answered.
-A server counts its connections -- dovecot's `mail_max_userip_connections\='
+A server counts its connections -- dovecot's `mail_max_userip_connections'
 -- and a client that drops them without a word leaves it to time them out.
 Nothing waits for the answer: the session is over either way, and this runs
 where a session is being unwound.
 
-In an `unwind-protect\=', so it is said whether the session ran to the end
+In an `unwind-protect', so it is said whether the session ran to the end
 or was abandoned, which is the reason the driver closes a generator rather
 than dropping it."
   (let ((process (get-buffer-process (current-buffer))))
@@ -403,7 +403,7 @@ Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols, as
 (defun vm-imap-net-remember-password (password)
   "Remember PASSWORD for this session's maildrop, the server having taken it.
 
-After the login and not before: an entry in `vm-imap-passwords\=' is what
+After the login and not before: an entry in `vm-imap-passwords' is what
 the operations that still block look the password up in, and a wrong one
 there is a login that fails without anybody being asked anything.  The
 blocking path writes it at the same point, and for the same reason."
@@ -549,7 +549,7 @@ any order, and the responses have to be told apart (issue #185)."
 (defun vm-imap-net-fetch-message-text (response)
   "Where in the process buffer RESPONSE's message is: (UID START END).
 Answers nil for a FETCH that carries no message: a server sends one of its own
-accord to report a message\='s flags, and that is not an answer to a fetch of
+accord to report a message's flags, and that is not an answer to a fetch of
 message text.  Signals for one that carries a message but no UID, there being
 no saying which message it would be."
   (let* ((parts (vm-imap-fetch-response-parts (cdr (nth 3 response))))
@@ -620,7 +620,7 @@ read, which is what keeps a mailbox of any size out of memory."
 (defun vm-imap-net-done-with-buffer (buffer)
   "Finish with BUFFER, a session's process buffer.
 
-Kept as a trace when `vm-imap-keep-trace-buffer\=' says to, as the blocking
+Kept as a trace when `vm-imap-keep-trace-buffer' says to, as the blocking
 path keeps its own: the driver killed every session buffer the moment the
 session ended, so there was nothing left to look at afterwards -- and \"did VM
 send that delete?\" is answered by the traffic and by nothing else."
@@ -648,11 +648,11 @@ The process is not open when this returns; the session's sentinel hears
 whether it ever will be, and its timeout covers a connect that never
 completes.
 
-TLS goes through `open-network-stream\=', which is the only thing that does
-it: `make-network-process\=' has no TLS of its own and answers `:type
-\\='tls\=' with \"Unsupported connection type\", so every imap-ssl maildrop
+TLS goes through `open-network-stream', which is the only thing that does
+it: `make-network-process' has no TLS of its own and answers `:type
+\\='tls' with \"Unsupported connection type\", so every imap-ssl maildrop
 without an stunnel failed there before it had sent a byte.  It takes
-`:nowait\=' too, and negotiates as the connection comes up."
+`:nowait' too, and negotiates as the connection comes up."
   (let ((process
 	 (if tls
 	     (open-network-stream name buffer host port
@@ -678,7 +678,7 @@ seconds to the mail, not to Emacs."
 		      (vm-imap-net-connect name "127.0.0.1" port buffer))))))
 
 (defun vm-imap-net-preauth-process (host port mailbox user password)
-  "What `vm-imap-session-preauth-hook\=' answers with, or nil.
+  "What `vm-imap-session-preauth-hook' answers with, or nil.
 The hook is the user's own function and makes the connection itself; VM's
 half of a preauthenticated session is everything after that, which is what
 the driver runs."
@@ -692,7 +692,7 @@ Its own cache first, then auth-source.  Nothing is written back: what the
 blocking path remembers is its own business, and a wrong or empty entry
 written there is a login that fails without asking anybody anything.  Only a
 non-empty string counts -- auth-source hands back a function for some
-backends, and the cache can hold a `*\=' that means nothing yet."
+backends, and the cache can hold a `*' that means nothing yet."
   (let* ((spec (vm-imapdrop-sans-password-and-mailbox source))
 	 (known (car (cdr (assoc spec vm-imap-passwords))))
 	 (password (or known
@@ -712,7 +712,7 @@ backends, and the cache can hold a `*\=' that means nothing yet."
 
 The parse is called once per token -- 190,000 times to fetch 6500 messages --
 and the generators it runs inside rebuild their closures on every call from
-source, through `cconv-make-interpreted-closure\='.  Measured on a mock
+source, through `cconv-make-interpreted-closure'.  Measured on a mock
 server, fetching a thousand messages takes 0.8 seconds compiled and three
 minutes from source, with Emacs held for tens of seconds at a time -- which
 looks exactly like the blocking implementation this replaces.  A reader
@@ -736,15 +736,15 @@ somebody is typing something else, and the check has nothing to do with the
 answer anyway.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
-`vm-net-start\='; nothing has been read from it yet.  The answer is
+`vm-net-start'; nothing has been read from it yet.  The answer is
 (SESSION MAILBOX USER PASSWORD).
 
 Plain, TLS, over ssh, through stunnel, and preauthenticated.  An ssh session
 has no process yet when this returns: ssh has to be listening on its
-forwarded port before there is anything to connect to, and `vm-net-attach\='
+forwarded port before there is anything to connect to, and `vm-net-attach'
 gives the session its connection when it is.  stunnel is the connection
 itself, over its standard input and output.  A maildrop whose password VM has
-not been told signals `vm-imap-net-unsupported\=', there being nobody to ask
+not been told signals `vm-imap-net-unsupported', there being nobody to ask
 from inside a filter."
   (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
 	 (protocol (car parts))
@@ -857,7 +857,7 @@ PREAUTH signals: there is no session to be had, and the caller has nothing
 to decide.
 
 A nil PASSWORD is a preauthenticated session -- greeted with PREAUTH, or
-made by `vm-imap-session-preauth-hook\=' -- and there is nothing to log in
+made by `vm-imap-session-preauth-hook' -- and there is nothing to log in
 with: the connection arrived authenticated."
   (let ((greeting (iter-yield-from (vm-imap-net-greeting))))
     (cond ((null greeting)
@@ -990,16 +990,16 @@ The current buffer is the folder."
 (defmacro vm-imap-net-as-folder (&rest body)
   "Run BODY saying that the current buffer is a folder.
 
-`vm-buffer-types\=' is VM's stack of what kind of buffer it is working in, and
+`vm-buffer-types' is VM's stack of what kind of buffer it is working in, and
 the blocking code pushes and pops it around every change of buffer so that
-`vm-buffer-type:assert\=' can catch a folder being written where a connection
+`vm-buffer-type:assert' can catch a folder being written where a connection
 was meant.  The driver does not push and pop -- a generator that suspended
 between an enter and its exit would leave the stack pushed for whatever ran
 next -- so it binds it instead, which cannot be left unbalanced.
 
 Without this, code the driver calls into asserted that it was in a folder
-while the stack said nothing at all: with `vm-assertion-checking-off\=' set to
-nil, which is what `test-runner --assert\=' and anyone debugging VM does,
+while the stack said nothing at all: with `vm-assertion-checking-off' set to
+nil, which is what `test-runner --assert' and anyone debugging VM does,
 visiting an IMAP folder brought in no messages."
   (declare (indent 0) (debug t))
   `(let ((vm-buffer-types (cons 'folder vm-buffer-types)))
@@ -1173,7 +1173,7 @@ after a crash there, the next fetch had no UID for it and brought it again, so
 the reader had it twice.
 
 The same cleaning up the blocking path does, in the same order: CRLF to LF,
-the separators the folder\='s own type wants, and the headers that go with
+the separators the folder's own type wants, and the headers that go with
 them."
   (with-current-buffer holding
     (save-excursion
@@ -1310,8 +1310,8 @@ supposed to remove, arriving from the other side."
   "Give the folder's messages the flags the server says they have.
 
 The current buffer is the folder, and its UID tables have been installed by
-`vm-imap-net-install-message-data\=' -- the same tables the blocking
-`retrieve-attributes\=' step reads.  Answers with how many messages were
+`vm-imap-net-install-message-data' -- the same tables the blocking
+`retrieve-attributes' step reads.  Answers with how many messages were
 touched.
 
 A message whose own changes have not reached the server is left alone: its
@@ -1334,8 +1334,8 @@ for the next synchronisation to retry."
 
 (defun vm-imap-net-arrived (folder)
   "Say that a fetch into FOLDER has finished putting messages in it.
-`vm-arrived-messages-hook\=' is for the arrival and not for each bunch of
-it, so it runs here rather than in `vm-imap-net-assimilate\='."
+`vm-arrived-messages-hook' is for the arrival and not for each bunch of
+it, so it runs here rather than in `vm-imap-net-assimilate'."
   (with-current-buffer folder
     (run-hooks 'vm-arrived-messages-hook)))
 
@@ -1379,7 +1379,7 @@ between mailbox and cache is as often a damaged cache as an expunge
 
 FULL-RETRIEVE is the other direction, and no part of a synchronisation: fetch
 what the folder was given once and no longer holds, rather than passing it
-over.  Two prefix arguments to `vm-get-new-mail\=' ask for it."
+over.  Two prefix arguments to `vm-get-new-mail' ask for it."
   ;; The bunch buffer is made here and killed in the cleanup below, not at the
   ;; end of the body: an abandoned session or any error on the way -- the
   ;; refused UIDVALIDITY a few lines down is the first of them -- never reaches
@@ -1633,7 +1633,7 @@ PERMANENTFLAGS can be wrong both ways: a server may leave a keyword out of it
 and store the keyword anyway, or advertise `\\*' and keep nothing.  That is
 why it warns and changes nothing.
 
-`vm-imap-note-dropped-flags\=' says the same thing after the fact, having seen
+`vm-imap-note-dropped-flags' says the same thing after the fact, having seen
 a keyword come back missing.  This says it at the moment the label is sent,
 which is where the reader still has the label in front of them.
 
@@ -1697,7 +1697,7 @@ an error and left with its modification flag set, so the next synchronisation
 tries it again, and the rest are still sent.
 
 ALL sends every message's flags, changed or not, which is what a full
-synchronisation asks for: `vm-imap-save-attributes\=' with `:all-flags\='."
+synchronisation asks for: `vm-imap-save-attributes' with `:all-flags'."
   (let ((messages (and (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (seq-filter
@@ -1744,7 +1744,7 @@ reader went to themselves, and take it back if they did not.")
 
 (defun vm-imap-net-show-arrival (folder count)
   "Say that COUNT messages arrived in FOLDER, and show one of them.
-What `vm-get-new-mail\=' does when mail arrives, done when it arrives rather
+What `vm-get-new-mail' does when mail arrives, done when it arrives rather
 than when the command was typed.  A folder that was empty has no current
 message until this runs, and every command that works on the current message
 would have nothing to work on."
@@ -1787,12 +1787,12 @@ that connection anyway.")
 
 ITERATOR is started after the folder has refused a second session rather than
 before, so a second one is prevented instead of reported: the sites here called
-`vm-net-start\=' first, and the error then arrived with a session already
+`vm-net-start' first, and the error then arrived with a session already
 talking to a server and the folder holding no record of it -- unowned, so
-`vm-imap-net-busy-p\=' could not see it, the mode line did not show it and
-`vm-imap-net-stop\=' could not stop it.  Two IMAP maildrops as spool sources for
+`vm-imap-net-busy-p' could not see it, the mode line did not show it and
+`vm-imap-net-stop' could not stop it.  Two IMAP maildrops as spool sources for
 one folder did exactly that.
-Every start goes through here: the slot is what `vm-imap-net-busy-p\=' reads,
+Every start goes through here: the slot is what `vm-imap-net-busy-p' reads,
 what is queued behind it would otherwise never run, and the mode line of every
 buffer showing this folder says what it is doing."
   (let ((folder (current-buffer)))
@@ -1894,7 +1894,7 @@ nothing.  Nothing is lost that is not still on the server -- messages fetched
 but not saved are fetched again next time, and flags that did not go up keep
 their modification flag in the file.
 
-The session is abandoned rather than dropped, so its `unwind-protect\=' forms
+The session is abandoned rather than dropped, so its `unwind-protect' forms
 run: the LOGOUT is said, and a server told nothing is a server that keeps the
 connection until it times out."
   (let ((session vm-imap-net-session)
@@ -1930,7 +1930,7 @@ folder's session and the rest keep waiting behind it."
 
 (defun vm-imap-net-when-free (name function)
   "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
-NAME says what it is, for the log.  Answers `later\=' when it was queued: the
+NAME says what it is, for the log.  Answers `later' when it was queued: the
 work has not happened yet and the caller is not to do it the blocking way,
 which would open the second connection this is avoiding."
   (cond
@@ -2377,7 +2377,7 @@ Answers (UID-VALIDITY DELETED GONE): the UIDs this session expunged, and the
 ones the mailbox does not have at all.  Both are settled, and the caller can
 forget them: a UID the mailbox no longer holds is a deletion that has already
 happened, and asking for it again is a session per expunge for ever.  This is
-what `vm-imap-net-note-expunged\=' says of the folder\='s own list -- a UID that
+what `vm-imap-net-note-expunged' says of the folder's own list -- a UID that
 no longer exists on the server is not a message anything need be told not to
 fetch again.
 
@@ -2496,7 +2496,7 @@ to be rewritten while another is being answered for."
 This one waits, up to SECONDS, and says so: it is what completion is built
 on, and completion has to answer with the names it has.  What it does not do
 is open a second connection or run the blocking implementation -- the session
-is the driver's, and the wait is `accept-process-output\=', so C-g still
+is the driver's, and the wait is `accept-process-output', so C-g still
 works.
 
 SELECTABLE-ONLY leaves out the names the server marks \\Noselect."
@@ -2655,7 +2655,7 @@ folder ends up in a different state depending on which path did the work."
   "Start sending this folder's changed flags to the server.
 Answers with whether it did; nil means the maildrop cannot be opened without
 waiting and the caller is to do it the blocking way.  With a session already
-running it is done when that one ends, and the answer is `later\=': a second
+running it is done when that one ends, and the answer is `later': a second
 connection writing this folder's flags while the first is writing its
 messages is what the queue exists to prevent."
   (let ((folder (current-buffer)))
@@ -2710,14 +2710,14 @@ messages whose attributes moved, and the deletions the folder has been asked
 to make.  Not the other direction -- what the server has expunged is worked
 out by downloading the flags of every message in the mailbox, which on a
 folder of six thousand took nineteen seconds with Emacs held still, and the
-next fetch or `vm-imap-synchronize\=' works it out anyway.
+next fetch or `vm-imap-synchronize' works it out anyway.
 
 The session outlives the folder buffer, which a quit kills as soon as the file
 is written.  Nothing is lost by that: a message whose flags did not reach the
 server still has its modification flag in the file, so the next session sends
 them again.
 
-Answers `later\=' when a session is already running.  That is not a nil: two
+Answers `later' when a session is already running.  That is not a nil: two
 sessions writing to one mailbox would interleave, and the blocking path the
 caller would fall back to is the wait this is here to remove.  The changes
 keep their modification flags and go up next time."
@@ -2772,7 +2772,7 @@ keep their modification flags and go up next time."
 Answers with whether it did; nil means the maildrop is one that cannot be
 opened without waiting, and the caller is to do it the blocking way.  With a
 session already running the expunge is done when that one ends and the answer
-is `later\='."
+is `later'."
   (let* ((folder (current-buffer))
 	 (pending (vm-imap-net-uids-to-expunge (vm-folder-imap-uid-validity))))
     (cond
@@ -2860,7 +2860,7 @@ is a caller\\='s cue to use the blocking implementation."
 (defun vm-imap-net-folder-buffer (&optional folder)
   "FOLDER, or the folder buffer the current buffer belongs to.
 A summary or presentation buffer is not where the session is: the session is
-the folder's, and those buffers name it in `vm-mail-buffer\='."
+the folder's, and those buffers name it in `vm-mail-buffer'."
   (or folder
       (and (boundp 'vm-mail-buffer) vm-mail-buffer
 	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
@@ -2874,7 +2874,7 @@ the folder's, and those buffers name it in `vm-mail-buffer\='."
 
 (defun vm-imap-net-say-why-not (folder reason)
   "Record that the driver left FOLDER's work to the blocking path, and why.
-REASON is the `vm-imap-net-unsupported\=' signal.  Without this the log said
+REASON is the `vm-imap-net-unsupported' signal.  Without this the log said
 what VM was about to do and not what it did: a maildrop the driver declines
 looks exactly like one it took until the blocking path announces itself."
   (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
@@ -2884,7 +2884,7 @@ looks exactly like one it took until the blocking path announces itself."
 (defun vm-imap-net-synchronize (&optional full interactive)
   "Start synchronising this folder with its mailbox, and answer whether it did.
 
-Everything `vm-imap-synchronize\=' does, on the driver: the folder's flags go
+Everything `vm-imap-synchronize' does, on the driver: the folder's flags go
 up, the mailbox's come down, what has arrived is fetched, what the server no
 longer has is expunged here, and what the folder has expunged is expunged
 there -- whether FULL is given or not, VM having recorded those expunges as
@@ -2895,7 +2895,7 @@ It used to delete on the server what the folder no longer holds, which a
 damaged cache turned into losing mail (emacs-vm/vm#752).
 
 Nil means the maildrop cannot be opened without waiting and the caller is to
-do it the blocking way; `later\=' that a session is running and this one goes
+do it the blocking way; `later' that a session is running and this one goes
 when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
   (let ((folder (current-buffer)))
     (vm-imap-net-when-free
@@ -2939,9 +2939,9 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
   "Start fetching this IMAP folder's new mail, and answer with whether it did.
 
 INTERACTIVE says a reader is there, and is what allows a password to be
-asked for; it is `vm-get-spooled-mail\='s own argument.  So is FULL: fetch
+asked for; it is `vm-get-spooled-mail's own argument.  So is FULL: fetch
 what the folder was given once and no longer holds, which is what two prefix
-arguments to `vm-get-new-mail\=' ask for.
+arguments to `vm-get-new-mail' ask for.
 
 Nil means this maildrop is one that cannot be opened without waiting -- one
 whose password nobody knows and nobody can be asked for -- and the caller is
@@ -3203,7 +3203,7 @@ saying it was saved."
 
 (defun vm-imap-net-unretrieved (data source retrieved)
   "The UIDs in DATA that RETRIEVED does not say were fetched from SOURCE.
-DATA is what `vm-imap-net-message-data\=' answers with; the answer is a list
+DATA is what `vm-imap-net-message-data' answers with; the answer is a list
 of (SEQUENCE-NUMBER . UID), oldest first."
   (let ((maildrop (vm-imapdrop-sans-password source))
 	(wanted nil))
@@ -3250,7 +3250,7 @@ FOLDER-TYPE where the server sent none of its own."
 				     folder-type retrieved delete)
   "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
 Answers with how many messages were written.  DELETE says to delete them from
-the server afterwards, which is `vm-imap-auto-expunge-alist\=' for this
+the server afterwards, which is `vm-imap-auto-expunge-alist' for this
 maildrop.
 
 A bunch at a time: appended to the crash box, and then remembered in FOLDER as
@@ -3260,10 +3260,10 @@ on disk leaves that mail in the crash box, which the folder gobbles when it
 next looks; if the folder did not know it had those UIDs it would fetch them
 again, and both copies would land -- refusing the EXPUNGE of a two-message
 maildrop put four messages in the folder.  Remembering them before the fetch
-goes on is also what the blocking path does, in the `unwind-protect\=' of
-`vm-imap-move-mail\='.
+goes on is also what the blocking path does, in the `unwind-protect' of
+`vm-imap-move-mail'.
 
-`vm-imap-net-note-retrieved\=' only writes the folder\='s own variable, so this
+`vm-imap-net-note-retrieved' only writes the folder's own variable, so this
 is not the folder work the session leaves to the callback: nothing is parsed
 and nothing is displayed."
   (unwind-protect
@@ -3314,7 +3314,7 @@ and nothing is displayed."
 (defun vm-imap-net-note-retrieved (uids uid-validity source)
   "Remember UIDS, valid under UID-VALIDITY, as fetched from SOURCE.
 So they are not fetched again.  The current buffer is the folder; this is
-`vm-imap-retrieved-messages\=', which is buffer-local to it.  The
+`vm-imap-retrieved-messages', which is buffer-local to it.  The
 UIDVALIDITY is part of the entry because a UID means nothing without it:
 a mailbox recreated on the server hands the same numbers to other messages."
   (let ((maildrop (vm-imapdrop-sans-password source)))
@@ -3331,8 +3331,8 @@ a mailbox recreated on the server hands the same numbers to other messages."
 
 (defun vm-imap-net-auto-expunge-p (source)
   "Whether messages fetched from SOURCE are to be deleted from the server.
-`vm-imap-auto-expunge-alist\=' first, by the maildrop with its password and
-then without, and `vm-imap-expunge-after-retrieving\=' failing those.  A
+`vm-imap-auto-expunge-alist' first, by the maildrop with its password and
+then without, and `vm-imap-expunge-after-retrieving' failing those.  A
 maildrop that neither names is left alone, with one warning per maildrop
 that mail is being left on the server."
   (let ((entry (or (assoc source vm-imap-auto-expunge-alist)
@@ -3354,14 +3354,14 @@ CALLBACK is called in the folder buffer with the number of messages written,
 or with the error that stopped the session.  It is for the caller to gobble
 the crash box: this writes it and remembers the UIDs.
 
-Queued when the folder is already busy, and the answer is then `later\=': a
+Queued when the folder is already busy, and the answer is then `later': a
 folder with two maildrops among its spool files is asked for both, one after
 the other, and the second must not open a second session writing the same
 folder and the same cache file.  It happened -- \"a second session was started
 while IMAP movemail was running\" -- and the caller is not to fall back to the
 blocking path either, which would be the same two writers.
 
-Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
+Signals `vm-imap-net-unsupported' for a maildrop this cannot open."
   (if (vm-imap-net-busy-p)
       (vm-imap-net-when-free
        (format "fetching from %s" (vm-safe-imapdrop-string source))
@@ -3369,7 +3369,7 @@ Signals `vm-imap-net-unsupported\=' for a maildrop this cannot open."
     (vm-imap-net-move-mail-1 source crash-box callback)))
 
 (defun vm-imap-net-move-mail-1 (source crash-box callback)
-  "Fetch from SOURCE into CRASH-BOX now.  See `vm-imap-net-move-mail\='."
+  "Fetch from SOURCE into CRASH-BOX now.  See `vm-imap-net-move-mail'."
   (let* ((folder (current-buffer))
 	 (folder-type (vm-folder-type-to-write))
 	 (retrieved vm-imap-retrieved-messages)
@@ -3422,7 +3422,7 @@ since a count of what is there says nothing about what is new."
 (defun vm-imap-net-folder-check-mail ()
   "Start asking whether this IMAP folder has new mail, and answer with
 whether it did.  The answer to the question itself arrives later, in
-`vm-spooled-mail-waiting\=', which is what the mode line reads.
+`vm-spooled-mail-waiting', which is what the mode line reads.
 
 Nil means the maildrop is one that cannot be opened without waiting, or a
 session is already running -- and a session already running is one that will

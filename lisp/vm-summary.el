@@ -495,7 +495,7 @@ of action."
 
 (defun vm-summary-strayed-cursor ()
   "Where the reader has moved the summary cursor, if off the summary pointer.
-A message, or `end\=' for the end of the buffer -- which is where
+A message, or `end' for the end of the buffer -- which is where
 \\[end-of-buffer] lands, past the last summary line, and where there is no
 message to name.
 
@@ -517,9 +517,9 @@ the end of it."
 	      (t here))))))
 
 (defun vm-summary-restore-cursor (where)
-  "Put the summary cursor back to WHERE, as `vm-summary-strayed-cursor\=' had it.
-Called after a rebuild, so a message\='s summary line is the one just written
-and its marker is the new one.  `end\=' is the end of the buffer as it now
+  "Put the summary cursor back to WHERE, as `vm-summary-strayed-cursor' had it.
+Called after a rebuild, so a message's summary line is the one just written
+and its marker is the new one.  `end' is the end of the buffer as it now
 stands, which is where a reader who asked for the end of the summary wants to
 be when more of it has arrived.  A message the rebuild removed is left alone."
   (when (and where vm-summary-buffer)

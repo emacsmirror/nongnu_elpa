@@ -197,7 +197,7 @@ decision to make."
 (defvar vm-pop-net-said-goodbye nil
   "Whether this session has said QUIT and heard the answer.
 
-Bound per session by the generators that delete, so the `unwind-protect\=' that
+Bound per session by the generators that delete, so the `unwind-protect' that
 covers an abandoned session does not say it twice.")
 
 (iter-defun vm-pop-net-quit ()
@@ -259,8 +259,8 @@ generator rather than dropping it."
 
 (defun vm-pop-net-done-with-buffer (buffer)
   "Finish with BUFFER, a session's process buffer.
-Kept as a trace when `vm-pop-keep-trace-buffer\=' says to; see
-`vm-imap-net-done-with-buffer\='."
+Kept as a trace when `vm-pop-keep-trace-buffer' says to; see
+`vm-imap-net-done-with-buffer'."
   (when (buffer-live-p buffer)
     ;; nothing to keep when nothing was said: a connection that was never made
     ;; leaves an empty buffer, and keeping those is how a session that failed
@@ -277,8 +277,8 @@ The process is not open when this returns; the session's sentinel hears
 whether it ever will be, and its timeout covers a connect that never
 completes.
 
-TLS goes through `open-network-stream\=', as for IMAP: `make-network-process\='
-has no TLS and answers `:type \\='tls\=' with \"Unsupported connection type\"."
+TLS goes through `open-network-stream', as for IMAP: `make-network-process'
+has no TLS and answers `:type \\='tls' with \"Unsupported connection type\"."
   (let ((process
 	 (if tls
 	     (open-network-stream name buffer host port
@@ -299,7 +299,7 @@ has no TLS and answers `:type \\='tls\=' with \"Unsupported connection type\"."
 (defun vm-pop-net-known-password (source user host port)
   "The password VM already holds for SOURCE, or nil.
 Its own cache first, then auth-source.  Nothing is written back, and only a
-non-empty string counts: see `vm-imap-net-known-password\='."
+non-empty string counts: see `vm-imap-net-known-password'."
   (let* ((spec (vm-popdrop-sans-password source))
 	 (known (car (cdr (assoc spec vm-pop-passwords))))
 	 (password (or known
@@ -319,15 +319,15 @@ a password.  A timer passes nil: a question from a timer arrives while
 somebody is typing something else.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
-`vm-net-start\='; the answer is (SESSION USER PASSWORD).
+`vm-net-start'; the answer is (SESSION USER PASSWORD).
 
 Plain, TLS, over ssh, and through stunnel where the user has one and would
-rather use it than Emacs\='s own TLS.  An ssh session has no process yet when
+rather use it than Emacs's own TLS.  An ssh session has no process yet when
 this returns: ssh has to be listening on its forwarded port before there is
-anything to connect to, and `vm-net-attach\=' gives the session its connection
+anything to connect to, and `vm-net-attach' gives the session its connection
 when it is.  stunnel is the connection itself, over its standard input and
 output.  A maildrop whose password VM has not been told signals
-`vm-pop-net-unsupported\=', there being nobody to ask from inside a filter."
+`vm-pop-net-unsupported', there being nobody to ask from inside a filter."
   (let* ((parts (vm-pop-parse-spec-to-list source))
 	 (protocol (car parts))
 	 (host (nth 1 parts))
@@ -410,7 +410,7 @@ output.  A maildrop whose password VM has not been told signals
 
 (iter-defun vm-pop-net-unretrieved (user password source retrieved)
   "Answer with how many messages of the maildrop have not been retrieved.
-RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
+RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names the maildrop it came from.
 
 Answers nil when the server has no UIDL: without UIDs VM cannot tell what it
@@ -437,7 +437,7 @@ has already seen, and saying \"no mail\" would be a guess."
   "Whether SOURCE can be checked for mail without waiting.
 
   POP or POP over TLS, with a password VM holds.  A pop-ssh maildrop starts a
-tunnel program inside the connect, and a maildrop whose password is `*\='
+tunnel program inside the connect, and a maildrop whose password is `*'
 would ask for one -- neither of which a timer should do behind the reader."
   (condition-case nil
       (let ((parts (vm-pop-parse-spec-to-list source)))
@@ -450,7 +450,7 @@ would ask for one -- neither of which a timer should do behind the reader."
 (defun vm-pop-net-check-mail (source callback &optional retrieved)
   "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
 
-RETRIEVED is what counts as already had, `vm-pop-retrieved-messages\=' by
+RETRIEVED is what counts as already had, `vm-pop-retrieved-messages' by
 default.  A POP folder passes its own messages instead: they are what it
 holds, and the list remembers only what was fetched into a folder somewhere
 else.
@@ -490,7 +490,7 @@ Nothing waits: this returns as soon as the connection is made."
   "Which of UIDS are to be fetched, as (NUMBER . UID) in server order.
 
 Left out: what RETRIEVED already has from SOURCE, and what is larger than
-`vm-pop-max-message-size\='.  Cut at `vm-pop-messages-per-session\=' if that
+`vm-pop-max-message-size'.  Cut at `vm-pop-messages-per-session' if that
 is set, so a maildrop with a thousand messages in it is not one session."
   (let ((wanted nil))
     (dolist (pair uids)
@@ -513,7 +513,7 @@ is set, so a maildrop with a thousand messages in it is not one session."
 (iter-defun vm-pop-net-fetch-new (folder user password source retrieved)
   "Fetch the messages of this maildrop that are not in RETRIEVED.
 
-RETRIEVED is `vm-pop-retrieved-messages\=' and SOURCE the maildrop without
+RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names where it came from.
 
 Answers a list of (UID . TEXT), oldest first: the caller puts them in the
@@ -521,13 +521,13 @@ folder, which is folder work and does not belong in a process filter.
 
 Nothing is deleted here, whatever the maildrop's auto-expunge setting says.
 A DELE sent in this session takes effect at the QUIT that ends it, and the
-QUIT is in an `unwind-protect\=', so an error part way through would commit the
+QUIT is in an `unwind-protect', so an error part way through would commit the
 deletion of messages whose text was thrown away with the session: fetched,
 deleted on the server, never written anywhere.  The caller deletes them once
 the crash box is on disk, in a session of its own and by UID.
 
-Stops at `vm-pop-messages-per-session\=' if that is set, and passes over a
-message bigger than `vm-pop-max-message-size\=' -- the same two limits the
+Stops at `vm-pop-messages-per-session' if that is set, and passes over a
+message bigger than `vm-pop-max-message-size' -- the same two limits the
 blocking implementation honours, and for the same reason: a maildrop with a
 thousand messages in it should not be one command."
   (unwind-protect
@@ -596,7 +596,7 @@ whether a message is fetched at all."
 
 CALLBACK is given a list of (UID . TEXT), oldest first, or the error that
 stopped the session.  Nothing is deleted from the server here; see
-`vm-pop-net-fetch-new\=' for why, and `vm-pop-net-expunge-maildrop\=' for what
+`vm-pop-net-fetch-new' for why, and `vm-pop-net-expunge-maildrop' for what
 does it afterwards.
 
 Nothing waits.  The caller does the folder work when the callback comes:
@@ -652,8 +652,8 @@ put there.")
 
 (defun vm-pop-net-auto-expunge-p (source)
   "Whether messages fetched from SOURCE are to be deleted from the server.
-`vm-pop-auto-expunge-alist\=' first, by the maildrop with its password and
-then without, and `vm-pop-expunge-after-retrieving\=' failing those."
+`vm-pop-auto-expunge-alist' first, by the maildrop with its password and
+then without, and `vm-pop-expunge-after-retrieving' failing those."
   (let ((entry (or (assoc source vm-pop-auto-expunge-alist)
 		   (assoc (vm-popdrop-sans-password source)
 			  vm-pop-auto-expunge-alist))))
@@ -662,9 +662,9 @@ then without, and `vm-pop-expunge-after-retrieving\=' failing those."
 (defun vm-pop-net-write-crash-box (messages crash-box folder-type)
   "Write MESSAGES to CRASH-BOX in FOLDER-TYPE, and answer with how many.
 
-MESSAGES is what `vm-pop-net-fetch\=' answers with.  A crash box rather than
+MESSAGES is what `vm-pop-net-fetch' answers with.  A crash box rather than
 the folder itself, because that is what VM recovers from when Emacs dies
-between the fetch and the folder being written: `vm-gobble-crash-box\=' is
+between the fetch and the folder being written: `vm-gobble-crash-box' is
 what reads it, here and after a crash alike.
 
 The messages arrive in CRLF and with the separators the server chose, or
@@ -706,7 +706,7 @@ with none: the same cleaning up the blocking path does, in the same order."
 
 (defun vm-pop-net-note-retrieved (messages source)
   "Remember the UIDs of MESSAGES as fetched from SOURCE.
-This is `vm-pop-retrieved-messages\=', the list that stops a message being
+This is `vm-pop-retrieved-messages', the list that stops a message being
 fetched a second time, and it is buffer-local to the folder."
   (let ((popdrop (vm-popdrop-sans-password source)))
     (dolist (message messages)
@@ -723,7 +723,7 @@ is for the caller to gobble the crash box: this writes it and remembers the
 UIDs, and what to do with a folder is the folder's business.
 
 Nothing waits.  Whether the messages are deleted from the server is
-`vm-pop-net-auto-expunge-p\=', as it is for the blocking path -- and the
+`vm-pop-net-auto-expunge-p', as it is for the blocking path -- and the
 deletion is a session of its own, run once the crash box is written: what
 the server still has is what VM has not saved yet."
   (let ((folder (current-buffer))
@@ -754,7 +754,7 @@ the server still has is what VM has not saved yet."
 (defun vm-pop-net-delete-fetched (folder source uidls)
   "Delete UIDLS from SOURCE, now that they are written, and say how it went.
 FOLDER is where to report to.  A failure loses nothing: the messages are on
-the server still, and `vm-pop-retrieved-messages\=' stops them being fetched
+the server still, and `vm-pop-retrieved-messages' stops them being fetched
 again."
   (let ((name (buffer-name folder)))
     (unless (vm-pop-net-expunge-maildrop
@@ -816,7 +816,7 @@ connection that would write the same folder.")
 
 (defun vm-pop-net-when-free (name function)
   "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
-NAME says what it is, for the log.  Answers `later\=' when it was queued: the
+NAME says what it is, for the log.  Answers `later' when it was queued: the
 work has not happened yet, and the caller is not to do it the blocking way
 either, which would be the second writer this is avoiding."
   (cond
@@ -905,7 +905,7 @@ How far it has got is there once it knows: \" fetching 24/340\"."
 
 (defun vm-pop-net-stop ()
   "Stop what this folder is doing with its server.
-For a folder that is going away; see `vm-imap-net-stop\='."
+For a folder that is going away; see `vm-imap-net-stop'."
   (let ((session vm-pop-net-session))
     (when (and session (vm-net-session-live-p session))
       (vm-net-inform 5 "%s: stopping %s" (buffer-name)
@@ -932,7 +932,7 @@ command asked to do something with what arrives."
     (not (vm-pop-net-busy-p folder))))
 
 (defun vm-pop-net-folder-retrieved ()
-  "What this POP folder already has, structured as `vm-pop-retrieved-messages\='.
+  "What this POP folder already has, structured as `vm-pop-retrieved-messages'.
 Its own messages as well as the list, since a message in the folder is one
 that must not be fetched again whether the list remembers it or not."
   (let ((popdrop (vm-popdrop-sans-password (vm-folder-pop-maildrop-spec)))
@@ -944,7 +944,7 @@ that must not be fetched again whether the list remembers it or not."
     retrieved))
 
 (defun vm-pop-net-store-in-folder (folder folder-type messages)
-  "Put MESSAGES, as `vm-pop-net-fetch\=' answers with them, into FOLDER.
+  "Put MESSAGES, as `vm-pop-net-fetch' answers with them, into FOLDER.
 Answers with the UIDLs stored, oldest first.  The same cleaning up the crash
 box gets: CRLF to LF, and the folder's own separators where the server sent
 none."
@@ -1054,7 +1054,7 @@ message that had gone was still on the list after two goes at it.
 
 By UID: a POP message number means something different after every session,
 and the folder remembers what it deleted by UID.  The deletions take effect
-when the server is told QUIT, which `vm-pop-net-session\=' style unwinding
+when the server is told QUIT, which `vm-pop-net-session' style unwinding
 does whether this runs to the end or is abandoned."
   (let ((vm-pop-net-said-goodbye nil))
     (unwind-protect
@@ -1087,9 +1087,9 @@ does whether this runs to the end or is abandoned."
   "Start deleting on the server what this POP folder has expunged locally.
 
 Answers with whether it did: nil means the maildrop cannot be opened without
-waiting and the caller is to do it the blocking way, `later\=' that a session
+waiting and the caller is to do it the blocking way, `later' that a session
 is already running and these deletions go up next time -- they are in
-`vm-pop-messages-to-expunge\=', which is written into the folder file, so
+`vm-pop-messages-to-expunge', which is written into the folder file, so
 nothing is lost by waiting.
 
 A save owes the server the deletions and nothing else.  Working out what the
@@ -1245,7 +1245,7 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 
 (defun vm-pop-net-folder-check-mail ()
   "Start asking whether this POP folder has new mail, and answer with whether
-it did.  The answer itself arrives later, in `vm-spooled-mail-waiting\=',
+it did.  The answer itself arrives later, in `vm-spooled-mail-waiting',
 which is what the mode line reads.
 
 Nil means the maildrop cannot be opened without waiting, or a session is

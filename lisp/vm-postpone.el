@@ -778,9 +778,9 @@ Optional argument DONT-KILL is positive, then do not kill source message."
 This checks if the postponed folder contains drafts.
 Drafts in other folders are not recognized!
 
-One of `force-continue\=', `continue\=', `visit\=', `none\=', `declined\=' or `new\='.
-`declined\=' is drafts being there and not being continued -- the question
-answered no, or `vm-continue-what-message\=' nil -- as against `new\=', which is
+One of `force-continue', `continue', `visit', `none', `declined' or `new'.
+`declined' is drafts being there and not being continued -- the question
+answered no, or `vm-continue-what-message' nil -- as against `new', which is
 there being none.  The two were one value, and the caller told a reader who
 had just declined the question that there were no drafts."
   (save-excursion
@@ -1281,8 +1281,8 @@ If optional argument RETURN-ONLY is t just returns FCC."
 
 (defun vm-composition-buffer-p (&optional buffer)
   "Whether BUFFER, or the current buffer, is a composition VM started.
-Mail mode alone is not enough: another package\='s composition is in Mail
-mode too, and postponing it into a VM folder is not VM\='s business."
+Mail mode alone is not enough: another package's composition is in Mail
+mode too, and postponing it into a VM folder is not VM's business."
   (with-current-buffer (or buffer (current-buffer))
     (and (eq major-mode 'mail-mode)
          (eq (current-local-map) vm-mail-mode-map))))
@@ -1308,7 +1308,7 @@ less a draft in the postponed folder."
                (buffer-list))))
 
 (defun vm-postpone-composition-quietly (buffer)
-  "Kill BUFFER, so that `vm-save-killed-message-hook\=' offers to keep it.
+  "Kill BUFFER, so that `vm-save-killed-message-hook' offers to keep it.
 The offer is the one killing a composition has always made, rather than a
 second one of its own.  A failure is reported rather than raised: this runs
 while Emacs is being left, where an error would put a debugger between the
@@ -1323,13 +1323,13 @@ user and the door."
 ;;;###autoload
 (defun vm-postpone-unfinished-compositions ()
   "Offer each unfinished composition to the drafts folder as Emacs is left.
-Killing a composition already offers this -- see `vm-save-killed-message\=',
+Killing a composition already offers this -- see `vm-save-killed-message',
 which says whether to ask, to save without asking, or to do neither, and
-`vm-save-killed-messages-folder\=', which says where.  But Emacs does not kill
+`vm-save-killed-messages-folder', which says where.  But Emacs does not kill
 buffers one at a time as it exits, so on the way out the offer was never
 made and the drafts went with it.  Issue #160.
 
-Runs from `kill-emacs-query-functions\=', where a nil return would stop Emacs
+Runs from `kill-emacs-query-functions', where a nil return would stop Emacs
 leaving.  This always returns t: losing a draft is a reason to ask a
 question, not to stand in the doorway."
   (when vm-save-killed-message

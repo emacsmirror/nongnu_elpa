@@ -177,7 +177,7 @@ message."
 (defun vm-pause (seconds)
   "Leave the last message on screen for SECONDS, or until the user types.
 
-`sit-for\=' rather than `sleep-for\=': both let a process filter run, and only
+`sit-for' rather than `sleep-for': both let a process filter run, and only
 one of them lets the reader carry on.  A pause here is for reading a
 message that the next one would overwrite -- it is never part of a
 protocol, and a reader who has read it should not have to wait out the
@@ -477,9 +477,9 @@ a part of VM the session has not touched."
 (defun vm-warn-about-stale-compiled-files ()
   "Say so, once, if VM is running compiled files from another build.
 Two ways of telling: a .elc older than the .el beside it, and a .elc that
-says it was compiled against a different VM (see `vm-assert-version\=').  The
+says it was compiled against a different VM (see `vm-assert-version').  The
 second is the one that works on an installed tree, where every .elc is newer
-than its source because `make install\=' copies it later.
+than its source because `make install' copies it later.
 
 Emacs loads a .elc in preference to a newer .el unless `load-prefer-newer\\='
 says otherwise, and its own warning about that is one line among many at
@@ -1582,7 +1582,7 @@ Returns t if there was a line longer than `fill-column'."
   "Whether `fill-prefix' leaves any room for text inside `fill-column'.
 A paragraph whose prefix is as wide as the column cannot be filled to
 anything but one word a line, which is worse than the long lines it was
-filled to be rid of.  `vm-forward-paragraph' reads a paragraph\='s
+filled to be rid of.  `vm-forward-paragraph' reads a paragraph's
 indentation as its prefix, and an HTML converter asked for a very wide page
 indents a centred paragraph by hundreds of columns (#540)."
   (or (null fill-prefix)
@@ -1887,10 +1887,10 @@ Return the list of loaded features.
 
 Silent in a batch Emacs whatever SILENT says.  The warning is for a reader who
 asked for a feature and is not getting it, and a batch Emacs has nobody to
-read it: eighteen lines of it came out of `make\=', where four WARNINGs in the
+read it: eighteen lines of it came out of `make', where four WARNINGs in the
 middle of a build read as a broken build (emacs-vm/vm#485, emacs-vm/vm#753).
 Building the manual loads every module to read its docstrings, which is where
-they were coming from -- SILENT is `byte-compile-current-file\=' at every call
+they were coming from -- SILENT is `byte-compile-current-file' at every call
 site, and that is nil when a file is loaded rather than compiled."
   (setq feature-list
         (mapcar (lambda (f)
@@ -1982,26 +1982,26 @@ this returns `vm-imagemagick-program' (magick); callers should prepend
 (defun vm-imagemagick-convert-shell-command ()
   "Return the shell command string for converting an image with ImageMagick.
 
-For ImageMagick 7 that is `magick\=' on its own.  Version 7 deprecated the
-`convert\=' command, and it says so on every run:
+For ImageMagick 7 that is `magick' on its own.  Version 7 deprecated the
+`convert' command, and it says so on every run:
 
     WARNING: The convert command is deprecated in IMv7, use \"magick\"
     instead of \"convert\" or \"magick convert\"
 
-so `magick convert\=' printed that warning for every image VM displayed.  For
-version 6 there is no `magick\=', and the program is `convert\=' itself."
+so `magick convert' printed that warning for every image VM displayed.  For
+version 6 there is no `magick', and the program is `convert' itself."
   (vm-imagemagick-convert-command))
 
 (defun vm-imagemagick-call-convert (infile buffer args)
   "Convert an image with ImageMagick and ARGS, and answer with the exit status.
-INFILE and BUFFER are passed to `vm-call-process\='.
+INFILE and BUFFER are passed to `vm-call-process'.
 
-ARGS go to `magick\=' as they are: version 7 deprecated the `convert\='
+ARGS go to `magick' as they are: version 7 deprecated the `convert'
 command and warns about it on every run, so VM does not ask for it.  Version 6
-has no `magick\=' and the program is `convert\=' itself, which takes the same
-arguments.  `identify\=' is a different matter -- version 7 has it as a
-subcommand of `magick\=' and does not deprecate it -- so
-`vm-imagemagick-call-identify\=' still names it."
+has no `magick' and the program is `convert' itself, which takes the same
+arguments.  `identify' is a different matter -- version 7 has it as a
+subcommand of `magick' and does not deprecate it -- so
+`vm-imagemagick-call-identify' still names it."
   (let ((program (vm-imagemagick-convert-command)))
     (when program
       (vm-call-process program infile buffer args))))

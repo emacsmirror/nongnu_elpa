@@ -554,7 +554,7 @@ boolean value (`t' or `nil').
 `vm-key-functions' is a list of \"key-functions\" that compare
 the two messages to see if one should precede the other.  They
 return `t' if MSG1 should precede MSG2, `nil' if MSG2 should
-precede MSG1, and '=' if neither is the case.  In the last case, the
+precede MSG1, and `=' if neither is the case.  In the last case, the
 two messages are regarded as equivalent as per the particular
 key-function and the remaining key-functions are tried to resolve the
 tie.   (This amounts to a lexicographic combination of the sort-orders
