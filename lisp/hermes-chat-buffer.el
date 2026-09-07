@@ -501,6 +501,19 @@ these same tails.  Markers already follow the transcript edits themselves."
            (goto-char (min (point-max)
                            (+ (hermes-chat--input-position) offset))))))))
 
+(defun hermes-chat--reflow-table-windows ()
+  "Reflow this chat's tables after a window configuration change.
+The buffer-local hook also runs when another window stops showing this
+chat.  Hidden buffers wait until displayed; changing mode removes the hook."
+  (when (and (derived-mode-p 'hermes-chat-mode)
+             (hermes-chat--input-position)
+             (get-buffer-window (current-buffer) t))
+    (hermes-chat--preserve-input-point
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t))
+        (hermes-chat--reflow-tables hermes-chat--input-marker
+                                    (hermes-chat--table-window-width))))))
+
 (defun hermes-chat--separator ()
   "Return a full-width rule string separating the transcript from the input."
   (propertize " " 'display '(space :width text) 'face 'hermes-chat-separator))
@@ -510,6 +523,7 @@ these same tails.  Markers already follow the transcript edits themselves."
   ;; Selective undo owns a separate list.  Keep it local so an asynchronous
   ;; transcript update cannot rebase another buffer's pending undo sequence.
   (setq-local pending-undo-list nil)
+  (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
   (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
         (buffer-undo-list t))

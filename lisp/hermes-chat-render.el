@@ -59,32 +59,81 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
       (plist-put metadata :expanded (cadr tail))
     metadata))
 
-(defun hermes-chat--view-table-button (button)
-  "Open the Markdown table stored on BUTTON without wrapping rows."
-  (let ((table (button-get button 'hermes-chat-table))
-        (directory default-directory)
-        (buffer (generate-new-buffer "*Hermes Table*")))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (delay-mode-hooks (markdown-view-mode))
-        (markdown-toggle-markup-hiding -1)
-        ;; Alignment and copying both need the literal markup delimiters.
-        (setq-local filter-buffer-substring-function #'buffer-substring--filter)
-        (insert (hermes-chat--fontify-markdown-string table)))
-      (setq default-directory directory)
-      (visual-line-mode -1)
-      (setq-local truncate-lines t)
-      (setq-local buffer-face-mode-face 'fixed-pitch)
-      (buffer-face-mode 1)
-      (goto-char (point-min)))
-    (pop-to-buffer buffer)
-    (set-window-hscroll (selected-window) 0)))
+(defun hermes-chat--copy-table-button (button)
+  "Copy the exact original Markdown table stored on BUTTON."
+  (kill-new (button-get button 'hermes-chat-table))
+  (message "Copied table source"))
+
+(defun hermes-chat--table-window-width ()
+  "Return usable fixed-pitch columns in the narrowest displaying window.
+A hidden buffer uses 78 columns until it becomes visible.  Reserve two
+columns for the continuation glyph and rounding on graphical displays."
+  (let ((windows (get-buffer-window-list (current-buffer) nil t)))
+    (if windows
+        (apply #'min
+               (mapcar (lambda (window)
+                         (with-selected-window window
+                           ;; Body width excludes margins and fringes, but
+                           ;; includes the line-number gutter.  Its native pixel
+                           ;; width includes padding and the line-number face.
+                           (let ((pixels (- (window-body-width window t)
+                                            (if display-line-numbers
+                                                (line-number-display-width t)
+                                              0))))
+                             (max 6 (- (/ pixels
+                                          (max 1 (window-font-width
+                                                  window 'fixed-pitch)))
+                                       2)))))
+                       windows))
+      78)))
+
+(defun hermes-chat--insert-table (source width)
+  "Insert SOURCE as a navigable grid within WIDTH, with a source-copy button."
+  (let ((start (point)))
+    (insert (hermes-chat--format-table source width))
+    (insert-text-button
+     "[Copy source]" 'face '(fixed-pitch link) 'follow-link t
+     'help-echo "Copy the original Markdown, not the wrapped presentation"
+     'hermes-chat-table source 'action #'hermes-chat--copy-table-button)
+    (insert "\n")
+    (add-text-properties start (point)
+                         (list 'hermes-chat-inline-table source
+                               'hermes-chat-table-width width
+                               'rear-nonsticky t))))
+
+(defun hermes-chat--reflow-tables (limit width)
+  "Reflow inline tables before marker LIMIT to WIDTH, without changing source.
+The caller owns transcript protection and draft undo.  Native diff-based
+replacement preserves markers in unchanged text, including EWOC boundaries."
+  (save-excursion
+    (goto-char (point-min))
+    (while (< (point) limit)
+      (let* ((start (point))
+             (end (next-single-property-change
+                   start 'hermes-chat-inline-table nil limit))
+             (source (get-text-property start 'hermes-chat-inline-table)))
+        (if (and source
+                 (not (equal width (get-text-property start 'hermes-chat-table-width))))
+            (let ((text (with-temp-buffer
+                          (hermes-chat--insert-table source width)
+                          (buffer-string))))
+              (replace-region-contents start end (lambda () text))
+              ;; Native replacement diffs characters, not their properties.
+              (let ((offset 0))
+                (while (< offset (length text))
+                  (let ((next (next-property-change offset text (length text))))
+                    (set-text-properties (+ start offset) (+ start next)
+                                         (text-properties-at offset text))
+                    (setq offset next))))
+              (goto-char (+ start (length text))))
+          (goto-char end))))))
 
 (defun hermes-chat--insert-markdown (text)
-  "Insert fontified TEXT, with native-view buttons for its tables.
-Truncation is buffer-wide in Emacs, so tables have their own viewer while
-ordinary chat prose continues to wrap."
+  "Insert fontified TEXT with wrapped, navigable inline tables.
+Ordinary region copying copies the presentation; each table also offers
+an explicit button to copy its exact original Markdown source."
   (let* ((text (hermes-chat--fontify-markdown-string text))
+         (width (hermes-chat--table-window-width))
          (end (length text))
          (start 0))
     (while (< start end)
@@ -92,13 +141,7 @@ ordinary chat prose continues to wrap."
                    start 'hermes-chat-table text end))
             (table (get-text-property start 'hermes-chat-table text)))
         (if table
-            (progn
-              (insert-text-button
-               "[View Table]" 'face 'link 'follow-link t
-               'help-echo "Open this table without line wrapping"
-               'hermes-chat-table table
-               'action #'hermes-chat--view-table-button)
-              (when (string-suffix-p "\n" table) (insert "\n")))
+            (hermes-chat--insert-table table width)
           (insert (substring text start next)))
         (setq start next)))))
 

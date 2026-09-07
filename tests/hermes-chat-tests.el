@@ -2207,145 +2207,291 @@
     (dotimes (i (length s))
       (should-not (get-text-property i 'invisible s)))))
 
-(defun hermes-chat-tests--pipe-columns (line)
-  "Return character positions of | in LINE."
-  (let ((columns nil)
-        (start 0))
-    (while (string-match "|" line start)
-      (push (match-beginning 0) columns)
-      (setq start (1+ (match-beginning 0))))
-    (nreverse columns)))
+(ert-deftest hermes-chat-markdown-marks-original-tables ()
+  "Recognizing tables does not align or otherwise change their source."
+  (let* ((raw "| A | B |\n|---|---|\n| one | two |\n")
+         (text (hermes-chat--fontify-markdown-string raw)))
+    (should (equal (substring-no-properties text) raw))
+    (should (equal (get-text-property 0 'hermes-chat-table text) raw))))
 
-(ert-deftest hermes-chat-markdown-aligns-tables ()
-  "Pipe tables are padded so columns line up across rows."
-  (let* ((raw (concat "| Skill | Verdict | Why |\n"
-                      "|---|---|---|\n"
-                      "| `tdd` | skip | overlap |\n"))
-         (s (substring-no-properties
-             (hermes-chat--fontify-markdown-string raw)))
-         (lines (split-string s "\n" t))
-         (header (hermes-chat-tests--pipe-columns (nth 0 lines)))
-         (rule (hermes-chat-tests--pipe-columns (nth 1 lines)))
-         (row (hermes-chat-tests--pipe-columns (nth 2 lines))))
-    (should (equal header rule))
-    (should (equal header row))
-    (should (string-match-p "`tdd`" s))
-    (should (string-match-p "overlap" s))))
+(ert-deftest hermes-chat-table-wrap-preserves-literals ()
+  "Wrapping preserves every character, native face and combining sequence."
+  (dolist (text (list "path\\ followed by text" "a\\|b **bold** `code`"
+                      "界é界é" (make-string 160 ?x)))
+    (dolist (width '(2 3 7 22))
+      (let ((lines (hermes-chat--table-cell-lines
+                    (propertize text 'face 'bold) width)))
+        (should (equal (apply #'concat lines) text))
+        (dolist (line lines)
+          (should (<= (string-width line) width))
+          (when (> (length line) 0)
+            (should (eq (get-text-property 0 'face line) 'bold))
+            (should-not (= (aref line 0) #x301))))))))
 
-(ert-deftest hermes-chat-markdown-table-view-preserves-chat ()
-  "Tables open natively without changing wrapped prose or the draft."
-  (let* ((markdown-hide-markup t)
-         (raw (concat "| Kind | Description |\n|---|---|\n"
-                      "| 界\t**bold** | " (make-string 160 ?x) " |\n"))
-         (prose (concat "Before " (make-string 160 ?p) ".\n\n"))
-         viewer)
-    (save-window-excursion
-      (unwind-protect
-          (hermes-test-with-chat-buffer
-           (let ((chat (current-buffer)))
-             (insert "Unsent draft")
-             (hermes-chat--insert-entry
-              (hermes-chat--make-entry
-               'assistant (concat prose raw "\nAfter.\n") 'done))
-             (should (derived-mode-p 'hermes-chat-mode))
-             (should visual-line-mode)
-             (should-not truncate-lines)
-             (should (equal (hermes-chat-input-string) "Unsent draft"))
-             (should (string-match-p (regexp-quote prose) (buffer-string)))
-             (should (string-match-p (regexp-quote "\nAfter.\n") (buffer-string)))
-             (set-window-buffer (selected-window) chat)
-             (goto-char (point-min))
-             (search-forward "Before ")
-             (beginning-of-line)
-             (let ((line (line-number-at-pos)))
-               (vertical-motion 1)
-               (should (= (line-number-at-pos) line)))
-             (goto-char (point-min))
-             (search-forward "[View Table]")
-             (let ((button (button-at (1- (point)))))
-               (should (equal (button-get button 'hermes-chat-table) raw))
-               (button-activate button))
-             (setq viewer (current-buffer))
-             (should-not (eq viewer chat))
-             (should (derived-mode-p 'markdown-mode))
-             (should buffer-read-only)
-             (should truncate-lines)
-             (should-not visual-line-mode)
-             (should-not (string-match-p "\t" (buffer-string)))
-             (should (string-match-p "界 +\\*\\*bold\\*\\*" (buffer-string)))
-             (should (eq (key-binding (kbd "q")) #'kill-current-buffer))
-             (let ((columns
-                    (mapcar
-                     (lambda (line)
-                       (mapcar (lambda (pos) (string-width (substring line 0 pos)))
-                               (hermes-chat-tests--pipe-columns line)))
-                     (split-string (buffer-string) "\n" t))))
-               (should (equal (nth 0 columns) (nth 1 columns)))
-               (should (equal (nth 0 columns) (nth 2 columns))))
-             (goto-char (point-min))
-             (let ((start (point)))
-               (vertical-motion 1)
-               (should (= (line-number-at-pos) 2))
-               (should (> (- (point) start) (window-body-width))))
-             (scroll-left 12)
-             (should (= (window-hscroll) 12))
-             (quit-window)
-             (with-current-buffer chat
-               (should (equal (hermes-chat-input-string) "Unsent draft")))))
-        (when (buffer-live-p viewer) (kill-buffer viewer))))))
+(ert-deftest hermes-chat-table-grid-bounded-with-native-cells ()
+  "Long tokens, escaped pipes and Unicode remain visible in bounded grids."
+  (let ((source (concat "| Kind | Description |\n|---|---|\n"
+                        "| 界é **bold** | path\\ followed a\\|b `x|y` "
+                        (make-string 160 ?x) " |\n")))
+    (dolist (width '(12 28 78))
+      (let ((grid (hermes-chat--format-table source width)))
+        (dolist (line (split-string grid "\n" t))
+          (should (<= (string-width line) width)))
+        (should-not (text-property-not-all 0 (length grid) 'display nil grid))
+        (should-not (text-property-not-all 0 (length grid) 'invisible nil grid))
+        (should (eq 'fixed-pitch (get-text-property 0 'face grid)))))
+    ;; The native parser keeps escaped pipes and fontified code spans together.
+    (let* ((line (hermes-chat--fontify-markdown-string
+                  "| a\\|b | `x|y` |\n"))
+           (cells (markdown--table-line-to-columns (string-trim-right line))))
+      (should (equal cells '("a\\|b" "`x|y`"))))))
 
-(ert-deftest hermes-chat-markdown-table-view-keeps-markup-visible-and-copyable ()
-  "Fontification keeps aligned markup visible and intact when copied."
+(ert-deftest hermes-chat-table-degenerate-and-optional-trailing-pipes ()
+  "Degenerate tables stay literal; missing closing pipes never lose cells."
+  (dolist (raw '("|---|---|\n" "|\n"))
+    (should (equal (substring-no-properties (hermes-chat--format-table raw 28)) raw)))
+  (let* ((raw "| A | B\n|---|---|\n| x | y\n")
+         (grid (hermes-chat--format-table raw 28)))
+    (dolist (cell '("A" "B" "x" "y"))
+      (should (string-match-p cell grid)))))
+
+(ert-deftest hermes-chat-table-narrow-column-panels ()
+  "Narrow windows retain every header and data cell in column panels."
+  (let* ((source "| A | B | C | D |\n|---|---|---|---|\n| a | b | c | d |\n")
+         (grid (hermes-chat--format-table source 12)))
+    (dolist (cell '("A" "B" "C" "D" "a" "b" "c" "d"))
+      (should (string-match-p cell grid)))
+    (dolist (line (split-string grid "\n" t))
+      (should (<= (string-width line) 12)))))
+
+(ert-deftest hermes-chat-table-ragged-panels-preserve-all-cells ()
+  "Missing cells render empty, including entire rows and header panel slices."
+  (let ((rows '(("A" "B" "C") ("x") nil ("y" "z" "q" "r")))
+        (padded '(("A" "B" "C" "") ("x" "" "" "")
+                  ("" "" "" "") ("y" "z" "q" "r"))))
+    (dolist (width '(6 12 80))
+      (should (equal (hermes-chat--table-grid rows width)
+                     (hermes-chat--table-grid padded width)))))
+  (dolist (body '("| x |\n" "|\n| x |\n| y | z | q | r |\n"))
+    (let* ((raw (concat "| A | B | C |\n|---|---|---|\n" body))
+           (grid (hermes-chat--format-table raw 12)))
+      (dolist (cell (if (string-match-p "y" body)
+                        '("A" "B" "C" "x" "y" "z" "q" "r")
+                      '("A" "B" "C" "x")))
+        (should (string-match-p (regexp-quote cell) grid)))
+      (dolist (line (split-string grid "\n" t))
+        (should (<= (string-width line) 12))))))
+
+(ert-deftest hermes-chat-table-ragged-insertion-and-reflow ()
+  "Narrow insertion and reflow preserve ragged source, EWOC and draft undo."
+  (dolist (initial-width '(12 80))
+    (hermes-test-with-chat-buffer
+     (let ((raw "| A | B | C |\n|---|---|---|\n| x |\n|\n| y | z | q | r |\n")
+           (width initial-width)
+           (kill-ring nil))
+       (cl-letf (((symbol-function 'hermes-chat--table-window-width)
+                  (lambda () width)))
+         (insert "Draft")
+         (undo-boundary)
+         (insert " suffix")
+         (undo-boundary)
+         (let* ((node (hermes-chat--insert-entry
+                       (hermes-chat--make-entry 'assistant raw 'done)))
+                (entry (ewoc-data node)))
+           (dolist (next-width '(12 80 12))
+             (setq width next-width)
+             (hermes-chat--reflow-table-windows)
+             (should (eq node (ewoc-nth hermes-chat--ewoc 0)))
+             (should (eq entry (ewoc-data node)))
+             (should (equal (plist-get entry :content) raw))
+             (should (equal (hermes-chat-input-string) "Draft suffix"))
+             (let* ((start (text-property-not-all
+                            (point-min) (point-max) 'hermes-chat-inline-table nil))
+                    (end (button-start (next-button start)))
+                    (grid (buffer-substring-no-properties start end)))
+               (should (= (get-text-property start 'hermes-chat-table-width) width))
+               (dolist (cell '("A" "B" "C" "x" "y" "z" "q" "r"))
+                 (should (string-match-p cell grid)))
+               (dolist (line (split-string grid "\n" t))
+                 (should (<= (string-width line) width))))
+             (button-activate (next-button (point-min)))
+             (should (equal (current-kill 0 t) raw)))
+           (goto-char (point-max))
+           (undo 1)
+           (should (equal (hermes-chat-input-string) "Draft"))))))))
+
+(ert-deftest hermes-chat-table-window-width-excludes-number-gutter ()
+  "Use each window's number gutter and fixed-pitch metrics, not frame columns."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let* ((wide (selected-window))
+             (narrow (split-window-right 30))
+             (body 1404)
+             (gutter 44)
+             (font 11))
+        (set-window-buffer narrow (current-buffer))
+        (cl-letf (((symbol-function 'window-body-width)
+                   (lambda (window pixelwise)
+                     (should pixelwise)
+                     (if (eq window wide) 2808 body)))
+                  ((symbol-function 'window-font-width)
+                   (lambda (window face)
+                     (should (memq window (list wide narrow)))
+                     (should (eq face 'fixed-pitch))
+                     font))
+                  ((symbol-function 'line-number-display-width)
+                   (lambda (pixelwise)
+                     (should pixelwise)
+                     (if (eq (selected-window) narrow) gutter 22))))
+          (setq-local display-line-numbers nil)
+          (should (= (hermes-chat--table-window-width) 125))
+          (setq-local display-line-numbers 'relative)
+          (should (= (hermes-chat--table-window-width) 121))
+          (setq gutter 66)
+          (should (= (hermes-chat--table-window-width) 119))
+          (setq body 682)
+          (should (= (hermes-chat--table-window-width) 54))
+          (setq font 14)
+          (should (= (hermes-chat--table-window-width) 42))
+          (should (eq (selected-window) wide)))))))
+
+(ert-deftest hermes-chat-table-window-width-real-number-geometry ()
+  "Graphical line-number gutters leave the rendered grid inside the text area."
+  (skip-unless (display-graphic-p))
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert (make-string 150 ?\n))
+      (let ((window (selected-window))
+            (raw (concat "| A | B |\n|---|---|\n| "
+                         (make-string 200 ?x) " | value |\n")))
+        ;; Body width already excludes these; do not subtract them twice.
+        (set-window-margins window 2 3)
+        (set-window-fringes window 8 8)
+        (dolist (columns '(nil 3 6))
+          (setq-local display-line-numbers (and columns 'relative))
+          (setq-local display-line-numbers-width columns)
+          (redisplay t)
+          (let* ((gutter (if columns (line-number-display-width t) 0))
+                 (body (window-body-width window t))
+                 (font (window-font-width window 'fixed-pitch))
+                 (width (hermes-chat--table-window-width)))
+            (when columns (should (> gutter 0)))
+            (should (= width (max 6 (- (/ (- body gutter) font) 2))))
+            (dolist (line (split-string (hermes-chat--format-table raw width) "\n" t))
+              (should (<= (string-pixel-width
+                           (propertize line 'face 'fixed-pitch))
+                          (- body gutter))))))))))
+
+(ert-deftest hermes-chat-table-inline-copy-and-navigation ()
+  "Tables are real text; source-copy does not switch buffers or touch drafts."
   (dolist (hide '(nil t))
     (let ((markdown-hide-markup hide)
-          viewer)
-      (save-window-excursion
-        (unwind-protect
-            (with-temp-buffer
-              (hermes-chat--insert-markdown
-               "| **bold** | `code` |\n|---|---|\n| a | b |\n")
-              (button-activate (button-at (point-min)))
-              (setq viewer (current-buffer))
-              (font-lock-ensure)
-              (goto-char (point-min))
-              (while (re-search-forward "[*`]" nil t)
-                (should-not (invisible-p (1- (point)))))
-              (let ((copied (filter-buffer-substring (point-min) (point-max))))
-                (should (equal copied (buffer-string)))
-                (should (string-match-p (regexp-quote "**bold**") copied))
-                (should (string-match-p (regexp-quote "`code`") copied))))
-          (when (buffer-live-p viewer) (kill-buffer viewer)))))))
+          (raw "| **bold** | B |\n|---|---|\n| one | two |\n")
+          (kill-ring nil))
+      (hermes-test-with-chat-buffer
+       (insert "Unsent draft")
+       (let* ((node (hermes-chat--insert-entry
+                     (hermes-chat--make-entry 'assistant raw 'done)))
+              (entry (ewoc-data node))
+              (buffer (current-buffer)))
+         (should (equal (plist-get entry :content) raw))
+         (should-not (string-match-p "View Table" (buffer-string)))
+         (goto-char (point-min))
+         (search-forward "one")
+         (backward-char 3)
+         (let ((start (point)))
+           (forward-char 1)
+           (should (= (point) (1+ start)))
+           (should (equal (filter-buffer-substring start (+ start 3)) "one")))
+         (let ((button (next-button (point-min))))
+           (should (equal (button-label button) "[Copy source]"))
+           (button-activate button))
+         (should (eq (current-buffer) buffer))
+         (should (equal (current-kill 0 t) raw))
+         (should (eq entry (ewoc-data node)))
+         (should (equal (hermes-chat-input-string) "Unsent draft"))
+         (should visual-line-mode)
+         (should-not truncate-lines))))))
 
-(ert-deftest hermes-chat-markdown-table-view-preserves-unrelated-buffer ()
-  "Opening a table must not adopt a same-name modified file buffer."
-  (let ((notes (generate-new-buffer "*Hermes Table*"))
-        (file (expand-file-name "hermes-table-notes.txt" temporary-file-directory))
-        viewer)
-    (save-window-excursion
-      (unwind-protect
-          (progn
-            (with-current-buffer notes
-              (text-mode)
-              (setq buffer-file-name file)
-              (insert "UNSAVED USER NOTES")
-              (set-buffer-modified-p t))
-            (with-temp-buffer
-              (hermes-chat--insert-markdown "| A | B |\n|---|---|\n| one | two |\n")
-              (button-activate (button-at (point-min)))
-              (setq viewer (current-buffer)))
-            (with-current-buffer notes
-              (should (equal (buffer-string) "UNSAVED USER NOTES"))
-              (should (eq major-mode 'text-mode))
-              (should (equal buffer-file-name file))
-              (should (buffer-modified-p)))
-            (should-not (eq viewer notes))
-            (with-current-buffer viewer
-              (should (derived-mode-p 'markdown-view-mode))
-              (should-not buffer-file-name)))
-        (when (and (buffer-live-p viewer) (not (eq viewer notes)))
-          (kill-buffer viewer))
-        (with-current-buffer notes (set-buffer-modified-p nil))
-        (kill-buffer notes)))))
+(ert-deftest hermes-chat-table-resize-preserves-ewoc-draft-and-undo ()
+  "Hidden insertion reflows for the narrowest window without mutating entries."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (let* ((raw (concat "| A | B |\n|---|---|\n| one | "
+                         (make-string 160 ?x) " |\n"))
+            (node (hermes-chat--insert-entry
+                   (hermes-chat--make-entry 'assistant raw 'done)))
+            (entry (ewoc-data node)))
+       (insert "Draft")
+       (undo-boundary)
+       (insert " suffix")
+       (undo-boundary)
+       (set-window-buffer (selected-window) (current-buffer))
+       (let* ((other (split-window-right 30))
+              (expected (hermes-chat--table-window-width)))
+         (set-window-buffer other (current-buffer))
+         (setq expected (hermes-chat--table-window-width))
+         (narrow-to-region hermes-chat--input-marker (point-max))
+         (hermes-chat--reflow-table-windows)
+         (should (buffer-narrowed-p))
+         (should (equal (buffer-string) "Draft suffix"))
+         (should (= (point) (point-max)))
+         (widen)
+         (should (eq entry (ewoc-data node)))
+         (should (equal (plist-get entry :content) raw))
+         (goto-char (point-min))
+         (let ((start (text-property-not-all (point-min) (point-max)
+                                             'hermes-chat-inline-table nil)))
+           (should (= (get-text-property start 'hermes-chat-table-width) expected)))
+         (goto-char (point-max))
+         (undo 1)
+         (should (equal (hermes-chat-input-string) "Draft"))
+         (let ((before (buffer-chars-modified-tick)))
+           (hermes-chat--reflow-table-windows)
+           (should (= before (buffer-chars-modified-tick))))
+         (should (memq #'hermes-chat--reflow-table-windows
+                       window-configuration-change-hook))
+         (fundamental-mode)
+         (should-not (memq #'hermes-chat--reflow-table-windows
+                           window-configuration-change-hook)))))))
+
+(ert-deftest hermes-chat-table-reflow-preserves-window-anchors-and-node-boundaries ()
+  "Table replacement preserves both reader windows and later EWOC updates."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (let* ((table (concat "| A | B |\n|---|---|\n| first | "
+                           (make-string 100 ?x) " |\n"))
+            (first (hermes-chat--insert-entry
+                    (hermes-chat--make-entry 'assistant (concat table "\nAfter one\n") 'done)))
+            (second (hermes-chat--insert-entry
+                     (hermes-chat--make-entry 'assistant (concat table "\nAfter two\n") 'done)))
+            (window (selected-window))
+            (other (split-window-right 30)))
+       (set-window-buffer window (current-buffer))
+       (set-window-buffer other (current-buffer))
+       (goto-char (point-min))
+       (search-forward "After one")
+       (beginning-of-line)
+       (set-window-start window (point))
+       (set-window-point window (point))
+       (search-forward "After two")
+       (beginning-of-line)
+       (set-window-start other (point))
+       (set-window-point other (point))
+       (goto-char (window-start window))
+       (hermes-chat--reflow-table-windows)
+       (dolist (pair (list (cons window "After one") (cons other "After two")))
+         (dolist (position (list (window-start (car pair)) (window-point (car pair))))
+           (should (equal (buffer-substring-no-properties position (+ position 9))
+                          (cdr pair)))))
+       (should (= (length (hermes-chat--entries)) 2))
+       (let ((inhibit-read-only t))
+         (hermes-chat--preserve-input-point
+          (ewoc-invalidate hermes-chat--ewoc first second)))
+       (should (= (how-many "After one" (point-min) (point-max)) 1))
+       (should (= (how-many "After two" (point-min) (point-max)) 1))))))
 
 (ert-deftest hermes-chat-markdown-unclosed-fenced-tables-stay-inline ()
   "Settled replies retain table-like code in either unclosed fence."
