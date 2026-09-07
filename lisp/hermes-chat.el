@@ -1215,10 +1215,15 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
   (let* ((context hermes-chat--unsettled-submit-context)
          (record (plist-get (plist-get context :queue-entry) :image-record))
          (phase (plist-get record :state)))
-    (if (memq phase '(uploading attaching))
+    (if (or (memq phase '(uploading attaching))
+            (and (eq phase 'local) hermes-chat--session-bootstrap))
         (progn
+          ;; Retire fresh-session callbacks before releasing the FIFO owner.
+          ;; A late create receipt must not submit canceled text without images.
+          (when (eq phase 'local)
+            (setq hermes-chat--session-bootstrap nil))
           (setf (plist-get record :state)
-                (if (eq phase 'uploading) 'local 'uncertain))
+                (if (eq phase 'attaching) 'uncertain 'local))
           (when (eq phase 'uploading)
             (hermes-chat--images-release record))
           (funcall (hermes-chat--queue-reject-callback (current-buffer) context)

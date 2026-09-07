@@ -1282,6 +1282,12 @@ shared client."
 (defun hermes-chat--dashboard-bootstrap-current-p (owner)
   "Return non-nil when OWNER still owns this buffer's fresh session setup."
   (and (eq owner hermes-chat--session-bootstrap)
+       (or (not (eq (plist-get owner :kind) 'queued))
+           (and (eq (plist-get owner :queue-context)
+                    hermes-chat--unsettled-submit-context)
+                (= (plist-get owner :queue-connection)
+                   (hermes-dashboard-transport-client-generation
+                    (plist-get owner :client)))))
        (hermes-chat--dashboard-context-current-p (plist-get owner :client)
                                                   (plist-get owner :generation)
                                                   (plist-get owner :session-id))))
@@ -1300,6 +1306,9 @@ shared client."
   "Reserve CLIENT's fresh-session setup for KIND with failure callback REJECT."
   (setq hermes-chat--session-bootstrap
         (list :client client :generation hermes-chat--lifecycle-generation :kind kind
+              ;; HTTP preflight can outlive the FIFO or a socket replacement.
+              :queue-context hermes-chat--unsettled-submit-context
+              :queue-connection (hermes-dashboard-transport-client-generation client)
               :reject (or reject #'hermes-chat--command-error)
               :phase 'preflight :session-id nil)))
 
@@ -1776,6 +1785,13 @@ local FIFO submission."
 (defun hermes-chat--dashboard-queue-drain-ready-p ()
   "Return non-nil when the current chat queue may submit."
   (or (not (hermes-chat--dashboard-default-transport-p))
+      ;; A fresh FIFO head must enter the ordinary lazy session bootstrap.
+      ;; Detached durable sessions still wait for explicit reattachment.
+      (and (null hermes-chat--session-id)
+           (null hermes-chat--dashboard-active-session-id)
+           (null hermes-chat--session-bootstrap)
+           (or (null hermes-chat--dashboard-client)
+               (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)))
       (and (hermes-chat--dashboard-session-attached-p)
            (hermes-chat--dashboard-client-live-p
             hermes-chat--dashboard-client))))
