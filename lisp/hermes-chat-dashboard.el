@@ -38,6 +38,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
+(require 'hermes-chat-images)
 (require 'hermes-chat-prompts)
 (require 'hermes-notifications)
 (require 'hermes-session-title)
@@ -1683,13 +1684,27 @@ path; a client with no readiness promise (such as a test stub) is left alone."
 RESOLVE and REJECT receive the asynchronous request result."
   (unless hermes-chat--dashboard-active-session-id
     (user-error "Hermes dashboard did not return a live session id"))
+  (hermes-chat--ensure-submit-allowed)
   (hermes-chat--dashboard-claim-submit-context client)
   (setq hermes-chat--dashboard-running-p t)
-  (hermes-dashboard-transport-prompt-submit
-   client prompt
-   :session-id hermes-chat--dashboard-active-session-id
-   :resolve resolve
-   :reject reject))
+  (let* ((context hermes-chat--unsettled-submit-context)
+         (record (plist-get (plist-get context :queue-entry) :image-record))
+         (session hermes-chat--dashboard-active-session-id)
+         (send (lambda ()
+                 (hermes-dashboard-transport-prompt-submit
+                  client prompt :session-id session
+                  :resolve resolve
+                  :reject (if record
+                              (lambda (_)
+                                (funcall reject "Image send uncertain; use image recovery"))
+                            reject)))))
+    (if record
+        (progn
+          (setf (plist-get record :content) prompt)
+          (hermes-chat--images-prepare client record context send reject))
+      (setf (plist-get context :admission)
+            (hermes-chat--image-admission-start (plist-get context :assistant-id)))
+      (funcall send))))
 
 (defun hermes-chat--dashboard-apply-bootstrap-overrides (bootstrap client continue generation reject)
   "Apply CLIENT overrides, settling optional BOOTSTRAP around CONTINUE."

@@ -1,0 +1,700 @@
+;;; hermes-chat-images-tests.el --- Image input tests -*- lexical-binding: t; -*-
+
+;;; Code:
+(require 'ert)
+(require 'hermes-test-helpers)
+
+(defconst hermes-images-test-png
+  (base64-decode-string
+   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
+
+(defmacro hermes-images-test-with-chat-buffer (&rest body)
+  "Run BODY with isolated staging locks and a disposable chat."
+  (declare (indent 0) (debug t))
+  `(let ((hermes-chat--image-session-blocks (make-hash-table :test #'equal))
+          (hermes-chat--image-prior-submits (make-hash-table :test #'equal)))
+     (hermes-test-with-chat-buffer ,@body)))
+
+(ert-deftest hermes-images-stage-validates-bytes-not-filename ()
+  (hermes-images-test-with-chat-buffer
+   (hermes-chat--image-stage hermes-images-test-png)
+   (should (equal (plist-get (car hermes-chat--draft-images) :bytes)
+                  hermes-images-test-png))
+   (should (equal (plist-get (car hermes-chat--draft-images) :mime) "image/png"))
+   (should-error (hermes-chat--image-stage "<svg>external</svg>") :type 'user-error)
+   (let ((hermes-chat-image-max-bytes 1))
+     (should-error (hermes-chat--image-stage hermes-images-test-png)
+                   :type 'user-error))
+   (should (= 1 (length hermes-chat--draft-images)))))
+
+(ert-deftest hermes-images-upload-before-attach-before-submit ()
+  (hermes-images-test-with-chat-buffer
+   (let* ((client (hermes-test--dashboard-client))
+          (upload (hermes--promise-make))
+          (record (list :images (list (list :bytes hermes-images-test-png
+                                            :mime "image/png" :type 'png))
+                        :state 'local))
+          (context (list :queue-entry (list :image-record record)))
+          attach-resolve submitted body)
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "session-a"
+           hermes-chat--unsettled-submit-context context)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (method path &rest args)
+                  (should (equal method "POST"))
+                  (should (equal path "/api/chat/image-upload"))
+                  (should (eq client (plist-get args :client)))
+                  (setq body (plist-get args :body)) upload))
+               ((symbol-function 'hermes-dashboard-transport-image-attach)
+                (lambda (target path &rest args)
+                  (should (eq target client))
+                  (should (equal path "/backend/image.png"))
+                  (should (equal (plist-get args :session-id) "session-a"))
+                  (setq attach-resolve (plist-get args :resolve)))))
+       (hermes-chat--images-prepare client record context
+                                    (lambda () (setq submitted t)) #'ert-fail)
+       (should-not submitted)
+       (should (equal (base64-decode-string
+                       (substring (alist-get 'data_url body) 22))
+                      hermes-images-test-png))
+       (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+       (should attach-resolve)
+       (should-not submitted)
+       (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+       (should submitted)))))
+
+(ert-deftest hermes-images-stale-upload-does-not-attach ()
+  (hermes-images-test-with-chat-buffer
+   (let* ((client (hermes-test--dashboard-client))
+          (upload (hermes--promise-make))
+          (record (list :state 'local :images
+                        (list (list :bytes hermes-images-test-png :mime "image/png"))))
+          (context (list :queue-entry (list :image-record record))))
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "old"
+           hermes-chat--unsettled-submit-context context)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _) upload))
+               ((symbol-function 'hermes-dashboard-transport-image-attach)
+                (lambda (&rest _) (ert-fail "Stale attach"))))
+       (hermes-chat--images-prepare client record context
+                                    (lambda () (ert-fail "Stale submit")) #'ert-fail)
+       (setq hermes-chat--dashboard-active-session-id "new")
+       (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+       (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                      hermes-images-test-png))))))
+
+(ert-deftest hermes-images-file-and-clipboard-own-local-bytes ()
+  (hermes-images-test-with-chat-buffer
+   (let ((file (make-temp-file "hermes-image-" nil ".txt")))
+     (unwind-protect
+         (progn
+           (let ((coding-system-for-write 'binary))
+             (write-region hermes-images-test-png nil file nil 'silent))
+           (hermes-chat-attach-image-file file)
+           (delete-file file)
+           (cl-letf (((symbol-function 'gui-get-selection)
+                      (lambda (selection target)
+                        (should (eq selection 'CLIPBOARD))
+                        (should (eq target 'image/png))
+                        hermes-images-test-png)))
+             (hermes-chat-paste-image))
+           (should (= 2 (length hermes-chat--draft-images)))
+           (hermes-chat-remove-image 1)
+           (should (= 1 (length hermes-chat--draft-images)))
+           (should (equal (plist-get (car hermes-chat--draft-images) :bytes)
+                          hermes-images-test-png)))
+       (when (file-exists-p file) (delete-file file))))))
+
+(defmacro hermes-images-test-with-send (&rest body)
+  "Exercise the real composer/FIFO/submit path with mocked I/O around BODY."
+  (declare (indent 0) (debug t))
+  `(hermes-images-test-with-chat-buffer
+    (let* ((client (hermes-test--dashboard-client))
+           (upload (hermes--promise-make))
+           (hermes-chat--queue-drain-ready-function (lambda () t))
+           attach-resolve attach-reject prompt-resolve prompt-reject sent)
+      (setq hermes-chat--dashboard-client client
+            hermes-chat--dashboard-active-session-id "session-a")
+      (cl-letf (((symbol-function 'hermes-chat--dashboard-default-transport-p)
+                 (lambda () t))
+                ((symbol-function 'hermes-chat--send-prompt)
+                 (lambda (content callback &optional resolve reject _queued)
+                   (setf (hermes-dashboard-transport-client-callback client) callback)
+                   (hermes-chat--dashboard-submit-prompt client content resolve reject)
+                   client))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest _) upload))
+                ((symbol-function 'hermes-dashboard-transport-image-attach)
+                 (lambda (_client _path &rest args)
+                   (setq attach-resolve (plist-get args :resolve)
+                         attach-reject (plist-get args :reject))))
+                ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                 (lambda (_client text &rest args)
+                   (setq sent text prompt-resolve (plist-get args :resolve)
+                         prompt-reject (plist-get args :reject)))))
+        (insert "  exact draft\n")
+        (hermes-chat--image-stage hermes-images-test-png)
+        (hermes-chat-send)
+        ,@body))))
+
+(ert-deftest hermes-images-composer-submit-retains-accepted-bytes ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (should (string-empty-p (hermes-chat-input-string)))
+     (should (equal (plist-get record :content) "  exact draft\n"))
+     (should-not sent)
+     (insert "newer draft")
+     (should-error (hermes-chat-send) :type 'user-error)
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (should-not sent)
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (should (equal sent "  exact draft\n"))
+     (funcall prompt-resolve '((status . "streaming")))
+     (should-not hermes-chat--queued-messages)
+     (should (eq (plist-get record :state) 'accepted))
+     (should (equal (hermes-chat-input-string) "newer draft"))
+     (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                    hermes-images-test-png)))))
+
+(ert-deftest hermes-images-upload-failure-is-safe-retry-not-input-loss ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes--promise-reject upload "token=never-print-this")
+     (should-not sent)
+     (should-not attach-resolve)
+     (should (plist-get (car hermes-chat--queued-messages) :rejected-p))
+     (should (eq (plist-get record :state) 'local))
+     (should-not (string-match-p "never-print-this" (buffer-string)))
+     (should (equal (plist-get record :content) "  exact draft\n")))))
+
+(ert-deftest hermes-images-attach-failure-blocks-contamination ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-reject "secret backend path")
+     (should-not sent)
+     (should (eq (plist-get record :state) 'uncertain))
+     (should-not (string-match-p "secret backend path" (buffer-string)))
+     (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)
+     (should (plist-get (car hermes-chat--queued-messages) :rejected-p)))))
+
+(ert-deftest hermes-images-interrupt-upload-never-submits-late ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes-chat-interrupt)
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (should-not attach-resolve)
+     (should-not sent)
+     (should (eq (plist-get record :state) 'local))
+     (should (equal (plist-get record :content) "  exact draft\n"))
+     (should (plist-get (car hermes-chat--queued-messages) :rejected-p)))))
+
+(ert-deftest hermes-images-disconnect-keeps-independent-recovery ()
+  (hermes-images-test-with-send
+   (let* ((recovery hermes-chat--image-recovery-buffer)
+          (record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes-chat--invalidate-transport-state)
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (should-not attach-resolve)
+     (should-not sent)
+     (should (eq (plist-get record :state) 'uncertain))
+     (should (memq record (buffer-local-value 'hermes-chat--image-records recovery)))
+     (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                    hermes-images-test-png)))))
+
+(ert-deftest hermes-images-unknown-ack-retains-input ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (funcall prompt-resolve '((voice_stopped . t)))
+     (should (eq (plist-get record :state) 'uncertain))
+     (should (plist-get (car hermes-chat--queued-messages) :rejected-p))
+     (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error))))
+
+(ert-deftest hermes-images-interrupt-attach-retains-uncertain-bytes ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (hermes-chat-interrupt)
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (should-not sent)
+     (should (eq (plist-get record :state) 'uncertain))
+     (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                    hermes-images-test-png)))))
+
+(ert-deftest hermes-images-preview-is-local-and-recovery-survives-kill ()
+  (let (recovery record)
+    (hermes-images-test-with-chat-buffer
+     (insert "unsent draft")
+     (hermes-chat--image-stage hermes-images-test-png)
+     (setq recovery hermes-chat--image-recovery-buffer
+           record hermes-chat--image-draft-record)
+     (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
+               ((symbol-function 'display-images-p) (lambda () nil)))
+       (hermes-chat-preview-images))
+     (with-current-buffer recovery
+       (should (eq major-mode 'hermes-chat-image-recovery-mode))
+       (should (string-match-p "image/png" (buffer-string)))
+       (should (string-match-p "unsent draft" (buffer-string)))))
+    (unwind-protect
+        (progn
+          (should (buffer-live-p recovery))
+          (should (equal (plist-get record :content) "unsent draft"))
+          (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                         hermes-images-test-png)))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
+        (kill-buffer recovery)))))
+
+(ert-deftest hermes-images-rpc-pins-returned-backend-path ()
+  (let (wire)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (setq wire (cons method params)))))
+      (hermes-dashboard-transport-image-attach nil "/backend/image.png"
+                                               :session-id "owned-session")
+      (should (equal (car wire) "image.attach"))
+      (should (equal (alist-get 'path (cdr wire)) "/backend/image.png"))
+      (should (equal (alist-get 'session_id (cdr wire)) "owned-session")))))
+
+(ert-deftest hermes-images-manual-recovery-copies-to-new-chat ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record))
+         (recovery hermes-chat--image-recovery-buffer))
+     (hermes-chat--invalidate-transport-state)
+     (hermes-images-test-with-chat-buffer
+      (let ((target (current-buffer)))
+        (cl-letf (((symbol-function 'hermes-chat--image-read-record) (lambda () record))
+                  ((symbol-function 'completing-read) (lambda (&rest _) (buffer-name target)))
+                  ((symbol-function 'yes-or-no-p) (lambda (_) t))
+                  ((symbol-function 'pop-to-buffer) #'ignore))
+          (with-current-buffer recovery (hermes-chat-image-recovery-restore)))
+	(should (equal (hermes-chat-input-string) "  exact draft\n"))
+	(should (equal (plist-get (car hermes-chat--draft-images) :bytes)
+                       hermes-images-test-png))
+	(should-not (eq hermes-chat--image-draft-record record))
+	(should-not (eq (plist-get (car hermes-chat--draft-images) :bytes)
+			(plist-get (car (plist-get record :images)) :bytes)))
+	(should (eq (plist-get record :state) 'uncertain))
+	(should-not sent))))))
+
+(ert-deftest hermes-images-queued-ack-keeps-recovery-after-interrupt ()
+  (hermes-images-test-with-send
+   (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (funcall prompt-resolve '((status . "queued")))
+     (should-not hermes-chat--queued-messages)
+     (hermes-chat--discard-server-queued-turn)
+     (should (eq (plist-get record :state) 'accepted))
+     (should (equal (plist-get record :content) "  exact draft\n"))
+     (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                    hermes-images-test-png)))))
+
+(ert-deftest hermes-images-streaming-lock-waits-for-owned-success ()
+  (hermes-images-test-with-send
+   (let* ((context hermes-chat--unsettled-submit-context)
+          (id (plist-get context :assistant-id)))
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (funcall prompt-resolve '((status . "streaming")))
+     (should (hermes-chat--images-inhibit))
+     (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)
+     (hermes-chat--images-settle "other-turn" 'done)
+     (should (hermes-chat--images-inhibit))
+     (hermes-chat--images-settle id 'done)
+     (should-not (hermes-chat--images-inhibit)))))
+
+(ert-deftest hermes-images-error-and-interrupt-never-release-idle-staging ()
+  (dolist (action '(error interrupt disconnect))
+    (hermes-images-test-with-send
+     (let ((id (plist-get hermes-chat--unsettled-submit-context :assistant-id)))
+       (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+       (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+       (funcall prompt-resolve '((status . "streaming")))
+       (pcase action
+         ('error (hermes-chat--images-settle id 'error))
+         ('disconnect (hermes-chat--images-invalidate))
+         ('interrupt
+          (cl-letf (((symbol-function 'hermes-chat--interrupt-run) #'ignore))
+            (hermes-chat-interrupt))))
+       (hermes-chat--images-settle id 'done)
+       (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)))))
+
+(ert-deftest hermes-images-lock-is-shared-and-survives-owner-kill ()
+  (hermes-images-test-with-send
+   (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+   (let ((owner (current-buffer)))
+     (hermes-test-with-chat-buffer
+      (setq hermes-chat--dashboard-client client
+            hermes-chat--dashboard-active-session-id "session-a")
+      (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)
+      (kill-buffer owner)
+      (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)
+      (setq hermes-chat--dashboard-active-session-id "session-b")
+      (should-not (hermes-chat--images-inhibit))))))
+
+(ert-deftest hermes-images-attach-ack-must-match-upload-path ()
+  (hermes-images-test-with-send
+   (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+   (funcall attach-resolve '((attached . t) (path . "/backend/other.png")))
+   (should-not sent)
+   (should-error (hermes-chat--ensure-submit-allowed) :type 'user-error)))
+
+(ert-deftest hermes-images-restore-rechecks-source-and-target-after-confirmation ()
+  (dolist (change '(session bytes removed draft quit))
+    (hermes-images-test-with-chat-buffer
+     (hermes-chat--image-stage hermes-images-test-png)
+     (let ((record hermes-chat--image-draft-record)
+           (source hermes-chat--image-recovery-buffer))
+       (hermes-test-with-chat-buffer
+        (let ((target (current-buffer)))
+          (cl-letf (((symbol-function 'hermes-chat--image-read-record) (lambda () record))
+                    ((symbol-function 'completing-read) (lambda (&rest _) (buffer-name target)))
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (_)
+                       (pcase change
+                         ('session (setq hermes-chat--dashboard-active-session-id "replacement"))
+                         ('bytes (aset (plist-get (car (plist-get record :images)) :bytes) 0 0))
+                         ('removed (with-current-buffer source (setq hermes-chat--image-records nil)))
+                         ('draft (insert "new draft"))
+                         ('quit (signal 'quit nil)))
+                       t)))
+            (condition-case err
+                (with-current-buffer source
+                  (hermes-chat-image-recovery-restore)
+                  (ert-fail "Changed recovery was restored"))
+              ((user-error quit) (should (memq (car err) '(user-error quit))))))
+          (should-not hermes-chat--draft-images)
+          (should (equal (hermes-chat-input-string)
+                         (if (eq change 'draft) "new draft" "")))))))))
+
+(ert-deftest hermes-images-recovery-kill-cannot-orphan-draft ()
+  (hermes-images-test-with-chat-buffer
+   (hermes-chat--image-stage hermes-images-test-png)
+   (let ((recovery hermes-chat--image-recovery-buffer))
+     (should-not (kill-buffer recovery))
+     (should (buffer-live-p recovery))
+     (hermes-chat-remove-image 1)
+     (should-not hermes-chat--image-draft-record)
+     (should (kill-buffer recovery)))))
+
+(ert-deftest hermes-images-clipboard-text-is-not-an-image ()
+  (hermes-images-test-with-chat-buffer
+   (cl-letf (((symbol-function 'gui-get-selection) (lambda (&rest _) "file:///image.png")))
+     (should-error (hermes-chat-paste-image) :type 'user-error))
+   (should-not hermes-chat--draft-images)))
+
+(ert-deftest hermes-images-multiple-bytes-upload-before-sequential-attach ()
+  (hermes-images-test-with-chat-buffer
+   (let* ((client (hermes-test--dashboard-client))
+          (record (list :state 'local :images
+                        (list (list :bytes hermes-images-test-png :mime "image/png")
+                              (list :bytes hermes-images-test-png :mime "image/png"))))
+          (context (list :queue-entry (list :image-record record)))
+          uploads attaches sent)
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "multi"
+           hermes-chat--unsettled-submit-context context)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _)
+                  (let ((promise (hermes--promise-make)))
+                    (setq uploads (append uploads (list promise))) promise)))
+               ((symbol-function 'hermes-dashboard-transport-image-attach)
+                (lambda (_client path &rest args)
+                  (setq attaches (append attaches (list (cons path (plist-get args :resolve))))))))
+       (hermes-chat--images-prepare client record context
+                                    (lambda () (setq sent t)) #'ert-fail)
+       (hermes--promise-resolve (nth 0 uploads) '((ok . t) (path . "/backend/one.png")))
+       (should (= 2 (length uploads)))
+       (should-not attaches)
+       (hermes--promise-resolve (nth 1 uploads) '((ok . t) (path . "/backend/two.png")))
+       (should (equal (mapcar #'car attaches) '("/backend/one.png")))
+       (funcall (cdar attaches) '((attached . t) (path . "/backend/one.png")))
+       (should (equal (mapcar #'car attaches) '("/backend/one.png" "/backend/two.png")))
+       (should-not sent)
+       (funcall (cdr (nth 1 attaches)) '((attached . t) (path . "/backend/two.png")))
+       (should sent)))))
+
+(ert-deftest hermes-images-native-preview-uses-captured-data ()
+  (with-temp-buffer
+    (let (shown)
+      (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+                ((symbol-function 'create-image)
+                 (lambda (data type data-p &rest _)
+                   (should (equal data hermes-images-test-png))
+                   (should (eq type 'png))
+                   (should data-p)
+                   '(image :type png)))
+                ((symbol-function 'insert-image) (lambda (&rest _) (setq shown t))))
+        (hermes-chat--image-insert-preview
+         (list :bytes hermes-images-test-png :mime "image/png" :type 'png)))
+      (should shown))))
+
+(ert-deftest hermes-images-prior-text-admission-blocks-other-buffer ()
+  "Streaming receipt must not expose B's images to A's deferred admission."
+  (hermes-images-test-with-chat-buffer
+   (let ((client (hermes-test--dashboard-client)) text-resolve uploads attaches)
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "session-a")
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-default-transport-p)
+                (lambda () t))
+               ((symbol-function 'hermes-chat--send-prompt)
+                (lambda (text _callback &optional resolve reject _queued)
+                  (hermes-chat--dashboard-submit-prompt client text resolve reject)
+                  client))
+               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                (lambda (_client _text &rest args)
+                  (setq text-resolve (plist-get args :resolve))))
+               ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _) (push t uploads) (hermes--promise-make)))
+               ((symbol-function 'hermes-dashboard-transport-image-attach)
+                (lambda (&rest _) (push t attaches))))
+       (insert "A text before admission")
+       (hermes-chat-send)
+       (funcall text-resolve '((status . "streaming")))
+       (let ((owner (current-buffer)) (id hermes-chat--pending-assistant-id))
+         (hermes-test-with-chat-buffer
+          (setq hermes-chat--dashboard-client client
+                hermes-chat--dashboard-active-session-id "session-a")
+          (let ((hermes-chat--queue-drain-ready-function (lambda () t)))
+            (insert "B image prompt")
+            (hermes-chat--image-stage hermes-images-test-png)
+            (condition-case nil (hermes-chat-send) (user-error nil))
+            (should-not uploads)
+            (should-not attaches)
+            ;; A has now consumed staging and completed.  Only now can B expose
+            ;; its bytes; local draft/FIFO ownership remains recoverable.
+            (with-current-buffer owner
+              (hermes-chat--handle-transport-event id '(:type done :content "A done")))
+            (if hermes-chat--draft-images
+                (hermes-chat-send)
+              (hermes-chat--queue-drain))
+            (should uploads))))))))
+
+(ert-deftest hermes-images-interim-rotation-releases-only-owned-success ()
+  (dolist (count '(1 3))
+    (hermes-images-test-with-send
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (funcall prompt-resolve '((status . "streaming")))
+     (let ((initial hermes-chat--pending-assistant-id))
+       (dotimes (_ count)
+         (hermes-dashboard-transport--handle-frame
+          client
+          (hermes-dashboard-transport--encode-frame
+           '((jsonrpc . "2.0") (method . "event")
+             (params . ((type . "message.interim") (session_id . "session-a")
+                        (payload . ((text . "candidate") (already_streamed . t)))))))))
+       (should-not (equal initial hermes-chat--pending-assistant-id))
+       (when (= count 3)
+         (hermes-chat--images-settle initial 'done))
+       (should (hermes-chat--images-inhibit))
+       (hermes-dashboard-transport--handle-frame
+        client
+        (hermes-dashboard-transport--encode-frame
+         '((jsonrpc . "2.0") (method . "event")
+           (params . ((type . "message.complete") (session_id . "session-a")
+                      (payload . ((text . "verified") (status . "complete"))))))))
+       (should-not (hermes-chat--images-inhibit))))))
+
+(defmacro hermes-images-test-with-text (&rest body)
+  "Start an ordinary submission through the real composer before BODY."
+  (declare (indent 0) (debug t))
+  `(hermes-images-test-with-chat-buffer
+    (let ((client (hermes-test--dashboard-client)) resolve reject)
+      (setq hermes-chat--dashboard-client client
+            hermes-chat--dashboard-active-session-id "session-a")
+      (cl-letf (((symbol-function 'hermes-chat--dashboard-default-transport-p)
+                 (lambda () t))
+                ((symbol-function 'hermes-chat--send-prompt)
+                 (lambda (text callback &optional accept fail _queued)
+                   (setf (hermes-dashboard-transport-client-callback client) callback)
+                   (hermes-chat--dashboard-submit-prompt client text accept fail)
+                   client))
+                ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                 (lambda (_client _text &rest args)
+                   (setq resolve (plist-get args :resolve) reject (plist-get args :reject)))))
+        (insert "ordinary text")
+        (hermes-chat-send)
+        ,@body))))
+
+(ert-deftest hermes-images-text-uncertainty-survives-late-success ()
+  (dolist (action '(interrupt disconnect reject error stale))
+    (hermes-images-test-with-text
+     (let ((id hermes-chat--pending-assistant-id)
+           (late-resolve resolve))
+       (funcall resolve '((status . "streaming")))
+       (pcase action
+         ('interrupt
+          (cl-letf (((symbol-function 'hermes-chat--interrupt-run) #'ignore))
+            (hermes-chat-interrupt)))
+         ('disconnect (hermes-chat--invalidate-transport-state))
+         ('reject
+          ;; A fresh request's rejection callback must also retain uncertainty.
+          (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client) (lambda () client)))
+            (hermes-chat--submit-busy-dashboard-content "next")
+            (funcall reject "timeout")))
+         ('error (hermes-chat--handle-transport-event id '(:type error :content "failed")))
+         ('stale (cl-incf hermes-chat--transport-generation)))
+       (funcall late-resolve '((status . "queued")))
+       (hermes-chat--images-settle id 'done)
+       (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client client
+              hermes-chat--dashboard-active-session-id "session-a")
+        (hermes-chat--image-stage hermes-images-test-png)
+        (should-error (hermes-chat-send) :type 'user-error)
+        (should (equal (plist-get (car hermes-chat--draft-images) :bytes)
+                       hermes-images-test-png)))))))
+
+(ert-deftest hermes-images-busy-text-admission-cannot-borrow-prior-completion ()
+  (hermes-images-test-with-text
+   (funcall resolve '((status . "streaming")))
+   (let ((first-id hermes-chat--pending-assistant-id))
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client) (lambda () client)))
+       (hermes-chat--submit-busy-dashboard-content "next text"))
+     (let ((context hermes-chat--busy-submit-context))
+       ;; The previous completion arrives while policy acknowledgment is held.
+       (funcall (hermes-dashboard-transport-client-callback client)
+                '(:type done :event "message.complete" :content "first answer"
+                  :session-id "session-a"))
+       (funcall resolve '((status . "streaming")))
+       (should-not (equal first-id hermes-chat--pending-assistant-id))
+       (should (eq (plist-get context :admission)
+                   (car (gethash (hermes-chat--image-session-key)
+                                 hermes-chat--image-prior-submits))))
+       (hermes-chat--images-settle first-id 'done)
+       (should (gethash (hermes-chat--image-session-key) hermes-chat--image-prior-submits))
+       (hermes-chat--handle-transport-event
+        hermes-chat--pending-assistant-id '(:type interim :content "checking"))
+       (hermes-chat--handle-transport-event
+        hermes-chat--pending-assistant-id '(:type done :content "second answer"))
+       (should-not (gethash (hermes-chat--image-session-key)
+                            hermes-chat--image-prior-submits))))))
+
+(ert-deftest hermes-images-text-busy-policy-releases-only-own-admission ()
+  (dolist (status '("queued" "steered" "redirected"))
+    (hermes-images-test-with-text
+     (funcall resolve '((status . "streaming")))
+     (let ((first (car (gethash (hermes-chat--image-session-key)
+                               hermes-chat--image-prior-submits))))
+       (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client) (lambda () client)))
+         (hermes-chat--submit-busy-dashboard-content "next text"))
+       (funcall resolve `((status . ,status)))
+       (should (equal (gethash (hermes-chat--image-session-key)
+                              hermes-chat--image-prior-submits)
+                      (if (equal status "queued") '(uncertain) (list first))))))))
+
+(ert-deftest hermes-images-queued-text-keeps-image-only-fence ()
+  "A queued text worker must not consume B's later images before admission."
+  (dolist (interims '(0 1 3))
+    (dolist (action '(complete held-complete wrong-turn error disconnect stale))
+      (hermes-images-test-with-text
+       (funcall resolve '((status . "streaming")))
+       (setq hermes-chat--dashboard-session-ready-p t)
+       (let ((first-id hermes-chat--pending-assistant-id)
+             (first-resolve resolve) uploads attaches)
+         (cl-labels ((wire (type)
+                       (hermes-dashboard-transport--handle-frame
+                        client
+                        (hermes-dashboard-transport--encode-frame
+                         `((jsonrpc . "2.0") (method . "event")
+                           (params . ((type . ,type) (session_id . "session-a")
+                                      (payload . ((text . "answer")
+                                                  (already_streamed . t)
+                                                  (status . "complete"))))))))))
+           (dotimes (_ interims) (wire "message.interim"))
+           (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client)
+                      (lambda () client)))
+             (insert "queued text exact\nsecond line")
+             (hermes-chat-send))
+           (when (eq action 'held-complete) (wire "message.complete"))
+           (funcall resolve '((status . "queued")))
+           (pcase action
+             ('wrong-turn (hermes-chat--images-settle "wrong-turn" 'done))
+             ('error (hermes-chat--handle-transport-event
+                      hermes-chat--pending-assistant-id '(:type error :content "failed")))
+             ('disconnect (hermes-chat--invalidate-transport-state))
+             ('stale (cl-incf hermes-chat--transport-generation)))
+           (unless (eq action 'held-complete) (wire "message.complete"))
+           (funcall first-resolve '((status . "streaming")))
+           (hermes-chat--images-settle first-id 'done)
+           (hermes-test-with-chat-buffer
+            (setq hermes-chat--dashboard-client client
+                  hermes-chat--dashboard-active-session-id "session-a")
+            ;; Unqualified queue events cannot prove consumption.  Text recovery
+            ;; remains usable even though images require a new session.
+            (should-not (hermes-chat--images-inhibit))
+            (insert "B exact image text\nkeep this")
+            (hermes-chat--image-stage hermes-images-test-png)
+            (let ((record hermes-chat--image-draft-record))
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                         (lambda (&rest _) (push t uploads) (hermes--promise-make)))
+                        ((symbol-function 'hermes-dashboard-transport-image-attach)
+                         (lambda (&rest _) (push t attaches))))
+                (should-error (hermes-chat-send) :type 'user-error))
+              (should-not uploads)
+              (should-not attaches)
+              (should (equal (hermes-chat-input-string) "B exact image text\nkeep this"))
+              (should (eq record hermes-chat--image-draft-record))
+              (should (equal (plist-get (car (plist-get record :images)) :bytes)
+                             hermes-images-test-png))))))))))
+
+(ert-deftest hermes-images-interim-failure-and-stale-owner-do-not-release ()
+  (dolist (action '(error interrupt disconnect generation lifetime client))
+    (hermes-images-test-with-send
+     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
+     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))
+     (funcall prompt-resolve '((status . "streaming")))
+     (hermes-chat--handle-transport-event
+      hermes-chat--pending-assistant-id '(:type interim :content "candidate"))
+     (let ((id hermes-chat--pending-assistant-id))
+       (pcase action
+         ('error (hermes-chat--handle-transport-event id '(:type error :content "failed")))
+         ('interrupt
+          (cl-letf (((symbol-function 'hermes-chat--interrupt-run) #'ignore))
+            (hermes-chat-interrupt)))
+         ('disconnect (hermes-chat--invalidate-transport-state))
+         ('client (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)))
+         ('generation (cl-incf hermes-chat--transport-generation))
+         ('lifetime (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))))
+       (hermes-chat--images-settle id 'done)
+       (should (hermes-chat--images-inhibit))))))
+
+(ert-deftest hermes-images-text-cross-buffer-admission-preserves-composers ()
+  (hermes-images-test-with-text
+   (funcall resolve '((status . "streaming")))
+   (let ((owner (current-buffer)) (id hermes-chat--pending-assistant-id))
+     (hermes-test-with-chat-buffer
+      (setq hermes-chat--dashboard-client client
+            hermes-chat--dashboard-active-session-id "session-a")
+      (insert "other buffer text")
+      (should-error (hermes-chat-send) :type 'user-error)
+      (should (equal (hermes-chat-input-string) "other buffer text"))
+      (setq hermes-chat--dashboard-active-session-id "other-session")
+      (should-not (hermes-chat--images-inhibit))
+      (setq hermes-chat--dashboard-active-session-id "session-a")
+      (with-current-buffer owner (hermes-chat--images-settle id 'done))
+      (hermes-chat-send)
+      (should (string-empty-p (hermes-chat-input-string)))
+      (should hermes-chat--pending-assistant-id)))))
+
+(ert-deftest hermes-images-text-uncertainty-does-not-block-text-recovery ()
+  (hermes-images-test-with-text
+   (funcall reject "timeout")
+   (should (equal (gethash (hermes-chat--image-session-key)
+                          hermes-chat--image-prior-submits) '(uncertain)))
+   (insert "ordinary retry")
+   (hermes-chat-send)
+   (funcall resolve '((status . "streaming")))
+   (hermes-chat--handle-transport-event
+    hermes-chat--pending-assistant-id '(:type done :content "retry answer"))
+   (should (equal (gethash (hermes-chat--image-session-key)
+                          hermes-chat--image-prior-submits) '(uncertain)))
+   (should-not (hermes-chat--images-inhibit))
+   (hermes-chat--image-stage hermes-images-test-png)
+   (should (hermes-chat--images-inhibit))))
+
+(provide 'hermes-chat-images-tests)
+;;; hermes-chat-images-tests.el ends here

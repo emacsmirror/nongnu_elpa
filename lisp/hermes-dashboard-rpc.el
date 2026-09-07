@@ -254,6 +254,12 @@ or error."
   :keys (action name schedule prompt))
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-image-attach "image.attach"
+  "Attach backend-visible PATH to CLIENT's SESSION-ID.
+RESOLVE and REJECT receive the result or error.  Upload local bytes first."
+  :args (path) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-prompt-submit "prompt.submit"
   "Send TEXT through `prompt.submit' on CLIENT.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
