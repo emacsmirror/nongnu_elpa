@@ -506,15 +506,9 @@ Run the hooks in vm-iconify-frame-hook before doing so."
     (while (and types (null params))
       (setq params (car (cdr (assq (car types) vm-frame-parameter-alist)))
 	    types (cdr types)))
-    ;; these functions might be defined in an Emacs that isn't
-    ;; running under a window system, but VM always checks for
-    ;; multi-frame support before calling this function.
-    (cond ((fboundp 'make-frame)
-	   (vm-select-frame (make-frame params)))
-	  ((fboundp 'make-screen)
-	   (vm-select-frame (make-screen params)))
-	  ((fboundp 'new-screen)
-	   (vm-select-frame (new-screen params))))
+    ;; `make-frame' is defined in an Emacs with no window system too, and
+    ;; fails there; the callers check `vm-multiple-frames-possible-p' first.
+    (vm-select-frame (make-frame params))
     (vm-register-frame (vm-selected-frame))
     (and vm-warp-mouse-to-new-frame
 	 (vm-warp-mouse-to-frame-maybe (vm-selected-frame)))))

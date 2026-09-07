@@ -1601,9 +1601,7 @@ as well."
 		  "ending IMAP session " (current-time-string) "\r\n")
 	  ;; Schedule killing of the process after a delay to allow
 	  ;; any output to be received first
-	  (if (fboundp 'add-async-timeout)
-	      (add-async-timeout 2 'delete-process process)
-	    (run-at-time 2 nil 'delete-process process))))
+	  (run-at-time 2 nil 'delete-process process)))
       ;; unwind-protections
       ;;----------------------------------
       (vm-buffer-type:exit)

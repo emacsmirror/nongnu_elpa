@@ -1946,10 +1946,7 @@ stood between VM and corrupting one of Emacs's own keymaps.
 `set-keymap-parent' does the same job without touching the parent, and, being
 what parenting actually means, can be repeated harmlessly.  It has been in GNU
 Emacs throughout the range of versions VM supports."
-  (cond ((fboundp 'set-keymap-parents)   ; XEmacs
-         (set-keymap-parents vm-mail-mode-map (list mail-mode-map)))
-        (t
-         (set-keymap-parent vm-mail-mode-map mail-mode-map))))
+  (set-keymap-parent vm-mail-mode-map mail-mode-map))
 
 ;;;###autoload
 (cl-defun vm-mail-internal (&key buffer-name to guessed-to subject
@@ -1993,12 +1990,16 @@ Binds the `vm-mail-mode-map' and hooks"
 			       (vm-menu-mode-menu)))
     (and vm-use-menus (vm-menu-support-possible-p)
 	 (vm-menu-install-mail-mode-menu))
-    (if (fboundp 'mail-aliases-setup) ; use mail-abbrevs.el if present
-	(mail-aliases-setup)
-      (when (eq mail-aliases t)
-	(setq mail-aliases nil)
-	(when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
-	  (build-mail-aliases))))
+    ;; `mail-aliases-setup' was guarded for here, to use mail-abbrevs.el
+    ;; where it was loaded.  Emacs has not had that function for a long
+    ;; time, so this is the arm that has been running: ~/.mailrc through
+    ;; mailalias.el.  Whether VM should offer mail-abbrevs.el instead, whose
+    ;; function is now `mail-abbrevs-setup', is a question about which alias
+    ;; system a reader wants and not one to settle by restoring a guard.
+    (when (eq mail-aliases t)
+      (setq mail-aliases nil)
+      (when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
+	(build-mail-aliases)))
     (when (stringp vm-mail-header-from)
       (insert "From: " vm-mail-header-from "\n"))
     (setq to (if to 

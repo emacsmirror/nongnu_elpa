@@ -44,11 +44,9 @@
 (declare-function vm-set-extent-property "vm-misc.el" (overlay prop value) t)
 
 
-(eval-and-compile
-  (if (fboundp 'mapcar-extents)
-      (defun vm-summary-faces-list-extents () (mapcar-extents 'identity))
-    (defun vm-summary-faces-list-extents ()
-      (let ((o (overlay-lists))) (nconc (car o) (cdr o))))))
+(defun vm-summary-faces-list-extents ()
+  "Every overlay in the current buffer."
+  (let ((o (overlay-lists))) (nconc (car o) (cdr o))))
 (require 'vm-macro)
 
 ;; Say so if this file's compiled form outlives the VM it was built

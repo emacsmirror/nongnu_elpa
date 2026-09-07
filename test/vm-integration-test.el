@@ -1247,6 +1247,65 @@ the list rather than leave a name in it that means nothing."
     (should (get (car entry) 'byte-obsolete-info))
     (should (stringp (cdr entry)))))
 
+;;; fboundp guards on functions no supported Emacs has (emacs-vm/vm#819)
+
+(defconst vm-integration-test--guarded-on-purpose
+  '(;; optional packages, which VM works with where they are installed
+    bbdb-extract-address-components bbdb/vm-alternate-full-name
+    w3m-browse-url
+    dired-file-name-at-point dired-filename-at-point
+    ;; not defined in a batch Emacs, which is the point of asking: it is
+    ;; how `vm-toolbar-support-possible-p' tells a windowed Emacs from one
+    ;; with no toolbar at all
+    tool-bar-mode
+    ;; arrived after VM's floor of Emacs 28.1
+    native-comp-function-p
+    ;; VM's own, but made by `easy-menu-define' when the menus are
+    ;; installed rather than by loading the file, so a batch Emacs has
+    ;; never seen it.  The guard is what stops the menus being built twice.
+    vm-menu-undo-menu)
+  "Function names VM tests `fboundp' of on purpose, and may go on testing.
+Each is either from an optional package, or newer than VM\='s floor of Emacs
+28.1, or one of VM\='s own that loading VM does not define.  Most of VM\='s own
+are not here: loading VM defines them, so the test sees them as present.")
+
+(defun vm-integration-test--guarded-names-in (file)
+  "Every function name FILE asks `fboundp' or `functionp' of."
+  (let ((names nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward
+              "(\\(?:fboundp\\|functionp\\) '\\([^) \t\n]+\\)" nil t)
+        (push (intern (match-string 1)) names)))
+    (delete-dups names)))
+
+(ert-deftest vm-integration-test-no-guard-tests-for-a-function-that-cannot-exist ()
+  "REGRESSION: no `fboundp' guard names a function no supported Emacs has.
+
+emacs-vm/vm#708 removed XEmacs by sweeping `(featurep \\='xemacs)', which
+left every XEmacs branch that was written as an `fboundp' guard instead.
+Fifteen of them named a function that does not exist in Emacs 28 or later,
+so the arm was unreachable and the code read as though VM still had two
+implementations of things it has one of (emacs-vm/vm#819).
+
+A guard that is legitimate names something optional or something newer than
+VM's floor; those are listed in
+`vm-integration-test--guarded-on-purpose'.  Anything else is either dead or
+a typo, and a typo here is silent: `vm-char-to-int' asked `fboundp' of
+`xeamcs' for years."
+  (let ((unaccounted nil))
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\|version-conf\\)\\.el\\'"
+                              file)
+        (dolist (name (vm-integration-test--guarded-names-in file))
+          (unless (or (fboundp name)
+                      (memq name vm-integration-test--guarded-on-purpose))
+            (push (format "%s guards on %s, which no Emacs 28+ has"
+                          (file-name-nondirectory file) name)
+                  unaccounted)))))
+    (should-not unaccounted)))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

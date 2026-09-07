@@ -1479,12 +1479,10 @@ source of the message."
     (setq pres-buf vm-presentation-buffer-handle)
     (setq vm-presentation-buffer vm-presentation-buffer-handle)
     (setq vm-mime-decoded nil)
-    ;; W3 or some other external mode might set some local colors
-    ;; in this buffer; remove them before displaying a different
-    ;; message here.
-    (when (fboundp 'remove-specifier)
-      (remove-specifier (face-foreground 'default) pres-buf)
-      (remove-specifier (face-background 'default) pres-buf))
+    ;; W3 or some other external mode might have set local colours in this
+    ;; buffer, and XEmacs's `remove-specifier' took them off again before a
+    ;; different message was shown here.  Emacs has no equivalent: a face
+    ;; is not specified per buffer, so there is nothing to remove.
     (with-current-buffer (vm-buffer-of real-m)
       (save-restriction
 	(widen)
@@ -3403,8 +3401,7 @@ current buffer."
 	     (vm-mime-fetch-url-with-programs url work-buffer)))
 	  ((and (or (string= access-method "ftp")
 		    (string= access-method "anon-ftp"))
-		(or (fboundp 'efs-file-handler-function)
-		    (fboundp 'ange-ftp-hook-function)))
+		(fboundp 'ange-ftp-hook-function))
 	   (let ((name (vm-mime-get-parameter layout "name"))
 		 (directory (vm-mime-get-parameter layout "directory"))
 		 (site (vm-mime-get-parameter layout "site"))

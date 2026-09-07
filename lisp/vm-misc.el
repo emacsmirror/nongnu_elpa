@@ -1196,20 +1196,18 @@ which should be ignored."
   "Find an extent at POS in the current buffer having PROPERTY.
 PROPERTY defaults nil, meaning any extent will do.
 
-In XEmacs, the extent is the \"smallest\" extent at POS.  In FSF Emacs,
-this may not be the case."
-  (if (fboundp 'extent-at)
-      (extent-at pos nil property)
-    (let ((o-list (overlays-at pos))
-	  (o nil))
-      (if (null property)
-	  (car o-list)
-	(while o-list
-	  (if (overlay-get (car o-list) property)
-	      (setq o (car o-list)
-		    o-list nil)
-	    (setq o-list (cdr o-list))))
-	o ))))
+Not necessarily the smallest overlay there, XEmacs's `extent-at' having
+answered that and this not."
+  (let ((o-list (overlays-at pos))
+	(o nil))
+    (if (null property)
+	(car o-list)
+      (while o-list
+	(if (overlay-get (car o-list) property)
+	    (setq o (car o-list)
+		  o-list nil)
+	  (setq o-list (cdr o-list))))
+      o)))
 
 (defun vm-extent-list (beg end &optional property)
   "The overlays that overlap the positions BEG to END.
@@ -1652,9 +1650,7 @@ front before adding it to the RING-VARIABLE."
 	(delete-region (- (point) 1) (- (point) 4))))))
 
 (defun vm-process-kill-without-query (process &optional flag)
-  (if (fboundp 'process-kill-without-query)
-      (process-kill-without-query process flag)
-    (set-process-query-on-exit-flag process flag)))
+  (set-process-query-on-exit-flag process flag))
 
 (defun vm-process-sentinel-kill-buffer (process _what-happened)
   (kill-buffer (process-buffer process)))
