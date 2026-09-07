@@ -1320,12 +1320,14 @@ When NO-DRAIN is non-nil, retain queued input without retrying it."
     (unless no-drain
       (hermes-chat--drain-queued-message))))
 
-(defun hermes-chat--queue-content (content &optional note display)
+(defun hermes-chat--queue-content (content &optional note display image-record)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.
-DISPLAY is the compact user-turn text shown when the queued message is sent."
+DISPLAY is the compact user-turn text shown when the queued message is sent.
+IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
   (setq hermes-chat--queued-messages
         (append hermes-chat--queued-messages
-                (list (hermes-chat--make-queue-entry content display))))
+                (list (append (hermes-chat--make-queue-entry content display)
+                              (and image-record (list :image-record image-record))))))
   (hermes-chat--queue-panel-refresh-if-live)
   (hermes-chat--insert-local-status
    (or note (format "Queued next message: %s"
@@ -1411,6 +1413,8 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
                            candidate :content content :display nil)
                         candidate))
                     hermes-chat--queued-messages))
+      (when-let* ((record (plist-get entry :image-record)))
+        (setf (plist-get record :content) content))
       (hermes-chat--insert-local-status "Queued message updated" 'done))))
 
 (defun hermes-chat--queue-remove-entry (owner id)
@@ -1421,6 +1425,10 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
     (unless (seq-find (lambda (entry) (equal (plist-get entry :id) id))
                       hermes-chat--queued-messages)
       (user-error "Queued message is no longer present"))
+    (when-let* ((entry (seq-find (lambda (entry) (equal (plist-get entry :id) id))
+                                hermes-chat--queued-messages))
+                (record (plist-get entry :image-record)))
+      (setf (plist-get record :state) 'removed))
     (setq hermes-chat--queued-messages
           (seq-remove (lambda (entry) (equal (plist-get entry :id) id))
                       hermes-chat--queued-messages))

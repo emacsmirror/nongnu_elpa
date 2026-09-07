@@ -442,6 +442,7 @@ and `upsert-entry'.  Other types return (STATE)."
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (next-id (plist-get entry :id)))
     (hermes-chat--insert-entry entry)
+    (hermes-chat--images-rotate assistant-id next-id)
     (setq hermes-chat--dashboard-interim-assistant-id assistant-id
           hermes-chat--pending-assistant-id next-id
           hermes-chat--dashboard-stream-assistant-id next-id)))
@@ -460,6 +461,8 @@ and `upsert-entry'.  Other types return (STATE)."
       (hermes-chat--mark-assistant
        assistant-id 'done
        (hermes-chat--assistant-done-content assistant-id content) t))))
+
+(require 'hermes-chat-images)
 
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
   "Apply one boundary EFFECT for ASSISTANT-ID.
@@ -499,6 +502,7 @@ stays side-effect-light."
      (hermes-chat--mark-assistant assistant-id status nil t))
     ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
     (`(settle . ,status)
+     (hermes-chat--images-settle assistant-id status)
      (hermes-chat--settle-transport-entries assistant-id status))
     ('(finish) (hermes-chat--dashboard-finish-assistant assistant-id))
     ('(clear-pending)
@@ -643,6 +647,8 @@ of its own."
          (after (and start (nthcdr start events))))
     (hermes-chat--replay-busy-submit-events context before)
     (hermes-chat--activate-backend-turn content)
+    (when-let* ((admission (plist-get context :admission)))
+      (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id))
     (hermes-chat--replay-busy-submit-events context after)))
 
 (defun hermes-chat--settle-busy-submit (context result)
@@ -655,6 +661,7 @@ of its own."
                        hermes-chat--nodes)))
         (status (hermes-chat--status-name
                  (hermes-chat--result-string result 'status))))
+    (hermes-chat--image-admission-ack (plist-get context :admission) result)
     (setq hermes-chat--busy-submit-context nil)
     (pcase status
       ("queued"
@@ -677,6 +684,7 @@ of its own."
 (defun hermes-chat--abandon-busy-submit ()
   "Restore a busy submission whose dashboard session was lost."
   (when-let* ((context hermes-chat--busy-submit-context))
+    (hermes-chat--image-admission-finish (plist-get context :admission) t)
     (let ((events (hermes-chat--busy-submit-events context)))
       (setq hermes-chat--busy-submit-context nil)
       (hermes-chat--replay-busy-submit-events context events)
@@ -690,6 +698,7 @@ of its own."
 (defun hermes-chat--fail-busy-submit (context message)
   "Reject current busy submission CONTEXT with MESSAGE."
   (when (eq context hermes-chat--busy-submit-context)
+    (hermes-chat--image-admission-finish (plist-get context :admission) t)
     (let ((events (hermes-chat--busy-submit-events context)))
       (setq hermes-chat--busy-submit-context nil)
       (hermes-chat--replay-busy-submit-events context events)
@@ -706,10 +715,12 @@ Return non-nil when the transport request starts."
                            hermes-chat--pending-assistant-id))
          (context
           (list :content content :generation generation :session-id session-id
-                :assistant-id assistant-id :events nil)))
+                :assistant-id assistant-id :admission nil :events nil)))
     (setq hermes-chat--busy-submit-context context)
     (condition-case err
         (progn
+          (hermes-chat--ensure-submit-allowed)
+          (setf (plist-get context :admission) (hermes-chat--image-admission-start nil))
           (hermes-dashboard-transport-prompt-submit
            (hermes-chat--dashboard-control-client) content
            :session-id session-id
@@ -797,6 +808,14 @@ extends the input instead of prepending a blank line to it."
 
 (defun hermes-chat--submit-resolved (context result)
   "Settle CONTEXT from dashboard prompt RESULT."
+  (hermes-chat--image-admission-ack (plist-get context :admission) result)
+  (when-let* ((record (plist-get (plist-get context :queue-entry) :image-record)))
+    (unless (eq (plist-get record :state) 'uncertain)
+      (setf (plist-get record :state) 'accepted))
+    ;; Only queued acknowledgment proves the backend took staging.  Idle
+    ;; streaming acknowledgment precedes admission and must keep the lock.
+    (when (equal (hermes-chat--result-string result 'status) "queued")
+      (hermes-chat--images-release record)))
   (pcase (hermes-chat--status-name
           (hermes-chat--result-string result 'status))
     ("queued" (hermes-chat--busy-submit-queued context))
@@ -830,14 +849,26 @@ extends the input instead of prepending a blank line to it."
         (when (and (not settled)
                    (hermes-chat--submit-context-current-p context))
           (setq settled t)
-          (hermes-chat--submit-resolved context result)
-          (hermes-chat--clear-submit-context context))))))
+          (let ((record (plist-get (plist-get context :queue-entry) :image-record)))
+            (if (and record
+                     (not (member (hermes-chat--result-string result 'status)
+                                  '("streaming" "queued"))))
+                (progn
+                  (setf (plist-get record :state) 'uncertain)
+                  (funcall (hermes-chat--queue-reject-callback buffer context)
+                           "Image acceptance unknown; use image recovery"))
+              (hermes-chat--submit-resolved context result)
+              (hermes-chat--clear-submit-context context))))))))
 
 (defun hermes-chat--queue-reject-callback (buffer context)
   "Return BUFFER callback rejecting the queued turn described by CONTEXT."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
+        (hermes-chat--image-admission-finish (plist-get context :admission) t)
+        (when-let* ((record (plist-get (plist-get context :queue-entry) :image-record)))
+          (when (eq (plist-get record :state) 'submitted)
+            (setf (plist-get record :state) 'uncertain)))
         (hermes-chat--queue-submit-rejected
          (plist-get context :queue-id)
          (plist-get context :user-id)
@@ -850,6 +881,7 @@ extends the input instead of prepending a blank line to it."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
+        (hermes-chat--image-admission-finish (plist-get context :admission) t)
         (setq hermes-chat--dashboard-running-p nil)
         (hermes-chat--handle-transport-event
          (plist-get context :assistant-id)
@@ -903,6 +935,7 @@ extends the input instead of prepending a blank line to it."
         (user-id (plist-get context :user-id))
         (assistant-id (plist-get context :assistant-id))
         (message (error-message-string err)))
+    (hermes-chat--image-admission-finish (plist-get context :admission) t)
     (when (plist-get context :dashboard-p)
       (setq hermes-chat--dashboard-running-p nil))
     (if queue-id
@@ -919,6 +952,7 @@ extends the input instead of prepending a blank line to it."
     (list :buffer (current-buffer)
           :lifetime hermes-chat--lifecycle-generation
           :client nil
+          :admission nil
           :session-id nil
           :user-id (plist-get user :id)
           :assistant-id (plist-get assistant :id)
@@ -967,16 +1001,38 @@ Return non-nil when the transport request starts."
 ;; pipeline into lower chat layers without upward references.
 
 
+(defun hermes-chat--queue-image-draft ()
+  "Transfer exact composer text and image bytes to a recoverable FIFO entry."
+  (unless (hermes-chat--dashboard-default-transport-p)
+    (user-error "Images require the dashboard transport"))
+  (when (or (hermes-chat--pending-prompt-p)
+            (hermes-chat--parse-slash (hermes-chat-input-string)))
+    (user-error "Images require an ordinary message, not a command or prompt reply"))
+  (let* ((record hermes-chat--image-draft-record)
+         (content (hermes-chat-input-string))
+         (display (format "%s\n[%d image(s)]" content
+                          (length hermes-chat--draft-images))))
+    (setf (plist-get record :content) content
+          (plist-get record :state) 'local)
+    (hermes-chat--queue-content content "Queued message with local images" display record)
+    (setq hermes-chat--draft-images nil
+          hermes-chat--image-draft-record nil)
+    (hermes-chat--delete-input-tail)
+    (hermes-chat--drain-queued-message)
+    t))
+
 (defun hermes-chat-queue-message (&optional message)
   "Queue MESSAGE to send after the active Hermes turn, or send now if idle."
   (interactive)
   (hermes-chat--ensure-submit-allowed)
-  (let ((content (string-trim (or message (hermes-chat-input-string)))))
-    (when (string-empty-p content)
-      (user-error "No Hermes input to queue"))
-    (unless message
-      (hermes-chat--delete-input-tail))
-    (hermes-chat--dashboard-queue-or-submit content (current-buffer))))
+  (if (and (null message) hermes-chat--draft-images)
+      (hermes-chat--queue-image-draft)
+    (let ((content (string-trim (or message (hermes-chat-input-string)))))
+      (when (string-empty-p content)
+	(user-error "No Hermes input to queue"))
+      (unless message
+	(hermes-chat--delete-input-tail))
+      (hermes-chat--dashboard-queue-or-submit content (current-buffer)))))
 
 (defun hermes-chat--steer-rejected (content message)
   "Handle rejected steer CONTENT with fallback MESSAGE."
@@ -1059,6 +1115,8 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 (defun hermes-chat-steer-message (&optional message)
   "Steer the active dashboard run with MESSAGE, falling back to queue."
   (interactive)
+  (when (and (null message) hermes-chat--draft-images)
+    (user-error "Images cannot steer a turn; use Send or Queue message"))
   (hermes-chat--ensure-submit-allowed)
   (let ((content (string-trim (or message (hermes-chat-input-string))))
         (buffer (current-buffer)))
@@ -1146,6 +1204,28 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
                 assistant-id generation)))))))))
 
 (defun hermes-chat-interrupt ()
+  "Interrupt image preparation locally, or request interruption of the run."
+  (interactive)
+  (when (gethash (hermes-chat--image-session-key) hermes-chat--image-prior-submits)
+    (puthash (hermes-chat--image-session-key) '(uncertain) hermes-chat--image-prior-submits))
+  (when-let* ((owner (gethash (hermes-chat--image-session-key)
+                             hermes-chat--image-session-blocks)))
+    (when (memq (plist-get owner :state) '(submitted accepted))
+      (setf (plist-get owner :state) 'uncertain)))
+  (let* ((context hermes-chat--unsettled-submit-context)
+         (record (plist-get (plist-get context :queue-entry) :image-record))
+         (phase (plist-get record :state)))
+    (if (memq phase '(uploading attaching))
+        (progn
+          (setf (plist-get record :state)
+                (if (eq phase 'uploading) 'local 'uncertain))
+          (when (eq phase 'uploading)
+            (hermes-chat--images-release record))
+          (funcall (hermes-chat--queue-reject-callback (current-buffer) context)
+                   "Image preparation interrupted; bytes retained"))
+      (hermes-chat--interrupt-run))))
+
+(defun hermes-chat--interrupt-run ()
   "Request interruption of the active dashboard run."
   (interactive)
   (when hermes-chat--busy-submit-context
@@ -1843,43 +1923,45 @@ durable session continues on send."
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is not in the Hermes chat input area"))
   (hermes-chat--ensure-submit-allowed)
-  (let ((content (hermes-chat--trimmed-input))
-        (clarify-key (hermes-chat--pending-clarify-key))
-        sent-p)
-    (when (string-empty-p content)
-      (user-error "No Hermes input to send"))
-    (setq sent-p
-          (cond
-           (clarify-key
-            (when (hermes-chat--batch-clarify-p
-                   (gethash clarify-key hermes-chat--pending-prompts))
-              (user-error
-               "Use C-c C-a to answer the batched Hermes clarification"))
-            (when (hermes-chat--prompt-response-in-flight-p clarify-key)
-              (user-error "Hermes is accepting the previous prompt response"))
-            (hermes-chat--delete-input-tail)
-            (hermes-chat-respond-to-prompt clarify-key content nil t)
-            t)
-           ((hermes-chat--parse-slash content)
-            (hermes-chat--handle-slash-content content)
-            t)
-           ((and (hermes-chat--active-turn-p)
-                 (hermes-chat--dashboard-session-attached-p)
-                 (null hermes-chat--queued-messages))
-            (when hermes-chat--busy-submit-context
-              (user-error "Hermes is accepting the previous message"))
-            (hermes-chat--delete-input-tail)
-            (hermes-chat--submit-busy-dashboard-content content))
-           ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
-            (hermes-chat--delete-input-tail)
-            (hermes-chat--queue-content content)
-            (hermes-chat--drain-queued-message)
-            t)
-           (t
-            (hermes-chat--delete-input-tail)
-            (hermes-chat--submit-content content))))
-    (when sent-p
-      (hermes-chat--record-input-history content))))
+  (if hermes-chat--draft-images
+      (hermes-chat--queue-image-draft)
+    (let ((content (hermes-chat--trimmed-input))
+          (clarify-key (hermes-chat--pending-clarify-key))
+          sent-p)
+      (when (string-empty-p content)
+	(user-error "No Hermes input to send"))
+      (setq sent-p
+            (cond
+             (clarify-key
+              (when (hermes-chat--batch-clarify-p
+                     (gethash clarify-key hermes-chat--pending-prompts))
+		(user-error
+		 "Use C-c C-a to answer the batched Hermes clarification"))
+              (when (hermes-chat--prompt-response-in-flight-p clarify-key)
+		(user-error "Hermes is accepting the previous prompt response"))
+              (hermes-chat--delete-input-tail)
+              (hermes-chat-respond-to-prompt clarify-key content nil t)
+              t)
+             ((hermes-chat--parse-slash content)
+              (hermes-chat--handle-slash-content content)
+              t)
+             ((and (hermes-chat--active-turn-p)
+                   (hermes-chat--dashboard-session-attached-p)
+                   (null hermes-chat--queued-messages))
+              (when hermes-chat--busy-submit-context
+		(user-error "Hermes is accepting the previous message"))
+              (hermes-chat--delete-input-tail)
+              (hermes-chat--submit-busy-dashboard-content content))
+             ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
+              (hermes-chat--delete-input-tail)
+              (hermes-chat--queue-content content)
+              (hermes-chat--drain-queued-message)
+              t)
+             (t
+              (hermes-chat--delete-input-tail)
+              (hermes-chat--submit-content content))))
+      (when sent-p
+	(hermes-chat--record-input-history content)))))
 
 ;;; Attachments view
 
@@ -2155,6 +2237,11 @@ Do not wrap into the composer or modify its draft."
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt)
   "j" ("Go to composer" hermes-chat-go-to-composer)
+  :group "Images"
+  "f" ("Attach file" hermes-chat-attach-image-file)
+  "v" ("Paste image" hermes-chat-paste-image)
+  "V" ("Preview / recover" hermes-chat-preview-images)
+  "D" ("Remove draft image" hermes-chat-remove-image)
   :group "Commands"
   "c" ("Show commands" hermes-chat-show-commands)
   "r" ("Refresh commands" hermes-chat-refresh-commands)
@@ -2230,6 +2317,10 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (add-hook 'completion-at-point-functions #'hermes-chat--model-capf t t)
   (add-hook 'completion-at-point-functions #'hermes-chat--file-ref-capf t t)
   (add-hook 'after-change-major-mode-hook #'hermes-chat--disable-linters 90 t)
+  (add-hook 'hermes-chat-lifecycle-invalidation-hook
+            #'hermes-chat--images-invalidate nil t)
+  (add-hook 'hermes-chat-submit-inhibit-functions
+            #'hermes-chat--images-inhibit nil t)
   (hermes-chat--setup-buffer))
 
 ;;;###autoload
