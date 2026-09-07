@@ -8,6 +8,22 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **A POP maildrop asking for `apop` no longer sends its password in
+    clear** (emacs-vm/vm#823).  The asynchronous POP driver read every field
+    of the maildrop except the authentication method, and always
+    authenticated with `USER` and `PASS`.  So `pop:host:110:apop:you:*` was
+    served by the method `apop` exists to avoid, and nothing said so.
+
+    APOP is done by the driver now.  An `rpop` maildrop is refused by it and
+    served by the blocking implementation, as before.  A server offering no
+    APOP timestamp is an error rather than a fall back to `PASS`: falling
+    back would send the password in clear, which is what the maildrop asked
+    not to happen.
+
+    This affects POP maildrops in `vm-spool-files` and the POP mail check.  A
+    POP folder was never affected: it goes through the blocking
+    implementation, which has always read the field.
+
   * `vm-word-wrap-paragraphs` and `vm-word-wrap-paragraphs-in-reply` no
     longer need the `longlines` library, and no longer load it
     (emacs-vm/vm#817).  It has been obsolete since Emacs 24.4 and says so as

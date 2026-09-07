@@ -1289,6 +1289,84 @@ summary was told there was nothing running."
         (kill-buffer summary)))))
 
 
+;;; APOP, and not downgrading to a cleartext password (emacs-vm/vm#823)
+
+(iter-defun vm-pop-net-test--login (user password auth)
+  "Greet and authenticate as AUTH asks, through the dispatch production uses.
+`vm-pop-net-auth' is buffer-local to the session buffer and set by
+`vm-pop-net-open', which this harness does not go through."
+  (setq vm-pop-net-auth auth)
+  (let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+    (iter-yield-from (vm-pop-net-authenticate user password greeting))))
+
+(ert-deftest vm-pop-net-test-an-apop-maildrop-is-not-downgraded ()
+  "REGRESSION: an apop maildrop does not send its password in clear.
+
+`vm-pop-net-open' read every field of the maildrop but the authentication
+method, and `vm-pop-net-authenticate' always sent USER and PASS.  So a
+maildrop written `apop' was served with the password in clear, which is the
+one thing asking for APOP is asking not to happen (emacs-vm/vm#823)."
+  (vm-pop-net-test--with-mock (mock)
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                                 (vm-pop-mock-password mock)
+                                                 "apop"))))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (vm-pop-mock-received-p mock "\\`APOP "))
+      ;; and the password was never sent as itself
+      (should-not (vm-pop-mock-received-p mock "\\`PASS ")))))
+
+(ert-deftest vm-pop-net-test-a-pass-maildrop-still-uses-pass ()
+  "The other side of it: `pass' is unchanged."
+  (vm-pop-net-test--with-mock (mock)
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                                 (vm-pop-mock-password mock)
+                                                 "pass"))))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (vm-pop-mock-received-p mock "\\`USER "))
+      (should (vm-pop-mock-received-p mock "\\`PASS "))
+      (should-not (vm-pop-mock-received-p mock "\\`APOP ")))))
+
+(ert-deftest vm-pop-net-test-a-wrong-apop-digest-is-refused ()
+  "The mock checks the digest, so this covers the arithmetic and not only
+that an APOP command was sent."
+  (vm-pop-net-test--with-mock (mock :password "secret")
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                                 "wrong" "apop"))))
+      (should-not (eq (vm-net-session-state session) 'done))
+      (should (vm-pop-mock-received-p mock "\\`APOP ")))))
+
+(ert-deftest vm-pop-net-test-apop-without-a-timestamp-is-an-error ()
+  "REGRESSION: a server offering no timestamp is an error, not a fall back.
+Falling back to PASS would send the password in clear, which is what the
+maildrop asked not to happen; the blocking implementation refuses too."
+  (should-not (vm-pop-net-timestamp "+OK POP3 server ready"))
+  (should (equal "<1896.697170952@dbc.mtview.ca.us>"
+                 (vm-pop-net-timestamp
+                  "+OK POP3 server ready <1896.697170952@dbc.mtview.ca.us>"))))
+
+(ert-deftest vm-pop-net-test-an-auth-the-driver-cannot-do-is-declined ()
+  "REGRESSION: what the driver cannot serve goes to the blocking path.
+Ignoring the field is what made the downgrade possible; refusing is what
+the IMAP side has always done."
+  (vm-pop-mock-with (mock)
+    ;; rpop is served by the blocking implementation and not by this one
+    (should-error (vm-pop-net-open (vm-pop-mock-spec mock "rpop")
+                                   "rpop test" nil)
+                  :type 'vm-pop-net-unsupported)
+    ;; and the two it does serve are opened
+    (dolist (auth '("pass" "apop"))
+      (let ((opened (vm-pop-net-open (vm-pop-mock-spec mock auth)
+                                     "auth test" nil)))
+        (should opened)
+        (let* ((session (nth 0 opened))
+               (process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process))
+          (when (buffer-live-p (vm-net-session-buffer session))
+            (kill-buffer (vm-net-session-buffer session))))))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
