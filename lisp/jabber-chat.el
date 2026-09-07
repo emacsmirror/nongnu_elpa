@@ -678,13 +678,12 @@ refresh has started and this insert sequence should abort."
         (with-current-buffer buffer
           (funcall callback)))
     (with-current-buffer buffer
-      (let* ((buffer-undo-list t)
-             (inhibit-read-only t)
-	     (chunk (cl-subseq entries 0
+      (let* ((chunk (cl-subseq entries 0
 			       (min jabber-chat-backlog-chunk-size
 				    (length entries))))
 	     (rest (nthcdr (length chunk) entries)))
-	(mapc #'jabber-chat-insert-backlog-entry chunk)
+	(jabber-chat-buffer--call-with-transcript
+         #'mapc #'jabber-chat-insert-backlog-entry chunk)
 	(if rest
 	    (run-with-timer 0.1 nil
 			    #'jabber-chat--insert-backlog-chunked
@@ -2445,7 +2444,8 @@ Preserve the underlying URL text so refresh/redraw can redisplay it.
 SCALE defaults to 1.0 and is stored on the displayed range."
   (let* ((scale (jabber-chat--clamp-image-scale (or scale 1.0)))
          (display-image (jabber-chat--scaled-image image scale))
-         (inhibit-read-only t))
+         (inhibit-read-only t)
+         (buffer-undo-list t))
     (add-text-properties
      beg end
      (list 'display display-image
@@ -2562,11 +2562,12 @@ N is passed to `self-insert-command' when point is not on an inline image."
 
 (defun jabber-chat--mark-image-fetching (beg end url)
   "Mark URL text from BEG to END as an image fetch attempt."
-  (add-text-properties
-   beg end
-   (list 'jabber-chat-image-url url
-         'jabber-chat-image-fetching url))
-  (jabber-chat--add-url-keymap beg end))
+  (let ((buffer-undo-list t))
+    (add-text-properties
+     beg end
+     (list 'jabber-chat-image-url url
+           'jabber-chat-image-fetching url))
+    (jabber-chat--add-url-keymap beg end)))
 
 (defun jabber-chat--url-markers-valid-p (beg end url buffer)
   "Return non-nil when markers BEG and END still delimit URL in BUFFER.
@@ -2588,7 +2589,8 @@ manual loading with RET still may."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (jabber-chat--url-markers-valid-p beg end url buffer)
-        (let ((inhibit-read-only t))
+        (let ((inhibit-read-only t)
+              (buffer-undo-list t))
           (cond (image
                  (jabber-chat--apply-image-display image beg end url))
                 ((not (jabber-chat--image-displayed-p beg url))
@@ -2712,18 +2714,18 @@ when AUTO is non-nil start a fetch restricted to
 URL text is preserved; images that `jabber-chat-display-images'
 does not auto-display stay clickable and load with RET."
   (interactive)
-  (save-excursion
-    (let ((inhibit-read-only t)
-          (limit (and (markerp jabber-point-insert) jabber-point-insert))
-          (auto (jabber-chat--auto-display-images-p)))
-      (when (display-graphic-p)
-        (goto-char (point-min))
-        (while (re-search-forward jabber-chat--image-url-re limit t)
-          (let* ((url (match-string-no-properties 0))
-                 (bounds (jabber-chat--isolate-image-url
-                          (match-beginning 0) (match-end 0))))
-            (jabber-chat--scan-image-url
-             url (car bounds) (cdr bounds) auto)))))))
+  (jabber-chat-buffer--call-with-transcript
+   (lambda ()
+     (let ((limit (and (markerp jabber-point-insert) jabber-point-insert))
+           (auto (jabber-chat--auto-display-images-p)))
+       (when (display-graphic-p)
+         (goto-char (point-min))
+         (while (re-search-forward jabber-chat--image-url-re limit t)
+           (let* ((url (match-string-no-properties 0))
+                  (bounds (jabber-chat--isolate-image-url
+                           (match-beginning 0) (match-end 0))))
+             (jabber-chat--scan-image-url
+              url (car bounds) (cdr bounds) auto))))))))
 
 (defun jabber-chat-goto-address (_msg _who mode)
   "Call function `goto-address' on the newly written text (MODE = :insert)."

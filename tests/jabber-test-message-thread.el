@@ -225,7 +225,7 @@
                     ((symbol-function 'jabber-db-message-thread-summary)
                      (lambda (&rest _) '(:title "Roadmap")))
                     ((symbol-function 'jabber-db-thread-backlog) #'ignore)
-                    ((symbol-function 'ewoc-refresh) #'ignore)
+                    ((symbol-function 'jabber-chat-ewoc-refresh) #'ignore)
                     ((symbol-function 'jabber-chat--peer-jid) #'ignore)
                     ((symbol-function 'jabber-chat-encryption--update-header)
                      #'ignore)

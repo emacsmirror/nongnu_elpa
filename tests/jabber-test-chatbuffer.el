@@ -212,6 +212,163 @@
                          (cons (+ (car undo-entry) shift)
                                (+ (cdr undo-entry) shift)))))))))
 
+(defmacro jabber-test-chatbuffer-with-render-boundaries (&rest body)
+  "Run BODY with a read-only transcript and an undo-enabled draft."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let* ((jabber-chat-ewoc
+             (ewoc-create
+              (lambda (data)
+                (insert (propertize (plist-get (cadr data) :body)
+                                    'read-only t 'rear-nonsticky t)))
+              nil "\n\n" 'nosep))
+            (jabber-chat--msg-nodes (make-hash-table :test 'equal))
+            (jabber-chat-display-images nil)
+            (jabber-chat--image-cache (make-hash-table :test 'equal))
+            (jabber-chat--image-scale-cache (make-hash-table :test 'equal)))
+       (setq-local jabber-point-insert (copy-marker (point-max)))
+       (jabber-chat-ewoc-enter
+        '(:local (:id "first" :body "photo https://example.org/a.png\n")))
+       (goto-char (point-max))
+       (let ((inhibit-read-only t))
+         (add-text-properties (point-min) (point)
+                              '(read-only t rear-nonsticky t)))
+       (buffer-enable-undo)
+       (insert "draft λ")
+       (undo-boundary)
+       ,@body)))
+
+(ert-deftest jabber-test-chatbuffer-image-scan-undo-then-incoming ()
+  "Image layout must not enter undo or misalign existing draft edits."
+  (jabber-test-chatbuffer-with-render-boundaries
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
+      (jabber-chat-display-buffer-images))
+    (let ((transcript (buffer-substring (point-min) jabber-point-insert)))
+      (let ((last-command nil)) (undo-only 1))
+      (should (equal (buffer-substring jabber-point-insert (point-max)) ""))
+      (should (equal-including-properties
+               transcript (buffer-substring (point-min) jabber-point-insert)))
+      (jabber-chat-ewoc-enter '(:local (:id "next" :body "incoming\n")))
+      (should (string-suffix-p "incoming\n\n\n" (buffer-string))))))
+
+(ert-deftest jabber-test-chatbuffer-image-callbacks-preserve-undo ()
+  "Fetch start, failure, success and resize leave composer undo alone."
+  (jabber-test-chatbuffer-with-render-boundaries
+    (goto-char (point-min))
+    (search-forward "https://example.org/a.png")
+    (let* ((url "https://example.org/a.png")
+           (end (point-marker))
+           (beg (copy-marker (- (point) (length url))))
+           (history (copy-tree buffer-undo-list)))
+      (cl-letf (((symbol-function 'jabber-chat--scaled-image)
+                 (lambda (image _scale) image)))
+        (let ((inhibit-read-only t))
+          (jabber-chat--mark-image-fetching beg end url))
+        (should (equal history buffer-undo-list))
+        (jabber-chat--replace-url-with-image nil url beg end (current-buffer))
+        (should (eq (get-text-property beg 'jabber-chat-image-fetching) 'failed))
+        (should (equal history buffer-undo-list))
+        (jabber-chat--replace-url-with-image '(image :type png) url beg end
+                                             (current-buffer))
+        (should (get-text-property beg 'display))
+        (goto-char beg)
+        (jabber-chat-image-enlarge)
+        (should (equal history buffer-undo-list))))))
+
+(ert-deftest jabber-test-chatbuffer-redraw-repairs-footer-preserves-draft ()
+  "Normal redraw repairs orphan footer text without losing draft or undo."
+  (jabber-test-chatbuffer-with-render-boundaries
+    ;; Simulate an interrupted renderer inserting inside the footer.
+    (let ((buffer-undo-list t) (inhibit-read-only t))
+      (save-excursion
+        (goto-char (1- jabber-point-insert))
+        (insert "orphan message")))
+    ;; Realign the fixture's preexisting draft edit to the corrupted transcript.
+    (jabber-chat-buffer--shift-undo-list (length "orphan message"))
+    (setq major-mode 'jabber-chat-mode)
+    (goto-char (+ jabber-point-insert 3))
+    (cl-letf (((symbol-function 'jabber-chat--peer-jid) #'ignore)
+              ((symbol-function 'jabber-chat-encryption--update-header) #'ignore)
+              ((symbol-function 'jabber-chat-buffer-recenter-input) #'ignore))
+      (jabber-chat-redisplay))
+    (should (equal (buffer-substring jabber-point-insert (point-max)) "draft λ"))
+    (should (= (point) (+ jabber-point-insert 3)))
+    (should-not (string-match-p "orphan" (buffer-string)))
+    (should (get-text-property (1- jabber-point-insert) 'read-only))
+    (should-not (get-text-property jabber-point-insert 'read-only))
+    (let ((last-command nil)) (undo-only 1))
+    (should (= jabber-point-insert (point-max)))))
+
+(ert-deftest jabber-test-chatbuffer-invalidate-delete-preserve-input-undo ()
+  "Length-changing node replacement and deletion preserve draft undo."
+  (dolist (operation '(invalidate delete))
+    (jabber-test-chatbuffer-with-render-boundaries
+      (let ((node (ewoc-nth jabber-chat-ewoc 0)))
+        (if (eq operation 'delete)
+            (jabber-chat-ewoc-delete node)
+          (ewoc-set-data node '(:local (:id "first" :body "short\n")))
+          (jabber-chat-ewoc-invalidate node)))
+      (let ((transcript (buffer-substring (point-min) jabber-point-insert)))
+        (let ((last-command nil)) (undo-only 1))
+        (should (= jabber-point-insert (point-max)))
+        (should (equal-including-properties transcript (buffer-string)))))))
+
+(ert-deftest jabber-test-chatbuffer-refresh-chunks-preserve-input-undo ()
+  "Database refresh repairs the footer and shifts undo across later chunks."
+  (jabber-test-chatbuffer-with-render-boundaries
+    (let ((buffer-undo-list t) (inhibit-read-only t))
+      (save-excursion
+        (goto-char (1- jabber-point-insert))
+        (insert "orphan")))
+    (jabber-chat-buffer--shift-undo-list (length "orphan"))
+    (let ((jabber-chat-backlog-chunk-size 1)
+          (jabber-print-rare-time nil)
+          (jabber-chat--backlog-generation 0)
+          continuation)
+      (cl-letf (((symbol-function 'jabber-chat-buffer-msg-count) (lambda () 2))
+                ((symbol-function 'jabber-chat--peer-jid) (lambda () "peer"))
+                ((symbol-function 'jabber-connection-bare-jid) (lambda (_) "me"))
+                ((symbol-function 'jabber-db-backlog)
+                 (lambda (&rest _)
+                   (list (list :id "new" :body "newer\n" :direction "in"
+                               :msg-type "chat" :timestamp (current-time))
+                         (list :id "old" :body "older\n" :direction "in"
+                               :msg-type "chat" :timestamp (current-time)))))
+                ((symbol-function 'run-with-timer)
+                 (lambda (_secs _repeat fn &rest args)
+                   (setq continuation (lambda () (apply fn args))))))
+        (jabber-chat-buffer-refresh)
+        (should continuation)
+        (should-not (string-match-p "orphan" (buffer-string)))
+        ;; Another real edit between timer ticks must retain its own undo step.
+        (goto-char (point-max))
+        (insert "!")
+        (undo-boundary)
+        (funcall continuation)
+        (should (equal (buffer-substring jabber-point-insert (point-max))
+                       "draft λ!"))
+        (should (string-prefix-p "older\nnewer\n" (buffer-string)))
+        (let ((last-command nil)) (undo-only 1))
+        (should (equal (buffer-substring jabber-point-insert (point-max))
+                       "draft λ"))
+        (let ((last-command 'undo)) (undo-only 1))
+        (should (= jabber-point-insert (point-max)))))))
+
+(ert-deftest jabber-test-chatbuffer-redraw-preserves-window-draft-offsets ()
+  "Redrawing the footer preserves both windows' independent draft points."
+  (save-window-excursion
+    (jabber-test-chatbuffer-with-render-boundaries
+      (switch-to-buffer (current-buffer))
+      (let ((other (split-window-below)))
+        (set-window-buffer other (current-buffer))
+        (goto-char jabber-point-insert)
+        (set-window-point other (+ jabber-point-insert 4))
+        (jabber-chat-ewoc-refresh)
+        (should (= (point) jabber-point-insert))
+        (should (= (window-point other) (+ jabber-point-insert 4)))
+        (should (equal (buffer-substring jabber-point-insert (point-max))
+                       "draft λ"))))))
+
 ;;; Group 2: jabber-chat-ewoc-find-by-id
 
 (ert-deftest jabber-test-chatbuffer-find-by-id-returns-node ()

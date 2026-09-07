@@ -361,8 +361,7 @@ at the bottom of the window."
     (mapc
      (lambda (buffer)
        (with-current-buffer buffer
-         (let ((buffer-undo-list t))
-           (ewoc-refresh jabber-chat-ewoc))
+         (jabber-chat-ewoc-refresh)
          (setq header-line-format
                (or jabber-chat-header-line-format-override
                    (if (bound-and-true-p jabber-group)
@@ -460,14 +459,10 @@ DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id or
 `jabber-chat--msg-nodes' for O(1) lookup.  Returns the ewoc node,
 or nil if the message was a duplicate."
   (unless (jabber-chat-ewoc-duplicate-p data)
-    (let ((preinsert-point (and (markerp jabber-point-insert)
-                                (marker-position jabber-point-insert))))
-      (let ((node (let ((buffer-undo-list t))
-                    (ewoc-enter-last jabber-chat-ewoc data))))
-        (when preinsert-point
-          (jabber-chat-buffer--shift-undo-list
-           (- jabber-point-insert preinsert-point)))
-        (jabber-chat-ewoc-register-node node data)))))
+    (jabber-chat-ewoc-register-node
+     (jabber-chat-buffer--call-with-transcript
+      #'ewoc-enter-last jabber-chat-ewoc data)
+     data)))
 
 (defun jabber-chat-ewoc--msg-matches-id-p (msg stanza-id)
   "Return non-nil when MSG has STANZA-ID as :id, :origin-id or :server-id."
@@ -529,16 +524,61 @@ or nil if the message was a duplicate."
       (dolist (key keys)
         (remhash key jabber-chat--msg-nodes)))))
 
+(defun jabber-chat-buffer--call-with-transcript (function &rest args)
+  "Call FUNCTION with ARGS without recording transcript edits in undo.
+Keep composer positions aligned when transcript length changes.  FUNCTION
+must leave the draft text after `jabber-point-insert' untouched."
+  (let* ((input (and (markerp jabber-point-insert)
+                     (marker-position jabber-point-insert)))
+         (draft-length (and input (- (point-max) input)))
+         (offset (and input (>= (point) input) (- (point) input)))
+         (windows (and input
+                       (mapcar
+                        (lambda (window)
+                          (cons window (and (>= (window-point window) input)
+                                            (- (window-point window) input))))
+                        (get-buffer-window-list (current-buffer) nil t)))))
+    (unwind-protect
+        (let ((buffer-undo-list t)
+              (inhibit-read-only t))
+          (save-excursion
+            (apply function args)))
+      (when input
+        ;; Footer replacement collapses nil-insertion-type markers.  The
+        ;; untouched draft tail, not that collapsed marker, fixes the boundary.
+        (set-marker jabber-point-insert (- (point-max) draft-length))
+        (jabber-chat-buffer--shift-undo-list (- jabber-point-insert input))
+        (dolist (entry windows)
+          (when (and (window-live-p (car entry)) (cdr entry))
+            (set-window-point (car entry) (+ jabber-point-insert (cdr entry))))))
+      (when offset
+        (goto-char (+ jabber-point-insert offset))))))
+
+(defun jabber-chat-buffer--reset-header-footer ()
+  "Restore the stored EWOC header and footer as read-only transcript text."
+  (let ((hf (ewoc-get-hf jabber-chat-ewoc)))
+    (ewoc-set-hf
+     jabber-chat-ewoc
+     (propertize (car hf) 'read-only t 'front-sticky t 'rear-nonsticky t)
+     (propertize (cdr hf) 'read-only t 'front-sticky t 'rear-nonsticky t))))
+
+(defun jabber-chat-ewoc-refresh ()
+  "Redraw the transcript and footer, preserving the draft and its undo."
+  (jabber-chat-buffer--call-with-transcript
+   (lambda ()
+     (ewoc-refresh jabber-chat-ewoc)
+     ;; `ewoc-refresh' only redraws nodes, not orphaned footer text.
+     (jabber-chat-buffer--reset-header-footer))))
+
 (defun jabber-chat-ewoc-invalidate (node)
   "Redraw ewoc NODE without recording undo."
-  (let ((buffer-undo-list t))
-    (ewoc-invalidate jabber-chat-ewoc node)))
+  (jabber-chat-buffer--call-with-transcript
+   #'ewoc-invalidate jabber-chat-ewoc node))
 
 (defun jabber-chat-ewoc-delete (node)
   "Delete ewoc NODE without recording undo."
-  (let ((buffer-undo-list t)
-        (inhibit-read-only t))
-    (ewoc-delete jabber-chat-ewoc node)))
+  (jabber-chat-buffer--call-with-transcript
+   #'ewoc-delete jabber-chat-ewoc node))
 
 ;;; View preservation across refresh
 ;;
@@ -656,14 +696,14 @@ reload, so a reader scrolled up in history is not yanked to the top."
   (let ((generation jabber-chat--backlog-generation)
         (count (jabber-chat-buffer-msg-count))
         (anchors (jabber-chat-buffer--capture-view))
-        (buffer-undo-list t)
-        (inhibit-read-only t)
         (node (ewoc-nth jabber-chat-ewoc 0)))
-    ;; Delete all ewoc nodes
-    (while node
-      (let ((next (ewoc-next jabber-chat-ewoc node)))
-        (ewoc-delete jabber-chat-ewoc node)
-        (setq node next)))
+    (jabber-chat-buffer--call-with-transcript
+     (lambda ()
+       (while node
+         (let ((next (ewoc-next jabber-chat-ewoc node)))
+           (ewoc-delete jabber-chat-ewoc node)
+           (setq node next)))
+       (jabber-chat-buffer--reset-header-footer)))
     ;; Clear message ID tracking
     (clrhash jabber-chat--msg-nodes)
     ;; Reload from DB
