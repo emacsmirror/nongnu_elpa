@@ -8,6 +8,12 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **CRAM-MD5 no longer costs you the asynchronous IMAP driver**
+    (emacs-vm/vm#822).  A maildrop asking for it was refused by the driver
+    and served by the blocking implementation, so every fetch from such an
+    account held Emacs still.  The driver speaks CRAM-MD5 now, and those
+    maildrops are as asynchronous as the rest.
+
   * **A POP maildrop asking for `apop` no longer sends its password in
     clear** (emacs-vm/vm#823).  The asynchronous POP driver read every field
     of the maildrop except the authentication method, and always
