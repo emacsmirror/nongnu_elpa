@@ -251,6 +251,37 @@
       (jabber-chat-ewoc-enter '(:local (:id "next" :body "incoming\n")))
       (should (string-suffix-p "incoming\n\n\n" (buffer-string))))))
 
+(ert-deftest jabber-test-chatbuffer-image-incoming-day-boundary-undo ()
+  "A day separator after image layout preserves the draft's undo positions."
+  (jabber-test-chatbuffer-with-render-boundaries
+    ;; Render the real rare-time node without depending on date formatting.
+    (setf (ewoc--pretty-printer jabber-chat-ewoc)
+          (lambda (data)
+            (insert (propertize
+                     (if (eq (car data) :rare-time) "DAY-BOUNDARY\n"
+                       (plist-get (cadr data) :body))
+                     'read-only t 'rear-nonsticky t))))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
+      (jabber-chat-display-buffer-images))
+    (let ((jabber-print-rare-time t)
+          (jabber-message-hooks nil)
+          (jabber-alert-message-hooks nil))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_) "me"))
+                ((symbol-function 'jabber-chatstates--clear-typing) #'ignore)
+                ((symbol-function 'jabber-rare-time-needed)
+                 (lambda (&rest _) t)))
+        (jabber-chat--display-message
+         nil nil (current-buffer) nil "me"
+         '(:id "next" :body "incoming\n" :timestamp (1 0 0 0)))))
+    (should (eq (car (ewoc-data (ewoc-nth jabber-chat-ewoc 1))) :rare-time))
+    (should (equal (buffer-substring jabber-point-insert (point-max)) "draft λ"))
+    (let ((transcript (buffer-substring (point-min) jabber-point-insert)))
+      (let ((last-command nil)) (undo-only 1))
+      (should (equal (buffer-substring jabber-point-insert (point-max)) ""))
+      (should (equal-including-properties
+               transcript (buffer-substring (point-min) jabber-point-insert))))))
+
 (ert-deftest jabber-test-chatbuffer-image-callbacks-preserve-undo ()
   "Fetch start, failure, success and resize leave composer undo alone."
   (jabber-test-chatbuffer-with-render-boundaries
