@@ -2511,7 +2511,12 @@ it, and Emacs cannot tell one of those from a transport that does not."
   (should (equal 'sent (vm-reply-test--send-with t 'sendmail-send-it t t)))
   (should (stringp vm-reply-test--asked))
   (should (string-match-p "Bcc" vm-reply-test--asked))
-  (should (string-match-p "sendmail-send-it" vm-reply-test--asked)))
+  (should (string-match-p "sendmail-send-it" vm-reply-test--asked))
+  ;; The question itself names where the answer is written down, not only the
+  ;; error that follows a no: a reader who says yes at the prompt and wants to
+  ;; fix it afterwards has nothing else to go on.
+  (should (string-match-p "Sending Options" vm-reply-test--asked))
+  (should (string-match-p "VM manual" vm-reply-test--asked)))
 
 (ert-deftest vm-reply-test-declining-the-bcc-question-says-what-to-change ()
   "Answering no stops the send and points at the manual.
@@ -2522,7 +2527,12 @@ names the setting, the alternative, and where it is written down."
     (should (string-match-p "smtpmail-send-it" stopped))
     (should (string-match-p "vm-check-bcc-removal" stopped))
     (should (string-match-p "Bcc header out" stopped))
-    (should (string-match-p "VM manual" stopped))))
+    (should (string-match-p "VM manual" stopped))
+    ;; Named exactly as the manual has them, so `g' in Info reaches them:
+    ;; both strings said "Mail Sending Options", which was the section
+    ;; heading and never a node.
+    (should (string-match-p "Sending Options" stopped))
+    (should (string-match-p "Setting Up" stopped))))
 
 (ert-deftest vm-reply-test-a-sender-that-removes-the-bcc-itself-does-not-ask ()
   "`smtpmail-send-it' works the recipients out first and then deletes the

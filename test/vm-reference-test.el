@@ -691,3 +691,55 @@ own heading, not among the ones to type."
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
+
+(defun vm-reference-test--manual-nodes ()
+  "Every node the manual defines, as a string."
+  (let ((nodes nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward "^@node +\\([^,\n]+\\)" nil t)
+        (push (string-trim (match-string 1)) nodes)))
+    nodes))
+
+(defun vm-reference-test--nodes-the-lisp-names ()
+  "Every manual section a string in `lisp/' sends the reader to.
+The forms recognised are \"NAME in the VM manual\" and \"the VM manual
+section \\\"NAME\\\"\", which is how VM's messages and docstrings write one."
+  (let ((named nil)
+        ;; nil, or `[A-Z]' matches the "s" of "see" and the prefix is taken
+        ;; for part of the name.
+        (case-fold-search nil))
+    (dolist (file (directory-files (expand-file-name "../lisp" vm-test-dir)
+                                   t "\\`vm-.*\\.el\\'"))
+      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward
+                  (concat "\\(?:the node \\|see \\)?"
+                          "\\([A-Z][A-Za-z/ ]+?\\) in the VM manual")
+                  nil t)
+            (push (cons (string-trim (match-string 1)) file) named))
+          (goto-char (point-min))
+          (while (re-search-forward
+                  "VM manual section .\"\\([^\"\\\\]+\\)" nil t)
+            (push (cons (match-string 1) file) named)))))
+    named))
+
+(ert-deftest vm-reference-test-a-message-that-names-the-manual-names-a-node ()
+  "REGRESSION: a section a message sends the reader to is one the manual has.
+
+The Bcc question and the error behind it both said \"Mail Sending Options\",
+which was the section's printed heading and never its node name, so `g' in
+Info found nothing and the reader was left where they started
+(emacs-vm/vm#815).  A message that points nowhere is worse than one that
+does not point, because it costs the reader the search as well."
+  (let ((nodes (vm-reference-test--manual-nodes))
+        (missing nil))
+    (dolist (named (vm-reference-test--nodes-the-lisp-names))
+      (unless (member (car named) nodes)
+        (push (format "%s names %S, which is no node in the manual"
+                      (file-name-nondirectory (cdr named)) (car named))
+              missing)))
+    (should-not missing)))
