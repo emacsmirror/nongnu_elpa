@@ -534,8 +534,14 @@ NO-REFRESH means do no not try to load more items if no next item
 found."
   (interactive)
   (condition-case nil
-      (mastodon-tl--goto-item-pos 'previous-single-property-change
-                       (unless no-refresh 'mastodon-tl-update))
+      (prog1
+          (mastodon-tl--goto-item-pos 'previous-single-property-change
+                           (unless no-refresh 'mastodon-tl-update))
+        ;; ensure top of toot visible (thanks rahguzar!):
+        (let ((start (previous-single-char-property-change
+                      (point) 'item-id nil (point-min))))
+          (unless (pos-visible-in-window-p start)
+            (set-window-start nil start))))
     (t (error "No more items"))))
 
 (defun mastodon-tl--goto-first-item ()
