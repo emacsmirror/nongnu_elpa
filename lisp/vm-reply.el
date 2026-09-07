@@ -113,6 +113,7 @@
 		  (field &optional soft))
 (declare-function mail-mode "ext:sendmail" ())
 (declare-function build-mail-aliases "ext:mailalias" (&optional file))
+(declare-function sendmail-sync-aliases "ext:sendmail" ())
 
 (defun vm-add-reply-subject-prefix (message &optional start)
   (when (not start)
@@ -1990,12 +1991,17 @@ Binds the `vm-mail-mode-map' and hooks"
 			       (vm-menu-mode-menu)))
     (and vm-use-menus (vm-menu-support-possible-p)
 	 (vm-menu-install-mail-mode-menu))
-    ;; `mail-aliases-setup' was guarded for here, to use mail-abbrevs.el
-    ;; where it was loaded.  Emacs has not had that function for a long
-    ;; time, so this is the arm that has been running: ~/.mailrc through
-    ;; mailalias.el.  Whether VM should offer mail-abbrevs.el instead, whose
-    ;; function is now `mail-abbrevs-setup', is a question about which alias
-    ;; system a reader wants and not one to settle by restoring a guard.
+    ;; Mail aliases, from ~/.mailrc through mailalias.el, as Emacs's own
+    ;; `mail-setup' does it.  `sendmail-sync-aliases' first, so that a file
+    ;; edited during this Emacs session is read again rather than being
+    ;; whatever it said when the first composition was made
+    ;; (emacs-vm/vm#820); it sets `mail-aliases' back to t when the
+    ;; modification time has moved.
+    ;;
+    ;; A reader who would rather see the address than the alias in the
+    ;; composition puts `mail-abbrevs-setup' on `vm-mail-mode-hook'.  Both
+    ;; read the same file; see Composing setup in the VM manual.
+    (sendmail-sync-aliases)
     (when (eq mail-aliases t)
       (setq mail-aliases nil)
       (when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
