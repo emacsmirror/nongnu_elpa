@@ -2469,8 +2469,8 @@ To enable external messages, set the variable
 messages may be maintained by VM.
 
 @vindex vm-imap-max-message-size
-As of version 8.2.0, the only context in which external messages are
-implemented is that of @acronym{IMAP} folders.  Setting
+@acronym{IMAP} folders are the only context in which external messages are
+implemented.  Setting
 @code{vm-enable-external-messages} to @code{(imap)} enables @acronym{IMAP}
 messages to be maintained externally.  When new messages are retrieved, this
 causes all messages with size below @code{vm-imap-max-message-size} to be
@@ -3302,13 +3302,20 @@ Emacs's own @code{visual-line-mode}, which wraps the display and leaves the
 text alone; add @code{turn-on-visual-line-mode} to
 @code{vm-presentation-mode-hook} to have it on for every message you read.
 
-Setting @code{vm-word-wrap-paragraphs} to t instead makes VM use the
-@file{longlines.el} library, which Emacs dropped in version 24, so this
-needs a copy of that library on your @code{load-path}, and is worth using only
-if you already have one. 
+Setting @code{vm-word-wrap-paragraphs} to t makes VM wrap the long lines
+themselves, in the presentation copy, leaving every line break that is
+already there.  That is the setting for quoted text: the filling described
+next joins the lines of a paragraph before breaking them again, so a short
+line followed by a long one becomes one paragraph and two quoted lines
+become one.  Wrapping never joins, and never breaks a word, so a long
+@acronym{URL} survives whole.
 
-If you are unable to use either of these solutions, then you can use
-Emacs's paragraph filling facility.  If you set
+In earlier releases this used the @file{longlines.el} library.  It no longer
+does, and needs nothing installed: the library had been obsolete since Emacs
+24.4 and said so as it loaded.  The wrapping is the same, save that
+@file{longlines.el} left a space at the end of each line it wrapped.
+
+Or use Emacs's paragraph filling.  If you set
 @code{vm-fill-paragraphs-containing-long-lines} to a positive numeric
 value @var{N}, VM will call @code{fill-paragraph} on all paragraphs that
 contain lines spanning @var{N} columns or more.  You can also set this
@@ -3318,7 +3325,8 @@ filling is invoked.  As with other things that VM does for presentation
 purposes, this does not change the message contents.  VM copies the
 message contents to a ``presentation'' buffer before altering them.  The
 fill column that VM uses is controlled by
-@code{vm-paragraph-fill-column}.  Unlike the Emacs variable
+@code{vm-paragraph-fill-column}, which is also the column
+@code{vm-word-wrap-paragraphs} wraps to.  Unlike the Emacs variable
 @code{fill-column}, this variable is not buffer-local by default.
 
 
@@ -3712,9 +3720,9 @@ run to display an object.  Any @var{ARG}s will be passed to the
 program as arguments.  The octets that compose the object will be
 written into a temporary file and the name of the file can be
 inserted into an @var{ARG} string by writing @samp{%f} in the
-@var{ARG} string.  In earlier versions of VM the filename was
-always added as the last argument; as of VM 6.49 this is only done
-if @samp{%f} does not appear in any of the @var{ARG} strings.
+@var{ARG} string.  The filename is added as the last argument only where
+@samp{%f} appears in none of the @var{ARG} strings; in earlier releases it
+was always added there.
 
 If the @var{COMMAND-LINE} form is used, the program and its
 arguments are specified as a single string and that string is
@@ -6997,10 +7005,9 @@ displayed using the standard indentation.
 @node Thread Folding, Thread Operations, Threaded Summaries, Summaries
 @section Thread Folding
 
-A new feature in VM version 8.2 is that of ``folding'' message threads
-in the summary window.  This feature allows you to collapse all the
-messages in a thread into a single line of the summary window, so that
-you can see a more compact summary of the folder.
+VM can ``fold'' a message thread in the summary window, collapsing all the
+messages in it into a single line, so that you can see a more compact
+summary of the folder.
 
 @vindex vm-summary-enable-thread-folding
 @findex vm-toggle-thread

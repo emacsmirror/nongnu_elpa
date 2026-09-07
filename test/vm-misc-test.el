@@ -1622,6 +1622,121 @@ is how #791 went unexplained.  The four left out are named here with why."
               (push name missing))))))
     (should (equal nil (sort missing #'string<)))))
 
+;;; Word-wrapping long lines without the longlines package (emacs-vm/vm#817)
+;;
+;; `vm-word-wrap-paragraphs' used longlines.el, obsolete since Emacs 24.4,
+;; which warned as it loaded.  These cover the replacement, and the fill
+;; column that the longlines path ignored.
+
+(defconst vm-misc-test--wrap-sample
+  (concat "A short line.\n"
+          "This is one very long line that runs well past forty columns"
+          " and needs to be wrapped somewhere.\n"
+          "> quoted short\n"
+          "> a quoted line that is also far too long to fit inside forty"
+          " columns of screen\n"
+          "\n"
+          "Final short line.\n")
+  "Short lines, long lines, and a quoted block, which is the case that matters.")
+
+(defun vm-misc-test--wrapped (width column &optional word-wrap)
+  "The sample filled with WIDTH and COLUMN, word-wrapped if WORD-WRAP."
+  (with-temp-buffer
+    (insert vm-misc-test--wrap-sample)
+    (let ((vm-paragraph-fill-column column)
+          (vm-word-wrap-paragraphs word-wrap)
+          (vm-message-pointer nil))
+      (vm-fill-paragraphs-containing-long-lines width (point-min) (point-max)))
+    (buffer-string)))
+
+(defun vm-misc-test--longest-line (text)
+  "The length of the longest line in TEXT."
+  (apply #'max 0 (mapcar #'length (split-string text "\n"))))
+
+(ert-deftest vm-misc-test-word-wrapping-keeps-every-line-break ()
+  "REGRESSION: word-wrapping does not join lines, where filling does.
+That is the whole point of `vm-word-wrap-paragraphs'.  Filling joins the
+lines of a paragraph before breaking them again, so a short line followed
+by a long one becomes one paragraph, and two quoted lines become one.  VM's
+own filling does keep the quote prefix on the lines it makes, `fill-region'
+on its own being worse than that; what it cannot keep is where the breaks
+were."
+  (let ((wrapped (vm-misc-test--wrapped 40 40 t))
+        (filled (vm-misc-test--wrapped 40 40 nil)))
+    ;; word-wrapped: the short line is still a line, and the quoted short
+    ;; line is still its own
+    (should (string-prefix-p "A short line.\n" wrapped))
+    (should (string-match-p "\n> quoted short\n" wrapped))
+    ;; every quote marker at the start of a line, in both
+    (should-not (string-match-p "[^\n]>" wrapped))
+    (should-not (string-match-p "[^\n]>" filled))
+    ;; filled: both of those breaks are gone
+    (should-not (string-prefix-p "A short line.\n" filled))
+    (should-not (string-match-p "\n> quoted short\n" filled))))
+
+(ert-deftest vm-misc-test-word-wrapping-honours-the-fill-column ()
+  "REGRESSION: the column wrapped to is `vm-paragraph-fill-column'.
+The longlines path read `vm-fill-paragraphs-containing-long-lines' instead,
+which is the threshold and not the column, and ignored the width its caller
+passed.  So anyone setting `vm-fill-long-lines-in-reply-column' with
+`vm-word-wrap-paragraphs-in-reply' on had it silently ignored: measured, a
+column of 30 produced lines of 59 (emacs-vm/vm#817)."
+  (should (<= (vm-misc-test--longest-line (vm-misc-test--wrapped 40 30 t)) 30))
+  (should (<= (vm-misc-test--longest-line (vm-misc-test--wrapped 40 50 t)) 50))
+  ;; and the threshold is separate from the column: nothing here is over 200
+  ;; columns, so nothing is touched however narrow the column
+  (should (equal vm-misc-test--wrap-sample
+                 (vm-misc-test--wrapped 200 30 t))))
+
+(ert-deftest vm-misc-test-word-wrapping-does-not-load-longlines ()
+  "REGRESSION: no obsolete package is required.
+The deprecation warning on emacs-vm/vm#817 was `Package longlines is
+deprecated', printed by the `require' inside the old implementation.  It
+was a run-time require, so no lint saw it, and no test ran that path."
+  (should-not (featurep 'longlines))
+  (vm-misc-test--wrapped 40 40 t)
+  (should-not (featurep 'longlines)))
+
+(ert-deftest vm-misc-test-word-wrapping-leaves-a-long-word-whole ()
+  "A word longer than the column is not broken: a URL has to survive."
+  (let ((url "https://example.com/a/very/long/path/that/has/no/spaces/in/it/at/all"))
+    (with-temp-buffer
+      (insert "See " url " for more.\n")
+      (let ((vm-paragraph-fill-column 40)
+            (vm-word-wrap-paragraphs t)
+            (vm-message-pointer nil))
+        (vm-fill-paragraphs-containing-long-lines 40 (point-min) (point-max)))
+      (should (string-match-p (regexp-quote url) (buffer-string)))
+      ;; on a line of its own, unbroken
+      (should (member url (split-string (buffer-string) "\n"))))))
+
+(ert-deftest vm-misc-test-word-wrapping-leaves-short-lines-alone ()
+  "A line at or under the threshold is untouched, and so is an empty region."
+  (with-temp-buffer
+    (insert (make-string 40 ?x) "\n")
+    (let ((vm-paragraph-fill-column 40)
+          (vm-word-wrap-paragraphs t)
+          (vm-message-pointer nil))
+      (vm-fill-paragraphs-containing-long-lines 40 (point-min) (point-max)))
+    (should (equal (concat (make-string 40 ?x) "\n") (buffer-string))))
+  (with-temp-buffer
+    (let ((vm-paragraph-fill-column 40)
+          (vm-word-wrap-paragraphs t)
+          (vm-message-pointer nil))
+      (vm-fill-paragraphs-containing-long-lines 40 (point-min) (point-max)))
+    (should (equal "" (buffer-string)))))
+
+(ert-deftest vm-misc-test-word-wrapping-leaves-no-trailing-whitespace ()
+  "Nothing is left at the end of a wrapped line.
+longlines put a space there to mark its own soft breaks, which VM never
+unwrapped.  Under RFC 3676 a trailing space is a soft line break, so
+leaving them would make VM's wrapping mean something to a recipient
+reading format=flowed."
+  (let ((wrapped (vm-misc-test--wrapped 40 40 t)))
+    (should (> (length (split-string wrapped "\n")) 6)) ; it did wrap
+    (dolist (line (split-string wrapped "\n"))
+      (should-not (string-match-p "[ \t]\\'" line)))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

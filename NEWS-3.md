@@ -8,6 +8,25 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `vm-word-wrap-paragraphs` and `vm-word-wrap-paragraphs-in-reply` no
+    longer need the `longlines` library, and no longer load it
+    (emacs-vm/vm#817).  It has been obsolete since Emacs 24.4 and says so as
+    it loads, which is what was reported.  VM wraps the lines itself, in
+    fourteen lines of its own, and the result is the same except that
+    `longlines` left a space at the end of every line it wrapped.
+
+    Two things change for anyone who had this on:
+
+      * The column wrapped to is `vm-paragraph-fill-column`, or
+        `vm-fill-long-lines-in-reply-column` in a reply, as both have always
+        documented themselves to be.  The old code used
+        `vm-fill-paragraphs-containing-long-lines`, which is the threshold
+        for what counts as a long line and not the column, so a column of 30
+        produced lines of 59.
+      * A wrapped line no longer ends in a space.  Under RFC 3676 a trailing
+        space is a soft line break, so the old output meant something to a
+        recipient reading `format=flowed` that was never intended.
+
   * `M-x vm-setup` asks what VM needs to know and writes the answers to a
     file VM loads (emacs-vm/vm#816): your name and address, where folders are
     to be kept, where new mail comes from, how mail is to be sent, and

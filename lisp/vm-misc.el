@@ -1490,18 +1490,22 @@ indents a centred paragraph by hundreds of columns (#540)."
       (< (string-width fill-prefix) fill-column)))
 
 (defun vm-fill-paragraphs-containing-long-lines (width start end)
-  "Fill paragraphs spanning more than WIDTH columns in region
-START to END.  If WIDTH is `window-width', the current width of
-the Emacs window is used.  If vm-word-wrap-paragraphs is set
-non-nil, then the longlines package is used to word-wrap long
-lines without removing any existing line breaks.
+  "Fill paragraphs spanning more than WIDTH columns in region START to END.
+If WIDTH is the symbol window-width, the current width of the Emacs window
+is used.  The column filled to is vm-paragraph-fill-column either way.
 
-In order to fill also quoted text you will need `filladapt.el' as the adaptive
-filling of GNU Emacs does not work correctly here."
-  (if (and vm-word-wrap-paragraphs (locate-library "longlines"))
-      (vm-fill-paragraphs-by-longlines start end)
-    (if (eq width 'window-width)
-	(setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
+vm-word-wrap-paragraphs non-nil wraps the long lines instead, leaving
+every existing line break where it is.  That is the setting to use on
+quoted text: filling joins the lines of a paragraph before breaking them
+again, so a quoted block is drawn into the paragraph above it and its
+markers end up mid-line.
+
+In order to fill also quoted text you will need filladapt.el, the adaptive
+filling of GNU Emacs not working correctly here."
+  (when (eq width 'window-width)
+    (setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
+  (if vm-word-wrap-paragraphs
+      (vm-word-wrap-long-lines width vm-paragraph-fill-column start end)
     (save-excursion
       (let ((buffer-read-only nil)
 	    (fill-column vm-paragraph-fill-column)
@@ -1534,53 +1538,32 @@ filling of GNU Emacs does not work correctly here."
 	;; are not particularly enlightening.  USR, 2010-01-26
 	))))
 
-(defun vm-fill-paragraphs-by-longlines (start end)
-  "Uses longlines.el for filling the region."
-  ;; prepare for longlines.el in XEmacs
-  (require 'overlay)
-  (require 'longlines)
-  (declare-function longlines-decode-region "ext:longlines"
-		    (start end))
-  (declare-function longlines-wrap-region "ext:longlines"
-		    (start end))
-  (defvar fill-nobreak-predicate nil)
-  (defvar undo-in-progress nil)
-  (defvar longlines-mode-hook nil)
-  (defvar longlines-mode-on-hook nil)
-  (defvar longlines-mode-off-hook nil)
-  (unless (functionp 'replace-regexp-in-string)
-    (defun replace-regexp-in-string (regexp rep string
-                                            &optional _fixedcase literal)
-      (vm-replace-in-string string regexp rep literal)))
-  (unless (functionp 'line-end-position)
-    (defun line-end-position ()
-      (save-excursion (end-of-line) (point))))
-  (unless (functionp 'line-beginning-position)
-    (defun line-beginning-position (&optional n)
-      (save-excursion
-        (if n (forward-line n))
-        (beginning-of-line)
-        (point)))
-    (unless (functionp 'replace-regexp-in-string)
-      (defun replace-regexp-in-string (regexp rep string
-                                              &optional _fixedcase literal)
-        (vm-replace-in-string string regexp rep literal))))
-  ;; now do the filling
-  (let ((buffer-read-only nil)
-        (fill-column 
-	 (if (numberp vm-fill-paragraphs-containing-long-lines)
-	     vm-fill-paragraphs-containing-long-lines
-	   (- (window-width (get-buffer-window (current-buffer))) 1)))
-	)
-    (save-excursion
-      (save-restriction
-       ;; longlines-wrap-region contains a (forward-line -1) which is causing
-       ;; wrapping of headers which is wrong, so we restrict it here!
-       (narrow-to-region start end)
-       (longlines-decode-region start end) ; make linebreaks hard
-       (longlines-wrap-region start end)  ; wrap, adding soft linebreaks
-       (widen)))))
+(defun vm-word-wrap-long-lines (width column start end)
+  "Wrap lines longer than WIDTH columns to COLUMN, between START and END.
 
+Each over-long line is filled on its own, so no existing line break is
+removed.  That is the difference from filling, and the reason this exists:
+`fill-region' joins the lines of a paragraph before breaking them again,
+which pulls a quoted block into the paragraph above it.
+
+A word longer than COLUMN is left whole rather than broken, so a long URL
+survives.
+
+This used the longlines package until 2026, which had been obsolete
+since Emacs 24.4 and warned as it was loaded (emacs-vm/vm#817).  Its output
+differed only in leaving a trailing space on each wrapped line, which was
+how it marked its own soft breaks; VM never unwrapped them."
+  (let ((end (copy-marker end))
+	(buffer-read-only nil)
+	(fill-column column)
+	(adaptive-fill-mode nil)
+	(fill-prefix nil))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+	(when (> (- (line-end-position) (point)) width)
+	  (fill-region-as-paragraph (point) (line-end-position)))
+	(forward-line 1)))))
 
 (defun vm-make-message-id ()
   (let (hostname

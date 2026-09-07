@@ -8369,9 +8369,14 @@ Default value:
 
 @defopt vm-word-wrap-paragraphs
 @vindex vm-word-wrap-paragraphs
-If non-nil, causes VM to word wrap paragraphs with long lines.
-This is done using the @code{longlines} library, which must be installed
-for the variable to have effect.
+If non-nil, causes VM to word wrap the long lines of a message.
+Every line break already there is kept, which is the difference from
+vm-fill-paragraphs-containing-long-lines: filling joins the lines of a
+paragraph before breaking them again, and so loses where the breaks were.
+The column wrapped to is vm-paragraph-fill-column.
+
+Needs nothing installed.  Earlier releases used the longlines library,
+obsolete since Emacs 24.4.
 @end defopt
 
 @appendixsubsec Called by VM
@@ -9182,10 +9187,10 @@ headers.
 
 @defopt vm-word-wrap-paragraphs-in-reply
 @vindex vm-word-wrap-paragraphs-in-reply
-If non-nil, causes VM to word wrap paragraphs with long lines
-during message composition.  This is done using the @code{longlines}
-library, which must be installed for the variable to have
-effect.
+If non-nil, causes VM to word wrap the long lines of a composition.
+As vm-word-wrap-paragraphs does for a message being read, and for the same
+reason: quoted text keeps its own line breaks.  The column wrapped to is
+vm-fill-long-lines-in-reply-column.
 @end defopt
 
 @appendixsubsec Called by VM
