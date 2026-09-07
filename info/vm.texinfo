@@ -2914,6 +2914,38 @@ A composition is an ordinary Emacs buffer, so set it up with a hook:
 (add-hook 'vm-mail-mode-hook 'my-vm-mail-mode-hook)
 @end lisp
 
+@subheading Short names for addresses
+
+@cindex aliases, mail
+@cindex mailrc
+@vindex mail-personal-alias-file
+VM reads @file{~/.mailrc} for mail aliases, so a line of
+
+@example
+alias fred fred@@example.com
+@end example
+
+@noindent
+lets you address a message to @samp{fred}.  This is Emacs's own
+@file{mailalias.el} and needs nothing set up; @code{mail-personal-alias-file}
+says where the file is if it is not @file{~/.mailrc}.  The alias is expanded
+as the message goes out, so the composition shows @samp{fred} until you send
+it.
+
+@findex mail-abbrevs-setup
+Emacs has a second reader for the same file, @file{mail-abbrevs.el}, which
+expands as you type instead, so the composition shows the address and you can
+see what you are about to send:
+
+@lisp
+(add-hook 'vm-mail-mode-hook 'mail-abbrevs-setup)
+@end lisp
+
+@noindent
+The two read the same aliases and differ only in when they act.  Which you
+prefer is a matter of whether you would rather read the name or the address
+in a composition.
+
 @node Sending setup, Address book, Composing setup, Setting Up
 @section Sending
 

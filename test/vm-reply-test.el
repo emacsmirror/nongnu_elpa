@@ -2558,6 +2558,68 @@ A sender VM has never heard of is asked about, which is the safe direction."
   (should (equal 'sent (vm-reply-test--send-with t 'some-unknown-send-it t t)))
   (should (stringp vm-reply-test--asked)))
 
+;;; Mail aliases from ~/.mailrc (emacs-vm/vm#820)
+
+(ert-deftest vm-reply-test-an-edited-mailrc-is-read-again ()
+  "REGRESSION: an alias added during the session is seen by the next message.
+
+`build-mail-aliases' fills `mail-aliases' once and leaves it filled, so
+without `sendmail-sync-aliases' the file was whatever it said when the
+first composition of the session was made, and an alias added afterwards
+did not work until Emacs was restarted (emacs-vm/vm#820).  Emacs's own
+`mail-setup' has always called it."
+  (require 'sendmail)
+  (require 'mailalias)
+  (let* ((file (make-temp-file "vm-mailrc-"))
+         (mail-personal-alias-file file)
+         (mail-aliases t)
+         (mail-alias-modtime nil))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "alias fred fred@example.com\n"))
+          (sendmail-sync-aliases)
+          (when (eq mail-aliases t)
+            (setq mail-aliases nil)
+            (build-mail-aliases))
+          (should (equal "fred@example.com" (cdr (assoc "fred" mail-aliases))))
+          ;; the reader adds one and composes again.  The modification time
+          ;; has to move for the check to mean anything, and a file written
+          ;; twice in the same second has not moved.
+          (with-temp-file file
+            (insert "alias fred fred@example.com\n"
+                    "alias barney barney@example.com\n"))
+          (set-file-times file (time-add (current-time) 2))
+          (sendmail-sync-aliases)
+          (when (eq mail-aliases t)
+            (setq mail-aliases nil)
+            (build-mail-aliases))
+          (should (equal "barney@example.com"
+                         (cdr (assoc "barney" mail-aliases)))))
+      (delete-file file))))
+
+(ert-deftest vm-reply-test-a-composition-syncs-the-aliases ()
+  "REGRESSION: `vm-mail-internal' asks for the sync, not just this test.
+The check above would pass on its own arithmetic whatever VM did, so this
+one holds the call itself: it is what makes the manual's paragraph on
+aliases true."
+  (let ((asked nil))
+    (cl-letf (((symbol-function 'sendmail-sync-aliases)
+               (lambda (&rest _) (setq asked t))))
+      ;; the source, rather than a composition: making one needs a folder
+      ;; and a window configuration, and what is being pinned is that the
+      ;; call is in the function at all.
+      (with-temp-buffer
+        (insert-file-contents
+         (expand-file-name "../lisp/vm-reply.el" vm-test-dir))
+        (goto-char (point-min))
+        (should (re-search-forward "^(cl-defun vm-mail-internal" nil t))
+        (let ((start (match-beginning 0)))
+          (goto-char start)
+          (forward-sexp)
+          (should (string-match-p "(sendmail-sync-aliases)"
+                                  (buffer-substring start (point))))))
+      (ignore asked))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
