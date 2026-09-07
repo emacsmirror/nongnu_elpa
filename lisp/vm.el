@@ -1605,7 +1605,10 @@ reach it without vm.el having been loaded by something else first."
 	;; to run code here at all.  `vm-session-beginning' is already nil, so a
 	;; hook function may call VM commands without starting this again.
 	;; Issue #565.
-	(run-hooks 'vm-startup-hook)))
+	(run-hooks 'vm-startup-hook)
+	;; After the hook, so that a configuration finished there is seen as
+	;; finished.
+	(vm-suggest-checking-configuration-maybe)))
   ;; check for postponed messages
   (vm-update-draft-count))
 
@@ -1878,6 +1881,28 @@ empty host fails later saying nothing about where it came from."
     (while (string-empty-p (string-trim answer))
       (setq answer (read-string prompt default)))
     (string-trim answer)))
+
+(defvar vm-suggested-checking-configuration nil
+  "Whether the suggestion to check the configuration has been made.
+Once per Emacs session, not once per folder visited.")
+
+(defun vm-suggest-checking-configuration-maybe ()
+  "Say once that vm-check-configuration has something to report.
+
+A suggestion and not the report: it names the command and how many things
+it found, and leaves the reading of them to someone who asks.  Nothing is
+said on a configuration whose checked settings are all in place, so this is
+silent for everyone it has nothing to tell."
+  (when (and vm-suggest-checking-configuration
+             (not vm-suggested-checking-configuration))
+    (setq vm-suggested-checking-configuration t)
+    (let ((problems (length (vm-configuration-problems))))
+      (when (> problems 0)
+        (vm-warn 1 2 (concat "%d thing%s not set up: M-x vm-check-configuration"
+                             " says what, M-x vm-setup asks for it"
+                             " (vm-suggest-checking-configuration to stop"
+                             " this)")
+                 problems (if (= problems 1) " is" "s are"))))))
 
 (defun vm-setup--ask-identity ()
   "The name and address mail will go out under, asked for."

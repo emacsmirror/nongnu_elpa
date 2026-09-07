@@ -2783,6 +2783,12 @@ for a type VM knows and the right number of fields, neither of which the
 parsers mind: a misspelt @code{imapssl} is accepted where it is written and
 fails much later, saying something about the server.
 
+@vindex vm-suggest-checking-configuration
+It never runs by itself.  What VM does unasked is say once per session, in
+one line, that the command would have something to report, and only where
+it would; @code{vm-suggest-checking-configuration} set to nil stops even
+that.
+
 @menu
 * Mail agent::          Making VM the mail reader Emacs uses.
 * Local mail::          Folders on this machine, and where new mail arrives.

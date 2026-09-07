@@ -8041,6 +8041,24 @@ regular expression instead of as a literal string.
 
 @end macro
 
+@macro vmdocvmsuggestcheckingconfiguration
+@defopt vm-suggest-checking-configuration
+@vindex vm-suggest-checking-configuration
+Non-nil means say once per session that the configuration is incomplete.
+One line in the echo area at the first VM start, naming
+vm-check-configuration, where that command would have something to
+report.  It never runs the check itself and never puts up a buffer: someone
+who has deliberately left a setting alone should not be shown a report they
+did not ask for.
+
+Nil says nothing.  Nothing is said either way once the settings VM checks
+are in place, so this is quiet on a working configuration.
+
+Default value: @code{t}
+@end defopt
+
+@end macro
+
 @macro vmdocvmsummaryuninterestingsendersarrow
 @defopt vm-summary-uninteresting-senders-arrow
 @vindex vm-summary-uninteresting-senders-arrow

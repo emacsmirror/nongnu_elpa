@@ -221,6 +221,11 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     address mail goes out from, how it is sent, where folders are kept, and
     where new mail comes from.
 
+    It never runs by itself.  What VM does unasked is say once per session,
+    in one line, that the command would have something to report, and only
+    where it would; `vm-suggest-checking-configuration` set to nil stops
+    even that.
+
     It reports only settings whose default either does nothing or does
     something the reader did not choose, so silence is meaningful.  Two are
     worth naming: `user-mail-address` when Emacs has invented it from the
