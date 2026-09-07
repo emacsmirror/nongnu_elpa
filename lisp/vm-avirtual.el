@@ -117,7 +117,6 @@
 
 (declare-function vm-get-folder-buffer "vm" (folder))
 ;; The following function is erroneously called for fsfemacs as well
-(declare-function key-or-menu-binding "vm-xemacs" (key &optional menu-flag))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 
 ;; vm-save.el function
@@ -652,11 +651,8 @@ format:
       (setq selector (vm-virtual-get-selector
                       (vm-read-string "Virtual folder: "
                                       vm-virtual-folder-alist)))
-      (if (featurep 'xemacs)
-	  (setq function 
-		(key-or-menu-binding (read-key-sequence "VM command: ")))
-	(setq function
-		(key-binding (read-key-sequence "VM command: ")))))
+      (setq function
+	    (key-binding (read-key-sequence "VM command: "))))
 
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
 

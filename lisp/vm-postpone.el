@@ -110,24 +110,12 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-(declare-function deiconify-frame "vm-xemacs" (&optional frame))
-(declare-function frames-of-buffer "vm-xemacs" 
-		  (&optional buffer visible-only))
-(declare-function user-mail-address "vm-xemacs" ())
-
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-visit-folder "vm" (folder &optional read-only))
 
 (declare-function bbdb-extract-address-components 
 		  "ext:bbdb" (adstring &optional ignore-errors))
 (declare-function bbdb/vm-alternate-full-name "ext:bbdb-vm" (address))
-
-(if (not (boundp 'user-mail-address))
-    (if (functionp 'user-mail-address)
-        (setq user-mail-address (user-mail-address))
-      (setq user-mail-address "unknown")
-      (message "Please set the variable `user-mail-address'")
-      (sit-for 2)))
 
 ; Group already defined in vm-vars.el      
 
@@ -533,8 +521,6 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 	  ;; in the postponded folder expunge them right now 
 	  (when (string= (buffer-name buffer)
 			 (file-name-nondirectory vm-postponed-folder))
-	    (if (and (featurep 'xemacs) (frames-of-buffer buffer t))
-		(iconify-frame (car (frames-of-buffer buffer))))
 	    (when vm-auto-expunge-postponed-folder
               (save-excursion
                 (switch-to-buffer buffer)
@@ -818,8 +804,6 @@ had just declined the question that there were no drafts."
                     (not (vm-deleted-flag (car vm-message-pointer))))
               (message "Please select a draft!")
               (select-window (car (get-buffer-window-list buffer nil 0)))
-              (if (and (featurep 'xemacs) (frames-of-buffer buffer))
-                  (deiconify-frame (car (frames-of-buffer buffer))))
               (setq action 'none))
           (setq action 'visit)))
 
@@ -1070,11 +1054,6 @@ See the variable `vm-mail-priority'."
         (progn (mail-position-on-field "Subject")
                (insert "\n" vm-mail-priority)))))
 
-;;-----------------------------------------------------------------------------
-(if (not (featurep 'xemacs))
-    (defun user-home-directory ()
-      (getenv "HOME")))
-
 (defun vm-mail-fcc-file-join (dir file)
   "Returns a nice path to a folder."
   (let* ((path (expand-file-name file dir)))
@@ -1198,8 +1177,7 @@ This function is a slightly changed version of `vm-auto-select-folder'."
                         ;; Set up a buffer that matches our cached
                         ;; match data.
                         (with-current-buffer buf
-                          (if (not (featurep 'xemacs))
-                              (set-buffer-multibyte nil)) ; for empty buffer
+                          (set-buffer-multibyte nil) ; for empty buffer
                           (widen)
                           (erase-buffer)
                           (insert header)

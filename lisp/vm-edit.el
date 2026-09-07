@@ -72,8 +72,7 @@ replace the original, use C-c C-] and the edit will be aborted."
 		(format "edit of %s's note re: %s"
 			(vm-su-full-name (car vm-message-pointer))
 			(vm-su-subject (car vm-message-pointer)))))
-	 (if (not (featurep 'xemacs))
-	     (set-buffer-multibyte nil)) ; for new buffer
+	 (set-buffer-multibyte nil)	; for new buffer
 	 (vm-set-edit-buffer-of (car mp) edit-buf)
 	 (copy-to-buffer edit-buf
 			 (vm-headers-of (car mp))

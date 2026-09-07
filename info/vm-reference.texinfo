@@ -1326,11 +1326,6 @@ Face to be used to highlight headers.
 The headers to highlight are specified by the @code{vm-highlighted-header-regexp}
 variable.
 
-This variable is ignored under XEmacs if @code{vm-use-lucid-highlighting} is
-non-nil.  XEmacs’ highlight-headers package is used instead.  See the
-documentation for the function @code{highlight-headers} to find out how to
-customize header highlighting using this package.
-
 Default value: @code{vm-highlighted-header}
 @end defopt
 
@@ -7019,14 +7014,6 @@ Name of a directory where VM can put temporary files.
 Default value: worked out when VM is loaded, from this system.
 @end defopt
 
-@defopt vm-use-lucid-highlighting
-@vindex vm-use-lucid-highlighting
-Non-nil means to use the @code{highlight-headers} package in XEmacs.
-Nil means just use VM’s builtin header highlighting code.
-
-FSF Emacs always uses VM’s builtin highlighting code.
-@end defopt
-
 @defopt vm-verbal-time
 @vindex vm-verbal-time
 Number of seconds for which to display VM’s minibuffer messages.
@@ -8264,13 +8251,6 @@ This is a regular expression that matches the names of headers that should
 be highlighted when a message is first presented.  For example setting
 this variable to "From:\\|Subject:" causes the From and Subject
 headers to be highlighted.
-
-If you’re using XEmacs, you might want to use the builtin
-@code{highlight-headers} package instead.  If so, then you should set
-the variable @code{vm-use-lucid-highlighting} non-nil.  You’ll need to
-set the various variables used by the highlight-headers package
-to customize highlighting.  @code{vm-highlighted-header-regexp} is
-ignored in this case.
 @end defopt
 
 @defopt vm-honor-page-delimiters
@@ -10641,23 +10621,6 @@ A nil value means VM should not change the binding of mouse-3.
 Default value: @code{t}
 @end defopt
 
-@defopt vm-toolbar-height
-@vindex vm-toolbar-height
-Desired height of the toolbar.
-@end defopt
-
-@defopt vm-toolbar-orientation
-@vindex vm-toolbar-orientation
-Value is a symbol that specifies where the VM toolbar is located.
-Legal values are @code{left}, @code{right} @code{top} and @code{bottom}.  Any other
-value will be interpreted as @code{top}.
-
-This variable only has meaning under XEmacs.
-Under FSF Emacs 21 the toolbar is always at the top of the frame.
-
-Default value: @code{top}
-@end defopt
-
 @defopt vm-toolbar-pixmap-directory
 @vindex vm-toolbar-pixmap-directory
 The directory VM should find its toolbar pixmaps.
@@ -10718,15 +10681,10 @@ Non-nil value causes VM to provide a toolbar interface.
 Value should be a list of symbols and integers that will determine which
 toolbar buttons will appear and in what order.
 
-If nil appears in the list, it should appear exactly once.  All
-buttons after nil in the list will be displayed flushright in
-top/bottom toolbars and flushbottom in left/right toolbars.
-
-If a positive integer N appears in the list, a blank space will
-appear in the toolbar with a width of N pixels for top/bottom
-toolbars, and a height of N for left/right toolbars.
-
-See also @code{vm-toolbar-orientation} to control where the toolbar is placed.
+A nil or an integer in the list is ignored.  Both meant something to
+XEmacs, which VM no longer supports: nil made what followed it flushright,
+and an integer put that many pixels of space in.  The Emacs toolbar has
+neither, and its position is @code{tool-bar-position}, a frame parameter.
 
 Default value:
 @example
@@ -11653,22 +11611,6 @@ Like @code{vm-visit-virtual-folder}, but run in a newly created frame.
 @findex vm-visit-virtual-folder-other-window
 Like @code{vm-visit-virtual-folder}, but run in a different window.
 @end deffn
-
-@appendixsubsec User options
-
-@defopt vm-toolbar
-@vindex vm-toolbar
-Non-nil value should be a list of toolbar button descriptors.
-See the documentation for the variable default-toolbar for a
-definition of what a toolbar button descriptor is.
-
-If @code{vm-toolbar} is set non-nil VM will use its value as a toolbar
-instantiator instead of the usual behavior of building a button
-list based on the value of @code{vm-use-toolbar}.  @code{vm-use-toolbar} still
-must be set non-nil for a toolbar to appear, however.
-
-Consider this variable experimental; it may not be supported forever.
-@end defopt
 
 @node Reference for Virtual folder actions, Reference for Virtual folders, Reference for VM itself, Reference
 @appendixsec Virtual folder actions

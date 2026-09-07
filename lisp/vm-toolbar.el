@@ -37,22 +37,11 @@
 (declare-function vm-auto-select-folder "vm-save" 
 		  (mp &optional auto-folder-alist))
 
-(declare-function glyph-height "vm-xemacs" (glyph &optional window))
-(declare-function glyph-width "vm-xemacs" (glyph &optional window))
-(declare-function make-glyph "vm-xemacs" (&optional spec-list type))
-(declare-function set-specifier "vm-xemacs" 
-		  (specifier value &optional locale tag-set how-to-add))
-
-(defvar vm-toolbar-specifier nil)
-(defvar right-toolbar)
-(defvar right-toolbar-width)
-(defvar left-toolbar)
-(defvar left-toolbar-width)
-(defvar bottom-toolbar)
-(defvar bottom-toolbar-height)
-(defvar top-toolbar)
-(defvar top-toolbar-height)
-
+;; Each button is [ICON COMMAND ENABLED-FORM HELP].  ICON named a list of
+;; XEmacs glyphs and is unread now, `vm-toolbar-fsfemacs-install-toolbar'
+;; finding the image files by the button's own name; the two delete icons
+;; below are variables still, being what tells the delete button from the
+;; undelete one.
 (defconst vm-toolbar-next-button
   [vm-toolbar-next-icon
    vm-toolbar-next-command
@@ -63,7 +52,6 @@ fbound to `vm-next-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-next-command 'some-other-command)"])
-(defvar vm-toolbar-next-icon nil)
 (or (fboundp 'vm-toolbar-next-command)
     (defalias 'vm-toolbar-next-command 'vm-next-message))
 (put 'vm-toolbar-next-command 'vm-called-by-vm t)
@@ -78,7 +66,6 @@ fbound to `vm-previous-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-previous-command 'some-other-command)"])
-(defvar vm-toolbar-previous-icon nil)
 (or (fboundp 'vm-toolbar-previous-command)
     (defalias 'vm-toolbar-previous-command 'vm-previous-message))
 (put 'vm-toolbar-previous-command 'vm-called-by-vm t)
@@ -88,7 +75,6 @@ s-expression like this one in your .vm file:
    vm-toolbar-autofile-message
    (vm-toolbar-can-autofile-p)
   "Save the current message to a folder selected using vm-auto-folder-alist."])
-(defvar vm-toolbar-autofile-icon nil)
 
 (defconst vm-toolbar-file-button
   [vm-toolbar-file-icon vm-toolbar-file-command (vm-toolbar-any-messages-p)
@@ -98,7 +84,6 @@ fbound to `vm-save-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-file-command 'some-other-command)"])
-(defvar vm-toolbar-file-icon nil)
 (or (fboundp 'vm-toolbar-file-command)
     (defalias 'vm-toolbar-file-command 'vm-save-message))
 (put 'vm-toolbar-file-command 'vm-called-by-vm t)
@@ -112,7 +97,6 @@ fbound to `vm-get-new-mail'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-getmail-command 'some-other-command)"])
-(defvar vm-toolbar-getmail-icon nil)
 (or (fboundp 'vm-toolbar-getmail-command)
     (defalias 'vm-toolbar-getmail-command 'vm-get-new-mail))
 (put 'vm-toolbar-getmail-command 'vm-called-by-vm t)
@@ -127,7 +111,6 @@ fbound to `vm-print-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-print-command 'some-other-command)"])
-(defvar vm-toolbar-print-icon nil)
 (or (fboundp 'vm-toolbar-print-command)
     (defalias 'vm-toolbar-print-command 'vm-print-message))
 (put 'vm-toolbar-print-command 'vm-called-by-vm t)
@@ -140,7 +123,6 @@ fbound to `vm-visit-folder'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-visit-command 'some-other-command)"])
-(defvar vm-toolbar-visit-icon nil)
 (or (fboundp 'vm-toolbar-visit-command)
     (defalias 'vm-toolbar-visit-command 'vm-visit-folder))
 (put 'vm-toolbar-visit-command 'vm-called-by-vm t)
@@ -155,7 +137,6 @@ fbound to `vm-followup-include-text'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-reply-command 'some-other-command)"])
-(defvar vm-toolbar-reply-icon nil)
 (or (fboundp 'vm-toolbar-reply-command)
     (defalias 'vm-toolbar-reply-command 'vm-followup-include-text))
 (put 'vm-toolbar-reply-command 'vm-called-by-vm t)
@@ -170,7 +151,6 @@ fbound to `vm-forward-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-forward-command 'some-other-command)"])
-(defvar vm-toolbar-forward-icon nil)
 (or (fboundp 'vm-toolbar-forward-command)
     (defalias 'vm-toolbar-forward-command 'vm-forward-message))
 (put 'vm-toolbar-forward-command 'vm-called-by-vm t)
@@ -185,7 +165,6 @@ fbound to `vm-followup-message'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-followup-command 'some-other-command)"])
-(defvar vm-toolbar-followup-icon nil)
 (or (fboundp 'vm-toolbar-followup-command)
     (defalias 'vm-toolbar-followup-command 'vm-followup))
 (put 'vm-toolbar-followup-command 'vm-called-by-vm t)
@@ -198,7 +177,6 @@ fbound to `vm-mail'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-compose-command 'some-other-command)"])
-(defvar vm-toolbar-compose-icon nil)
 (or (fboundp 'vm-toolbar-compose-command)
     (defalias 'vm-toolbar-compose-command 'vm-mail))
 (put 'vm-toolbar-compose-command 'vm-called-by-vm t)
@@ -217,7 +195,6 @@ fbound to `vm-decode-mime-messages'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-decode-mime-command 'some-other-command)"])
-(defvar vm-toolbar-decode-mime-icon nil)
 (or (fboundp 'vm-toolbar-decode-mime-command)
     (defalias 'vm-toolbar-decode-mime-command 'vm-decode-mime-message))
 (put 'vm-toolbar-decode-mime-command 'vm-called-by-vm t)
@@ -236,13 +213,6 @@ s-expression like this one in your .vm file:
    "Delete the current message, or undelete it if it is already deleted."])
 (defvar vm-toolbar-delete/undelete-icon nil)
 (make-variable-buffer-local 'vm-toolbar-delete/undelete-icon)
-
-(defvar vm-toolbar-help-icon nil)
-
-(defvar vm-toolbar-recover-icon nil)
-
-(defvar vm-toolbar-helper-icon nil)
-(make-variable-buffer-local 'vm-toolbar-helper-icon)
 
 (defconst vm-toolbar-help-button
   [vm-toolbar-helper-icon vm-toolbar-helper-command
@@ -281,7 +251,6 @@ fbound to `vm-quit'.
 You can make this button run some other command by using a Lisp
 s-expression like this one in your .vm file:
    (fset 'vm-toolbar-quit-command 'some-other-command)"])
-(defvar vm-toolbar-quit-icon nil)
 (or (fboundp 'vm-toolbar-quit-command)
     (defalias 'vm-toolbar-quit-command 'vm-quit))
 (put 'vm-toolbar-quit-command 'vm-called-by-vm t)
@@ -385,45 +354,29 @@ the message, rather than prompting for a folder."
       (setq vm-toolbar-delete/undelete-icon vm-toolbar-undelete-icon)
     (setq vm-toolbar-delete/undelete-icon vm-toolbar-delete-icon))
   (cond ((vm-toolbar-can-recover-p)
-	 (setq vm-toolbar-helper-command 'vm-recover-folder
-	       vm-toolbar-helper-icon vm-toolbar-recover-icon))
+	 (setq vm-toolbar-helper-command 'vm-recover-folder))
 	((and (vm-toolbar-mail-waiting-p)
 	      (not (memq 'getmail vm-use-toolbar)))
-	 (setq vm-toolbar-helper-command 'vm-get-new-mail
-	       vm-toolbar-helper-icon vm-toolbar-getmail-icon))
+	 (setq vm-toolbar-helper-command 'vm-get-new-mail))
 	((and (vm-toolbar-can-decode-mime-p) (not vm-mime-decoded)
 	      (not (memq 'mime vm-use-toolbar)))
-	 (setq vm-toolbar-helper-command 'vm-decode-mime-message
-	       vm-toolbar-helper-icon vm-toolbar-decode-mime-icon))
+	 (setq vm-toolbar-helper-command 'vm-decode-mime-message))
 	(t
-	 (setq vm-toolbar-helper-command 'vm-help
-	       vm-toolbar-helper-icon vm-toolbar-help-icon)))
+	 (setq vm-toolbar-helper-command 'vm-help)))
   (if (and vm-summary-buffer (buffer-name vm-summary-buffer))
       (vm-copy-local-variables vm-summary-buffer
 			       'vm-toolbar-delete/undelete-icon
-			       'vm-toolbar-helper-command
-			       'vm-toolbar-helper-icon))
+			       'vm-toolbar-helper-command))
   (if (and vm-presentation-buffer (buffer-name vm-presentation-buffer))
       (vm-copy-local-variables vm-presentation-buffer
 			       'vm-toolbar-delete/undelete-icon
-			       'vm-toolbar-helper-command
-			       'vm-toolbar-helper-icon))
-  (and vm-toolbar-specifier
-       (progn
-	 (set-specifier vm-toolbar-specifier (cons (current-buffer) nil))
-	 (set-specifier vm-toolbar-specifier (cons (current-buffer)
-						   vm-toolbar)))))
+			       'vm-toolbar-helper-command)))
 
 (defun vm-toolbar-install-or-uninstall-toolbar ()
-  (and (vm-toolbar-support-possible-p) vm-use-toolbar
-       (vm-toolbar-install-toolbar))
-  (if (and (not (featurep 'xemacs)) (not vm-use-toolbar))
-      (vm-toolbar-fsfemacs-uninstall-toolbar)))
-
-(defcustom vm-toolbar-height nil
-  "*Desired height of the toolbar."
-  :group 'vm-toolbar
-  :type '(choice (const  :tag "Automatic" nil) integer))
+  (when (and (vm-toolbar-support-possible-p) vm-use-toolbar)
+    (vm-toolbar-install-toolbar))
+  (unless vm-use-toolbar
+    (vm-toolbar-fsfemacs-uninstall-toolbar)))
 
 (defun vm-toolbar-install-toolbar ()
   ;; drag these in now instead of waiting for them to be
@@ -432,153 +385,8 @@ the message, rather than prompting for a folder."
   ;; save file is newer..."
   (require 'vm-save)
   (require 'vm-summary)
-  (if (not (featurep 'xemacs))
-      (if (not vm-fsfemacs-toolbar-installed-p)
-	  (vm-toolbar-fsfemacs-install-toolbar))
-    (if (not (vm-toolbar-pixmap-directory))
-	(progn
-	  (vm-warn 
-	   0 2 "Bad toolbar pixmap directory, can't setup toolbar."))
-      (vm-toolbar-initialize)
-      (let ((height (or vm-toolbar-height
-			(+ 5 (glyph-height (car vm-toolbar-help-icon)))))
-	    (width (+ 5 (glyph-width (car vm-toolbar-help-icon))))
-	    (frame (selected-frame))
-	    (buffer (current-buffer))
-	    (tag-set '(win))
-	    (myframe (vm-created-this-frame-p))
-	    toolbar )
-	;; glyph-width and glyph-height return 0 at startup sometimes
-	;; use reasonable values if they fail.
-	(if (= width 4)
-	    (setq width 38))
-	(if (= height 4)
-	    (setq height 38))
-	;; honor user setting of vm-toolbar if they are daring enough
-	;; to set it.
-	(if vm-toolbar
-	    (setq toolbar vm-toolbar)
-	  (setq toolbar (vm-toolbar-make-toolbar-spec)
-		vm-toolbar toolbar))
-	(cond ((eq vm-toolbar-orientation 'right)
-	       (setq vm-toolbar-specifier right-toolbar)
-	       (if myframe
-		   (set-specifier right-toolbar toolbar frame tag-set))
-	       (set-specifier right-toolbar toolbar buffer)
-	       (set-specifier right-toolbar-width width frame tag-set))
-	      ((eq vm-toolbar-orientation 'left)
-	       (setq vm-toolbar-specifier left-toolbar)
-	       (if myframe
-		   (set-specifier left-toolbar toolbar frame tag-set))
-	       (set-specifier left-toolbar toolbar buffer)
-	       (set-specifier left-toolbar-width width frame tag-set))
-	      ((eq vm-toolbar-orientation 'bottom)
-	       (setq vm-toolbar-specifier bottom-toolbar)
-	       (if myframe
-		   (set-specifier bottom-toolbar toolbar frame tag-set))
-	       (set-specifier bottom-toolbar toolbar buffer)
-	       (set-specifier bottom-toolbar-height height frame tag-set))
-	      (t
-	       (setq vm-toolbar-specifier top-toolbar)
-	       (if myframe
-		   (set-specifier top-toolbar toolbar frame tag-set))
-	       (set-specifier top-toolbar toolbar buffer)
-	       (set-specifier top-toolbar-height height frame tag-set)))))))
-
-(defun vm-toolbar-make-toolbar-spec ()
-  (let ((button-alist '(
-			(autofile . vm-toolbar-autofile-button)
-			(compose . vm-toolbar-compose-button)
-			(delete/undelete . vm-toolbar-delete/undelete-button)
-			(file . vm-toolbar-file-button)
-			(getmail . vm-toolbar-getmail-button)
-			(help . vm-toolbar-help-button)
-			(mime . vm-toolbar-decode-mime-button)
-			(next . vm-toolbar-next-button)
-			(previous . vm-toolbar-previous-button)
-			(print . vm-toolbar-print-button)
-			(quit . vm-toolbar-quit-button)
-			(reply . vm-toolbar-reply-button)
-			(forward . vm-toolbar-forward-button)
-			(followup . vm-toolbar-followup-button)
-			(visit . vm-toolbar-visit-button)
-			))
-	(button-list vm-use-toolbar)
-	cons
-	(toolbar nil))
-    (while button-list
-      (cond ((null (car button-list))
-	     (setq toolbar (cons nil toolbar)))
-	    ((integerp (car button-list))
-	     (if (< 0 (car button-list))
-		 (setq toolbar (cons (vector ':size (car button-list)
-					     ':style '2d)
-				     toolbar))))
-	    (t
-	     (setq cons (assq (car button-list) button-alist))
-	     (if cons
-		 (setq toolbar (cons (symbol-value (cdr cons)) toolbar)))))
-      (setq button-list (cdr button-list)))
-    (nreverse toolbar) ))
-
-(defun vm-toolbar-initialize ()
-  (cond
-   ((not (featurep 'xemacs)) nil)
-   ((null vm-toolbar-help-icon)
-    (let ((tuples
-           (list
-            '(vm-toolbar-decode-mime-icon
-              "mime-up.xpm" "mime-dn.xpm" "mime-xx.xpm")
-            '(vm-toolbar-next-icon
-              "next-up.xpm" "next-dn.xpm" "next-dn.xpm")
-            '(vm-toolbar-previous-icon
-              "previous-up.xpm" "previous-dn.xpm" "previous-dn.xpm")
-            '(vm-toolbar-delete-icon
-              "delete-up.xpm" "delete-dn.xpm" "delete-dn.xpm")
-            '(vm-toolbar-undelete-icon
-              "undelete-up.xpm" "undelete-dn.xpm" "undelete-dn.xpm")
-            '(vm-toolbar-autofile-icon
-              "autofile-up.xpm" "autofile-dn.xpm" "autofile-dn.xpm")
-            '(vm-toolbar-getmail-icon
-              "getmail-up.xpm" "getmail-dn.xpm" "getmail-dn.xpm")
-            '(vm-toolbar-file-icon
-              "file-up.xpm" "file-dn.xpm" "file-dn.xpm")
-            '(vm-toolbar-reply-icon
-              "reply-up.xpm" "reply-dn.xpm" "reply-dn.xpm")
-            '(vm-toolbar-forward-icon
-              "forward-up.xpm" "forward-dn.xpm" "forward-dn.xpm")
-            '(vm-toolbar-followup-icon
-              "followup-up.xpm" "followup-dn.xpm" "followup-dn.xpm")
-            '(vm-toolbar-compose-icon
-              "compose-up.xpm" "compose-dn.xpm" "compose-dn.xpm")
-            '(vm-toolbar-print-icon
-              "print-up.xpm" "print-dn.xpm" "print-dn.xpm")
-            '(vm-toolbar-visit-icon
-              "visit-up.xpm" "visit-dn.xpm" "visit-dn.xpm")
-            '(vm-toolbar-quit-icon
-              "quit-up.xpm" "quit-dn.xpm" "quit-dn.xpm")
-            '(vm-toolbar-help-icon
-              "help-up.xpm" "help-dn.xpm" "help-dn.xpm")
-            '(vm-toolbar-recover-icon
-              "recover-up.xpm" "recover-dn.xpm" "recover-dn.xpm")
-            ))
-	  tuple files var)
-      (while tuples
-	(setq tuple (car tuples)
-	      var (car tuple)
-	      files (cdr tuple))
-	(set var (mapcar
-		  (function
-		   (lambda (f)
-		     (make-glyph
-		      (expand-file-name f (vm-toolbar-pixmap-directory)))))
-		  files))
-	(setq tuples (cdr tuples))))))
-  (setq vm-toolbar-delete/undelete-icon vm-toolbar-delete-icon)
-  (setq-default vm-toolbar-delete/undelete-icon vm-toolbar-delete-icon)
-  (setq vm-toolbar-helper-command 'vm-help)
-  (setq vm-toolbar-helper-icon vm-toolbar-help-icon)
-  (setq-default vm-toolbar-helper-icon vm-toolbar-help-icon))
+  (unless vm-fsfemacs-toolbar-installed-p
+    (vm-toolbar-fsfemacs-install-toolbar)))
 
 (defun vm-toolbar-fsfemacs-uninstall-toolbar ()
   (define-key vm-mode-map [toolbar] nil)

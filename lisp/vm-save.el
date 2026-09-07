@@ -78,8 +78,7 @@ specified, use `vm-auto-folder-alist'."
 			  ;; Set up a buffer that matches our cached
 			  ;; match data.
 			  (with-current-buffer buf
-			    (if (not (featurep 'xemacs))
-				(set-buffer-multibyte nil)) ; for empty buffer
+			    (set-buffer-multibyte nil)	; for empty buffer
 			    (widen)
 			    (erase-buffer)
 			    (insert header)

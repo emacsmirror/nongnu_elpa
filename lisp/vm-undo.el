@@ -108,19 +108,9 @@
 	    (t (setq udp-prev udp)))
       (setq udp (cdr udp)))
     (if (equal '(nil) vm-undo-record-list)
-	(setq vm-undo-record-list nil)))
-  ;; for the Undo button on the menubar, if present
-  (when (and (null vm-undo-record-list)
-	     (vm-menu-support-possible-p)
-	     (featurep 'xemacs))
-    (vm-menu-set-menubar-dirty-flag)))
-	    
+	(setq vm-undo-record-list nil))))
+
 (defun vm-undo-record (sexp)
-  ;; for the Undo button on the menubar, if present
-  (when (and (null vm-undo-record-list)
-	     (vm-menu-support-possible-p)
-	     (featurep 'xemacs))
-    (vm-menu-set-menubar-dirty-flag))
   (setq vm-undo-record-list (cons sexp vm-undo-record-list)))
 
 (defun vm-undo-describe (record)

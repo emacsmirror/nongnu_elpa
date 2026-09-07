@@ -22,34 +22,11 @@
 
 ;;; Code:
 
-;; Definitions for things that aren't in all Emacsen and that we really
-;; prefer not to live without.
-(eval-and-compile
-  (if (fboundp 'unless) nil
-    (defmacro unless (bool &rest forms) `(if ,bool nil ,@forms))
-    (defmacro when (bool &rest forms) `(if ,bool (progn ,@forms))))
-  (unless (fboundp 'save-current-buffer)
-    (defalias 'save-current-buffer 'save-excursion))
-  (if (fboundp 'mapc)
-      (defalias 'bbdb-mapc 'mapc)
-    (defalias 'bbdb-mapc 'mapcar))
-
-  (unless (fboundp 'with-current-buffer)
-    (defmacro with-current-buffer (buf &rest body)
-      `(save-current-buffer (set-buffer ,buf) ,@body)))
-
-  (unless (fboundp 'defvaralias)
-    (defmacro defvaralias (&rest _args)))
-
-  (unless (fboundp 'declare-function)
-    (defmacro declare-function (_fn _file &optional _arglist _fileonly))))
-
 (defmacro vm-interactive-p ()
-  (if (featurep 'xemacs)
-      `(interactive-p)
-    (if (fboundp 'called-interactively-p) ;; (> emacs-major-version 23)
-	`(called-interactively-p 'interactive)
-      `(interactive-p))))
+  "Non-nil when the command now running was called interactively.
+A macro, so `cl-letf' on the symbol does not stub it; stub
+`called-interactively-p' instead."
+  `(called-interactively-p 'interactive))
 
 (declare-function vm-check-for-killed-summary "vm-misc" ())
 (declare-function vm-check-for-killed-presentation "vm-misc" ())
@@ -192,14 +169,10 @@ current-buffer in `vm-user-interaction-buffer'."
       (vm-build-threads nil)))
 
 (defsubst vm-binary-coding-system ()
-  (cond ((featurep 'xemacs) 'binary)
-	((featurep 'xemacs) 'binary)
-	(t 'no-conversion)))
+  'no-conversion)
 
 (defsubst vm-line-ending-coding-system ()
-  (cond ((featurep 'xemacs) 'no-conversion)
-	((featurep 'xemacs) 'no-conversion)
-	(t 'raw-text)))
+  'raw-text)
 
 ;; can't use defsubst where quoting is needed in some places but
 ;; not others.

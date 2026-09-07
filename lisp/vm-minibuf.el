@@ -29,9 +29,6 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-(declare-function button-press-event-p "vm-xemacs" (object))
-(declare-function button-release-event-p "vm-xemacs" (object))
-(declare-function menu-event-p "vm-xemacs" (object))
 (declare-function vm-folder-buffers "vm" (&optional non-virtual))
 
 (defun vm-minibuffer-complete-word (&optional exiting)
@@ -223,16 +220,12 @@ default the local keymap of the current buffer is used."
 			       (list 'and 'string (list function 'string)))))
 	     (while keymaps
 	       (setq keymap (car keymaps))
-	       (cond ((featurep 'xemacs)
-		      (define-key keymap 'button1 command)
-		      (define-key keymap 'button2 command))
-		     ((not (featurep 'xemacs))
-		      (define-key keymap [down-mouse-1] 'ignore)
-		      (define-key keymap [drag-mouse-1] 'ignore)
-		      (define-key keymap [mouse-1] command)
-		      (define-key keymap [drag-mouse-2] 'ignore)
-		      (define-key keymap [down-mouse-2] 'ignore)
-		      (define-key keymap [mouse-2] command)))
+	       (define-key keymap [down-mouse-1] 'ignore)
+	       (define-key keymap [drag-mouse-1] 'ignore)
+	       (define-key keymap [mouse-1] command)
+	       (define-key keymap [drag-mouse-2] 'ignore)
+	       (define-key keymap [down-mouse-2] 'ignore)
+	       (define-key keymap [mouse-2] command)
 	       (setq keymaps (cdr keymaps)))))
       (setq list (sort (copy-sequence list) (function string-lessp))
 	    w (vm-get-buffer-window (current-buffer))
@@ -320,16 +313,9 @@ item in turn."
   (if (consp (car completion-list))
       (setq completion-list (nreverse (mapcar 'car completion-list))))
   (if (and completion-list (vm-mouse-support-possible-here-p))
-      (cond ((and (featurep 'xemacs)
-		  (or (button-press-event-p last-command-event)
-		      (button-release-event-p last-command-event)
-		      (menu-event-p last-command-event)))
-	     (vm-mouse-read-string prompt completion-list multi-word))
-	    ((and (not (featurep 'xemacs))
-		  (listp last-nonmenu-event))
-	     (vm-mouse-read-string prompt completion-list multi-word))
-	    (t
-	     (vm-keyboard-read-string prompt completion-list multi-word)))
+      (if (listp last-nonmenu-event)
+	  (vm-mouse-read-string prompt completion-list multi-word)
+	(vm-keyboard-read-string prompt completion-list multi-word))
     (vm-keyboard-read-string prompt completion-list multi-word)))
 
 (defun vm-read-number (prompt)
@@ -366,19 +352,11 @@ argument is a completion PREDICATE -- so the list is supplied by binding
   "Like `read-file-name', except a mouse interface is used if a mouse
 click mouse triggered the current command."
   (if (vm-mouse-support-possible-here-p)
-      (cond ((and (featurep 'xemacs)
-		  (or (button-press-event-p last-command-event)
-		      (button-release-event-p last-command-event)
-		      (menu-event-p last-command-event)))
-	     (vm-mouse-read-file-name prompt dir default
-				      must-match initial history))
-	    ((and (not (featurep 'xemacs))
-		  (listp last-nonmenu-event))
-	     (vm-mouse-read-file-name prompt dir default
-				      must-match initial history))
-	    (t
-	     (vm-keyboard-read-file-name prompt dir default
-					 must-match initial history)))
+      (if (listp last-nonmenu-event)
+	  (vm-mouse-read-file-name prompt dir default
+				   must-match initial history)
+	(vm-keyboard-read-file-name prompt dir default
+				    must-match initial history))
     (vm-keyboard-read-file-name prompt dir default
 				must-match initial history)))
 

@@ -28,14 +28,9 @@
 (require 'vm-vars)
 (require 'auth-source)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
-(declare-function map-extents "vm-xemacs" (function &optional buffer from to))
-(declare-function focus-frame "vm-xemacs" (frame))
-(declare-function char-to-int "vm-xemacs" (char))
 (declare-function scroll-bar-mode "scroll-bar" (&optional arg))
 
-;; Aliases for xemacs/fsfemacs functions with different arguments
+;; VM's own names for the overlay functions, which were extents in XEmacs
 (declare-function vm-buffer-substring-no-properties "vm-misc.el"
 		  (start end))
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
@@ -746,79 +741,43 @@ LIST2 satisfying PRED and return the position"
       t)))
 
 ;;;###autoload (autoload 'vm-view-file-other-frame "vm-misc" nil t)
-(defalias 'vm-view-file-other-frame
-  (if (fboundp 'view-file-other-frame) ;XEmacs doesn't have it yet!
-      #'view-file-other-frame
-    #'view-file-other-window))
+(defalias 'vm-view-file-other-frame #'view-file-other-frame)
 
 
-(defalias 'vm-device-type
-  (if (featurep 'xemacs) #'device-type
-    (lambda (&optional _device)
-      "An FSF Emacs emulation for XEmacs `device-type' function.  Returns
-the type of the current screen device: one of `x', `gtk', `w32', `ns', and
-`pc'.  The optional argument DEVICE is ignored."
-      (if (eq window-system 'x)
-          (if (featurep 'gtk) 'gtk)
-        window-system))))
+(defun vm-device-type (&optional _device)
+  "The type of the current screen device.
+One of `x', `gtk', `w32', `ns' and `pc'.  DEVICE is ignored, and is there
+because XEmacs's `device-type', which this stood in for, took one."
+  (if (eq window-system 'x)
+      (if (featurep 'gtk) 'gtk)
+    window-system))
 
 (defun vm-generate-new-unibyte-buffer (name)
-  (if (featurep 'xemacs)
-      (generate-new-buffer name)
-    (let* (;; (default-enable-multibyte-characters nil)
-	   ;; don't need this because of set-buffer-multibyte below
-	   (buffer (generate-new-buffer name)))
-      (when (fboundp 'set-buffer-multibyte)
-	(with-current-buffer buffer
-	  (set-buffer-multibyte nil)))
-      buffer)))
+  (let ((buffer (generate-new-buffer name)))
+    (with-current-buffer buffer
+      (set-buffer-multibyte nil))
+    buffer))
 
 (defun vm-generate-new-multibyte-buffer (name)
-  (if (featurep 'xemacs)
-      (generate-new-buffer name)
-    (let* (;; (default-enable-multibyte-characters t)
-	   ;; don't need this because of set-buffer-multibyte below
-	   (buffer (generate-new-buffer name)))
-      (if (fboundp 'set-buffer-multibyte)
-	  (with-current-buffer buffer
-	    (set-buffer-multibyte t))
-	;; This error checking only works on FSF
-	(with-current-buffer buffer 
-	  (unless enable-multibyte-characters
-	    (error "VM internal error #1922: buffer is not multibyte"))))
-      buffer)))
+  (let ((buffer (generate-new-buffer name)))
+    (with-current-buffer buffer
+      (set-buffer-multibyte t))
+    buffer))
 
-(defun vm-abbreviate-file-name (path)
-  (if (featurep 'xemacs)
-      (abbreviate-file-name path t)
-    (abbreviate-file-name path)))
+(defalias 'vm-abbreviate-file-name #'abbreviate-file-name)
 
-(defun vm-select-frame-set-input-focus (frame)
-  (if (fboundp 'select-frame-set-input-focus)
-      ;; defined in FSF Emacs 22.1
-      (select-frame-set-input-focus frame)
-    (select-frame frame)
-    (focus-frame frame)
-    (raise-frame frame)))
+(defalias 'vm-select-frame-set-input-focus #'select-frame-set-input-focus)
 
-(defun vm-get-buffer-window (buffer &optional which-frames which-devices)
-  (if (featurep 'xemacs)
-      (or (get-buffer-window buffer which-frames which-devices)
-	  (and vm-search-other-frames
-	       (get-buffer-window buffer t t)))
-    (or (get-buffer-window buffer which-frames)
-	(and vm-search-other-frames
-	     (get-buffer-window buffer t)))))
+(defun vm-get-buffer-window (buffer &optional which-frames _which-devices)
+  (or (get-buffer-window buffer which-frames)
+      (and vm-search-other-frames
+	   (get-buffer-window buffer t))))
 
-(defun vm-get-visible-buffer-window (buffer &optional 
-					    which-frames which-devices)
-  (if (featurep 'xemacs)
-      (or (get-buffer-window buffer which-frames which-devices)
-	  (and vm-search-other-frames
-	       (get-buffer-window buffer t which-devices)))
-    (or (get-buffer-window buffer which-frames)
-	(and vm-search-other-frames
-	     (get-buffer-window buffer 'visible)))))
+(defun vm-get-visible-buffer-window (buffer &optional
+					    which-frames _which-devices)
+  (or (get-buffer-window buffer which-frames)
+      (and vm-search-other-frames
+	   (get-buffer-window buffer 'visible))))
 
 (defun vm-force-mode-line-update ()
   "Force a mode line update in all frames."
@@ -1137,9 +1096,7 @@ than passed over in silence, since it is the one holding the older mail."
 ;; The following function is not working correctly on Gnu Emacs 23.
 ;; So we do it ourselves.
 (defun vm-delete-auto-save-file-if-necessary ()
-  (if (featurep 'xemacs)
-      (delete-auto-save-file-if-necessary)
-    (when (and buffer-auto-save-file-name delete-auto-save-files
+  (when (and buffer-auto-save-file-name delete-auto-save-files
 	       (not (string= buffer-file-name buffer-auto-save-file-name))
 	       (file-newer-than-file-p 
 		buffer-auto-save-file-name buffer-file-name))
@@ -1167,7 +1124,7 @@ than passed over in silence, since it is the one holding the older mail."
 			 buffer-auto-save-file-name)))
 	      (delete-file buffer-auto-save-file-name))
 	(file-error nil))
-      (set-buffer-auto-saved))))
+    (set-buffer-auto-saved)))
 
 (defun vm-set-region-face (start end face)
   (let ((e (vm-make-extent start end)))
@@ -1181,20 +1138,12 @@ than passed over in silence, since it is the one holding the older mail."
     (set-text-properties 0 (length s) nil s)
     (copy-sequence s)))
 
-(defalias 'vm-buffer-substring-no-properties
-  (cond ((fboundp 'buffer-substring-no-properties)
-	 (function buffer-substring-no-properties))
-	((featurep 'xemacs)
-	 (function buffer-substring))
-	(t (function vm-default-buffer-substring-no-properties))))
+(defalias 'vm-buffer-substring-no-properties #'buffer-substring-no-properties)
 
 (defun vm-buffer-string-no-properties ()
   (vm-buffer-substring-no-properties (point-min) (point-max)))
 
-(defalias 'vm-substring-no-properties
-  (cond ((fboundp 'substring-no-properties)
-	 (function substring-no-properties))
-	(t (function substring))))
+(defalias 'vm-substring-no-properties #'substring-no-properties)
 
 (defun vm-insert-region-from-buffer (buffer &optional start end)
   (let ((target-buffer (current-buffer)))
@@ -1208,70 +1157,40 @@ than passed over in silence, since it is the one holding the older mail."
       (set-buffer buffer))
     (set-buffer target-buffer)))
 
-(defalias 'vm-extent-property
-  (if (featurep 'xemacs) #'extent-property #'overlay-get))
+(defalias 'vm-extent-property #'overlay-get)
 
-(defalias 'vm-extent-object
-  (if (featurep 'xemacs) #'extent-object #'overlay-buffer))
+(defalias 'vm-extent-object #'overlay-buffer)
 
-(defalias 'vm-set-extent-property
-  (if (featurep 'xemacs) #'set-extent-property #'overlay-put))
+(defalias 'vm-set-extent-property #'overlay-put)
 
-(defalias 'vm-set-extent-endpoints
-  (if (featurep 'xemacs) #'set-extent-endpoints #'move-overlay))
+(defalias 'vm-set-extent-endpoints #'move-overlay)
 
-(defalias 'vm-make-extent
-  (if (featurep 'xemacs) #'make-extent #'make-overlay))
+(defalias 'vm-make-extent #'make-overlay)
 
-(defalias 'vm-extent-end-position
-  (if (featurep 'xemacs) #'extent-end-position #'overlay-end))
+(defalias 'vm-extent-end-position #'overlay-end)
 
-(defalias 'vm-extent-start-position
-  (if (featurep 'xemacs) #'extent-start-position #'overlay-start))
+(defalias 'vm-extent-start-position #'overlay-start)
 
-(defalias 'vm-next-extent-change
-  (if (featurep 'xemacs) #'next-extent-change #'next-overlay-change))
+(defalias 'vm-next-extent-change #'next-overlay-change)
 
-(defalias 'vm-previous-extent-change
-  (if (featurep 'xemacs) #'previous-extent-change #'previous-overlay-change))
+(defalias 'vm-previous-extent-change #'previous-overlay-change)
 
-(defalias 'vm-detach-extent
-  (if (featurep 'xemacs) #'detach-extent #'delete-overlay))
+(defalias 'vm-detach-extent #'delete-overlay)
 
-(defalias 'vm-delete-extent
-  (if (featurep 'xemacs) #'delete-extent #'delete-overlay))
+(defalias 'vm-delete-extent #'delete-overlay)
 
-(defalias 'vm-disable-extents
-  (if (featurep 'xemacs)
-      ;; XEmacs doesn't need to disable extents because they don't
-      ;; slow things down
-      (lambda (&optional _beg _end _name _val) nil)
-    #'remove-overlays))
+(defalias 'vm-disable-extents #'remove-overlays)
 
-(defalias 'vm-extent-properties
-  (if (featurep 'xemacs) #'extent-properties #'overlay-properties))
+(defalias 'vm-extent-properties #'overlay-properties)
 
-(defalias 'vm-map-extents
-  (if (featurep 'xemacs)
-      (lambda (function)
-	(map-extents function (current-buffer) (point-min) (point-max)))
-    (lambda (function)
-      "Map FUNCTION over the extents in the current buffer.
-FUNCTION is called with two arguments: an extent and a dummy argument
+(defun vm-map-extents (function)
+  "Map FUNCTION over the overlays in the current buffer.
+FUNCTION is called with two arguments: an overlay and a dummy argument
 which should be ignored."
-      ;; This is based on old code in vm-page.el, rev. 1335
-      ;; BUFFER is being ignored, possibly yet to be handled. USR, 2019-04-04
-      (let (o-lists p)
-        (setq o-lists (overlay-lists))
-        (setq p (car o-lists))
-        (while p
-          (funcall function (car p) nil)
-          (setq p (cdr p)))
-        (setq p (cdr o-lists))
-        (while p
-          (funcall function (car p) nil)
-          (setq p (cdr p)))))))
-
+  ;; This is based on old code in vm-page.el, rev. 1335
+  (let ((o-lists (overlay-lists)))
+    (dolist (o (car o-lists)) (funcall function o nil))
+    (dolist (o (cdr o-lists)) (funcall function o nil))))
 
 (defun vm-extent-at (pos &optional property)
   "Find an extent at POS in the current buffer having PROPERTY.
@@ -1293,16 +1212,12 @@ this may not be the case."
 	o ))))
 
 (defun vm-extent-list (beg end &optional property)
-  "Returns a list of the extents that overlap the positions BEG to END.
-If PROPERTY is given, then only the extents have PROPERTY are returned."
-  (if (fboundp 'extent-list)
-      (extent-list nil beg end nil property)
-    (let ((o-list (overlays-in beg end)))
-      (if property
-	  (vm-delete (function (lambda (e)
-				 (vm-extent-property e property)))
-		     o-list t)
-	o-list))))
+  "The overlays that overlap the positions BEG to END.
+Where PROPERTY is given, only those carrying it."
+  (let ((o-list (overlays-in beg end)))
+    (if property
+	(vm-delete (lambda (e) (vm-extent-property e property)) o-list t)
+      o-list)))
 
 (defun vm-copy-extent (e)
   (let ((props (vm-extent-properties e))
@@ -1377,14 +1292,14 @@ encoding/decoding, conversions, subprocess communication etc."
 ;; non-nil globally, do they?
     work-buffer ))
 
-(defalias 'vm-insert-char
-  (if (featurep 'xemacs)
-      #'insert-char
-    (lambda (char &optional count _ignored buffer)
-      (if (and buffer (eq buffer (current-buffer)))
-          (insert-char char count)
-        (with-current-buffer buffer
-          (insert-char char count))))))
+(defun vm-insert-char (char &optional count _ignored buffer)
+  "Insert COUNT copies of CHAR into BUFFER, or the current buffer.
+IGNORED is there because XEmacs's `insert-char', which this stood in for,
+took an argument here that Emacs's does not."
+  (if (or (null buffer) (eq buffer (current-buffer)))
+      (insert-char char count)
+    (with-current-buffer buffer
+      (insert-char char count))))
 
 (defun vm-symbol-lists-intersect-p (list1 list2)
   (catch 'done
@@ -1467,32 +1382,18 @@ encoding/decoding, conversions, subprocess communication etc."
     (setq 65536-secs (- (nth 0 t1) (nth 0 t2) carry))
     (+ (* 65536-secs 65536)
        secs
-       (/ usecs (if (featurep 'lisp-float-type) 1e6 1000000)))))
+       (/ usecs 1e6))))
 
-(defalias 'vm-char-to-int
-  (if (featurep 'xemacs) #'char-to-int #'identity))
+(defalias 'vm-char-to-int #'identity)
 
-(defalias 'vm-charsets-in-region
-  (if (featurep 'xemacs) #'charsets-in-region #'find-charset-region))
+(defalias 'vm-charsets-in-region #'find-charset-region)
 
-;; Wrapper for coding-system-p:
-;; The XEmacs function expects a coding-system object as its argument,
-;; the GNU Emacs function expects a symbol.
-;; In the non-MULE case, return nil (is this the right fallback?).
-(defun vm-coding-system-p (name)
-  (cond ((featurep 'xemacs)
-	 (coding-system-p (find-coding-system name)))
-	((not (featurep 'xemacs))
-	 (coding-system-p name))))
+(defalias 'vm-coding-system-p #'coding-system-p)
 
-(defalias 'vm-coding-system-name
-  (if (featurep 'xemacs) #'coding-system-name #'identity))
+(defalias 'vm-coding-system-name #'identity)
 
 (defun vm-coding-system-name-no-eol (coding-system)
-  (if (featurep 'xemacs)
-      (coding-system-name
-       (coding-system-change-eol-conversion coding-system nil))
-    (coding-system-change-eol-conversion coding-system nil)))
+  (coding-system-change-eol-conversion coding-system nil))
 
 (defun vm-get-file-line-ending-coding-system (file)
   (let ((coding-system-for-read  (vm-binary-coding-system))
@@ -1504,11 +1405,11 @@ encoding/decoding, conversions, subprocess communication etc."
 	    (error nil))
 	  (goto-char (point-min))
 	  (cond ((re-search-forward "[^\r]\n" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-unix 'no-conversion-unix))
+		 'raw-text-unix)
 		((re-search-forward "\r[^\n]" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-mac 'no-conversion-mac))
+		 'raw-text-mac)
 		((search-forward "\r\n" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-dos 'no-conversion-dos))
+		 'raw-text-dos)
 		(t (vm-line-ending-coding-system))))
       (and work-buffer (kill-buffer work-buffer)))))
 
@@ -1516,11 +1417,11 @@ encoding/decoding, conversions, subprocess communication etc."
   (cond ((eq vm-default-new-folder-line-ending-type nil)
 	 (vm-line-ending-coding-system))
 	((eq vm-default-new-folder-line-ending-type 'lf)
-	 (if (not (featurep 'xemacs)) 'raw-text-unix 'no-conversion-unix))
+	 'raw-text-unix)
 	((eq vm-default-new-folder-line-ending-type 'crlf)
-	 (if (not (featurep 'xemacs)) 'raw-text-dos 'no-conversion-dos))
+	 'raw-text-dos)
 	((eq vm-default-new-folder-line-ending-type 'cr)
-	 (if (not (featurep 'xemacs)) 'raw-text-mac 'no-conversion-mac))
+	 'raw-text-mac)
 	(t
 	 (vm-line-ending-coding-system))))
 
@@ -1729,10 +1630,7 @@ front before adding it to the RING-VARIABLE."
 (defvar enable-multibyte-characters)
 (defvar buffer-display-table)
 (defun vm-fsfemacs-nonmule-display-8bit-chars ()
-  (cond ((and (not (featurep 'xemacs))
-	      (or (not (not (featurep 'xemacs)))
-		  (and (boundp 'enable-multibyte-characters)
-		       (not enable-multibyte-characters))))
+  (cond ((not enable-multibyte-characters)
 	 (let* (tab (i 160))
 	   ;; We need the function make-display-table, but it is
 	   ;; in disp-table.el, which overwrites the value of
@@ -1809,76 +1707,47 @@ If MODES is nil the take the modes from the variable
 	   (setq vm-disable-modes-ignore (cons m vm-disable-modes-ignore)))
 	 nil)))))
 
-;; Don't use vm-device-type here because it may not not be loaded yet.
-(declare-function device-type "vm-xemacs" ())
-(declare-function device-matching-specifier-tag-list "vm-xemacs" ())
-
 (defun vm-menu-can-eval-item-name ()
-  (and (featurep 'xemacs)
-       (fboundp 'check-menu-syntax)
-       (condition-case nil
-	   (check-menu-syntax '("bar" ((identity "foo") 'ding t)))
-	 (error nil))))
+  "Whether a menu item's name may be a form to evaluate.
+Only XEmacs allowed it, so this is always nil.  The callers keep their
+other branch, which spells the name out."
+  nil)
 
 (defun vm-multiple-frames-possible-p ()
   "Whether VM may put a buffer in a frame of its own.
 Never in a batch Emacs: `make-frame' is defined there and fails, with
 \"Unknown terminal type\", so a composition made by a script died at the
 point where VM went to give it a frame."
-  (cond (noninteractive nil)
-	((featurep 'xemacs)
-	 (or (memq 'win (device-matching-specifier-tag-list))
-	     (featurep 'tty-frames)))
-        ((not (featurep 'xemacs))
-         (fboundp 'make-frame))))
+  (and (not noninteractive) (fboundp 'make-frame)))
  
 (defun vm-mouse-support-possible-p ()
-  (cond ((featurep 'xemacs)
-         (featurep 'window-system))
-        ((not (featurep 'xemacs))
-         (fboundp 'track-mouse))))
+  (fboundp 'track-mouse))
  
 (defun vm-mouse-support-possible-here-p ()
-  (cond ((featurep 'xemacs)
-	 (memq 'win (device-matching-specifier-tag-list)))
-	((not (featurep 'xemacs))
-	 (memq window-system '(x mac w32 win32)))))
+  (memq window-system '(x mac w32 win32)))
 
 (defun vm-menu-support-possible-p ()
-  (cond ((featurep 'xemacs)
-	 (featurep 'menubar))
-	((not (featurep 'xemacs))
-	 (fboundp 'menu-bar-mode))))
+  (fboundp 'menu-bar-mode))
  
 (defun vm-menubar-buttons-possible-p ()
   "Menubar buttons are menus that have an immediate action.  Some
 Windowing toolkits do not allow such buttons.  This says whether such
 buttons are possible under the current windowing system."
-  (not
-   (cond ((featurep 'xemacs) (memq (device-type) '(gtk ns)))
-	 ((not (featurep 'xemacs)) (or (and (eq window-system 'x) (featurep 'gtk))
-			    (eq window-system 'ns))))))
+  (not (or (and (eq window-system 'x) (featurep 'gtk))
+	   (eq window-system 'ns))))
 
 (defun vm-toolbar-support-possible-p ()
-  (or (and (featurep 'xemacs) (featurep 'toolbar))
-      (and (not (featurep 'xemacs)) (fboundp 'tool-bar-mode) (boundp 'tool-bar-map))))
+  (and (fboundp 'tool-bar-mode) (boundp 'tool-bar-map)))
 
 (defun vm-multiple-fonts-possible-p ()
-  (cond ((featurep 'xemacs)
-	 (memq (device-type) '(x gtk mswindows)))
-	((not (featurep 'xemacs))
-	 (memq window-system '(x mac w32 win32)))))
+  (memq window-system '(x mac w32 win32)))
 
 (defun vm-images-possible-here-p ()
-  (or (and (featurep 'xemacs) (memq (device-type) '(x gtk mswindows)))
-      (and (not (featurep 'xemacs)) window-system
-	   (or (fboundp 'image-type-available-p)
-	       (vm-imagemagick-available-p)))))
+  (and window-system
+       (or (fboundp 'image-type-available-p)
+	   (vm-imagemagick-available-p))))
 
-(defun vm-image-type-available-p (type)
-  (if (fboundp 'image-type-available-p)
-      (image-type-available-p type)
-    (or (featurep type) (eq type 'xbm))))
+(defalias 'vm-image-type-available-p #'image-type-available-p)
 
 (defun vm-load-features (feature-list &optional silent)
   "Try to load those features listed in FEATURE_LIST.

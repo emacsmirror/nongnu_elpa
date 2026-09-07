@@ -747,12 +747,10 @@ of its job."
 
 (ert-deftest vm-misc-test-char-to-int-does-not-name-a-misspelt-feature ()
   "REGRESSION: `vm-char-to-int' asked for `xeamcs'.
-The XEmacs branch of that alias could therefore never be taken.  Harmless on
-GNU Emacs, which is why it sat there; the point is that a misspelt feature
-name is silent, so this checks every one VM asks about."
-  (let ((known '(xemacs berkeley-db native-sound latin-unity gtk scrollbar
-                 nas-sound xface window-system vm-pgg vm-epg tty-frames
-                 toolbar menubar lisp-float-type itimer))
+The XEmacs branch of that alias could therefore never be taken.  That branch
+is gone with XEmacs support, but the point stands: a misspelt feature name
+is silent, so this checks every one VM asks about."
+  (let ((known '(berkeley-db gtk window-system vm-pgg vm-epg))
         (unknown nil))
     (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
       (unless (string-match-p "vm-autoloads\\|vm-cus-load" file)

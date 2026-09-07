@@ -38,12 +38,6 @@
 (require 'vm-pop)
 (require 'vm-page)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function get-itimer "vm-xemacs.el" (name))
-(declare-function start-itimer "vm-xemacs.el"
-		  (name function value &optional restart is-idle with-args
-			&rest function-arguments))
-(declare-function set-itimer-restart "vm-xemacs.el" (itimer restart))
 
 (declare-function vm-update-draft-count "vm.el" ())
 (declare-function vm "vm.el"
@@ -4314,56 +4308,35 @@ changes should be discarded."
     (vm-update-summary-and-mode-line)))
 
 (defun vm-start-itimers-if-needed ()
-  (cond ((and (not (natnump vm-flush-interval))
-	      (not (natnump vm-auto-get-new-mail))
-	      (not (natnump vm-mail-check-interval))))
-	((condition-case _data
-	     (progn (require 'itimer) t)
-	   (error nil))
-	 (when (and (natnump vm-flush-interval) (not (get-itimer "vm-flush")))
-	   ;; name function time restart-time
-	   ;; ...... idle with-args args
-	   (start-itimer "vm-flush" 'vm-flush-itimer-function
-			 vm-flush-interval nil))
-	 (when (and (natnump vm-auto-get-new-mail)
-		    (not (get-itimer "vm-get-mail")))
-	   (start-itimer "vm-get-mail" 'vm-get-mail-itimer-function
-			 vm-auto-get-new-mail nil))
-	 (when (and (natnump vm-mail-check-interval)
-		    (not (get-itimer "vm-check-mail")))
-	   (start-itimer "vm-check-mail" 'vm-check-mail-itimer-function
-			 vm-mail-check-interval nil)))
-	((condition-case _data
-	     (progn (require 'timer) t)
-	   (error nil))
-	 (let (timer)
-	   (when (and (natnump vm-flush-interval)
-		      (not (vm-timer-using 'vm-flush-itimer-function))
-		      (setq timer 
-			    ;; time restart-time function args
-			    (run-at-time vm-flush-interval vm-flush-interval
-					 'vm-flush-itimer-function nil)))
-	     (timer-set-function timer 'vm-flush-itimer-function
-				 (list timer)))
-	   (when (and (natnump vm-mail-check-interval)
-		      (not (vm-timer-using 'vm-check-mail-itimer-function))
-		      (setq timer 
-			    (run-at-time vm-mail-check-interval
-					 vm-mail-check-interval
-					 'vm-check-mail-itimer-function nil)))
-	     (timer-set-function timer 'vm-check-mail-itimer-function
-				 (list timer)))
-	   (when (and (natnump vm-auto-get-new-mail)
-		      (not (vm-timer-using 'vm-get-mail-itimer-function))
-		      (setq timer 
-			    (run-at-time vm-auto-get-new-mail
-					 vm-auto-get-new-mail
-					 'vm-get-mail-itimer-function nil)))
-	     (timer-set-function timer 'vm-get-mail-itimer-function
-				 (list timer)))))
-	(t
-	 (setq vm-flush-interval t
-	       vm-auto-get-new-mail t))))
+  "Start the timers for whichever of the three intervals is a number.
+Named for XEmacs's itimer package, which is what VM used before Emacs had
+timers of its own and is where the -itimer-function names come from."
+  (require 'timer)
+  (let (timer)
+    (when (and (natnump vm-flush-interval)
+	       (not (vm-timer-using 'vm-flush-itimer-function))
+	       (setq timer
+		     ;; time restart-time function args
+		     (run-at-time vm-flush-interval vm-flush-interval
+				  'vm-flush-itimer-function nil)))
+      (timer-set-function timer 'vm-flush-itimer-function
+			  (list timer)))
+    (when (and (natnump vm-mail-check-interval)
+	       (not (vm-timer-using 'vm-check-mail-itimer-function))
+	       (setq timer
+		     (run-at-time vm-mail-check-interval
+				  vm-mail-check-interval
+				  'vm-check-mail-itimer-function nil)))
+      (timer-set-function timer 'vm-check-mail-itimer-function
+			  (list timer)))
+    (when (and (natnump vm-auto-get-new-mail)
+	       (not (vm-timer-using 'vm-get-mail-itimer-function))
+	       (setq timer
+		     (run-at-time vm-auto-get-new-mail
+				  vm-auto-get-new-mail
+				  'vm-get-mail-itimer-function nil)))
+      (timer-set-function timer 'vm-get-mail-itimer-function
+			  (list timer)))))
 
 (defvar timer-list)
 (defun vm-timer-using (fun)
@@ -4375,27 +4348,19 @@ changes should be discarded."
 	(setq p (cdr p))))
     p ))
 
-(defvar current-itimer)
-
 ;; support for vm-mail-check-interval
-;; if timer argument is present, this means we're using the Emacs
-;; 'timer package rather than the 'itimer package.
-(defun vm-check-mail-itimer-function (&optional timer)
+(defun vm-check-mail-itimer-function (timer)
   ;; FSF Emacs sets this non-nil, which means the user can't
   ;; interrupt the check.  Bogus.
   (setq inhibit-quit nil)
   (if (integerp vm-mail-check-interval)
-      (if timer
-	  (timer-set-time 
-	   timer 
-	   (timer-relative-time (current-time) vm-mail-check-interval)
-	   vm-mail-check-interval)
-	(set-itimer-restart current-itimer vm-mail-check-interval))
+      (timer-set-time
+       timer
+       (timer-relative-time (current-time) vm-mail-check-interval)
+       vm-mail-check-interval)
     ;; user has changed the variable value to something that
     ;; isn't a number, make the timer go away.
-    (if timer
-	(cancel-timer timer)
-      (set-itimer-restart current-itimer nil)))
+    (cancel-timer timer))
   (let ((b-list (buffer-list))
 	(found-one nil)
 	oldval)
@@ -4418,29 +4383,21 @@ changes should be discarded."
     (vm-update-summary-and-mode-line)
     ;; make the timer go away if we didn't encounter a vm-mode buffer.
     (when (and (not found-one) (null b-list))
-      (if timer
-	  (cancel-timer timer)
-	(set-itimer-restart current-itimer nil)))))
+      (cancel-timer timer))))
 
 ;; support for numeric vm-auto-get-new-mail
-;; if timer argument is present, this means we're using the Emacs
-;; 'timer package rather than the 'itimer package.
-(defun vm-get-mail-itimer-function (&optional timer)
+(defun vm-get-mail-itimer-function (timer)
   ;; FSF Emacs sets this non-nil, which means the user can't
   ;; interrupt mail retrieval.  Bogus.
   (setq inhibit-quit nil)
   (if (integerp vm-auto-get-new-mail)
-      (if timer
-	  (timer-set-time 
-	   timer
-	   (timer-relative-time (current-time) vm-auto-get-new-mail)
-	   vm-auto-get-new-mail)
-	(set-itimer-restart current-itimer vm-auto-get-new-mail))
+      (timer-set-time
+       timer
+       (timer-relative-time (current-time) vm-auto-get-new-mail)
+       vm-auto-get-new-mail)
     ;; user has changed the variable value to something that
     ;; isn't a number, make the timer go away.
-    (if timer
-	(cancel-timer timer)
-      (set-itimer-restart current-itimer nil)))
+    (cancel-timer timer))
   (let ((b-list (buffer-list))
 	(found-one nil))
     (while (and (not (input-pending-p)) b-list)
@@ -4467,27 +4424,21 @@ changes should be discarded."
       (setq b-list (cdr b-list)))
     ;; make the timer go away if we didn't encounter a vm-mode buffer.
     (when (and (not found-one) (null b-list))
-      (if timer
-	  (cancel-timer timer)
-	(set-itimer-restart current-itimer nil)))))
+      (cancel-timer timer))))
 
 ;; support for numeric vm-flush-interval
 ;; if timer argument is present, this means we're using the Emacs
 ;; 'timer package rather than the 'itimer package.
-(defun vm-flush-itimer-function (&optional timer)
+(defun vm-flush-itimer-function (timer)
   (when (integerp vm-flush-interval)
-    (if timer
-	(timer-set-time 
-	 timer
-	 (timer-relative-time (current-time) vm-flush-interval)
-	 vm-flush-interval)
-      (set-itimer-restart current-itimer vm-flush-interval)))
+    (timer-set-time
+     timer
+     (timer-relative-time (current-time) vm-flush-interval)
+     vm-flush-interval))
   ;; if no vm-mode buffers are found, we might as well shut down the
-  ;; flush itimer.
+  ;; flush timer.
   (unless (vm-flush-cached-data-all-folders)
-    (if timer
-	(cancel-timer timer)
-      (set-itimer-restart current-itimer nil))))
+    (cancel-timer timer)))
 
 ;; flush cached data in all vm-mode buffers.
 ;; returns non-nil if any vm-mode buffers were found.

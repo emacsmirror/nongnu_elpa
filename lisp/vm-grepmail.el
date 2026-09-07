@@ -177,8 +177,7 @@ FOLDERS should be a list of files/directories to search in."
       (if (null process)
           (error "Cannot start grepmail"))
       ;; set the send-filter
-      (if (not (featurep 'xemacs))
-          (set-process-coding-system process 'raw-text-unix 'raw-text-unix))
+      (set-process-coding-system process 'raw-text-unix 'raw-text-unix)
       (set-process-filter process 'vm-grepmail-process-filter)
       (set-process-sentinel process 'vm-grepmail-process-done)
       process)))

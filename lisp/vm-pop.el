@@ -1023,17 +1023,9 @@ popdrop
   (setq end (vm-marker end))
   (save-excursion
     ;; CRLF -> LF
-    (if (featurep 'xemacs)
-        (progn
-          ;; we need this otherwise the end marker gets corrupt and
-          ;; unfortunately decode-coding-region does not return the
-          ;; length to the decoded region 
-          (decode-coding-region start (1- end) 'undecided-dos)
-          (goto-char (- end 2))
-          (delete-char 1))
     (goto-char start)
-      (while (and (< (point) end) (search-forward "\r\n"  end t))
-        (replace-match "\n" t t)))
+    (while (and (< (point) end) (search-forward "\r\n" end t))
+      (replace-match "\n" t t))
     ;; chop leading dots
     (goto-char start)
     (while (and (< (point) end) (re-search-forward "^\\."  end t))
