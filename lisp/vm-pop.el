@@ -704,9 +704,7 @@ killed as well."
 	(vm-keep-some-buffers (process-buffer process) 'vm-kept-pop-buffers
 			      vm-pop-keep-trace-buffer
 			      "saved ")))
-  (if (fboundp 'add-async-timeout)
-      (add-async-timeout 2 'delete-process process)
-    (run-at-time 2 nil 'delete-process process)))
+  (run-at-time 2 nil 'delete-process process))
 
 (defun vm-pop-stat-timer (o) (aref o 0))
 (defun vm-pop-stat-did-report (o) (aref o 1))

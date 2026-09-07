@@ -37,9 +37,7 @@ wrong Emacs actually gets chosen."
     This handles EmacsW32 path problems when building on cygwin."
   (if (file-exists-p path)
       path
-    (let ((dos-path (cond ((functionp 'mswindows-cygwin-to-win32-path)
-			   (mswindows-cygwin-to-win32-path path))
-			  ((and (locate-library "cygwin-mount")
+    (let ((dos-path (cond ((and (locate-library "cygwin-mount")
     				(require 'cygwin-mount))
     			   (cygwin-mount-activate)
     			   (cygwin-mount-convert-file-name path))
@@ -97,10 +95,8 @@ wrong Emacs actually gets chosen."
 (defun vm-custom-make-dependencies ()
   (defvar generated-custom-dependencies-file)
   (if (load-library "cus-dep")
-      (if (functionp 'Custom-make-dependencies)
-	  (Custom-make-dependencies)
-	(let ((generated-custom-dependencies-file "vm-cus-load.el"))
-	  (custom-make-dependencies)))
+      (let ((generated-custom-dependencies-file "vm-cus-load.el"))
+	(custom-make-dependencies))
     (error "Failed to load 'cus-dep'")))
 
 (defun vm-built-autoloads (&optional autoloads-file source-dir)

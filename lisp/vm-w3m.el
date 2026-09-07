@@ -98,8 +98,6 @@ this variable to nil if you consider all urls to be safe."
     (define-key map "\C-xi" 'w3m-toggle-inline-image)
     (define-key map "\C-x\C-I" 'w3m-toggle-inline-images)
     (define-key map [down-mouse-1] 'w3m-mouse-view-this-url)
-    (cond ((fboundp 'set-keymap-name)
-	   (set-keymap-name map 'vm-w3m-map)))
     map )
   "Keymap for text/html parts inlined by emacs-w3m.")
 
