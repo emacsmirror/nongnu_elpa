@@ -3378,6 +3378,79 @@ count does not depend on how busy the machine is."
           (should (< words (* 100 lines)))
           (should (< conses (* 200 lines))))))))
 
+;;; CRAM-MD5 (emacs-vm/vm#822)
+;;
+;; The blocking implementation spoke CRAM-MD5 and the driver did not, so a
+;; maildrop asking for it fell back to blocking on every fetch.  That, and
+;; APOP and RPOP on the POP side, is why the blocking driver could not
+;; simply be deleted.
+
+(iter-defun vm-imap-net-test--login-cram-md5 (user password)
+  "Greet and log in with CRAM-MD5, through the dispatch production uses.
+`vm-imap-net-auth' is buffer-local to the session buffer and set by
+`vm-imap-net-open', which this harness does not go through, so it is set
+here.  Calling `vm-imap-net-authenticate-cram-md5' directly would skip the
+greeting and read it as the challenge."
+  (setq vm-imap-net-auth "cram-md5")
+  (iter-yield-from (vm-imap-net-open-session user password)))
+
+(ert-deftest vm-imap-net-test-a-session-authenticates-with-cram-md5 ()
+  "REGRESSION: the driver logs in with CRAM-MD5.
+
+RFC 2195: the server challenges, the client answers with its user name and
+the HMAC-MD5 of that challenge keyed by the password.  The mock checks the
+digest, so a wrong answer fails here rather than merely a missing one."
+  (vm-imap-net-test--with-session (mock :cram-md5 t)
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-cram-md5 "vmtest" "secret"))))
+      (should (eq (vm-net-session-state session) 'done))
+      ;; the capabilities come back, which happens only after the server has
+      ;; accepted the authentication
+      (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
+      (should (vm-imap-mock-received-p mock "AUTHENTICATE CRAM-MD5"))
+      (should (vm-imap-mock-authenticated mock)))))
+
+(ert-deftest vm-imap-net-test-a-wrong-cram-md5-password-is-refused ()
+  "A digest the server does not accept ends the session rather than proceeding."
+  (vm-imap-net-test--with-session (mock :cram-md5 t :password "secret")
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-cram-md5 "vmtest" "wrong"))))
+      (should-not (eq (vm-net-session-state session) 'done))
+      (should (vm-imap-mock-received-p mock "AUTHENTICATE CRAM-MD5"))
+      (should-not (vm-imap-mock-authenticated mock)))))
+
+(ert-deftest vm-imap-net-test-the-password-is-not-echoed-into-the-buffer ()
+  "REGRESSION: the answer to the challenge is not written to the transcript.
+The session buffer is kept for the trace `vm-imap-submit-bug-report' sends,
+and the answer is a credential derived from the password."
+  (vm-imap-net-test--with-session (mock :cram-md5 t)
+    (vm-imap-net-test--run
+     mock (vm-imap-net-test--login-cram-md5 "vmtest" "secret"))
+    (with-current-buffer vm-imap-net-test--buffer
+      (let ((transcript (buffer-string)))
+        (should (string-match-p "AUTHENTICATE CRAM-MD5" transcript))
+        (should (string-match-p "authentication response omitted" transcript))))))
+
+(ert-deftest vm-imap-net-test-a-cram-md5-maildrop-is-not-declined ()
+  "REGRESSION: `vm-imap-net-open' no longer refuses a CRAM-MD5 maildrop.
+It signalled `vm-imap-net-unsupported' for any auth but login, and that
+signal is what sent the work to the blocking path."
+  (vm-imap-mock-with (mock :cram-md5 t)
+    (let ((opened (vm-imap-net-open
+                   (vm-imap-mock-spec mock "INBOX" "cram-md5")
+                   "cram-md5 test" nil)))
+      (should opened)
+      (let ((process (vm-net-session-process (nth 0 opened))))
+        (when (process-live-p process) (delete-process process))
+        (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
+          (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
+  ;; an auth VM does not know is still declined rather than attempted
+  (vm-imap-mock-with (mock)
+    (should-error (vm-imap-net-open
+                   (vm-imap-mock-spec mock "INBOX" "kerberos_v4")
+                   "unknown auth" nil)
+                  :type 'vm-imap-net-unsupported)))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

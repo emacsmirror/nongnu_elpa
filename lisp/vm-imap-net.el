@@ -78,6 +78,13 @@ What `vm-imap-passwords' is keyed by, kept so that a password the server
 has accepted can be remembered under it.")
 (make-variable-buffer-local 'vm-imap-net-password-key)
 
+(defvar vm-imap-net-auth nil
+  "The authentication method this session's maildrop asked for.
+A string: login, cram-md5 or preauth.  Buffer-local to the session's process
+buffer, so that vm-imap-net-open-session can choose without every caller
+having to hand it on.")
+(make-variable-buffer-local 'vm-imap-net-auth)
+
 (defun vm-imap-net-init ()
   "Prepare the current buffer to be a session's process buffer."
   (setq vm-imap-net-read-point (point-min))
@@ -304,6 +311,17 @@ a transcript -- with a LOGIN's arguments left out of it."
     (process-send-string process (format "%s %s\r\n" tag command))
     tag))
 
+(defun vm-imap-net-send-line (line)
+  "Send LINE with no tag in front of it, and note where the answer begins.
+What a continuation asks for: the answer to an AUTHENTICATE challenge is a
+line of its own.  The line is not echoed into the process buffer, holding a
+credential."
+  (let ((process (get-buffer-process (current-buffer))))
+    (goto-char (point-max))
+    (insert-before-markers "<authentication response omitted>\r\n")
+    (setq vm-imap-net-read-point (point))
+    (process-send-string process (format "%s\r\n" line))))
+
 (defvar vm-imap-net-counting nil
   "Where `vm-imap-net-command' is to report its progress, or nil.
 A list (FOLDER PHASE TOTAL): the folder whose mode line says so, the word for
@@ -412,6 +430,52 @@ blocking path writes it at the same point, and for the same reason."
 	       (not (equal password "*"))
 	       (not (assoc key vm-imap-passwords)))
       (setq vm-imap-passwords (cons (list key password) vm-imap-passwords)))))
+
+(declare-function vm-hmac-md5 "vm-crypto" (key data))
+(declare-function vm-mime-base64-decode-string "vm-mime" (string))
+(declare-function vm-mime-base64-encode-string "vm-mime" (string))
+(declare-function vm-imap-protocol-error "vm-imap" (&rest args))
+
+(iter-defun vm-imap-net-authenticate-cram-md5 (user password)
+  "Log in as USER with CRAM-MD5, and answer what the server can do afterwards.
+
+RFC 2195: the server answers the AUTHENTICATE with a continuation line
+holding a base64 challenge, and the client sends back the user name and the
+HMAC-MD5 of that challenge under the password, base64 again, as a line of
+its own with no tag.
+
+`vm-hmac-md5' rather than the pads and xors spelled out: it takes the
+password as octets, where doing it by hand sent the wrong digest for an
+accented one (emacs-vm/vm#772)."
+  (let ((tag (vm-imap-net-send "AUTHENTICATE CRAM-MD5"))
+	(challenge nil)
+	response)
+    ;; The server answers with a continuation line, not a tagged one, so this
+    ;; reads a single response rather than going through
+    ;; `vm-imap-net-command', which reads until a tag that cannot come until
+    ;; the answer has been sent.
+    (setq response (vm-imap-net-verify-response
+		    (vm-imap-net-read-a-response)
+		    "AUTHENTICATE CRAM-MD5"))
+    (unless (vm-imap-response-matches response '+ 'atom)
+      (vm-imap-protocol-error "Don't understand AUTHENTICATE response"))
+    (let ((token (nth 1 response)))
+      (setq challenge (vm-mime-base64-decode-string
+		       (buffer-substring (nth 1 token) (nth 2 token)))))
+    (vm-imap-net-send-line
+     (vm-mime-base64-encode-string
+      (concat user " " (vm-hmac-md5 password challenge))))
+    ;; and now the tagged answer to the AUTHENTICATE
+    (let ((done nil))
+      (while (not done)
+	(setq response (vm-imap-net-verify-response
+			(vm-imap-net-read-a-response)
+			"AUTHENTICATE CRAM-MD5"))
+	(when (vm-imap-response-matches response 'VM 'OK)
+	  (setq done t))))
+    (ignore tag))
+  (vm-imap-net-remember-password password)
+  (iter-yield-from (vm-imap-net-capabilities)))
 
 (iter-defun vm-imap-net-login (user password)
   "Log in as USER, and answer with what the server can do afterwards.
@@ -765,7 +829,7 @@ from inside a filter."
     (vm-imap-net-check-compiled)
     (unless (member protocol '("imap" "imap-ssl" "imap-ssh"))
       (signal 'vm-imap-net-unsupported (list protocol source)))
-    (unless (or preauth (equal auth "login"))
+    (unless (member auth '("login" "cram-md5" "preauth"))
       (signal 'vm-imap-net-unsupported (list (or auth "no authentication") source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
@@ -813,7 +877,8 @@ from inside a filter."
       (setf (vm-net-session-buffer session) buffer)
       (with-current-buffer buffer
 	(setq vm-imap-net-password-key
-	      (vm-imapdrop-sans-password-and-mailbox source)))
+	      (vm-imapdrop-sans-password-and-mailbox source))
+	(setq vm-imap-net-auth auth))
       ;; The buffer goes with a connection that was never made: a host that
       ;; does not resolve, an stunnel that is not installed, a preauth hook
       ;; that answers with nothing.  Left behind, one accumulated per attempt.
@@ -871,6 +936,9 @@ with: the connection arrived authenticated."
 	   (vm-imap-normal-error "server did not greet the connection"))
 	  ((or (eq greeting 'preauth) (null password))
 	   (iter-yield-from (vm-imap-net-capabilities)))
+	  ((equal vm-imap-net-auth "cram-md5")
+	   (iter-yield-from (vm-imap-net-capabilities))
+	   (iter-yield-from (vm-imap-net-authenticate-cram-md5 user password)))
 	  (t
 	   (iter-yield-from (vm-imap-net-capabilities))
 	   (iter-yield-from (vm-imap-net-login user password))))))

@@ -53,6 +53,7 @@
 ;;   :drops-keywords  take a STORE of a keyword, answer OK, and keep only the
 ;;                    protocol's own flags, which is what Gmail does
 ;;   :capabilities    replace the advertised capability list outright
+;;   :cram-md5        advertise AUTH=CRAM-MD5 and serve AUTHENTICATE
 ;;
 ;; The server records every command it received, so a test can assert on what
 ;; VM actually sent -- that an expunge really was withheld, say -- rather than
@@ -61,6 +62,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'vm-crypto)          ; vm-hmac-md5, for CRAM-MD5
 
 (cl-defstruct (vm-imap-mock (:constructor vm-imap-mock--make))
   server port
@@ -74,7 +76,9 @@
   refuse bad drop-on truncate-fetch lie-about-size slow-greeting
   no-uidplus capabilities preauth reorder-fetch drop-after-fetch
   extra-fetch-items unsolicited-flags drops-keywords
-  authenticated)
+  authenticated
+  ;; CRAM-MD5: the challenge sent, kept so that the response can be checked
+  cram-md5 challenge)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
   uid text (flags nil) (expunged nil))
@@ -185,10 +189,14 @@ knows about and VM does not."
 
 (defun vm-imap-mock--capabilities (mock)
   "The capability list MOCK advertises."
-  (or (vm-imap-mock-capabilities mock)
-      (if (vm-imap-mock-no-uidplus mock)
-	  (remove "UIDPLUS" vm-imap-mock-default-capabilities)
-	vm-imap-mock-default-capabilities)))
+  (let ((capabilities
+	 (or (vm-imap-mock-capabilities mock)
+	     (if (vm-imap-mock-no-uidplus mock)
+		 (remove "UIDPLUS" vm-imap-mock-default-capabilities)
+	       vm-imap-mock-default-capabilities))))
+    (if (vm-imap-mock-cram-md5 mock)
+	(append capabilities '("AUTH=CRAM-MD5"))
+      capabilities)))
 
 ;;; Answering
 
@@ -565,10 +573,33 @@ Returns non-nil when the fault answered the command, so the caller stops."
 	(replace-regexp-in-string "\\\\\\(.\\)" "\\1" (match-string 1 trimmed))
       trimmed)))
 
+(defun vm-imap-mock--cram-md5-answer (mock process line)
+  "Check LINE, the answer to a CRAM-MD5 challenge, and answer the client.
+RFC 2195: base64 of the user name, a space, and the HMAC-MD5 of the
+challenge keyed by the password, in lower case hexadecimal."
+  (let* ((tag (car (vm-imap-mock-challenge mock)))
+	 (challenge (cdr (vm-imap-mock-challenge mock)))
+	 (given (ignore-errors (base64-decode-string line)))
+	 (want (concat (vm-imap-mock-user mock) " "
+		       (vm-hmac-md5 (vm-imap-mock-password mock) challenge))))
+    (setf (vm-imap-mock-challenge mock) nil)
+    (if (equal given want)
+	(progn (setf (vm-imap-mock-authenticated mock) t)
+	       (vm-imap-mock--send
+		process (format "%s OK AUTHENTICATE completed\r\n" tag)))
+      (vm-imap-mock--log mock (format "!! CRAM-MD5 wanted %S, got %S" want given))
+      (vm-imap-mock--send
+       process (format "%s NO authentication failed\r\n" tag)))))
+
 (defun vm-imap-mock--handle (mock process line)
   "Answer LINE, one command from PROCESS."
   (vm-imap-mock--log mock line)
-  (if (string-match "\\`\\([^ ]+\\) +\\(.*\\)\\'" line)
+  (cond
+   ;; the answer to a continuation carries no tag, so it is taken before
+   ;; anything tries to read one off the front of it
+   ((vm-imap-mock-challenge mock)
+    (vm-imap-mock--cram-md5-answer mock process line))
+   ((string-match "\\`\\([^ ]+\\) +\\(.*\\)\\'" line)
       (let ((tag (match-string 1 line))
 	    (rest (match-string 2 line)))
 	(unless (vm-imap-mock--fault mock process tag line)
@@ -578,6 +609,18 @@ Returns non-nil when the fault answered the command, so the caller stops."
 	     process (format "* CAPABILITY %s\r\n%s OK CAPABILITY completed\r\n"
 			     (mapconcat #'identity (vm-imap-mock--capabilities mock) " ")
 			     tag)))
+	   ((string-match-p "\\`AUTHENTICATE +CRAM-MD5\\'" rest)
+	    (if (not (vm-imap-mock-cram-md5 mock))
+		(vm-imap-mock--send
+		 process (format "%s NO AUTHENTICATE not supported\r\n" tag))
+	      ;; RFC 2195: any challenge will do, so long as the digest is
+	      ;; taken over the one that was sent.
+	      (let ((challenge (format "<%d.%d@vm-imap-mock>"
+				       (random 100000) (random 100000))))
+		(setf (vm-imap-mock-challenge mock) (cons tag challenge))
+		(vm-imap-mock--send
+		 process (format "+ %s\r\n"
+				 (base64-encode-string challenge t))))))
 	   ((string-match "\\`LOGIN +\\(.*\\)\\'" rest)
 	    (let* ((args (match-string 1 rest))
 		   ;; both groups out before anything that matches again:
@@ -599,8 +642,8 @@ Returns non-nil when the fault answered the command, so the caller stops."
 	    (setf (vm-imap-mock-selected mock) nil))
 	   ((null (vm-imap-mock-authenticated mock))
 	    (vm-imap-mock--send process (format "%s NO not authenticated\r\n" tag)))
-	   (t (vm-imap-mock--handle-authenticated mock process tag rest)))))
-    (vm-imap-mock--send process "* BAD not a command\r\n")))
+	   (t (vm-imap-mock--handle-authenticated mock process tag rest))))))
+   (t (vm-imap-mock--send process "* BAD not a command\r\n"))))
 
 ;;; The connection
 
@@ -692,7 +735,7 @@ not ask about the live process."
 				   lie-about-size slow-greeting no-uidplus
 				   capabilities preauth reorder-fetch
 				   drop-after-fetch extra-fetch-items
-				   unsolicited-flags drops-keywords)
+				   unsolicited-flags drops-keywords cram-md5)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -712,7 +755,8 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:drop-after-fetch drop-after-fetch
 		:extra-fetch-items extra-fetch-items
 		:unsolicited-flags unsolicited-flags
-		:drops-keywords drops-keywords))
+		:drops-keywords drops-keywords
+		:cram-md5 cram-md5))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t
@@ -735,12 +779,13 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
     (when (eq (process-get process 'vm-imap-mock) mock)
       (ignore-errors (delete-process process)))))
 
-(defun vm-imap-mock-spec (mock &optional mailbox)
+(defun vm-imap-mock-spec (mock &optional mailbox auth)
   "Return a VM IMAP maildrop specification pointing at MOCK.
-MAILBOX defaults to INBOX."
-  (format "imap:127.0.0.1:%d:%s:login:%s:%s"
+MAILBOX defaults to INBOX, AUTH to login."
+  (format "imap:127.0.0.1:%d:%s:%s:%s:%s"
 	  (vm-imap-mock-port mock)
 	  (or mailbox "INBOX")
+	  (or auth "login")
 	  (vm-imap-mock-user mock)
 	  (vm-imap-mock-password mock)))
 
