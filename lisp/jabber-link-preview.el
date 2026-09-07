@@ -214,12 +214,13 @@ be globally routable."
           found)
       (while (and (not found)
                   (string-match jabber-link-preview--url-regexp text start))
-        (let ((url (jabber-link-preview--trim-url (match-string 0 text))))
+        (let ((end (match-end 0))
+              (url (jabber-link-preview--trim-url (match-string 0 text))))
           (when (and (jabber-link-preview-safe-url-p url)
                      (not (string-match-p jabber-link-preview--image-regexp
                                           (downcase url))))
             (setq found url))
-          (setq start (match-end 0))))
+          (setq start end)))
       found)))
 
 (defun jabber-link-preview-format (metadata)

@@ -58,6 +58,22 @@
            "photo https://example.org/pic.png then https://example.org/page?q=1")
           "https://example.org/page?q=1")))
 
+(ert-deftest jabber-test-link-preview-skips-images-without-revisiting ()
+  "URL parsing must advance even when validation changes match data."
+  (dolist (suffix '("" " then https://example.org/page"))
+    (let ((validate (symbol-function 'jabber-link-preview-safe-url-p))
+          (calls 0))
+      (cl-letf (((symbol-function 'jabber-link-preview-safe-url-p)
+                 (lambda (url &optional resolve)
+                   ;; Bound a broken scan without hanging the test runner.
+                   (should (<= (cl-incf calls) 2))
+                   (funcall validate url resolve))))
+        (should (equal (jabber-link-preview-url
+                        (concat "look at this https://www.example.org/foo.webp"
+                                suffix))
+                       (unless (string-empty-p suffix)
+                         "https://example.org/page")))))))
+
 (ert-deftest jabber-test-link-preview-rejects-http-and-local-hosts ()
   (should-not (jabber-link-preview-url "http://example.org/page"))
   (should-not (jabber-link-preview-url "https://localhost/private"))
