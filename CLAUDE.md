@@ -445,6 +445,16 @@ code comments, commit messages, and issue and merge request text.
     in the generated appendix, and the verbatim GPL text
   - anything a test asserts on or that VM itself prints: `vm-icalendar.el`
     emits `" -- accepted"`, so the manual's example has to match it
+- **No static version numbers in the manual, except when the sentence is
+  about history.** "As of version 8.2.0, the only context ..." dates what VM
+  simply does now, and has to be edited again at every release; say what it
+  does. "Prior to version 8.2.0 it was possible to ..." is history and
+  stays, as does the Selected Releases appendix and the minimum Emacs
+  version, which is a requirement rather than a date. For a change made in
+  the release being prepared write "In earlier releases", which needs no
+  upkeep and which
+  `vm-reference-test-the-manual-does-not-name-the-unreleased-version` exists
+  to enforce.
 - **Do not write "shape".** Say "structure", "form", "layout", or name the thing.
   It is vague where "structure" is specific.
 

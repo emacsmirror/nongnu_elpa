@@ -1296,17 +1296,22 @@ This constant is a place holder for the obsolete variable
 `vm-always-use-presentation-buffer'.  It should be removed eventually.")
 
 (defcustom vm-word-wrap-paragraphs nil
-  "*If non-nil, causes VM to word wrap paragraphs with long lines.
-This is done using the `longlines' library, which must be installed
-for the variable to have effect."
+  "*If non-nil, causes VM to word wrap the long lines of a message.
+Every line break already there is kept, which is the difference from
+vm-fill-paragraphs-containing-long-lines: filling joins the lines of a
+paragraph before breaking them again, and so loses where the breaks were.
+The column wrapped to is vm-paragraph-fill-column.
+
+Needs nothing installed.  Earlier releases used the longlines library,
+obsolete since Emacs 24.4."
   :group 'vm-presentation
   :type 'boolean)
 
 (defcustom vm-word-wrap-paragraphs-in-reply nil
-  "*If non-nil, causes VM to word wrap paragraphs with long lines
-during message composition.  This is done using the `longlines'
-library, which must be installed for the variable to have
-effect."
+  "*If non-nil, causes VM to word wrap the long lines of a composition.
+As vm-word-wrap-paragraphs does for a message being read, and for the same
+reason: quoted text keeps its own line breaks.  The column wrapped to is
+vm-fill-long-lines-in-reply-column."
   :group 'vm-reply
   :type 'boolean)
 
