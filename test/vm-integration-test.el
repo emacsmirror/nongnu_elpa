@@ -1131,6 +1131,122 @@ VM has renamed away is one a reader copies and then debugs."
                             missing)))
     (should (equal nil (delete-dups (nreverse missing))))))
 
+;;; Obsolete Emacs functions (emacs-vm/vm#818)
+
+(defconst vm-integration-test--obsolete-on-purpose
+  '((subr-native-elisp-p
+     . "native-comp-function-p arrived in Emacs 30.1 and VM's floor is 28.1,
+so the old name has to serve the Emacsen that have only it.  Asked for
+second, after the new one."))
+  "Obsolete functions VM calls deliberately, and the reason for each.
+An entry is a promise that the call is guarded so that it runs only where
+the replacement does not exist.")
+
+(defun vm-integration-test--vm-own-name-p (symbol)
+  "Whether SYMBOL is one of VM\='s own names rather than Emacs\='s.
+`vmpc-' as well as `vm-': the Personality Crisis names were renamed in
+8.3.3 and the old ones kept as obsolete aliases."
+  (string-match-p "\\`vm\\(pc\\)?-" (symbol-name symbol)))
+
+(defun vm-integration-test--obsolete-calls-in (file)
+  "Every obsolete Emacs function FILE calls, or names in an `fboundp' test.
+Read as forms rather than matched as text, so a name in a comment or a
+docstring is not a hit.  A name inside `fboundp' counts: that is how the
+three found for emacs-vm/vm#818 were hidden, an `fboundp' guard being
+enough to stop the byte compiler warning about what it guards.
+
+VM\='s own deprecated names are left out.  They are aliases VM made and
+keeps on purpose, `vm-integration-test-obsolete-names-point-somewhere'
+covers them, and the `define-obsolete-function-alias' that makes each one
+names it in a position this walk cannot tell from a call."
+  (let ((found nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (condition-case nil
+          (while t
+            (vm-integration-test--walk-for-obsolete (read (current-buffer))
+                                                    #'(lambda (sym)
+                                                        (push sym found))))
+        (end-of-file nil)))
+    (delete-dups found)))
+
+(defun vm-integration-test--walk-for-obsolete (form report)
+  "Call REPORT with every obsolete function FORM calls or asks `fboundp' of.
+
+Walks with a stack rather than recursion: VM\='s alists hold dotted pairs,
+which `dolist\=' will not take, and some of its lists are long enough that
+recursing down the cdrs would run out of depth."
+  (let ((pending (list form)))
+    (while pending
+      (let ((this (pop pending)))
+        (when (consp this)
+          (let ((head (car this)))
+            (when (and (symbolp head) head
+                       (get head 'byte-obsolete-info)
+                       (not (vm-integration-test--vm-own-name-p head)))
+              (funcall report head))
+            ;; (fboundp 'x) and (functionp 'x), the symbol being quoted
+            (when (and (memq head '(fboundp functionp))
+                       (eq (car-safe (cadr this)) 'quote)
+                       (symbolp (cadr (cadr this)))
+                       (get (cadr (cadr this)) 'byte-obsolete-info)
+                       (not (vm-integration-test--vm-own-name-p
+                             (cadr (cadr this)))))
+              (funcall report (cadr (cadr this)))))
+          ;; Each element is a form of its own; the cdr chain is walked here
+          ;; rather than pushed, so that no element is later mistaken for a
+          ;; head.  Pushing the cdr instead reported every obsolete symbol
+          ;; anywhere in a list, which made an argument named interactive-p
+          ;; look like a call to `interactive-p'.
+          (let ((tail this))
+            (while (consp tail)
+              (push (car tail) pending)
+              (setq tail (cdr tail)))
+            ;; a dotted tail is a form too
+            (when tail (push tail pending))))))))
+
+(ert-deftest vm-integration-test-no-obsolete-function-is-called ()
+  "REGRESSION: VM calls no obsolete Emacs function it has not accounted for.
+
+Three were found by hand (emacs-vm/vm#818), and two of them were the branch
+VM actually took: `x-set-selection' and `disable-timeout' are both obsolete
+aliases and both `fboundp', so a guard written to prefer them over the
+current name always preferred them, leaving the correct call unreached.
+
+No lint reports this.  An `fboundp' guard suppresses the byte compiler's
+obsolescence warning, which is also why the `longlines' deprecation behind
+`vm-word-wrap-paragraphs' went unnoticed for years (emacs-vm/vm#817).  So
+the tree is read here instead.
+
+`vm-integration-test--obsolete-on-purpose' is the list of what VM calls
+knowingly, each with its reason.
+
+An optional package's obsolescence is seen only where that package is
+loaded, since `byte-obsolete-info' is a property set by loading it.  So the
+suite pass covers BBDB, emacs-w3m and vcard and the no-optional pass does
+not; VM calling BBDB's `bbdb/sc-consult-attr', obsolete since BBDB 3.0, was
+found by the difference."
+  (let ((unaccounted nil))
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\|version-conf\\)\\.el\\'"
+                              file)
+        (dolist (symbol (vm-integration-test--obsolete-calls-in file))
+          (unless (assq symbol vm-integration-test--obsolete-on-purpose)
+            (push (format "%s calls %s, obsolete since %s"
+                          (file-name-nondirectory file) symbol
+                          (or (nth 2 (get symbol 'byte-obsolete-info)) "?"))
+                  unaccounted)))))
+    (should-not unaccounted)))
+
+(ert-deftest vm-integration-test-what-is-called-on-purpose-is-obsolete ()
+  "Every entry in the on-purpose list is still an obsolete function.
+An Emacs that un-obsoletes one, or a VM that stops calling it, should shrink
+the list rather than leave a name in it that means nothing."
+  (dolist (entry vm-integration-test--obsolete-on-purpose)
+    (should (get (car entry) 'byte-obsolete-info))
+    (should (stringp (cdr entry)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

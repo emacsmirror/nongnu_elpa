@@ -199,9 +199,10 @@ using cached data."
 (defun vm-imap-stop-status-timer (status-blob)
   (if (vm-imap-status-did-report status-blob)
       (vm-inform 6 ""))
-  (if (fboundp 'disable-timeout)
-      (disable-timeout (vm-imap-status-timer status-blob))
-    (cancel-timer (vm-imap-status-timer status-blob))))
+  ;; `disable-timeout' is an obsolete alias for `cancel-timer', and
+  ;; `fboundp' is true of it, so the guard that was here always took the
+  ;; deprecated name (emacs-vm/vm#818).
+  (cancel-timer (vm-imap-status-timer status-blob)))
 
 (defun vm-imap-report-retrieval-status (o)
   (condition-case _err
