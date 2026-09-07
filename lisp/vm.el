@@ -81,9 +81,6 @@
   "Git commit number of VM from generated file when building using make.")
 
 
-;; vm-xemacs.el is a non-existent file to fool the Emacs 23 compiler
-(declare-function get-coding-system "vm-xemacs.el" (name))
-(declare-function facep "vm-xemacs.el" (face-or-name))
 
 (declare-function vm-summary-faces-mode "vm-summary-faces.el" 
 		  (&optional arg))
@@ -245,13 +242,10 @@ deleted messages.  Use `###' to expunge deleted messages."
 
       ;; [5] Prepare the folder buffer for MULE
 
-      (if (and (not (featurep 'xemacs)) enable-multibyte-characters)
+      (if enable-multibyte-characters
 	  (set-buffer-multibyte nil))	; is this safe?
       (defvar buffer-file-coding-system)
-      (if (featurep 'xemacs)
-	  (vm-setup-xemacs-folder-coding-system))
-      (if (not (featurep 'xemacs))
-	  (vm-setup-fsfemacs-folder-coding-system))
+      (vm-setup-fsfemacs-folder-coding-system)
 
       ;; [6] Safeguards
 
@@ -442,31 +436,6 @@ deleted messages.  Use `###' to expunge deleted messages."
 	(vm-display-startup-message)
 	(if (not (input-pending-p))
 	    (vm-inform 5 "%s" totals-blurb))))))
-
-(defun vm-setup-xemacs-folder-coding-system ()
-  ;; If the file coding system is not a no-conversion variant,
-  ;; make it so by encoding all the text, then setting the
-  ;; file coding system and decoding it.  This situation is
-  ;; only possible if a file is visited and then vm-mode is
-  ;; run on it afterwards.
-  (if (and (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-unix)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-dos)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-mac)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'binary))))
-      (let ((buffer-read-only nil)
-	    (omodified (buffer-modified-p)))
-	(unwind-protect
-	    (progn
-	      (encode-coding-region (point-min) (point-max)
-				    buffer-file-coding-system)
-	      (set-buffer-file-coding-system 'no-conversion nil)
-	      (decode-coding-region (point-min) (point-max)
-				    buffer-file-coding-system))
-	  (set-buffer-modified-p omodified)))))
 
 (defun vm-setup-fsfemacs-folder-coding-system ()
   ;; If the file coding system is not a no-conversion variant,
@@ -1577,30 +1546,15 @@ draft messages."
 	(setq vm-buffers-needing-display-update (make-vector 29 0))
 	(setq vm-buffers-needing-undo-boundaries (make-vector 29 0))
 	(add-hook 'post-command-hook 'vm-add-undo-boundaries)
-	(if (if (featurep 'xemacs)
-		(find-face 'vm-monochrome-image)
-	      (facep 'vm-monochrome-image))
+	(if (facep 'vm-monochrome-image)
 	    nil
 	  (make-face 'vm-monochrome-image)
 	  (set-face-background 'vm-monochrome-image "white")
 	  (set-face-foreground 'vm-monochrome-image "black"))
-	(if (or (not (not (featurep 'xemacs)))
-		;; don't need this face under Emacs 21.
-		(fboundp 'image-type-available-p)
-		(facep 'vm-image-placeholder))
-	    nil
-	  (make-face 'vm-image-placeholder)
-	  (if (fboundp 'set-face-stipple)
-	      (set-face-stipple 'vm-image-placeholder
-				(list 16 16
-				      (concat "UU\377\377UU\377\377UU\377\377"
-					      "UU\377\377UU\377\377UU\377\377"
-					      "UU\377\377UU\377\377")))))
 	(and (vm-mouse-support-possible-p)
 	     (vm-mouse-install-mouse))
 	(and (vm-menu-support-possible-p)
 	     vm-use-menus
-	     (not (featurep 'xemacs))
 	     (vm-menu-initialize-vm-mode-menu-map))
 	(setq vm-session-beginning nil)
 	;; Last, so that a hook function sees VM assembled: the init file read,
@@ -1704,8 +1658,7 @@ form expected, and to \"Unknown Emacs\" if there is nothing to go on."
 			 full)
 	   (concat (match-string 1 full) " " (match-string 2 full)))
 	  ((boundp 'emacs-version)
-	   (concat (if (featurep 'xemacs) "XEmacs " "GNU Emacs ")
-		   emacs-version))
+	   (concat "GNU Emacs " emacs-version))
 	  (t "Unknown Emacs"))))
 
 ;;;###autoload

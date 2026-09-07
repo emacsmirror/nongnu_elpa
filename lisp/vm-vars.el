@@ -1168,28 +1168,9 @@ Nil value causes VM to display ONLY those headers specified in
 This is a regular expression that matches the names of headers that should
 be highlighted when a message is first presented.  For example setting
 this variable to \"From:\\\\|Subject:\" causes the From and Subject
-headers to be highlighted.
-
-If you're using XEmacs, you might want to use the builtin
-`highlight-headers' package instead.  If so, then you should set
-the variable `vm-use-lucid-highlighting' non-nil.  You'll need to
-set the various variables used by the highlight-headers package
-to customize highlighting.  `vm-highlighted-header-regexp' is
-ignored in this case."
+headers to be highlighted."
   :group 'vm-presentation
   :type '(choice (const nil) regexp))
-
-(defcustom vm-use-lucid-highlighting (condition-case nil
-                                         (progn
-                                           (require 'highlight-headers)
-                                           t )
-                                       (error nil))
-  "*Non-nil means to use the `highlight-headers' package in XEmacs.
-Nil means just use VM's builtin header highlighting code.
-
-FSF Emacs always uses VM's builtin highlighting code."
-  :group 'vm-misc
-  :type 'boolean)
 
 (defface vm-highlighted-header '((t (:inherit bold)))
  "Default face used to highlight headers."
@@ -1272,12 +1253,7 @@ u-vm-color add-on, which had to be wired up by hand and is gone
 (defcustom vm-highlighted-header-face 'vm-highlighted-header
   "*Face to be used to highlight headers.
 The headers to highlight are specified by the `vm-highlighted-header-regexp'
-variable.
-
-This variable is ignored under XEmacs if `vm-use-lucid-highlighting' is
-non-nil.  XEmacs' highlight-headers package is used instead.  See the
-documentation for the function `highlight-headers' to find out how to
-customize header highlighting using this package."
+variable."
   :group 'vm-faces
   :type 'symbol)
 
@@ -2082,11 +2058,9 @@ and when you read an email."
 		 regexp))
 
 (defcustom vm-mime-default-face-charsets
-  (if (not (featurep 'xemacs))
-      (if (eq window-system nil)
-          '("us-ascii" "ansi_x3.4-1968" "iso-8859-1")
-        '("us-ascii" "ansi_x3.4-1968"))
-    '("us-ascii" "ansi_x3.4-1968" "iso-8859-1"))
+  (if (eq window-system nil)
+      '("us-ascii" "ansi_x3.4-1968" "iso-8859-1")
+    '("us-ascii" "ansi_x3.4-1968"))
   "*List of character sets that can be displayed using the `default' face.
 The default face is what you normally see when you edit text in Emacs.
 The font assigned to the default face can typically display one or two
@@ -5191,49 +5165,27 @@ decide the face."
   :group 'vm-summary-faces)
 
 
-(if (featurep 'xemacs)
-    (defface vm-summary-deleted
-      '(
-	(((class color) (background light))
-	 (:foreground "grey50" :strikethru t))
-	(((class color) (background dark))
-	 (:foreground "grey70" :strikethru t))
-	(((type tty) (class color) (background light)) 
-	 (:foreground "yellow"))
-	(((type tty) (class color) (background dark)) 
-	 (:foreground "yellow"))
-	(((class grayscale) (background light))
-	 (:foreground "grey50" :strikethru t))
-	(((class grayscale) (background dark))
-	 (:foreground "grey70" :strikethru t))
-	(((class mono))
-	 (:strikethru t))
-	(((type tty)) 
-	 (:dim t))
-	(t ()))
-      "The face used in VM Summary buffers for deleted messages."
-      :group 'vm-summary-faces)
-  (defface vm-summary-deleted
-    '(
-      (((type x w32 mswindows mac) (class color) (background light)) 
-       (:foreground "grey50" :strike-through "grey80"))
-      (((type x w32 mswindows mac) (class color) (background dark)) 
-       (:foreground "grey70" :strike-through "grey50"))
-      (((class color) (background light)) ;  (min-colors 8)
-       (:foreground "yellow"))
-      (((class color) (background dark)) 
-       (:foreground "yellow"))
-      (((class grayscale) (background light)) 
-       (:foreground "grey50" :strike-through "grey70"))
-      (((class grayscale) (background dark)) 
-       (:foreground "grey70" :strike-trhough "grey50"))
-      (((class mono))
-       (:strike-through t))
-      (((type tty)) 
-       (:dim t))
-      (t ()))
-    "The face used in VM Summary buffers for deleted messages."
-    :group 'vm-summary-faces))
+(defface vm-summary-deleted
+  '(
+    (((type x w32 mswindows mac) (class color) (background light)) 
+     (:foreground "grey50" :strike-through "grey80"))
+    (((type x w32 mswindows mac) (class color) (background dark)) 
+     (:foreground "grey70" :strike-through "grey50"))
+    (((class color) (background light)) ;  (min-colors 8)
+     (:foreground "yellow"))
+    (((class color) (background dark)) 
+     (:foreground "yellow"))
+    (((class grayscale) (background light)) 
+     (:foreground "grey50" :strike-through "grey70"))
+    (((class grayscale) (background dark)) 
+     (:foreground "grey70" :strike-trhough "grey50"))
+    (((class mono))
+     (:strike-through t))
+    (((type tty)) 
+     (:dim t))
+    (t ()))
+  "The face used in VM Summary buffers for deleted messages."
+  :group 'vm-summary-faces)
 
 
 (defface vm-summary-new
@@ -5911,9 +5863,7 @@ The default should work on UNIX systems."
   :group 'vm-helpers
   :type '(string :tag "Shell command"))
 
-(defcustom vm-uncompface-program (and (not (featurep 'xemacs))
-				   (fboundp 'image-type-available-p)
-				   (vm-locate-executable-file "uncompface"))
+(defcustom vm-uncompface-program (vm-locate-executable-file "uncompface")
   "*Program used to convert X-Face data to Sun icon format.
 Or if the program version is new enough, it will be called with
 -X to produce XBM data.  This program is needed to support he
@@ -5922,9 +5872,7 @@ display of X-Faces under Emacs 21."
   :type '(choice (const :tag "None" nil)
 		 file))
 
-(defcustom vm-icontopbm-program (and (not (featurep 'xemacs))
-				  (fboundp 'image-type-available-p)
-				  (vm-locate-executable-file "icontopbm"))
+(defcustom vm-icontopbm-program (vm-locate-executable-file "icontopbm")
   "*Program to convert Sun icon data to a PBM file.
 This program is needed to support the display of X-Faces under
 Emacs 21 if the uncompface program can't convert X-Face image
@@ -5934,13 +5882,11 @@ data to XBM data."
 		 file))
 
 (defvar vm-uncompface-accepts-dash-x
-  (and (not (featurep 'xemacs)) (fboundp 'image-type-available-p)
-       (stringp vm-uncompface-program)
+  (and (stringp vm-uncompface-program)
        (eq 0 (string-match "#define"
 			   (shell-command-to-string
 			    (format "%s -X" vm-uncompface-program)))))
-  "Non-nil if the uncompface command accepts a -X argument.
-This is only used for FSF Emacs currently.")
+  "Non-nil if the uncompface command accepts a -X argument.")
 
 (defcustom vm-mail-check-recipient-format 't
   "Non-nil value causes `vm-mail-send' to check multi-line recipient
@@ -6336,10 +6282,6 @@ Its parent keymap is mail-mode-map.")
     (define-key map "$|" 'vm-mime-reader-map-pipe-to-command)
     (define-key map "$a" 'vm-mime-reader-map-attach-to-composition)
     (define-key map "$d" 'vm-delete-mime-object)
-    (cond ((featurep 'xemacs)
-	   (define-key map 'button3 'vm-menu-popup-mime-dispose-menu)))
-    (cond ((fboundp 'set-keymap-name)
-	   (set-keymap-name map 'vm-mime-reader-map)))
     map )
   "Keymap for the MIME buttons in VM folder buffers.")
 
@@ -7238,9 +7180,6 @@ Possible values are
 (make-variable-buffer-local 'vm-imap-session-type)
 
 (defvar vm-fsfemacs-toolbar-installed-p nil)
-;; this defvar matches the XEmacs one so it doesn't matter if VM
-;; is loaded before highlight-headers.el
-(defconst highlight-headers-regexp "Subject[ \t]*:")
 (defconst vm-url-regexp
   "<URL:\\([^>\n]+\\)>\\|\\(\\(file\\|sftp\\|ftp\\|gopher\\|http\\|https\\|news\\|wais\\|www\\)://[^ \t\n\f\r\"<>|()]*[^ \t\n\f\r\"<>|.!?(){}]\\)\\|\\(mailto:[^ \t\n\f\r\"<>|()]*[^] \t\n\f\r\"<>|.!?(){}]\\)\\|\\(file:/[^ \t\n\f\r\"<>|()]*[^ \t\n\f\r\"<>|.!?(){}]\\)"
   "Regular expression that matches an absolute URL.
@@ -7395,95 +7334,35 @@ actions to be taken to destroy them.")
 (defconst vm-mime-header-list '("MIME-Version:" "Content-"))
 (defconst vm-mime-header-regexp "\\(MIME-Version:\\|Content-\\)")
 (defconst vm-mime-mule-charset-to-coding-alist
-  (cond ((not (featurep 'xemacs))
-	 (let ((coding-systems (coding-system-list))
-	       (alist nil)
-	       val)
-	   (while coding-systems
-	     (setq val (coding-system-get (car coding-systems) 'mime-charset))
-	     (if val
-		 (setq alist (cons (list (symbol-name val)
-					 (car coding-systems))
-				   alist)))
-	     (setq coding-systems (cdr coding-systems)))
-	   (setq alist (append '(("us-ascii" raw-text)
-				 ("unknown" iso-8859-1))
-			       alist))
-	   alist))
-	 (t
-	 '(
-	   ("us-ascii"		no-conversion)
-	   ("iso-8859-1"	no-conversion)
-	   ("iso-8859-2"	iso-8859-2)
-	   ("iso-8859-3"	iso-8859-3)
-	   ("iso-8859-4"	iso-8859-4)
-	   ("iso-8859-5"	iso-8859-5)
-	   ;; iso-8859-6, Arabic, is deliberately not mapped here.
-	   ("iso-8859-7"	iso-8859-7)
-	   ("iso-8859-8"	iso-8859-8)
-	   ("iso-8859-8-i"	iso-8859-8)
-	   ("iso-8859-9"	iso-8859-9)
-	   ("iso-2022-jp"	iso-2022-jp)
-	   ("big5"		big5)
-	   ("koi8-r"		koi8-r)
-	   ("ks_c_5601-1987"	euc-kr)
-	   ("euc-jp"		euc-jp)
-	   ;; probably not correct, but probably better than nothing.
-	   ("iso-2022-jp-2"	iso-2022-jp)
-	   ("iso-2022-int-1"	iso-2022-int-1)
-	   ("iso-2022-kr"	iso-2022-kr)
-	   ("euc-kr"		iso-2022-kr)
-	  )
-	 ))
-  "Alist that maps MIME character sets to MULE coding systems.  The
-information is generated from the `mime-charset' property of coding
-systems, if it is defined in the Emacs version.  Otherwise, a
-default alist is used.")
-	  
-(defconst vm-mime-mule-charset-to-charset-alist
-  '(
-    (latin-iso8859-1	"iso-8859-1")
-    (latin-iso8859-2	"iso-8859-2")
-    (latin-iso8859-3	"iso-8859-3")
-    (latin-iso8859-4	"iso-8859-4")
-    (cyrillic-iso8859-5	"iso-8859-5")
-    (arabic-iso8859-6	"iso-8859-6")
-    (greek-iso8859-7	"iso-8859-7")
-    (hebrew-iso8859-8	"iso-8859-8")
-    (latin-iso8859-9	"iso-8859-9")
-    (japanese-jisx0208	"iso-2022-jp")
-    (korean-ksc5601	"iso-2022-kr")
-    (chinese-gb2312	"iso-2022-jp")
-    (sisheng		"iso-2022-jp")
-    (thai-tis620	"iso-2022-jp")
-   )
+  (let ((coding-systems (coding-system-list))
+	(alist nil)
+	val)
+    (while coding-systems
+      (setq val (coding-system-get (car coding-systems) 'mime-charset))
+      (if val
+	  (setq alist (cons (list (symbol-name val)
+				  (car coding-systems))
+			    alist)))
+      (setq coding-systems (cdr coding-systems)))
+    (append '(("us-ascii" raw-text)
+	      ("unknown" iso-8859-1))
+	    alist))
   "Alist that maps MULE character sets to matching MIME character sets.")
 
 (defconst vm-mime-mule-coding-to-charset-alist
-  (cond ((not (featurep 'xemacs))
-	 (let ((coding-systems (coding-system-list))
-	       (alist nil)
-	       val)
-	   (while coding-systems
-	     (setq val (coding-system-get (car coding-systems) 'mime-charset))
-	     (if val
-		 (setq alist (cons (list (car coding-systems)
-					 (symbol-name val))
-				   alist)))
-	     (setq coding-systems (cdr coding-systems)))
-	   (setq alist (append '((raw-text "us-ascii")) alist))
-	   alist))
-	(t
-	 '(
-	   (iso-2022-8		"iso-2022-jp")
-	   (iso-2022-7-unix	"iso-2022-jp")
-	   (iso-2022-7-dos	"iso-2022-jp")
-	   (iso-2022-7-mac	"iso-2022-jp")
-	  )))
-  "Alist that maps MULE coding systems to MIME character sets.  The
-information is generated from the `mime-charset' property of coding
-systems, if it is defined in the Emacs version.  Otherwise, a
-default alist is used.")
+  (let ((coding-systems (coding-system-list))
+	(alist nil)
+	val)
+    (while coding-systems
+      (setq val (coding-system-get (car coding-systems) 'mime-charset))
+      (if val
+	  (setq alist (cons (list (car coding-systems)
+				  (symbol-name val))
+			    alist)))
+      (setq coding-systems (cdr coding-systems)))
+    (append '((raw-text "us-ascii")) alist))
+  "Alist that maps MULE coding systems to MIME character sets.
+Generated from the `mime-charset' property of the coding systems.")
 
 (defcustom vm-mime-charset-completion-alist
   (mapcar (lambda (a) (list (car a)))
@@ -7736,11 +7615,9 @@ which is the file on disk."
   :group 'vm-presentation)
 
 (defconst vm-shrunken-headers-keymap
-  (let ((map (if (featurep 'xemacs) (make-keymap) (copy-keymap vm-mode-map))))
-    (define-key map [(return)]   'vm-shrunken-headers-toggle-this)
-    (if (featurep 'xemacs)
-        (define-key map [(button2)]  'vm-shrunken-headers-toggle-this-mouse)
-      (define-key map [(mouse-2)]  'vm-shrunken-headers-toggle-this-mouse))
+  (let ((map (copy-keymap vm-mode-map)))
+    (define-key map [(return)] 'vm-shrunken-headers-toggle-this)
+    (define-key map [(mouse-2)] 'vm-shrunken-headers-toggle-this-mouse)
     map)
   "Keymap used for shrunken-headers glyphs.")
 

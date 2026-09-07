@@ -117,7 +117,6 @@
 
 (declare-function vm-get-folder-buffer "vm" (folder))
 ;; The following function is erroneously called for fsfemacs as well
-(declare-function key-or-menu-binding "vm-xemacs" (key &optional menu-flag))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 
 ;; vm-save.el function

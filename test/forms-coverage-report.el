@@ -56,33 +56,6 @@ cannot read is a file this report is blind to."
                      failed))))
     (nreverse failed)))
 
-(defun vm-forms-coverage-xemacs-only ()
-  "The definitions whose body branches on `(featurep \='xemacs)\='.
-
-Their never-evaluated forms are mostly unreachable rather than untested: the
-XEmacs arm cannot run on the Emacs measuring it.  `vm-determine-proper-charset'
-is thirteen lines of GNU Emacs and a hundred and forty-seven of XEmacs, so it
-sat near the top of the ranking with a hundred and six never-evaluated forms
-that no test could ever reach.  Listed apart, so the ranking a reader acts on
-holds only what is worth acting on."
-  (let ((names (make-hash-table :test 'eq)))
-    (dolist (file (vm-forms-coverage-files))
-      (with-temp-buffer
-        (insert-file-contents file)
-        (goto-char (point-min))
-        (while (re-search-forward "^(\\(?:cl-\\)?\\(?:defun\\|defsubst\\|defmacro\\) \\([^ \t\n()]+\\)" nil t)
-          (let ((name (intern (match-string 1)))
-                (start (match-beginning 0))
-                (end (save-excursion
-                       (goto-char (match-beginning 0))
-                       (or (and (re-search-forward "^(def" nil t 2)
-                                (match-beginning 0))
-                           (point-max)))))
-            (when (string-match-p "featurep[ \t\n]+'xemacs"
-                                  (buffer-substring-no-properties start end))
-              (puthash name t names))))))
-    names))
-
 (defun vm-forms-coverage-tally ()
   "Answer (SYMBOL NEVER ONE-VALUE VARIED) for each instrumented definition."
   (let ((rows nil))
@@ -211,7 +184,6 @@ a line is written as run once or not at all."
 (defun vm-forms-coverage-report (failed)
   "Write the report, naming any FAILED files first."
   (let* ((rows (vm-forms-coverage-tally))
-         (xemacs-only (vm-forms-coverage-xemacs-only))
          (forms (apply #'+ (mapcar (lambda (r) (+ (nth 1 r) (nth 2 r) (nth 3 r)))
                                    rows)))
          (never (apply #'+ (mapcar (lambda (r) (nth 1 r)) rows)))
@@ -236,28 +208,11 @@ a line is written as run once or not at all."
                       one (if (zerop forms) 0.0 (* 100.0 (/ (float one) forms)))))
       (insert (format "  varied: %d (%.1f%%)\n"
                       varied (if (zerop forms) 0.0 (* 100.0 (/ (float varied) forms)))))
-      (insert (format "Definitions with an XEmacs branch: %d, listed apart below.\n\n"
-                      (seq-count (lambda (row) (gethash (car row) xemacs-only))
-                                 rows)))
-      (insert "=== DEFINITIONS WITH FORMS NEVER EVALUATED ===\n")
-      (insert "Most first.  A never-evaluated `cond' arm is a branch no test took.\n")
-      (insert "Definitions that branch on XEmacs are in the section after this\n")
-      (insert "one: their unreached forms cannot run on the Emacs measuring them.\n\n")
+      (insert "\n=== DEFINITIONS WITH FORMS NEVER EVALUATED ===\n")
+      (insert "Most first.  A never-evaluated `cond' arm is a branch no test took.\n\n")
       (insert (format "%-52s %6s %6s %6s\n" "definition" "never" "1value" "varied"))
       (dolist (row rows)
-        (when (and (> (nth 1 row) 0)
-                   (not (gethash (car row) xemacs-only)))
-          (insert (format "%-52s %6d %6d %6d\n"
-                          (car row) (nth 1 row) (nth 2 row) (nth 3 row)))))
-      (insert "\n=== THE SAME, FOR DEFINITIONS WITH AN XEMACS BRANCH ===\n")
-      (insert "Most of what is never evaluated here is the XEmacs arm, which no\n")
-      (insert "test on this Emacs can reach.  Read these counts as an upper bound.\n")
-      (insert "Found by looking for `(featurep 'xemacs)' in the body, so a\n")
-      (insert "definition that is XEmacs-only some other way -- one called only\n")
-      (insert "from an XEmacs arm elsewhere, or named for it -- is still above.\n\n")
-      (dolist (row rows)
-        (when (and (> (nth 1 row) 0)
-                   (gethash (car row) xemacs-only))
+        (when (> (nth 1 row) 0)
           (insert (format "%-52s %6d %6d %6d\n"
                           (car row) (nth 1 row) (nth 2 row) (nth 3 row)))))
       (insert "\n=== EVERY FORM EVALUATED, SOME ALWAYS ONE VALUE ===\n")

@@ -93,7 +93,6 @@
 (declare-function dnd-get-local-file-name "dnd" (uri &optional must-exist))
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-version "vm" ())
-(declare-function get-itimer "vm-xemacs.el" (name))
 
 ;; vm-digest.el functions - cyclic dependency
 (declare-function vm-no-frills-encapsulate-message "vm-digest"
@@ -818,8 +817,7 @@ This function is a variant of `vm-get-header-contents'."
 
 (defvar vm-dont-ask-coding-system-question nil)
 
-(cond ((and (not (featurep 'xemacs))
-	    (fboundp 'select-message-coding-system)
+(cond ((and (fboundp 'select-message-coding-system)
 	    (not (fboundp 'vm-old-select-message-coding-system)))
        (fset 'vm-old-select-message-coding-system
 	     (symbol-function 'select-message-coding-system))
@@ -1443,8 +1441,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 	       (insert "Content-Description: forwarded message\n")
 	       ;; eight bit chars will get \201 prepended if we
 	       ;; don't do this.
-	       (when (not (featurep 'xemacs))
-		 (set-buffer-multibyte t))) ; is this safe?
+	       (set-buffer-multibyte t))	; is this safe?
 	      ((equal vm-forwarding-digest-type "rfc934")
 	       (vm-rfc934-encapsulate-messages
 		vm-forward-list 
@@ -1585,12 +1582,9 @@ You may also create a Resent-Cc header."
       (insert "Resent-To: \n")
       (if mail-self-blind
 	  (insert "Bcc: "
-		  (cond ((and (featurep 'xemacs) (fboundp 'user-mail-address))
-			 (user-mail-address))
-			((and (boundp 'user-mail-address)
-			      (stringp user-mail-address))
-			 user-mail-address)
-			(t (user-login-name)))
+		  (if (stringp user-mail-address)
+		      user-mail-address
+		    (user-login-name))
 		  ?\n))
       (if mail-archive-file-name
 	  (insert "FCC: " mail-archive-file-name ?\n))
@@ -1973,8 +1967,7 @@ Binds the `vm-mail-mode-map' and hooks"
     (set-buffer (generate-new-buffer buffer-name))
     ;; FSF Emacs: try to prevent write-region (called to handle FCC) from
     ;; asking the user to choose a safe coding system.
-    (if (and (not (featurep 'xemacs)) (fboundp 'set-buffer-file-coding-system))
-	(set-buffer-file-coding-system 'raw-text))
+    (set-buffer-file-coding-system 'raw-text)
     ;; Avoid trying to write auto-save files in potentially unwritable
     ;; directories.  This is the composition's directory from here on: the
     ;; commands that start one used to put the folder's own directory back
@@ -2036,12 +2029,9 @@ Binds the `vm-mail-mode-map' and hooks"
       (insert "Reply-To: " mail-default-reply-to "\n"))
     (when mail-self-blind
       (insert "Bcc: "
-	      (cond ((and (featurep 'xemacs) (fboundp 'user-mail-address))
-		     (user-mail-address))
-		    ((and (boundp 'user-mail-address)
-			  (stringp user-mail-address))
-		     user-mail-address)
-		    (t (user-login-name)))
+	      (if (stringp user-mail-address)
+		  user-mail-address
+		(user-login-name))
 	      ?\n))
     (when mail-archive-file-name
       (insert "FCC: " mail-archive-file-name "\n"))
@@ -2115,17 +2105,10 @@ Binds the `vm-mail-mode-map' and hooks"
 	   (mail-position-on-field "To" t))
 	  ((null subject)
 	   (mail-position-on-field "Subject" t)))
-    (cond ((and (featurep 'xemacs)
-		(fboundp 'start-itimer)
-		(null (get-itimer "vm-rename-mail"))
-	   (start-itimer "vm-rename-mail"
-			 'vm-update-composition-buffer-name
-			 1.5 1.5 t)))
-	  ((and (fboundp 'run-with-idle-timer)
-		(null vm-update-composition-buffer-name-timer))
-	   (setq vm-update-composition-buffer-name-timer
-		 (run-with-idle-timer 
-		  1.5 t 'vm-update-composition-buffer-name))))
+    (unless vm-update-composition-buffer-name-timer
+      (setq vm-update-composition-buffer-name-timer
+	    (run-with-idle-timer
+	     1.5 t 'vm-update-composition-buffer-name)))
     (vm-new-composition-buffer)
     (run-hooks 'mail-setup-hook)))
 

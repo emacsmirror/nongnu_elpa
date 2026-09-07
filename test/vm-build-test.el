@@ -78,11 +78,14 @@ A word that is a glob has to match something rather than name something,
   "REGRESSION: no .elc is listed for lisp that is never byte-compiled.
 `vm-custom-make-dependencies' writes vm-cus-load.el with a
 `no-byte-compile: t' local variable, so vm-cus-load.elc is never produced.
-Listing it in `emacs_OBJECTS' put it on the install list, where it failed
-the same silent way as the missing docs above."
+Listing it in `OBJECTS' put it on the install list, where it failed
+the same silent way as the missing docs above.
+
+The variable was `emacs_OBJECTS' until XEmacs support was dropped, there
+having been an `xemacs_OBJECTS' beside it that the flavor chose between."
   (let ((objects (vm-build-test--make-variable
                   (expand-file-name "lisp/Makefile.in" vm-build-test--root)
-                  "emacs_OBJECTS")))
+                  "OBJECTS")))
     (should objects)
     (should-not (member "vm-cus-load.elc" objects)))
   ;; The premise: that file really is marked never-to-be-compiled.  It is

@@ -32,7 +32,9 @@ requires package-lint
   make package-lint
 or 
   M-x package-lint-current-buffer
-note lint will not be clean, due to xemacs references
+note lint will not be clean: it takes the package prefix from
+  vm-autoloads.el and then reports every vm- name in vm.el as wrongly
+  prefixed, 55 of them
 
 * run the automated suite
 - cd test && ./test-runner --assert   # every pass, with VM's assertions on

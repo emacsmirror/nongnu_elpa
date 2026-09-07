@@ -204,31 +204,6 @@ test-no-opt:
 .PHONY: test test-no-opt
 
 ##############################################################################
-# xemacs package (not tested)
-# @abs_builddir@ rather than $(shell pwd): $(shell ...) is GNU make only, and
-# BSD make expanded it to nothing, rooting the whole package tree at "/".
-PKGDIR =  @abs_builddir@/,,package/
-PKGINFO = $(PKGDIR)/lisp/vm/_pkg.el
-xemacs-package:
-	if [ "x@EMACS_FLAVOR@" != "xxemacs" ]; then \
-	  echo "ERROR: Current build dir not configured for XEmacs,"; \
-	  echo "ERROR: Please re-run configure with --with-emacs=xemacs."; \
-	  exit 1; \
-	fi
-	-$(RM) -rf ,,package
-	cd lisp && $(MAKE) PACKAGEDIR=$(PKGDIR)/lisp/vm install-pkg
-	cd info && $(MAKE) infodir=$(PKGDIR)/info install-pkg
-	echo ";;;###autoload" > $(PKGINFO)
-	echo "(package-provide 'vm'" > $(PKGINFO)
-	echo "         :version $(PACKAGE_VERSION)" >> $(PKGINFO)
-	echo '         :author-version "'`$(GIT) --git-dir="@top_srcdir@/.git" rev-parse HEAD`'"' >> $(PKGINFO)
-	echo "         :type 'regular)" >> $(PKGINFO)
-	mkdir $(PKGDIR)/pkginfo;
-	touch $(PKGDIR)/pkginfo/MANIFEST.vm;
-	cd $(PKGDIR) && find -type f | cut -c3- > pkginfo/MANIFEST.vm
-	cd ,,package && $(TAR) -cvzf ../vm-pkg.tar.gz *
-
-##############################################################################
 tags::
 	etags lisp/*.el info/*.texinfo NEWS-*.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 

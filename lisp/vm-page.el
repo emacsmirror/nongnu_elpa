@@ -37,16 +37,6 @@
 (declare-function vm-decode-mime-message "vm-mime" (&optional state))
 (declare-function vm-mime-plain-message-p "vm-mime" (message))
 
-(declare-function map-extents "vm-xemacs" 
-		  (function &optional object from to maparg 
-			    flags property value))
-(declare-function find-face "vm-xemacs" (face-or-name))
-(declare-function make-glyph "vm-xemacs" (&optional spec-list type))
-(declare-function set-glyph-face "vm-xemacs" (glyph face))
-(declare-function glyphp "vm-xemacs" (object))
-(declare-function set-extent-begin-glyph "vm-xemacs" 
-		  (extent begin-glyph &optional layout))
-(declare-function highlight-headers "vm-xemacs" (start end hack-sig))
 
 ;;;###autoload
 (defun vm-scroll-forward (&optional arg)
@@ -304,51 +294,27 @@ Negative arg means scroll forward."
   (vm-scroll-forward (- count)))
 
 (defun vm-highlight-headers ()
-  (cond
-   ((and (featurep 'xemacs) vm-use-lucid-highlighting)
-    (require 'highlight-headers)
-    ;; disable the url marking stuff, since VM has its own interface.
-    (let ((highlight-headers-mark-urls nil)
-	  (highlight-headers-regexp (or vm-highlighted-header-regexp
-					highlight-headers-regexp)))
-      (highlight-headers (point-min) (point-max) t)))
-   ((featurep 'xemacs)
-    (let (e)
-      (map-extents (function
-		    (lambda (e ignore)
-		      (when (vm-extent-property e 'vm-highlight)
-			(vm-delete-extent e))
-		      nil))
-		   (current-buffer) (point-min) (point-max))
-      (goto-char (point-min))
-      (while (vm-match-header)
-	(cond ((vm-match-header vm-highlighted-header-regexp)
-	       (setq e (vm-make-extent (vm-matched-header-contents-start)
-				       (vm-matched-header-contents-end)))
-	       (vm-set-extent-property e 'face vm-highlighted-header-face)
-	       (vm-set-extent-property e 'vm-highlight t)))
-	(goto-char (vm-matched-header-end)))))
-   ((not (featurep 'xemacs))
-    (let (o-lists p)
-      (setq o-lists (overlay-lists)
-	    p (car o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-highlight)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (setq p (cdr o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-highlight)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (goto-char (point-min))
-      (while (vm-match-header)
-	(cond ((vm-match-header vm-highlighted-header-regexp)
-	       (setq p (make-overlay (vm-matched-header-contents-start)
-				     (vm-matched-header-contents-end)))
-	       (overlay-put p 'face vm-highlighted-header-face)
-	       (overlay-put p 'vm-highlight t)))
-	(goto-char (vm-matched-header-end)))))))
+  (let (o-lists p)
+    (setq o-lists (overlay-lists)
+	  p (car o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-highlight)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (setq p (cdr o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-highlight)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (goto-char (point-min))
+    (while (vm-match-header)
+      (when (vm-match-header vm-highlighted-header-regexp)
+	(setq p (make-overlay (vm-matched-header-contents-start)
+			      (vm-matched-header-contents-end)))
+	(overlay-put p 'face vm-highlighted-header-face)
+	(overlay-put p 'vm-highlight t))
+      (goto-char (vm-matched-header-end)))))
+
 
 ;;;###autoload
 (defun vm-energize-urls (&optional clean-only)
@@ -390,16 +356,9 @@ Negative arg means scroll forward."
 			     (looking-at "mailto:"))
 			   'vm-menu-popup-mailto-url-browser-menu
 			 'vm-menu-popup-url-browser-menu)))
-		  (if (not (featurep 'xemacs))
-		      (setq keymap (nconc keymap (current-local-map))))
-		  (if (featurep 'xemacs)
-		      (define-key keymap 'button2 'vm-mouse-send-url-at-event)
-		    ;; nothing for fsfemacs?
-		    )
+		  (setq keymap (nconc keymap (current-local-map)))
 		  (when vm-popup-menu-on-mouse-3
-		    (if (featurep 'xemacs)
-			(define-key keymap 'button3 popup-function)
-		      (define-key keymap [mouse-3] popup-function)))
+		    (define-key keymap [mouse-3] popup-function))
 		  (define-key keymap "\r"
 			      (function (lambda () (interactive)
 				          (vm-mouse-send-url-at-position (point)))))
@@ -419,113 +378,37 @@ Negative arg means scroll forward."
 	  (setq search-pairs (cdr search-pairs)))))))
 
 (defun vm-energize-headers ()
-  (cond
-   ((featurep 'xemacs)
-    (let ((search-tuples '(("^From:" vm-menu-author-menu)
-			   ("^Subject:" vm-menu-subject-menu)))
-	  regexp menu keymap e)
-      (map-extents (function
-		    (lambda (e ignore)
-		      (when (vm-extent-property e 'vm-header)
-			(vm-delete-extent e))
-		      nil))
-		   (current-buffer) (point-min) (point-max))
-      (while search-tuples
-	(goto-char (point-min))
-	(setq regexp (nth 0 (car search-tuples))
-	      menu (symbol-value (nth 1 (car search-tuples))))
-	(while (re-search-forward regexp nil t)
-	  (save-excursion (goto-char (match-beginning 0)) (vm-match-header))
-	  (setq e (vm-make-extent (vm-matched-header-contents-start)
-				  (vm-matched-header-contents-end)))
-	  (vm-set-extent-property e 'vm-header t)
-	  (setq keymap (make-sparse-keymap))
-	  ;; Might as well make button2 do what button3 does in
-	  ;; this case, since there is no default 'select'
-	  ;; action.
-	  (define-key keymap 'button2
-	    (list 'lambda () '(interactive)
-		  (list 'popup-menu (list 'quote menu))))
-	  (if vm-popup-menu-on-mouse-3
-	      (define-key keymap 'button3
-		(list 'lambda () '(interactive)
-		      (list 'popup-menu (list 'quote menu)))))
-	  (vm-set-extent-property e 'keymap keymap)
-	  (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help)
-	  (vm-set-extent-property e 'highlight t))
-	(setq search-tuples (cdr search-tuples)))))
-   ((and (not (featurep 'xemacs))
-	 (fboundp 'overlay-put))
-    (let ((search-tuples '(("^From:" vm-menu-fsfemacs-author-menu)
-			   ("^Subject:" vm-menu-fsfemacs-subject-menu)))
-	  regexp menu
-	  o-lists o p)
-      (setq o-lists (overlay-lists)
-	    p (car o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-header)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (setq p (cdr o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-header)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (while search-tuples
-	(goto-char (point-min))
-	(setq regexp (nth 0 (car search-tuples))
-	      menu (symbol-value (nth 1 (car search-tuples))))
-	(while (re-search-forward regexp nil t)
-	  (goto-char (match-end 0))
-	  (save-excursion (goto-char (match-beginning 0)) (vm-match-header))
-	  (setq o (make-overlay (vm-matched-header-contents-start)
-				(vm-matched-header-contents-end)))
-	  (overlay-put o 'vm-header menu)
-	  (overlay-put o 'mouse-face 'highlight))
-	(setq search-tuples (cdr search-tuples)))))))
+  (let ((search-tuples '(("^From:" vm-menu-fsfemacs-author-menu)
+			 ("^Subject:" vm-menu-fsfemacs-subject-menu)))
+	regexp menu
+	o-lists o p)
+    (setq o-lists (overlay-lists)
+	  p (car o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-header)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (setq p (cdr o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-header)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (while search-tuples
+      (goto-char (point-min))
+      (setq regexp (nth 0 (car search-tuples))
+	    menu (symbol-value (nth 1 (car search-tuples))))
+      (while (re-search-forward regexp nil t)
+	(goto-char (match-end 0))
+	(save-excursion (goto-char (match-beginning 0)) (vm-match-header))
+	(setq o (make-overlay (vm-matched-header-contents-start)
+			      (vm-matched-header-contents-end)))
+	(overlay-put o 'vm-header menu)
+	(overlay-put o 'mouse-face 'highlight))
+      (setq search-tuples (cdr search-tuples)))))
 
 (defun vm-display-xface ()
-  (cond ((featurep 'xemacs) (vm-display-xface-xemacs))
-	((and (not (featurep 'xemacs))
-	      (and (stringp vm-uncompface-program)
-		   (fboundp 'create-image)))
-	 (vm-display-xface-fsfemacs))))
-
-(defun vm-display-xface-xemacs ()
-  (let ((case-fold-search t) e g h)
-    (if (map-extents (function
-		      (lambda (e _ignore)
-			(if (vm-extent-property e 'vm-xface)
-			    t
-			  nil)))
-		     (current-buffer) (point-min) (point-max))
-	nil
-      (goto-char (point-min))
-      (if (find-face 'vm-xface)
-	  nil
-	(make-face 'vm-xface)
-	(set-face-background 'vm-xface "white")
-	(set-face-foreground 'vm-xface "black"))
-      (if (re-search-forward "^X-Face:" nil t)
-	  (progn
-	    (goto-char (match-beginning 0))
-	    (vm-match-header)
-	    (setq h (concat "X-Face: " (vm-matched-header-contents)))
-	    (setq g (intern h vm-xface-cache))
-	    (if (boundp g)
-		(setq g (symbol-value g))
-	      (set g (make-glyph
-		      (list
-		       (list 'global (cons '(tty) [nothing]))
-		       (list 'global (cons '(win) (vector 'xface ':data h))))))
-	      (setq g (symbol-value g))
-	      ;; XXX broken.  Gives extra pixel lines at the
-	      ;; bottom of the glyph in 19.12
-	      (set-glyph-face g 'vm-xface))
-	    (setq e (vm-make-extent (vm-vheaders-of (car vm-message-pointer))
-				    (vm-vheaders-of (car vm-message-pointer))))
-	    (vm-set-extent-property e 'vm-xface t)
-	    (set-extent-begin-glyph e g))))))
+  (when (stringp vm-uncompface-program)
+    (vm-display-xface-fsfemacs)))
 
 (defun vm-display-xface-fsfemacs ()
   (catch 'done
@@ -698,8 +581,7 @@ both mark their overlays `vm-highlight'."
 
 (defun vm-highlight-headers-maybe ()
   ;; highlight the headers
-  (if (or vm-highlighted-header-regexp
-	  (and (featurep 'xemacs) vm-use-lucid-highlighting))
+  (if vm-highlighted-header-regexp
       (save-restriction
 	(widen)
 	(narrow-to-region (vm-headers-of (car vm-message-pointer))
@@ -715,20 +597,20 @@ both mark their overlays `vm-highlight'."
 			  (vm-text-of (car vm-message-pointer)))
 	(vm-energize-headers)))
   ;; display xfaces, if we can
-  (if (and vm-display-xfaces
-	   (or (and (featurep 'xemacs) (featurep 'xface))
-	       (and (not (featurep 'xemacs)) (fboundp 'create-image)
-		    (stringp vm-uncompface-program))))
+  (if (and vm-display-xfaces (stringp vm-uncompface-program))
       (save-restriction
 	(widen)
 	(narrow-to-region (vm-headers-of (car vm-message-pointer))
 			  (vm-text-of (car vm-message-pointer)))
 	(vm-display-xface))))
 
-(defun vm-narrow-for-preview (&optional just-passing-through)
+(defun vm-narrow-for-preview (&optional _just-passing-through)
   "Hide as much of the message body as vm-preview-lines specifies.
-Optional argument JUST-PASSING-THROUGH says that no real preview
-is necessary."
+JUST-PASSING-THROUGH said that no real preview was necessary, and is
+ignored: it suppressed a workaround for XEmacs displaying the begin-glyph of
+an extent at the end of a narrowed region, which put the image of a message
+that held only one on the screen at preview time however small
+vm-preview-lines was."
   (widen)
   (narrow-to-region
    (vm-vheaders-of (car vm-message-pointer))
@@ -738,27 +620,6 @@ is necessary."
 	   (save-excursion
 	     (goto-char (vm-text-of (car vm-message-pointer)))
 	     (forward-line (if (natnump vm-preview-lines) vm-preview-lines 0))
-	     ;; KLUDGE CITY: Under XEmacs, an extent's begin-glyph
-	     ;; will be displayed even if the extent is at the end
-	     ;; of a narrowed region.  Thus a message containing
-	     ;; only an image will have the image displayed at
-	     ;; preview time even if vm-preview-lines is 0 provided
-	     ;; vm-mime-decode-for-preview is non-nil.  We kludge
-	     ;; a fix for this by moving everything on the preview
-	     ;; cutoff line one character forward, but only if
-	     ;; we're doing MIME decode for preview.
-	     (if (and (not just-passing-through)
-		      (featurep 'xemacs)
-		      vm-mail-buffer ; in presentation buffer
-		      vm-auto-decode-mime-messages
-		      vm-mime-decode-for-preview
-		      ;; can't do the kludge unless we know that
-		      ;; when the message is exposed it will be
-		      ;; decoded and thereby remove the kludge.
-		      (not (vm-mime-plain-message-p (car vm-message-pointer))))
-		 (let ((buffer-read-only nil))
-		   (insert " ")
-		   (forward-char -1)))
 	     (point))))
 	 (t (vm-text-end-of (car vm-message-pointer))))))
 
@@ -1205,25 +1066,13 @@ Does nothing if POSITION is outside what is visible now."
 			  (vm-text-end-of (car vm-message-pointer))))))
 
 (defun vm-narrow-to-page ()
-  (cond ((not (featurep 'xemacs))
-	 (if (not (and vm-page-end-overlay
-		       (overlay-buffer vm-page-end-overlay)))
-	     (let ((g vm-page-continuation-glyph))
-	       (setq vm-page-end-overlay (make-overlay (point) (point)))
-	       (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'before-string g)
-	       (overlay-put vm-page-end-overlay 'evaporate nil))))
-	((featurep 'xemacs)
-	 (if (not (and vm-page-end-overlay
-		       (vm-extent-end-position vm-page-end-overlay)))
-	     (let ((g vm-page-continuation-glyph))
-	       (cond ((not (glyphp g))
-		      (setq g (make-glyph g))
-		      (set-glyph-face g 'italic)))
-	       (setq vm-page-end-overlay (vm-make-extent (point) (point)))
-	       (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'begin-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'detachable nil)))))
+  (unless (and vm-page-end-overlay
+	       (overlay-buffer vm-page-end-overlay))
+    (let ((g vm-page-continuation-glyph))
+      (setq vm-page-end-overlay (make-overlay (point) (point)))
+      (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
+      (vm-set-extent-property vm-page-end-overlay 'before-string g)
+      (overlay-put vm-page-end-overlay 'evaporate nil)))
   (save-excursion
     (let (min max (e vm-page-end-overlay))
       (if (or (bolp) (not (save-excursion

@@ -15,10 +15,7 @@ manual and arranges the autoloads.
 
 The source is at <https://gitlab.com/emacs-vm/vm>.
 
-XEmacs is not tested.  VM still carries XEmacs code and the build still
-accepts `--with-emacs=xemacs`, but nobody runs it, and the XEmacs paths and
-instructions below are kept from earlier releases rather than checked.  VM
-needs GNU Emacs 28.1 or later.
+VM needs GNU Emacs 28.1 or later.  XEmacs is no longer supported.
 
 ### 0. Generate the configure script
 
@@ -44,19 +41,12 @@ autoconf
 | `--with-docdir` | where the doc files go |
 | `--infodir` | where the info files go |
 
-Defaults under GNU Emacs: lisp in `${prefix}/share/emacs/site-lisp`, data in
+Defaults: lisp in `${prefix}/share/emacs/site-lisp`, data in
 `${prefix}/share/vm`, doc files with the data files, info in
 `${prefix}/share/info`.
 
-Under XEmacs (untested): lisp in
-`${prefix}/lib/xemacs/site-packages/lisp/vm`, data in
-`${prefix}/lib/xemacs/site-packages/etc/vm`, info in
-`${prefix}/lib/xemacs/site-packages/info`.  `M-x describe-installation` in
-XEmacs gives hints on where things belong.
-
-Files byte-compiled with GNU Emacs are **not compatible** with XEmacs, and
-there can be trouble even between versions of the same Emacs.  A stale `.elc`
-gives strange failures at startup.
+A `.elc` can be stale between versions of Emacs, and gives strange failures
+at startup when it is.
 
 Examples:
 

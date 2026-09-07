@@ -215,20 +215,6 @@
   :group 'vm-pgg
   :group 'faces)
 
-;; hack to work around the missing support for :inherit in XEmacs
-(when (featurep 'xemacs)
-  (let ((faces '(vm-pgg-bad-signature-modeline
-                 vm-pgg-good-signature-modeline
-                 vm-pgg-unknown-signature-type-modeline
-                 vm-pgg-error-modeline))
-        (faces-list (face-list))
-        f)
-    (while faces
-      (setq f (car faces))
-      (set-face-parent f 'modeline)
-      (face-display-set f (custom-face-get-spec f) nil '(custom))
-      (setq faces (cdr faces)))))
-
 (defcustom vm-pgg-fetch-missing-keys t
   "*If t, PGP will try to fetch missing keys from `pgg-default-keyserver-address'."
   :group 'vm-pgg
@@ -269,7 +255,7 @@ See `vm-pgg-sign' for details."
   "The composition menu of vm-pgg.")
 
 (easy-menu-define
- vm-pgg-compose-mode-menu (if (featurep 'xemacs) nil (list vm-pgg-compose-mode-map))
+ vm-pgg-compose-mode-menu (list vm-pgg-compose-mode-map)
  "PGP/MIME compose mode menu."
  '("PGP/MIME"
    ["Sign"              vm-pgg-sign t]
@@ -295,11 +281,7 @@ Switch mode on/off according to ARG.
   (interactive)
   (setq vm-pgg-compose-mode
 	(if (null arg) (not vm-pgg-compose-mode)
-	  (> (prefix-numeric-value arg) 0)))
-  (when (featurep 'xemacs)
-    (if vm-pgg-compose-mode
-        (easy-menu-add vm-pgg-compose-mode-menu)
-      (easy-menu-remove vm-pgg-compose-mode-menu))))
+	  (> (prefix-numeric-value arg) 0))))
 
 (defvar vm-pgg-compose-mode-string " vm-pgg"
   "*String to put in mode line when function `vm-pgg-compose-mode' is active.")
@@ -449,23 +431,11 @@ Switch mode on/off according to ARG.
 
 (make-variable-buffer-local 'vm-pgg-state-message)
 
-(defvar vm-pgg-mode-line-items
-  (let ((items '((error " ERROR" vm-pgg-error-modeline)
-                 (unknown " unknown" vm-pgg-unknown-signature-type-modeline)
-                 (verified " verified" vm-pgg-good-signature-modeline)))
-        mode-line-items
-        x i s f)
-    (while (and (featurep 'xemacs) items)
-      (setq x (car items)
-            i (car x)
-            s (cadr x)
-            f (caddr x)
-            x (vm-make-extent 0 (length s) s))
-      (vm-set-extent-property x 'face f)
-      (setq items (cdr items))
-      (setq mode-line-items (append mode-line-items (list (list i x s)))))
-    mode-line-items)
-  "An alist mapping states to modeline strings.")
+(defvar vm-pgg-mode-line-items nil
+  "An alist mapping states to modeline strings.
+Empty: the entries were XEmacs extents over the strings, carrying the face,
+and `vm-pgg-state-set' falls back to the plain string where a state has no
+entry here.")
 
 (if (not (member 'vm-pgg-state vm-mode-line-format))
     (setq vm-mode-line-format (append '("" vm-pgg-state) vm-mode-line-format)))
@@ -923,8 +893,7 @@ cleanup here after verification and decoding took place."
                    (vm-pgg-state-set 'error)
                    (insert-buffer-substring pgg-errors-buffer))
                (vm-pgg-state-set 'verified)
-               (insert-buffer-substring 
-                (if (not (featurep 'xemacs)) pgg-errors-buffer pgg-output-buffer))
+               (insert-buffer-substring pgg-errors-buffer)
                (vm-pgg-crlf-cleanup start (point)))
              (setq end (point))
              (put-text-property start end 'face
@@ -994,8 +963,7 @@ cleanup here after verification and decoding took place."
     ;; verify
     (unless (pgg-snarf-keys)
       (error "Snarfing failed"))
-    (with-current-buffer
-        (if (not (featurep 'xemacs)) pgg-errors-buffer pgg-output-buffer)
+    (with-current-buffer pgg-errors-buffer
       (message "%s" (buffer-substring (point-min) (point-max))))))
 
 ;;; ###autoload
@@ -1030,10 +998,7 @@ cleanup here after verification and decoding took place."
                                (concat "filename=\"" 
 				       pgg-default-user-id ".asc\"")))
             (end (point)))
-        (if (featurep 'xemacs)
-            (vm-set-extent-property (vm-extent-at start 'vm-mime-disposition)
-                                 'vm-mime-disposition disposition)
-          (put-text-property start end 'vm-mime-disposition disposition))))))
+        (put-text-property start end 'vm-mime-disposition disposition)))))
 
 (defun vm-pgg-make-multipart-boundary (word)
   "Create a mime part boundery starting with WORD and return it.
@@ -1231,9 +1196,7 @@ The transfer encoding done by `vm-pgg-sign' can be controlled by the variable
           action nil)
     (while (not event)
       (setq event (read-key-sequence prompt))
-      (if (featurep 'xemacs)
-          (setq event (event-to-character (aref event 0)))
-        (setq event (if (stringp event) (aref event 0))))
+      (setq event (if (stringp event) (aref event 0)))
       (if (eq event ?\r)
           (setq action vm-pgg-prompt-last-action)
         (setq action (assoc event vm-pgg-prompt-action-alist))

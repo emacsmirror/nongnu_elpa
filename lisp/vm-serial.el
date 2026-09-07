@@ -98,15 +98,11 @@
 		  "ext:bbdb-snarf" (adstring &optional ignore-errors))
 
 ;; XEmacs function
-(declare-function read-expression "vm-xemacs" (prompt &optional initial-contents))
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 (declare-function bbdb/sc-consult-attr "ext:bbdb-sc" (from))
 
-;; vm-xemacs is a fake file meant to fool Emacs 23 compiler
-(declare-function region-exists-p "vm-xemacs" ())
-(declare-function zmacs-region-buffer "vm-xemacs" ())
 ;; The following function is erroneously called in fsfemacs too
 (vm-load-features-silent-when-compiling '(bbdb bbdb-sc))
 
@@ -426,7 +422,9 @@ You may remove a token by specifying just the TOKEN as argument."
 		  nil nil nil
 		  ;; hist
 		  vm-serial-token-history))
-          (value (read-expression
+          ;; read-minibuffer and not read-expression, which was XEmacs's name
+          ;; for it: calling this command interactively raised void-function
+          (value (read-minibuffer
                   "Value: "
                   (format "%S" (cdr (assoc token vm-serial-token-alist))))))
      (list token value)))

@@ -31,8 +31,6 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-(declare-function set-specifier "vm-xemacs" 
-		  (specifier value &optional locale tag-set how-to-add))
 (declare-function rfc822-addresses "ext:rfc822" (header-text))
 
 (declare-function vm-visit-folder "vm.el" 
@@ -150,10 +148,6 @@ to the folder buffer signals args-out-of-range."
 	truncate-lines t
 	;; Needed for Emacs 24 bidi display
 	bidi-paragraph-direction 'left-to-right)
-  ;; horizontal scrollbar off by default
-  ;; user can turn it on in summary hook if desired.
-  (when (and (featurep 'xemacs) (featurep 'scrollbar))
-    (set-specifier scrollbar-height (cons (current-buffer) 0)))
   (use-local-map vm-summary-mode-map)
   (when (vm-menu-support-possible-p)
     (vm-menu-install-menus))
@@ -745,27 +739,12 @@ Also move the cursor (point and window-point)."
 
 (defun vm-summary-xxxx-highlight-region (start end face var)
   (let ((ooo (symbol-value var)))
-    (cond ((not (featurep 'xemacs))
-	   (if (and ooo (overlay-buffer ooo))
-	       (move-overlay ooo start end)
-	     (setq ooo (make-overlay start end))
-	     (set var ooo)
-	     (overlay-put ooo 'evaporate nil)
-	     (overlay-put ooo 'face face)))
-	  ((featurep 'xemacs)
-	   (if (and ooo (vm-extent-end-position ooo))
-	       (vm-set-extent-endpoints ooo start end)
-	     (setq ooo (vm-make-extent start end))
-	     (set var ooo)
-	     ;; the reason this isn't needed under FSF Emacs is
-	     ;; that insert-before-markers also inserts before
-	     ;; overlays!  so a summary update of an entry just
-	     ;; before this overlay in the summary buffer won't
-	     ;; leak into the overlay, but it _will_ leak into an
-	     ;; XEmacs extent.
-	     (vm-set-extent-property ooo 'start-open t)
-	     (vm-set-extent-property ooo 'detachable nil)
-	     (vm-set-extent-property ooo 'face face))))))
+    (if (and ooo (overlay-buffer ooo))
+	(move-overlay ooo start end)
+      (setq ooo (make-overlay start end))
+      (set var ooo)
+      (overlay-put ooo 'evaporate nil)
+      (overlay-put ooo 'face face))))
 
 (defun vm-auto-center-summary ()
   (if vm-auto-center-summary

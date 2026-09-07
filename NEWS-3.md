@@ -11,20 +11,30 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
   * VM no longer supports XEmacs, which has had no release since 2013 and
     which VM has not been tested against for as long (emacs-vm/vm#708).  The
     alternative implementations of menus, toolbars, extents and mouse
-    handling that stood beside the Emacs ones are being removed.
+    handling that stood beside the Emacs ones are gone, along with
+    `--with-emacs=xemacs` and the `xemacs-package` make target.
 
-    Removed with the XEmacs toolbar, having meant nothing in Emacs:
+    Removed options and functions, each of which meant nothing in Emacs:
 
       * `vm-toolbar-orientation`.  The toolbar goes where the frame parameter
         `tool-bar-position` says.
       * `vm-toolbar`, which held a toolbar instantiator in XEmacs's own
         format and was read nowhere else.
+      * `vm-use-lucid-highlighting`, which chose XEmacs's `highlight-headers`
+        package over VM's own header highlighting.  There is no such package
+        here, so VM's own always did the work.
       * `user-home-directory`, an XEmacs function VM defined for Emacs and
         never called.  `(expand-file-name "~")` is the Emacs way to it.
 
     A nil or an integer in `vm-use-toolbar` is now ignored rather than
     meaning flushright or a run of blank pixels.  The Emacs toolbar has
     neither.
+
+    Two things that never worked here now do.  `vm-serial-set-token` called
+    XEmacs's `read-expression` and so raised `void-function` every time it
+    was used interactively; it reads with `read-minibuffer` now.  An
+    `audio/basic` part is no longer offered for internal display, having been
+    played by XEmacs's sound support and by nothing on this side.
 
   * VM asks before sending a message with a `Bcc` header, unless
     `send-mail-function` removes that header itself (emacs-vm/vm#815).

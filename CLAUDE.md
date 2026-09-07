@@ -4,14 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VM (View Mail) is an Emacs mail reader supporting GNU Emacs 28.1+ and XEmacs. It handles POP/IMAP servers, MIME, UNIX mailbox format, and BABYL format. Features include virtual folders for searching and multi-folder management.
+VM (View Mail) is an Emacs mail reader supporting GNU Emacs 28.1+. It handles POP/IMAP servers, MIME, UNIX mailbox format, and BABYL format. Features include virtual folders for searching and multi-folder management.
 
 ## Build Commands
 
 ```bash
 # Configure (run first, or after configure.ac changes)
 ./configure                                    # Default GNU Emacs
-./configure --with-emacs=xemacs               # For XEmacs
 ./configure --with-other-dirs=/path/to/bbdb   # Include external libs
 
 # Build
@@ -543,7 +542,7 @@ Architecture docs in `dev/docs/design/`:
 
 ## Development Notes
 
-- Byte-compiled files are NOT compatible between GNU Emacs and XEmacs
+- A byte-compiled file can be stale between Emacs versions; `rm -f lisp/*.elc` when a build behaves oddly
 - Run from build directory by adding `lisp/` to load-path and requiring `vm-autoloads`
 - Companion packages: BBDB (address book), emacs-w3m/w3 (HTML rendering)
 - Bug reports: https://gitlab.com/emacs-vm/vm/-/issues

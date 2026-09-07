@@ -1465,11 +1465,6 @@ Face to be used to highlight headers.
 The headers to highlight are specified by the @code{vm-highlighted-header-regexp}
 variable.
 
-This variable is ignored under XEmacs if @code{vm-use-lucid-highlighting} is
-non-nil.  XEmacs’ highlight-headers package is used instead.  See the
-documentation for the function @code{highlight-headers} to find out how to
-customize header highlighting using this package.
-
 Default value: @code{vm-highlighted-header}
 @end defopt
 
@@ -8313,17 +8308,6 @@ Default value: worked out when VM is loaded, from this system.
 
 @end macro
 
-@macro vmdocvmuselucidhighlighting
-@defopt vm-use-lucid-highlighting
-@vindex vm-use-lucid-highlighting
-Non-nil means to use the @code{highlight-headers} package in XEmacs.
-Nil means just use VM’s builtin header highlighting code.
-
-FSF Emacs always uses VM’s builtin highlighting code.
-@end defopt
-
-@end macro
-
 @macro vmdocvmverbaltime
 @defopt vm-verbal-time
 @vindex vm-verbal-time
@@ -9886,13 +9870,6 @@ This is a regular expression that matches the names of headers that should
 be highlighted when a message is first presented.  For example setting
 this variable to "From:\\\\|Subject:" causes the From and Subject
 headers to be highlighted.
-
-If you’re using XEmacs, you might want to use the builtin
-@code{highlight-headers} package instead.  If so, then you should set
-the variable @code{vm-use-lucid-highlighting} non-nil.  You’ll need to
-set the various variables used by the highlight-headers package
-to customize highlighting.  @code{vm-highlighted-header-regexp} is
-ignored in this case.
 @end defopt
 
 @end macro

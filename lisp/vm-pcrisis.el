@@ -48,7 +48,6 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-(declare-function set-extent-face "vm-xemacs" (extent face))
 (declare-function timezone-absolute-from-gregorian "ext:timezone"
 		  (month day year))
 (declare-function bbdb-buffer "ext:bbdb" ())
@@ -431,77 +430,48 @@ Overlays suck.  Extents rule.  XEmacs got this right."
     new-ovl))
 
 
-(defun vm-pcrisis-set-extent-insertion-types (extent start end)
-  "Set the insertion types of EXTENT from START to END.
-START and END should be either nil or t, indicating the desired value
-of the `start-open' and `end-closed' properties of the extent
-respectively.
-This is the XEmacs version of `vm-pcrisis-set-overlay-insertion-types'."
-  ;; pretty simple huh?
-  (vm-set-extent-property extent 'start-open start)
-  (vm-set-extent-property extent 'end-closed end))
-
-
 (defun vm-pcrisis-set-exerlay-insertion-types (exerlay start end)
   "Set the insertion types for EXERLAY from START to END.
 In other words, EXERLAY is the name of the overlay or extent with a quote in
 front.  START and END are the equivalent of the marker insertion types for the
 start and end of the overlay/extent."
-  (if (featurep 'xemacs)
-      (vm-pcrisis-set-extent-insertion-types (symbol-value exerlay) start end)
-    (set exerlay (vm-pcrisis-set-overlay-insertion-types (symbol-value exerlay)
-						   start end))))
+  (set exerlay (vm-pcrisis-set-overlay-insertion-types (symbol-value exerlay)
+						       start end)))
 
 
 (defun vm-pcrisis-exerlay-start (exerlay)
   "Return buffer position of the start of EXERLAY."
-  (if (featurep 'xemacs)
-      (vm-extent-start-position exerlay)
-    (overlay-start exerlay)))
+  (overlay-start exerlay))
 
 
 (defun vm-pcrisis-exerlay-end (exerlay)
   "Return buffer position of the end of EXERLAY."
-  (if (featurep 'xemacs)
-      (vm-extent-end-position exerlay)
-    (overlay-end exerlay)))
+  (overlay-end exerlay))
 
 
 (defun vm-pcrisis-move-exerlay (exerlay new-start new-end)
   "Change EXERLAY to cover region from NEW-START to NEW-END."
-  (if (featurep 'xemacs)
-      (vm-set-extent-endpoints exerlay new-start new-end (current-buffer))
-    (move-overlay exerlay new-start new-end (current-buffer))))
+  (move-overlay exerlay new-start new-end (current-buffer)))
 
 
 (defun vm-pcrisis-set-exerlay-detachable-property (exerlay newval)
   "Set the `detachable' or `evaporate' property for EXERLAY to NEWVAL."
-  (if (featurep 'xemacs)
-      (vm-set-extent-property exerlay 'detachable newval)
-    (overlay-put exerlay 'evaporate newval)))
+  (overlay-put exerlay 'evaporate newval))
 
 
 (defun vm-pcrisis-set-exerlay-intangible-property (exerlay newval)
   "Set the `intangible' or `atomic' property for EXERLAY to NEWVAL."
-  (if (featurep 'xemacs)
-      (progn
-	(require 'atomic-extents)
-	(vm-set-extent-property exerlay 'atomic newval))
-    (overlay-put exerlay 'intangible newval)))
+  (overlay-put exerlay 'intangible newval))
 
 
 (defun vm-pcrisis-set-exerlay-face (exerlay newface)
   "Set the face used by EXERLAY to NEWFACE."
-  (if (featurep 'xemacs)
-      (set-extent-face exerlay newface)
-    (overlay-put exerlay 'face newface)))
+  (overlay-put exerlay 'face newface))
 
 
 (defun vm-pcrisis-forcefully-detach-exerlay (exerlay)
   "Leave EXERLAY in memory but detaches it from the buffer."
-  (if (featurep 'xemacs)
-      (vm-detach-extent exerlay)
-    (delete-overlay exerlay)))
+  (delete-overlay exerlay))
 
 
 (defun vm-pcrisis-make-exerlay (startpos endpos)

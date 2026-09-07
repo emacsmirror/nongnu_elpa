@@ -53,26 +53,22 @@ AC_DEFUN([VM_PROG_OPTIONAL],
       [ AC_MSG_WARN([*** No $2 program found.])
         AC_MSG_WARN([*** $3]) ]) ])
 
-# Choose an Emacs flavor according to the --with-emacs user option, or try
-# emacs and xemacs.
+# Choose an Emacs according to the --with-emacs user option, or find one.
 # We use EMACS_PROG instead of EMACS to avoid colliding with Emacs' own
 # internal environment.
 AC_DEFUN([VM_PROG_EMACS],
   [ AC_ARG_WITH([emacs],
      AS_HELP_STRING([--with-emacs=PROG],[choose which flavor of Emacs to use]),
       [ EMACS_PROG="${withval}" ],
-      [ AC_CHECK_PROGS([EMACS_PROG], [emacs xemacs]) ])
+      [ AC_CHECK_PROGS([EMACS_PROG], [emacs]) ])
     if test "x${EMACS_PROG}" = "x" ; then
       dnl This is critical enough to generate an error and not a warning...
       AC_MSG_ERROR([*** No Emacs program found.])
     fi
     # EMACS TYPE ##################################################
-    AC_MSG_CHECKING([checking emacs-type of ${EMACS_PROG}])
-    cat > conftest.el <<TEST
-(princ (format "%s" (if (featurep 'xemacs ) 'xemacs 'emacs)))
-TEST
-    EMACS_FLAVOR=`"${EMACS_PROG}" --no-site-file --batch -l conftest.el | ${GREP} .`
-    AC_MSG_RESULT([${EMACS_FLAVOR}])
+    # It was probed, XEmacs being the other answer.  VM no longer supports
+    # XEmacs, and this names the directory that lisp and info install under.
+    EMACS_FLAVOR=emacs
     # EMACS VERSION ###############################################
     # Keep VM_MIN_EMACS_VERSION in sync with vm-min-emacs-version in lisp/vm.el,
     # which is the check that matters: VM signals an error as it loads in
@@ -110,21 +106,11 @@ TEST
       fi
       datarootdir="\$(prefix)/share"
       datadir="${datarootdir}"
-      if test "$EMACS_FLAVOR" = "xemacs"; then
-          datarootdir="\$(prefix)/lib"
-	  datadir="${datarootdir}/${EMACS_FLAVOR}/site-packages/etc"
-          lispdir="${datarootdir}/${EMACS_FLAVOR}/site-packages/lisp/vm"
-      else
-          lispdir="${datarootdir}/${EMACS_FLAVOR}/site-lisp/vm"
-      fi
+      lispdir="${datarootdir}/${EMACS_FLAVOR}/site-lisp/vm"
       for thedir in share lib; do
   	potential=
   	if test -d "${theprefix}/${thedir}/${EMACS_FLAVOR}/site-lisp"; then
-             if test "$EMACS_FLAVOR" = "xemacs"; then
-  	         lispdir="\$(prefix)/${thedir}/${EMACS_FLAVOR}/site-packages/lisp/vm"
-             else
-                 lispdir="${datarootdir}/${EMACS_FLAVOR}/site-lisp/vm"
-             fi
+  	   lispdir="${datarootdir}/${EMACS_FLAVOR}/site-lisp/vm"
   	   break
   	fi
       done
@@ -162,13 +148,9 @@ TEST
 
 # copied from gnus aclocal.m4
 AC_DEFUN([VM_BUILD_FLAGS], [
-  AC_MSG_CHECKING([which options to pass on to (X)Emacs])
+  AC_MSG_CHECKING([which options to pass on to Emacs])
   if test "x$FLAGS" = "x"; then
-    if test "x$EMACS_FLAVOR" = "xxemacs"; then
-      FLAGS="-batch -no-autoloads -l \$(srcdir)/vm-build.el"
-    else
-      FLAGS="-batch -q -no-site-file -no-init-file -l \$(srcdir)/vm-build.el"
-    fi
+    FLAGS="-batch -q -no-site-file -no-init-file -l \$(srcdir)/vm-build.el"
   fi
   AC_MSG_RESULT([$FLAGS])
   AC_SUBST([FLAGS])
@@ -179,11 +161,6 @@ AC_DEFUN([VM_BUILD_FLAGS], [
 AC_DEFUN([VM_PATH_INFO_DIR], [
   AC_MSG_CHECKING([where the TeXinfo docs should go])
   dnl Set default value.  This must be an absolute path.
-  if test "$infodir" = "\${datarootdir}/info"; then
-    if test "$EMACS_FLAVOR" = "xemacs"; then
-      infodir="\$(prefix)/${thedir}/${EMACS_FLAVOR}/site-packages/info"
-    fi
-  fi
   AC_MSG_RESULT([$infodir])
   AC_SUBST([infodir])
 ])

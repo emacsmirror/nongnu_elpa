@@ -13,9 +13,6 @@
 ;;
 ;; So this is the cover the installation has.  It binds what it touches.
 ;;
-;; The GNU Emacs path only: the suite runs under `emacs -batch', so an XEmacs
-;; guard here would be a branch nothing ever takes.  vm-toolbar.el still has its
-;; XEmacs half, and it is untested either way.
 
 ;;; Code:
 

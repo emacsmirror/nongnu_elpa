@@ -145,10 +145,9 @@ in a familiar environment.  You might have even used other Emacs-based
 mail readers such as Rmail and Gnus.  If you are new to Emacs, you can
 start using VM via the menubar and toolbar until you become familiar
 with it.  Then you can move on to keyboard shortcuts and advanced
-features.  VM runs in GNU Emacs, and needs version 28.1 or later.  It still carries code
-for XEmacs, from the years when that was the other Emacs people used, but no
-release has been tested there for a long time and none of the test suite runs
-there.
+features.  VM runs in GNU Emacs, and needs version 28.1 or later.  It supported XEmacs
+for many years, and no longer does: nothing has been tested there for a long
+time and none of the test suite ran there.
 
 Emacs provides a powerful text-based user interface for VM users, with
 facilities for quick navigation, incremental searching , sophisticated
@@ -8348,10 +8347,6 @@ your own faces using Emacs primitives for doing so.
 In the folder or presentation buffer, the header contents of headers
 matched by the @code{vm-highlighted-header-regexp} variable are
 displayed using the face named by @code{vm-highlighted-header-face}.
-(Under XEmacs this variable is ignored when
-@code{vm-use-lucid-highlighting} is non-@code{nil}, XEmacs's own
-@code{highlight-headers} package doing the work instead.  That package does not
-exist in GNU Emacs, where the setting has no meaning.)
 
 @cindex @acronym{URL}
 @vindex vm-highlight-url-face
@@ -9299,7 +9294,7 @@ developers/programmers.
 * @acronym{MIME} Display::          How VM displays @acronym{MIME} messages
 * @acronym{MIME} Composition::	  How @acronym{MIME} messages are composed
 * Virtual Folder Internals:: Details of virtual folders and selectors
-* Extents and Overlays::  How VM deals with XEmacs and GNU Emacs differences
+* Extents and Overlays::  What VM calls an overlay, and what it costs
 * Timers and Concurrency:: How VM runs asynchronous timers
 @end menu
 
@@ -10846,7 +10841,7 @@ Set to true if the button should be removed when it is replaced by the
 @inindex vm-mime-button-face
 @item @code{face}.
 Set to the value of @code{vm-mime-button-face}.
-@item @code{local-map} (GNU Emacs) or @code{keymap} (XEmacs).
+@item @code{local-map}.
 Set to a keymap that includes @code{vm-mime-reader-map}, binding the
 @kbd{$} keys.
 @end itemize
@@ -10869,13 +10864,10 @@ attachment button is a region of text that looks like:
 button, allowing it to be turned into an actual attachment when the
 message is sent.
 
-The representation of the attachment buttons differs in GNU Emacs and
-XEmacs.  In GNU Emacs, the region of text is given @i{text properties}
-that represent the metadata about the object.  In XEmacs, the region
-of text is given an @i{extent}, which is then given properties
-representing the metadata.  The reason for the  different
-representations is that in GNU Emacs, only text properties are
-preserved under killing and yanking.
+The region of text is given @i{text properties} that represent the metadata
+about the object.  Text properties and not an overlay, because only text
+properties are preserved under killing and yanking, and an attachment button
+has to survive both.
 
 The following properties are defined for attachment buttons:
 
@@ -10917,20 +10909,16 @@ Whether or not references to local external-body objects should be
 forwarded as is.
 @item @code{fontified}.
 Standard text property.
-@item @code{duplicable}.
-Set to @code{t} in XEmacs allowing the extent to be
-preserved under killing and yanking.
-@item @code{front-nonsticky} and @code{rear-nonsticky}.  
-Standard stickiness of text properties in GNU Emacs.
+@item @code{front-nonsticky} and @code{rear-nonsticky}.
+Standard stickiness of text properties.
 @end itemize
 
 @inindex vm-mime-fake-attachment-overlays
 When a composed message is sent, the attachment buttons are replaced
-by actual attachment objects.  In GNU Emacs, the attachment buttons
-are first converted into ``fake'' overlays before @acronym{MIME} encoding, in a
-function called @code{vm-mime-fake-attachment-overlays}.  This allows
-the next stage to treat both GNU Emacs and XEmacs using the same
-logic.
+by actual attachment objects.  The buttons are first converted into
+``fake'' overlays before @acronym{MIME} encoding, in a function called
+@code{vm-mime-fake-attachment-overlays}, so that the next stage has
+overlays to work through rather than property runs.
 
 The function @code{vm-mime-encode-composition} then encodes the composition
 buffer, by selecting each attachment button and replacing it with the
@@ -11046,66 +11034,30 @@ selectors that can be used with the @kbd{V C} command.
 
 @inindex extents
 @inindex overlays
-XEmacs and GNU Emacs differ in how they represent non-textual properties in
-buffers, which is why VM's code has two ways of doing several things.  The
-XEmacs page ``XEmacs vs GNU Emacs'' described the difference this way, in the
-days of GNU Emacs 19:
+An @dfn{extent} was XEmacs's single object for everything non-textual in a
+buffer, where Emacs has two: text properties and overlays.  VM was written
+in the early days of that fork and carried both implementations until 2026.
 
-@quotation
-XEmacs uses "extents" to represent all non-textual aspects of buffers;
-GNU Emacs 19 uses two distinct objects, "text properties" and
-"overlays", which divide up the functionality between them. Extents
-are a superset of the union of the functionality of the two GNU Emacs
-data types. The full GNU Emacs 19 interface to text properties and
-overlays is supported in XEmacs (with extents being the underlying
-representation). 
+What is left is the naming.  @code{vm-misc.el} defines @code{vm-make-extent},
+@code{vm-extent-property} and a dozen others, each of which is now the
+overlay function under VM's own name.
 
-Extents can be made to be copied into strings, and then restored, by
-kill and yank. Thus, one can specify this behavior on either "extents"
-or "text properties", whereas in GNU Emacs 19 text properties always
-have this behavior and overlays never do. 
-@end quotation
-
-None of that has changed since, except that it is now GNU Emacs rather than GNU
-Emacs 19.  Extents are attached to text and so can be killed and yanked;
-overlays are not attached to text.  XEmacs implemented GNU-style text
-properties on top of extents, so text properties would work much the same in
-both, but VM was written in the early days of the fork and does not use them.
-
-The file @code{vm-misc.el} contains definitions whereby both extents
-and overlays can be treated as a single type of ``VM extents''.
-Wherever such VM extents can be used, there is some uniformity in the
-code but, in other places, there is not.  (Independently, the XEmacs
-team has developed the @code{fsf-compat} package by which FSF-style
-overlays are implemented on top of extents.  This package is not
-compatible with the way VM deals with the two types.)
-
-Another major differences between extents and overlays is that the
-beginning and ending of overlays are markers.  This has some
-advantages.  However, if a buffer has many overlays, normal editing
-operations must update all the overlay markers, which can be
-time-consuming.  
-
-The major applications of extents and overlays in VM are the following:
+The beginning and end of an overlay are markers, so a buffer holding many of
+them makes ordinary editing slower: every marker is updated.  That cost
+shows in two places:
 
 @enumerate
 @item
-Summary buffers use extents/overlays for each summary line.  These are
-implemented uniformly but, to avoid the performance problem in GNU
-Emacs, all the markers are reset to nil before a summary is
-regenerated and then set to their correct positions afterwards.  Not
-doing this correctly can seriously degrade the performance of summary
-generation.
+Summary buffers use an overlay for each summary line.  All the markers are
+set to nil before a summary is regenerated and put back afterwards; not
+doing that seriously degrades the speed of summary generation.
 @item
-Presentation buffers use extents/overlays for @acronym{MIME} buttons.  These
-are implemented uniformly.
-@item
-The message composition buffers have attachment buttons.  These are
-implemented using text properties in GNU Emacs and extents in
-overlays.  The difference is necessary because VM allows the
-attachment buttons to be killed and yanked.  It is not possible to
-implement this functionality using overlays.
+Presentation buffers use an overlay for each @acronym{MIME} button.
 @end enumerate
+
+@noindent Composition buffers are the exception: their attachment buttons
+are text properties, because a button has to survive being killed and
+yanked and an overlay does not.  @xref{@acronym{MIME} Composition}.
 
 @node Timers and Concurrency,, Extents and Overlays, Internals
 @section Timers and Concurrency
@@ -11148,8 +11100,7 @@ However, it executes server command in the process buffers of POP or IMAP
 folders. 
 @end table
 
-@noindent These timer tasks are scheduled with Emacs's @code{timer} package,
-or with @code{itimer} where VM is running under XEmacs.
+@noindent These timer tasks are scheduled with Emacs's @code{timer} package.
 
 @inindex vm-global-block-new-mail
 The basic synchronization mechanism is a global variable

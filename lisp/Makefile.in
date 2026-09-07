@@ -65,30 +65,17 @@ SOURCES += vm-version-conf.el
 
 SOURCES += tapestry.el
 
-# autoloads differ depending on emacs flavor
-emacs_AUTOLOADS = vm-autoloads.el
-xemacs_AUTOLOADS = auto-autoloads.el
-AUTOLOADS = ${@EMACS_FLAVOR@_AUTOLOADS}
+AUTOLOADS = vm-autoloads.el
 
-# to list of object files
-emacs_OBJECTS = vm-autoloads.elc
-xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
-
-OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
+OBJECTS = vm-autoloads.elc $(SOURCES:.el=.elc)
 
 # Generated lisp that is never byte-compiled, so it has no .elc to install.
 # `vm-custom-make-dependencies' writes vm-cus-load.el with a
 # `no-byte-compile: t' local variable, so listing vm-cus-load.elc in OBJECTS
 # asked install for a file that can never exist.
-emacs_LISP_ONLY = vm-cus-load.el
-xemacs_LISP_ONLY =
-LISP_ONLY = ${@EMACS_FLAVOR@_LISP_ONLY}
+LISP_ONLY = vm-cus-load.el
 
 INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS) $(LISP_ONLY)
-
-# for autoload generation
-AUTOLOAD_PACKAGE_NAME = (setq autoload-package-name \"vm\")
-AUTOLOAD_FILE = (setq generated-autoload-file \"./auto-autoloads.el\")
 
 # for BSDmake
 .SUFFIXES: .el .elc
@@ -171,8 +158,7 @@ vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 #	assignment to a free variable.  It went unwarned while u-vm-color.el
 #	was in SOURCES, that being the one file sorting before the vm- ones,
 #	so compiling it pulled vm-vars in first and the whole-directory lint
-#	saw the definitions anyway.  The XEmacs rule below has always had
-#	these two in this order.
+#	saw the definitions anyway.
 	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-datadir \"${etcdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" | tr -d '\015' >> $@.tmp
@@ -182,30 +168,6 @@ vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	mv -f $@.tmp $@
 
 vm-cus-load.el: $(SOURCES:%=@srcdir@/%)
-	$(EMACS_COMP) -f vm-custom-make-dependencies .
-
-##############################################################################
-# XEmacs#s auto-autoloads and custom-load file
-auto-autoloads.el: $(SOURCES:%=@srcdir@/%)
-	-$(RM) -f $@
-	$(EMACS_COMP) \
-                -eval "$(AUTOLOAD_PACKAGE_NAME)" \
-                -eval "$(AUTOLOAD_FILE)" \
-                -l autoload -f batch-update-autoloads $^
-#	avoid getting an error about an already loaded vm-autoloads
-	mv $@ $@.tmp
-	echo "(setq features (delete 'vm-autoloads features))" > $@
-	cat $@.tmp >> $@
-	echo "(setq features (delete 'vm-autoloads features))" >> $@
-	echo "(require 'vm-vars)" >> $@
-	echo "(setq vm-configure-datadir \"${etcdir}\")" >> $@
-	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" >> $@
-	echo "(setq vm-configure-docdir \"${docdir}\")"  >> $@
-	echo "(setq vm-configure-infodir \"${infodir}\")" >> $@
-	$(RM) $@.tmp
-
-
-custom-load.el: $(SOURCES:%=@srcdir@/%)
 	$(EMACS_COMP) -f vm-custom-make-dependencies .
 
 ##############################################################################

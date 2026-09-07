@@ -53,19 +53,6 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function get-itimer "vm-xemacs.el" (name))
-(declare-function start-itimer "vm-xemacs.el"
-		  (name function value &optional restart is-idle with-args
-			&rest function-arguments))
-(declare-function set-itimer-restart "vm-xemacs.el" (itimer restart))
-(declare-function delete-itimer "vm-xemacs" (itimer))
-(declare-function set-specifier "vm-xemacs" 
-		  (specifier value &optional locale tag-set how-to-add))
-(declare-function console-type "vm-xemacs" (&optional console))
-(declare-function frame-device "vm-xemacs" (&optional frame))
-(declare-function window-displayed-height "vm-xemacs" (&optional window))
-(defvar current-itimer)
 
 (declare-function vm-decode-mime-encoded-words-in-string "vm-mime" (string))
 
@@ -77,11 +64,6 @@
 		  (start end &optional overlay))
 (declare-function vm-summary-faces-add "vm-summary-faces" (message))
 
-(when (featurep 'xemacs)
-  (require 'overlay))
-
-(when (not (featurep 'xemacs))
-  (defvar horizontal-scrollbar-visible-p nil))
 
 ; group already defined in vm-vars.el
 
@@ -258,14 +240,14 @@ folder selectors work."
 (defvar vm-biff--folder-window nil)
 
 (defun vm-biff-x-p ()
-  (if (featurep 'xemacs)
-      (memq (console-type) '(x mswindows))
-    t))
+  "Whether a frame of its own may be made for the message.
+Always: it asked XEmacs's `console-type', and the answer for Emacs was
+always t, `make-frame' erroring on a terminal being handled by
+`vm-multiple-frames-possible-p' where it matters."
+  t)
 
 (defun vm-biff-get-buffer-window (buf)
-  (if (featurep 'xemacs)
-      (vm-get-buffer-window buf (vm-biff-x-p) (frame-device))
-    (vm-get-buffer-window buf (vm-biff-x-p))))
+  (vm-get-buffer-window buf (vm-biff-x-p)))
 
 (defun  vm-biff-find-folder-window (msg)
   (let ((buf (vm-buffer-of msg)))
@@ -370,14 +352,11 @@ AddToFunc SelectWindow
   (sit-for 0))
 
 (defun vm-biff-timer-delete-popup (wf)
-  (if (featurep 'itimer)
-      (delete-itimer current-itimer))
   (vm-biff-delete-popup wf))
 
 (defvar vm-biff-message-pointer nil)
 (make-variable-buffer-local 'vm-biff-message-pointer)
 
-(defvar horizontal-scrollbar-visible-p)	; defined for XEmacs only
 
 ;;;###autoload
 (defun vm-biff-popup (&optional force)
@@ -476,18 +455,13 @@ AddToFunc SelectWindow
                                 (cons (cons 'popup ff)
                                       vm-biff-frame-properties)
                               vm-biff-frame-properties))
-                     (mf (or (and (if (featurep 'xemacs)
-				      (vm-get-buffer-window buf t 
-							    (frame-device))
-				    (vm-get-buffer-window buf t))
+                     (mf (or (and (vm-get-buffer-window buf t)
                                   (window-frame
                                    (vm-biff-get-buffer-window buf)))
                              (make-frame props))))
 
                 (select-frame mf)
                 (switch-to-buffer buf)
-                (if (featurep 'xemacs)
-                    (set-specifier horizontal-scrollbar-visible-p nil))
             
                 (if (functionp vm-biff-place-frame-function)
                     (funcall vm-biff-place-frame-function))
@@ -510,26 +484,14 @@ AddToFunc SelectWindow
               (switch-to-buffer buf)
               (if (> h vm-biff-max-height)
                   (setq h vm-biff-max-height))
-	      (if (featurep 'xemacs)
-		  (setq h (- (window-displayed-height) h))
-		(setq h (- (window-height) h)))
+	      (setq h (- (window-height) h))
               (if (not (one-window-p))
                   (shrink-window h)))))
 
-        (if vm-biff-auto-remove
-            (cond
-             	((condition-case nil
-                     (progn (require 'itimer) t)
-                   (error nil))
-                 (start-itimer (buffer-name)
-                               'vm-biff-timer-delete-popup
-                               vm-biff-auto-remove
-                               nil t t wf))
-                ((condition-case nil
-                     (progn (require 'timer) t)
-                   (error nil))
-                 (run-at-time vm-biff-auto-remove nil
-                              'vm-biff-timer-delete-popup wf))))))))
+        (when vm-biff-auto-remove
+          (require 'timer)
+          (run-at-time vm-biff-auto-remove nil
+                       'vm-biff-timer-delete-popup wf))))))
 
 ;;;###autoload
 (define-minor-mode vm-biff-mode
