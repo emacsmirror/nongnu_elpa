@@ -1671,4 +1671,153 @@ form expected, and to \"Unknown Emacs\" if there is nothing to go on."
       (message "VM commit was not discovered when VM was loaded")))
    (or vm-version-commit "unknown"))
 
+;;; Checking a configuration (emacs-vm/vm#816)
+
+(defun vm-configuration-problem-mail-agent ()
+  "A problem with what Emacs uses to send mail, or nil."
+  (unless (eq mail-user-agent 'vm-user-agent)
+    (format (concat "`mail-user-agent' is %s, so C-x m and anything else that"
+                    " composes mail through Emacs will not use VM."
+                    "  Set it to `vm-user-agent'.  See Mail agent in the VM"
+                    " manual")
+            mail-user-agent)))
+
+(defun vm-address-looks-machine-made-p (address)
+  "Whether ADDRESS is one Emacs invented from the host name.
+Emacs sets `user-mail-address' to the login name at `mail-host-address' or
+the system name where nothing else says, and that is rarely an address
+anyone can reply to."
+  (and (stringp address)
+       (or (string-suffix-p (concat "@" (system-name)) address)
+           (and (stringp mail-host-address)
+                (string-suffix-p (concat "@" mail-host-address) address))
+           ;; no dot in the domain: not a name the DNS can resolve
+           (not (string-match-p "@[^@]+\\.[^@.]+\\'" address)))))
+
+(defun vm-configuration-problem-from-address ()
+  "A problem with the address mail will be sent from, or nil."
+  (cond ((not (stringp user-mail-address))
+         (concat "`user-mail-address' is not set, so VM does not know what"
+                 " address to send from.  Set it to your own address."
+                 "  See Composing setup in the VM manual"))
+        ((vm-address-looks-machine-made-p user-mail-address)
+         (format (concat "`user-mail-address' is %S, which Emacs made up from"
+                         " this machine's name rather than being told."
+                         "  Mail will go out from an address nobody can reply"
+                         " to.  Set it to your own address.  See Composing"
+                         " setup in the VM manual")
+                 user-mail-address))))
+
+(defun vm-configuration-problem-sending ()
+  "A problem with how mail will be sent, or nil."
+  (cond ((eq send-mail-function 'sendmail-query-once)
+         (concat "`send-mail-function' has not been set, so Emacs will ask how"
+                 " to send the first message and remember the answer."
+                 "  Set it yourself instead: `smtpmail-send-it' with"
+                 " `smtpmail-smtp-server' is what most people want.  See"
+                 " Sending setup in the VM manual"))
+        ((null send-mail-function)
+         (concat "`send-mail-function' is nil, so sending a message will fail."
+                 "  Set it to `smtpmail-send-it'.  See Sending setup in the VM"
+                 " manual"))))
+
+(defun vm-configuration-problem-folder-directory ()
+  "A problem with where folders are kept, or nil."
+  (cond ((null vm-folder-directory)
+         (concat "`vm-folder-directory' is not set, so saving a message offers"
+                 " whatever directory happens to be current and folders end up"
+                 " scattered.  Set it to the one directory your folders live"
+                 " in.  See Local mail in the VM manual"))
+        ((not (file-directory-p (expand-file-name vm-folder-directory)))
+         (format (concat "`vm-folder-directory' is %S, which is not a"
+                         " directory.  Create it, or set the variable to the"
+                         " directory your folders are in.  See Local mail in"
+                         " the VM manual")
+                 vm-folder-directory))))
+
+(defun vm-configuration-problem-mail-source ()
+  "A problem with where new mail comes from, or nil."
+  (unless (or (vm-spool-files) vm-imap-account-alist vm-pop-folder-alist)
+    (concat "Nothing says where your mail comes from, so getting new mail"
+            " will find none.  Set `vm-spool-files' for a local spool file or"
+            " maildir, and see Local mail in the VM manual; for a mailbox on a"
+            " server set `vm-imap-account-alist', and see Server mail in the"
+            " VM manual")))
+
+(defconst vm-maildrop-types
+  '(("imap" . 7) ("imap-ssl" . 7) ("imap-ssh" . 7)
+    ("pop" . 6) ("pop-ssl" . 6) ("pop-ssh" . 6))
+  "Each maildrop type VM understands, and how many colon-separated fields it takes.
+
+The parsers accept any number of fields and any leading word, so a misspelt
+type or a missing field is not reported where it is written: the failure
+comes later, from the session, saying something about the server instead.")
+
+(defun vm-maildrop-problem (spec where)
+  "A problem with the maildrop SPEC, which was found in WHERE, or nil."
+  (let* ((fields (vm-parse spec "\\([^:]+\\):?" 1 8))
+         (type (car fields))
+         (known (assoc type vm-maildrop-types)))
+    (cond ((null known)
+           (format (concat "%s names the maildrop %S, whose type %S is not one"
+                           " VM knows.  The types are %s.  See Server mail in"
+                           " the VM manual")
+                   where spec type
+                   (mapconcat #'car vm-maildrop-types ", ")))
+          ((/= (length fields) (cdr known))
+           (format (concat "%s names the maildrop %S, which has %d"
+                           " colon-separated field%s where %s takes %d.  See"
+                           " Server mail in the VM manual")
+                   where spec (length fields)
+                   (if (= (length fields) 1) "" "s")
+                   type (cdr known))))))
+
+(defun vm-configuration-problems-maildrops ()
+  "Every problem with a maildrop VM has been given."
+  (let ((problems nil))
+    (dolist (entry vm-imap-account-alist)
+      (let ((problem (vm-maildrop-problem
+                      (car entry) "`vm-imap-account-alist'")))
+        (when problem (push problem problems))))
+    (dolist (spec (vm-spool-files))
+      (when (and (stringp spec) (string-match-p "\\`[a-z-]+:" spec))
+        (let ((problem (vm-maildrop-problem spec "`vm-spool-files'")))
+          (when problem (push problem problems)))))
+    (nreverse problems)))
+
+(defun vm-configuration-problems ()
+  "Everything wrong with this VM configuration, as a list of strings."
+  (append
+   (delq nil (list (vm-configuration-problem-mail-agent)
+                   (vm-configuration-problem-from-address)
+                   (vm-configuration-problem-sending)
+                   (vm-configuration-problem-folder-directory)
+                   (vm-configuration-problem-mail-source)))
+   (vm-configuration-problems-maildrops)))
+
+;;;###autoload
+(defun vm-check-configuration ()
+  "Say what is missing from your VM configuration, and what to do about it.
+
+Checks the settings a first-time reader has to get right before anything
+works: which mail agent Emacs uses, the address mail goes out from, how it
+is sent, where folders are kept, and where new mail comes from.  Each
+maildrop is checked for a type VM knows and the right number of fields,
+neither of which the parsers mind.
+
+Says nothing about taste.  Everything it reports is a setting whose default
+either does nothing or does something the reader did not choose."
+  (interactive)
+  (let ((problems (vm-configuration-problems)))
+    (if (null problems)
+        (message "VM configuration: nothing missing")
+      (with-output-to-temp-buffer "*VM Configuration*"
+        (princ (format "%d thing%s to set up:\n\n"
+                       (length problems) (if (cdr problems) "s" "")))
+        (dolist (problem problems)
+          (princ (concat "* " problem "\n\n")))
+        (princ "The VM manual's Setting Up chapter works through all of\n")
+        (princ "these in order: M-x info, then (vm) Setting Up.\n")))
+    (length problems)))
+
 ;;; vm.el ends here

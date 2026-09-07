@@ -710,14 +710,16 @@ section \\\"NAME\\\"\", which is how VM's messages and docstrings write one."
         ;; nil, or `[A-Z]' matches the "s" of "see" and the prefix is taken
         ;; for part of the name.
         (case-fold-search nil))
+    ;; "vm.*" and not "vm-.*": vm.el itself was skipped, and it is where the
+    ;; configuration checker's messages are.
     (dolist (file (directory-files (expand-file-name "../lisp" vm-test-dir)
-                                   t "\\`vm-.*\\.el\\'"))
+                                   t "\\`vm.*\\.el\\'"))
       (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
         (with-temp-buffer
           (insert-file-contents file)
           (goto-char (point-min))
           (while (re-search-forward
-                  (concat "\\(?:the node \\|see \\)?"
+                  (concat "\\(?:the node \\|[Ss]ee \\)?"
                           "\\([A-Z][A-Za-z/ ]+?\\) in the VM manual")
                   nil t)
             (push (cons (string-trim (match-string 1)) file) named))
