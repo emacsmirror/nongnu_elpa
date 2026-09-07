@@ -1212,16 +1212,12 @@ this may not be the case."
 	o ))))
 
 (defun vm-extent-list (beg end &optional property)
-  "Returns a list of the extents that overlap the positions BEG to END.
-If PROPERTY is given, then only the extents have PROPERTY are returned."
-  (if (fboundp 'extent-list)
-      (extent-list nil beg end nil property)
-    (let ((o-list (overlays-in beg end)))
-      (if property
-	  (vm-delete (function (lambda (e)
-				 (vm-extent-property e property)))
-		     o-list t)
-	o-list))))
+  "The overlays that overlap the positions BEG to END.
+Where PROPERTY is given, only those carrying it."
+  (let ((o-list (overlays-in beg end)))
+    (if property
+	(vm-delete (lambda (e) (vm-extent-property e property)) o-list t)
+      o-list)))
 
 (defun vm-copy-extent (e)
   (let ((props (vm-extent-properties e))

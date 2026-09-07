@@ -34,34 +34,6 @@
 ;; against; see `vm-assert-version' (#791).
 (vm-assert-version)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function get-itimer "vm-xemacs" (name))
-(declare-function start-itimer "vm-xemacs"
-		  (name function value &optional restart is-idle with-args
-			&rest function-arguments))
-(declare-function set-itimer-restart "vm-xemacs" (itimer restart))
-(declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
-(declare-function latin-unity-representations-feasible-region 
-		  "vm-xemacs" (start end))
-(declare-function latin-unity-representations-present-region 
-		  "vm-xemacs" (start end))
-(declare-function latin-unity-massage-name "vm-xemacs" (a b))
-(declare-function latin-unity-maybe-remap "vm-xemacs" 
-		  (a1 a2 a3 a4 a5 a6))
-(declare-function device-sound-enabled-p "vm-xemacs" (&optional device))
-(declare-function device-bitplanes "vm-xemacs" (&optional device))
-(declare-function font-height "vm-xemacs" (font &optional domain charset))
-(declare-function make-glyph "vm-xemacs" (&optional spec-list type))
-(declare-function set-glyph-baseline "vm-xemacs" 
-		  (glyph spec &optional locale tag-set how-to-add))
-(declare-function set-glyph-face "vm-xemacs" (glyph face))
-(declare-function extent-list "vm-xemacs" 
-		  (&optional buffer-or-string from to flags property value))
-(declare-function extent-begin-glyph "vm-xemacs" (extent))
-(declare-function set-extent-begin-glyph "vm-xemacs" 
-		  (extent begin-glyph &optional layout))
-(declare-function extent-live-p "vm-xemacs" (object))
-
 (declare-function vm-get-sender ())
 (declare-function vm-smime-get-recipient-certfiles ())
 (declare-function vm-mode "vm" (&optional read-only))
@@ -88,7 +60,6 @@
 (defvar vm-image-list)
 (defvar vm-image-type)
 (defvar vm-image-type-name)
-(defvar vm-extent-list)
 (defvar vm-overlay-list)
 
 
@@ -108,11 +79,10 @@
 (defsubst vm-mime-handler (op type)
   (intern (concat "vm-mime-" op "-" type)))
 
-;; A lot of the more complicated MIME character set processing is only
-;; practical under MULE.
-(defvar latin-unity-ucs-list)
-(defvar latin-unity-character-sets)
 (defvar coding-system-list)
+;; defined by `easy-menu-define' in vm-menu.el, and referred to before that
+;; file is loaded
+(defvar vm-menu-fsfemacs-image-menu)
 
 (defun vm-get-coding-system-priorities ()
   "Return the value of `vm-coding-system-priorities', or a reasonable
@@ -131,82 +101,21 @@ default for it if it's nil.  "
   ;; We can depend on the fact that, in FSF Emacsen, coding systems
   ;; have aliases that correspond to MIME charset names.
   (let ((tmp nil))
-    (cond ((not (featurep 'xemacs))
-	   (cond ((vm-coding-system-p (setq tmp (intern (downcase charset))))
-		   tmp)
-		  ((equal charset "us-ascii")
-		   'raw-text)
-		  ((equal charset "unknown")
-		   'iso-8859-1)
-		  (t 'undecided)))
-	  (t
-	   ;; What about the case where vm-m-m-c-t-c-a doesn't have an
-	   ;; entry for the given charset? That shouldn't happen, if
-	   ;; vm-mime-mule-coding-to-charset-alist and
-	   ;; vm-mime-mule-charset-to-coding-alist have complete and
-	   ;; matching entries. Admittedly this last is not a
-	   ;; given. Should we make it so on startup? (By setting the
-	   ;; key for any missing entries in
-	   ;; vm-mime-mule-coding-to-charset-alist to being (format
-	   ;; "%s" coding-system), if necessary.) RWF, 2005-03-25
-	   (setq tmp (vm-string-assoc charset
-				      vm-mime-mule-charset-to-coding-alist))
-	   (if tmp (cadr tmp) nil))
-	  )))
-		  
+    (cond ((vm-coding-system-p (setq tmp (intern (downcase charset))))
+	   tmp)
+	  ((equal charset "us-ascii")
+	   'raw-text)
+	  ((equal charset "unknown")
+	   'iso-8859-1)
+	  (t 'undecided))))
+
 
 (defun vm-get-mime-ucs-list ()
-  "Return the value of `vm-mime-ucs-list', or a reasonable default for it if
-it's nil.  This is used instead of `vm-mime-ucs-list' directly in order to
-allow runtime checks for optional features like `mule-ucs' or
-`latin-unity'.  "
+  "The value of `vm-mime-ucs-list', or a reasonable default where it is nil.
+A universal character set is one that can encode anything, so a message in
+one needs no charset negotiation."
   (or vm-mime-ucs-list
-      (if (featurep 'latin-unity)
-	  latin-unity-ucs-list
-	(if (vm-coding-system-p 'utf-8)
-	    '(utf-8 iso-2022-jp ctext escape-quoted)
-	  '(iso-2022-jp ctext escape-quoted)))))
-
-(defun vm-update-mime-charset-maps ()
-  "Check for the presence of certain Mule coding systems, and add
-information about the corresponding MIME character sets to VM's
-configuration.  "
-  ;; Add some extra charsets that may not have been defined onto the end
-  ;; of vm-mime-mule-charset-to-coding-alist.
-  (mapc (lambda (x)
-	  (and (vm-coding-system-p x)
-	       ;; Not using vm-string-assoc because of some quoting
-	       ;; weirdness it's doing. 
-	       (if (not (assoc
-			 (format "%s" x)
-			 vm-mime-mule-charset-to-coding-alist))
-		   (add-to-list 'vm-mime-mule-charset-to-coding-alist 
-				(list (format "%s" x) x)))))
-	'(utf-8 iso-8859-15 iso-8859-14 iso-8859-16
-		alternativnyj iso-8859-6 iso-8859-7 koi8-c koi8-o koi8-ru koi8-t
-		koi8-u macintosh windows-1250 windows-1251 windows-1252
-		windows-1253 windows-1256))
-
-  ;; And make sure that the map back from coding-systems is good for
-  ;; those charsets.
-  (mapc (lambda (x)
-	  (or (assoc (car (cdr x)) vm-mime-mule-coding-to-charset-alist)
-	      (add-to-list 'vm-mime-mule-coding-to-charset-alist
-			   (list (car (cdr x)) (car x)))))
-	vm-mime-mule-charset-to-coding-alist)
-  ;; Whoops, doesn't get picked up for some reason. 
-  (add-to-list 'vm-mime-mule-coding-to-charset-alist 
-	       '(iso-8859-1 "iso-8859-1")))
-
-(when (featurep 'xemacs)
-  (require 'vm-vars)
-  (vm-update-mime-charset-maps)
-  ;; If the user loads Mule-UCS, re-evaluate the MIME charset maps. 
-  (unless (vm-coding-system-p 'utf-8)
-    (eval-after-load "un-define" `(vm-update-mime-charset-maps)))
-  ;; Ditto for latin-unity. 
-  (unless (featurep 'latin-unity)
-    (eval-after-load "latin-unity" `(vm-update-mime-charset-maps))))
+      '(utf-8 iso-2022-jp ctext escape-quoted)))
 
 ;;----------------------------------------------------------------------------
 ;;; MIME layout structs (vm-mm)
@@ -556,7 +465,7 @@ same effect."
 	  (insert-buffer-substring b b-start b-end)
 	  (setq retval (apply 'decode-coding-region (point-min) (point-max)
 			      coding-system foo))
-	  (and (not (featurep 'xemacs)) (set-buffer-multibyte t)) ; is this safe?
+	  (set-buffer-multibyte t)	; is this safe?
 	  (setq start (point-min) end (point-max))
 	  (with-current-buffer b
 	    (goto-char b-start)
@@ -572,9 +481,7 @@ same effect."
 
 (defun vm-mime-charset-decode-region (charset start end)
   (or (markerp end) (setq end (vm-marker end)))
-  (if (or (and (featurep 'xemacs) (memq (vm-device-type) '(x gtk mswindows)))
-	  (not (featurep 'xemacs))
-	  (vm-mime-tty-can-display-mime-charset charset))
+  (if t
       (let ((buffer-read-only nil)
 	    (coding (vm-mime-charset-to-coding charset))
 	    (opoint (point)))
@@ -1754,152 +1661,25 @@ recipient's software, if that recipient is outside of East Asia."
   (save-excursion
     (save-restriction
       (narrow-to-region beg end)
-      (if (not (featurep 'xemacs))
-	  (let* ((preapproved (vm-get-coding-system-priorities))
-		 (ucs-list (vm-get-mime-ucs-list))
-		 (cant-encode (check-coding-systems-region
-			       (point-min) (point-max)
-			       (cons 'us-ascii preapproved))))
-	    (if (not (assq 'us-ascii cant-encode))
-		;; If there are only ASCII chars, we're done.
-		"us-ascii"
-	      (while (and preapproved
-			  (assq (car preapproved) cant-encode)
-			  (not (memq (car preapproved) ucs-list)))
-		(setq preapproved (cdr preapproved)))
-	      (if preapproved
-		  (cadr (assq (car preapproved)
-			      vm-mime-mule-coding-to-charset-alist))
-		;; None of the entries in vm-coding-system-priorities
-		;; can be used. This can only happen if no universal
-		;; coding system is included. Fall back to utf-8.
-		"utf-8")))
-
-	(let ((charsets (delq 'ascii
-			      (vm-charsets-in-region (point-min)
-						     (point-max)))))
-	  (cond
-	   ;; No non-ASCII chars? Right, that makes it easy for us.
-	   ((null charsets) "us-ascii")
-
-	   ;; Check whether the buffer can be encoded using one of the
-	   ;; vm-coding-system-priorities coding systems.
-	   ((catch 'done
-
-	      ;; We can't really do this intelligently unless latin-unity
-	      ;; is available.
-	      (if (featurep 'latin-unity)
-		  (let ((csetzero charsets)
-			;; Check what latin character sets are in the
-			;; buffer.
-			(csets (latin-unity-representations-feasible-region
-				beg end))
-			(psets (latin-unity-representations-present-region
-				beg end))
-			(systems (vm-get-coding-system-priorities)))
-
-		    ;; If one of the character sets is outside of latin
-		    ;; unity's remit, check for a universal character
-		    ;; set in vm-coding-system-priorities, and pass back
-		    ;; the first one.
-		    ;;
-		    ;; Otherwise, there's no remapping that latin unity
-		    ;; can do for us, and we should default to something
-		    ;; iso-2022 based. (Since we're not defaulting to
-		    ;; Unicode, at the moment.)
-
-		    (while csetzero
-		      (if (not (memq 
-				(car csetzero) latin-unity-character-sets))
-			  (let ((ucs-list (vm-get-mime-ucs-list))
-				(preapproved
-				 (vm-get-coding-system-priorities)))
-			    (while preapproved
-			      (if (memq (car preapproved) ucs-list)
-				  (throw 'done 
-					 (car (cdr (assq (car preapproved)
-					                 vm-mime-mule-coding-to-charset-alist)))))
-			      (setq preapproved (cdr preapproved)))
-			    ;; Nothing universal in the preapproved list.
-			    (throw 'done nil)))
-		      (setq csetzero (cdr csetzero)))
-
-		    ;; Okay, we're able to remap using latin-unity. Do so.
-		    (while systems
-		      (let ((sys (latin-unity-massage-name (car systems)
-					                   'buffer-default)))
-			(when (latin-unity-maybe-remap (point-min) 
-						       (point-max) sys 
-						       csets psets t)
-			  (throw 'done
-				 (second (assq sys
-				               vm-mime-mule-coding-to-charset-alist)))))
-		      (setq systems (cdr systems)))
-		    (throw 'done nil))
-
-		;; Right, latin-unity isn't available.  If there's only
-		;; one non-ASCII character set in the region, and the
-		;; corresponding coding system is on the preapproved
-		;; list before the first universal character set, pass
-		;; it back. Otherwise, if a universal character set is
-		;; on the preapproved list, pass the first one of them
-		;; back. Otherwise, pass back nil and use the
-		;; "iso-2022-jp" entry below.
-
-		(let ((csetzero charsets)
-		      (preapproved (vm-get-coding-system-priorities))
-		      (ucs-list (vm-get-mime-ucs-list)))
-		  (if (null (cdr csetzero))
-		      (while preapproved
-			;; If we encounter a universal character set on
-			;; the preapproved list, pass it back.
-			(if (memq (car preapproved) ucs-list)
-			    (throw 'done
-				   (second (assq (car preapproved)
-				                 vm-mime-mule-coding-to-charset-alist))))
-
-			;; The preapproved entry isn't universal. Check if
-			;; it's related to the single non-ASCII MULE
-			;; charset in the buffer (that is, if the
-			;; conceptually unordered MULE list of characters
-			;; is based on a corresponding ISO character set,
-			;; and thus the ordered ISO character set can
-			;; encode all the characters in the MIME charset.)
-			;;
-			;; The string equivalence test is used because we
-			;; don't have another mapping that is useful
-			;; here. Nnngh.
-
-			(if (string=
-			     (car (cdr (assoc (car csetzero)
-				              vm-mime-mule-charset-to-charset-alist)))
-			     (car (cdr (assoc (car preapproved)
-				              vm-mime-mule-coding-to-charset-alist))))
-			    (throw 'done
-				   (car (cdr (assoc (car csetzero)
-				                    vm-mime-mule-charset-to-charset-alist)))))
-			(setq preapproved (cdr preapproved)))
-
-		    ;; Okay, there's more than one MULE character set in
-		    ;; the buffer. Check for a universal entry in the
-		    ;; preapproved list; if it exists pass it back,
-		    ;; otherwise fall through to the iso-2022-jp below,
-		    ;; because nothing on the preapproved list is
-		    ;; appropriate.
-
-		    (while preapproved
-		      ;; If we encounter a universal character set on
-		      ;; the preapproved list, pass it back.
-		      (when (memq (car preapproved) ucs-list)
-			(throw 'done
-			       (second (assq (car preapproved)
-				             vm-mime-mule-coding-to-charset-alist))))
-		      (setq preapproved (cdr preapproved)))))
-		(throw 'done nil))))
-	   ;; Couldn't do any magic with vm-coding-system-priorities. Pass
-	   ;; back a Japanese iso-2022 MIME character set.
-	   (t "iso-2022-jp")
-	   ))))))
+      (let* ((preapproved (vm-get-coding-system-priorities))
+	     (ucs-list (vm-get-mime-ucs-list))
+	     (cant-encode (check-coding-systems-region
+			   (point-min) (point-max)
+			   (cons 'us-ascii preapproved))))
+	(if (not (assq 'us-ascii cant-encode))
+	    ;; If there are only ASCII chars, we're done.
+	    "us-ascii"
+	  (while (and preapproved
+		      (assq (car preapproved) cant-encode)
+		      (not (memq (car preapproved) ucs-list)))
+	    (setq preapproved (cdr preapproved)))
+	  (if preapproved
+	      (cadr (assq (car preapproved)
+			  vm-mime-mule-coding-to-charset-alist))
+	    ;; None of the entries in vm-coding-system-priorities
+	    ;; can be used. This can only happen if no universal
+	    ;; coding system is included. Fall back to utf-8.
+	    "utf-8"))))))
 
 (defun vm-mime-longest-line-length ()
   "The length of the longest line in the accessible region.
@@ -1995,14 +1775,9 @@ means to that function that the region is encoded already.")
 	   (and (vm-image-type-available-p 'pbm) (vm-images-possible-here-p)))
 	  ((vm-mime-types-match "image/xbm" type)
 	   (and (vm-image-type-available-p 'xbm) (vm-images-possible-here-p)))
-	  ((vm-mime-types-match "audio/basic" type)
-	   (and (featurep 'xemacs)
-		(or (featurep 'native-sound)
-		    (featurep 'nas-sound))
-		(or (device-sound-enabled-p)
-		    (and (featurep 'native-sound)
-			 (not native-sound-only-on-console)
-			 (memq (vm-device-type) '(x gtk))))))
+	  ;; audio/basic was played by XEmacs's own sound support and there
+	  ;; is no Emacs equivalent to put here.
+	  ((vm-mime-types-match "audio/basic" type) nil)
 	  ((vm-mime-types-match "multipart" type) t)
 	  ((vm-mime-types-match "message/external-body" type)
 	   (or (not deep)
@@ -3788,9 +3563,7 @@ button that this LAYOUT comes from."
       (lambda (extent)
 	;; reuse the internal display code, but make sure that no new
 	;; buttons will be created for the external-body content.
-	(let ((layout (if (featurep 'xemacs)
-                         (vm-extent-property extent 'vm-mime-layout)
-                       (overlay-get extent 'vm-mime-layout)))
+	(let ((layout (vm-extent-property extent 'vm-mime-layout))
 	      (vm-mime-auto-displayed-content-types t)
 	      (vm-mime-auto-displayed-content-type-exceptions nil))
 	  (vm-mime-display-internal-message/external-body 
@@ -4037,134 +3810,7 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
 describing the image type.                             USR, 2011-03-25"
-  (cond
-   ((featurep 'xemacs)
-    (vm-mime-display-internal-image-xemacs-xxxx layout image-type name))
-   ((and (not (featurep 'xemacs)) (fboundp 'image-type-available-p))
-    (vm-mime-display-internal-image-fsfemacs-xxxx layout image-type name))
-   (t
-    (vm-inform 0 "Unsupported Emacs version"))
-   ))
-
-(defun vm-mime-display-internal-image-xemacs-xxxx (layout image-type name)
-  (if (and (vm-images-possible-here-p)
-	   (vm-image-type-available-p image-type))
-      (let ((start (point-marker)) end tempfile g e
-	    (selective-display nil)
-	    (incremental vm-mime-display-image-strips-incrementally)
-	    do-strips
-	    (keymap (make-sparse-keymap))
-	    (buffer-read-only nil))
-	(if (and (setq tempfile (vm-mm-layout-image-file layout))
-		 (file-readable-p tempfile))
-	    nil
-	  (vm-mime-insert-mime-body layout)
-	  (setq end (point-marker))
-	  (vm-mime-transfer-decode-region layout start end)
-	  (setq tempfile (vm-make-tempfile))
-	  (vm-register-folder-garbage-files (list tempfile))
-	  ;; coding system for presentation buffer is binary so
-	  ;; we don't need to set it here.
-	  (write-region start end tempfile nil 0)
-	  (vm-set-mm-layout-image-file layout tempfile)
-	  (delete-region start end))
-	(if (not (bolp))
-	    (insert "\n"))
-	(setq do-strips (and (vm-imagemagick-available-p)
-			     vm-mime-use-image-strips))
-	(cond (do-strips
-	       (condition-case error-data
-		   (let ((strips (vm-make-image-strips tempfile
-						       (* 2 (font-height
-							(face-font 'default)))
-						       image-type
-						       t incremental))
-			 process image-list extent-list
-			 start
-			 (first t))
-		     (define-key keymap 'button3 'vm-menu-popup-image-menu)
-		     (setq process (car strips)
-			   strips (cdr strips)
-			   image-list strips)
-		     (vm-register-message-garbage-files strips)
-		     (setq start (point))
-		     (while strips
-		       (setq g (make-glyph
-				(list
-				 (cons nil
-				       (vector 'string
-					       ':data
-					       (if (or first
-						       (null (cdr strips)))
-						   (progn
-						     (setq first nil)
-						     "+-----+")
-						 "|image|"))))))
-		       (insert " \n")
-		       (setq e (vm-make-extent (- (point) 2) (1- (point))))
-		       (vm-set-extent-property e 'begin-glyph g)
-		       (vm-set-extent-property e 'start-open t)
-		       (vm-set-extent-property e 'keymap keymap)
-		       (setq extent-list (cons e extent-list))
-		       (setq strips (cdr strips)))
-		     (setq e (vm-make-extent start (point)))
-		     (vm-set-extent-property e 'start-open t)
-		     (vm-set-extent-property e 'vm-mime-layout layout)
-		     (vm-set-extent-property e 'vm-mime-disposable t)
-		     (vm-set-extent-property e 'keymap keymap)
-		     (with-current-buffer (process-buffer process)
-		       (set (make-local-variable 'vm-image-list) image-list)
-		       (set (make-local-variable 'vm-image-type) image-type)
-		       (set (make-local-variable 'vm-image-type-name)
-			    name)
-		       (set (make-local-variable 'vm-extent-list)
-			    (nreverse extent-list)))
-		     (if incremental
-			 (set-process-filter
-			  process
-			  'vm-process-filter-display-some-image-strips))
-		     (set-process-sentinel
-		      process
-		      'vm-process-sentinel-display-image-strips))
-		 (vm-image-too-small
-		  (setq do-strips nil))
-		 (error
-		  (vm-warn 0 0 "%s: Failed making image strips: %s" 
-			   (buffer-name vm-mail-buffer) error-data)
-		  ;; fallback to the non-strips way
-		  (setq do-strips nil)))))
-	(cond ((not do-strips)
-	       (vm-inform 6 "Creating %s glyph..." name)
-	       (setq g (make-glyph
-			(list
-			 (cons (list 'win)
-			       (vector image-type ':file tempfile))
-			 (cons (list 'win)
-			       (vector 'string
-				       ':data
-				       (format "[Unknown/Bad %s image encoding]"
-					       name)))
-			 (cons nil
-			       (vector 'string
-				       ':data
-				       (format "[%s image]\n" name))))))
-	       (vm-inform 6 "")
-	       ;; XEmacs 21.2 can pixel scroll images (sort of)
-	       ;; if the entire image is above the baseline.
-	       (set-glyph-baseline g 100)
-	       (if (memq image-type '(xbm))
-		   (set-glyph-face g 'vm-monochrome-image))
-	       (insert " \n")
-	       (define-key keymap 'button3 'vm-menu-popup-image-menu)
-	       (setq e (vm-make-extent (- (point) 2) (1- (point))))
-	       (vm-set-extent-property e 'keymap keymap)
-	       (vm-set-extent-property e 'begin-glyph g)
-	       (vm-set-extent-property e 'vm-mime-layout layout)
-	       (vm-set-extent-property e 'vm-mime-disposable t)
-	       (vm-set-extent-property e 'start-open t)))
-	t )))
-
-(defvar vm-menu-fsfemacs-image-menu)
+  (vm-mime-display-internal-image-fsfemacs-xxxx layout image-type name))
 
 (defun vm-mime-display-internal-image-fsfemacs-xxxx (layout image-type name)
   "Display the image object described by LAYOUT internally.
@@ -4381,50 +4027,15 @@ describing the image type.                            USR, 2011-03-25"
 
 (defun vm-process-sentinel-display-image-strips (process _what-happened)
   (with-current-buffer (process-buffer process)
-    (cond ((and (boundp 'vm-extent-list)
-		(boundp 'vm-image-list))
-	   (let ((strips vm-image-list)
-		 (extents vm-extent-list)
-		 (image-type vm-image-type)
-		 (type-name vm-image-type-name))
-	     (vm-display-image-strips-on-extents strips extents image-type
-						 type-name)))
-	  ((and (boundp 'vm-overlay-list)
-		(overlay-buffer (car vm-overlay-list))
-		(boundp 'vm-image-list))
-	   (let ((strips vm-image-list)
-		 (overlays vm-overlay-list)
-		 (image-type vm-image-type))
-	     (vm-display-image-strips-on-overlay-regions strips overlays
-							 image-type))))
+    (when (and (boundp 'vm-overlay-list)
+	       (overlay-buffer (car vm-overlay-list))
+	       (boundp 'vm-image-list))
+      (let ((strips vm-image-list)
+	    (overlays vm-overlay-list)
+	    (image-type vm-image-type))
+	(vm-display-image-strips-on-overlay-regions strips overlays
+						    image-type)))
     (kill-buffer (current-buffer))))
-
-(defun vm-display-image-strips-on-extents (strips extents image-type type-name)
-  (let (g)
-    (while (and strips
-		(file-exists-p (car strips))
-		(extent-live-p (car extents))
-		(vm-extent-object (car extents)))
-      (setq g (make-glyph
-	       (list
-		(cons (list 'win)
-		      (vector image-type ':file (car strips)))
-		(cons (list 'win)
-		      (vector
-		       'string
-		       ':data
-		       (format "[Unknown/Bad %s image encoding]"
-			       type-name)))
-		(cons nil
-		      (vector 'string
-			      ':data
-			      (format "[%s image]\n" type-name))))))
-      (set-glyph-baseline g 50)
-      (if (memq image-type '(xbm))
-	  (set-glyph-face g 'vm-monochrome-image))
-      (set-extent-begin-glyph (car extents) g)
-      (setq strips (cdr strips)
-	    extents (cdr extents)))))
 
 (defun vm-display-image-strips-on-overlay-regions (strips overlays image-type)
   (let (prop value omodified)
@@ -4434,18 +4045,13 @@ describing the image type.                            USR, 2011-03-25"
 	(widen)
 	(unwind-protect
 	    (let ((buffer-read-only nil))
-	      (if (fboundp 'image-type-available-p)
-		  (setq prop 'display)
-		(setq prop 'face))
+	      (setq prop 'display)
 	      (while (and strips
 			  (file-exists-p (car strips))
 			  (overlay-end (car overlays)))
-		(if (fboundp 'image-type-available-p)
-		    (setq value (list 'image ':type image-type
-				      ':file (car strips)
-				      ':ascent 50))
-		  (setq value (make-face (make-symbol "<vm-image-face>")))
-		  (set-face-stipple value (car strips)))
+		(setq value (list 'image ':type image-type
+				  ':file (car strips)
+				  ':ascent 50))
 		(put-text-property (overlay-start (car overlays))
 				   (overlay-end (car overlays))
 				   prop value)
@@ -4460,54 +4066,14 @@ describing the image type.                            USR, 2011-03-25"
 			       which-strips)
 	    i (match-end 0)))
     (with-current-buffer (process-buffer process)
-      (cond ((and (boundp 'vm-extent-list)
-		  (boundp 'vm-image-list))
-	     (let ((strips vm-image-list)
-		   (extents vm-extent-list)
-		   (image-type vm-image-type)
-		   (type-name vm-image-type-name))
-	       (vm-display-some-image-strips-on-extents strips extents
-							image-type
-							type-name
-							which-strips)))
-	    ((and (boundp 'vm-overlay-list)
-		  (overlay-buffer (car vm-overlay-list))
-		  (boundp 'vm-image-list))
-	     (let ((strips vm-image-list)
-		   (overlays vm-overlay-list)
-		   (image-type vm-image-type))
-	       (vm-display-some-image-strips-on-overlay-regions
-		strips overlays image-type which-strips)))))))
-
-(defun vm-display-some-image-strips-on-extents
-  (strips extents image-type type-name which-strips)
-  (let (g sss eee)
-    (while which-strips
-      (setq sss (nthcdr (car which-strips) strips)
-	    eee (nthcdr (car which-strips) extents))
-      (cond ((and sss
-		  (file-exists-p (car sss))
-		  (extent-live-p (car eee))
-		  (vm-extent-object (car eee)))
-	     (setq g (make-glyph
-		      (list
-		       (cons (list 'win)
-			     (vector image-type ':file (car sss)))
-		       (cons (list 'win)
-			     (vector
-			      'string
-			      ':data
-			      (format "[Unknown/Bad %s image encoding]"
-				      type-name)))
-		       (cons nil
-			     (vector 'string
-				     ':data
-				     (format "[%s image]\n" type-name))))))
-	     (set-glyph-baseline g 50)
-	     (if (memq image-type '(xbm))
-		 (set-glyph-face g 'vm-monochrome-image))
-	     (set-extent-begin-glyph (car eee) g)))
-      (setq which-strips (cdr which-strips)))))
+      (when (and (boundp 'vm-overlay-list)
+		 (overlay-buffer (car vm-overlay-list))
+		 (boundp 'vm-image-list))
+	(let ((strips vm-image-list)
+	      (overlays vm-overlay-list)
+	      (image-type vm-image-type))
+	  (vm-display-some-image-strips-on-overlay-regions
+	   strips overlays image-type which-strips))))))
 
 (defun vm-display-some-image-strips-on-overlay-regions
   (strips overlays image-type which-strips)
@@ -4518,22 +4084,16 @@ describing the image type.                            USR, 2011-03-25"
 	(widen)
 	(unwind-protect
 	    (let ((buffer-read-only nil))
-	      (if (fboundp 'image-type-available-p)
-		  (setq prop 'display)
-		(setq prop 'face))
+	      (setq prop 'display)
 	      (while which-strips
 		(setq sss (nthcdr (car which-strips) strips)
 		      ooo (nthcdr (car which-strips) overlays))
 		(cond ((and sss
 			    (file-exists-p (car sss))
 			    (overlay-end (car ooo)))
-		       (if (fboundp 'image-type-available-p)
-			   (setq value (list 'image ':type image-type
-					     ':file (car sss)
-					     ':ascent 50))
-			 (setq value (make-face (make-symbol
-						 "<vm-image-face>")))
-			 (set-face-stipple value (car sss)))
+		       (setq value (list 'image ':type image-type
+					 ':file (car sss)
+					 ':ascent 50))
 		       (put-text-property (overlay-start (car ooo))
 					  (overlay-end (car ooo))
 					  prop value)))
@@ -4718,20 +4278,13 @@ image when possible."
 				   vm-mime-thumbnail-max-geometry))
 	;; extract image data, don't need the image itself!
 	;; if the display was not successful, glyph will be nil
-	(setq glyph (if (featurep 'xemacs)
-			(let ((e1 (vm-extent-at start))
-			      (e2 (vm-extent-at (1+ start))))
-			  (or (and e1 (extent-begin-glyph e1))
-			      (and e2 (extent-begin-glyph e2))))
-		      (get-text-property start 'display)))
+	(setq glyph (get-text-property start 'display))
 	(delete-region start (point))
 	;; insert the button and replace the image 
 	(setq start (point))
 	(vm-mime-display-button-xxxx layout t)
 	(when glyph
-	  (if (featurep 'xemacs)
-	      (set-extent-begin-glyph (vm-extent-at start) glyph)
-	    (put-text-property start (1+ start) 'display glyph)))
+	  (put-text-property start (1+ start) 'display glyph))
 	;; remove the cached thumb so that full sized image will be shown
 	;; next time
 	t)
@@ -4740,38 +4293,6 @@ image when possible."
 
 (defun vm-mime-display-button-application/pdf (layout)
   (vm-mime-display-button-image layout))
-
-(defun vm-mime-display-internal-audio/basic (layout)
-  (if (and (featurep 'xemacs)
-	   (or (featurep 'native-sound)
-	       (featurep 'nas-sound))
-	   (or (device-sound-enabled-p)
-	       (and (featurep 'native-sound)
-		    (not native-sound-only-on-console)
-		    (memq (vm-device-type) '(x gtk)))))
-      (let ((start (point-marker)) end tempfile
-	    (selective-display nil)
-	    (buffer-read-only nil))
-	(if (setq tempfile (get (vm-mm-layout-cache layout)
-				'vm-mime-display-internal-audio/basic))
-	    nil
-	  (vm-mime-insert-mime-body layout)
-	  (setq end (point-marker))
-	  (vm-mime-transfer-decode-region layout start end)
-	  (setq tempfile (vm-make-tempfile))
-	  (vm-register-folder-garbage-files (list tempfile))
-	  ;; coding system for presentation buffer is binary, so
-	  ;; we don't need to set it here.
-	  (write-region start end tempfile nil 0)
-	  (put (vm-mm-layout-cache layout)
-	       'vm-mime-display-internal-audio/basic
-	       tempfile)
-	  (delete-region start end))
-	(start-itimer "audioplayer"
-		      (list 'lambda nil (list 'play-sound-file tempfile))
-		      1)
-	t )
-    nil ))
 
 (defun vm-mime-display-generic (layout)
   "Display the mime object described by LAYOUT, irrespective of
@@ -5330,11 +4851,7 @@ confirmed before creating a new directory."
 (defun vm-mime-set-image-stamp-for-type (e type)
   "Set an image stamp for MIME button extent E as appropriate for
 TYPE.                                                 USR, 2011-03-25"
-  (cond
-   ((featurep 'xemacs)
-    (vm-mime-xemacs-set-image-stamp-for-type e type))
-   ((not (featurep 'xemacs))
-    (vm-mime-fsfemacs-set-image-stamp-for-type e type))))
+  (vm-mime-fsfemacs-set-image-stamp-for-type e type))
 
 (defconst vm-mime-type-images
   '(("text" "text.xpm")
@@ -5344,34 +4861,6 @@ TYPE.                                                 USR, 2011-03-25"
     ("message" "message.xpm")
     ("application" "application.xpm")
     ("multipart" "multipart.xpm")))
-
-(defun vm-mime-xemacs-set-image-stamp-for-type (e type)
-  "Set an image stamp for MIME button extent E as appropriate for
-TYPE.                                                  USR, 2011-03-25"
-  (if (and (vm-images-possible-here-p)
-	   (vm-image-type-available-p 'xpm)
-	   (> (device-bitplanes) 7))
-      (let ((dir (vm-image-directory))
-	    (tuples vm-mime-type-images)
-	    glyph file sym) ;; p
-	(setq file (catch 'done
-		     (while tuples
-		       (if (vm-mime-types-match (car (car tuples)) type)
-			   (throw 'done (car tuples))
-			 (setq tuples (cdr tuples))))
-		     nil)
-	      file (and file (nth 1 file))
-	      sym (and file (intern file vm-image-obarray))
-	      glyph (and sym (boundp sym) (symbol-value sym))
-	      glyph (or glyph
-			(and file
-			     (make-glyph
-			      (list
-			       (vector 'xpm ':file
-				       (expand-file-name file dir))
-			       [nothing])))))
-	(and sym (not (boundp sym)) (set sym glyph))
-	(and glyph (set-extent-begin-glyph e glyph)))))
 
 (defun vm-mime-fsfemacs-set-image-stamp-for-type (e type)
   "Set an image stamp for MIME button extent E as appropriate for
@@ -5420,32 +4909,16 @@ be removed when it is expanded to display the mime object."
   (let ((start (point))	e
 	(keymap vm-mime-reader-map)
 	(buffer-read-only nil))
-    (if (fboundp 'set-keymap-parents)
-	(if (current-local-map)
-	    (set-keymap-parents keymap (list (current-local-map))))
-      (setq keymap (append keymap (current-local-map))))
+    (setq keymap (append keymap (current-local-map)))
     (if (not (bolp))
 	(insert "\n"))
     (insert caption "\n")
-    ;; we must use the same interface that the vm-extent functions
-    ;; use.  if they use overlays, then we call make-overlay.
-    (if (not (featurep 'xemacs))
-	;; we MUST have the five arg make-overlay.  overlays must
-	;; advance when text is inserted at their start position or
-	;; inline text and graphics will seep into the button
-	;; overlay and then be removed when the button is removed.
-	(setq e (vm-make-extent start (point) nil t nil))
-      (setq e (vm-make-extent start (point)))
-      (vm-set-extent-property e 'start-open t)
-      (vm-set-extent-property e 'end-open t))
+    ;; the five argument make-overlay: an overlay must advance when text is
+    ;; inserted at its start position, or inline text and graphics seep into
+    ;; the button overlay and are then removed when the button is
+    (setq e (vm-make-extent start (point) nil t nil))
     (vm-mime-set-image-stamp-for-type e (car (vm-mm-layout-type layout)))
-    (when (not (featurep 'xemacs))
-      (vm-set-extent-property e 'local-map keymap))
-    (when (featurep 'xemacs)
-      (vm-set-extent-property e 'highlight t)
-      (vm-set-extent-property e 'keymap keymap)
-      (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help))
-    ;; for all
+    (vm-set-extent-property e 'local-map keymap)
     (vm-set-extent-property e 'vm-button t)
     (vm-set-extent-property e 'vm-mime-disposable disposable)
     (vm-set-extent-property e 'face vm-mime-button-face)
@@ -5453,12 +4926,9 @@ be removed when it is expanded to display the mime object."
     (vm-set-extent-property e 'vm-mime-layout layout)
     (vm-set-extent-property e 'vm-mime-function action)
     ;; for vm-continue-postponed-message
-    (when (featurep 'xemacs)
-      (vm-set-extent-property e 'duplicable t))
-    (when (not (featurep 'xemacs))
-      (put-text-property (overlay-start e)
-			 (overlay-end e)
-			 'vm-mime-layout layout))
+    (put-text-property (overlay-start e)
+		       (overlay-end e)
+		       'vm-mime-layout layout)
     ;; return t as decoding worked
     t))
 
@@ -5847,55 +5317,12 @@ Returns non-NIL value M is a plain message."
       (vm-mime-types-match "message" (car (vm-mm-layout-type layout)))))
 
 
-(defun vm-mime-tty-can-display-mime-charset (name)
-  "Can the current TTY correctly display the given MIME character set?"
-  (and (fboundp 'console-tty-output-coding-system)
-       ;; Is this check too paranoid?
-       (vm-coding-system-p (console-tty-output-coding-system))
-       (fboundp 'coding-system-get)
-       (let
-	   ;; Nnngh, latin-unity-base-name isn't doing the right thing for
-	   ;; me with MULE-UCS and UTF-8 as the terminal coding system. Of
-	   ;; course, it's not evident that it _can_ do the right thing.
-	   ;;
-	   ;; The intention is that ourtermcs is the version of the
-	   ;; coding-system without line-ending information attached to its
-	   ;; end.
-	   ((ourtermcs (vm-coding-system-name
-                        (or (car 
-                             (coding-system-get
-                              (console-tty-output-coding-system)
-                              'alias-coding-systems))
-                            (coding-system-base
-                             (console-tty-output-coding-system))))))
-	 (or (eq ourtermcs (vm-mime-charset-to-coding name))
-	     ;; The vm-mime-mule-charset-to-coding-alist check is to make
-	     ;; sure it does the right thing with a nonsense MIME character
-	     ;; set name.
-	     (and (memq ourtermcs (vm-get-mime-ucs-list))
-		  (vm-mime-charset-to-coding name) 
-		  t)
-	     (vm-mime-default-face-charset-p name)))))
-
-(defun vm-mime-charset-internally-displayable-p (name)
-  "Can the given MIME charset be displayed within emacs by VM?"
-  (cond ((and (featurep 'xemacs) (memq (vm-device-type) '(x gtk mswindows)))
-	 (or (vm-mime-charset-to-coding name)
-	     (vm-mime-default-face-charset-p name)))
-
-	;; vm-mime-tty-can-display-mime-charset (called below) fails
-	;; for GNU Emacs. So keep things simple, since there's no harm
-	;; if replacement characters are displayed.
-	((not (featurep 'xemacs)))
-
-	;; If the terminal-coding-system variable is set to something that
-	;; can encode all the characters of the given MIME character set,
-	;; then we can display any message in the given MIME character set
-	;; internally.
-
-	((vm-mime-tty-can-display-mime-charset name))
-	(t
-	 (vm-mime-default-face-charset-p name))))
+(defun vm-mime-charset-internally-displayable-p (_name)
+  "Whether VM can display the MIME charset NAME inside Emacs.  Always.
+Emacs shows a replacement character for what it cannot render, which is
+better than sending the part to an external viewer.  It answered per
+charset when it had to serve XEmacs on a tty as well."
+  t)
 
 (defun vm-mime-default-face-charset-p (charset)
   (and (or (eq vm-mime-default-face-charsets t)
@@ -6532,7 +5959,7 @@ there is no file name for this object.             USR, 2011-03-07"
     (error "VM internal error: vm-attach-object not in Mail mode buffer."))
   (when (vm-mail-mode-get-header-contents "MIME-Version")
     (error "Can't attach MIME object to already encoded MIME buffer."))
-  (let (start end e tag-string file-name
+  (let (start end tag-string file-name
 	;; Forward references to external-body parts when
 	;; vm-mime-forward-saved-attachments is nil; otherwise expand them
 	(fb (list (not vm-mime-forward-saved-attachments))))
@@ -6568,67 +5995,30 @@ there is no file name for this object.             USR, 2011-03-07"
     (setq end (1- (point)))
 
 
-    (cond ((not (featurep 'xemacs))
-	   (put-text-property start end 'front-sticky nil)
-	   (put-text-property start end 'rear-nonsticky t)
-	   ;; can't be intangible because menu clicking at a position
-	   ;; needs to set point inside the tag so that a command can
-	   ;; access the text properties there.
-	   (put-text-property start end 'face vm-attachment-button-face)
-	   (put-text-property start end 'font-lock-face 
-			      vm-attachment-button-face)
-	   (put-text-property start end 'mouse-face 
-			      vm-attachment-button-mouse-face)
-	   (put-text-property start end 'vm-mime-forward-local-refs fb)
-	   (put-text-property start end 'vm-mime-type type)
-	   (put-text-property start end 'vm-mime-object object)
-	   (put-text-property start end 'vm-mime-parameters params)
-	   (put-text-property start end 'vm-mime-description description)
-	   (put-text-property start end 'vm-mime-disposition disposition)
-	   (put-text-property start end 'vm-mime-encoding (list nil))
-	   (put-text-property start end 'vm-mime-encoded mimed)
-	   )
-	  ((featurep 'xemacs)
-	   (setq e (vm-make-extent start end))
-	   (vm-mime-set-image-stamp-for-type e (or type "text/plain"))
-	   (vm-set-extent-property e 'start-open t)
-	   (vm-set-extent-property e 'face vm-mime-button-face)
-	   (vm-set-extent-property e 'mouse-face vm-mime-button-mouse-face)
-	   (vm-set-extent-property e 'duplicable t)
-	   (let ((keymap (make-sparse-keymap)))
-	     (when vm-popup-menu-on-mouse-3
-	       (define-key keymap 'button3
-		 'vm-menu-popup-attachment-menu))
-             (define-key keymap [return] 'vm-mime-change-content-disposition)
-	     (vm-set-extent-property e 'keymap keymap)
-	     (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help))
-	   (vm-set-extent-property e 'vm-mime-forward-local-refs fb)
-	   (vm-set-extent-property e 'vm-mime-type type)
-	   (vm-set-extent-property e 'vm-mime-object object)
-	   (vm-set-extent-property e 'vm-mime-parameters params)
-	   (vm-set-extent-property e 'vm-mime-description description)
-	   (vm-set-extent-property e 'vm-mime-disposition disposition)
-	   (vm-set-extent-property e 'vm-mime-encoding (list nil))
-	   (vm-set-extent-property e 'vm-mime-encoded mimed)))))
+    (put-text-property start end 'front-sticky nil)
+    (put-text-property start end 'rear-nonsticky t)
+    ;; can't be intangible because menu clicking at a position
+    ;; needs to set point inside the tag so that a command can
+    ;; access the text properties there.
+    (put-text-property start end 'face vm-attachment-button-face)
+    (put-text-property start end 'font-lock-face vm-attachment-button-face)
+    (put-text-property start end 'mouse-face vm-attachment-button-mouse-face)
+    (put-text-property start end 'vm-mime-forward-local-refs fb)
+    (put-text-property start end 'vm-mime-type type)
+    (put-text-property start end 'vm-mime-object object)
+    (put-text-property start end 'vm-mime-parameters params)
+    (put-text-property start end 'vm-mime-description description)
+    (put-text-property start end 'vm-mime-disposition disposition)
+    (put-text-property start end 'vm-mime-encoding (list nil))
+    (put-text-property start end 'vm-mime-encoded mimed)))
+
 (defalias 'vm-mime-attach-object 'vm-attach-object)
 
 (defun vm-mime-attachment-forward-local-refs-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((fb (get-text-property (point) 'vm-mime-forward-local-refs)))
-	   (car fb) ))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-type))
-		(fb (vm-extent-property e 'vm-mime-forward-local-refs)))
-	   (car fb) ))))
+  (car (get-text-property (point) 'vm-mime-forward-local-refs)))
 
 (defun vm-mime-set-attachment-forward-local-refs-at-point (val)
-  (cond ((not (featurep 'xemacs))
-	 (let ((fb (get-text-property (point) 'vm-mime-forward-local-refs)))
-	   (setcar fb val) ))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-type))
-		(fb (vm-extent-property e 'vm-mime-forward-local-refs)))
-	   (setcar fb val) ))))
+  (setcar (get-text-property (point) 'vm-mime-forward-local-refs) val))
 
 ;; vm-mime-delete-attachment-button and
 ;; vm-mime-delete-attachment-button-keep-infos were removed along with the
@@ -6683,21 +6073,10 @@ bracket, which is where `end-of-line' leaves it."
 (defun vm-mime-attachment-name-at-point ()
   "Return the file name of the attachment at point, or nil.
 Any MIME parameter quoting is removed."
-  (let* ((pos (if (featurep 'xemacs)
-		  (point)
-		;; go through the bounds, so that point just past the
-		;; tag counts as being on it
-		(car (vm-mime-attachment-tag-bounds))))
-	 (disposition
-	  (if (featurep 'xemacs)
-	      (vm-extent-property (vm-extent-at (point) 'vm-mime-disposition)
-				  'vm-mime-disposition)
-	    (and pos (get-text-property pos 'vm-mime-disposition))))
-	 (params
-	  (if (featurep 'xemacs)
-	      (vm-extent-property (vm-extent-at (point) 'vm-mime-type)
-				  'vm-mime-parameters)
-	    (and pos (get-text-property pos 'vm-mime-parameters)))))
+  ;; through the bounds, so that point just past the tag counts as on it
+  (let* ((pos (car (vm-mime-attachment-tag-bounds)))
+	 (disposition (and pos (get-text-property pos 'vm-mime-disposition)))
+	 (params (and pos (get-text-property pos 'vm-mime-parameters))))
     (vm-mime-unquote-parameter-value
      (or (vm-mime-get-xxx-parameter "filename" (cdr disposition))
 	 (vm-mime-get-xxx-parameter "name" params)))))
@@ -6706,24 +6085,9 @@ Any MIME parameter quoting is removed."
   "Give the attachment at point the file NAME.
 Sets it in both the Content-Type name parameter and the
 Content-Disposition filename parameter, and updates the visible tag."
-  (cond
-   ((featurep 'xemacs)
-    (let ((e (vm-extent-at (point) 'vm-mime-type)))
-      (unless e (error "No attachment here"))
-      (vm-set-extent-property
-       e 'vm-mime-parameters
-       (vm-mime-set-parameter-in-list
-	(vm-extent-property e 'vm-mime-parameters) "name" name))
-      (let ((disposition (vm-extent-property e 'vm-mime-disposition)))
-	(vm-set-extent-property
-	 e 'vm-mime-disposition
-	 (cons (car disposition)
-	       (vm-mime-set-parameter-in-list
-		(cdr disposition) "filename" name))))))
-   (t
-    (let ((bounds (vm-mime-attachment-tag-bounds)))
-      (unless bounds (error "No attachment here"))
-      (let* ((start (car bounds))
+  (let ((bounds (vm-mime-attachment-tag-bounds)))
+    (unless bounds (error "No attachment here"))
+    (let* ((start (car bounds))
 	     (end (cdr bounds))
 	     (inhibit-read-only t)
 	     ;; the whole tag carries one set of properties; work on a
@@ -6760,7 +6124,7 @@ Content-Disposition filename parameter, and updates the visible tag."
 		;; run would be split in three -- which the encoder reads
 		;; as two attachments where there is one.
 		(insert name)))))
-	(set-text-properties start end props))))))
+      (set-text-properties start end props))))
 
 ;;;###autoload
 (defun vm-mime-rename-attachment ()
@@ -6770,9 +6134,7 @@ suggest when they save it; the file the attachment was read from is not
 touched."
   (interactive)
   (let ((current (vm-mime-attachment-name-at-point)))
-    (unless (if (featurep 'xemacs)
-		(vm-extent-at (point) 'vm-mime-type)
-	      (vm-mime-attachment-tag-bounds))
+    (unless (vm-mime-attachment-tag-bounds)
       (error "No attachment here"))
     (vm-mime-set-attachment-name-at-point
      (read-string "Attachment file name: " current))))
@@ -6787,9 +6149,7 @@ Content-Disposition header and leaves the choice to them."
   (interactive)
   ;; before the prompt, as `vm-mime-rename-attachment' does: an answer read
   ;; and then thrown away is worse than the question not being asked
-  (unless (if (featurep 'xemacs)
-	      (vm-extent-at (point) 'vm-mime-type)
-	    (vm-mime-attachment-tag-bounds))
+  (unless (vm-mime-attachment-tag-bounds)
     (error "No attachment here"))
   (vm-mime-set-attachment-disposition-at-point
    (intern
@@ -6802,41 +6162,18 @@ Content-Disposition header and leaves the choice to them."
      nil t))))
 
 (defun vm-mime-attachment-disposition-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((disp (get-text-property (point) 'vm-mime-disposition)))
-	   (intern (car disp))))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(disp (vm-extent-property e 'vm-mime-disposition)))
-	   (intern (car disp))))))
+  (intern (car (get-text-property (point) 'vm-mime-disposition))))
 
 (defun vm-mime-set-attachment-disposition-at-point (sym)
-  (cond ((not (featurep 'xemacs))
-	 (let ((disp (get-text-property (point) 'vm-mime-disposition)))
-	   (setcar disp (symbol-name sym))))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(disp (vm-extent-property e 'vm-mime-disposition)))
-	   (setcar disp (symbol-name sym))))))
+  (setcar (get-text-property (point) 'vm-mime-disposition)
+	  (symbol-name sym)))
 
 
 (defun vm-mime-attachment-encoding-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((enc (get-text-property (point) 'vm-mime-encoding)))
-	   (car enc)))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-encoding))
-		(enc (vm-extent-property e 'vm-mime-encoding)))
-           (if e (car enc))))))
+  (car (get-text-property (point) 'vm-mime-encoding)))
 
 (defun vm-mime-set-attachment-encoding-at-point (sym)
-  (cond ((not (featurep 'xemacs))
-	 (let ((enc (get-text-property (point) 'vm-mime-encoding)))
-	   (setcar enc sym)))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(enc (vm-extent-property e 'vm-mime-encoding)))
-	   (setcar enc sym)))))
+  (setcar (get-text-property (point) 'vm-mime-encoding) sym))
 
 (defun vm-disallow-overlay-endpoint-insertion 
   (overlay after start end &optional _old-size)
@@ -6860,12 +6197,9 @@ excluded from the overlay."
 argument PROP can specify an extent property, in which case only those
 extents that have the property are returned.
 
-In GNU Emacs version of this function, attachment buttons are expected
-to be denoted by text-properties rather than extents.  \"Fake\"
-extents are created for the purpose of this function.  USR, 2011-03-27"
-  (let ((e-list  (if (featurep 'xemacs)
-		     (vm-extent-list start end prop)
-		   (vm-mime-fake-attachment-overlays start end prop))))
+Attachment buttons are denoted by text properties rather than by overlays,
+so the overlays this returns are made for the purpose.  USR, 2011-03-27"
+  (let ((e-list (vm-mime-fake-attachment-overlays start end prop)))
     (sort e-list (function
 		  (lambda (e1 e2)
 		    (< (vm-extent-end-position e1)
@@ -7231,10 +6565,9 @@ CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
   (with-temp-buffer
     (insert text)
     (when (and coding (not (eq coding 'no-conversion)))
-      (if (featurep 'xemacs)
-	  (vm-encode-coding-region (point-min) (point-max) coding)
-	;; using vm-encode-coding-region causes wrong encoding in GNU Emacs
-	(encode-coding-region (point-min) (point-max) coding)))
+      ;; encode-coding-region and not vm-encode-coding-region, which encodes
+      ;; this wrongly
+      (encode-coding-region (point-min) (point-max) coding))
     ;; A marker that advances: Q-encoding expands the text it encodes, and
     ;; `vm-mime-Q-encode-region' turns the spaces into underscores afterwards
     ;; over the region it was given.  A plain position taken before the call
@@ -7508,9 +6841,6 @@ and the appropriate content-type and boundary markup information is added."
 	  forward-local-refs already-mimed layout e e-list boundary
 	  type encoding params description disposition object ;; charset
 	  opoint-min encoded-attachment message-smimed)
-      (when (featurep 'xemacs)
-	;;Make sure we don't double encode UTF-8 (for example) text.
-	(setq buffer-file-coding-system (vm-binary-coding-system)))
       (goto-char (mail-text-start))
       (setq e-list (vm-mime-attachment-button-extents 
 		    (point) (point-max) 'vm-mime-object))
@@ -7823,19 +7153,17 @@ WHOLE-MESSAGE is true then nil is returned."
     ;; support enriched-mode for text/enriched composition
     (when enriched
       (let ((enriched-initial-annotation ""))
-	(if (not (featurep 'xemacs))
-	    (save-excursion
-	      ;; insert/delete trick needed to avoid
-	      ;; enriched-mode tags from seeping into the
-	      ;; attachment overlays.  I really wish
-	      ;; front-advance / rear-advance overlay
-	      ;; endpoint properties actually worked.
-	      (goto-char (point-max))
-	      (insert-before-markers "\n")
-	      (enriched-encode (point-min) (1- (point)))
-	      (goto-char (point-max))
-	      (delete-char -1))
-	  (enriched-encode (point-min) (point-max)))))
+	(save-excursion
+	  ;; insert/delete trick needed to avoid
+	  ;; enriched-mode tags from seeping into the
+	  ;; attachment overlays.  I really wish
+	  ;; front-advance / rear-advance overlay
+	  ;; endpoint properties actually worked.
+	  (goto-char (point-max))
+	  (insert-before-markers "\n")
+	  (enriched-encode (point-min) (1- (point)))
+	  (goto-char (point-max))
+	  (delete-char -1))))
             
     (setq charset (vm-determine-proper-charset (point-min) (point-max)))
     (when t
@@ -7855,9 +7183,6 @@ WHOLE-MESSAGE is true then nil is returned."
 	     ;; coding-system), if necessary.)        RWF, 2005-03-25
 			      coding-system)))
 
-    ;; not clear why this is needed.  USR, 2011-03-27
-    (when (featurep 'xemacs)
-      (when whole-message (enriched-mode -1)))
     (setq encoding (vm-determine-proper-content-transfer-encoding
 		    (point-min) (point-max))
 	  encoding (vm-mime-transfer-encode-region 
@@ -8368,29 +7693,12 @@ This is a destructive operation and cannot be undone!"
   "Replace all mime buttons in the current buffer by attachment buttons."
   ;; called vm-mime-encode-mime-attachments in vm-postpone.el
   (interactive)
-  (cond ((featurep 'xemacs)
-         (let ((e-list (vm-extent-list 
-			(point-min) (point-max) 'vm-mime-layout)))
-           (setq e-list
-                 (sort e-list
-                       (function (lambda (e1 e2)
-                                   (< (vm-extent-end-position e1)
-                                      (vm-extent-end-position e2))))))
-           ;; Then replace the buttons, because doing it at once will result in
-           ;; problems since the new buttons are from the same extent.
-           (while e-list
-             (vm-mime-replace-by-attachment-button (car e-list))
-             (setq e-list (cdr e-list)))))
-        ((not (featurep 'xemacs))
-         (let ((e-list (vm-mime-attachment-button-extents
-			(point-min) (point-max) 'vm-mime-layout)))
-           (while e-list
-             (vm-mime-replace-by-attachment-button (car e-list))
-             (setq e-list (cdr e-list)))
-	   (goto-char (point-max))))
-        (t
-         (error "don't know how to MIME encode composition for %s"
-                (emacs-version)))))
+  (let ((e-list (vm-mime-attachment-button-extents
+		 (point-min) (point-max) 'vm-mime-layout)))
+    (while e-list
+      (vm-mime-replace-by-attachment-button (car e-list))
+      (setq e-list (cdr e-list)))
+    (goto-char (point-max))))
 
 ;; The function vm-mime-re-fake-attachment-overlays from vm-postpone.el is
 ;; now unused.  USR, 2011-02-14 
@@ -8460,63 +7768,32 @@ This is a destructive operation and cannot be undone!"
       (vm-detach-extent x))))
 
 
-;; This code was originally part of
-;; vm-mime-xemacs/fsfemacs-encode-composition functions.
+;; This code was originally part of vm-mime-fsfemacs-encode-composition.
 
 (defun vm-mime-insert-file-contents (file type)
-  "Safely insert the contents of FILE of TYPE into the current
-buffer." 
-  (if (featurep 'xemacs)
-      (let ((coding-system-for-read
-	     (if (vm-mime-text-type-p type)
-		 (vm-line-ending-coding-system)
-	       (vm-binary-coding-system)))
-	    ;; keep no undos 
-	    (buffer-undo-list t)
-	    ;; no transformations!
-	    (format-alist nil)
-	    ;; no decompression!
-	    (jka-compr-compression-info-list nil)
-	    ;; don't let buffer-file-coding-system be changed
-	    ;; by insert-file-contents.  The
-	    ;; value we bind to it to here isn't important.
-	    (buffer-file-coding-system (vm-binary-coding-system)))
-	(insert-file-contents file))
-    ;; as of FSF Emacs 19.34, even with the hooks
-    ;; we've attached to the attachment overlays,
-    ;; text STILL can be inserted into them when
-    ;; font-lock is enabled.  Explaining why is
-    ;; beyond the scope of this comment and I
-    ;; don't know the answer anyway.  This
-    ;; insertion dance works to prevent it.
-    (insert-before-markers " ")
-    (forward-char -1)
-    (let ((coding-system-for-read
-	   (if (vm-mime-text-type-p type)
-	       (vm-line-ending-coding-system)
-	     (vm-binary-coding-system)))
-	  ;; keep no undos 
-	  (buffer-undo-list t)
-	  ;; no transformations!
-	  (format-alist nil)
-	  ;; no decompression!
-	  (jka-compr-compression-info-list nil)
-	  ;; don't let buffer-file-coding-system be
-	  ;; changed by insert-file-contents.  The
-	  ;; value we bind to it to here isn't
-	  ;; important.
-	  (buffer-file-coding-system (vm-binary-coding-system)))
-      (condition-case data
-	  (insert-file-contents file)
-	(error
-	 ;; font-lock could signal this error in FSF
-	 ;; Emacs versions prior to 21.0.  Catch it
-	 ;; and ignore it.
-	 (if (equal data '(error "Invalid search bound (wrong side of point)"))
-	     nil
-	   (signal (car data) (cdr data)))))
-      (goto-char (point-max))
-      (delete-char -1))))
+  "Safely insert the contents of FILE of TYPE into the current buffer."
+  ;; Even with the hooks attached to the attachment overlays, text can still
+  ;; be inserted into them when font-lock is on.  Explaining why is beyond
+  ;; the scope of this comment and I do not know the answer anyway.  This
+  ;; insertion dance prevents it.
+  (insert-before-markers " ")
+  (forward-char -1)
+  (let ((coding-system-for-read
+	 (if (vm-mime-text-type-p type)
+	     (vm-line-ending-coding-system)
+	   (vm-binary-coding-system)))
+	;; keep no undos
+	(buffer-undo-list t)
+	;; no transformations!
+	(format-alist nil)
+	;; no decompression!
+	(jka-compr-compression-info-list nil)
+	;; don't let buffer-file-coding-system be changed by
+	;; insert-file-contents.  The value bound here is not important.
+	(buffer-file-coding-system (vm-binary-coding-system)))
+    (insert-file-contents file)
+    (goto-char (point-max))
+    (delete-char -1)))
 
 (defun vm-mime-insert-buffer-substring (buffer _type)
   "Safe insert the contents of BUFFER of TYPE into the current buffer."
