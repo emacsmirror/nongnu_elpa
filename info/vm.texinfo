@@ -2725,6 +2725,22 @@ normally @file{~/.vm} (@pxref{Starting Up}).
 The same settings, in one file you can copy, are installed as
 @file{example.vm} in VM's documentation directory.
 
+@findex vm-setup
+@cindex setting up, from questions
+Or let VM ask.  @kbd{M-x vm-setup} asks for your name and address, where
+folders are to be kept, where new mail comes from, how mail is to be sent,
+and whether VM should be the mail reader Emacs uses, and writes the answers
+to a file VM loads.  Every question is asked before anything is written, so
+stopping part way through leaves your files as they were; the file to write
+is asked for as the last question, and replacing one that already exists is
+confirmed.  It writes the whole file rather than adding to it, so it
+defaults to @code{vm-preferences-file}, which VM loads after
+@code{vm-init-file} and which nothing else writes.
+
+The one setting it cannot finish is @code{mail-user-agent}: a file VM loads
+is read when VM starts, so @kbd{C-x m} in a fresh Emacs has already
+happened by then.  @xref{Mail agent}.
+
 @findex vm-check-configuration
 @cindex checking a configuration
 @kbd{M-x vm-check-configuration} says what is still missing, and what to set
@@ -2756,6 +2772,14 @@ So that @kbd{C-x m} and anything else that composes mail goes through VM:
 @lisp
 (setq mail-user-agent 'vm-user-agent)
 @end lisp
+
+@noindent
+This line belongs in your Emacs init file rather than in
+@code{vm-init-file}, and it is the only one here that does.  A file VM
+loads is read when VM starts, so a @kbd{C-x m} before that would find
+whatever @code{mail-user-agent} was.  It works from the init file because
+@file{vm-autoloads.el} registers the agent, so nothing of VM needs to be
+loaded for Emacs to know how to reach it.
 
 @node Local mail, Server mail, Mail agent, Setting Up
 @section Folders on this machine
