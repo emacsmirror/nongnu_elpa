@@ -48,8 +48,10 @@
             "lisp/hermes-chat-slash.el"
             "lisp/hermes-chat.el"
             "lisp/hermes-browser.el"
+            "lisp/hermes-admin.el"
             "lisp/hermes-sessions.el"
             "lisp/hermes-inventory.el"
+            "lisp/hermes-tool-setup.el"
             "lisp/hermes-rollback.el"
             "lisp/hermes-subagents.el"
             "lisp/hermes-cron.el"
@@ -60,6 +62,7 @@
             "lisp/hermes-kanban.el"
             "lisp/hermes-mcp.el"
             "lisp/hermes-config.el"
+            "lisp/hermes-plugins.el"
             "lisp/hermes-system.el"
             "lisp/hermes-command-palette.el"
             "lisp/hermes-exec.el"
@@ -82,6 +85,7 @@
           # No directory trees — nested/generated/private files stay out of src.
           # Dot-prefixed basenames stay out of scans and release membership.
           testElFiles = [
+            "hermes-admin-tests.el"
             "hermes-browsers-tests.el"
             "hermes-capabilities-tests.el"
             "hermes-chat-dashboard-tests.el"
@@ -101,10 +105,12 @@
             "hermes-messaging-tests.el"
             "hermes-notifications-tests.el"
             "hermes-onboarding-tests.el"
+            "hermes-plugins-tests.el"
             "hermes-promise-tests.el"
             "hermes-sessions-tests.el"
             "hermes-system-tests.el"
             "hermes-test-helpers.el"
+            "hermes-tool-setup-tests.el"
             "hermes-transport-tests.el"
             "hermes-ui-tests.el"
           ];

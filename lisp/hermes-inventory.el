@@ -211,13 +211,15 @@ a `skills' field too so older/newer dashboard shapes render the same way."
   "e" #'hermes-inventory-enable
   "d" #'hermes-inventory-disable
   "t" #'hermes-inventory-toggle
-  "R" #'hermes-inventory-reload-skills)
+  "R" #'hermes-inventory-reload-skills
+  "c" #'hermes-inventory-configure-toolset)
 
 (define-derived-mode hermes-inventory-mode tabulated-list-mode "Hermes Inventory"
   "Major mode for Hermes inventory listings.
 \<hermes-inventory-mode-map>
 Toolsets and skills support `\[hermes-inventory-enable]' and
-`\[hermes-inventory-disable]'.  Skill reload is available with
+`\[hermes-inventory-disable]'.  Use `\[hermes-inventory-configure-toolset]'
+for provider setup.  Skill reload is available with
 `\[hermes-inventory-reload-skills]'."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-inventory--revert))
@@ -297,6 +299,16 @@ client for the listing."
   "Return the current inventory row name, or signal `user-error'."
   (or (tabulated-list-get-id)
       (user-error "No Hermes inventory row on this line")))
+
+(declare-function hermes-tool-setup "hermes-tool-setup" (name &optional profile))
+
+(defun hermes-inventory-configure-toolset ()
+  "Configure the toolset at point on this inventory's instance."
+  (interactive)
+  (unless (eq (hermes-inventory--spec-kind hermes-inventory--spec) 'toolsets)
+    (user-error "Setup is available only for toolsets"))
+  (require 'hermes-tool-setup)
+  (hermes-tool-setup (hermes-inventory--row-name)))
 
 (defun hermes-inventory--row-enabled-p ()
   "Return whether the current row appears enabled, or nil when unknown/off."

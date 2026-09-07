@@ -2,6 +2,22 @@
 
 ;;; Code:
 
+(require 'hermes-mcp)
+
+(ert-deftest hermes-mcp-oauth-url-validation ()
+  (should (hermes-mcp--authorization-url-p "https://auth.example/authorize?state=x"))
+  (dolist (url '("javascript:alert(1)" "https://user:pass@example/a"
+                 "http://example/a" "https://example/a\nInjected"))
+    (should-not (hermes-mcp--authorization-url-p url))))
+
+(ert-deftest hermes-mcp-create-closed-transport-contract ()
+  (should (equal (hermes-mcp--create-body "srv" "http" "https://mcp.example" nil nil "oauth" nil)
+                 '((name . "srv") (url . "https://mcp.example") (auth . "oauth"))))
+  (should-error (hermes-mcp--create-body "" "http" "https://mcp.example" nil nil "none" nil))
+  (should-error (hermes-mcp--create-body "srv" "stdio" "node" nil nil "oauth" nil))
+  (should-error (hermes-mcp--create-body "srv" "http" "https://mcp.example" nil nil "header" "")))
+
+
 (require 'ert)
 (require 'hermes-test-helpers)
 
@@ -74,7 +90,7 @@
   "Reverting the MCP list refreshes rows in place; the command displays."
   (let (displayed)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (let ((p (funcall make-promise 'fake-client)))
                    (if on-success (hermes--promise-then p on-success) p))))
               ((symbol-function 'hermes-mcp--api)
@@ -103,7 +119,7 @@
     (cl-letf (((symbol-function 'hermes-instance-resolve)
                (lambda () instance))
               ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then
                   (funcall make-promise 'fake-client) on-success)))
               ((symbol-function 'hermes-mcp--api)
@@ -121,7 +137,7 @@
   "A late MCP refresh does not recreate its killed buffer."
   (let ((promise (hermes--promise-make)))
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'fake-client)
                                        on-success)))
               ((symbol-function 'hermes-mcp--api) (lambda (&rest _) promise)))
@@ -138,7 +154,7 @@
         (second (hermes--promise-make))
         (requests 0))
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'fake-client)
                                        on-success)))
               ((symbol-function 'hermes-mcp--api)
@@ -164,7 +180,7 @@
   "Testing and toggling dispatch to MCP dashboard REST endpoints."
   (let (calls messages)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (let ((p (funcall make-promise 'fake-client)))
                    (if on-success (hermes--promise-then p on-success) p))))
               ((symbol-function 'hermes-mcp--api)
@@ -224,7 +240,7 @@
   "A completed MCP toggle starts a fresh authoritative read."
   (let ((put (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-mcp--api)
                (lambda (method _path &rest _)
@@ -250,7 +266,7 @@
   "A late MCP toggle cannot report success or refresh a retargeted buffer."
   (let ((put (hermes--promise-make)) messages refreshed)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-mcp--api)
                (lambda (method _path &rest _)
@@ -282,7 +298,7 @@
   (let ((secret "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         messages)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (let ((p (funcall make-promise 'fake-client)))
                    (if on-success (hermes--promise-then p on-success) p))))
               ((symbol-function 'hermes-mcp--api)
@@ -315,7 +331,7 @@
   "MCP actions surface unsupported REST backends as a Hermes message."
   (let (called messages)
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-catch
                   (hermes--promise-then (funcall make-promise 'fake-client)
                                         on-success)
@@ -395,6 +411,331 @@
        (hermes-mcp--api "GET" "/servers")
        (lambda (r) (setq reason r)))
       (should (string-match-p "MCP REST API is unavailable" reason)))))
+
+(defmacro hermes-mcp-test--operation (&rest body)
+  "Run BODY with isolated operation resources and captured async requests."
+  (declare (indent 0))
+  `(let (requests timers cancelled opened messages (released 0) (refreshed 0))
+     (cl-letf (((symbol-function 'hermes-browser--with-client)
+                (lambda (fn) (funcall fn 'exact-client (lambda () (cl-incf released)))))
+               ((symbol-function 'hermes-mcp--api)
+                (lambda (method path &optional payload query &rest keys)
+                  (let ((promise (hermes--promise-make)))
+                    (push (list method path payload query keys promise) requests)
+                    promise)))
+               ((symbol-function 'run-at-time)
+                (lambda (&rest args) (let ((timer (copy-sequence args)))
+                                      (push timer timers) timer)))
+               ((symbol-function 'cancel-timer) (lambda (timer) (push timer cancelled)))
+               ((symbol-function 'browse-url) (lambda (url &rest _) (push url opened)))
+               ((symbol-function 'message)
+                (lambda (fmt &rest args) (push (apply #'format fmt args) messages)))
+               ((symbol-function 'hermes-mcp--revert) (lambda (&rest _) (cl-incf refreshed))))
+       (with-temp-buffer
+         (hermes-mcp-mode)
+         (setq-local hermes-instance '("test" . "https://backend.example"))
+         ,@body))))
+
+(defun hermes-mcp-test--resolve (request body)
+  "Resolve captured REQUEST with BODY."
+  (hermes--promise-resolve (nth 5 request) body))
+
+(ert-deftest hermes-mcp-oauth-browser-poll-and-completion ()
+  (hermes-mcp-test--operation
+    (hermes-mcp--start-operation 'oauth "srv" nil)
+    (let ((operation hermes-mcp--operation))
+      (should (equal (cadr (car requests)) "/servers/srv/auth"))
+      (should (eq (plist-get (nth 4 (car requests)) :client) 'exact-client))
+      (hermes-mcp-test--resolve
+       (car requests) '((flow_id . "flow-1") (server_name . "srv")
+                        (status . "authorization_required")
+                        (authorization_url . "https://auth.example/authorize?state=secret")))
+      (should (= (length opened) 1))
+      (should (= released 0))
+      (hermes-mcp--poll operation)
+      (should (equal (cadr (car requests)) "/oauth/flows/flow-1"))
+      (hermes-mcp-test--resolve
+       (car requests) '((flow_id . "flow-1") (server_name . "srv") (status . "approved")))
+      (should-not hermes-mcp--operation)
+      (should (= released 1))
+      (should (= refreshed 1))
+      (should (= (length cancelled) 2))
+      (should-not (string-match-p "secret" (format "%s" messages))))))
+
+(ert-deftest hermes-mcp-oauth-cancel-before-start-cleans-late-flow ()
+  (hermes-mcp-test--operation
+    (hermes-mcp--start-operation 'oauth "srv" nil)
+    (let ((request (car requests)))
+      (hermes-mcp-cancel)
+      (should (= released 1))
+      (hermes-mcp-test--resolve
+       request '((flow_id . "late-flow") (server_name . "srv")
+                 (status . "authorization_required")
+                 (authorization_url . "https://auth.example/authorize?state=secret")))
+      (should (equal (cl-subseq (car requests) 0 2) '("DELETE" "/oauth/flows/late-flow")))
+      (should (eq (plist-get (nth 4 (car requests)) :client) 'exact-client))
+      (should-not opened)
+      (should (= released 1))
+      (should (= refreshed 0)))))
+
+(ert-deftest hermes-mcp-oauth-mode-exit-and-stale-poll ()
+  (hermes-mcp-test--operation
+    (hermes-mcp--start-operation 'oauth "srv" nil)
+    (let ((operation hermes-mcp--operation))
+      (hermes-mcp-test--resolve
+       (car requests) '((flow_id . "flow") (server_name . "srv") (status . "starting")))
+      (hermes-mcp--poll operation)
+      (let ((poll (car requests)))
+        (fundamental-mode)
+        (should (= released 1))
+        (should (equal (cl-subseq (car requests) 0 2) '("DELETE" "/oauth/flows/flow")))
+        (hermes-mcp-test--resolve
+         poll '((flow_id . "flow") (server_name . "srv") (status . "approved")))
+        (should (= refreshed 0))
+        (should-not opened)
+        (should (= released 1))))))
+
+(ert-deftest hermes-mcp-oauth-rejects-mismatch-and-browser-failure ()
+  (dolist (failure '(identity browser url rejection timeout))
+    (hermes-mcp-test--operation
+      (hermes-mcp--start-operation 'oauth "srv" nil)
+      (let ((operation hermes-mcp--operation))
+        (cond
+         ((eq failure 'rejection)
+          (hermes--promise-reject (nth 5 (car requests)) "password-is-short"))
+         ((eq failure 'timeout) (hermes-mcp--operation-failed operation))
+         (t
+          (cl-letf (((symbol-function 'browse-url)
+                     (lambda (&rest _) (error "password-is-short"))))
+            (hermes-mcp-test--resolve
+             (car requests)
+             `((flow_id . "flow") (server_name . ,(if (eq failure 'identity) "other" "srv"))
+               (status . "authorization_required")
+               (authorization_url . ,(if (eq failure 'url) "file:///secret"
+                                      "https://auth.example/authorize?state=x")))))))
+        (should-not hermes-mcp--operation)
+        (should (= released 1))
+        (should (= refreshed 0))
+        (should-not (string-match-p "password-is-short" (format "%s" messages)))))))
+
+(ert-deftest hermes-mcp-instance-change-invalidates-operation ()
+  (hermes-mcp-test--operation
+    (hermes-mcp--start-operation 'oauth "srv" nil)
+    (setq-local hermes-instance '("other" . "https://other.example"))
+    (hermes-mcp-test--resolve
+     (car requests) '((flow_id . "flow") (server_name . "srv") (status . "approved")))
+    (should-not opened)
+    (should (= refreshed 0))
+    (should (equal (cl-subseq (car requests) 0 2) '("DELETE" "/oauth/flows/flow")))))
+
+(ert-deftest hermes-mcp-install-background-is-not-completion ()
+  (hermes-mcp-test--operation
+    (hermes-mcp--start-operation 'install "catalog" '(("API_KEY" . "short-secret")))
+    (let ((operation hermes-mcp--operation) status-request)
+      (should (equal (nth 2 (car requests))
+                     '((name . "catalog") (enable . t) (env . (("API_KEY" . "short-secret"))))))
+      (should (equal (plist-get (nth 4 (car requests)) :secrets) '("short-secret")))
+      (hermes-mcp-test--resolve
+       (car requests) '((ok . t) (background . t) (action . "mcp-install-catalog-123")))
+      (should (= refreshed 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (method path &rest keys)
+                   (should (equal method "GET"))
+                   (should (equal path "/api/actions/mcp-install-catalog-123/status"))
+                   (should (eq (plist-get keys :client) 'exact-client))
+                   (setq status-request (hermes--promise-make)))))
+        (hermes-mcp--poll operation)
+        (hermes--promise-resolve status-request '((running . t) (exit_code . nil)))
+        (should (= refreshed 0))
+        (hermes-mcp--poll operation)
+        (hermes--promise-resolve status-request '((running . :false) (exit_code . 0)))
+        (should (string-match-p "entry action succeeded.*shared handle" (car messages)))
+        (should (= refreshed 1))
+        (should (= released 1))))))
+
+(ert-deftest hermes-mcp-catalog-credentials-closed-and-required ()
+  (let ((entry '((required_env . (((name . "DECLARED") (required . t)))))))
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "secret")))
+      (should (equal (hermes-mcp--catalog-env entry) '(("DECLARED" . "secret")))))
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "")))
+      (should-error (hermes-mcp--catalog-env entry)))))
+
+(ert-deftest hermes-mcp-remove-confirmation-and-stale-owner ()
+  (dolist (answer '(nil t switch))
+    (let (calls)
+      (cl-letf (((symbol-function 'hermes-mcp--name-at-point) (lambda () "name with spaces"))
+                 ((symbol-function 'yes-or-no-p)
+                  (lambda (&rest _)
+                    (when (eq answer 'switch) (setq-local hermes-instance '("new" . "https://new.example")))
+                    answer))
+                 ((symbol-function 'hermes-mcp--request)
+                  (lambda (_context request _success) (funcall request 'exact-client)))
+                 ((symbol-function 'hermes-mcp--api)
+                  (lambda (&rest args) (push args calls))))
+        (with-temp-buffer
+          (hermes-mcp-mode)
+          (setq-local hermes-instance '("old" . "https://old.example"))
+          (hermes-mcp-remove)
+          (if (eq answer t)
+              (should (equal (cl-subseq (car calls) 0 2) '("DELETE" "/servers/name%20with%20spaces")))
+            (should-not calls)))))))
+
+(ert-deftest hermes-mcp-stale-test-cannot-start-followup-read ()
+  (let ((promise (hermes--promise-make)) calls)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (request success &optional failure)
+                 (hermes--promise-catch (hermes--promise-then (funcall request 'client) success) failure)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest args) (push args calls) promise))
+              ((symbol-function 'hermes-mcp--name-at-point) (lambda () "srv")))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp-test)
+        (hermes-browser--next-request-generation)
+        (hermes--promise-resolve promise '((ok . t) (tools . nil)))
+        (should (= (length calls) 1))
+        (should (= (hash-table-count hermes-mcp--test-results) 0))))))
+
+(ert-deftest hermes-mcp-management-keymap-is-native ()
+  (dolist (pair '(("a" . hermes-mcp-add) ("d" . hermes-mcp-remove)
+                  ("c" . hermes-mcp-catalog) ("o" . hermes-mcp-authenticate)
+                  ("k" . hermes-mcp-cancel)))
+    (should (eq (keymap-lookup hermes-mcp-mode-map (car pair)) (cdr pair)))))
+
+(ert-deftest hermes-mcp-add-http-secret-request-and-readback ()
+  (let ((texts '("new" "https://mcp.example/mcp"))
+        (choices '("http" "header")) calls (refreshed 0))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (pop texts)))
+              ((symbol-function 'completing-read) (lambda (&rest _) (pop choices)))
+              ((symbol-function 'read-passwd) (lambda (&rest _) "short-secret"))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'exact-client #'ignore)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest args)
+                 (push args calls) (hermes--promise-resolved '((name . "new")))))
+              ((symbol-function 'hermes-mcp--revert) (lambda (&rest _) (cl-incf refreshed))))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp-add)
+        (should (equal (cl-subseq (car calls) 0 3)
+                       '("POST" "/servers" ((name . "new") (url . "https://mcp.example/mcp")
+                                             (auth . "header") (bearer_token . "short-secret")))))
+        (should (equal (plist-get (nthcdr 4 (car calls)) :secrets) '("short-secret")))
+        (should (= refreshed 1))))))
+
+(ert-deftest hermes-mcp-catalog-journey-reviews-before-install ()
+  (let ((entry '((name . "catalog") (source . "official")
+                 (command . "node") (args . ("server.js"))
+                 (install_url) (bootstrap)))
+        reviewed installed)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'exact-client #'ignore)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (method path &rest _)
+                 (should (equal (list method path) '("GET" "/catalog")))
+                 (hermes--promise-resolved `((entries . (,entry))))))
+              ((symbol-function 'completing-read) (lambda (&rest _) "catalog"))
+              ((symbol-function 'hermes-mcp--catalog-review)
+               (lambda (value) (setq reviewed value)))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _) (should (equal reviewed entry)) t))
+              ((symbol-function 'hermes-mcp--start-operation)
+               (lambda (kind name env) (setq installed (list kind name env)))))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp-catalog)
+        (should (equal installed '(install "catalog" nil)))))))
+
+(ert-deftest hermes-mcp-catalog-blocks-unproven-bootstrap-before-secrets ()
+  "Root dashboard with different sticky profile must never dispatch bootstrap.
+The released catalog response exposes no child profile-preservation proof;
+named dashboards are indistinguishable here and must also fail closed."
+  (dolist (install-fields '(((install_url . "https://example/repo") (bootstrap . ("build")))
+                            ((install_url . "https://example/repo") (bootstrap))
+                            ((bootstrap . ("build")))
+                            nil))
+    (hermes-mcp-test--operation
+      (let ((entry (append '((name . "catalog")
+                            (required_env . (((name . "API_KEY") (required . t)))))
+                          install-fields))
+            prompted)
+        (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "catalog"))
+                  ((symbol-function 'hermes-mcp--catalog-review) #'ignore)
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'read-passwd)
+                   (lambda (&rest _) (setq prompted t) "short-secret")))
+          (hermes-mcp-catalog)
+          (hermes-mcp-test--resolve (car requests) `((entries . (,entry))))
+          (should-not prompted)
+          (should (= (length requests) 1))
+          (should (equal (cl-subseq (car requests) 0 2) '("GET" "/catalog")))
+          (should-not hermes-mcp--operation)
+          (should (string-match-p "profile.*cannot be guaranteed" (format "%s" messages))))))))
+
+(ert-deftest hermes-mcp-catalog-nonbootstrap-keeps-dashboard-scope ()
+  "In-process catalog installs retain dashboard authority and declared secrets."
+  (hermes-mcp-test--operation
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "catalog"))
+              ((symbol-function 'hermes-mcp--catalog-review) #'ignore)
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'read-passwd) (lambda (&rest _) "short-secret")))
+      (hermes-mcp-catalog)
+      (hermes-mcp-test--resolve
+       (car requests) '((entries . (((name . "catalog") (install_url) (bootstrap)
+                                    (required_env . (((name . "API_KEY") (required . t)))))))))
+      (should (= (length requests) 2))
+      (should (equal (cl-subseq (car requests) 0 4)
+                     '("POST" "/catalog/install"
+                       ((name . "catalog") (enable . t) (env . (("API_KEY" . "short-secret")))) nil)))
+      (should (eq (plist-get (nth 4 (car requests)) :client) 'exact-client))
+      (hermes-mcp-test--resolve (car requests) '((ok . t) (background . :false)))
+      (should (= refreshed 1))
+      (should-not hermes-mcp--operation))))
+
+(ert-deftest hermes-mcp-catalog-review-displays-execution-details ()
+  (let ((before (buffer-list)))
+    (unwind-protect
+        (save-window-excursion
+          (hermes-mcp--catalog-review
+           '((name . "catalog") (command . "node") (args . ("server.js"))
+             (install_url . "https://example/repo") (bootstrap . ("build"))))
+          (let ((buffer (cl-find-if (lambda (b) (not (memq b before))) (buffer-list))))
+            (should buffer)
+            (with-current-buffer buffer
+              (should (derived-mode-p 'help-mode))
+              (should (string-match-p "server.js" (buffer-string)))
+              (should (string-match-p "build" (buffer-string))))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before) (kill-buffer buffer))))))
+
+(ert-deftest hermes-mcp-request-rejection-is-quiet-when-stale ()
+  (let ((promise (hermes--promise-make)) messages)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'exact-client #'ignore)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp--request (hermes-mcp--context) (lambda (_client) promise) #'ignore)
+        (hermes-browser--next-request-generation)
+        (hermes--promise-reject promise "arbitrary short secret")
+        (should-not messages)))))
+
+(ert-deftest hermes-mcp-client-acquisition-cannot-transfer-authority ()
+  (let ((released 0) calls)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn)
+                 (hermes-browser--next-request-generation)
+                 (funcall fn 'client (lambda () (cl-incf released)))))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest _) (setq calls t))))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp--start-operation 'oauth "srv" nil)
+        (should-not calls)
+        (should-not hermes-mcp--operation)
+        (should (= released 1))))))
 
 (provide 'hermes-mcp-tests)
 ;;; hermes-mcp-tests.el ends here

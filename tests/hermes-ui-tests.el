@@ -142,6 +142,12 @@
   (should (eq (keymap-lookup hermes-dashboard-mode-map "c") #'hermes-chat))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "m") #'hermes-dashboard-switch-model))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "X") #'hermes-list-mcp))
+  (dolist (binding '(("B" . hermes-list-pairing)
+                     ("W" . hermes-list-webhooks)
+                     ("J" . hermes-list-plugins)))
+    (should (eq (keymap-lookup hermes-dashboard-mode-map (car binding))
+                (cdr binding)))
+    (should (commandp (cdr binding))))
   (should-not (keymap-lookup hermes-dashboard-mode-map "T"))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "g") #'hermes-dashboard-refresh))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "n") #'hermes-dashboard-next))
@@ -162,7 +168,7 @@
                                  groups))))
     (should (equal group-names
                    '("Navigate" "Session" "Selected chat" "Browse" "Manage"
-                     "System")))
+                     "Access and routes" "System")))
     (dolist (group groups)
       (should (<= (length (plist-get group :entries)) 6)))
     (dolist (key '("c" "m" "I" "g"))
