@@ -2597,15 +2597,16 @@ Declining says what to change and where it is written down."
              (not (memq send-mail-function vm-senders-that-remove-bcc))
              (not (y-or-n-p
                    (format (concat "This message has a Bcc and %s leaves"
-                                   " removing it to your mail transport."
+                                   " removing it to your mail transport;"
+                                   " see Sending Options in the VM manual."
                                    "  Send anyway? ")
                            send-mail-function))))
     (error (concat "Message not sent.  Set send-mail-function to"
                    " smtpmail-send-it, which removes the Bcc itself; or take"
                    " the Bcc header out; or set vm-check-bcc-removal to nil"
-                   " if you know your transport removes it.  See Mail Sending"
-                   " Options in the VM manual, and Setting Up for a worked"
-                   " smtpmail configuration"))))
+                   " if you know your transport removes it.  See the node"
+                   " Sending Options in the VM manual, and Sending under"
+                   " Setting Up for a worked smtpmail configuration"))))
 (put 'vm-mail-check-bcc-removal 'vm-called-by-vm t)
 
 (defun vm-mail-check-for-empty-subject ()

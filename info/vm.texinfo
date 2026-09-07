@@ -4380,7 +4380,7 @@ headers will be used.
 @end menu
 
 @node Sending Options, Sending @acronym{MIME} Messages, Sending Messages, Sending Messages
-@section Mail Sending Options
+@section Sending Options
 
 As already mentioned, VM uses Emacs @ref{Mail Mode,,,emacs, the Gnu
 Emacs Manual} for sending email.  Therefore, Mail Mode options
