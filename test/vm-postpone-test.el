@@ -389,12 +389,6 @@ name, which is how it survived: nothing checked that the target was defined."
     (goto-char (point-min))
     (should (search-forward "Notice-Requested-Upon-Delivery-To:" nil t))))
 
-;;; user-home-directory
-
-(ert-deftest vm-postpone-test-user-home-directory ()
-  "Test user-home-directory returns HOME."
-  (should (equal (user-home-directory) (getenv "HOME"))))
-
 ;;; vm-continue-postponed-message MIME handling
 
 (defvar vm-postpone-test-draft

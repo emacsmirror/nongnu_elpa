@@ -8238,31 +8238,17 @@ The Visit button.  Clicking on this button runs the command
 alias for the @code{vm-visit-folder} command.  If you want the Visit button to 
 do something else, redefine @code{vm-toolbar-visit-command} using
 either @code{fset} or @code{defun}.
-@item nil
-If nil appears in the list, it must appear exactly once.  The
-buttons associated with symbols that appear after nil in the
-list will be display flushright for top and bottom toolbars, and
-flushbottom for left and right toolbars.
 @end table
 
-If an positive integer appears in the @code{vm-use-toolbar} list, it
-specifies the number of pixels of blank space to display between
-the button that comes before and the button that comes after the
-integer.
+A nil or a positive integer in the list is ignored.  Both meant something
+to XEmacs, which VM no longer supports: nil made the buttons after it
+flushright, and an integer put that many pixels of space in.  The Emacs
+toolbar has neither.
 
-@vmdocvmtoolbarorientation
-
-@noindent
-For example:
-
-@example
-(setq vm-toolbar-orientation 'top)
-@end example
-
-@noindent causes the toolbar to be displayed at the top of the frame.  The
-@code{top} in the example can be replaced with @code{bottom},
-@code{right} and @code{left} to make the toolbar appear in those
-places instead.
+@cindex toolbar, where it is placed
+The toolbar goes where the frame parameter @code{tool-bar-position} says,
+which is not VM's to set.  @code{vm-toolbar-orientation} used to
+place it and is gone.
 
 @vindex vm-toolbar-pixmap-directory
 VM finds the images for the toolbar in the directory specified by

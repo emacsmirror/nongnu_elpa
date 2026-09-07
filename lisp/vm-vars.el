@@ -33,11 +33,6 @@
 (declare-function vm-display "vm-window" 
 		  (buffer display commands configs &optional do-not-raise))
 
-(declare-function xemacs-locate-data-directory "vm-xemacs" (name))
-(fset 'xemacs-locate-data-directory 'locate-data-directory)
-;; Don't use vm-device-type here because it may not be loaded yet.
-(declare-function device-type "vm-xemacs" ())
-
 ;; Custom group definitions
 (defgroup vm nil
   "The VM mail reader."
@@ -4516,10 +4511,7 @@ older VM installation."
                            (and vm-configure-datadir
                                 (expand-file-name vm-configure-datadir))
                            (expand-file-name "pixmaps" vm-dir)
-			   (expand-file-name "../pixmaps" vm-dir)
-			   (let ((d (and (featurep 'xemacs)
-					 (xemacs-locate-data-directory "vm"))))
-			     (and d (expand-file-name "pixmaps" d)))))
+			   (expand-file-name "../pixmaps" vm-dir)))
          image-dir)
     (while image-dirs
       (setq image-dir (car image-dirs))
@@ -4547,15 +4539,10 @@ older VM installation."
 Value should be a list of symbols and integers that will determine which
 toolbar buttons will appear and in what order.
 
-If nil appears in the list, it should appear exactly once.  All
-buttons after nil in the list will be displayed flushright in
-top/bottom toolbars and flushbottom in left/right toolbars.
-
-If a positive integer N appears in the list, a blank space will
-appear in the toolbar with a width of N pixels for top/bottom
-toolbars, and a height of N for left/right toolbars.
-
-See also `vm-toolbar-orientation' to control where the toolbar is placed."
+A nil or an integer in the list is ignored.  Both meant something to
+XEmacs, which VM no longer supports: nil made what followed it flushright,
+and an integer put that many pixels of space in.  The Emacs toolbar has
+neither, and its position is `tool-bar-position', a frame parameter."
   :group 'vm-toolbar
   :type '(repeat (choice integer
 			 (const autofile)
@@ -4575,29 +4562,14 @@ See also `vm-toolbar-orientation' to control where the toolbar is placed."
 			 (const visit)
 			 (const nil))))
 
-(defcustom vm-toolbar-orientation 'top
-  "*Value is a symbol that specifies where the VM toolbar is located.
-Legal values are `left', `right' `top' and `bottom'.  Any other
-value will be interpreted as `top'.
-
-This variable only has meaning under XEmacs.
-Under FSF Emacs 21 the toolbar is always at the top of the frame."
-  :group 'vm-toolbar
-  :type '(choice (const left)
-		 (const right)
-		 (const top)
-		 (const bottom)))
-
 (defcustom vm-toolbar-pixmap-directory nil
   "*The directory VM should find its toolbar pixmaps."
   :group 'vm-toolbar
   :type '(choice directory (const :tag "Automatic" nil)))
 
 (defvar vm-gtk-emacs-p (or (featurep 'gtk)
-			 (string-match "'--with-gtk'" 
-				       system-configuration-options)
-			 (and (boundp 'device-type)
-			      (eq (device-type) 'gtk)))
+			   (string-match "'--with-gtk'"
+					 system-configuration-options))
   "True when running in a GTK enabled Emacs.")
 
 (defun vm-toolbar-pixmap-directory ()
@@ -4606,20 +4578,6 @@ Under FSF Emacs 21 the toolbar is always at the top of the frame."
       (if vm-gtk-emacs-p
 	  (concat (vm-pixmap-directory) "/gtk")
 	(vm-pixmap-directory))))
-
-(defcustom vm-toolbar nil
-  "*Non-nil value should be a list of toolbar button descriptors.
-See the documentation for the variable default-toolbar for a
-definition of what a toolbar button descriptor is.
-
-If `vm-toolbar' is set non-nil VM will use its value as a toolbar
-instantiator instead of the usual behavior of building a button
-list based on the value of `vm-use-toolbar'.  `vm-use-toolbar' still
-must be set non-nil for a toolbar to appear, however.
-
-Consider this variable experimental; it may not be supported forever."
-  :group 'vm-toolbar
-  :type 'sexp)
 
 (defcustom vm-use-menus
   (nconc (list 'folder 'motion 'send 'mark 'label 'sort 'virtual)
