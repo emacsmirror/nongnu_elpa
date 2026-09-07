@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * `M-x vm-check-configuration` says what is missing from a VM setup and
+    what to set for each (emacs-vm/vm#816).  It checks the settings that have
+    to be right before anything works: which mail agent Emacs uses, the
+    address mail goes out from, how it is sent, where folders are kept, and
+    where new mail comes from.
+
+    It reports only settings whose default either does nothing or does
+    something the reader did not choose, so silence is meaningful.  Two are
+    worth naming: `user-mail-address` when Emacs has invented it from the
+    machine's name, which sends mail from an address nobody can reply to; and
+    a maildrop with a type VM does not know or the wrong number of fields,
+    which the parsers accept where it is written and which then fails from
+    inside a session, saying something about the server.
+
   * VM no longer supports XEmacs, which has had no release since 2013 and
     which VM has not been tested against for as long (emacs-vm/vm#708).  The
     alternative implementations of menus, toolbars, extents and mouse
