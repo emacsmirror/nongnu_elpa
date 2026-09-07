@@ -37,6 +37,7 @@
 (require 'ewoc)
 (require 'goto-addr)
 (require 'seq)
+(require 'xref)
 (require 'subr-x)
 (require 'url-parse)
 (require 'url-queue)
@@ -1644,7 +1645,8 @@ Only meaningful in the message area, above the input divider."
          (and (listp msg) (plist-get msg :reply-to-id)))))
 
 (defun jabber-chat-goto-reply-target ()
-  "Move point to the message the reply at point references."
+  "Move point to the message the reply at point references.
+Save the starting position for `xref-go-back' (\\[xref-go-back])."
   (interactive)
   (let ((target (jabber-chat--reply-target-at-point)))
     (unless target
@@ -1652,6 +1654,7 @@ Only meaningful in the message area, above the input divider."
     (let ((node (jabber-chat-ewoc-find-by-id target)))
       (unless node
         (user-error "The original message is not in this buffer"))
+      (xref-push-marker-stack)
       (goto-char (ewoc-location node))
       (require 'pulse)
       (pulse-momentary-highlight-region

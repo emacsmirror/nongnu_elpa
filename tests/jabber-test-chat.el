@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'xref)
 (require 'jabber-chat)
 (require 'jabber-chat-commands)
 
@@ -282,25 +283,64 @@ The original has id \"orig-1\"; the reply references it.  Point
 starts on the reply node; `jabber-point-insert' marks the input
 area after both messages."
   (declare (indent 0) (debug t))
-  `(with-temp-buffer
-     (let ((jabber-chat-ewoc (ewoc-create
-                              (lambda (data)
-                                (insert (plist-get (cadr data) :body) "\n"))
-                              nil nil 'nosep))
-           (jabber-chat--msg-nodes (make-hash-table :test 'equal)))
-       (jabber-chat-ewoc-enter
-        (list :foreign (list :id "orig-1" :from "alice@x.com"
-                             :body "the original"
-                             :timestamp (current-time))))
-       (let ((reply-node
-              (jabber-chat-ewoc-enter
-               (list :foreign (list :id "r-1" :from "alice@x.com"
-                                    :body "the reply"
-                                    :reply-to-id "orig-1"
-                                    :timestamp (current-time))))))
-         (setq-local jabber-point-insert (point-max-marker))
-         (goto-char (ewoc-location reply-node))
-         ,@body))))
+  `(save-window-excursion
+     (with-temp-buffer
+       (let* ((history (cons nil nil))
+              (xref-history-storage (lambda (&optional _new-value) history))
+              (jabber-chat-ewoc (ewoc-create
+                                 (lambda (data)
+                                   (insert (plist-get (cadr data) :body) "\n"))
+                                 nil nil 'nosep))
+              (jabber-chat--msg-nodes (make-hash-table :test 'equal)))
+         (jabber-chat-ewoc-enter
+          (list :foreign (list :id "orig-1" :from "alice@x.com"
+                               :body "the original"
+                               :timestamp (current-time))))
+         (let ((reply-node
+                (jabber-chat-ewoc-enter
+                 (list :foreign (list :id "r-1" :from "alice@x.com"
+                                      :body "the reply"
+                                      :reply-to-id "orig-1"
+                                      :timestamp (current-time))))))
+           (setq-local jabber-point-insert (point-max-marker))
+           (goto-char (ewoc-location reply-node))
+           ,@body)))))
+
+(ert-deftest jabber-test-chat-goto-reply-target-history ()
+  "Reply jumps preserve exact positions through nested back navigation."
+  (jabber-test-chat--with-reply-ewoc
+    (let* ((reply (point))
+           (node (jabber-chat-ewoc-enter
+                  '(:foreign (:id "r-2" :body "nested reply"
+                              :reply-to-id "r-1"))))
+           (origin (+ 3 (ewoc-location node))))
+      (set-marker jabber-point-insert (point-max))
+      (goto-char origin)
+      (jabber-chat-goto-reply-target-or-send)
+      (should (= (point) reply))
+      (jabber-chat-goto-reply-target-or-send)
+      (should (= (point) (point-min)))
+      (xref-go-back)
+      (should (= (point) reply))
+      (xref-go-back)
+      (should (= (point) origin)))))
+
+(ert-deftest jabber-test-chat-goto-reply-target-failure-preserves-history ()
+  "Missing replies and targets do not alter point or xref history."
+  (jabber-test-chat--with-reply-ewoc
+    (xref-push-marker-stack)
+    (let ((before (copy-tree (funcall xref-history-storage)))
+          (origin (point)))
+      (setf (plist-get (cadr (ewoc-data (ewoc-locate jabber-chat-ewoc)))
+                       :reply-to-id)
+            "missing")
+      (should-error (jabber-chat-goto-reply-target) :type 'user-error)
+      (should (= (point) origin))
+      (should (equal before (funcall xref-history-storage)))
+      (goto-char (point-min))
+      (should-error (jabber-chat-goto-reply-target) :type 'user-error)
+      (should (= (point) (point-min)))
+      (should (equal before (funcall xref-history-storage))))))
 
 (ert-deftest jabber-test-chat-reply-target-at-point ()
   "The reply target is found on the reply node and nowhere else."
