@@ -57,6 +57,16 @@ Buffer-local to the process buffer, as `vm-pop-read-point\\=' is for the
 blocking implementation.")
 (make-variable-buffer-local 'vm-pop-net-read-point)
 
+(defvar vm-pop-net-auth nil
+  "The authentication method this session's maildrop asked for.
+A string: pass or apop.  Buffer-local to the session's process buffer, so
+that vm-pop-net-authenticate can choose without every caller having to hand
+it on.
+
+It was not read at all until 2026, so an apop maildrop was served with USER
+and PASS and its password went over the wire in clear (emacs-vm/vm#823).")
+(make-variable-buffer-local 'vm-pop-net-auth)
+
 (define-error 'vm-pop-net-error "POP error")
 
 (defun vm-pop-net-init ()
@@ -150,10 +160,37 @@ refused the connection, which the read reports as an error."
   (vm-pop-net-init)
   (iter-yield-from (vm-pop-net-read-response)))
 
-(iter-defun vm-pop-net-authenticate (user password)
-  "Log in as USER with PASSWORD, using USER and PASS."
-  (iter-yield-from (vm-pop-net-command (format "USER %s" user)))
-  (iter-yield-from (vm-pop-net-command (format "PASS %s" password)))
+(declare-function vm-pop-md5 "vm-crypto" (string))
+(declare-function vm-parse "vm-misc"
+		  (string regexp &optional matchn matches))
+
+(defun vm-pop-net-timestamp (greeting)
+  "The APOP timestamp in GREETING, or nil.
+RFC 1939 section 7: a server offering APOP puts a message id in angle
+brackets at the end of its greeting, and that is what the digest is taken
+over."
+  (car (vm-parse greeting "[^<]+\\(<[^>]+>\\)")))
+
+(iter-defun vm-pop-net-authenticate (user password &optional greeting)
+  "Log in as USER with PASSWORD.
+
+APOP where the maildrop asked for it, USER and PASS otherwise.  GREETING is
+what the server said, which is where the APOP timestamp comes from.
+
+A maildrop asking for APOP against a server that offers no timestamp is an
+error rather than a quiet fall back to PASS: the password would go over the
+wire in clear, which is the thing APOP was asked for to avoid."
+  (if (equal vm-pop-net-auth "apop")
+      (let ((timestamp (vm-pop-net-timestamp (or greeting ""))))
+	(unless timestamp
+	  (signal 'vm-pop-net-error
+		  (list "server offers no APOP timestamp")))
+	(iter-yield-from
+	 (vm-pop-net-command
+	  (format "APOP %s %s" user
+		  (vm-pop-md5 (concat timestamp password))))))
+    (iter-yield-from (vm-pop-net-command (format "USER %s" user)))
+    (iter-yield-from (vm-pop-net-command (format "PASS %s" password))))
   t)
 
 (iter-defun vm-pop-net-stat ()
@@ -222,8 +259,8 @@ under generators that form runs only because `vm-net-abandon\\=' closes the
 generator rather than dropping it."
   (unwind-protect
       (progn
-	(iter-yield-from (vm-pop-net-greeting))
-	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	(iter-yield-from (vm-pop-net-stat)))
     (let ((process (get-buffer-process (current-buffer))))
       (when (process-live-p process)
@@ -332,10 +369,17 @@ output.  A maildrop whose password VM has not been told signals
 	 (protocol (car parts))
 	 (host (nth 1 parts))
 	 (port (nth 2 parts))
+	 (auth (nth 3 parts))
 	 (user (nth 4 parts))
 	 (password (nth 5 parts)))
     (unless (member protocol '("pop" "pop-ssl" "pop-ssh"))
       (signal 'vm-pop-net-unsupported (list protocol source)))
+    ;; Refusing rather than ignoring: what is not served here has to go to
+    ;; the blocking path, which does serve it.  Ignoring it meant an `apop'
+    ;; maildrop was authenticated with USER and PASS (emacs-vm/vm#823).
+    (unless (member auth '("pass" "apop"))
+      (signal 'vm-pop-net-unsupported (list (or auth "no authentication")
+					    source)))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")
@@ -371,7 +415,8 @@ output.  A maildrop whose password VM has not been told signals
 	   (opened nil))
       (with-current-buffer buffer
 	(buffer-disable-undo)
-	(vm-pop-net-init))
+	(vm-pop-net-init)
+	(setq vm-pop-net-auth auth))
       (setf (vm-net-session-buffer session) buffer)
       ;; as for IMAP: the buffer goes with a connection that was never made
       (unwind-protect
@@ -417,8 +462,8 @@ Answers nil when the server has no UIDL: without UIDs VM cannot tell what it
 has already seen, and saying \"no mail\" would be a guess."
   (unwind-protect
       (progn
-	(iter-yield-from (vm-pop-net-greeting))
-	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	(let ((uids (iter-yield-from (vm-pop-net-uidl))))
 	  (when uids
 	    (let ((count 0))
@@ -532,8 +577,8 @@ blocking implementation honours, and for the same reason: a maildrop with a
 thousand messages in it should not be one command."
   (unwind-protect
       (progn
-	(iter-yield-from (vm-pop-net-greeting))
-	(iter-yield-from (vm-pop-net-authenticate user password))
+	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	(let* ((uids (iter-yield-from (vm-pop-net-uidl)))
 	       (sizes (and uids (iter-yield-from (vm-pop-net-sizes))))
 	       (wanted (vm-pop-net-messages-to-fetch uids sizes retrieved source))
@@ -1059,8 +1104,8 @@ does whether this runs to the end or is abandoned."
   (let ((vm-pop-net-said-goodbye nil))
     (unwind-protect
 	(progn
-	  (iter-yield-from (vm-pop-net-greeting))
-	  (iter-yield-from (vm-pop-net-authenticate user password))
+	  (let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+	    (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	  (let ((numbers (iter-yield-from (vm-pop-net-uidl)))
 		(deleted nil))
 	    (unless numbers
