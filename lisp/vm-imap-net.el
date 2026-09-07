@@ -721,8 +721,15 @@ rather than being slow silently."
   (unless (or vm-imap-net-said-it-is-uncompiled
 	      (let ((reader (symbol-function 'vm-imap-net-parse-object)))
 		(or (byte-code-function-p reader)
-		    (and (fboundp 'subr-native-elisp-p)
-			 (subr-native-elisp-p reader)))))
+		    ;; `native-comp-function-p' arrived in Emacs 30.1 and
+		    ;; `subr-native-elisp-p' is obsolete from the same
+		    ;; release, so the new name is asked for first and the
+		    ;; old one serves the Emacsen that have only it
+		    ;; (emacs-vm/vm#818).
+		    (if (fboundp 'native-comp-function-p)
+			(native-comp-function-p reader)
+		      (and (fboundp 'subr-native-elisp-p)
+			   (subr-native-elisp-p reader))))))
     (setq vm-imap-net-said-it-is-uncompiled t)
     (vm-net-warn 1 (concat "VM is running from source: asynchronous mail will be"
 			 " very slow until lisp/ is byte-compiled"))))

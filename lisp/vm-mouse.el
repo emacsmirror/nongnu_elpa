@@ -330,12 +330,11 @@ existed for a long time; `browse-url' is the setting to want."
 (defun vm-mouse-send-url-to-clipboard (url &optional type)
   (unless type (setq type 'CLIPBOARD))
   (vm-inform 5 "Sending URL to %s..." type)
-  (cond ((fboundp 'own-selection)	; XEmacs
-	 (own-selection url type))
-	((fboundp 'x-set-selection)	; Gnu Emacs
-	 (x-set-selection type url))
-	((fboundp 'x-own-selection)	; lselect for Emacs21?
-	 (x-own-selection url type)))
+  ;; `gui-set-selection' and not `x-set-selection', which is an obsolete
+  ;; alias for it and which VM called: `fboundp' is true of an obsolete
+  ;; alias, so the guard that was here picked the deprecated name and left
+  ;; the right one unreached (emacs-vm/vm#818).
+  (gui-set-selection type url)
   (vm-inform 5 "Sending URL to %s... done" type))
 
 ;;;###autoload

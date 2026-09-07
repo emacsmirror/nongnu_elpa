@@ -744,9 +744,10 @@ killed as well."
 (defun vm-pop-stop-status-timer (status-blob)
   (if (vm-pop-stat-did-report status-blob)
       (vm-inform 5 ""))
-  (if (fboundp 'disable-timeout)
-      (disable-timeout (vm-pop-stat-timer status-blob))
-    (cancel-timer (vm-pop-stat-timer status-blob))))
+  ;; `disable-timeout' is an obsolete alias for `cancel-timer', and
+  ;; `fboundp' is true of it, so the guard that was here always took the
+  ;; deprecated name (emacs-vm/vm#818).
+  (cancel-timer (vm-pop-stat-timer status-blob)))
 
 (defun vm-pop-report-retrieval-status (o)
   (vm-set-pop-stat-did-report o t)

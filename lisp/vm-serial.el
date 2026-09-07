@@ -101,7 +101,7 @@
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
-(declare-function bbdb/sc-consult-attr "ext:bbdb-sc" (from))
+(declare-function bbdb-sc-get-attrib "ext:bbdb-sc" (from))
 
 ;; The following function is erroneously called in fsfemacs too
 (vm-load-features-silent-when-compiling '(bbdb bbdb-sc))
@@ -531,8 +531,13 @@ Optional argument HEADER is the header to get the recipients from."
          ;; `bbdb-search-simple' answered with one record (#549).
          (rec (car (bbdb-message-search nil (cadr to)))))
     (if rec
-        (cond ((equal part 'first) (or (bbdb/sc-consult-attr (cadr to))
-                                       (bbdb-record-firstname rec)))
+        (cond ((equal part 'first)
+               ;; `bbdb-sc-get-attrib' and not `bbdb/sc-consult-attr',
+               ;; which BBDB has kept as an obsolete alias for it since
+               ;; BBDB 3.0 (emacs-vm/vm#818).  `bbdb-message-search' above
+               ;; is BBDB 3 as well.
+               (or (bbdb-sc-get-attrib (cadr to))
+                   (bbdb-record-firstname rec)))
               ((equal part 'last)  (bbdb-record-lastname rec)))
       (vm-serial-get-name part name))))
 
