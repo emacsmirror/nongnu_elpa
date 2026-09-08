@@ -1787,6 +1787,13 @@ NEW-BODY is the new comment text to send."
                           owner repo id)))
     (fj-get endpoint)))
 
+(defun fj-get-issue-reactions-async (repo owner id cb &rest cbargs)
+  "Return reactions data for issue with ID in REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
+                          owner repo id)))
+    (apply #'fedi-http--get-json-async
+           (fj-api endpoint) nil cb cbargs)))
+
 (defun fj-get-comment-reactions (repo owner id)
   "Return reactions data for comment with ID in REPO by OWNER."
   ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
@@ -1794,16 +1801,12 @@ NEW-BODY is the new comment text to send."
                           owner repo id)))
     (fj-get endpoint nil nil :silent)))
 
-(defun fj-get-comment-reactions-async (repo owner id)
+(defun fj-get-comment-reactions-async (repo owner id cb &rest cbargs)
   "Return reactions data for comment with ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
                           owner repo id)))
     (apply #'fedi-http--get-json-async
-           nil #'fj-get-comment-reactions-cb)))
-
-(defun fj-get-comment-reactions-cb (json)
-  ;; FIXME: get timeline buf, go right comment, then:
-  (fj-render-comment-reactions json))
+           (fj-api endpoint) nil cb cbargs)))
 
 (defun fj-render-issue-reactions (reactions)
   "Render REACTIONS for issue.
@@ -2826,8 +2829,7 @@ Optionally start from POINT."
 AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
-                  (date-to-time .created_at)))
-          (reactions (fj-get-comment-reactions repo owner .id)))
+                  (date-to-time .created_at))))
       (propertize
        (concat
         (fj-format-comment-header
@@ -2841,24 +2843,20 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
         ;; don't have assets, so we skip them:
         (if (not (string= (alist-get 'type comment) "comment"))
             ""
-          (fj--assets-placeholder-str))
-        (if (not reactions)
-            ""
-          (concat "\n"
-                  (fj-render-comment-reactions reactions)))
+          (fj--placeholder-str "assets" 'fj-assets))
+        ;; reactions
+        (fj--placeholder-str "reacs" 'fj-reactions)
         (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
        'fj-comment comment
        'fj-comment-author .user.username
-       'fj-comment-id .id
-       'fj-reactions reactions))))
+       'fj-comment-id .id))))
 
-(defun fj--assets-placeholder-str ()
-  "Return an assets placeholder string.
-Added to all items/comments, deleted if item has no assets."
+(defun fj--placeholder-str (str property)
+  "Return a placeholder string STR with text PROPERTY."
   (concat "\n"
-          (propertize "[assets]"
+          (propertize (format "[%s]" str)
                       'invisible t
-                      'fj-assets t)
+                      property t)
           "\n"))
 
 (defun fj-render-assets-async ()
@@ -2902,6 +2900,69 @@ MARKER is where we insert the assets."
         (when assets
           (insert
            (fj-format-assets-urls assets))))
+      ;; delete marker for this match:
+      (set-marker marker nil))))
+
+(defun fj-render-reactions-async ()
+  "Render reactions in current item view asynchonously."
+  (let (reac-match)
+    (save-excursion
+      (goto-char (point-min))
+      (while (setq reac-match
+                   (text-property-search-forward 'fj-reactions))
+        (fj-destructure-buf-spec (repo owner)
+          (let ((comment-id (fedi--property 'fj-comment-id))
+                (issue (fedi--property 'fj-item-number))
+                ;; create marker for this match:
+                (marker (copy-marker
+                         (prop-match-beginning reac-match))))
+            (if issue
+                ;; we are at an item (issue/PR):
+                (fj-get-issue-reactions-async
+                 repo owner issue
+                 #'fj-render-issue-reactions-cb marker
+                 #'fj-render-issue-reactions)
+              ;; comment:
+              (fj-get-comment-reactions-async
+               repo owner comment-id
+               #'fj-render-reactions-cb marker
+               #'fj-render-comment-reactions))))))))
+
+(defun fj-render-reactions-cb (data marker render-fun)
+  "Render reactions in DATA.
+MARKER is where we insert.
+RENDER-FUN is the function to render DATA with."
+  (with-current-buffer (marker-buffer marker)
+    (let ((inhibit-read-only t))
+      (save-excursion
+        ;; goto marker for this match:
+        (goto-char
+         (marker-position marker))
+        ;; remove placeholder + newline:
+        (delete-region (pos-bol) (pos-bol 3))
+        (when data
+          (insert
+           (concat (funcall render-fun data)
+                   "\n"))))
+      ;; delete marker for this match:
+      (set-marker marker nil))))
+
+(defun fj-render-issue-reactions-cb (data marker render-fun)
+  "Render reactions in DATA.
+MARKER is where we insert.
+RENDER-FUN is the function to render DATA with."
+  (with-current-buffer (marker-buffer marker)
+    (let ((inhibit-read-only t))
+      (save-excursion
+        ;; goto marker for this match:
+        (goto-char
+         (marker-position marker))
+        ;; remove placeholder:
+        (delete-region (pos-bol) (pos-bol 2))
+        (when data
+          (insert
+           (concat (funcall render-fun data)
+                   "\n"))))
       ;; delete marker for this match:
       (set-marker marker nil))))
 
@@ -2961,8 +3022,7 @@ RELOAD mean we reloaded."
       (let* ((stamp (fedi--relative-time-description
                      (date-to-time .created_at)))
              (pull-p .base) ;; rough PR check!
-             (type (or type (if pull-p :pull :issue)))
-             (reactions (fj-get-issue-reactions repo owner .number)))
+             (type (or type (if pull-p :pull :issue))))
         ;; set vars before timeline so they're avail:
         (setq fj-current-repo repo)
         (setq fj-buffer-spec
@@ -3033,15 +3093,14 @@ RELOAD mean we reloaded."
                        'fj-item-body t)
            ;; attachments:
            (when .assets
-             (fj--assets-placeholder-str))
+             (fj--placeholder-str "assets" 'fj-assets))
            "\n"
-           (fj-render-issue-reactions reactions)
+           (fj--placeholder-str "reac" 'fj-reactions)
            fedi-horiz-bar fedi-horiz-bar
            "\n\n")
           'fj-item-number number
           'fj-repo repo
-          'fj-item-data item
-          'fj-reactions reactions))
+          'fj-item-data item))
         ;; FIXME: move this to after async timeline rendering?:
         (insert
          (pcase .mergeable
@@ -3236,6 +3295,8 @@ END-PAGE should be a string of the highest page number to paginate to."
                 (fj-render-item-bodies render-point)))
             ;; async render assets:
             (fj-render-assets-async)
+            ;; async render reactions
+            (fj-render-reactions-async)
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
