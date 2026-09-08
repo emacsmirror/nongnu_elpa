@@ -2104,7 +2104,7 @@ in any order (issue #185)."
   "Fetch the bodies of MESSAGES, which are the current folder's, and tell
 CALLBACK how many arrived.  Nothing waits.
 
-Signals `vm-imap-net-no-password\\=' where VM has no password yet, which
+Signals `vm-imap-net-no-password' where VM has no password yet, which
 means the work does not start: a command asks for a password, and a
 timer has nobody to ask."
   (let* ((folder (current-buffer))
@@ -2264,7 +2264,7 @@ one it already has being no reason to stop."
 
 The text and flags of each message are taken now, in the folder they are in;
 what the session sends is that copy, so the folder is free to change while
-it goes.  Signals `vm-imap-net-no-password\\=' where VM has no password
+it goes.  Signals `vm-imap-net-no-password' where VM has no password
 open."
   (let* ((folder (current-buffer))
 	 (copies (mapcar (lambda (message)
@@ -2911,7 +2911,7 @@ while it does.
 FULL-RETRIEVE asks for the messages the folder was given once and no longer
 holds; see `vm-imap-net-plan\\='.
 
-Signals `vm-imap-net-no-password\\=' where VM has no password yet, which
+Signals `vm-imap-net-no-password' where VM has no password yet, which
 is a caller\\='s cue to use the blocking implementation."
   (let* ((folder (current-buffer))
 	 (opened (vm-imap-net-open source "IMAP fetch" may-ask))
@@ -2957,7 +2957,7 @@ the folder's, and those buffers name it in `vm-mail-buffer'."
 	 (vm-net-session-live-p vm-imap-net-session))))
 
 (defun vm-imap-net-say-no-password (folder _reason)
-  "Record that FOLDER\='s work did not start, VM having no password for it.
+  "Record that FOLDER had no work started, VM having no password for it.
 Nothing else can be done here: the password would have to be asked for, and
 there is nobody to ask from inside a process filter.  A command run by the
 reader asks and then this does not arise."

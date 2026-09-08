@@ -84,6 +84,7 @@
 ;; A cl-defun taking &key arguments: spelling the arglist out here makes the
 ;; compiler count a keyword call wrongly, so it is left unsaid.
 (declare-function vm-imap-make-session "vm-imap" t)
+(declare-function vm-imap-spec-fields "vm-imap" (spec))
 (declare-function vm-imap-net-append-text "vm-imap-net"
 		  (spec mailbox text &optional flags may-ask))
 (declare-function vm-imap-append-message "vm-imap"
@@ -1113,7 +1114,10 @@ in the default directory and put the sent copy in it (issue #605).
 
 The session is opened for this one message and closed again, since a
 composition has no folder whose session it could borrow."
-  (let ((mailbox (nth 3 (vm-imap-parse-spec-to-list spec)))
+  ;; `vm-imap-spec-fields' and not `vm-imap-parse-spec-to-list', which drops
+  ;; an empty field: a maildrop with no mailbox read its `login' as the
+  ;; mailbox and nothing said so (emacs-vm/vm#822).
+  (let ((mailbox (nth 3 (vm-imap-spec-fields spec)))
 	(string (vm-imap-subst-CRLF-for-LF
 		 (buffer-substring-no-properties (point-min) (point-max)))))
     (when (or (null mailbox) (equal mailbox ""))

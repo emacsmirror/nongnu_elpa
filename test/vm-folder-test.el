@@ -5801,30 +5801,26 @@ to From_, rather than losing the extension it was given."
 
 (defun vm-folder-test--retrieves-asked-for (full)
   "What `vm-get-spooled-mail' asks an IMAP folder for, given FULL.
-The driver is refused where there is one, so what is measured is the blocking
-call either way: on the asynchronous branch `vm-imap-net-get-spooled-mail' is
-tried first and this is its fallback."
+The driver is the only path, so it is what is measured (emacs-vm/vm#822)."
   (let (asked)
-    (cl-letf (((symbol-function 'vm-imap-synchronize-folder)
-               (lambda (&rest arguments)
-                 (setq asked (plist-get arguments :do-retrieves))))
-              ((symbol-function 'vm-imap-net-get-spooled-mail)
-               (lambda (&rest _) nil)))
+    (cl-letf (((symbol-function 'vm-imap-net-get-spooled-mail)
+               (lambda (&optional _interactive full) (setq asked full) t)))
       (vm-get-spooled-mail nil full))
     asked))
 
 (ert-deftest vm-folder-test-a-full-fetch-asks-for-the-messages-already-recorded ()
-  "`vm-get-spooled-mail' passes `full' when it is asked to, and t otherwise.
-`full' is what reaches the branch in `vm-imap-get-synchronization-data' that
+  "`vm-get-spooled-mail' hands FULL on when it is asked to, and nil otherwise.
+FULL is what reaches the branch in `vm-imap-get-synchronization-data' that
 fetches a message the folder was given once and no longer holds, rather than
-passing it over."
+passing it over.
+
+`vm-imap-sync-on-get' no longer decides anything here: it chose between two
+shapes of blocking synchronisation, and there is one path now."
   (vm-test-with-folder (vm-folder-test--write-folder-content 1)
     (setq vm-folder-access-method 'imap)
-    (dolist (sync-on-get '(t nil))
-      (let ((vm-imap-sync-on-get sync-on-get)
-            (vm-block-new-mail nil))
-        (should (eq (vm-folder-test--retrieves-asked-for nil) t))
-        (should (eq (vm-folder-test--retrieves-asked-for t) 'full))))))
+    (let ((vm-block-new-mail nil))
+      (should-not (vm-folder-test--retrieves-asked-for nil))
+      (should (eq (vm-folder-test--retrieves-asked-for t) t)))))
 
 (defmacro vm-folder-test--getting-new-mail (spec &rest body)
   "Run BODY in a folder with `vm-get-spooled-mail' recording how it was asked.

@@ -411,6 +411,16 @@ why one cannot be recognised or typed by hand -- see `vm-recover-folder'."
 	   (vm-imap-encode-list-to-spec comps)))))))
 
 ;;;###autoload
+(defun vm-imap-spec-fields (spec)
+  "The colon-separated fields of SPEC, empty ones included.
+
+`vm-imap-parse-spec-to-list' drops an empty field, so a maildrop with no
+mailbox in it -- imap:host:143::login:user:* -- parses as six fields and its
+login is read as the mailbox.  Nothing reported that: the session then
+failed for an unrelated reason and the error looked like the right one
+(emacs-vm/vm#822)."
+  (split-string spec ":"))
+
 (defun vm-imap-parse-spec-to-list (spec)
   "Parses the IMAP maildrop specification SPEC and returns a list of
 its components."
