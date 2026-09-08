@@ -110,38 +110,16 @@ Chat ownership:
 - One space between tokens. No column alignment. Comments explain why. Use plain
   `;;; Section name` headings.
 
-## Workflow
+## Tooling
 
-1. Inspect Git state, scoped source/tests, and backend contract.
-2. Discuss non-trivial boundaries. Plan cross-module, protocol, lifecycle,
-   security, or migration work.
-3. Start behavior changes with focused failing ERT or reproducer when practical.
-4. Make smallest coherent change. Preserve unrelated work.
-5. Run focused checks, then risk-appropriate gates. Review full diff and repeat.
+Build, check and live-load targets are defined in `Makefile`:
 
 - Focused ERT: `make test TESTS=tests/hermes-chat-tests.el`
 - Compile: `make compile`
-- Commit gate: `make pre-commit`
-- Large/release/dependency/flake gate: `make pre-handoff-check`
-- Live dogfood: `make load`
-- Whitespace: `git diff --check`
+- Full checks: `make check`
+- Checks with native compilation: `make pre-commit`
+- Extended Nix checks: `make pre-handoff-check`
+- Live load: `make load`
 
-Run `make pre-commit` before authorized commits. Live dogfood supplements batch
-tests. Never commit, amend, rebase, push, deploy, or run destructive Git without
-explicit authorization. Stage only scoped verified files. Use repository
-identity and short `module: Change` subjects. No generated-by or co-author
-metadata.
-
-## Review and handoff
-
-- Trivial: full diff self-review plus smallest check.
-- Behavior: targeted tests plus full diff self-review.
-- Lifecycle, protocol, public API, auth, secrets, destructive work, broad
-  refactor: independent adversarial review against fixed commit, tree, or patch
-  hash. Review code/tests, fix findings, rerun gates, review changed candidate.
-- Green tests count only when assertions prove claimed behavior.
-- Keep one feature per execution unit unless dependency, ownership, risk, or
-  publication needs a split. Create dependent cards in dependency order.
-- Handoffs include changed files, commands/results, candidate identity, verdict,
-  blockers, and dogfood status. Close work only with evidence.
-- Keep cards, comments, commits, and handoffs public-safe.
+The live loader rebuilds the package's keymaps through an ordered module load.
+A partial reload after clearing maps can leave unrelated commands unavailable.
