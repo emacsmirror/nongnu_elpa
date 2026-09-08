@@ -2478,7 +2478,7 @@ is not written down back to the blocking path."
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
            (vm-imap-passwords nil))
       ;; not known yet, so this is one for the blocking path
-      (should-error (vm-imap-net-open spec "x") :type 'vm-imap-net-unsupported)
+      (should-error (vm-imap-net-open spec "x") :type 'vm-imap-net-no-password)
       ;; known now, as it would be after one login
       (setq vm-imap-passwords
             (list (list (vm-imapdrop-sans-password-and-mailbox spec) "secret")))
@@ -2656,7 +2656,7 @@ log in with, and the maildrop is left to the blocking path -- which can ask."
     (dolist (useless (list nil "" "*" 42))
       (let ((vm-imap-passwords (list (list key useless))))
         (should-error (vm-imap-net-open spec "x")
-                      :type 'vm-imap-net-unsupported)
+                      :type 'vm-imap-net-no-password)
         (should-not (vm-imap-net-checkable-p spec))))
     ;; and a real one is enough
     (let ((vm-imap-passwords (list (list key "secret"))))
@@ -2665,13 +2665,12 @@ log in with, and the maildrop is left to the blocking path -- which can ask."
 
 ;;; The log says which path took the work
 
-(ert-deftest vm-imap-net-test-declining-says-so-and-why ()
-  "A maildrop the driver will not open is announced as such, with the reason.
+(ert-deftest vm-imap-net-test-not-starting-says-so ()
+  "Work that does not start is announced as such, rather than as started.
 
 Without it the log said what VM was about to do rather than what it did: the
-line said \"fetching new mail without waiting\" and the blocking path then
-did the fetching, which is how a locked-up Emacs came to look like a
-converted one."
+line said \"fetching new mail without waiting\" and no fetch happened, which
+is how a folder that never updated came to look like a converted one."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((said nil)
           (vm-imap-passwords nil)
@@ -2683,8 +2682,7 @@ converted one."
                  (lambda () "imap:host:143:INBOX:login:someone:*")))
         (should-not (vm-imap-net-get-spooled-mail)))
       (should (seq-find (lambda (line)
-                          (string-match-p "leaving it to the blocking path"
-                                          line))
+                          (string-match-p "no password for the maildrop" line))
                         said))
       ;; and it does not claim to be fetching
       (should-not (seq-find (lambda (line)
@@ -2745,7 +2743,7 @@ path -- which the reader started -- can ask."
                (lambda (&rest _) (setq asked (1+ asked)) "secret")))
       ;; no MAY-ASK: this is what the check passes
       (should-error (vm-imap-net-open spec "checking")
-                    :type 'vm-imap-net-unsupported)
+                    :type 'vm-imap-net-no-password)
       (should (equal asked 0)))))
 
 (ert-deftest vm-imap-net-test-asking-does-not-need-ok-to-ask-bound ()
@@ -3433,7 +3431,7 @@ and the answer is a credential derived from the password."
 
 (ert-deftest vm-imap-net-test-a-cram-md5-maildrop-is-not-declined ()
   "REGRESSION: `vm-imap-net-open' no longer refuses a CRAM-MD5 maildrop.
-It signalled `vm-imap-net-unsupported' for any auth but login, and that
+It signalled `vm-imap-net-no-password' for any auth but login, and that
 signal is what sent the work to the blocking path."
   (vm-imap-mock-with (mock :cram-md5 t)
     (let ((opened (vm-imap-net-open
@@ -3444,12 +3442,16 @@ signal is what sent the work to the blocking path."
         (when (process-live-p process) (delete-process process))
         (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
           (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
-  ;; an auth VM does not know is still declined rather than attempted
+  ;; an auth VM does not know is an error the reader sees, naming what to
+  ;; write instead.  There is no other path for it to be handed to.
   (vm-imap-mock-with (mock)
-    (should-error (vm-imap-net-open
-                   (vm-imap-mock-spec mock "INBOX" "kerberos_v4")
-                   "unknown auth" nil)
-                  :type 'vm-imap-net-unsupported)))
+    (let* ((text-quoting-style 'grave)
+           (message (cadr (should-error
+                           (vm-imap-net-open
+                            (vm-imap-mock-spec mock "INBOX" "kerberos_v4")
+                            "unknown auth" nil)))))
+      (should (string-match-p "kerberos_v4" message))
+      (should (string-match-p "login, cram-md5 or preauth" message)))))
 
 (provide 'vm-imap-net-test)
 

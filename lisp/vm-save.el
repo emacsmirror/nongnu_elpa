@@ -1015,79 +1015,19 @@ The saved messages are flagged as `filed'."
   (vm-display nil nil '(vm-save-message-to-imap-folder)
 	      '(vm-save-message-to-imap-folder))
   (unless count (setq count 1))
-  (let (source-spec-list
-	(target-spec-list (vm-imap-parse-spec-to-list folder))
-	ml m
-	(save-count 0)
-	server-to-server-p mailbox
-	process
-	)
-    (unless mlist
-      (setq mlist 
-	    (vm-select-operable-messages count (vm-interactive-p) "Save")))
-    (setq mailbox (nth 3 target-spec-list))
-    (when (vm-imap-net-save-messages-to-folder folder mlist count)
-      ;; on its way, and this returns before it lands
-      (setq mlist nil))
-    (unwind-protect
-	(save-excursion
-	  (when mlist (vm-inform 5 "Saving messages..."))
-	  (setq ml mlist)
-	  (while ml
-	    (setq m (vm-real-message-of (car ml)))
-	    (set-buffer (vm-buffer-of m))
-	    (setq source-spec-list 
-		  (and (vm-imap-folder-p)
-		       (vm-imap-parse-spec-to-list 
-			(vm-folder-imap-maildrop-spec))))
-	    (setq server-to-server-p	; copy on the same imap server
-		  (and (equal (nth 1 source-spec-list) 
-			      (nth 1 target-spec-list))
-		       (equal (nth 5 source-spec-list) 
-			      (nth 5 target-spec-list))))
-	    (unless server-to-server-p
-		(vm-retrieve-operable-messages 1 (list m) :fail t))
-	    ;; Kyle Jones says:
-	    ;; have to stuff the attributes in all cases because
-	    ;; the deleted attribute may have been stuffed
-	    ;; previously and we don't want to save that attribute.
-	    ;; FIXME But stuffing attributes into the IMAP buffer is
-	    ;; not easy.  USR, 2010-03-08
-	    (if server-to-server-p ; economise on upstream data traffic
-		(let ((process 
-		       (vm-re-establish-folder-imap-session nil "save")))
-		  (if (null process)
-		      (error "Could not connect to the IMAP server"))
-		  (vm-imap-copy-message process m mailbox))
-	      (unless process
-		(setq process 
-		      (vm-imap-make-session folder t :purpose "save"
-					    :folder-buffer (current-buffer))))
-	      (if (null process)
-		  (error "Could not connect to the IMAP server"))
-	      (vm-imap-save-message process m mailbox))
-	    (vm-run-hook-on-message-with-args 'vm-save-message-hook m folder)
-	    (vm-set-filed-flag m t)
-	    (vm-increment save-count)
-	    ;; we set the deleted flag so that the user is not
-	    ;; confused if the save doesn't go through fully.
-	    (when (and vm-delete-after-saving (not (vm-deleted-flag m)))
-	      (vm-set-deleted-flag m t))
-	    (vm-inform 6 "Saving messages... %s" save-count)
-	    (setq ml (cdr ml))))
-      (when process (vm-imap-end-session process))
-      (when (> save-count 0)
-	(vm-inform 5 "%d message%s saved to %s"
-		   save-count (if (/= 1 save-count) "s" "")
-		   (or (vm-imap-folder-for-spec folder)
-		       (vm-safe-imapdrop-string folder))))
-      (vm-update-summary-and-mode-line)
-      (setq vm-last-save-imap-folder folder))
-    ;; We call delete-message again even though the deleted-flags have
-    ;; already been set, perhaps to take care of other business?
-    (if (and vm-delete-after-saving (not vm-folder-read-only))
-	(vm-delete-message count mlist))
-    folder ))
+  (unless mlist
+    (setq mlist (vm-select-operable-messages count (vm-interactive-p) "Save")))
+  ;; On the driver, which is the only way this is done.  The messages are
+  ;; flagged filed when the server has taken them rather than when the
+  ;; command was typed: a save the server refuses must not leave the folder
+  ;; saying it was saved.
+  (vm-imap-net-save-messages-to-folder folder mlist count)
+  (setq vm-last-save-imap-folder folder)
+  ;; We call delete-message again even though the deleted-flags have
+  ;; already been set, perhaps to take care of other business?
+  (if (and vm-delete-after-saving (not vm-folder-read-only))
+      (vm-delete-message count mlist))
+  folder)
 
 (provide 'vm-save)
 ;;; vm-save.el ends here

@@ -4480,26 +4480,11 @@ that destroyed mail nobody asked it to (emacs-vm/vm#752)."
   (vm-display nil nil '(vm-imap-synchronize) '(vm-imap-synchronize))
   (if (not (eq vm-folder-access-method 'imap))
       (vm-inform 0 "%s: This is not an IMAP folder" (buffer-name))
-    ;; Through the driver where the maildrop allows it: this is the command
-    ;; whose work is the expensive half -- the flags of every message in the
-    ;; mailbox come down it -- and on a folder of six thousand that was half a
-    ;; minute of frozen Emacs.
-    (unless (vm-imap-net-synchronize full t)
-     (when (vm-establish-new-folder-imap-session t "general operation" nil)
-      (vm-imap-retrieve-uid-and-flags-data)
-      (vm-imap-save-attributes :all-flags full)
-      (vm-imap-synchronize-folder :interactive t 
-				  :do-remote-expunges t 
-				  :do-local-expunges t 
-				  :do-retrieves t
-				  :retrieve-attributes t)
-      ;; stuff the attributes of messages that need it.
-      (when vm-message-list
-	;; get summary cache up-to-date
-	(vm-inform 6 "Updating summary... ")
-	(vm-update-summary-and-mode-line)
-	(vm-inform 6 "Updating summary... done")
-	)))))
+    ;; On the driver, which is the only way this is done: the work here is
+    ;; the expensive half -- the flags of every message in the mailbox come
+    ;; down it -- and on a folder of six thousand it was half a minute of
+    ;; frozen Emacs.
+    (vm-imap-net-synchronize full t)))
   
 
 ;;;###autoload
@@ -5308,7 +5293,7 @@ May throw exceptions."
   (let ((mailbox (vm-mail-get-header-contents "IMAP-FCC:"))
 	(mailboxes nil)
 	maildrop
-	process (flags nil) string m ;; response
+	(flags nil) string m ;; response
 	(vm-imap-ok-to-ask t))
     (if (null mailbox)
 	(setq mailboxes nil)
@@ -5352,17 +5337,8 @@ May throw exceptions."
     (while mailboxes
       (setq mailbox (car (car mailboxes)))
       (setq maildrop (cdr (car mailboxes)))
-      (unless (vm-imap-net-append-text maildrop mailbox string
-				       (vm-imap-flag-list-string flags) t)
-	(setq process (vm-imap-make-session maildrop t :purpose "IMAP-FCC"))
-	(if (null process)
-	    (error "Could not connect to the IMAP server for IMAP-FCC"))
-	(unwind-protect
-	    (vm-imap-append-message process mailbox string flags)
-	  ;; unwind-protections
-	  (when (and (processp process)
-		     (memq (process-status process) '(open run)))
-	    (vm-imap-end-session process))))
+      (vm-imap-net-append-text maildrop mailbox string
+			       (vm-imap-flag-list-string flags) t)
       (setq mailboxes (cdr mailboxes)))
     ))
 

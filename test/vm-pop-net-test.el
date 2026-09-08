@@ -341,10 +341,16 @@ a minute."
 there is nobody to ask from inside a filter, and a caller that meets it uses
 the blocking implementation, which can ask.  So does a protocol this does not
 speak."
+  ;; no password and nobody to ask: the work does not start, quietly
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
-                :type 'vm-pop-net-unsupported)
-  (should-error (vm-pop-net-open "imap:example.com:143:INBOX:login:user:x" "x")
-                :type 'vm-pop-net-unsupported))
+                :type 'vm-pop-net-no-password)
+  ;; but a maildrop that is not POP at all is an error the reader sees:
+  ;; there is no other path to hand it to
+  (let* ((text-quoting-style 'grave)
+         (message (cadr (should-error
+                         (vm-pop-net-open
+                          "imap:example.com:143:INBOX:login:user:x" "x")))))
+    (should (string-match-p "not a POP maildrop type" message))))
 
 ;;; The mail check that runs on a timer
 
@@ -1368,9 +1374,13 @@ recognise (emacs-vm/vm#822)."
   "REGRESSION: an authentication VM does not know is refused, not attempted.
 Ignoring the field is what made the apop downgrade possible."
   (vm-pop-mock-with (mock)
-    (should-error (vm-pop-net-open (vm-pop-mock-spec mock "kerberos_v4")
-                                   "unknown auth" nil)
-                  :type 'vm-pop-net-unsupported)
+    (let* ((text-quoting-style 'grave)
+           (message (cadr (should-error
+                           (vm-pop-net-open
+                            (vm-pop-mock-spec mock "kerberos_v4")
+                            "unknown auth" nil)))))
+      (should (string-match-p "kerberos_v4" message))
+      (should (string-match-p "pass, or apop" message)))
     ;; and the two it does serve are opened
     (dolist (auth '("pass" "apop"))
       (let ((opened (vm-pop-net-open (vm-pop-mock-spec mock auth)

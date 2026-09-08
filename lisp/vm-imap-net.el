@@ -664,7 +664,8 @@ read, which is what keeps a mailbox of any size out of memory."
 (declare-function vm-imap-get-password "vm-imap"
 		  (folder source user host port ask-password purpose))
 
-(define-error 'vm-imap-net-unsupported "IMAP maildrop VM cannot open without waiting")
+(define-error 'vm-imap-net-no-password
+  "VM has no password for this IMAP maildrop")
 
 (declare-function vm-setup-stunnel-random-data-if-needed "vm-crypto" ())
 (declare-function vm-stunnel-configuration-args "vm-crypto" (host port))
@@ -815,7 +816,7 @@ has no process yet when this returns: ssh has to be listening on its
 forwarded port before there is anything to connect to, and `vm-net-attach'
 gives the session its connection when it is.  stunnel is the connection
 itself, over its standard input and output.  A maildrop whose password VM has
-not been told signals `vm-imap-net-unsupported', there being nobody to ask
+not been told signals `vm-imap-net-no-password', there being nobody to ask
 from inside a filter."
   (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
 	 (protocol (car parts))
@@ -828,9 +829,14 @@ from inside a filter."
 	 (preauth (equal auth "preauth")))
     (vm-imap-net-check-compiled)
     (unless (member protocol '("imap" "imap-ssl" "imap-ssh"))
-      (signal 'vm-imap-net-unsupported (list protocol source)))
+      (error (concat "%s is not an IMAP maildrop type VM knows."
+		     "  The types are imap, imap-ssl and imap-ssh;"
+		     " M-x vm-check-configuration checks every maildrop")
+	     protocol))
     (unless (member auth '("login" "cram-md5" "preauth"))
-      (signal 'vm-imap-net-unsupported (list (or auth "no authentication") source)))
+      (error (concat "%s is not an IMAP authentication VM knows."
+		     "  Write login, cram-md5 or preauth in the maildrop")
+	     (or auth "no authentication")))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (and (equal password "*") (not preauth))
@@ -866,8 +872,7 @@ from inside a filter."
 		   (if vm-imap-passwords
 		       (mapconcat #'car vm-imap-passwords ", ")
 		     "none"))
-	(signal 'vm-imap-net-unsupported
-		(list "password not remembered" source))))
+	(signal 'vm-imap-net-no-password (list source))))
     (let* ((buffer (vm-imap-net-session-buffer name))
 	   (session (vm-net-session :name name
 				    :timeout vm-imap-server-timeout))
@@ -890,8 +895,10 @@ from inside a filter."
 							  user password)))
 		(unless (processp process)
 		  (kill-buffer buffer)
-		  (signal 'vm-imap-net-unsupported (list "preauth hook gave no process"
-							 source)))
+		  (error (concat "vm-imap-session-preauth-hook gave no"
+				 " process for %s, so there is no"
+				 " connection to use")
+			 source))
 		(set-process-buffer process buffer)
 		(setf (vm-net-session-process session) process)
 		;; nothing to log in with, and nothing to log in to: the hook did it
@@ -1998,8 +2005,8 @@ folder's session and the rest keep waiting behind it."
 		 (buffer-name) (car next))
       (condition-case reason
 	  (funcall (cdr next))
-	(vm-imap-net-unsupported
-	 (vm-imap-net-say-why-not (current-buffer) reason))
+	(vm-imap-net-no-password
+	 (vm-imap-net-say-no-password (current-buffer) reason))
 	(error
 	 (vm-net-warn 0 "%s: %s: %s" (buffer-name) (car next)
 		  (error-message-string reason)))))))
@@ -2097,8 +2104,9 @@ in any order (issue #185)."
   "Fetch the bodies of MESSAGES, which are the current folder's, and tell
 CALLBACK how many arrived.  Nothing waits.
 
-Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
-is the caller\\='s cue to use the blocking implementation."
+Signals `vm-imap-net-no-password\\=' where VM has no password yet, which
+means the work does not start: a command asks for a password, and a
+timer has nobody to ask."
   (let* ((folder (current-buffer))
 	 (validity (vm-folder-imap-uid-validity))
 	 ;; What is still here: this can have waited behind a session that
@@ -2172,8 +2180,8 @@ than left empty."
 			(buffer-name folder)
 			(length messages) (if (cdr messages) "ies" "y"))
 	     t))
-	(vm-imap-net-unsupported
-	 (vm-imap-net-say-why-not folder reason)
+	(vm-imap-net-no-password
+	 (vm-imap-net-say-no-password folder reason)
 	 nil)))))
 
 ;;; Saving a message to a mailbox
@@ -2256,7 +2264,7 @@ one it already has being no reason to stop."
 
 The text and flags of each message are taken now, in the folder they are in;
 what the session sends is that copy, so the folder is free to change while
-it goes.  Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot
+it goes.  Signals `vm-imap-net-no-password\\=' where VM has no password
 open."
   (let* ((folder (current-buffer))
 	 (copies (mapcar (lambda (message)
@@ -2312,7 +2320,7 @@ sent by then, and the copy is what did not arrive."
 					(list (cons text (or flags "()")))))
 	(vm-net-inform 6 "Filing in %s on %s without waiting" mailbox name)
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (declare-function vm-imap-decode-mailbox-name "vm-imap" (name))
 (declare-function vm-imap-scan-list-for-flag "vm-imap" (list flag))
@@ -2404,7 +2412,7 @@ slowest thing VM asks a server for and the one worst spent frozen."
 	(vm-net-start session
 		      (vm-imap-net-list-session (nth 2 opened) (nth 3 opened)))
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (iter-defun vm-imap-net-uids-session (user password mailbox)
   "Log in, EXAMINE MAILBOX, and answer with (UID-VALIDITY UIDS).
@@ -2444,7 +2452,7 @@ the mailbox still has."
 		      (vm-imap-net-uids-session (nth 2 opened) (nth 3 opened)
 						(nth 1 opened)))
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (iter-defun vm-imap-net-maildrop-expunge-session (user password mailbox uids)
   "Log in, select MAILBOX and delete the messages with UIDS.
@@ -2502,7 +2510,7 @@ whether it started."
 		      (vm-imap-net-maildrop-expunge-session
 		       (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (defun vm-imap-net-expunge-maildrops (groups folder each done)
   "Work through GROUPS, one maildrop at a time, deleting what each names.
@@ -2606,7 +2614,7 @@ Answers whether the asking started."
 		      (vm-imap-net-names-session (nth 2 opened) (nth 3 opened)
 						 selectable-only))
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (iter-defun vm-imap-net-one-command-session (user password command purpose)
   "Log in, send COMMAND, and answer with what the server said.
@@ -2643,7 +2651,7 @@ send it the blocking way."
 		      (vm-imap-net-one-command-session
 		       (nth 2 opened) (nth 3 opened) command purpose))
 	t)
-    (vm-imap-net-unsupported nil)))
+    (vm-imap-net-no-password nil)))
 
 (defvar vm-imap-account-folder-cache)
 (declare-function vm-delete "vm-misc" (predicate list &optional reverse))
@@ -2760,8 +2768,8 @@ messages is what the queue exists to prevent."
 			   (vm-imap-net-save-attributes-session
 			    folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
 	     t)
-	 (vm-imap-net-unsupported
-	  (vm-imap-net-say-why-not folder reason)
+	 (vm-imap-net-no-password
+	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
 
 (iter-defun vm-imap-net-send-changes-session (folder user password mailbox uids)
@@ -2830,8 +2838,8 @@ keep their modification flags and go up next time."
 	     (vm-net-inform 6 "%s: sending this folder's changes without waiting"
 			(buffer-name folder))
 	     t)
-	 (vm-imap-net-unsupported
-	  (vm-imap-net-say-why-not folder reason)
+	 (vm-imap-net-no-password
+	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
 
 (iter-defun vm-imap-net-expunge-session (user password mailbox uids)
@@ -2887,8 +2895,8 @@ is `later'."
 			     (vm-imap-net-expunge-session
 			      (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
 	       t)
-	   (vm-imap-net-unsupported
-	    (vm-imap-net-say-why-not folder reason)
+	   (vm-imap-net-no-password
+	    (vm-imap-net-say-no-password folder reason)
 	    nil))))))))
 
 (defun vm-imap-net-get-mail (source callback &optional may-ask full-retrieve)
@@ -2903,7 +2911,7 @@ while it does.
 FULL-RETRIEVE asks for the messages the folder was given once and no longer
 holds; see `vm-imap-net-plan\\='.
 
-Signals `vm-imap-net-unsupported\\=' for a maildrop this cannot open, which
+Signals `vm-imap-net-no-password\\=' where VM has no password yet, which
 is a caller\\='s cue to use the blocking implementation."
   (let* ((folder (current-buffer))
 	 (opened (vm-imap-net-open source "IMAP fetch" may-ask))
@@ -2948,14 +2956,14 @@ the folder's, and those buffers name it in `vm-mail-buffer'."
     (and vm-imap-net-session
 	 (vm-net-session-live-p vm-imap-net-session))))
 
-(defun vm-imap-net-say-why-not (folder reason)
-  "Record that the driver left FOLDER's work to the blocking path, and why.
-REASON is the `vm-imap-net-unsupported' signal.  Without this the log said
-what VM was about to do and not what it did: a maildrop the driver declines
-looks exactly like one it took until the blocking path announces itself."
-  (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-	     (if (bufferp folder) (buffer-name folder) folder)
-	     (or (car (cdr reason)) "not supported")))
+(defun vm-imap-net-say-no-password (folder _reason)
+  "Record that FOLDER\='s work did not start, VM having no password for it.
+Nothing else can be done here: the password would have to be asked for, and
+there is nobody to ask from inside a process filter.  A command run by the
+reader asks and then this does not arise."
+  (vm-net-inform 6 (concat "%s: not started, VM has no password for the"
+			   " maildrop yet")
+		 (if (bufferp folder) (buffer-name folder) folder)))
 
 (defun vm-imap-net-synchronize (&optional full interactive)
   "Start synchronising this folder with its mailbox, and answer whether it did.
@@ -3007,8 +3015,8 @@ when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
 			    'attributes full))
 	     (vm-net-inform 6 "%s: synchronising without waiting" name)
 	     t)
-	 (vm-imap-net-unsupported
-	  (vm-imap-net-say-why-not folder reason)
+	 (vm-imap-net-no-password
+	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
 
 (defun vm-imap-net-get-spooled-mail (&optional interactive full)
@@ -3053,8 +3061,8 @@ messages."
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)
-	(vm-imap-net-unsupported
-	 (vm-imap-net-say-why-not folder reason)
+	(vm-imap-net-no-password
+	 (vm-imap-net-say-no-password folder reason)
 	 nil))))))
 
 (defun vm-imap-net-unfinished-p (&optional folder)
@@ -3218,7 +3226,7 @@ without waiting."
 	  (vm-imap-net-save-messages
 	   target (nth 3 (vm-imap-parse-spec-to-list target)) messages callback)
 	  t))
-      (vm-imap-net-unsupported nil))))
+      (vm-imap-net-no-password nil))))
 
 (declare-function vm-set-filed-flag "vm-message" (m flag))
 (declare-function vm-set-deleted-flag "vm-message" (m flag))
@@ -3437,7 +3445,7 @@ folder and the same cache file.  It happened -- \"a second session was started
 while IMAP movemail was running\" -- and the caller is not to fall back to the
 blocking path either, which would be the same two writers.
 
-Signals `vm-imap-net-unsupported' for a maildrop this cannot open."
+Signals `vm-imap-net-no-password' where VM has no password yet."
   (if (vm-imap-net-busy-p)
       (vm-imap-net-when-free
        (format "fetching from %s" (vm-safe-imapdrop-string source))
@@ -3538,8 +3546,8 @@ say what arrived anyway."
 	    (vm-net-inform 6 "%s: checking the server without waiting"
 		       (buffer-name folder))
 	    t)
-	(vm-imap-net-unsupported
-	 (vm-imap-net-say-why-not folder reason)
+	(vm-imap-net-no-password
+	 (vm-imap-net-say-no-password folder reason)
 	 nil))))))
 
 

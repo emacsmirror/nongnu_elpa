@@ -4626,29 +4626,16 @@ folder."
 	(let ((buffer-undo-list t)) ;; (mp nil) (newlist nil)
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
+	  ;; What the save owes the server goes without waiting: the flags
+	  ;; that changed and the deletions asked for.  What the server has
+	  ;; expunged is deliberately not worked out here -- that means the
+	  ;; flags of every message in the mailbox, nineteen seconds on a
+	  ;; folder of six thousand, and the next fetch and
+	  ;; `vm-imap-synchronize' work it out anyway.
 	  (cond ((eq vm-folder-access-method 'pop)
-		 ;; as for IMAP below: the deletions go without waiting, and
-		 ;; what the server no longer has is the next fetch's business
-		 (unless (vm-pop-net-send-changes)
-		   (vm-pop-synchronize-folder :interactive t
-					      :do-remote-expunges t
-					      :do-local-expunges t
-					      :do-retrieves nil)))
+		 (vm-pop-net-send-changes))
 		((eq vm-folder-access-method 'imap)
-		 ;; What the save owes the server goes without waiting: the
-		 ;; flags that changed and the deletions asked for.  The
-		 ;; blocking synchronisation also worked out what the server
-		 ;; had expunged, which means downloading the flags of every
-		 ;; message in the mailbox -- nineteen seconds on a folder of
-		 ;; six thousand, with Emacs held still, on every quit.  The
-		 ;; next fetch and `vm-imap-synchronize' both work that out
-		 ;; anyway.
-		 (unless (vm-imap-net-send-changes)
-		   (vm-imap-synchronize-folder :interactive t
-					       :do-remote-expunges t
-					       :do-local-expunges t
-					       :do-retrieves nil
-					       :save-attributes t))))
+		 (vm-imap-net-send-changes)))
 	  (vm-discard-fetched-messages)
           ;; remove the message summary file of Thunderbird and force
 	  ;; it to rebuild it.  Expect error if Thunderbird is active.
@@ -5438,20 +5425,9 @@ ignore it."
   (if vm-block-new-mail
       (error "Can't get new mail until you save this folder."))
   (cond ((eq vm-folder-access-method 'pop)
-	 (vm-pop-synchronize-folder :interactive interactive
-				    :do-retrieves t))
+	 (vm-pop-net-get-folder-mail))
 	((eq vm-folder-access-method 'imap)
-	 (let ((do-retrieves (if full 'full t)))
-	   (or (vm-imap-net-get-spooled-mail interactive full)
-	       (if vm-imap-sync-on-get
-		   (progn
-		     (vm-imap-synchronize-folder :interactive interactive
-						 :do-local-expunges t
-						 :do-retrieves do-retrieves
-						 :save-attributes t
-						 :retrieve-attributes t))
-		 (vm-imap-synchronize-folder :interactive interactive
-					     :do-retrieves do-retrieves)))))
+	 (vm-imap-net-get-spooled-mail interactive full))
 	(t (vm-get-spooled-mail-normal interactive))))
 
 (defun vm-spooled-mail-arrived (crash safe-maildrop)
@@ -5505,8 +5481,8 @@ is, being what the blocking path would have called."
 			   (t
 			    (vm-inform 5 "No mail from %s." safe-maildrop)))))
 	       t)
-	   (vm-imap-net-unsupported nil)
-	   (vm-pop-net-unsupported nil)))))
+	   (vm-imap-net-no-password nil)
+	   (vm-pop-net-no-password nil)))))
 
 (defun vm-get-spooled-mail-normal (&optional interactive)
   (if vm-global-block-new-mail

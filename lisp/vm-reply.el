@@ -1115,21 +1115,12 @@ The session is opened for this one message and closed again, since a
 composition has no folder whose session it could borrow."
   (let ((mailbox (nth 3 (vm-imap-parse-spec-to-list spec)))
 	(string (vm-imap-subst-CRLF-for-LF
-		 (buffer-substring-no-properties (point-min) (point-max))))
-	process)
+		 (buffer-substring-no-properties (point-min) (point-max)))))
     (when (or (null mailbox) (equal mailbox ""))
       (error "Not filing in %s: no mailbox in the maildrop specification" spec))
-    ;; Through the driver where the maildrop allows it: sending a message
-    ;; should not stop Emacs while a copy of it goes to a server.
-    (unless (vm-imap-net-append-text spec mailbox string)
-      (setq process (vm-imap-make-session spec nil :purpose "FCC"))
-      (unless process
-	(error "Not filing in %s: could not open an IMAP session" spec))
-      (unwind-protect
-	  (vm-imap-append-message process mailbox string)
-	(when (and (processp process)
-		   (memq (process-status process) '(open run)))
-	  (vm-imap-end-session process))))))
+    ;; On the driver: sending a message should not stop Emacs while a copy
+    ;; of it goes to a server.
+    (vm-imap-net-append-text spec mailbox string)))
 
 (defun vm-do-fcc (header-end)
   "File a copy of this composition in each folder its Fcc headers name.
