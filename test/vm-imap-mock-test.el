@@ -667,6 +667,25 @@ is taken off the server behind VM's back, and the list comes back to one."
      (lambda () (vm-imap-mock-received-p mock "LOGOUT")))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
+(ert-deftest vm-imap-mock-test-pruning-says-so-when-it-cannot-ask ()
+  "With no password for the maildrop, pruning says so and forgets nothing.
+It used to go on to a blocking session, whose process variable was bound to
+nil and never assigned: `(process-buffer nil)', so that half could not run at
+all.  Nothing is remembered as pruned by a look that never happened."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-imap-net-mailbox-uids) (lambda (&rest _) nil))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock)))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))
+    (should (equal (length vm-imap-retrieved-messages) 2))))
+
 ;;; Making, renaming and deleting mailboxes on the server
 
 (defun vm-imap-mock-test--spec-for (mock mailbox)

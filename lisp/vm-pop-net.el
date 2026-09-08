@@ -1307,8 +1307,9 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 it did.  The answer itself arrives later, in `vm-spooled-mail-waiting',
 which is what the mode line reads.
 
-Nil means the maildrop cannot be opened without waiting, or a session is
-already running -- and one already running will say what arrived anyway."
+Nil means nothing was started: VM has no password for the maildrop yet, or a
+session is already running -- and one already running will say what arrived
+anyway."
   (let ((folder (current-buffer))
 	(source (vm-folder-pop-maildrop-spec)))
     (cond

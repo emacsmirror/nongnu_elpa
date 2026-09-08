@@ -2447,9 +2447,10 @@ for: a server refuses STATUS on a name it has just listed often enough."
   "Ask SPEC's server what mailboxes it has, and tell CALLBACK.
 
 CALLBACK is called with a list of (MAILBOX MESSAGES RECENT), or with the
-error.  Answers whether the asking started; nil means the maildrop cannot be
-opened without waiting.  A listing is a command per mailbox, so it is the
-slowest thing VM asks a server for and the one worst spent frozen."
+error.  Answers whether the asking started; nil means nothing was started, VM
+having no password for the maildrop yet.  A listing is a command per mailbox,
+so it is the slowest thing VM asks a server for and the one worst spent
+frozen."
   (condition-case nil
       (let* ((opened (vm-imap-net-open spec "IMAP folders" t))
 	     (session (car opened))
@@ -2485,10 +2486,10 @@ mark anything seen."
 (defun vm-imap-net-mailbox-uids (source callback)
   "Ask SOURCE which messages it holds, and tell CALLBACK (UID-VALIDITY UIDS).
 
-Answers whether the asking started; nil means the maildrop cannot be opened
-without waiting.  CALLBACK is called with the error instead when the session
-failed.  For the commands that compare what a folder remembers against what
-the mailbox still has."
+Answers whether the asking started; nil means nothing was started, VM having
+no password for the maildrop yet.  CALLBACK is called with the error instead
+when the session failed.  For the commands that compare what a folder
+remembers against what the mailbox still has."
   (condition-case nil
       (let* ((opened (vm-imap-net-open source "IMAP uids" t))
 	     (session (car opened))
@@ -3077,9 +3078,8 @@ asked for; it is `vm-get-spooled-mail's own argument.  So is FULL: fetch
 what the folder was given once and no longer holds, which is what two prefix
 arguments to `vm-get-new-mail' ask for.
 
-Nil means this maildrop is one that cannot be opened without waiting -- one
-whose password nobody knows and nobody can be asked for -- and the caller is
-to use the blocking implementation.  Anything else means the fetch
+Nil means nothing was started: VM has no password for the maildrop and
+nobody can be asked for one from here.  Anything else means the fetch
 is under way: it has not happened yet, and this returns before it does, so
 the folder is usable while it runs and says what arrived when it lands.
 
@@ -3600,7 +3600,7 @@ since a count of what is there says nothing about what is new."
 whether it did.  The answer to the question itself arrives later, in
 `vm-spooled-mail-waiting', which is what the mode line reads.
 
-Nil means the maildrop is one that cannot be opened without waiting, or a
+Nil means nothing was started: VM has no password for the maildrop yet, or a
 session is already running -- and a session already running is one that will
 say what arrived anyway."
   (let ((folder (current-buffer)))

@@ -4164,6 +4164,10 @@ them.
 Prune the X-VM-IMAP-Retrieved header of the current folder by
 examining which messages are still present in SOURCE.  SOURCE
 should be a maildrop folder on an IMAP server.         USR, 2011-04-06
+
+Nothing waits: the mailbox is asked for the UID of every message it holds and
+the header is pruned when the answer comes.  That is the same round trip a
+synchronisation makes, and it used to be just as frozen.
 @end deffn
 
 @end macro

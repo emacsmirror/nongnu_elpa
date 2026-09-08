@@ -897,7 +897,11 @@ again rather than forgetting what was never deleted."
 (defun vm-prune-imap-retrieved-list (source)
   "Prune the X-VM-IMAP-Retrieved header of the current folder by
 examining which messages are still present in SOURCE.  SOURCE
-should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
+should be a maildrop folder on an IMAP server.         USR, 2011-04-06
+
+Nothing waits: the mailbox is asked for the UID of every message it holds and
+the header is pruned when the answer comes.  That is the same round trip a
+synchronisation makes, and it used to be just as frozen."
   (interactive
    (let ((this-command this-command)
 	 (last-command last-command))
@@ -917,66 +921,23 @@ should be a maildrop folder on an IMAP server.         USR, 2011-04-06"
   ;;--------------------------
   (let* ((imapdrop (vm-imapdrop-sans-password source))
 	 (folder (current-buffer))
-	 (uid-obarray (make-vector 67 0))
-	 (process nil)
-	 mailbox select mailbox-count uid-validity
-	 list retrieved-count pruned-count)
-    ;; Through the driver where the maildrop allows it: what this asks for is
-    ;; the UID of every message in the mailbox, which is the same round trip a
-    ;; synchronisation makes and was just as frozen.
-    ;;
-    ;; The name is taken now: what the callback closes over is the variable
-    ;; and not its value, and a callback that read `source' after this
-    ;; function had finished with it was handed a nil to print.
-    (let* ((name (vm-safe-imapdrop-string source))
-	   (asked (vm-imap-net-mailbox-uids
-		   source
-		   (lambda (result)
-		     (if (vm-net-error-p result)
-			 (vm-warn 0 2 "Could not prune %s: %s" name
-				  (error-message-string result))
-		       (when (buffer-live-p folder)
-			 (with-current-buffer folder
-			   (vm-imap-prune-retrieved-with
-			    (car result) (cadr result) imapdrop))))))))
-      (when asked
+	 ;; The name is taken now: what the callback closes over is the
+	 ;; variable and not its value, and a callback that read `source'
+	 ;; after this function had finished with it was handed a nil to
+	 ;; print.
+	 (name (vm-safe-imapdrop-string source)))
+    (if (vm-imap-net-mailbox-uids
+	 source
+	 (lambda (result)
+	   (if (vm-net-error-p result)
+	       (vm-warn 0 2 "Could not prune %s: %s" name
+			(error-message-string result))
+	     (when (buffer-live-p folder)
+	       (with-current-buffer folder
+		 (vm-imap-prune-retrieved-with
+		  (car result) (cadr result) imapdrop))))))
 	(vm-inform 5 "Asking %s which messages it still has..." name)
-	(setq source nil)))
-    (when source
-    (unwind-protect
-	(with-current-buffer (process-buffer process)
-	  ;;-----------------------------
-	  (vm-buffer-type:enter 'process)
-	  ;;-----------------------------
-	  (setq mailbox (nth 3 (vm-parse source "\\([^:]+\\):?")))
-	  (setq select (vm-imap-select-mailbox process mailbox t)
-		mailbox-count (nth 0 select)
-		uid-validity (nth 2 select))
-	  (unless (eq mailbox-count 0)
-	    (setq list (vm-imap-get-message-data-list process 1 mailbox-count)))
-	  (mapc (lambda (tuple)
-		  (set (intern (cadr tuple) uid-obarray) (car tuple)))
-		list))
-      ;; unwind-protections
-      ;;-----------------------------
-      (vm-buffer-type:exit)
-      ;;-----------------------------
-      (when process (vm-imap-end-session process)))
-    (setq retrieved-count (length vm-imap-retrieved-messages))
-    (setq vm-imap-retrieved-messages
-     (vm-imap-prune-retrieval-entries 
-      imapdrop vm-imap-retrieved-messages
-      (lambda (tuple) 
-	(and (equal (nth 1 tuple) uid-validity)
-	     (intern-soft (car tuple) uid-obarray)))))
-    (setq pruned-count (- retrieved-count (length vm-imap-retrieved-messages)))
-    (if (= pruned-count 0)
-	(vm-inform 5 "No messages to be pruned")
-      (vm-mark-folder-modified-p)
-      (vm-update-summary-and-mode-line)
-      (vm-inform 5 "%d message%s pruned" 
-	       pruned-count (if (= pruned-count 1) "" "s"))))
-    ))
+      (vm-inform 5 "Cannot prune %s: VM has no password for it yet" name))))
 
 (defun vm-imap-prune-retrieved-with (uid-validity uids imapdrop)
   "Prune this folder's retrieval list to the UIDS the mailbox still has.
