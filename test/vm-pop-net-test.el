@@ -545,6 +545,49 @@ writing one folder is what corrupts it."
   (iter-yield (lambda () nil))
   'never)
 
+(ert-deftest vm-pop-net-test-expunging-says-so-with-no-password ()
+  "`vm-expunge-pop-messages' says so when the driver cannot start.
+
+It used to fall back to a blocking expunge, a session per maildrop with Emacs
+held for all of them, which is the second implementation this does not have
+any more.  A command that answers a keystroke with silence looks as though it
+worked, so it says what happened instead."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-pop-net-expunge-retrieved) (lambda () nil))
+              ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+              ((symbol-function 'vm-pop-expunge-entries)
+               (lambda (&rest _) (error "the blocking expunge was called")))
+              ((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (with-temp-buffer
+        ;; `vm-select-folder-buffer-and-validate' and
+        ;; `vm-error-if-virtual-folder' are defsubsts, inlined into the
+        ;; compiled command, so stubbing the symbols does nothing: the buffer
+        ;; has to be a folder buffer for real
+        (setq major-mode 'vm-mode)
+        (setq-local vm-pop-retrieved-messages (list (list "uid1" "pop:h:110:p:pass:u:*" 'uidl)))
+        (vm-expunge-pop-messages)
+        ;; the record is untouched: nothing was expunged, so nothing is forgotten
+        (should (equal (length vm-pop-retrieved-messages) 1)))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))))
+
+(ert-deftest vm-imap-net-test-expunging-says-so-with-no-password ()
+  "`vm-expunge-imap-messages' says so when the driver cannot start.
+It discarded the answer, so with no password the command did nothing and said
+nothing."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-imap-net-expunge-retrieved) (lambda () nil))
+              ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+              ((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (with-temp-buffer
+        ;; a folder buffer for real; see the test above
+        (setq major-mode 'vm-mode)
+        (vm-expunge-imap-messages))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))))
+
 (ert-deftest vm-pop-net-test-expunging-a-maildrop-does-not-wait ()
   "`vm-expunge-pop-messages' deletes on the server what the folder retrieved,
 one maildrop at a time and without waiting for any of it.

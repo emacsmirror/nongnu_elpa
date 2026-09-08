@@ -452,11 +452,11 @@ relevant POP servers to remove the messages."
   (vm-error-if-virtual-folder)
   (if (and (vm-interactive-p) (eq vm-folder-access-method 'pop))
       (error "This command is not meant for POP folders.  Use the normal folder expunge instead."))
-  ;; Through the driver where the maildrops allow it, as the IMAP one is: a
-  ;; session per maildrop, and Emacs held for all of them.
+  ;; On the driver, as the IMAP one is: a session per maildrop, and Emacs held
+  ;; for all of them.
   (unless (vm-pop-net-expunge-retrieved)
-    (setq vm-pop-retrieved-messages
-	  (vm-pop-expunge-entries vm-pop-retrieved-messages))))
+    (vm-inform 5 (concat "Nothing expunged: VM has no password for the"
+			 " maildrop yet"))))
 
 (defun vm-pop-make-session (source interactive &optional retry)
   "Create a new POP session for the POP mail box SOURCE.

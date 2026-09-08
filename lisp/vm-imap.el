@@ -850,7 +850,11 @@ on all the relevant IMAP servers and then immediately expunges."
   ;; held Emacs for all of them.
   (let ((vm-global-block-new-mail t)
 	(vm-imap-ok-to-ask t))
-    (vm-imap-net-expunge-retrieved)))
+    ;; Said rather than discarded: with no password nothing is expunged, and a
+    ;; command that answers a keystroke with silence looks as though it worked.
+    (unless (vm-imap-net-expunge-retrieved)
+      (vm-inform 5 (concat "Nothing expunged: VM has no password for the"
+			   " maildrop yet")))))
 (defun vm-imap-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved, without
 waiting for any of it.  Answers whether it started.
