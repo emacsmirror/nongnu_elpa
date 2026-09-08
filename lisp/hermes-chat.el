@@ -2197,6 +2197,37 @@ result into the transient status text shown in the transcript."
           (hermes-transport--get result 'output))
          "No status available"))))
 
+(defun hermes-chat-quote-region ()
+  "Append the active transcript region as a Markdown quote to the draft.
+Preserve existing input and move below the quote for editing.  This only
+edits the draft, even during a running turn; it never sends or queues it.
+Reject an empty region or one extending into the composer."
+  (interactive)
+  (unless (and (derived-mode-p 'hermes-chat-mode)
+               (markerp hermes-chat--input-marker)
+               (eq (marker-buffer hermes-chat--input-marker) (current-buffer))
+               (use-region-p)
+               (< (region-beginning) (region-end))
+               (<= (point-min) (region-beginning))
+               (<= (region-end) (min (point-max) hermes-chat--input-marker)))
+    (user-error "Select text entirely within the chat transcript"))
+  (let ((quote (mapconcat (lambda (line) (concat "> " line))
+                          (split-string (buffer-substring-no-properties
+                                         (region-beginning) (region-end))
+                                        "\n" nil)
+                          "\n")))
+    (widen)
+    (goto-char (point-max))
+    (insert (cond
+             ((= (point) hermes-chat--input-marker) "")
+             ((and (>= (- (point) hermes-chat--input-marker) 2)
+                   (equal (buffer-substring-no-properties (- (point) 2) (point))
+                          "\n\n")) "")
+             ((eq (char-before) ?\n) "\n")
+             (t "\n\n"))
+            quote "\n\n")
+    (deactivate-mark)))
+
 (defun hermes-chat-go-to-composer ()
   "Move to the end of the writable composer without changing its text."
   (interactive)
@@ -2306,6 +2337,7 @@ Do not wrap into the composer or modify its draft."
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt)
   "j" ("Go to composer" hermes-chat-go-to-composer)
+  "Q" ("Quote region" hermes-chat-quote-region)
   "f" ("Attach image" hermes-chat-attach-image-file)
   "v" ("Paste image" hermes-chat-paste-image)
   :row
@@ -2362,6 +2394,11 @@ Do not wrap into the composer or modify its draft."
   "C-j" #'hermes-chat-newline
   "S-<return>" #'hermes-chat-newline
   "TAB" #'hermes-chat-tab
+  "r" '(menu-item "Quote region" hermes-chat-quote-region
+         :filter (lambda (command)
+                   (if (hermes-chat--point-in-input-p)
+                       #'self-insert-command
+                     command)))
   "<backtab>" #'hermes-chat-previous-button
   "<remap> <forward-button>" #'hermes-chat-next-button
   "<remap> <backward-button>" #'hermes-chat-previous-button
