@@ -1699,6 +1699,26 @@ self-explanatory."
                  (if detail (format "%s: %s" label detail) label))
          'face (hermes-chat--header-status-face status))))))
 
+(defun hermes-chat--setting-value (value &optional pending)
+  "Return bounded, faced setting VALUE, marking PENDING choices explicitly."
+  (let* ((value (hermes-transport--non-empty-string value))
+         (suffix (and value pending " (pending)")))
+    (propertize
+     (concat (truncate-string-to-width
+              (replace-regexp-in-string "[\n\r\t]" " " (or value "unknown"))
+              (- 40 (length suffix)) nil nil "…")
+             suffix)
+     'face (cond ((null value) 'shadow) (pending 'warning)
+                 (t 'font-lock-constant-face))
+     'help-echo value)))
+
+(defun hermes-chat--pending-setting-p ()
+  "Return non-nil when create-time settings belong to this chat session."
+  (or (null hermes-chat--dashboard-active-session-id)
+      hermes-chat--create-override-owner
+      (equal hermes-chat--create-overrides-retry-session-id
+             hermes-chat--dashboard-active-session-id)))
+
 (defun hermes-chat--header-model-segment ()
   "Return the propertized header model segment, or nil."
   (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))

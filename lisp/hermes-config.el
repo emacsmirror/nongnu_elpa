@@ -31,6 +31,7 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'keymap-popup)
 
 (defvar-local hermes-config--schema nil
   "Latest dashboard configuration schema.")
@@ -392,6 +393,27 @@ List fields use JSON arrays, including [] for an empty list."
   "D" #'hermes-config-delete-env
   "R" #'hermes-config-reveal-env
   "g" #'hermes-config-refresh)
+
+(keymap-popup-annotate hermes-config-mode-map
+  :popup-key "?" :exit-key "C-g"
+  :description "Hermes Configuration"
+  :group "Configuration"
+  hermes-config-edit ("Edit value" :inapt-if
+                     (lambda () (or hermes-config--mutation-in-flight
+                                    hermes-config--refresh-required)))
+  hermes-config-refresh ("Refresh" :stay-open t :inapt-if
+                        (lambda () hermes-config--mutation-in-flight))
+  :group ("Environment" :inapt-if
+          (lambda () (or hermes-config--mutation-in-flight
+                         hermes-config--refresh-required)))
+  hermes-config-set-env "Set secret"
+  hermes-config-delete-env ("Delete key" :inapt-if
+                           (lambda () (not (get-text-property (point) 'hermes-env-key))))
+  hermes-config-reveal-env ("Copy secret" :inapt-if
+                           (lambda () (not (get-text-property (point) 'hermes-env-key))))
+  :row
+  :group "View"
+  quit-window "Quit view")
 
 (define-derived-mode hermes-config-mode special-mode "Hermes Config"
   "Major mode for dashboard configuration and environment management."

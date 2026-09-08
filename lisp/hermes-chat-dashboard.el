@@ -2155,7 +2155,9 @@ REASON, when non-nil, explains why remote completion was unavailable."
   "Choose CLIENT's next action at DIRECTORY using API RESULT.
 GENERATION and SESSION-ID identify the owning interaction."
   (let* ((candidates (hermes-chat--directory-candidates directory result))
-         (label (completing-read "Hermes instance directory: "
+         (label (completing-read (format "Hermes instance directory (current: %s): "
+                                         (hermes-chat--setting-value
+                                          (hermes-chat--current-working-directory)))
                                  candidates nil t nil nil (caar candidates)))
          (choice (cdr (assoc label candidates))))
     (when (hermes-chat--dashboard-context-current-p
@@ -2443,17 +2445,37 @@ event handler.  A no-op without a live dashboard session or with a manual title.
     (run-at-time 0 nil #'hermes-chat--fetch-session-title
                  (current-buffer) hermes-chat--lifecycle-generation)))
 
+(defun hermes-chat--read-session-title ()
+  "Read a title, refusing an answer whose chat owner has changed."
+  (let* ((buffer (current-buffer))
+         (client hermes-chat--dashboard-client)
+         (generation hermes-chat--lifecycle-generation)
+         (transport hermes-chat--transport-generation)
+         (session hermes-chat--dashboard-active-session-id)
+         ;; `read-string' can itself fail while restoring a deleted owner.
+         (title (condition-case err
+                    (read-string
+                     "Hermes chat title: "
+                     (or (and hermes-chat--title
+                              (hermes-session-title-chat-display hermes-chat--title))
+                         ""))
+                  (error
+                   (when (buffer-live-p buffer)
+                     (signal (car err) (cdr err)))))))
+    (unless (and (buffer-live-p buffer)
+                 (eq buffer (current-buffer))
+                 (hermes-chat--dashboard-context-current-p client generation)
+                 (equal session hermes-chat--dashboard-active-session-id)
+                 (= transport hermes-chat--transport-generation))
+      (user-error "Hermes rename prompt is no longer current"))
+    title))
+
 (defun hermes-chat-rename (title)
   "Rename this chat session to TITLE.
 When a live dashboard session is attached, update its server title via
 `session.title'.  A manual title is kept against automatic title refreshes and
 does not alter the project-specific buffer name."
-  (interactive
-   (list (read-string
-          "Hermes chat title: "
-          (or (and hermes-chat--title
-                   (hermes-session-title-chat-display hermes-chat--title))
-              ""))))
+  (interactive (list (hermes-chat--read-session-title)))
   (let ((title (string-trim title)))
     (when (string-empty-p title)
       (user-error "Title must not be empty"))

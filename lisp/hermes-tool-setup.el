@@ -34,6 +34,51 @@
 (defvar-local hermes-tool-setup--config nil "Last backend provider snapshot.")
 (defvar-local hermes-tool-setup--busy nil "Non-nil while a change is pending.")
 (defvar-local hermes-tool-setup--post-status nil "Last server-wide setup status.")
+(defvar-local hermes-tool-setup--model-catalog nil
+  "Last backend model snapshot for the active provider, not the row at point.")
+(defvar-local hermes-tool-setup--pending nil
+  "Current (OWNER . SUFFIX) setup request, or nil when settled.")
+
+(defun hermes-tool-setup--active-providers ()
+  "Return backend-reported active provider names, preserving multiple matches."
+  (or (delq nil (mapcar
+                 (lambda (provider)
+                   (and (eq t (hermes-transport--get provider 'is_active))
+                        (hermes-transport--get provider 'name)))
+                 (hermes-transport--get hermes-tool-setup--config 'providers)))
+      (when-let* ((name (hermes-transport--non-empty-string
+                        (hermes-transport--get hermes-tool-setup--config 'active_provider))))
+        (list name))))
+
+(defun hermes-tool-setup--setting-description (setting)
+  "Return a bounded SETTING label from this owner's reported state."
+  (let* ((config hermes-tool-setup--config)
+         (catalog hermes-tool-setup--model-catalog)
+         (pending (and hermes-tool-setup--pending
+                       (hermes-tool-setup--current-p (car hermes-tool-setup--pending))
+                       (cdr hermes-tool-setup--pending)))
+         (value
+          (cond
+           (hermes-tool-setup--busy "pending change")
+           ((or (equal pending "/config")
+                (and (eq setting 'model) (equal pending "/models")))
+            "loading")
+           ((eq setting 'provider)
+            (if (equal hermes-tool-setup--name "web")
+                (format "search %s / extract %s"
+                        (or (hermes-transport--get config 'active_search_backend) "unknown")
+                        (or (hermes-transport--get config 'active_extract_backend) "unknown"))
+              (when-let* ((names (hermes-tool-setup--active-providers)))
+                (string-join names ", "))))
+           ((and catalog (eq :false (hermes-transport--get catalog 'has_models)))
+            "not exposed")
+           ((member (hermes-transport--get catalog 'provider)
+                    (hermes-tool-setup--active-providers))
+            (hermes-transport--non-empty-string (hermes-transport--get catalog 'current)))))
+         (value (or value "unknown")))
+    (concat (if (eq setting 'provider) "Provider: " "Model: ")
+            (propertize (truncate-string-to-width value 28 nil nil t)
+                        'face 'keymap-popup-value 'help-echo value))))
 
 (defun hermes-tool-setup--rows (config)
   "Return provider rows from CONFIG without inferring readiness from keys."
@@ -86,6 +131,7 @@ Fence success and failure against buffer, instance and profile changes."
                         (url-hexify-string hermes-tool-setup--name) suffix)))
         (query (append query (when hermes-tool-setup--profile
                                `((profile . ,hermes-tool-setup--profile))))))
+    (setq hermes-tool-setup--pending (cons owner suffix))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes-dashboard-transport-api-request-async
@@ -93,19 +139,20 @@ Fence success and failure against buffer, instance and profile changes."
      (lambda (result)
        (when (hermes-tool-setup--current-p owner)
          (with-current-buffer (car owner)
-           (setq hermes-tool-setup--busy nil)
+           (setq hermes-tool-setup--busy nil hermes-tool-setup--pending nil)
            (funcall success result))))
      (lambda (_reason)
        ;; Do not echo backend errors which may repeat credential input.
        (when (hermes-tool-setup--current-p owner)
          (with-current-buffer (car owner)
-           (setq hermes-tool-setup--busy nil)
+           (setq hermes-tool-setup--busy nil hermes-tool-setup--pending nil)
            (message "Hermes: tool setup request failed; refresh to check state")))))))
 
 (defun hermes-tool-setup-refresh (&rest _)
   "Recheck provider readiness without invoking a model or a tool."
   (interactive)
   (hermes-tool-setup--idle)
+  (setq hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil)
   (hermes-tool-setup--request
    "GET" "/config"
    (lambda (config)
@@ -126,7 +173,12 @@ Fence success and failure against buffer, instance and profile changes."
                             (format " | Search: %s / Extract: %s"
                                     (hermes-transport--get config 'active_search_backend)
                                     (hermes-transport--get config 'active_extract_backend))))))
-     (tabulated-list-print t))))
+     (tabulated-list-print t)
+     ;; Omitting provider asks the backend for its active selection.  A catalog
+     ;; fetched for an inactive row is not evidence of the active model.
+     (hermes-tool-setup--request
+      "GET" "/models"
+      (lambda (catalog) (setq hermes-tool-setup--model-catalog catalog))))))
 
 (defun hermes-tool-setup--provider ()
   "Return the provider at point from the rendered snapshot."
@@ -147,7 +199,8 @@ Call VERIFY, or re-read readiness, after a semantically successful write."
     (when (yes-or-no-p prompt)
       (unless (hermes-tool-setup--current-p owner)
         (user-error "Tool setup changed while confirming"))
-      (setq hermes-tool-setup--busy t)
+      (setq hermes-tool-setup--busy t
+            hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil)
       (hermes-tool-setup--request
        (or method "PUT") suffix
        (lambda (result)
@@ -226,7 +279,10 @@ Blank input leaves an existing key intact."
                                   (cons (format "%s [%s]" (hermes-transport--get row 'display)
                                                 (hermes-transport--get row 'id))
                                         (hermes-transport--get row 'id))) models))
-                (model (cdr (assoc (completing-read "Tool model: " choices nil t) choices))))
+                (model (cdr (assoc (completing-read
+                                      (format "Tool model for %s (current %s): " provider
+                                              (or (hermes-transport--get catalog 'current) "unknown"))
+                                      choices nil t) choices))))
            (when (and model (hermes-tool-setup--current-p owner))
              (hermes-tool-setup--change
               "/model" `((provider . ,provider) (model . ,model))
@@ -279,9 +335,13 @@ this toolset or infer readiness from the last process exit code."
   :parent tabulated-list-mode-map
   :description "Tool setup"
   :group "Configure"
-  "p" ("Select provider" hermes-tool-setup-select-provider)
+  "p" ((lambda () (hermes-tool-setup--setting-description 'provider))
+       hermes-tool-setup-select-provider
+       :inapt-if (lambda () hermes-tool-setup--busy))
   "k" ("Save credentials" hermes-tool-setup-save-credentials)
-  "m" ("Select model" hermes-tool-setup-select-model)
+  "m" ((lambda () (hermes-tool-setup--setting-description 'model))
+       hermes-tool-setup-select-model
+       :inapt-if (lambda () hermes-tool-setup--busy))
   :group "Setup"
   "i" ("Run install hook" hermes-tool-setup-run-post-setup)
   "s" ("Post-setup status" hermes-tool-setup-post-setup-status)
@@ -296,7 +356,7 @@ Readiness reports backend prerequisites, not a successful tool invocation."
               [("Provider" 26 t) ("Selection" 10 t) ("Readiness" 16 t)
                ("Credentials" 38 nil) ("Details" 40 nil)])
   (setq-local revert-buffer-function #'hermes-tool-setup-refresh)
-  (setq-local hermes-browser--snapshot-variables '(hermes-tool-setup--config hermes-tool-setup--post-status))
+  (setq-local hermes-browser--snapshot-variables '(hermes-tool-setup--config hermes-tool-setup--model-catalog hermes-tool-setup--post-status))
   (hermes-browser--next-request-generation)
   (tabulated-list-init-header))
 

@@ -68,24 +68,27 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
   "Return usable fixed-pitch columns in the narrowest displaying window.
 A hidden buffer uses 78 columns until it becomes visible.  Reserve two
 columns for the continuation glyph and rounding on graphical displays."
-  (let ((windows (get-buffer-window-list (current-buffer) nil t)))
-    (if windows
-        (apply #'min
-               (mapcar (lambda (window)
-                         (with-selected-window window
-                           ;; Body width excludes margins and fringes, but
-                           ;; includes the line-number gutter.  Its native pixel
-                           ;; width includes padding and the line-number face.
-                           (let ((pixels (- (window-body-width window t)
-                                            (if display-line-numbers
-                                                (line-number-display-width t)
-                                              0))))
-                             (max 6 (- (/ pixels
-                                          (max 1 (window-font-width
-                                                  window 'fixed-pitch)))
-                                       2)))))
-                       windows))
-      78)))
+  ;; Selecting an unselected chat window adopts its draft point.  Restore
+  ;; the caller's insertion point before returning to the EWOC printer.
+  (save-excursion
+    (let ((windows (get-buffer-window-list (current-buffer) nil t)))
+      (if windows
+          (apply #'min
+                 (mapcar (lambda (window)
+                           (with-selected-window window
+                             ;; Body width excludes margins and fringes, but
+                             ;; includes the line-number gutter.  Its native pixel
+                             ;; width includes padding and the line-number face.
+                             (let ((pixels (- (window-body-width window t)
+                                              (if display-line-numbers
+                                                  (line-number-display-width t)
+                                                0))))
+                               (max 6 (- (/ pixels
+                                            (max 1 (window-font-width
+                                                    window 'fixed-pitch)))
+                                         2)))))
+                         windows))
+        78))))
 
 (defun hermes-chat--insert-table (source width)
   "Insert SOURCE as a navigable grid within WIDTH, with a source-copy button."

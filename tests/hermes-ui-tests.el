@@ -167,7 +167,7 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Navigate" "Session" "Selected chat" "Browse" "Manage"
+                   '("Navigate" "Session" "Selected chat" "Browse" "Resources" "Manage"
                      "Access and routes" "System")))
     (dolist (group groups)
       (should (<= (length (plist-get group :entries)) 6)))
@@ -504,6 +504,160 @@
               (should (= requests 2))
               (should-not hermes-dashboard--needs-onboarding))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+
+(ert-deftest hermes-dashboard-popup-uses-deliberate-two-column-rows ()
+  "The real popup fits narrow and wide displays and preserves direct actions."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-dashboard-stale-refresh-interval nil)
+            (keymap-popup-backend #'keymap-popup-backend-side-window)
+            (keymap-popup--buffer-name " *dashboard layout test*"))
+        (hermes-dashboard-mode)
+        (unwind-protect
+            ;; Side-window fringes leave body widths 52, 118, 48 and 47.
+            (dolist (width '(54 120 50 49))
+              (let ((old-width (frame-width))
+                    (owner (current-buffer)))
+                (unwind-protect
+                    (progn
+                      (set-frame-width (selected-frame) width)
+                      (execute-kbd-macro (kbd "?"))
+                      (should (get-buffer-window keymap-popup--buffer-name))
+                      (with-current-buffer keymap-popup--buffer-name
+                        (let ((text (buffer-string)))
+                          (should (<= (apply #'max (mapcar #'string-width
+                                                          (split-string text "\n")))
+                                      (1- (window-body-width (get-buffer-window (current-buffer))))))
+                          (dolist (pair '("Navigate.*Session"
+                                          "Selected chat.*Browse"
+                                          "Resources.*Manage"
+                                          "Access and routes.*System"))
+                            (should (string-match-p pair text)))
+                          (should-not (string-match-p "Navigate.*Selected chat" text))
+                          (dolist (row (keymap-popup--meta
+                                        hermes-dashboard-mode-map 'descriptions))
+                            (dolist (group row)
+                              (dolist (entry (plist-get group :entries))
+                                (should (string-match-p
+                                         (concat (regexp-quote (plist-get entry :key))
+                                                 " +"
+                                                 (regexp-quote
+                                                  (plist-get entry :description)))
+                                         text)))))))
+                      (condition-case nil
+                          (execute-kbd-macro (kbd "C-g"))
+                        (quit nil))
+                      (should-not (get-buffer keymap-popup--buffer-name))
+                      (should (eq (current-buffer) owner))
+                      (should (eq major-mode 'hermes-dashboard-mode)))
+                  (keymap-popup-dismiss)
+                  (set-frame-width (selected-frame) old-width))))
+          (keymap-popup-dismiss))))))
+
+(ert-deftest hermes-dashboard-cards-bound-activity-with-full-source-retained ()
+  "Long tool arguments cannot dominate cards or replace dispatch identity."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let* ((tool (concat "terminal: " (make-string 500 ?x) "\nlast argument"))
+             (node (list :id "chat: exact bytes " :kind 'chat :title "Exact  title λ"
+                         :status 'running :activity tool :active-tools (list tool tool)))
+             (original (copy-tree node)))
+        (hermes-dashboard--print-chat-node node)
+        (should (< (buffer-size) 400))
+        (should (string-match-p "Exact  title λ.*Running" (buffer-string)))
+        (should (string-match-p "2 active tools" (buffer-string)))
+        (should-not (string-match-p "last argument" (buffer-string)))
+        (should (equal node original))
+        (goto-char (point-min))
+        (should (equal (get-text-property (point) 'hermes-dashboard-node-id)
+                       "chat: exact bytes "))
+        (should (string-match-p "last argument"
+                                (get-text-property (point) 'help-echo)))))))
+
+(ert-deftest hermes-management-plain-maps-have-contextual-help ()
+  "Annotations render original bindings and keep dismissal non-destructive."
+  (save-window-excursion
+    (dolist (mode '(hermes-config-mode hermes-inventory-mode hermes-memory-status-mode))
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (funcall mode)
+        (let ((keymap-popup-backend #'keymap-popup-backend-side-window)
+              (keymap-popup--buffer-name " *management help test*"))
+          (unwind-protect
+              (progn
+                (execute-kbd-macro (kbd "?"))
+                (should (get-buffer-window keymap-popup--buffer-name))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "Refresh" (buffer-string)))
+                  (should (string-match-p "Quit view" (buffer-string))))
+                (execute-kbd-macro (kbd "C-g"))
+                (should-not (get-buffer keymap-popup--buffer-name))
+                (should (eq major-mode mode))
+                (let (quit-called)
+                  (cl-letf (((symbol-function 'quit-window)
+                             (lambda () (interactive) (setq quit-called t))))
+                    (execute-kbd-macro (kbd "? q")))
+                  (should quit-called)
+                  (should-not (get-buffer keymap-popup--buffer-name))))
+            (keymap-popup-dismiss)))))))
+
+
+(ert-deftest hermes-management-annotation-keeps-remapped-keys-and-guards ()
+  "Popup annotations follow existing command bindings and refuse busy edits."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (hermes-config-mode)
+      (let ((map (copy-keymap hermes-config-mode-map))
+            (keymap-popup-backend #'keymap-popup-backend-side-window)
+            (keymap-popup--buffer-name " *config remap test*") invoked)
+        (keymap-unset map "e")
+        (keymap-unset map "RET")
+        (keymap-set map "v" #'hermes-config-edit)
+        (use-local-map map)
+        (setq hermes-config--mutation-in-flight t)
+        (cl-letf (((symbol-function 'hermes-config-edit)
+                   (lambda () (interactive) (setq invoked t))))
+          (unwind-protect
+              (progn
+                (keymap-popup map)
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "v.*Edit value" (buffer-string))))
+                (execute-kbd-macro (kbd "v"))
+                (should-not invoked)
+                (should (get-buffer keymap-popup--buffer-name))
+                (setq hermes-config--mutation-in-flight nil)
+                (execute-kbd-macro (kbd "v"))
+                (should invoked))
+            (keymap-popup-dismiss)))))))
+
+
+(ert-deftest hermes-dashboard-popup-dispatches-every-advertised-key ()
+  "Each keyboard suffix still dispatches its original command through the loop."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-dashboard-stale-refresh-interval nil)
+            (keymap-popup-backend #'keymap-popup-backend-side-window)
+            (keymap-popup--buffer-name " *dashboard dispatch test*"))
+        (hermes-dashboard-mode)
+        (dolist (row (keymap-popup--meta hermes-dashboard-mode-map 'descriptions))
+          (dolist (group row)
+            (dolist (entry (plist-get group :entries))
+              (let ((key (plist-get entry :key))
+                    (command (plist-get entry :command)) called)
+                (unless (member key '("?" "<mouse-1>"))
+                  (cl-letf (((symbol-function command)
+                             (lambda () (interactive) (setq called t))))
+                    (unwind-protect
+                        (progn
+                          (execute-kbd-macro (kbd "?"))
+                          (execute-kbd-macro (kbd key))
+                          (should called))
+                      (keymap-popup-dismiss))))))))))))
 
 (provide 'hermes-ui-tests)
 ;;; hermes-ui-tests.el ends here

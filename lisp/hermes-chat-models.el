@@ -168,6 +168,12 @@ identity is part of the selection."
       (hermes-chat--warm-model-completions client)
       nil)))
 
+(defun hermes-chat--model-setting-value ()
+  "Return the current chat's model value for a setting label."
+  (let ((pending (and (hermes-chat--pending-setting-p)
+                      hermes-chat--dashboard-create-model)))
+    (hermes-chat--setting-value (or pending hermes-chat--model) pending)))
+
 (defun hermes-chat--model-display-name (candidate)
   "Return a compact display name for CANDIDATE."
   (if (stringp candidate)
@@ -280,7 +286,10 @@ confirmation prompt."
              (labels (mapcar #'car candidates)))
         (if (null candidates)
             (message "Hermes: no models available to switch to")
-          (let* ((choice (completing-read "Switch model: " labels nil t))
+          (let* ((prompt (with-current-buffer buffer
+                           (format "Switch model (current: %s): "
+                                   (hermes-chat--model-setting-value))))
+                 (choice (completing-read prompt labels nil t))
                  (candidate (cdr (assoc choice candidates)))
                  (provider (and candidate
                                 (hermes-chat--find-provider

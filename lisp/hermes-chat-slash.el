@@ -299,6 +299,45 @@ CONTEXT, when non-nil, retains ownership from a failed `slash.exec' request."
               client name arg (hermes-chat--command-context client owner)
               buffer))))))
 
+(defun hermes-chat--reasoning-report (result)
+  "Return the effort and display reported by session config RESULT.
+Do not infer defaults or full/clamped display from fields this RPC omits."
+  (let ((effort (hermes-transport--non-empty-string
+                 (hermes-chat--result-string result 'value)))
+        (display (hermes-transport--non-empty-string
+                  (hermes-chat--result-string result 'display))))
+    (format "Reasoning effort:  %s\nReasoning display: %s"
+            (if (equal effort "none") "none (disabled)" (or effort "unknown"))
+            (pcase display
+              ("show" "on")
+              ("hide" "off")
+              (_ (or display "unknown"))))))
+
+(defun hermes-chat--dashboard-query-reasoning ()
+  "Report reasoning from the owning session, not the isolated slash worker."
+  (let ((buffer (current-buffer)))
+    (hermes-chat--command-run-owned
+     "/reasoning"
+     (lambda (client owner)
+       (let ((context (hermes-chat--command-context client owner)))
+         (hermes-dashboard-transport-config-get
+          client "reasoning" :session-id (plist-get context :session-id)
+          :resolve
+          (lambda (result)
+            (hermes-chat--in-buffer buffer
+              (hermes-chat--command-finish
+               context
+               (lambda ()
+                 (setq hermes-chat--runtime-flags
+                       (hermes-chat--reasoning-flags hermes-chat--runtime-flags result))
+                 (hermes-chat--handle-command-result
+                  `((output . ,(hermes-chat--reasoning-report result))))
+                 (force-mode-line-update)))))
+          :reject
+          (lambda (message)
+            (hermes-chat--in-buffer buffer
+              (hermes-chat--command-rejection context message)))))))))
+
 (defun hermes-chat--reasoning-request (arg)
   "Return (VALUE . SCOPE) for reasoning ARG.
 SCOPE is \"global\" only when ARG contains `--global'.  `--session' is an
@@ -339,13 +378,37 @@ accepted explicit spelling of the default session scope."
             (hermes-chat--in-buffer buffer
               (hermes-chat--command-rejection context message)))))))))
 
+(defun hermes-chat--reasoning-setting-value ()
+  "Return the current chat's reasoning value for a setting label."
+  (let ((pending (and (hermes-chat--pending-setting-p)
+                      hermes-chat--dashboard-create-reasoning-effort)))
+    (hermes-chat--setting-value
+     (or pending (plist-get hermes-chat--runtime-flags :reasoning-effort))
+     pending)))
+
 (defun hermes-chat--read-reasoning-effort ()
-  "Read a Hermes reasoning effort level with completion."
-  (completing-read
-   "Reasoning effort: " hermes-chat--reasoning-efforts nil t nil nil
-   (or hermes-chat--dashboard-create-reasoning-effort
-       (plist-get hermes-chat--runtime-flags :reasoning-effort)
-       "medium")))
+  "Read reasoning with a known default, refusing a changed prompt owner."
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before changing reasoning"))
+  (let* ((buffer (current-buffer))
+         (client hermes-chat--dashboard-client)
+         (generation hermes-chat--lifecycle-generation)
+         (transport hermes-chat--transport-generation)
+         (session hermes-chat--dashboard-active-session-id)
+         (default (or (and (hermes-chat--pending-setting-p)
+                           hermes-chat--dashboard-create-reasoning-effort)
+                      (plist-get hermes-chat--runtime-flags :reasoning-effort)))
+         (effort (completing-read
+                  (format "Reasoning effort (current: %s): "
+                          (hermes-chat--reasoning-setting-value))
+                  hermes-chat--reasoning-efforts nil t nil nil
+                  (and (member default hermes-chat--reasoning-efforts) default))))
+    (unless (and (eq buffer (current-buffer))
+                 (hermes-chat--dashboard-context-current-p client generation)
+                 (equal session hermes-chat--dashboard-active-session-id)
+                 (= transport hermes-chat--transport-generation))
+      (user-error "Hermes reasoning prompt is no longer current"))
+    effort))
 
 (defun hermes-chat-set-reasoning (&optional effort)
   "Set reasoning EFFORT for this session or its first turn.
@@ -450,8 +513,11 @@ CONFIRMED acknowledges a prior expensive-model warning."
   "Run RAW slash command for NAME and ARG, using native state paths when available."
   (let ((reasoning-request (and (string-equal name "reasoning")
                                 (hermes-chat--reasoning-request arg))))
-    (if reasoning-request
-        (hermes-chat--dashboard-set-reasoning arg)
+    (cond
+     (reasoning-request (hermes-chat--dashboard-set-reasoning arg))
+     ((and (string-equal name "reasoning") (string-empty-p (string-trim arg)))
+      (hermes-chat--dashboard-query-reasoning))
+     (t
       (let ((buffer (current-buffer))
             (preserve-content (concat "/" raw)))
         (hermes-chat--command-run-owned
@@ -471,7 +537,7 @@ CONFIRMED acknowledges a prior expensive-model warning."
                   (if (hermes-chat--command-context-current-p context)
                       (hermes-chat--dashboard-dispatch-command
                        name arg preserve-content context)
-                    (hermes-chat--command-stop owner))))))))))))
+                    (hermes-chat--command-stop owner)))))))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."

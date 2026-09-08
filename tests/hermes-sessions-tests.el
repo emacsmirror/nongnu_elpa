@@ -352,7 +352,8 @@
 (ert-deftest hermes-sessions-late-rename-does-not-report-success ()
   "An instance A rename cannot report success after retargeting to B."
   (let ((pending (hermes--promise-make)) messages)
-    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "A title"))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () 'test-client))
+              ((symbol-function 'read-string) (lambda (&rest _) "A title"))
               ((symbol-function 'hermes-sessions--set-title-promise)
                (lambda (&rest _) pending))
               ((symbol-function 'message)
@@ -375,7 +376,8 @@
 (ert-deftest hermes-sessions-late-delete-does-not-report-success ()
   "An instance A delete cannot report success after retargeting to B."
   (let ((pending (hermes--promise-make)) messages)
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () 'test-client))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
               ((symbol-function 'hermes-sessions--rest)
                (lambda (&rest _) pending))
               ((symbol-function 'message)

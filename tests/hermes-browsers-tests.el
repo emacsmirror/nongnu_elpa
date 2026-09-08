@@ -212,7 +212,7 @@
             (hermes-browseridentity-mode)
             (when rename-before (rename-buffer "*Renamed browser*" t))
             (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-                       (lambda (_fetch done) (setq callback done))))
+                       (lambda (_fetch done &optional _error) (setq callback done))))
               (hermes-browseridentity--revert))
             (unless rename-before (rename-buffer "*Renamed browser*" t))
             (setq replacement (get-buffer-create "*Hermes Browser Identity*"))
@@ -401,11 +401,11 @@
                   pending (hermes--promise-make))
             (hermes-kanban--render-board "another-board" "Another" t)
             (with-current-buffer "*Hermes Kanban*"
-              ;; Same-instance refreshes retain their displayed context
-              ;; until replacement rows arrive.
-              (should (equal hermes-kanban--slug "old-board"))
-              (should (hermes-kanban--events-tail-active
-                       hermes-kanban--events-tail))))
+              ;; A different board is a replacement even on the same instance.
+              (should (equal hermes-kanban--slug "another-board"))
+              (should-not tabulated-list-entries)
+              (should-not (hermes-kanban--events-tail-active
+                           hermes-kanban--events-tail))))
         (when (get-buffer "*Hermes Kanban*")
           (kill-buffer "*Hermes Kanban*"))))))
 
@@ -1741,6 +1741,383 @@
         (hermes--promise-resolve promise '((found . t)))
         (should-not refreshed)
         (should-not messages)))))
+
+(ert-deftest hermes-browser-entry-displays-before-deferred-result ()
+  "Show the pending list now; late replies cannot redirect subsequent typing."
+  (save-window-excursion
+    (let ((draft (generate-new-buffer " *browser draft*")) callback)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                     (lambda (_fetch success &optional _error)
+                       (setq callback success))))
+            (call-interactively #'hermes-list-sessions)
+            (should (eq (window-buffer) (get-buffer "*Hermes Sessions*")))
+            (with-current-buffer "*Hermes Sessions*"
+              (should (equal hermes-browser--status "Loading")))
+            (switch-to-buffer draft)
+            (buffer-enable-undo)
+            (execute-kbd-macro "draft")
+            (let ((point (point)) (undo (copy-tree buffer-undo-list)))
+              (funcall callback '((sessions . (((id . "fixture")
+                                                (title . "Visible result"))))))
+              (should (eq (window-buffer) draft))
+              (should (= (point) point))
+              (should (equal buffer-undo-list undo))
+              (should (equal (buffer-string) "draft")))
+            (with-current-buffer "*Hermes Sessions*"
+              (should (string-match-p "Visible result" (buffer-string)))))
+        (kill-buffer draft)
+        (when (get-buffer "*Hermes Sessions*") (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-browser-simple-help-command-loop ()
+  "Native popup dispatch, dismissal, and direct help preserve ordinary maps."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *browser help*")) (refreshes 0))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (hermes-sessions-mode)
+            (setq hermes-sessions--archived-filter "only"
+                  hermes-sessions--all-profiles t)
+            (cl-letf (((symbol-function 'hermes-sessions--revert)
+                       (lambda (&rest _) (cl-incf refreshes))))
+              (execute-kbd-macro (kbd "?"))
+              (should (get-buffer-window keymap-popup--buffer-name))
+              (with-current-buffer keymap-popup--buffer-name
+                (should (string-match-p
+                         "Archived: only"
+                         (plist-get (plist-get keymap-popup--session :active)
+                                    :resolved-docstring))))
+              (execute-kbd-macro (kbd "C-g"))
+              (should-not (get-buffer-window keymap-popup--buffer-name))
+              (should (eq (window-buffer) buffer))
+              (execute-kbd-macro (kbd "? g"))
+              (should (= refreshes 1))
+              (execute-kbd-macro (kbd "g"))
+              (should (= refreshes 2))
+              (should (eq (key-binding (kbd "RET")) #'hermes-sessions-open))
+              (should (keymapp (key-binding (kbd "C-h"))))
+              (execute-kbd-macro (kbd "? q"))
+              (should-not (eq (window-buffer) buffer))))
+        (keymap-popup-dismiss)
+        (kill-buffer buffer)))))
+
+(defconst hermes-browser-test--kanban-buffers
+  '("*Hermes Kanban Boards*" "*Hermes Kanban*" "*Hermes Kanban Task*"
+    "*Hermes Kanban Log*" "*Hermes Kanban Diagnostics*"))
+
+(ert-deftest hermes-browser-kanban-entry-focus-and-pending-context ()
+  "Every public Kanban navigation displays an initialized pending owner."
+  (save-window-excursion
+    (dolist (kind '(boards board task log diagnostics))
+      (let ((pending (hermes--promise-make))
+            (draft (generate-new-buffer " *kanban draft*")))
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-kanban--api)
+                       (lambda (method path &rest _)
+                         (should (equal method "GET"))
+                         (if (equal path "/orchestration")
+                             (hermes--promise-resolved nil) pending))))
+              (switch-to-buffer draft)
+              (hermes-kanban-mode)
+              (setq hermes-kanban--slug "alpha"
+                    tabulated-list-entries '(("one" ["todo" "1" "worker" "One"])))
+              (tabulated-list-print)
+              (goto-char (point-min))
+              (let* ((name (pcase kind
+                             ('boards (call-interactively #'hermes-list-kanban)
+                                      "*Hermes Kanban Boards*")
+                             ('board (hermes-kanban-open-board-task "alpha" "one")
+                                     "*Hermes Kanban*")
+                             ('task (call-interactively #'hermes-kanban-show)
+                                    "*Hermes Kanban Task*")
+                             ('log (call-interactively #'hermes-kanban-show-log)
+                                   "*Hermes Kanban Log*")
+                             ('diagnostics (call-interactively #'hermes-kanban-diagnostics)
+                                           "*Hermes Kanban Diagnostics*")))
+                     (target (get-buffer name)))
+                (should (eq (window-buffer) target))
+                (with-current-buffer target
+                  (should (equal hermes-browser--status "Loading"))
+                  (when (eq kind 'task) (should (equal hermes-kanban-task--task-id "one")))
+                  (when (eq kind 'log) (should (equal hermes-kanban-log--task-id "one"))))
+                (switch-to-buffer draft)
+                (fundamental-mode)
+                (read-only-mode -1)
+                (erase-buffer)
+                (buffer-enable-undo)
+                (execute-kbd-macro "still typing")
+                (let ((point (point)) (undo (copy-tree buffer-undo-list)))
+                  (hermes--promise-resolve
+                   pending '((task . ((id . "one") (title . "One")))
+                             (task_id . "one") (exists . t) (content . "log")))
+                  (should (eq (window-buffer) draft))
+                  (should (= (point) point))
+                  (should (equal buffer-undo-list undo))
+                  (should (equal (buffer-string) "still typing")))))
+          (kill-buffer draft)
+          (dolist (name hermes-browser-test--kanban-buffers)
+            (when (get-buffer name) (kill-buffer name))))))))
+
+(ert-deftest hermes-browser-kanban-refresh-preserves-every-window ()
+  "Task and log refresh retain buffer point and each independent viewport."
+  (save-window-excursion
+    (dolist (kind '(task log))
+      (let* ((text (mapconcat (lambda (n) (format "Line %d: content" n))
+                             (number-sequence 1 100) "\n"))
+             (payload `((task . ((id . "one") (title . "One") (body . ,text)))
+                        (task_id . "one") (exists . t) (content . ,text)))
+             (pending (hermes--promise-make)))
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-kanban--api)
+                       (lambda (method &rest _) (should (equal method "GET")) pending)))
+              (delete-other-windows)
+              (if (eq kind 'task)
+                  (hermes-kanban--display-task payload "alpha" nil nil (hermes-instance-resolve))
+                (hermes-kanban--display-log payload "alpha" nil (hermes-instance-resolve)))
+              (set-buffer (window-buffer))
+              (let* ((target (window-buffer))
+                     (first (selected-window))
+                     (second (split-window-below))
+                     (start-a (save-excursion (goto-char (point-min)) (forward-line 10) (point)))
+                     (start-b (save-excursion (goto-char (point-min)) (forward-line 40) (point)))
+                     (point-a (+ start-a 4))
+                     (point-b (+ start-b 7)))
+                (set-buffer target)
+                (set-window-buffer second target)
+                (set-window-start first start-a t)
+                (set-window-start second start-b t)
+                (set-window-point first point-a)
+                (set-window-point second point-b)
+                (execute-kbd-macro (kbd "g"))
+                (hermes--promise-resolve pending payload)
+                (should (= (with-current-buffer target (point)) point-a))
+                (should (= (window-start first) start-a))
+                (should (= (window-start second) start-b))
+                (should (= (window-point first) point-a))
+                (should (= (window-point second) point-b))))
+          (dolist (name hermes-browser-test--kanban-buffers)
+            (when (get-buffer name) (kill-buffer name))))))))
+
+(ert-deftest hermes-browser-list-status-failure-and-retry ()
+  "Initial acquisition failure is visible, and g distinguishes empty from loading."
+  (save-window-excursion
+    (let ((pending (hermes--promise-make))
+          (hermes-browser-test--fetch-function nil))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'hermes-browser--with-client)
+                       (lambda (_) (error "Unavailable"))))
+              (hermes-list-browseridentity))
+            (should (eq (window-buffer) (get-buffer "*Hermes Browser Identity*")))
+            (set-buffer (window-buffer))
+            (should (string-prefix-p "Failed" hermes-browser--status))
+            (setq hermes-browser-test--fetch-function (lambda () pending))
+            (cl-letf (((symbol-function 'hermes-browser--with-client)
+                       (lambda (fn) (funcall fn 'test-client #'ignore))))
+              (execute-kbd-macro (kbd "g")))
+            (should (equal hermes-browser--status "Loading"))
+            (hermes--promise-resolve pending nil)
+            (should (equal hermes-browser--status "Empty")))
+        (when (get-buffer "*Hermes Browser Identity*")
+          (kill-buffer "*Hermes Browser Identity*"))))))
+
+(ert-deftest hermes-browser-kanban-board-refresh-sort-and-row ()
+  "Public board refresh retains the selected sort and logical task row."
+  (save-window-excursion
+    (let* ((tasks '(((id . "a") (title . "Zulu") (created_at . 2))
+                    ((id . "b") (title . "Alpha") (created_at . 1))))
+           (payload `((columns . (((tasks . ,tasks))))))
+           (pending (hermes--promise-make)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-kanban--api)
+                     (lambda (method path &rest _)
+                       (should (equal method "GET"))
+                       (if (equal path "/orchestration")
+                           (hermes--promise-resolved nil) pending))))
+            (hermes-kanban-open-board-task "alpha" "a")
+            (hermes--promise-resolve pending payload)
+            (set-buffer (window-buffer))
+            (tabulated-list-sort 3)
+            (hermes-kanban--goto-task-row "a")
+            (let ((sort tabulated-list-sort-key))
+              (setq pending (hermes--promise-make))
+              (execute-kbd-macro (kbd "g"))
+              (hermes--promise-resolve pending payload)
+              (should (equal tabulated-list-sort-key sort))
+              (should (equal (tabulated-list-get-id) "a")))
+            (setq pending (hermes--promise-make))
+            (hermes-kanban-open-board-task "beta" nil)
+            (should (equal hermes-kanban--slug "beta"))
+            (should-not tabulated-list-entries)
+            (should-not tabulated-list-sort-key)
+            (hermes--promise-resolve pending payload)
+            (should (= (point) (point-min))))
+        (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*"))))))
+
+(ert-deftest hermes-browser-kanban-detached-reading-and-replacement ()
+  "Refresh preserves hidden/unselected readers; replacing a task starts at top."
+  (save-window-excursion
+    (dolist (kind '(task log))
+      (dolist (visibility '(hidden unselected))
+        (let* ((text (mapconcat (lambda (n) (format "Line %d" n))
+                               (number-sequence 1 80) "\n"))
+               (payload `((task . ((id . "one") (body . ,text)))
+                          (task_id . "one") (exists . t) (content . ,text)))
+               (pending (hermes--promise-make))
+               (draft (generate-new-buffer " *detached draft*")))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-kanban--api)
+                         (lambda (method &rest _) (should (equal method "GET")) pending)))
+                (delete-other-windows)
+                (if (eq kind 'task) (hermes-kanban-open-task "one" "alpha")
+                  (hermes-kanban--open-log "one" "alpha"))
+                (hermes--promise-resolve pending payload)
+                (set-buffer (window-buffer))
+                (let* ((target (current-buffer))
+                       (reader (selected-window)))
+                  (goto-char (point-min)) (forward-line 20)
+                  (set-window-start reader (point) t)
+                  (forward-line 3) (forward-char 2)
+                  (let ((position (point)) (start (window-start reader)))
+                    (when (eq visibility 'unselected) (select-window (split-window-below)))
+                    (switch-to-buffer draft)
+                    (execute-kbd-macro "new draft")
+                    (setq pending (hermes--promise-make))
+                    (with-current-buffer target (revert-buffer nil t))
+                    (hermes--promise-resolve pending payload)
+                    (should (eq (window-buffer) draft))
+                    (should (equal (buffer-string) "new draft"))
+                    (with-current-buffer target (should (= (point) position)))
+                    (when (eq visibility 'unselected)
+                      (should (= (window-point reader) position))
+                      (should (= (window-start reader) start))))
+                  (setq pending (hermes--promise-make))
+                  (if (eq kind 'task) (hermes-kanban-open-task "two" "alpha")
+                    (hermes-kanban--open-log "two" "alpha"))
+                  (with-current-buffer target
+                    (should (= (buffer-size) 0))
+                    (should (equal hermes-browser--status "Loading")))
+                  (hermes--promise-resolve
+                   pending '((task . ((id . "two") (body . "Short")))
+                             (task_id . "two") (exists . t) (content . "Short")))
+                  (with-current-buffer target (should (= (point) (point-min))))))
+            (kill-buffer draft)
+            (dolist (name hermes-browser-test--kanban-buffers)
+              (when (get-buffer name) (kill-buffer name)))))))))
+
+(ert-deftest hermes-browser-kanban-results-own-buffer-not-name ()
+  "Renamed targets retain results; killed or repurposed owners ignore both settlements."
+  (dolist (kind '(boards board task log diagnostics))
+    (dolist (change '(rename mode kill instance))
+      (dolist (reject '(nil t))
+        (save-window-excursion
+          (let ((pending (hermes--promise-make)) target replacement messages)
+            (unwind-protect
+                (cl-letf (((symbol-function 'hermes-kanban--api)
+                           (lambda (method path &rest _)
+                             (should (equal method "GET"))
+                             (if (equal path "/orchestration")
+                                 (hermes--promise-resolved nil) pending)))
+                          ((symbol-function 'message)
+                           (lambda (&rest args) (push args messages))))
+                  (pcase kind
+                    ('boards (hermes-list-kanban))
+                    ('board (hermes-kanban-open-board-task "alpha" nil))
+                    ('task (hermes-kanban-open-task "one" "alpha"))
+                    ('log (hermes-kanban--open-log "one" "alpha"))
+                    ('diagnostics (hermes-kanban--render-diagnostics "alpha" "Alpha")))
+                  (setq target (window-buffer))
+                  (with-current-buffer target
+                    (pcase change
+                      ('rename
+                       (let ((name (buffer-name)))
+                         (rename-buffer " *renamed browser*" t)
+                         (setq replacement (get-buffer-create name))))
+                      ('mode (fundamental-mode))
+                      ('kill (kill-buffer))
+                      ('instance (setq hermes-instance '("other" . "https://other.invalid")))))
+                  (setq messages nil)
+                  (if reject (hermes--promise-reject pending "Read failed")
+                    (hermes--promise-resolve pending '((task . ((id . "one"))) (task_id . "one"))))
+                  (when (buffer-live-p replacement)
+                    (with-current-buffer replacement (should (= (buffer-size) 0))))
+                  (if (eq change 'rename)
+                      (with-current-buffer target
+                        (should-not (equal hermes-browser--status "Loading")))
+                    (should-not messages)
+                    (when (buffer-live-p target)
+                      (with-current-buffer target (should (= (buffer-size) 0))))))
+              (when (buffer-live-p target) (kill-buffer target))
+              (when (buffer-live-p replacement) (kill-buffer replacement)))))))))
+
+(ert-deftest hermes-browser-help-shared-modes-and-editable-soul ()
+  "Every simple list and observed-work view has native contextual help."
+  (save-window-excursion
+    (dolist (mode '(hermes-sessions-mode hermes-session-detail-mode hermes-cron-mode
+                    hermes-profiles-mode hermes-rollback-mode hermes-subagents-mode
+                    hermes-provider-accounts-mode hermes-work-mode hermes-work-log-mode))
+      (let ((buffer (generate-new-buffer " *native browser help*")))
+        (unwind-protect
+            (progn
+              (switch-to-buffer buffer) (funcall mode)
+              (let ((map (current-local-map))
+                    (refresh (key-binding (kbd "g")))
+                    (quit (key-binding (kbd "q"))))
+                (execute-kbd-macro (kbd "?"))
+                (should (get-buffer-window keymap-popup--buffer-name))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "Refresh" (buffer-string))))
+                (execute-kbd-macro (kbd "C-g"))
+                (should (eq (window-buffer) buffer))
+                (should (eq map (current-local-map)))
+                (should (eq refresh (key-binding (kbd "g"))))
+                (should (eq quit (key-binding (kbd "q"))))
+                (should (keymapp (key-binding (kbd "C-h"))))))
+          (keymap-popup-dismiss) (kill-buffer buffer))))
+    (let ((buffer (generate-new-buffer " *SOUL typing*")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer) (hermes-profiles-soul-mode)
+            (execute-kbd-macro "? q g ordinary text")
+            (should (equal (buffer-string) "? q g ordinary text")))
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-browser-kanban-initial-failure-and-retry ()
+  "A new view settles failure, and its direct refresh can load usable data."
+  (save-window-excursion
+    (dolist (kind '(boards board task log diagnostics))
+      (let ((pending (hermes--promise-make)))
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-kanban--api)
+                       (lambda (method path &rest _)
+                         (should (equal method "GET"))
+                         (if (equal path "/orchestration")
+                             (hermes--promise-resolved nil) pending))))
+              (dolist (name hermes-browser-test--kanban-buffers)
+                (should-not (get-buffer name)))
+              (pcase kind
+                ('boards (call-interactively #'hermes-list-kanban))
+                ('board (hermes-kanban-open-board-task "alpha" nil))
+                ('task (hermes-kanban-open-task "one" "alpha"))
+                ('log (hermes-kanban--open-log "one" "alpha"))
+                ('diagnostics (hermes-kanban--render-diagnostics "alpha" "Alpha")))
+              (set-buffer (window-buffer))
+              (should (equal hermes-browser--status "Loading"))
+              (hermes--promise-reject pending "Read unavailable")
+              (should (string-prefix-p "Failed" hermes-browser--status))
+              (setq pending (hermes--promise-make))
+              (execute-kbd-macro (kbd "g"))
+              (should (equal hermes-browser--status "Loading"))
+              (hermes--promise-resolve
+               pending '((task . ((id . "one") (title . "One")))
+                         (task_id . "one") (exists . t) (content . "Log ready")))
+              (should (member hermes-browser--status '("Ready" "Empty")))
+              (when (memq kind '(task log))
+                (should (string-match-p (if (eq kind 'task) "One" "Log ready")
+                                        (buffer-string)))))
+          (dolist (name hermes-browser-test--kanban-buffers)
+            (when (get-buffer name) (kill-buffer name))))))))
 
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

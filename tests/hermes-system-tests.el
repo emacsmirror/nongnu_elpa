@@ -442,9 +442,9 @@
                   ((symbol-function 'completing-read)
                    (lambda (prompt &rest _)
                      (pcase prompt
-                       ("Log source: " "errors")
-                       ("Minimum log level: " "WARNING")
-                       ("Log component: " "cron"))))
+                       ((pred (string-prefix-p "Log source:")) "errors")
+                       ((pred (string-prefix-p "Minimum log level:")) "WARNING")
+                       ((pred (string-prefix-p "Log component:")) "cron"))))
                   ((symbol-function 'read-number) (lambda (&rest _) 250)))
           (unwind-protect
               (progn
@@ -473,6 +473,71 @@
                   (should (= fetches 6))
                   (should-not hermes-system--auto-refresh)))
             (keymap-popup-dismiss)))))))
+
+
+(ert-deftest hermes-system-popup-shows-each-owners-current-filters ()
+  "Rendered descriptions show current filter values, not replacement defaults."
+  (save-window-excursion
+    (dolist (source '("agent" "gateway"))
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (hermes-system-mode)
+        (setq hermes-system--path "/api/logs"
+              hermes-system--query `((file . ,source) (level . "ERROR")
+                                     (component . "cron") (lines . 37)))
+        (let ((keymap-popup-backend #'keymap-popup-backend-side-window)
+              (keymap-popup--buffer-name " *system labels test*"))
+          (unwind-protect
+              (progn
+                (execute-kbd-macro (kbd "?"))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p (concat "Source: " source) (buffer-string)))
+                  (should (string-match-p "Min level: ERROR" (buffer-string)))
+                  (should (string-match-p "Component: cron" (buffer-string)))
+                  (should (string-match-p "Tail lines: 37" (buffer-string)))))
+            (keymap-popup-dismiss)))))))
+
+
+(ert-deftest hermes-system-real-filter-prompt-cancel-preserves-two-owners ()
+  "A real popup prompt shows its owner value and cancellation changes neither."
+  (save-window-excursion
+    (let ((one (generate-new-buffer " *log owner one*"))
+          (two (generate-new-buffer " *log owner two*"))
+          (keymap-popup-backend #'keymap-popup-backend-side-window)
+          (keymap-popup--buffer-name " *log prompt test*"))
+      (unwind-protect
+          (progn
+            (dolist (buffer (list one two))
+              (with-current-buffer buffer
+                (hermes-system-mode)
+                (setq hermes-system--path "/api/logs"
+                      hermes-system--query `((file . ,(if (eq buffer one) "agent" "gateway"))))))
+            (switch-to-buffer one)
+            (let ((noninteractive nil) prompt)
+              (minibuffer-with-setup-hook
+                  (lambda () (setq prompt (minibuffer-prompt)))
+                (condition-case nil
+                    (execute-kbd-macro (kbd "? s C-g"))
+                  (quit nil)))
+              (should (string-match-p "Log source: agent" prompt))
+              (should (eq (current-buffer) one)))
+            (should (equal (buffer-local-value 'hermes-system--query one) '((file . "agent"))))
+            (should (equal (buffer-local-value 'hermes-system--query two) '((file . "gateway")))))
+        (keymap-popup-dismiss)
+        (kill-buffer one) (kill-buffer two)))))
+
+(ert-deftest hermes-system-filter-prompt-refuses-replaced-owner ()
+  "Minibuffer input cannot replace a newer query or status view."
+  (with-temp-buffer
+    (hermes-system-mode)
+    (setq hermes-system--path "/api/logs" hermes-system--query '((file . "agent")))
+    (let (fetched)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) (setq hermes-system--path "/api/status") "gateway"))
+                ((symbol-function 'hermes-system--fetch) (lambda (&rest _) (setq fetched t))))
+        (should-error (call-interactively #'hermes-system-log-source) :type 'user-error)
+        (should-not fetched)
+        (should (equal hermes-system--query '((file . "agent"))))))))
 
 (provide 'hermes-system-tests)
 ;;; hermes-system-tests.el ends here

@@ -729,6 +729,12 @@ Return the new request context."
   :on-mode (lambda ()
              (setq-local hermes-browser--snapshot-variables
                          '(hermes-onboarding--provider-account-result)))
+  :help (:group "Account"
+         hermes-onboarding-provider-account-act "Connect / manage"
+         hermes-onboarding-provider-account-disconnect "Disconnect"
+         :group "Setup"
+         hermes-onboarding-provider-account-browse-docs "Documentation"
+         hermes-onboarding-provider-account-copy-command "Copy setup command")
   :keys ("RET" #'hermes-onboarding-provider-account-act
          "c" #'hermes-onboarding-provider-account-act
          "d" #'hermes-onboarding-provider-account-disconnect

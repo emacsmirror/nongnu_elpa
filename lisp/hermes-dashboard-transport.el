@@ -148,14 +148,16 @@ Each further attempt doubles the delay up to
 
 ;;; Subscribers
 
-(defun hermes-dashboard-transport-subscribe (client fn)
+(defun hermes-dashboard-transport-subscribe (client fn &optional retire)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
 A new subscriber owns no session, so it receives untagged connection-level
 broadcast events until
 `hermes-dashboard-transport-subscribe-session' binds the token to a live session
-id."
+id.  Optional RETIRE is called without arguments after connection ownership
+retires, even when stopping emits no event.  It must revalidate its local owner.
+With FN nil, observe retirement only, without participating in event routing."
   (let ((token (gensym "hermes-dashboard-sub-")))
-    (puthash token (list :fn fn :session-id nil)
+    (puthash token (list :fn fn :session-id nil :retire retire)
              (hermes-dashboard-transport-client-subscribers client))
     token))
 
@@ -178,6 +180,8 @@ stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
   (when-let* ((record (gethash token
                                (hermes-dashboard-transport-client-subscribers
                                 client))))
+    (unless (plist-get record :fn)
+      (error "Retirement-only subscription cannot own a session"))
     (let ((index (hermes-dashboard-transport-client-session-index client)))
       (when-let* ((previous (plist-get record :session-id)))
         (when (eq (gethash previous index) token)
@@ -204,10 +208,13 @@ stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
 
 (defun hermes-dashboard-transport-set-subscriber-fn (client token fn)
   "Replace subscriber TOKEN's function with FN on CLIENT, keeping its session.
+With FN nil, clear its session ownership and observe retirement only.
 Return TOKEN on success, or nil when TOKEN is not registered on CLIENT."
   (when-let* ((record (gethash token
                                (hermes-dashboard-transport-client-subscribers
                                 client))))
+    (when (and (null fn) (plist-get record :session-id))
+      (hermes-dashboard-transport-subscribe-session client token nil))
     (plist-put record :fn fn)
     token))
 
@@ -235,14 +242,22 @@ perturb shared transport state from inside a status broadcast."
 (defun hermes-dashboard-transport--broadcast-event (client event)
   "Send EVENT to every subscriber function on CLIENT."
   (maphash (lambda (_token record)
-             (hermes-dashboard-transport--deliver (plist-get record :fn) event))
+             (when-let* ((fn (plist-get record :fn)))
+               (hermes-dashboard-transport--deliver fn event)))
            (hermes-dashboard-transport-client-subscribers client)))
+
+(defun hermes-dashboard-transport--event-subscribers (client)
+  "Return CLIENT's subscriber records that participate in event routing."
+  (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
+    (when (hash-table-p subscribers)
+      (seq-filter (lambda (record) (plist-get record :fn))
+                  (hash-table-values subscribers)))))
 
 (defun hermes-dashboard-transport--sole-subscriber-fn (client)
   "Return CLIENT's only unbound subscriber function, or nil."
-  (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
-    (when (= (hash-table-count subscribers) 1)
-      (let ((record (car (hash-table-values subscribers))))
+  (let ((subscribers (hermes-dashboard-transport--event-subscribers client)))
+    (when (= (length subscribers) 1)
+      (let ((record (car subscribers)))
         (unless (plist-get record :session-id)
           (plist-get record :fn))))))
 
@@ -251,11 +266,10 @@ perturb shared transport state from inside a status broadcast."
 Tagged events go only to their live session owners and are dropped when no
 owner remains.  A sole unbound subscriber is the legacy bootstrap case and may
 receive the tagged event; with multiple subscribers an unowned tag is dropped.
-Untagged events broadcast.  With no subscribers registered, fall back to
+Untagged events broadcast.  With no event subscribers, fall back to
 CLIENT's legacy callback for single-callback callers."
-  (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
-    (if (and (hash-table-p subscribers)
-             (> (hash-table-count subscribers) 0))
+  (let ((subscribers (hermes-dashboard-transport--event-subscribers client)))
+    (if subscribers
         (if-let* ((session-id
                    (hermes-dashboard-transport--event-session-id event)))
             (let ((fns (hermes-dashboard-transport--session-subscriber-fns
@@ -565,17 +579,20 @@ SINGLE-EVENT-P omits request-derived error events."
          (requests (and (hash-table-p pending)
                         (hermes-dashboard-transport--pending-requests client)))
          (subscribers (hermes-dashboard-transport-client-subscribers client))
-         subscriber-fns)
+         subscriber-fns retirement-fns)
     (when (hash-table-p subscribers)
       (maphash (lambda (_token record)
                  (when (functionp (plist-get record :fn))
-                   (push (plist-get record :fn) subscriber-fns)))
+                   (push (plist-get record :fn) subscriber-fns))
+                 (when (functionp (plist-get record :retire))
+                   (push (plist-get record :retire) retirement-fns)))
                subscribers))
     (let* ((message (hermes-dashboard-transport--normalized-error-message
                      client message))
            (fallback (and (null subscriber-fns)
                           (hermes-dashboard-transport-client-callback client))))
       (list :message message :requests requests
+            :retirement-fns retirement-fns
             :ready (hermes-dashboard-transport-client-ready-promise client)
             :event-fns (or subscriber-fns (and (functionp fallback)
                                                 (list fallback)))
@@ -643,6 +660,8 @@ SINGLE-EVENT-P omits request-derived error events."
 
 (defun hermes-dashboard-transport--run-stop-effects (snapshot)
   "Run captured terminal SNAPSHOT effects independently."
+  (mapc #'hermes-dashboard-transport--attempt
+        (plist-get snapshot :retirement-fns))
   (when (functionp (plist-get snapshot :startup))
     (hermes-dashboard-transport--attempt (plist-get snapshot :startup)))
   (dolist (timer (append (list (plist-get snapshot :idle)
@@ -720,6 +739,7 @@ Return captured resources, never a lease on later client state."
           (when (hermes-dashboard-transport-client-reconnecting-p client)
             (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client)))
           (setq snapshot (plist-put snapshot :requests nil)
+                snapshot (plist-put snapshot :retirement-fns nil)
                 snapshot (plist-put snapshot :ready nil)
                 snapshot (plist-put snapshot :events nil)))
       (cl-incf (hermes-dashboard-transport-client-generation client))
@@ -742,6 +762,7 @@ Check CURRENT after each effect for reference-only abandonment."
   (cl-flet ((retire (function &rest args)
               (apply #'hermes-dashboard-transport--attempt function args)
               (funcall current)))
+    (mapc #'retire (plist-get snapshot :retirement-fns))
     (when (functionp (plist-get snapshot :startup))
       (retire (plist-get snapshot :startup)))
     (dolist (timer (append (list (plist-get snapshot :idle)

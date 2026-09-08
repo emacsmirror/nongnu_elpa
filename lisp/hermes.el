@@ -50,6 +50,7 @@
 (require 'hermes-admin)
 (require 'hermes-command-palette)
 (require 'hermes-browser)
+(autoload 'hermes-files "hermes-files" nil t)
 (require 'hermes-onboarding)
 
 (defgroup hermes nil
@@ -136,19 +137,20 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :popup-key "h"
   :description "Hermes Dashboard"
   :group "Navigate"
-  "n" ("Next card" hermes-dashboard-next)
-  "p" ("Previous card" hermes-dashboard-previous)
+  "n" ("Next" hermes-dashboard-next)
+  "p" ("Previous" hermes-dashboard-previous)
   "RET" ("Open" hermes-dashboard-open)
-  "<mouse-1>" ("Open with mouse" hermes-dashboard-mouse-open)
+  "<mouse-1>" ("Open" hermes-dashboard-mouse-open)
   :group "Session"
   "c" ("Chat" hermes-chat)
-  "e" ("Connect API-key provider" hermes-onboarding-connect-provider)
+  "e" ("Connect provider" hermes-onboarding-connect-provider)
   "o" ("Provider accounts" hermes-onboarding-oauth-connect)
   "S" ("Sessions" hermes-list-sessions)
+  :row
   :group "Selected chat"
   "i" ("Interrupt" hermes-dashboard-interrupt)
   "s" ("Steer" hermes-dashboard-steer)
-  "a" ("Respond to prompt" hermes-dashboard-respond)
+  "a" ("Answer prompt" hermes-dashboard-respond)
   "m" ("Switch model" hermes-dashboard-switch-model)
   "d" ("Disconnect" hermes-dashboard-disconnect)
   :group "Browse"
@@ -156,6 +158,9 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "R" ("Rollbacks" hermes-list-rollbacks)
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
+  "O" ("Managed files" hermes-files)
+  :row
+  :group "Resources"
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
   :group "Manage"
@@ -163,6 +168,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "M" ("Messaging" hermes-list-messaging-platforms)
   "Z" ("Configuration" hermes-config)
   "J" ("Agent plugins" hermes-list-plugins)
+  :row
   :group "Access and routes"
   "B" ("Pairing" hermes-list-pairing)
   "W" ("Webhooks" hermes-list-webhooks)
@@ -282,6 +288,17 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
          (> (or (hermes-dashboard--time-age updated) 0)
             hermes-dashboard-stale-after))))
 
+(defun hermes-dashboard--activity-summary (text)
+  "Return a single subdued line of activity TEXT for a dashboard card."
+  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
+         (width (if windows (apply #'min (mapcar #'window-body-width windows))
+                  (window-body-width))))
+    (propertize
+     (truncate-string-to-width
+      (string-join (split-string text "[[:space:]]+" t) " ")
+      (max 1 (min 72 (- width 6))) nil nil t)
+     'face 'hermes-dashboard-muted)))
+
 (defun hermes-dashboard--format-chat-detail (node)
   "Return detail strings for chat dashboard NODE."
   (let* ((activity (hermes-dashboard--nonempty-string
@@ -297,16 +314,19 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
          (active-tools (plist-get node :active-tools))
          (pending-prompts (or (plist-get node :pending-prompts) 0))
          (tools (and active-tools
-                     (format "tools: %s" (string-join active-tools "; "))))
+                     (format "%d active tool%s · RET open for details"
+                             (length active-tools)
+                             (if (= (length active-tools) 1) "" "s"))))
          (prompts (and (> pending-prompts 0)
                        (format "%d pending prompt%s"
                                pending-prompts
                                (if (= pending-prompts 1) "" "s")))))
     (delq nil
-          (list activity
-                connection
+          (list (and activity (hermes-dashboard--activity-summary activity))
+                (and connection (propertize connection 'face 'hermes-dashboard-muted))
                 (and instance (format "instance %s" instance))
-                (and session-id (format "session %s" session-id))
+                (and session-id (propertize (format "session %s" session-id)
+                                            'face 'hermes-dashboard-muted))
                 tools
                 prompts
                 (and (plist-get node :stale-p) "no recent updates")))))
@@ -368,7 +388,12 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
     (insert (propertize "    RET open   i interrupt   s steer   a respond\n"
                         'face 'hermes-dashboard-muted))
     (hermes-dashboard--add-card-properties
-     start node (format "Open %s" title) 'hermes-dashboard-buffer buffer)))
+     start node (string-join
+                 (delq nil (append (list (format "Open %s" title)
+                                          (plist-get node :activity))
+                                    (plist-get node :active-tools)))
+                 "\n")
+     'hermes-dashboard-buffer buffer)))
 
 (defun hermes-dashboard--print-empty-node (node)
   "Insert empty-state dashboard NODE at point."

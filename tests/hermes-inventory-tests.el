@@ -386,7 +386,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "A late memory response does not recreate a killed memory buffer."
   (let ((promise (hermes--promise-make)))
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise)))
@@ -403,7 +403,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
         (second (hermes--promise-make))
         (requests 0))
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _)
@@ -461,7 +461,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
               ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise))
@@ -481,7 +481,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
               ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
+               (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise))
@@ -724,6 +724,241 @@ Toolset toggles are global configuration: no `:session-id' is sent."
          request '((fields . (((key . "api_key") (kind . "secret"))))))))
     (should (equal methods '("GET")))
     (should-not prompts)))
+
+
+(ert-deftest hermes-inventory-open-displays-pending-without-late-focus ()
+  "The public listing selects at invocation, never at delayed settlement."
+  (save-window-excursion
+    (let ((buffer (get-buffer-create "*Hermes Toolsets*"))
+          (draft (generate-new-buffer " *inventory draft*")) success failure)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                     (lambda (_make ok &optional bad) (setq success ok failure bad))))
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (&rest _) "Toolsets")))
+              (hermes-list-inventory))
+            (should (eq (current-buffer) buffer))
+            (should (string-match-p "Loading" mode-line-process))
+            (switch-to-buffer draft)
+            (insert "unfinished draft")
+            (funcall success '((tools . nil)))
+            (should (eq (current-buffer) draft))
+            (should (equal (buffer-string) "unfinished draft"))
+            (with-current-buffer buffer
+              (should (string-match-p "Empty" mode-line-process))
+              (hermes-inventory--revert))
+            (funcall failure "fixture read failure")
+            (should (eq (current-buffer) draft))
+            (with-current-buffer buffer
+              (should (string-match-p "Failed" mode-line-process)))
+            (should (equal (buffer-string) "unfinished draft")))
+        (kill-buffer buffer)
+        (kill-buffer draft)))))
+
+
+(ert-deftest hermes-memory-status-pending-entry-does-not-steal-later-focus ()
+  "Memory help's view also displays pending and settles without selection."
+  (save-window-excursion
+    (let ((target (get-buffer-create "*Hermes Memory*"))
+          (draft (generate-new-buffer " *memory focus draft*")) success failure)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                     (lambda (_make ok &optional bad) (setq success ok failure bad))))
+            (switch-to-buffer draft)
+            (insert "draft")
+            (hermes-memory-status)
+            (should (eq (current-buffer) target))
+            (should (string-match-p "Loading" mode-line-process))
+            (switch-to-buffer draft)
+            (funcall success '((active . "built-in")))
+            (should (eq (current-buffer) draft))
+            (with-current-buffer target
+              (should (string-match-p "Ready" mode-line-process))
+              (hermes-memory-status))
+            (funcall failure "fixture failure")
+            (should (eq (current-buffer) draft))
+            (should (equal (buffer-string) "draft"))
+            (with-current-buffer target (should (string-match-p "Failed" mode-line-process))))
+        (kill-buffer target) (kill-buffer draft)))))
+
+(ert-deftest hermes-inventory-cold-start-failure-is-retryable ()
+  "Both public readers settle a real failed spawn and release a successful retry."
+  (save-window-excursion
+    (dolist (command '(hermes-list-inventory hermes-memory-status))
+      (let* ((directory (make-temp-file "hermes-missing-command-" t))
+             (hermes-instance '("test" . "http://127.0.0.1:19391"))
+             (hermes-dashboard-transport-start-mode 'spawn)
+             (hermes-dashboard-transport-command
+              (expand-file-name "nonexistent-hermes" directory))
+             (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+             (hermes-dashboard-transport-idle-close-delay nil)
+             (cleanup (symbol-function 'hermes-dashboard-transport--cleanup-start-failure))
+             (client (make-hermes-dashboard-transport-client :callback #'ignore))
+             (response (hermes--promise-make))
+             (draft (generate-new-buffer " *cold-start draft*"))
+             (processes (process-list))
+             (timers (copy-sequence timer-list))
+             failed-client target)
+        (unwind-protect
+            (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
+                      ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                      ((symbol-function 'hermes-dashboard-transport--cleanup-start-failure)
+                       (lambda (failed)
+                         (setq failed-client failed)
+                         (funcall cleanup failed))))
+              (switch-to-buffer draft)
+              (should-error (call-interactively command) :type 'user-error)
+              (setq target (current-buffer))
+              (should (string-match-p "Failed.*g Retry" mode-line-process))
+              (should (eq (window-buffer) target))
+              (should failed-client)
+              (should (hermes-dashboard-transport-client-stopping-p failed-client))
+              (should (zerop (hermes-dashboard-transport-client-refcount failed-client)))
+              (should-not (hermes-dashboard-transport-client-process failed-client))
+              (should-not (hermes-dashboard-transport-client-websocket failed-client))
+              (should (zerop (hash-table-count hermes-dashboard-transport--clients)))
+              (should-not (seq-difference (process-list) processes))
+              (should-not (seq-difference timer-list timers))
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                         (lambda (&rest _) client))
+                        ((symbol-function 'hermes-dashboard-transport-call)
+                         (lambda (&rest _) response))
+                        ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                         (lambda (&rest _) response)))
+                ;; Invoke the advertised key, retaining real acquire/release.
+                (call-interactively (key-binding (kbd "g")))
+                (should (string-match-p "Loading" mode-line-process))
+                (should (= 1 (hermes-dashboard-transport-client-refcount client)))
+                (switch-to-buffer draft)
+                (insert "continued draft")
+                (hermes--promise-resolve
+                 response '((active . "built-in")
+                            (toolsets . (((name . "files") (enabled . t))))))
+                (should (eq (window-buffer) draft))
+                (should (equal (buffer-string) "continued draft"))
+                (with-current-buffer target
+                  (should (string-match-p "Ready" mode-line-process))
+                  (if (eq command 'hermes-list-inventory)
+                      (should (equal (caar tabulated-list-entries) "files"))
+                    (should (equal (hermes-transport--get hermes-memory--status 'active)
+                                   "built-in"))))
+                (should (zerop (hermes-dashboard-transport-client-refcount client)))
+                (should (hermes-dashboard-transport-client-stopping-p client))
+                (should (zerop (hash-table-count hermes-dashboard-transport--clients)))
+                (should-not (seq-difference (process-list) processes))
+                (should-not (seq-difference timer-list timers))))
+          (when (buffer-live-p target) (kill-buffer target))
+          (kill-buffer draft)
+          (delete-directory directory))))))
+
+(ert-deftest hermes-inventory-acquisition-quit-is-cancelled ()
+  "A synchronous acquisition quit stays a quit, but no longer looks pending."
+  (save-window-excursion
+    (dolist (command '(hermes-list-inventory hermes-memory-status))
+      (let ((hermes-instance '("test" . "http://127.0.0.1:19391"))
+            (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+            target escaped released requested)
+        (unwind-protect
+            (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
+                      ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                      ((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _)
+                         (setq target (current-buffer))
+                         (signal 'quit nil)))
+                      ((symbol-function 'hermes-dashboard-transport-release)
+                       (lambda (&rest _) (setq released t)))
+                      ((symbol-function 'hermes-dashboard-transport-call)
+                       (lambda (&rest _) (setq requested t)))
+                      ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                       (lambda (&rest _) (setq requested t))))
+              (with-temp-buffer
+                (condition-case nil (call-interactively command)
+                  (quit (setq escaped t))))
+              (should escaped)
+              (with-current-buffer target
+                (should (string-match-p "Cancelled.*g Retry" mode-line-process))
+                (should (commandp (key-binding (kbd "g")))))
+              (should-not requested)
+              (should-not released)
+              (should (zerop (hash-table-count hermes-dashboard-transport--clients))))
+          (when (buffer-live-p target) (kill-buffer target)))))))
+
+(ert-deftest hermes-inventory-acquisition-failure-fences-replaced-owners ()
+  "Acquisition errors and quits cannot repaint a successor across owner changes."
+  (save-window-excursion
+    (dolist (replacement '(generation mode instance buffer))
+      (let* ((memory (memq replacement '(mode instance)))
+             (command (if memory #'hermes-memory-status #'hermes-list-inventory))
+             (condition (if (memq replacement '(mode buffer)) 'quit 'error))
+             (hermes-instance '("test" . "http://127.0.0.1:19391"))
+             target successor snapshot escaped)
+        (unwind-protect
+            (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
+                      ;; Enter before with-client's temporary instance binding:
+                      ;; changing that binding would be undone on its unwind.
+                      ((symbol-function 'hermes-browser--with-client)
+                       (lambda (_fn)
+                         (setq target (current-buffer))
+                         (let ((generation hermes-browser--request-generation)
+                               (owner-instance hermes-instance))
+                           (pcase replacement
+                             ('generation
+                              (cl-letf (((symbol-function 'hermes-browser--with-client)
+                                         (lambda (fn) (funcall fn 'client #'ignore)))
+                                        ((symbol-function 'hermes-dashboard-transport-call)
+                                         (lambda (&rest _)
+                                           (hermes--promise-resolved
+                                            '((toolsets . (((name . "successor")))))))))
+                                (call-interactively command))
+                              (should (equal (caar tabulated-list-entries) "successor"))
+                              (should (string-match-p "Ready" mode-line-process)))
+                             ('mode
+                              (fundamental-mode)
+                              ;; Retain the other owner fields to isolate mode.
+                              (setq-local hermes-browser--request-generation generation
+                                          hermes-instance owner-instance))
+                             ('instance
+                              (setq-local hermes-instance
+                                          '("other" . "http://127.0.0.1:19392")))
+                             ('buffer
+                              (let ((name (buffer-name)))
+                                (kill-buffer target)
+                                (set-buffer (get-buffer-create name))
+                                (hermes-inventory-mode)
+                                (setq-local hermes-browser--request-generation generation))))
+                           (setq successor (current-buffer))
+                           (unless (eq replacement 'generation)
+                             (let ((inhibit-read-only t))
+                               (erase-buffer)
+                               (insert "successor contents"))
+                             (setq-local mode-line-process " Successor ready"))
+                           (setq snapshot (list (buffer-string) mode-line-process)))
+                         (signal condition '("old acquisition")))))
+              (with-temp-buffer
+                (condition-case err (call-interactively command)
+                  ((error quit) (setq escaped (car err)))))
+              (should (eq escaped condition))
+              (with-current-buffer successor
+                (should (equal (list (buffer-string) mode-line-process) snapshot))))
+          (when (buffer-live-p target) (kill-buffer target))
+          (when (buffer-live-p successor) (kill-buffer successor)))))))
+
+(ert-deftest hermes-inventory-read-render-errors-remain-visible ()
+  "A renderer failure is reported, not silently treated as a successful read."
+  (let (reported)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'borrowed-client))
+              ((symbol-function 'hermes-dashboard-transport-call)
+               (lambda (&rest _) (hermes--promise-resolved nil)))
+              ((symbol-function 'hermes-inventory--render-result)
+               (lambda (&rest _) (error "Renderer failed")))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq reported (apply #'format format-string args)))))
+      (with-temp-buffer
+        (hermes-inventory--fetch (assoc "Toolsets" hermes-inventory--specs))
+        (should (string-match-p "Failed" mode-line-process))
+        (should (equal reported "Hermes: Renderer failed"))))))
 
 (provide 'hermes-inventory-tests)
 ;;; hermes-inventory-tests.el ends here

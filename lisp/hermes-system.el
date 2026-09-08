@@ -263,6 +263,36 @@ and auto-refresh controls.  With no prefix, request 100 lines."
                   'face (if hermes-system--auto-refresh 'success 'shadow))
       " · " (propertize "? Help" 'face 'help-key-binding)))))
 
+(defun hermes-system--filter-description (label key)
+  "Return LABEL with this buffer's bounded log query value for KEY."
+  (let ((value (if (not (equal hermes-system--path "/api/logs")) "not applicable"
+                 (format "%s" (or (alist-get key hermes-system--query)
+                                  (alist-get key '((file . "agent") (level . "ALL")
+                                                   (component . "all") (lines . 100))))))))
+    (concat label ": "
+            (propertize (truncate-string-to-width value 24 nil nil t)
+                        'face 'keymap-popup-value 'help-echo value))))
+
+(defun hermes-system--read-filter (key prompt &optional choices)
+  "Read query KEY using PROMPT and CHOICES without outliving the owner."
+  (unless (and (derived-mode-p 'hermes-system-mode)
+               (equal hermes-system--path "/api/logs"))
+    (user-error "Not a Hermes log buffer"))
+  (let* ((buffer (current-buffer))
+         (generation hermes-browser--request-generation)
+         (instance hermes-instance)
+         (query (copy-tree hermes-system--query))
+         (prompt (concat (hermes-system--filter-description prompt key) "; new value: "))
+         (value (if choices (completing-read prompt choices nil t)
+                  (read-number prompt (or (alist-get key query) 100)))))
+    (unless (and (hermes-browser--request-current-mode-p buffer generation 'hermes-system-mode)
+                 (eq (current-buffer) buffer)
+                 (equal instance hermes-instance)
+                 (equal query hermes-system--query)
+                 (equal hermes-system--path "/api/logs"))
+      (user-error "Log view changed while choosing"))
+    value))
+
 (defun hermes-system--log-option (key value &optional choices)
   "Set log query KEY to VALUE and refresh, validating against CHOICES."
   (unless (and (derived-mode-p 'hermes-system-mode)
@@ -277,26 +307,26 @@ and auto-refresh controls.  With no prefix, request 100 lines."
 
 (defun hermes-system-log-source (source)
   "Show log SOURCE: agent, errors, or gateway."
-  (interactive (list (completing-read "Log source: "
-                                     '("agent" "errors" "gateway") nil t)))
+  (interactive (list (hermes-system--read-filter 'file "Log source"
+                                     '("agent" "errors" "gateway"))))
   (hermes-system--log-option 'file source '("agent" "errors" "gateway")))
 
 (defun hermes-system-log-level (level)
   "Show log lines at minimum LEVEL, or use ALL for no level filter."
-  (interactive (list (completing-read "Minimum log level: "
-                                     '("ALL" "DEBUG" "INFO" "WARNING" "ERROR") nil t)))
+  (interactive (list (hermes-system--read-filter 'level "Minimum log level"
+                                     '("ALL" "DEBUG" "INFO" "WARNING" "ERROR"))))
   (hermes-system--log-option 'level level '("ALL" "DEBUG" "INFO" "WARNING" "ERROR")))
 
 (defun hermes-system-log-component (component)
   "Show log lines for COMPONENT, or use all for no component filter."
-  (interactive (list (completing-read "Log component: "
-                                     '("all" "gateway" "agent" "tools" "cli" "cron") nil t)))
+  (interactive (list (hermes-system--read-filter 'component "Log component"
+                                     '("all" "gateway" "agent" "tools" "cli" "cron"))))
   (hermes-system--log-option 'component component
                            '("all" "gateway" "agent" "tools" "cli" "cron")))
 
 (defun hermes-system-log-lines (lines)
   "Set the requested log tail to LINES, clamped to 1..500."
-  (interactive (list (read-number "Log tail lines: " 100)))
+  (interactive (list (hermes-system--read-filter 'lines "Log tail lines")))
   (unless (integerp lines) (user-error "Log lines must be an integer"))
   (hermes-system--log-option 'lines (hermes-system--bounded-log-lines lines)))
 
@@ -326,10 +356,14 @@ Requests never accumulate automatically while a previous poll is pending."
   :exit-key "C-g"
   :description (lambda () (or hermes-system--heading "Hermes System"))
   :group ("Filter" :inapt-if (lambda () (not (equal hermes-system--path "/api/logs"))))
-  "s" ("Set source" hermes-system-log-source :stay-open t)
-  "l" ("Set minimum level" hermes-system-log-level :stay-open t)
-  "c" ("Set component" hermes-system-log-component :stay-open t)
-  "n" ("Set tail length" hermes-system-log-lines :stay-open t)
+  "s" ((lambda () (hermes-system--filter-description "Source" 'file))
+       hermes-system-log-source :stay-open t)
+  "l" ((lambda () (hermes-system--filter-description "Min level" 'level))
+       hermes-system-log-level :stay-open t)
+  "c" ((lambda () (hermes-system--filter-description "Component" 'component))
+       hermes-system-log-component :stay-open t)
+  "n" ((lambda () (hermes-system--filter-description "Tail lines" 'lines))
+       hermes-system-log-lines :stay-open t)
   :group "View"
   ;; Native switches only assign a variable; polling also owns request cleanup.
   "a" ((lambda () (format "Auto-refresh: %s" (if hermes-system--auto-refresh "5s" "off")))

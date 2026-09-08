@@ -31,6 +31,7 @@
 
 (require 'cl-lib)
 (require 'tabulated-list)
+(require 'keymap-popup)
 (require 'hermes-dashboard-transport)
 (require 'hermes-notifications)
 (require 'hermes-promise)
@@ -382,6 +383,66 @@ degrades to a `message' on systems or builds without them.  Optional EVENT
 applies the shared notification policy.  Optional BUFFER is the notice target."
   (hermes-notifications-notify event title body :buffer buffer))
 
+(defvar-local hermes-browser--status nil
+  "Visible status of the current browser read.")
+
+(defun hermes-browser--setup-status ()
+  "Expose read status and contextual help in this browser's mode line."
+  (setq-local mode-line-misc-info
+              (append mode-line-misc-info
+                      '((:eval (concat " [" (or hermes-browser--status "Not fetched")
+                                       "; ? help]"))))))
+
+(defun hermes-browser--read-error (reason)
+  "Show read failure REASON while retaining the current snapshot."
+  (setq hermes-browser--status
+        (propertize "Failed; g retry" 'face 'error
+                    'help-echo (format "%s" reason)))
+  (force-mode-line-update)
+  (message "Hermes: %s" reason))
+
+(defun hermes-browser--reading-position (position)
+  "Return the logical row, line and column at POSITION."
+  (save-excursion
+    (goto-char position)
+    (list (and (derived-mode-p 'tabulated-list-mode) (tabulated-list-get-id))
+          (line-number-at-pos nil t) (current-column))))
+
+(defun hermes-browser--reading-point (position)
+  "Return a bounded buffer point for logical POSITION."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((row (and (car position)
+                    (text-property-search-forward
+                     'tabulated-list-id (car position) #'equal))))
+      (if row (goto-char (prop-match-beginning row))
+        (forward-line (1- (cadr position))))
+      (move-to-column (caddr position))
+      (point))))
+
+(defun hermes-browser--preserve-reading-position (render)
+  "Call RENDER, retaining this buffer's point and every window's reading state."
+  (let* ((buffer (current-buffer))
+         (mode major-mode)
+         (generation hermes-browser--request-generation)
+         (position (hermes-browser--reading-position (point)))
+         (windows (mapcar
+                   (lambda (window)
+                     (list window
+                           (hermes-browser--reading-position (window-start window))
+                           (hermes-browser--reading-position (window-point window))))
+                   (get-buffer-window-list buffer nil t))))
+    (unwind-protect (funcall render)
+      (when (and (hermes-browser--request-current-mode-p buffer generation mode)
+                 (eq mode (buffer-local-value 'major-mode buffer)))
+        (with-current-buffer buffer
+          (goto-char (hermes-browser--reading-point position))
+          (dolist (entry windows)
+            (when (and (window-live-p (car entry))
+                       (eq (window-buffer (car entry)) buffer))
+              (set-window-point (car entry) (hermes-browser--reading-point (caddr entry)))
+              (set-window-start (car entry) (hermes-browser--reading-point (cadr entry)) t))))))))
+
 ;;; Dynamic column widths
 
 (defun hermes-browser--visible-window-width ()
@@ -482,6 +543,8 @@ command `hermes-list-NAME'.  BODY is a plist:
   :fetch           function (CLIENT -> promise) that starts asynchronous I/O
   :rows            pure function (RESULT -> list of `tabulated-list' entries)
   :keys            extra bindings, spliced into `defvar-keymap'
+  :help            command descriptions for `keymap-popup-annotate'
+  :description     popup title string or function, optional
   :doc             major-mode docstring, optional
   :command-doc     list-command docstring, optional
   :on-result       function (RESULT) called in the buffer after each render,
@@ -506,6 +569,8 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
         (fetch (plist-get body :fetch))
         (rows (plist-get body :rows))
         (keys (plist-get body :keys))
+        (help (plist-get body :help))
+        (description (or (plist-get body :description) (plist-get body :title)))
         (doc (plist-get body :doc))
         (command-doc (plist-get body :command-doc))
         (on-result (plist-get body :on-result))
@@ -514,7 +579,16 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
        (defvar-keymap ,map
          :doc ,(format "Keymap for `%s'." mode)
          :parent tabulated-list-mode-map
+         "h" #'describe-mode
          ,@keys)
+       (keymap-popup-annotate ,map
+         :popup-key "?" :exit-key "C-g"
+         :description ,description
+         ,@help
+         :group "View"
+         revert-buffer "Refresh"
+         describe-mode "Describe mode"
+         quit-window "Quit view")
        ,@(and dynamic
               `((defun ,format-fn (&optional width)
                   ,(format "Return the dynamic `tabulated-list-format' for the %s browser."
@@ -534,6 +608,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          :interactive nil
          (setq tabulated-list-format ,(if dynamic `(,format-fn) columns))
          (setq-local revert-buffer-function #',revert)
+         (hermes-browser--setup-status)
          ,@(and dynamic
                 `((add-hook 'window-size-change-functions #',size-change nil t)))
          ,@(and on-mode `((funcall ,on-mode)))
@@ -544,21 +619,34 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
                 `((setq tabulated-list-format (,format-fn))
                   (tabulated-list-init-header)))
          (setq tabulated-list-entries (funcall ,rows result))
-         (tabulated-list-print t)
+         (hermes-browser--preserve-reading-position
+          (lambda () (tabulated-list-print t)))
+         (setq hermes-browser--status (if tabulated-list-entries "Ready" "Empty"))
          ,@(and on-result `((funcall ,on-result result))))
        (defun ,revert (&rest _)
          ,(format "Refresh the %s browser without re-displaying it." title)
-         (let ((target (current-buffer))
-               (generation (hermes-browser--next-request-generation)))
-           (let ((hermes-browser--request-error-owner
-                  (list target generation ',mode)))
-             (hermes-browser--run-on-client
-              ,fetch
-              (lambda (result)
-                (when (hermes-browser--request-current-mode-p
-                       target generation ',mode)
-                  (with-current-buffer target
-                    (,render result))))))))
+         (hermes-browser--own-instance (hermes-instance-resolve))
+         (let* ((target (current-buffer))
+                (instance hermes-instance)
+                (generation (hermes-browser--next-request-generation))
+                (current-p
+                 (lambda ()
+                   (and (hermes-browser--request-current-mode-p target generation ',mode)
+                        (equal instance (buffer-local-value 'hermes-instance target)))))
+                (on-error
+                 (lambda (reason)
+                   (when (funcall current-p)
+                     (with-current-buffer target (hermes-browser--read-error reason))))))
+           (setq hermes-browser--status "Loading")
+           (force-mode-line-update)
+           (condition-case err
+               (hermes-browser--run-on-client
+                ,fetch
+                (lambda (result)
+                  (when (funcall current-p)
+                    (with-current-buffer target (,render result))))
+                on-error)
+             ((error quit) (funcall on-error (error-message-string err))))))
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
@@ -567,21 +655,10 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
            (with-current-buffer target
              (unless (derived-mode-p ',mode)
                (,mode))
-             (hermes-browser--own-instance instance))
-           (let ((generation
-                  (with-current-buffer target
-                    (hermes-browser--next-request-generation))))
-             (with-current-buffer target
-               (let ((hermes-browser--request-error-owner
-                      (list target generation ',mode)))
-                 (hermes-browser--run-on-client
-                  ,fetch
-                  (lambda (result)
-                    (when (hermes-browser--request-current-mode-p
-                           target generation ',mode)
-                      (with-current-buffer target
-                        (,render result))
-                      (pop-to-buffer target))))))))))))
+             (hermes-browser--own-instance instance)
+             (setq hermes-browser--status "Loading"))
+           (pop-to-buffer target)
+           (with-current-buffer target (,revert)))))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

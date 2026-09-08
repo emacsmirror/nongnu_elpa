@@ -222,5 +222,132 @@
         (should (eq (not (null (string-match-p "Install unavailable" header-line-format)))
                     (not (equal profile "second"))))))))
 
+
+(ert-deftest hermes-tool-setup-popup-shows-reported-not-available-values ()
+  "Two owners show their actual readback, with unknown and pending explicit."
+  (save-window-excursion
+    (dolist (name '("One" "Two"))
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (hermes-tool-setup-mode)
+        (setq hermes-tool-setup--name "image_gen"
+              hermes-tool-setup--profile name)
+        (let ((keymap-popup-backend #'keymap-popup-backend-side-window)
+              (keymap-popup--buffer-name " *tool setup labels test*"))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                         (lambda (_make ok &optional _bad)
+                           (funcall ok
+                                    (if hermes-tool-setup--config
+                                        `((has_models . t) (provider . ,name)
+                                          (current . ,(concat name "-model")))
+                                      `((providers . (((name . ,name) (is_active . t))
+                                                      ((name . "Available only") (status . "ready"))))))))))
+                (hermes-tool-setup-refresh)
+                (execute-kbd-macro (kbd "?"))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p (concat "Provider: " name) (buffer-string)))
+                  (should (string-match-p (concat "Model: " name "-model") (buffer-string)))
+                  (should-not (string-match-p "Available only" (buffer-string))))
+                (keymap-popup-dismiss)
+                (setq hermes-tool-setup--config '((providers . (((name . "Available only") (status . "ready")))))
+                      hermes-tool-setup--model-catalog '((default . "not-current")))
+                (execute-kbd-macro (kbd "?"))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "Provider: unknown" (buffer-string)))
+                  (should (string-match-p "Model: unknown" (buffer-string))))
+                (keymap-popup-dismiss)
+                (setq hermes-tool-setup--busy t)
+                (execute-kbd-macro (kbd "?"))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "pending" (buffer-string)))))
+            (keymap-popup-dismiss)))))))
+
+
+(ert-deftest hermes-tool-setup-current-model-read-is-owned-and-provider-checked ()
+  "Only an owning active-provider readback supplies the model label."
+  (with-temp-buffer
+    (hermes-tool-setup-mode)
+    (setq hermes-tool-setup--name "image_gen" hermes-tool-setup--profile "second")
+    (let (success failure request)
+      (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                 (lambda (make ok &optional bad)
+                   (setq success ok failure bad)
+                   (funcall make 'test-client)))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest args) (setq request args))))
+        (hermes-tool-setup-refresh)
+        (should (string-match-p "loading" (hermes-tool-setup--setting-description 'provider)))
+        (funcall success '((providers . (((name . "Active") (is_active . t))
+                                        ((name . "Inactive") (status . "ready"))))))
+        (should (equal (cadr request) "/api/tools/toolsets/image_gen/models"))
+        (should (equal (plist-get (cddr request) :query) '((profile . "second"))))
+        (should (string-match-p "loading" (hermes-tool-setup--setting-description 'model)))
+        (funcall success '((has_models . t) (provider . "Inactive") (current . "not-active")))
+        (should (string-match-p "unknown" (hermes-tool-setup--setting-description 'model)))
+        (hermes-tool-setup-refresh)
+        (funcall failure "test failure")
+        (should (string-match-p "unknown" (hermes-tool-setup--setting-description 'provider)))
+        (should (string-match-p "unknown" (hermes-tool-setup--setting-description 'model)))
+        (hermes-tool-setup-refresh)
+        (let ((old-success success))
+          (hermes-browser--next-request-generation)
+          (funcall old-success '((active_provider . "Stale")))
+          (should-not hermes-tool-setup--config)
+          (should (string-match-p "unknown" (hermes-tool-setup--setting-description 'provider))))))))
+
+(ert-deftest hermes-tool-setup-multiple-and-capability-values-retain-full-help ()
+  "Provider names and distinct web dispatchers are not replaced by catalog order."
+  (with-temp-buffer
+    (hermes-tool-setup-mode)
+    (setq hermes-tool-setup--name "browser"
+          hermes-tool-setup--config '((active_provider . "First")
+                                     (providers . (((name . "First") (is_active . t))
+                                                   ((name . "Driver") (is_active . t))))))
+    (should (equal (substring-no-properties (hermes-tool-setup--setting-description 'provider))
+                   "Provider: First, Driver"))
+    (setq hermes-tool-setup--name "web"
+          hermes-tool-setup--config '((active_provider . "Do not infer from this")
+                                     (active_search_backend . "search-backend")
+                                     (active_extract_backend . "extract-backend")))
+    (let ((label (hermes-tool-setup--setting-description 'provider)))
+      (should (<= (string-width label) 38))
+      (should (equal (get-text-property (length "Provider: ") 'face label) 'keymap-popup-value))
+      (should (equal (get-text-property (length "Provider: ") 'help-echo label)
+                     "search search-backend / extract extract-backend")))))
+
+
+(ert-deftest hermes-tool-setup-real-model-prompt-cancel-keeps-reported-state ()
+  "A real model prompt identifies the queried provider and current model."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (hermes-tool-setup-mode)
+      (setq hermes-tool-setup--name "image_gen"
+            hermes-tool-setup--config '((providers . (((name . "Active") (is_active . t)))))
+            tabulated-list-entries (hermes-tool-setup--rows hermes-tool-setup--config))
+      (tabulated-list-print)
+      (goto-char (point-min))
+      (let ((keymap-popup-backend #'keymap-popup-backend-side-window)
+            (keymap-popup--buffer-name " *tool model prompt test*")
+            (before (copy-tree hermes-tool-setup--config)) prompt)
+        (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                   (lambda (_make success &optional _failure)
+                     (funcall success '((has_models . t) (current . "model-one")
+                                        (models . (((id . "model-one") (display . "Model One"))))))))
+                  ((symbol-function 'hermes-tool-setup--change)
+                   (lambda (&rest _) (ert-fail "Cancelled model prompt attempted a write"))))
+          (unwind-protect
+              (let ((noninteractive nil))
+                (minibuffer-with-setup-hook
+                    (lambda () (setq prompt (minibuffer-prompt)))
+                  (condition-case nil
+                      (execute-kbd-macro (kbd "? m C-g"))
+                    (quit nil)))
+                (should (string-match-p "Tool model for Active (current model-one)" prompt))
+                (should (equal hermes-tool-setup--config before))
+                (should-not hermes-tool-setup--busy))
+            (keymap-popup-dismiss)))))))
+
 (provide 'hermes-tool-setup-tests)
 ;;; hermes-tool-setup-tests.el ends here

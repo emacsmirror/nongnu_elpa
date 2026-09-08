@@ -342,7 +342,7 @@
 (ert-deftest hermes-chat-work-refinement-popup-workers ()
   "Inspect renders current delegate counts without treating processes as workers."
   (hermes-test--with-work
-    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
+    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-info-map 'descriptions)))
            (inspect (seq-find (lambda (g) (equal (plist-get g :name) "Inspect")) groups))
            (entry (seq-find (lambda (e) (equal (plist-get e :key) "W"))
                             (plist-get inspect :entries)))
@@ -367,7 +367,7 @@
       (let ((chat (current-buffer)) (owner hermes-chat--work-owner))
         (unwind-protect
             (progn
-              (call-interactively (keymap-lookup hermes-chat-actions-map "W"))
+              (call-interactively (keymap-lookup hermes-chat-info-map "W"))
               (should (eq owner hermes-work--owner))
               (should (equal (funcall description) "Workers 2"))
               (hermes-chat-work)

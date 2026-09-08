@@ -363,6 +363,13 @@ Keep edits made during a save modified."
   :fetch (lambda (client)
            (hermes-dashboard-transport-profile-list-async client))
   :rows #'hermes-profiles--rows
+  :help (:group "Settings"
+         hermes-profiles-set-model "Set default model"
+         hermes-profiles-edit-soul "Edit SOUL"
+         :group "Profile"
+         hermes-profiles-create "Create"
+         hermes-profiles-rename "Rename"
+         hermes-profiles-delete "Delete")
   :keys ("m" #'hermes-profiles-set-model
          "RET" #'hermes-profiles-set-model
          "s" #'hermes-profiles-edit-soul

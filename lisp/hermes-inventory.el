@@ -38,6 +38,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'keymap-popup)
 
 (defun hermes-inventory--bool-cell (value &optional unknown)
   "Return an on/off display cell for VALUE.
@@ -205,6 +206,9 @@ a `skills' field too so older/newer dashboard shapes render the same way."
           (generation (hermes-browser--next-request-generation)))
       (hermes-inventory--fetch hermes-inventory--spec nil target generation))))
 
+(defvar-local hermes-inventory--mutation-in-flight nil
+  "Identity token for the current inventory mutation, or nil.")
+
 (defvar-keymap hermes-inventory-mode-map
   :doc "Keymap for `hermes-inventory-mode'."
   :parent tabulated-list-mode-map
@@ -213,6 +217,30 @@ a `skills' field too so older/newer dashboard shapes render the same way."
   "t" #'hermes-inventory-toggle
   "R" #'hermes-inventory-reload-skills
   "c" #'hermes-inventory-configure-toolset)
+
+(keymap-popup-annotate hermes-inventory-mode-map
+  :popup-key "?" :exit-key "C-g"
+  :description (lambda () (format "Hermes %s" (or (car hermes-inventory--spec) "Inventory")))
+  :group ("Selection" :inapt-if
+          (lambda () (or hermes-inventory--mutation-in-flight
+                         (not (tabulated-list-get-id))
+                         (not (memq (hermes-inventory--spec-kind hermes-inventory--spec)
+                                    '(toolsets skills))))))
+  hermes-inventory-enable "Enable"
+  hermes-inventory-disable "Disable"
+  hermes-inventory-toggle "Toggle"
+  :group "Manage"
+  hermes-inventory-configure-toolset ("Configure toolset" :inapt-if
+                                    (lambda () (or (not (tabulated-list-get-id))
+                                                   (not (eq (hermes-inventory--spec-kind hermes-inventory--spec)
+                                                            'toolsets)))))
+  hermes-inventory-reload-skills ("Reload skills" :inapt-if
+                                (lambda () hermes-inventory--mutation-in-flight))
+  :row
+  :group "View"
+  revert-buffer ("Refresh" :stay-open t :inapt-if
+                 (lambda () hermes-inventory--mutation-in-flight))
+  quit-window "Quit view")
 
 (define-derived-mode hermes-inventory-mode tabulated-list-mode "Hermes Inventory"
   "Major mode for Hermes inventory listings.
@@ -256,9 +284,46 @@ REST is unavailable."
               reason)
      (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
+(defun hermes-inventory--run-read (generation make-promise on-success)
+  "Run read GENERATION through MAKE-PROMISE, then call ON-SUCCESS.
+Capture the current buffer, mode and instance for every settlement.
+Acquisition errors settle the view before propagating; shared browser code
+still owns client release and promise errors."
+  (let* ((buffer (current-buffer))
+         (mode major-mode)
+         (instance hermes-instance)
+         (current-p
+          (lambda ()
+            (and (hermes-browser--request-current-p buffer generation)
+                 (eq (buffer-local-value 'major-mode buffer) mode)
+                 (equal (buffer-local-value 'hermes-instance buffer) instance))))
+         (on-error
+          (lambda (reason)
+            (when (funcall current-p)
+              (with-current-buffer buffer
+                (setq mode-line-process
+                      (if (eq (car-safe reason) 'quit)
+                          " Cancelled · g Retry · ? Help"
+                        " Failed · g Retry · ? Help")))
+              (message "Hermes: %s" reason))))
+         acquired)
+    (condition-case err
+        (hermes-browser--run-on-client
+         (lambda (client)
+           (setq acquired t)
+           (funcall make-promise client))
+         (lambda (result)
+           (when (funcall current-p)
+             (funcall on-success result)))
+         on-error)
+      ((error quit)
+       ;; Do not relabel errors escaping an already acquired read as startup.
+       (unless acquired (funcall on-error err))
+       (signal (car err) (cdr err))))))
+
 (defun hermes-inventory--fetch (spec &optional display target generation)
   "Fetch and render the inventory described by SPEC asynchronously.
-DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
+DISPLAY selects the pending buffer at invocation; callbacks never select it.
 TARGET and GENERATION identify an existing buffer-owned refresh.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
@@ -271,12 +336,17 @@ client for the listing."
       (unless (derived-mode-p 'hermes-inventory-mode)
         (hermes-inventory-mode))
       (hermes-inventory--require-mutation-idle)
-      (hermes-browser--own-instance instance))
+      (hermes-browser--own-instance instance)
+      (unless (equal hermes-inventory--spec spec)
+        (hermes-inventory--render spec nil target))
+      (setq mode-line-process " Loading · ? Help"))
+    (when display (pop-to-buffer target))
     (let ((generation (or generation
                           (with-current-buffer target
                             (hermes-browser--next-request-generation)))))
       (with-current-buffer target
-        (hermes-browser--run-on-client
+        (hermes-inventory--run-read
+         generation
          (lambda (client)
            (if (eq (hermes-inventory--spec-kind spec) 'skills)
                (hermes-inventory--skills-promise client spec)
@@ -284,10 +354,10 @@ client for the listing."
               client (hermes-inventory--spec-method spec)
               (hermes-inventory--spec-params spec))))
          (lambda (result)
-           (when (hermes-browser--request-current-mode-p
-                  target generation 'hermes-inventory-mode)
-             (hermes-inventory--render-result spec result target)
-             (when display (pop-to-buffer target)))))))))
+           (hermes-inventory--render-result spec result target)
+           (with-current-buffer target
+             (setq mode-line-process
+                   (if tabulated-list-entries " Ready · ? Help" " Empty · g Refresh · ? Help")))))))))
 
 (defun hermes-inventory--refresh-origin (buffer)
   "Start a fresh read of live inventory BUFFER."
@@ -334,9 +404,6 @@ client for the listing."
             (if reset
                 "; current dashboard session was reset"
               "; new sessions use this setting after reset/restart"))))
-
-(defvar-local hermes-inventory--mutation-in-flight nil
-  "Identity token for the current inventory mutation, or nil.")
 
 (defun hermes-inventory--require-mutation-idle ()
   "Signal while the current inventory mutation remains unsettled."
@@ -521,6 +588,17 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
   "c" #'hermes-memory-configure-provider
   "g" #'hermes-memory-status
   "D" #'hermes-memory-reset)
+
+(keymap-popup-annotate hermes-memory-status-mode-map
+  :popup-key "?" :exit-key "C-g"
+  :description "Hermes Memory"
+  :group ("Provider" :inapt-if (lambda () hermes-memory--operation))
+  hermes-memory-select-provider "Select provider"
+  hermes-memory-configure-provider "Configure provider"
+  hermes-memory-reset "Reset built-in memory"
+  :group "View"
+  hermes-memory-status ("Refresh" :stay-open t)
+  quit-window "Quit view")
 
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
@@ -816,15 +894,17 @@ The buffer never displays memory contents or secret material."
               (hermes-memory-status-mode))
             (hermes-browser--own-instance instance)
             (hermes-browser--next-request-generation))))
+    (when display (pop-to-buffer target))
     (with-current-buffer target
-      (hermes-browser--run-on-client
+      (setq mode-line-process " Loading · ? Help")
+      (hermes-inventory--run-read
+       generation
        (lambda (client)
          (hermes-dashboard-transport-api-request-async
           "GET" "/api/memory" :client client))
        (lambda (status)
-         (when (hermes-browser--request-current-mode-p
-                target generation 'hermes-memory-status-mode)
-           (hermes-inventory--render-memory-status status target display)))))))
+         (hermes-inventory--render-memory-status status target)
+         (with-current-buffer target (setq mode-line-process " Ready · ? Help")))))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)

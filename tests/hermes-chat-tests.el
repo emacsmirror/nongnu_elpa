@@ -799,6 +799,130 @@
        (should (equal (plist-get sent :title)
                       "Renamed--20260807T183045.000000Z--emacs"))))))
 
+(ert-deftest hermes-chat-rename-prompt-rejects-replaced-owner ()
+  "A real rename answer cannot mutate any replacement owner."
+  (dolist (changed '(lifetime transport session fresh-session client mode killed))
+    (hermes-test-with-chat-buffer
+      (save-window-excursion
+        (switch-to-buffer (current-buffer))
+        (insert "Exact draft")
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-session-ready-p t
+              hermes-chat--dashboard-active-session-id
+              (unless (eq changed 'fresh-session) "session-original"))
+        (let* ((owner (current-buffer)) (noninteractive nil) sent
+               (minibuffer-setup-hook
+                (cons (lambda ()
+                        (with-current-buffer owner
+                          (pcase changed
+                            ('lifetime
+                             (setq hermes-chat--lifecycle-generation
+                                   (hermes-chat--next-lifetime-token)))
+                            ('transport (cl-incf hermes-chat--transport-generation))
+                            ((or 'session 'fresh-session)
+                             (setq hermes-chat--dashboard-active-session-id
+                                   "session-successor"))
+                            ('client
+                             (setq hermes-chat--dashboard-client
+                                   (hermes-test--dashboard-client)))
+                            ('mode (fundamental-mode))
+                            ('killed (kill-buffer owner)))
+                          (when (buffer-live-p owner)
+                            (setq hermes-chat--title "Successor"
+                                  hermes-chat--title-manual-p nil))))
+                      minibuffer-setup-hook)))
+          (cl-letf (((symbol-function 'hermes-chat--dashboard-client-live-p)
+                     (lambda (_client) t))
+                    ((symbol-function 'hermes-dashboard-transport-session-title)
+                     (lambda (_client &rest args) (setq sent args))))
+            (unwind-protect
+                (progn
+                  (should (equal
+                           (should-error
+                            (execute-kbd-macro
+                             (kbd "C-c C-o S R r e n a m e d RET"))
+                            :type 'user-error)
+                           '(user-error "Hermes rename prompt is no longer current")))
+                  (should-not sent)
+                  (when (buffer-live-p owner)
+                    (with-current-buffer owner
+                      (should (equal hermes-chat--title "Successor"))
+                      (should-not hermes-chat--title-manual-p)
+                      (when (derived-mode-p 'hermes-chat-mode)
+                        (should (equal (hermes-chat-input-string) "Exact draft"))))))
+              (keymap-popup-dismiss)
+              (when (buffer-live-p owner)
+                (with-current-buffer owner
+                  (setq hermes-chat--dashboard-client nil))))))))))
+
+(ert-deftest hermes-chat-rename-prompt-uses-original-session ()
+  "An unchanged real prompt renames its original session, preserving the draft."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (buffer-enable-undo)
+      (insert "Exact draft")
+      (undo-boundary)
+      (setq hermes-chat--dashboard-active-session-id "session-original")
+      (let ((owner (current-buffer)) (noninteractive nil)
+            (before (buffer-string)) (position (point))
+            (undo (copy-tree buffer-undo-list)) sent)
+        (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                   (lambda () t))
+                  ((symbol-function 'hermes-dashboard-transport-session-title)
+                   (lambda (_client &rest args) (setq sent args))))
+          (unwind-protect
+              (progn
+                (execute-kbd-macro (kbd "C-c C-o S R r e n a m e d RET"))
+                (should (equal (plist-get sent :session-id) "session-original"))
+                (should (equal (plist-get sent :title) hermes-chat--title))
+                (should (equal (hermes-session-title-chat-display hermes-chat--title)
+                               "renamed"))
+                (should hermes-chat--title-manual-p)
+                (should (equal before (buffer-string)))
+                (should (= position (point)))
+                (should (equal undo buffer-undo-list))
+                (should (eq owner (current-buffer))))
+            (keymap-popup-dismiss)))))))
+
+(ert-deftest hermes-chat-rename-prompt-preserves-reader-error ()
+  "An unrelated reader failure is not laundered into stale-owner refusal."
+  (hermes-test-with-chat-buffer
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) (signal 'file-error '("Reader failure")))))
+      (should (equal (should-error (call-interactively #'hermes-chat-rename)
+                                   :type 'file-error)
+                     '(file-error "Reader failure"))))))
+
+(ert-deftest hermes-chat-rename-prompt-cancel-preserves-editor ()
+  "Cancelling a real rename preserves the title, draft, undo, point and focus."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (buffer-enable-undo)
+      (insert "Exact draft")
+      (undo-boundary)
+      (setq hermes-chat--title "Original")
+      (let ((before (buffer-string)) (position (point))
+            (undo (copy-tree buffer-undo-list)) (owner (current-buffer))
+            (noninteractive nil) sent)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-session-title)
+                   (lambda (&rest _) (setq sent t))))
+          (unwind-protect
+              (progn
+                (condition-case nil
+                    (execute-kbd-macro (kbd "C-c C-o S R C-g"))
+                  (quit nil))
+                (should-not sent)
+                (should (equal hermes-chat--title "Original"))
+                (should-not hermes-chat--title-manual-p)
+                (should (equal before (buffer-string)))
+                (should (= position (point)))
+                (should (equal undo buffer-undo-list))
+                (should (eq owner (current-buffer)))
+                (should (eq owner (window-buffer (selected-window)))))
+            (keymap-popup-dismiss)))))))
+
 (ert-deftest hermes-chat-rename-preserves-canonical-session-timestamp ()
   "Renaming an identified session changes its label, not its timestamp."
   (hermes-test-with-chat-buffer
@@ -2032,56 +2156,221 @@
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
 (ert-deftest hermes-chat-actions-popup-bound ()
-  "C-c C-o opens the in-chat actions popup, which lists turn actions."
+  "Chat actions use shallow native menus with two columns per row."
   (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-o")
               #'hermes-chat-actions-map-popup))
-  (should (fboundp 'hermes-chat-actions-map-popup))
-  (should (eq (keymap-lookup hermes-chat-actions-map "s")
-              #'hermes-chat-steer-message))
-  (should (eq (keymap-lookup hermes-chat-actions-map "i")
-              #'hermes-chat-interrupt))
-  (should (eq (keymap-lookup hermes-chat-actions-map "m")
-              #'hermes-chat-switch-model))
-  (should (eq (keymap-lookup hermes-chat-actions-map "e")
-              #'hermes-chat-set-reasoning))
-  (should (eq (keymap-lookup hermes-chat-actions-map "n")
-              #'hermes-chat))
-  (should (eq (keymap-lookup hermes-chat-actions-map "H")
-              #'hermes-chat-handoff))
-  (should (eq (keymap-lookup hermes-chat-actions-map "x")
-              #'hermes-dashboard-reconnect))
-  (should (eq (keymap-lookup hermes-chat-actions-map "w")
-              #'hermes-chat-set-directory))
-  (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
-         (groups (apply #'append rows))
-         (group-names (mapcar (lambda (group) (plist-get group :name)) groups))
-         (entries (apply #'append
-                         (mapcar (lambda (group)
-                                   (plist-get group :entries))
-                                 groups))))
-    (should (equal group-names
-                   '("Turn" "Input" "Images" "Commands" "Session" "Runtime" "Workspace" "Inspect" "System")))
+  (let ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
     (should (equal (mapcar (lambda (row)
-                             (mapcar (lambda (group)
-                                       (plist-get group :name))
-                                     row))
-                           rows)
-                   '(("Turn" "Input" "Images" "Commands" "Session" "Runtime" "Workspace" "Inspect" "System"))))
-    (should (equal (mapcar (lambda (group)
-                             (length (plist-get group :entries)))
-                           groups)
-                   '(4 3 4 2 3 3 4 2 3)))
-    (let ((directory-entry
-           (cl-find "w" entries :key (lambda (entry)
-                                       (plist-get entry :key))
-                    :test #'equal)))
-      (should directory-entry)
-      (should (eq (plist-get directory-entry :inapt-if)
-                  #'hermes-chat--active-turn-p)))
-    (dolist (key '("n" "m" "x" "b" "t"))
-      (should (cl-find key entries :key (lambda (entry)
-                                         (plist-get entry :key))
-                       :test #'equal)))))
+                            (mapcar (lambda (group) (plist-get group :name)) row))
+                          rows)
+                   '(("Turn" "Compose") ("Configure" "Browse"))))))
+
+(ert-deftest hermes-chat-actions-popup-paths ()
+  "Actual popup wrappers dispatch every advertised path in the owner buffer."
+  (hermes-test-with-chat-buffer
+    (let ((owner (current-buffer)))
+      (dolist (path '(("s" hermes-chat-steer-message)
+                      ("i" hermes-chat-interrupt)
+                      ("k" hermes-chat-interrupt-and-send)
+                      ("q" hermes-chat-queue-message)
+                      ("a" hermes-chat-respond-to-prompt)
+                      ("d" hermes-chat-cancel-prompt)
+                      ("j" hermes-chat-go-to-composer)
+                      ("f" hermes-chat-attach-image-file)
+                      ("v" hermes-chat-paste-image)
+                      ("I V" hermes-chat-preview-images)
+                      ("I D" hermes-chat-remove-image)
+                      ("c" hermes-chat-show-commands)
+                      ("r" hermes-chat-refresh-commands)
+                      ("S n" hermes-chat)
+                      ("S R" hermes-chat-rename)
+                      ("S H" hermes-chat-handoff)
+                      ("S S" hermes-list-sessions)
+                      ("M m" hermes-chat-switch-model)
+                      ("M e" hermes-chat-set-reasoning)
+                      ("M K" hermes-chat-connect-provider)
+                      ("w w" hermes-chat-set-directory)
+                      ("w b" hermes-switch-to-chat)
+                      ("w P" hermes-chat-queue-panel)
+                      ("X W" hermes-chat-work)
+                      ("X h" hermes-chat-session-details)
+                      ("X x" hermes-dashboard-reconnect)
+                      ("X u" hermes-chat-show-usage)
+                      ("X t" hermes-chat-show-status)))
+        (let (called)
+          (cl-letf (((symbol-function (cadr path))
+                     (lambda () (interactive) (setq called (current-buffer)))))
+            (unwind-protect
+                (save-window-excursion
+                  (switch-to-buffer owner)
+                  (execute-kbd-macro (kbd (concat "C-c C-o " (car path))))
+                  (should (eq called owner)))
+              (keymap-popup-dismiss))))))))
+
+(ert-deftest hermes-chat-actions-popup-shortcut-aliases ()
+  "Unclaimed old suffix keys remain hidden aliases, not a second menu."
+  (dolist (map (list hermes-chat-images-map hermes-chat-sess-map
+                     hermes-chat-model-map hermes-chat-work-map
+                     hermes-chat-info-map))
+    (map-keymap
+     (lambda (event binding)
+       (when (and (commandp binding)
+                  (not (eq binding #'hermes-chat--submenu-root-key))
+                  (not (memq event '(?? ?S ?w))))
+         (should (eq (lookup-key hermes-chat-actions-map (vector event))
+                     binding))))
+     map)))
+
+(ert-deftest hermes-chat-actions-popup-back-and-cancel ()
+  "Native q/C-g back navigation and dismissal preserve the chat draft."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (insert "Unsent draft")
+      (let ((owner (current-buffer)) (before (buffer-string)))
+        (unwind-protect
+            (progn
+              (hermes-chat-actions-map-popup)
+              (execute-kbd-macro (kbd "S q"))
+              (let ((popup (get-buffer keymap-popup--buffer-name)))
+                (should popup)
+                (should (eq (keymap-popup--active-get popup :keymap)
+                            hermes-chat-actions-map)))
+              (execute-kbd-macro (kbd "M C-g"))
+              (should (get-buffer keymap-popup--buffer-name))
+              (execute-kbd-macro (kbd "C-g"))
+              (should-not (get-buffer keymap-popup--buffer-name))
+              (should (eq (current-buffer) owner))
+              (should (equal (buffer-string) before)))
+          (keymap-popup-dismiss))))))
+
+(ert-deftest hermes-chat-actions-popup-directory-guard ()
+  "The nested directory action refuses busy turns in the actual wrapper."
+  (hermes-test-with-chat-buffer
+    (let (called)
+      (cl-letf (((symbol-function 'hermes-chat--active-turn-p) (lambda () t))
+                ((symbol-function 'hermes-chat-set-directory)
+                 (lambda () (interactive) (setq called t))))
+        (unwind-protect
+            (save-window-excursion
+              (hermes-chat-actions-map-popup)
+              (call-interactively (key-binding (kbd "w")))
+              (call-interactively (key-binding (kbd "w")))
+              (should-not called)
+              (should (eq (keymap-popup--active-get
+                           (get-buffer keymap-popup--buffer-name) :keymap)
+                          hermes-chat-work-map)))
+          (keymap-popup-dismiss))))))
+
+(ert-deftest hermes-chat-actions-popup-minibuffer-owner ()
+  "A nested prompting suffix reads text without stealing the draft owner."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (insert "Keep this draft")
+      (let ((owner (current-buffer)) (before (buffer-string)) answer called)
+        (cl-letf (((symbol-function 'hermes-chat-rename)
+                   (lambda (name)
+                     (interactive (list (read-string "Session name: ")))
+                     (setq answer name called (current-buffer)))))
+          (unwind-protect
+              (let ((noninteractive nil))
+                (hermes-chat-actions-map-popup)
+                (execute-kbd-macro (kbd "S R n e w SPC n a m e RET"))
+                (should (equal answer "new name"))
+                (should (eq called owner))
+                (should (equal (buffer-string) before))
+                (should-not (get-buffer keymap-popup--buffer-name)))
+            (keymap-popup-dismiss)))))))
+
+(ert-deftest hermes-chat-actions-popup-inherited-launchers-safe ()
+  "Root launchers inside children refuse safely through the command loop."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (buffer-enable-undo)
+      (insert "Exact draft")
+      (undo-boundary)
+      (let ((before (buffer-string)) (position (point))
+            (undo (copy-tree buffer-undo-list)) (owner (current-buffer))
+            (children '("S" "M" "w" "I" "X")) paths)
+        (dolist (child children)
+          (dolist (target children)
+            ;; S S and w w are child actions, not ancestor launchers.
+            (unless (member (list child target) '(("S" "S") ("w" "w")))
+              (let ((path (concat "C-c C-o " child " " target)))
+                (unwind-protect
+                    (progn
+                      (should (equal
+                               (should-error (execute-kbd-macro (kbd path))
+                                             :type 'user-error)
+                               '(user-error
+                                 "Reopen chat actions to choose another menu")))
+                      (push path paths)
+                      (should-not (get-buffer keymap-popup--buffer-name))
+                      ;; The supported child -> root -> child route still works.
+                      (execute-kbd-macro
+                       (kbd (concat "C-c C-o " child " q " target " q C-g")))
+                      (should-not (get-buffer keymap-popup--buffer-name))
+                      (should (eq owner (current-buffer)))
+                      (should (eq owner (window-buffer (selected-window))))
+                      (should (equal before (buffer-string)))
+                      (should (= position (point)))
+                      (should (equal undo buffer-undo-list)))
+                  (keymap-popup-dismiss))))))
+        (should (= (length paths) 23))))))
+
+(ert-deftest hermes-chat-actions-popup-model-busy-availability ()
+  "Busy model and reasoning actions remain visible but cannot prompt."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (setq hermes-chat--dashboard-running-p t
+            hermes-chat--model "Current model"
+            hermes-chat--runtime-flags '(:reasoning-effort "low"))
+      (let (prompted)
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (&rest _) (setq prompted t) "high")))
+          (unwind-protect
+              (progn
+                (execute-kbd-macro (kbd "C-c C-o M"))
+                (with-current-buffer (get-buffer keymap-popup--buffer-name)
+                  (dolist (text '("Switch model: Current model"
+                                  "Set reasoning: low"))
+                    (goto-char (point-min))
+                    (search-forward text)
+                    (should (eq (get-text-property (line-beginning-position) 'face)
+                                'keymap-popup-inapt))))
+                (execute-kbd-macro (kbd "m e"))
+                (should-not prompted)
+                (should-not hermes-chat--dashboard-create-reasoning-effort)
+                (should (eq (keymap-popup--active-get
+                             (get-buffer keymap-popup--buffer-name) :keymap)
+                            hermes-chat-model-map)))
+            (keymap-popup-dismiss)))))))
+
+(ert-deftest hermes-chat-set-reasoning-busy-before-prompt ()
+  "Direct reasoning invocation refuses an already-busy chat before asking."
+  (hermes-test-with-chat-buffer
+    (setq hermes-chat--dashboard-running-p t)
+    (let (prompted)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) (setq prompted t) "high")))
+        (should-error (call-interactively #'hermes-chat-set-reasoning)
+                      :type 'user-error)
+        (should-not prompted)
+        (should-not hermes-chat--dashboard-create-reasoning-effort)))))
+
+(ert-deftest hermes-chat-actions-popup-attach-image-label ()
+  "The actual root advertises the image-only attachment command accurately."
+  (hermes-test-with-chat-buffer
+    (unwind-protect
+        (progn
+          (hermes-chat-actions-map-popup)
+          (with-current-buffer (get-buffer keymap-popup--buffer-name)
+            (should (string-match-p "Attach image" (buffer-string)))
+            (should-not (string-match-p "Attach file" (buffer-string)))))
+      (keymap-popup-dismiss))))
 
 (ert-deftest hermes-chat-set-reasoning-before-session-stores-override ()
   "A fresh buffer stores reasoning effort without opening a session."
@@ -2319,6 +2608,30 @@
            (goto-char (point-max))
            (undo 1)
            (should (equal (hermes-chat-input-string) "Draft"))))))))
+
+(ert-deftest hermes-chat-visible-unselected-reply-preserves-input ()
+  "Rendering in an unselected window must not insert at its draft point."
+  (save-window-excursion
+    (delete-other-windows)
+    (with-temp-buffer
+      (hermes-chat-mode)
+      (let ((window (split-window-right)))
+        (set-window-buffer window (current-buffer))
+        (insert "Draft")
+        (set-window-point window (point-max))
+        (hermes-chat--insert-entry
+         (hermes-chat--make-entry 'assistant "Reply" 'done "reply"))
+        (should (equal (hermes-chat-input-string) "Draft"))
+        (should (equal (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)
+                       "Reply\n\n \n"))
+        (hermes-chat--update-entry
+         "reply" (lambda (entry)
+                   (hermes-chat--entry-with entry :content "Updated reply")))
+        (should (equal (hermes-chat-input-string) "Draft"))
+        (should (equal (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)
+                       "Updated reply\n\n \n"))))))
 
 (ert-deftest hermes-chat-table-window-width-excludes-number-gutter ()
   "Use each window's number gutter and fixed-pitch metrics, not frame columns."
@@ -5514,6 +5827,224 @@
        (should (string-match-p "ultra" (hermes-chat--session-details-text)))
        (should-not (string-match-p "high" (hermes-test--header-line-string)))))))
 
+(ert-deftest hermes-chat-reasoning-query-follows-public-setter-readback ()
+  "A public effort pick, readback, and bare query share one session authority."
+  (let ((client (hermes-test--dashboard-client))
+        (efforts (make-hash-table :test #'equal))
+        (undo-in-region nil) (last-command nil)
+        (undo-equiv-table (make-hash-table :test #'eq)) requests query-resolve)
+    ;; Keep the public setter, typed RPCs, command owner, and renderer real.
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (sent-client method params resolve &optional _reject)
+                 (push method requests)
+                 (should (eq sent-client client))
+                 (should (equal (alist-get 'key params) "reasoning"))
+                 (should (equal (alist-get 'session_id params) "sid-active"))
+                 (pcase method
+                   ("config.set"
+                    (puthash (alist-get 'session_id params)
+                             (alist-get 'value params) efforts)
+                    (funcall resolve `((value . ,(alist-get 'value params)))))
+                   ("config.get"
+                    (if hermes-chat--command-owner
+                        (setq query-resolve resolve)
+                      (funcall resolve
+                               `((value . ,(gethash "sid-active" efforts))
+                                 (display . "hide")))))
+                   (_ (ert-fail "Bare reasoning must not use slash.exec"))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (dolist (effort '("max" "xhigh"))
+         (hermes-chat-set-reasoning effort)
+         (should (equal (gethash "sid-active" efforts) effort))
+         (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
+                        effort))
+         (should-not hermes-chat--command-owner)
+         (insert "/reasoning")
+         (hermes-chat-send)
+         (should-not (member "slash.exec" requests))
+         (should hermes-chat--command-owner)
+         (should (functionp query-resolve))
+         (undo-boundary)
+         (insert "new draft α")
+         (undo-boundary)
+         (let ((undo buffer-undo-list)
+               (point-offset (- (point) (hermes-chat--input-position))))
+           (funcall query-resolve `((value . ,(gethash "sid-active" efforts))
+                                   (display . "hide")))
+           (should-not hermes-chat--command-owner)
+           (should (equal (hermes-chat-input-string) "new draft α"))
+           (should (eq buffer-undo-list undo))
+           (should (= (- (point) (hermes-chat--input-position)) point-offset))
+           (let ((transcript (buffer-substring (point-min) hermes-chat--input-marker)))
+             (hermes-test--draft-undo-command #'undo-only)
+             (should (equal (hermes-chat-input-string) ""))
+             (hermes-test--draft-undo-command #'undo-redo)
+             (should (equal (hermes-chat-input-string) "new draft α"))
+             (should (equal (buffer-substring (point-min) hermes-chat--input-marker)
+                            transcript)))
+           (should (string-match-p (concat "Reasoning effort:  " effort)
+                                   (buffer-string)))
+           (should (string-match-p "Reasoning display: off" (buffer-string)))
+           (should-not (string-match-p "clamped to\\|medium" (buffer-string))))
+         (hermes-chat--delete-input-tail))
+       (should (equal (nreverse requests)
+                      '("config.set" "config.get" "config.get"
+                        "config.set" "config.get" "config.get")))))))
+
+(ert-deftest hermes-chat-reasoning-query-reports-only-returned-fields ()
+  "Reasoning reports distinguish missing values, disabled effort, and display."
+  (dolist (case '((nil "unknown" "unknown")
+                  (((value . "max")) "max" "unknown")
+                  (((display . "show")) "unknown" "on")
+                  (((value . "none") (display . "hide")) "none (disabled)" "off")
+                  (((value . "") (display . "")) "unknown" "unknown")
+                  (((value . "future-effort") (display . "future-display"))
+                   "future-effort" "future-display")))
+    (let ((expected (format "Reasoning effort:  %s\nReasoning display: %s"
+                            (nth 1 case) (nth 2 case))))
+      (should (equal (hermes-chat--reasoning-report (car case)) expected))))
+  (should (equal (hermes-chat--reasoning-report
+                  '(:value "medium" :display "show"))
+                 "Reasoning effort:  medium\nReasoning display: on"))
+  (let ((result (make-hash-table :test #'equal)))
+    (puthash "value" "xhigh" result)
+    (puthash "display" "hide" result)
+    (puthash "reasoning_full" t result)
+    (should (equal (hermes-chat--reasoning-report result)
+                   "Reasoning effort:  xhigh\nReasoning display: off"))))
+
+(ert-deftest hermes-chat-reasoning-query-settles-rejection-and-stale-callbacks ()
+  "A query settles once and cannot paint or release a successor's owner."
+  (dolist (terminal '(reject session disconnect kill))
+    (let ((client (hermes-test--dashboard-client)) resolve reject)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (_client method params on-success on-error)
+                   (should (equal method "config.get"))
+                   (should (equal params '((key . "reasoning")
+                                          (session_id . "sid-active"))))
+                   (setq resolve on-success reject on-error))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "sid-active"
+               hermes-chat--dashboard-session-ready-p t
+               hermes-chat--runtime-flags '(:reasoning-effort "low"))
+         (insert "/reasoning")
+         (hermes-chat-send)
+         (should hermes-chat--command-owner)
+         (pcase terminal
+           ('reject (funcall reject "Reasoning query rejected"))
+           ('session
+            (setq hermes-chat--dashboard-active-session-id "sid-new")
+            (funcall resolve '((value . "max") (display . "hide"))))
+           ('disconnect (hermes-chat-disconnect))
+           ('kill (kill-buffer (current-buffer))))
+         (if (eq terminal 'kill)
+             (with-temp-buffer
+               (insert "Unrelated buffer")
+               (funcall resolve '((value . "max") (display . "show")))
+               (funcall reject "late failure")
+               (should (equal (buffer-string) "Unrelated buffer")))
+           (should-not hermes-chat--command-owner)
+           (should (equal (plist-get hermes-chat--runtime-flags :reasoning-effort)
+                          "low"))
+           (when (eq terminal 'reject)
+             (should (string-match-p "Reasoning query rejected" (buffer-string)))
+             (should (eq (plist-get hermes-chat--status-state :status) 'error)))
+           (let ((owner (hermes-chat--command-start))
+                 (text (buffer-string))
+                 (undo (copy-tree buffer-undo-list)))
+             (funcall resolve '((value . "max") (display . "show")))
+             (funcall reject "late failure")
+             (should (eq hermes-chat--command-owner owner))
+             (should (equal (buffer-string) text))
+             (should (equal buffer-undo-list undo)))))))))
+
+(ert-deftest hermes-chat-reasoning-query-transport-error-and-timeout ()
+  "Real RPC rejection and timeout release the query without a worker fallback."
+  (dolist (failure '(error timeout stop))
+    (let ((client (hermes-test--dashboard-client)) frames
+          (hermes-dashboard-transport-websocket-close-function #'ignore))
+      (let ((hermes-dashboard-transport-websocket-send-function
+             (lambda (_socket frame) (push frame frames))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "sid-active"
+               hermes-chat--dashboard-session-ready-p t)
+         (insert "/reasoning")
+         (hermes-chat-send)
+         (let* ((pending (hermes-dashboard-transport-client-pending client))
+                (id (car (hash-table-keys pending)))
+                (request (gethash id pending)))
+           (should (= (length frames) 1))
+           (should (equal (plist-get request :method) "config.get"))
+           (should hermes-chat--command-owner)
+           (pcase failure
+             ('error
+              (hermes-dashboard-transport--handle-frame
+               client (hermes-dashboard-transport--encode-frame
+                       `((jsonrpc . "2.0") (id . ,id)
+                         (error . ((code . 4002) (message . "Reasoning unavailable")))))))
+             ('timeout (hermes-dashboard-transport--on-request-timeout client id))
+             ('stop (hermes-dashboard-transport-stop client "Socket closed")))
+           (should (= (hash-table-count pending) 0))
+           (should-not hermes-chat--command-owner)
+           (should-not hermes-chat--runtime-flags)
+           (should (eq (plist-get hermes-chat--status-state :status) 'error))
+           (should (string-match-p
+                    (pcase failure
+                      ('error "Reasoning unavailable")
+                      ('timeout "[Tt]ime")
+                      ('stop "Socket closed"))
+                    (buffer-string)))
+           (should (= (length frames) 1))))))))
+
+(ert-deftest hermes-chat-reasoning-query-keeps-busy-guards ()
+  "Existing exclusive command, handoff, and creation guards refuse a bare query."
+  (dolist (busy '(handoff creation command))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (&rest _) (ert-fail "Busy query must not dispatch"))))
+      (hermes-test-with-chat-buffer
+       (pcase busy
+         ('handoff (setq hermes-chat--handoff-owner 'handoff))
+         ('creation (setq hermes-chat--create-override-owner 'creation))
+         ('command (hermes-chat--command-start)))
+       (insert "/reasoning")
+       (let ((text (buffer-string)) (undo (copy-tree buffer-undo-list)))
+         (should-error (hermes-chat-send) :type 'user-error)
+         (should (equal (buffer-string) text))
+         (should (equal buffer-undo-list undo)))))))
+
+(ert-deftest hermes-chat-reasoning-query-preserves-argument-routing ()
+  "Only a bare query changes route; display, effort, and flag handling stays put."
+  (dolist (case '(("max --session" "config.set" "max" "sid-active")
+                  ("xhigh --global" "config.set" "xhigh" nil)
+                  ("show" "config.set" "show" "sid-active")
+                  ("hide" "config.set" "hide" "sid-active")
+                  ("full" "config.set" "full" "sid-active")
+                  ("clamp" "config.set" "clamp" "sid-active")
+                  ("unknown" "config.set" "unknown" "sid-active")
+                  ("--global" "slash.exec" nil "sid-active")
+                  ("--session" "slash.exec" nil "sid-active")))
+    (let ((client (hermes-test--dashboard-client)) request)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (_client method params _resolve _reject)
+                   (setq request (list method params)))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "sid-active"
+               hermes-chat--dashboard-session-ready-p t)
+         (insert (concat "/reasoning " (car case)))
+         (hermes-chat-send)
+         (should (equal (car request) (nth 1 case)))
+         (should (equal (alist-get 'value (cadr request)) (nth 2 case)))
+         (should (equal (alist-get 'session_id (cadr request)) (nth 3 case)))
+         (when (equal (car request) "slash.exec")
+           (should (equal (alist-get 'command (cadr request))
+                          (concat "reasoning " (car case))))))))))
+
 (ert-deftest hermes-chat-reasoning-request-projects-scope ()
   "Reasoning arguments project to one value and optional global scope."
   (should (equal (hermes-chat--reasoning-request "ultra --session")
@@ -8065,12 +8596,12 @@
            (should (string-match-p (regexp-quote hermes-chat--working-directory)
                                    (get-text-property 0 'help-echo header)))))
        (should (string-match-p "界%%project" (hermes-chat--header-line 120)))
-       (should (eq (keymap-lookup hermes-chat-actions-map "h")
+       (should (eq (keymap-lookup hermes-chat-info-map "h")
                    #'hermes-chat-session-details))
        (should-not (keymap-lookup hermes-chat-mode-map "C-c C-h"))
        (unwind-protect
            (progn
-             (call-interactively (keymap-lookup hermes-chat-actions-map "h"))
+             (call-interactively (keymap-lookup hermes-chat-info-map "h"))
              (with-current-buffer "*Hermes Session Details*"
                (should (derived-mode-p 'special-mode))
                (should buffer-read-only)

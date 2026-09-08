@@ -179,6 +179,7 @@
         (applied 0)
         (changed 0)
         (refreshed 0)
+        (revert (symbol-function 'hermes-provider-accounts--revert))
         opened messages)
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'client #'ignore)))
@@ -201,7 +202,9 @@
               ((symbol-function 'hermes-onboarding--auth-changed)
                (lambda () (setq changed (1+ changed))))
               ((symbol-function 'hermes-provider-accounts--revert)
-               (lambda () (setq refreshed (1+ refreshed))))
+               (lambda (&rest args)
+                 (setq refreshed (1+ refreshed))
+                 (apply revert args)))
               ((symbol-function 'browse-url) (lambda (url) (setq opened url)))
               ((symbol-function 'pop-to-buffer) #'ignore)
               ((symbol-function 'message)
@@ -219,7 +222,9 @@
             (should (= shown 0))
             (should (= applied 0))
             (should (= changed 0))
-            (should (= refreshed 0))
+            ;; Initial catalog acquisition uses the normal refresh route.
+            ;; A rejected catalog must not trigger another auth refresh.
+            (should (= refreshed 1))
             (should-not opened)
             (should (= (cl-count-if
                         (lambda (text)

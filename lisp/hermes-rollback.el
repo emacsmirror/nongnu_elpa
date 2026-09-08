@@ -158,6 +158,9 @@ browser reports the error and still releases a transient client."
   :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]
   :fetch #'hermes-rollback--fetch
   :rows #'hermes-rollback--rows
+  :help (:group "Checkpoint"
+         hermes-rollback-show-diff "View diff"
+         hermes-rollback-restore "Restore")
   :keys ("RET" #'hermes-rollback-show-diff
          "d" #'hermes-rollback-show-diff
          "x" #'hermes-rollback-restore))

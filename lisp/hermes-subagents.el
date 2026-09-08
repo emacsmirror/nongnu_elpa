@@ -92,6 +92,7 @@ Each active subagent's goal is indented by its spawn depth."
            (hermes-dashboard-transport-call-fn
             #'hermes-dashboard-transport-delegation-status client))
   :rows #'hermes-subagents--rows
+  :help (:group "Worker" hermes-subagents-interrupt "Interrupt")
   :keys ("k" #'hermes-subagents-interrupt))
 
 ;;; Exact-session observations
@@ -235,7 +236,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
             (insert (propertize "Observed work\n" 'face 'bold)
                     (propertize
                      (truncate-string-to-width
-                      (format "Agents %s · Processes %s · h Scope"
+                      (format "Agents %s · Processes %s · ? Help"
                               (hermes-work--coverage owner :delegates)
                               (hermes-work--coverage owner :processes))
                       width nil nil "…") 'face 'shadow)
@@ -371,17 +372,12 @@ The endpoint returns whole files, not a tail or a paginated transcript."
 
 (defun hermes-work-log--render (text)
   "Replace this log with rendered TEXT, preserving point and windows."
-  (let ((position (point))
-        (windows (mapcar (lambda (window) (cons window (window-start window)))
-                         (get-buffer-window-list (current-buffer) nil t))))
-    (let ((inhibit-read-only t)
-          (inhibit-modification-hooks t))
-      (erase-buffer)
-      (insert text)
-      (goto-char (min position (point-max))))
-    (dolist (entry windows)
-      (when (window-live-p (car entry))
-        (set-window-start (car entry) (min (cdr entry) (point-max)) t)))))
+  (hermes-browser--preserve-reading-position
+   (lambda ()
+     (let ((inhibit-read-only t)
+           (inhibit-modification-hooks t))
+       (erase-buffer)
+       (insert text)))))
 
 (defun hermes-work-log-refresh ()
   "Fetch this worker's remote log asynchronously, preserving point.
@@ -415,8 +411,8 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
                    (if (string-empty-p text) "No log content yet.\n" text))
                   (setq hermes-work-log--request nil
                         header-line-format
-                        (if (string-empty-p text) "Worker log · Empty snapshot · g Refresh"
-                          "Worker log · Snapshot; entries may be truncated · g Refresh"))))))))
+                        (if (string-empty-p text) "Worker log · Empty snapshot · ? Help"
+                          "Worker log · Snapshot; entries may be truncated · ? Help"))))))))
        (lambda (reason)
          (when (hermes-work-log--current-p buffer binding token)
            (with-current-buffer buffer
@@ -481,6 +477,15 @@ Use only the exact path published in this parent's structured tool result."
   "n" #'hermes-kanban-log-next-hunk
   "p" #'hermes-kanban-log-previous-hunk)
 
+(keymap-popup-annotate hermes-work-log-mode-map
+  :popup-key "?" :exit-key "C-g" :description "Worker Log Snapshot"
+  :group "Diff"
+  hermes-kanban-log-next-hunk "Next hunk"
+  hermes-kanban-log-previous-hunk "Previous hunk"
+  :group "View"
+  hermes-work-log-refresh "Refresh"
+  quit-window "Quit view")
+
 (define-derived-mode hermes-work-log-mode special-mode "Worker Log"
   "Read a remote worker log snapshot without visiting a local file.
 The backend may truncate individual entries or expire logs.  No full-session
@@ -498,6 +503,18 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
   "q" #'quit-window
   "i" #'hermes-work-instance-subagents
   "h" #'hermes-work-scope-details)
+
+(keymap-popup-annotate hermes-work-mode-map
+  :popup-key "?" :exit-key "C-g" :description "Observed Chat Work"
+  :group "Worker"
+  hermes-work-log "Open log"
+  hermes-work-details "Observed details"
+  :group "Scope"
+  hermes-work-scope-details "Scope details"
+  hermes-work-instance-subagents "Instance workers"
+  :group "View"
+  hermes-work-refresh "Refresh"
+  quit-window "Quit view")
 
 (define-derived-mode hermes-work-mode tabulated-list-mode "Observed Work"
   "Browse only one chat attachment's observed delegates and processes."

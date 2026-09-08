@@ -169,6 +169,18 @@ BODY and QUERY extend the request."
     (hermes-dashboard-transport-call-fn
      #'hermes-dashboard-transport-session-list client))))
 
+(defun hermes-sessions--scope-description ()
+  "Return the active query scope from this session browser."
+  (if hermes-sessions--search-query
+      (format "Hermes Sessions · Search: %s · Profile: %s"
+              (truncate-string-to-width hermes-sessions--search-query 24 nil nil t)
+              (or hermes-sessions--search-profile "dashboard default"))
+    (format "Hermes Sessions · Archived: %s · Profiles: %s"
+            hermes-sessions--archived-filter
+            (if (or hermes-sessions--all-profiles
+                    (not (equal hermes-sessions--archived-filter "exclude")))
+                "all" "dashboard default"))))
+
 ;;;###autoload (autoload 'hermes-list-sessions "hermes-sessions" nil t)
 (hermes-define-list-browser sessions
   :title "Hermes Sessions"
@@ -180,6 +192,21 @@ Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   :columns [("Session" 22 t) ("Title" 36 t) ("Msgs" 6 t) ("Source" 12 t)
             ("Profile" 14 t)]
+  :description #'hermes-sessions--scope-description
+  :help (:group "Open"
+         hermes-sessions-open "Resume chat"
+         hermes-sessions-view "View history"
+         hermes-sessions-export "Export"
+         :group "Session"
+         hermes-sessions-rename "Rename"
+         hermes-sessions-delete "Delete"
+         hermes-sessions-archive "Archive"
+         hermes-sessions-unarchive "Unarchive"
+         :row
+         :group "Scope"
+         hermes-sessions-toggle-archived "Toggle archived"
+         hermes-sessions-search "Search"
+         hermes-sessions-list-all-profiles "All profiles")
   :fetch #'hermes-sessions--fetch
   :rows #'hermes-sessions--result-rows
   :on-result #'hermes-sessions--record-result
@@ -206,7 +233,23 @@ client just for the listing."
   "d" #'hermes-sessions-delete
   "a" #'hermes-sessions-archive
   "u" #'hermes-sessions-unarchive
-  "w" #'hermes-sessions-export)
+  "w" #'hermes-sessions-export
+  "h" #'describe-mode)
+
+(keymap-popup-annotate hermes-session-detail-mode-map
+  :popup-key "?" :exit-key "C-g" :description "Hermes Session"
+  :group "Open"
+  hermes-sessions-open "Resume chat"
+  hermes-sessions-export "Export"
+  :group "Session"
+  hermes-sessions-rename "Rename"
+  hermes-sessions-delete "Delete"
+  hermes-sessions-archive "Archive"
+  hermes-sessions-unarchive "Unarchive"
+  :group "View"
+  hermes-sessions-view "Refresh"
+  describe-mode "Describe mode"
+  quit-window "Quit view")
 
 (define-derived-mode hermes-session-detail-mode special-mode "Hermes Session"
   "Major mode showing one Hermes session's history."

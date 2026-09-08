@@ -643,6 +643,14 @@ The first render only records a baseline so pre-existing failures do not alert."
   :rows #'hermes-cron--rows
   :on-result #'hermes-cron--note-failures
   :on-mode #'hermes-cron--maybe-start-auto-refresh
+  :help (:group "Job"
+         hermes-cron-show "Show details"
+         hermes-cron-create "Create"
+         hermes-cron-edit "Edit"
+         :group "Run"
+         hermes-cron-trigger "Run now"
+         hermes-cron-toggle "Toggle enabled"
+         hermes-cron-remove "Remove")
   :keys ("RET" #'hermes-cron-show
          "e" #'hermes-cron-edit
          "!" #'hermes-cron-trigger

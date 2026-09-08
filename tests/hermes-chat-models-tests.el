@@ -10,6 +10,130 @@
 
 (require 'ert)
 (require 'hermes-test-helpers)
+(ert-deftest hermes-chat-setting-values-follow-buffer-and-pending-owner ()
+  "Current values never invent defaults or reuse another session's override."
+  (hermes-test-with-chat-buffer
+   (should (equal (hermes-chat--model-setting-value) "unknown"))
+   (should (equal (hermes-chat--reasoning-setting-value) "unknown"))
+   (should (eq (get-text-property 0 'face
+                                 (hermes-chat--reasoning-setting-value)) 'shadow))
+   (setq hermes-chat--model "model-a"
+         hermes-chat--runtime-flags '(:reasoning-effort "high"))
+   (should (equal (hermes-chat--model-setting-value) "model-a"))
+   (should (equal (hermes-chat--reasoning-setting-value) "high"))
+   (hermes-test-with-chat-buffer
+    (setq hermes-chat--model "model-b")
+    (should (equal (hermes-chat--model-setting-value) "model-b"))
+    (should (equal (hermes-chat--reasoning-setting-value) "unknown")))
+   (setq hermes-chat--dashboard-create-model "next-model"
+         hermes-chat--dashboard-create-reasoning-effort "low")
+   (should (equal (hermes-chat--model-setting-value) "next-model (pending)"))
+   (should (equal (hermes-chat--reasoning-setting-value) "low (pending)"))
+   (should (eq (get-text-property 0 'face (hermes-chat--model-setting-value))
+               'warning))
+   (setq hermes-chat--dashboard-active-session-id "new"
+         hermes-chat--create-overrides-retry-session-id "old")
+   (should (equal (hermes-chat--model-setting-value) "model-a"))
+   (should (equal (hermes-chat--reasoning-setting-value) "high"))
+   (setq hermes-chat--create-overrides-retry-session-id "new")
+   (should (equal (hermes-chat--reasoning-setting-value) "low (pending)"))))
+
+(ert-deftest hermes-chat-setting-values-create-in-flight-is-pending ()
+  "The newly attached session has not confirmed in-flight create overrides."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-active-session-id "creating"
+         hermes-chat--dashboard-create-model "next-model"
+         hermes-chat--dashboard-create-reasoning-effort "low"
+         hermes-chat--create-override-owner (gensym "create-"))
+   (should (equal (hermes-chat--model-setting-value) "next-model (pending)"))
+   (should (equal (hermes-chat--reasoning-setting-value) "low (pending)"))))
+
+(ert-deftest hermes-chat-setting-values-render-native-popup ()
+  "Native popup labels show bounded values without replacing setters."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "model-a"
+         hermes-chat--runtime-flags '(:reasoning-effort "high")
+         hermes-chat--working-directory "/remote/project/")
+   (let ((text (keymap-popup--render
+                (keymap-popup--meta hermes-chat-model-map 'descriptions))))
+     (should (string-match-p "Switch model: model-a" text))
+     (should (eq (get-text-property (string-match "model-a" text) 'face text)
+                 'font-lock-constant-face))
+     (should (string-match-p "Set reasoning: high" text))
+     (should (string-match-p "Connect provider" text)))
+   (should (string-match-p
+            "Set directory: /remote/project/"
+            (keymap-popup--render
+             (keymap-popup--meta hermes-chat-work-map 'descriptions))))
+   (should (eq (lookup-key hermes-chat-model-map (kbd "m"))
+               #'hermes-chat-switch-model))
+   (should (eq (lookup-key hermes-chat-model-map (kbd "e"))
+               #'hermes-chat-set-reasoning))
+   (setq hermes-chat--model (make-string 100 ?x))
+   (should (<= (string-width (hermes-chat--model-setting-value)) 40))))
+
+(ert-deftest hermes-chat-setting-values-reasoning-prompt-and-default ()
+  "Unknown reasoning has no made-up default; known values are offered."
+  (hermes-test-with-chat-buffer
+   (cl-letf (((symbol-function 'completing-read)
+              (lambda (prompt _choices _pred _require _initial _history default)
+                (should (string-match-p "current: unknown" prompt))
+                (should-not default)
+                "high")))
+     (should (equal (hermes-chat--read-reasoning-effort) "high")))
+   (setq hermes-chat--runtime-flags '(:reasoning-effort "low"))
+   (cl-letf (((symbol-function 'completing-read)
+              (lambda (prompt _choices _pred _require _initial _history default)
+                (should (string-match-p "current: low" prompt))
+                (should (equal default "low"))
+                default)))
+     (should (equal (hermes-chat--read-reasoning-effort) "low")))))
+
+(ert-deftest hermes-chat-setting-values-model-prompt-uses-owner-buffer ()
+  "An asynchronous model catalog reads the owner's value, not callback context."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "owner-model")
+   (let ((owner (current-buffer))
+         (context (hermes-chat--model-switch-context))
+         (payload '((providers . (((slug . "p") (authenticated . t)
+                                   (models . ("next"))))))))
+     (with-temp-buffer
+       (setq-local hermes-chat--model "unrelated-model")
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (prompt &rest _)
+                    (should (string-match-p "current: owner-model" prompt))
+                    "")))
+         (hermes-chat--prompt-and-set-model owner nil payload context))
+       (with-current-buffer owner
+         (setq hermes-chat--dashboard-active-session-id "successor"))
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (&rest _) (ert-fail "Stale catalog opened prompt"))))
+         (hermes-chat--prompt-and-set-model owner nil payload context))))))
+
+(ert-deftest hermes-chat-setting-values-reasoning-refuses-changed-owner ()
+  "A reasoning prompt cannot apply to a session created while it was open."
+  (hermes-test-with-chat-buffer
+   (cl-letf (((symbol-function 'completing-read)
+              (lambda (&rest _)
+                (setq hermes-chat--dashboard-active-session-id "successor")
+                "high")))
+     (should-error (call-interactively #'hermes-chat-set-reasoning)
+                   :type 'user-error))
+   (should-not hermes-chat--dashboard-create-reasoning-effort)
+   (should-not hermes-chat--runtime-flags)))
+
+(ert-deftest hermes-chat-setting-values-directory-prompt-keeps-current-path ()
+  "Browsing another directory still hints the actual session directory."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--working-directory "/remote/current/")
+   (cl-letf (((symbol-function 'completing-read)
+              (lambda (prompt &rest _)
+                (should (string-match-p "current: /remote/current/" prompt))
+                "")))
+     (hermes-chat--choose-directory-candidate
+      nil hermes-chat--lifecycle-generation nil "/remote/browsed/"
+      '((entries . nil))))))
+
 (ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
   "Model candidates list authenticated providers first and keep provider identity."
   (let* ((cands (hermes-chat--model-candidates
