@@ -4542,7 +4542,10 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-match-next-handle (limit)
   "A font-lock match function for handles.
 LIMIT is for `re-search-forward''s bound argument."
-  (re-search-forward "@[[:alnum:]_-]+" limit :no-error))
+  (re-search-forward
+   ;; no preceding slash, as that may be a @ in a URL:
+   "[^/]@[[:alnum:]_-]+"
+   limit :no-error))
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
