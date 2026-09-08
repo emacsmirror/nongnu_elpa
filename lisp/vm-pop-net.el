@@ -824,7 +824,7 @@ again."
 			    name (length result)
 			    (if (= (length result) 1) "" "s")))))
       (vm-net-warn 0 "%s: fetched mail is still on the server: %s" name
-	       "the maildrop cannot be opened again without waiting"))))
+	       "VM has no password for the maildrop"))))
 
 
 ;;; A POP folder, which is a maildrop VM keeps a copy of
@@ -873,8 +873,8 @@ connection that would write the same folder.")
 (defun vm-pop-net-when-free (name function)
   "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
 NAME says what it is, for the log.  Answers `later' when it was queued: the
-work has not happened yet, and the caller is not to do it the blocking way
-either, which would be the second writer this is avoiding."
+work has not happened yet, and it happens on the one session this folder has
+rather than as the second writer this is avoiding."
   (cond
    ((vm-pop-net-busy-p)
     (setq vm-pop-net-waiting
@@ -1060,8 +1060,8 @@ fetched again."
 
 (defun vm-pop-net-get-folder-mail ()
   "Start fetching this POP folder's new mail, and answer with whether it did.
-Nil means this maildrop is one that cannot be opened without waiting, or a
-session is already running, and the caller is to use the blocking path."
+Nil means nothing was started: VM has no password for the maildrop yet, or a
+session is already running on the folder."
   (let* ((folder (current-buffer))
 	 (source (vm-folder-pop-maildrop-spec))
 	 (folder-type (vm-folder-type-to-write)))
@@ -1093,8 +1093,9 @@ session is already running, and the caller is to use the blocking path."
 		       (buffer-name folder))
 	    t)
 	(vm-pop-net-no-password
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 
@@ -1142,9 +1143,9 @@ does whether this runs to the end or is abandoned."
 (defun vm-pop-net-send-changes ()
   "Start deleting on the server what this POP folder has expunged locally.
 
-Answers with whether it did: nil means the maildrop cannot be opened without
-waiting and the caller is to do it the blocking way, `later' that a session
-is already running and these deletions go up next time -- they are in
+Answers with whether it did: nil means nothing was started, VM having no
+password for the maildrop yet; `later' that a session is already running and
+these deletions go up next time -- they are in
 `vm-pop-messages-to-expunge', which is written into the folder file, so
 nothing is lost by waiting.
 
@@ -1203,8 +1204,9 @@ next fetch's business."
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)
 	(vm-pop-net-no-password
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 (defun vm-pop-net-expunge-maildrop (source uidls callback)
@@ -1231,10 +1233,10 @@ whether it started."
 (defun vm-pop-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved by POP.
 
-Answers whether it started; nil means the first maildrop cannot be opened
-without waiting and the caller is to do the lot the blocking way.  One
-maildrop at a time: a POP server serves one session anyway, and they all
-write the same folder.
+Answers whether it started; nil means nothing was started, VM having no
+password for the first maildrop yet, and none after it is answered for
+either.  One maildrop at a time: a POP server serves one session anyway, and
+they all write the same folder.
 
 The folder forgets each maildrop's messages as that maildrop answers for
 them, so an expunge that fails half way leaves the rest to be offered again."
@@ -1292,7 +1294,8 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 		  t)
 		 (first nil)
 		 (t
-		  (vm-net-warn 0 "%s: cannot be deleted from without waiting" name)
+		  (vm-net-warn 0 "%s: not deleted from, VM has no password for it"
+			   name)
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
@@ -1337,8 +1340,9 @@ already running -- and one already running will say what arrived anyway."
 		       (buffer-name folder))
 	    t)
 	(vm-pop-net-no-password
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 (provide 'vm-pop-net)

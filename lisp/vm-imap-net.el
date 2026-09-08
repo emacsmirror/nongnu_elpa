@@ -1861,8 +1861,7 @@ A list of (NAME . FUNCTION), oldest first.  A folder writes what a session
 tells it to -- messages, flags, expunges -- and two sessions doing that at
 once would interleave their writes into one buffer and one cache file.  So
 the second asks to be run afterwards rather than opening a connection of its
-own, and rather than being turned away to the blocking path, which would open
-that connection anyway.")
+own.")
 (make-variable-buffer-local 'vm-imap-net-waiting)
 
 (defun vm-imap-net-take-session (session &optional iterator)
@@ -2014,8 +2013,8 @@ folder's session and the rest keep waiting behind it."
 (defun vm-imap-net-when-free (name function)
   "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
 NAME says what it is, for the log.  Answers `later' when it was queued: the
-work has not happened yet and the caller is not to do it the blocking way,
-which would open the second connection this is avoiding."
+work has not happened yet, and it happens on the one connection this folder
+has rather than on a second one."
   (cond
    ((vm-imap-net-busy-p)
     (setq vm-imap-net-waiting
@@ -2145,13 +2144,12 @@ timer has nobody to ask."
 
 (defun vm-imap-net-load-message-bodies (messages)
   "Start fetching the bodies of MESSAGES, and answer with whether it did.
-They must all be in one folder.  Nil means the maildrop is one that cannot
-be opened without waiting, and the caller is to fetch them the blocking way.
+They must all be in one folder.  Nil means nothing was started, VM having no
+password for the maildrop yet.
 
 With a session already running on the folder this waits for it rather than
 opening a second connection into the same buffer, and answers `later\\=': the
-bodies arrive when the fetch in front of them is done, and the caller must
-not go to the blocking path, which would open that second connection.
+bodies arrive when the fetch in front of them is done.
 
 Each message is marked as no longer needing its body only when the body is
 there, so a message the server did not answer for is asked for again rather
@@ -2296,9 +2294,9 @@ could be borrowed and none whose buffer could be written, so this session
 belongs to nobody and is not the folder queue's business.  TEXT is taken as it
 is; the composition buffer is free to go.
 
-Nil means the maildrop cannot be opened without waiting -- the caller files it
-the blocking way.  A failure afterwards is a warning: the message has been
-sent by then, and the copy is what did not arrive."
+Nil means nothing was started, VM having no password for the maildrop yet.  A
+failure afterwards is a warning: the message has been sent by then, and the
+copy is what did not arrive."
   (condition-case nil
       (let* ((opened (vm-imap-net-open spec "IMAP FCC" may-ask))
 	     (session (car opened))
@@ -2521,9 +2519,9 @@ have, as each maildrop answers, so that the folder forgets them then rather
 than at the end; DONE is called with the maildrops that gave trouble, newest
 first, when there are no more.
 
-Answers whether the first maildrop started.  Nil means the driver cannot open
-that one, and the caller is to do the lot the blocking way -- half an expunge
-on the driver and half on the blocking path is worse than either.
+Answers whether the first maildrop started.  Nil means nothing was started, VM
+having no password for that one yet, and no maildrop after it is answered for
+either: half an expunge is worse than none.
 
 One maildrop at a time and not all at once: they are separate servers as often
 as not, but they all write the same folder, and what it remembers of one is not
@@ -2558,11 +2556,11 @@ to be rewritten while another is being answered for."
 		       (funcall step (cdr rest) trouble nil)))))
 		  t)
 		 (first
-		  ;; the caller has not started anything yet and can still do
-		  ;; the whole thing the blocking way
+		  ;; nothing has been started yet, so the caller is told that
+		  ;; none of it was
 		  nil)
 		 (t
-		  (vm-net-warn 0 "%s: cannot be expunged without waiting" name)
+		  (vm-net-warn 0 "%s: not expunged, VM has no password for it" name)
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
@@ -2634,8 +2632,7 @@ each and belong to no folder: nothing is written into a buffer here, so there
 is no folder session to queue behind.  DONE is called with t, or with the
 error, when the server has answered.
 
-Nil means the maildrop cannot be opened without waiting, and the caller is to
-send it the blocking way."
+Nil means nothing was sent, VM having no password for the maildrop yet."
   (condition-case nil
       (let* ((opened (vm-imap-net-open spec (format "IMAP %s" purpose) may-ask))
 	     (session (car opened))
@@ -2737,8 +2734,8 @@ folder ends up in a different state depending on which path did the work."
 
 (defun vm-imap-net-save-attributes ()
   "Start sending this folder's changed flags to the server.
-Answers with whether it did; nil means the maildrop cannot be opened without
-waiting and the caller is to do it the blocking way.  With a session already
+Answers with whether it did; nil means nothing was started, VM having no
+password for the maildrop yet.  With a session already
 running it is done when that one ends, and the answer is `later': a second
 connection writing this folder's flags while the first is writing its
 messages is what the queue exists to prevent."
@@ -2787,7 +2784,7 @@ and which is also being deleted should go up with the flags it had."
 
 (defun vm-imap-net-send-changes ()
   "Start sending what this folder owes its server, and answer with whether it
-did.  Nil means the caller is to do it the blocking way.
+did.  Nil means nothing was sent, VM having no password for the maildrop yet.
 
 What a save owes the server is what the reader changed: the flags of the
 messages whose attributes moved, and the deletions the folder has been asked
@@ -2853,10 +2850,9 @@ keep their modification flags and go up next time."
 
 (defun vm-imap-net-expunge-remote-messages ()
   "Start expunging on the server what this folder has expunged locally.
-Answers with whether it did; nil means the maildrop is one that cannot be
-opened without waiting, and the caller is to do it the blocking way.  With a
-session already running the expunge is done when that one ends and the answer
-is `later'."
+Answers with whether it did; nil means nothing was started, VM having no
+password for the maildrop yet.  With a session already running the expunge is
+done when that one ends and the answer is `later'."
   (let* ((folder (current-buffer))
 	 (pending (vm-imap-net-uids-to-expunge (vm-folder-imap-uid-validity))))
     (cond
@@ -2978,9 +2974,9 @@ that changed.
 It used to delete on the server what the folder no longer holds, which a
 damaged cache turned into losing mail (emacs-vm/vm#752).
 
-Nil means the maildrop cannot be opened without waiting and the caller is to
-do it the blocking way; `later' that a session is running and this one goes
-when it ends.  INTERACTIVE says a reader is there to be asked for a password.'"
+Nil means nothing was started, VM having no password for the maildrop yet;
+`later' that a session is running and this one goes when it ends.  INTERACTIVE
+says a reader is there to be asked for a password."
   (let ((folder (current-buffer)))
     (vm-imap-net-when-free
      (if full "synchronising fully" "synchronising")
@@ -3242,7 +3238,8 @@ without waiting."
 
 (defun vm-imap-net-save-messages-to-folder (target messages count)
   "Save MESSAGES into the IMAP maildrop TARGET without waiting.
-Answers with whether it started; nil leaves the save to the blocking path.
+Answers with whether it started; nil means nothing was saved, VM having no
+password for the target yet.
 COUNT is what the command was given, for the deletion afterwards.
 
 The messages are flagged filed when the server has taken them, not when the

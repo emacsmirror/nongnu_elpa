@@ -5456,11 +5456,12 @@ list, and say where they came from."
 
 (defun vm-start-spooled-mail (retrieval-function maildrop crash safe-maildrop)
   "Start fetching MAILDROP into CRASH without waiting, if that can be done.
-Answers with whether it started.  Nil means this maildrop is one that has to
-be fetched the blocking way, and the caller does that.
+Answers with whether it started.  Nil means nothing was started: either the
+maildrop is not one VM fetches over the network, or VM has no password for it
+and the reader, who has been asked, gave none.
 
 SAFE-MAILDROP is the name to show; RETRIEVAL-FUNCTION says which protocol it
-is, being what the blocking path would have called."
+is."
   (let ((folder (current-buffer))
 	(starter (cond ((eq retrieval-function 'vm-imap-move-mail)
 			#'vm-imap-net-move-mail)
@@ -5483,6 +5484,24 @@ is, being what the blocking path would have called."
 	       t)
 	   (vm-imap-net-no-password nil)
 	   (vm-pop-net-no-password nil)))))
+
+(defun vm-move-spooled-mail (retrieval-function maildrop crash got-mail)
+  "Move MAILDROP into CRASH with RETRIEVAL-FUNCTION, and answer whether to read
+CRASH.  For a spool file, `movemail' and the rest, which VM fetches by waiting.
+
+GOT-MAIL says whether mail has already been appended to this folder.  Once it
+has, an error must not be signalled: the reader would be left looking for mail
+that is neither in the crash box, nor in the spool file, nor visibly in the
+folder.  So it answers t on an error and on a quit, both of which leave it
+unknown whether anything reached the crash box."
+  (if got-mail
+      (condition-case error-data
+	  (funcall retrieval-function maildrop crash)
+	(error (vm-warn 0 2 "%s signaled: %s" retrieval-function error-data)
+	       t)
+	(quit (vm-warn 0 2 "quitting from %s..." retrieval-function)
+	      t))
+    (funcall retrieval-function maildrop crash)))
 
 (defun vm-get-spooled-mail-normal (&optional interactive)
   (if vm-global-block-new-mail
@@ -5545,36 +5564,23 @@ is, being what the blocking path would have called."
 		(setq maildrop 
 		      (expand-file-name maildrop 
 					vm-folder-directory)))
-	      (when (if (vm-start-spooled-mail retrieval-function maildrop
-					       crash safe-maildrop)
-			;; on its way; the crash box is gobbled when it lands
-			nil
-		      (if got-mail
-			;; don't allow errors to be signaled unless no
-			;; mail has been appended to the incore
-			;; copy of the folder.  otherwise the
-			;; user will wonder where the mail is,
-			;; since it is not in the crash box or
-			;; the spool file and doesn't _appear_ to
-			;; be in the folder either.
-			(condition-case error-data
-			    (funcall retrieval-function maildrop crash)
-			  (error (vm-warn 0 2 "%s signaled: %s"
-					  retrieval-function
-					  error-data)
-				 ;; we don't know if mail was
-				 ;; put into the crash box or
-				 ;; not, so return t just to be
-				 ;; safe.
-				 t )
-			  (quit (vm-warn 0 2 "quitting from %s..."
-					 retrieval-function)
-				;; we don't know if mail was
-				;; put into the crash box or
-				;; not, so return t just to be
-				;; safe.
-				t ))
-		      (funcall retrieval-function maildrop crash)))
+	      (when (cond
+		     ((vm-start-spooled-mail retrieval-function maildrop
+					     crash safe-maildrop)
+		      ;; on its way; the crash box is gobbled when it lands
+		      nil)
+		     ((memq retrieval-function
+			    '(vm-imap-move-mail vm-pop-move-mail))
+		      ;; The driver did not start, which for a network maildrop
+		      ;; means VM has no password for it and the reader has
+		      ;; already been asked.  There is nothing else to try: one
+		      ;; way in, and asking again through a second
+		      ;; implementation would put the same question twice.
+		      (vm-inform 5 "No mail from %s, VM has no password for it."
+				 safe-maildrop)
+		      nil)
+		     (t (vm-move-spooled-mail retrieval-function maildrop
+					      crash got-mail)))
 		(when (vm-gobble-crash-box crash)
 		  (setq got-mail t)
 		  (vm-inform 5 "Got mail from %s."

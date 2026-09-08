@@ -6591,6 +6591,87 @@ The other arm of `vm-totals-blurb', which a folder with nothing in it takes."
       (should (equal (concat name ": No messages.") (vm-totals-blurb)))
       (should (equal "No messages." (vm-totals-blurb t))))))
 
+;;; Fetching from a spool maildrop: one way in (emacs-vm/vm#822)
+
+(defmacro vm-folder-test--in-a-folder-with-a-spool (maildrop &rest body)
+  "Run BODY in a folder buffer whose only spool entry is MAILDROP.
+`vm-get-spooled-mail-normal' works on the buffer visiting the folder file
+named in the triple, so there has to be a file and it has to be visited."
+  (declare (indent 1) (debug t))
+  `(let* ((directory (make-temp-file "vm-spool-test" t))
+	  (folder (expand-file-name "inbox" directory))
+	  (buffer nil))
+     (unwind-protect
+	 (progn
+	   (write-region "" nil folder nil 'quiet)
+	   (setq buffer (find-file-noselect folder))
+	   (cl-letf (((symbol-function 'vm-compute-spool-files)
+		      (lambda (&rest _)
+			(list (list folder ,maildrop
+				    (expand-file-name "crash" directory)))))
+		     ((symbol-function 'vm-assimilate-new-messages)
+		      (lambda (&rest _) nil))
+		     ((symbol-function 'vm-update-summary-and-mode-line)
+		      (lambda () nil)))
+	     (with-current-buffer buffer
+	       (let ((vm-folder-directory directory)
+		     (vm-buffers-needing-display-update (make-vector 29 0))
+		     (vm-global-block-new-mail nil))
+		 ,@body))))
+       (when (buffer-live-p buffer)
+	 (with-current-buffer buffer (set-buffer-modified-p nil))
+	 (kill-buffer buffer))
+       (delete-directory directory t))))
+
+(ert-deftest vm-folder-test-a-network-maildrop-is-not-fetched-by-waiting ()
+  "A network spool maildrop the driver declines is not fetched blockingly.
+The driver declines only where VM has no password and the reader, who was
+asked, gave none, so calling the blocking implementation would put the same
+question a second time."
+  (let ((called nil)
+	(said nil))
+    (cl-letf (((symbol-function 'vm-start-spooled-mail) (lambda (&rest _) nil))
+	      ((symbol-function 'vm-imap-move-mail)
+	       (lambda (&rest _) (setq called t) t))
+	      ((symbol-function 'vm-gobble-crash-box) (lambda (&rest _) nil))
+	      ((symbol-function 'vm-inform)
+	       (lambda (_level format &rest args)
+		 (setq said (concat (or said "")
+				    (apply #'format format args))))))
+      (vm-folder-test--in-a-folder-with-a-spool
+	  "imap:mail.example:143:INBOX:login:me:*"
+	(vm-get-spooled-mail-normal nil))
+      (should-not called)
+      (should (string-match-p "no password" (or said ""))))))
+
+(ert-deftest vm-folder-test-a-spool-file-is-still-fetched-by-waiting ()
+  "A local spool file is fetched by waiting, which is the only way there is.
+`movemail' and the rest are not on the driver, so the branch that waits for
+them has to stay."
+  (let ((fetched nil))
+    (cl-letf (((symbol-function 'vm-start-spooled-mail) (lambda (&rest _) nil))
+	      ((symbol-function 'vm-spool-move-mail)
+	       (lambda (&rest _) (setq fetched t) t))
+	      ((symbol-function 'vm-gobble-crash-box) (lambda (&rest _) nil))
+	      ((symbol-function 'vm-inform) (lambda (&rest _) nil)))
+      (vm-folder-test--in-a-folder-with-a-spool "po:me"
+	(vm-get-spooled-mail-normal nil))
+      (should fetched))))
+
+(ert-deftest vm-folder-test-move-spooled-mail-answers-t-once-mail-has-arrived ()
+  "An error or a quit answers t when mail has already reached the folder.
+Anything else would leave the reader looking for mail that is neither in the
+crash box nor visibly in the folder."
+  (cl-letf (((symbol-function 'vm-warn) (lambda (&rest _) nil)))
+    (should (eq t (vm-move-spooled-mail
+		   (lambda (&rest _) (error "server said no")) "drop" "crash" t)))
+    (should (eq t (vm-move-spooled-mail
+		   (lambda (&rest _) (signal 'quit nil)) "drop" "crash" t)))
+    (should (equal "fetched" (vm-move-spooled-mail
+			      (lambda (&rest _) "fetched") "drop" "crash" t)))
+    (should-error (vm-move-spooled-mail
+		   (lambda (&rest _) (error "server said no")) "drop" "crash" nil))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
