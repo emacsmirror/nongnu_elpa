@@ -846,164 +846,11 @@ on all the relevant IMAP servers and then immediately expunges."
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-virtual-folder)
-  (let ((process nil)
-	(source nil)
-	(trouble nil)
-	(delete-count 0)
-	(vm-global-block-new-mail t)
-	(vm-imap-ok-to-ask t)
-	(did-delete nil)
-	msg-count can-delete read-write uid-validity
-	select-response source-list folder uid-alist mailbox data mp match)
-    ;; Through the driver where the maildrops allow it: this is a session and
-    ;; an expunge per maildrop, and it held Emacs for all of them.
-    (unless (vm-imap-net-expunge-retrieved)
-    (unwind-protect
-	(save-excursion			; save-current-buffer?
-	  ;;------------------------
-	  (vm-buffer-type:duplicate)
-	  ;;------------------------
-	  (setq vm-imap-retrieved-messages
-		(sort vm-imap-retrieved-messages
-		      (function 
-		       (lambda (a b)
-			 (cond ((string-lessp (nth 2 a) (nth 2 b)) t)
-			       ((string-lessp (nth 2 b) (nth 2 a)) nil)
-			       ((string-lessp (nth 1 a) (nth 1 b)) t)
-			       ((string-lessp (nth 1 b) (nth 1 a)) nil)
-			       ((string-lessp (nth 0 a) (nth 0 b)) t)
-			       (t nil))))))
-	  (setq mp vm-imap-retrieved-messages)
-	  (while mp
-	    (catch 'replay
-	      (condition-case error-data
-		  (progn
-		    (setq data (car mp))
-		    (when (not (equal source (nth 2 data)))
-		      (when process
-			(when did-delete
-			  (vm-imap-send-command process "CLOSE")
-			  (vm-imap-read-ok-response process)
-			  ;;----------------------------------
-			  (vm-imap-session-type:set 'inactive)
-			  ;;----------------------------------
-			  )
-			(vm-imap-end-session process)
-				
-			(setq process nil
-			      did-delete nil))
-		      (setq source (nth 2 data))
-		      (setq folder (or (vm-imap-folder-for-spec source)
-				       (vm-safe-imapdrop-string source)))
-		      (condition-case error-data
-			  (progn
-			    (vm-inform 6 "Opening IMAP session to %s..."
-				     folder)
-			    (setq process 
-				  (vm-imap-make-session 
-				   source vm-imap-ok-to-ask 
-				   :folder-buffer (current-buffer)
-				   :purpose "expunge"))
-			    (if (null process)
-				(signal 'vm-imap-protocol-error nil))
-			    ;;--------------------------
-			    (vm-buffer-type:set 'process)
-			    ;;--------------------------
-			    (set-buffer (process-buffer process))
-			    (setq source-list (vm-parse source
-							"\\([^:]+\\):?")
-				  mailbox (nth 3 source-list)
-				  select-response (vm-imap-select-mailbox
-						   process mailbox t)
-				  msg-count (car select-response)
-				  uid-validity (nth 2 select-response)
-				  read-write (nth 3 select-response)
-				  can-delete (nth 4 select-response))
-			    (setq mp
-				  (vm-imap-clear-invalid-retrieval-entries
-				   source mp uid-validity))
-			    (unless (eq data (car mp))
-				;; this entry must have been
-				;; discarded as invalid, so
-				;; skip it and process the
-				;; entry that is now at the
-				;; head of the list.
-				(throw 'replay t))
-			    (unless can-delete
-			      (error "Can't delete messages in mailbox %s, skipping..." mailbox))
-			    (unless read-write
-			      (error "Mailbox %s is read-only, skipping..." mailbox))
-			    (vm-inform 6 "Expunging messages in %s..." folder))
-			(error
-			 (if (cdr error-data)
-			     (apply 'message (cdr error-data))
-			   (vm-warn 0 2
-			    "Couldn't open IMAP session to %s, skipping..."
-			    folder))
-			 (setq trouble (cons folder trouble))
-			 (while (equal (nth 1 (car mp)) source)
-			   (setq mp (cdr mp)))
-			 (throw 'replay t)))
-		      (when (zerop msg-count)
-			(while (equal (nth 1 (car mp)) source)
-			  (setq mp (cdr mp)))
-			(throw 'replay t))
-		      (setq uid-alist (vm-imap-get-uid-list
-				       process 1 msg-count))
-		      (vm-imap-session-type:make-active))
-		    (when (setq match (rassoc (car data) uid-alist))
-		      (vm-imap-delete-message process (car match))
-		      (setq did-delete t)
-		      (vm-increment delete-count)))
-		(error
-		 (setq trouble (cons folder trouble))
-		 (vm-warn 0 2 "Something signaled: %s"
-			  (prin1-to-string error-data))
-		 (vm-inform 0 "Skipping rest of mailbox %s..." folder)
-		 (vm-pause 2)
-		 (while (equal (nth 2 (car mp)) source)
-		   (setq mp (cdr mp)))
-		 (throw 'replay t)))
-	      (setq mp (cdr mp))))
-	  (when did-delete
-	    (vm-imap-send-command process "CLOSE")
-	    (vm-imap-read-ok-response process)
-	    ;;----------------------------------
-	    (vm-imap-session-type:set 'inactive)
-	    ;;----------------------------------
-	    )
-	  (if trouble
-	      (progn
-		;;--------------------------
-		(vm-buffer-type:set 'scratch)
-		;;--------------------------
-		(set-buffer (get-buffer-create "*IMAP Expunge Trouble*"))
-		(setq buffer-read-only nil)
-		(erase-buffer)
-		(insert (format "%s IMAP message%s expunged.\n\n"
-				(if (zerop delete-count) "No" delete-count)
-				(if (= delete-count 1) "" "s")))
-		(insert "VM had problems expunging messages from:\n")
-		(setq trouble (nreverse trouble))
-		(setq mp trouble)
-		(while mp
-		  (insert "   " (car mp) "\n")
-		  (setq mp (cdr mp)))
-		(setq buffer-read-only t)
-		(display-buffer (current-buffer)))
-	    (vm-inform 5 "%s IMAP message%s expunged."
-		     (if (zerop delete-count) "No" delete-count)
-		     (if (= delete-count 1) "" "s"))))
-      ;; unwind-protections
-      ;;-------------------
-      (vm-buffer-type:exit)
-      ;;-------------------
-      (when process (vm-imap-end-session process)))
-    (unless trouble 
-      (setq vm-imap-retrieved-messages nil)
-      (when (> delete-count 0)
-	(vm-mark-folder-modified-p (current-buffer)))))))
-
+  ;; On the driver: this is a session and an expunge per maildrop, and it
+  ;; held Emacs for all of them.
+  (let ((vm-global-block-new-mail t)
+	(vm-imap-ok-to-ask t))
+    (vm-imap-net-expunge-retrieved)))
 (defun vm-imap-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved, without
 waiting for any of it.  Answers whether it started.
@@ -4577,7 +4424,7 @@ See Info node `(elisp)Programmed Completion'."
 
   (let ((account-list (mapcar (lambda (a) (list (concat (cadr a) ":")))
 			      vm-imap-account-alist))
-	completion-list folder account spec process mailbox-list)
+	completion-list folder account spec mailbox-list)
 
     ;; handle SPC completion (remove last " " from string)
     (when (and (> (length string) 0)
@@ -4602,16 +4449,6 @@ See Info node `(elisp)Programmed Completion'."
 	;; instant.
 	(vm-inform 6 "Asking %s what folders it has..." account)
 	(setq mailbox-list (vm-imap-net-mailbox-names spec selectable-only))
-	(unless mailbox-list
-	  (unwind-protect
-	      (progn
-		(setq process (vm-imap-make-session spec t
-						    :purpose "folders"))
-		(when process
-		  (setq mailbox-list
-			(vm-imap-mailbox-list process selectable-only))))
-	    ;; unwind-protection
-	    (when process (vm-imap-end-session process))))
 	(when mailbox-list
 	  (add-to-list 'vm-imap-account-folder-cache
 		       (cons account mailbox-list))))
@@ -4892,40 +4729,13 @@ documentation for `vm-spool-files'."
 	 (mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
 	 (folder-display (or (vm-imap-folder-for-spec folder)
 			     (vm-safe-imapdrop-string folder)))
-	 ;; Through the driver where the maildrop allows it: one command to a
-	 ;; server has no more business freezing Emacs than a fetch has.
-	 (sent (vm-imap-net-mailbox-command
-		folder (format "CREATE %s" (vm-imap-quote-mailbox-name mailbox))
-		"CREATE" (format "Folder %s created" folder-display)))
-	 process)
-    (unless sent
-    (setq process (vm-imap-make-session folder t :purpose "create"))
-    (if (null process)
-	(error "Couldn't open IMAP session for %s"
-	       (or (vm-imap-folder-for-spec folder)
-		   (vm-safe-imapdrop-string folder))))
-    (unwind-protect
-	(with-current-buffer (process-buffer process)
-	  ;;-----------------------------
-	  (vm-buffer-type:enter 'process)
-	  ;;-----------------------------
-	  (setq mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
-	  (setq folder-display (or (vm-imap-folder-for-spec folder)
-				   (vm-safe-imapdrop-string folder)))
-	  (vm-imap-create-mailbox process mailbox t)
-	  (vm-inform 5 "Folder %s created" folder-display)
-	  ;; invalidate the folder-cache
-	  (setq vm-imap-account-folder-cache
-		(vm-delete (lambda (a) (equal (car a) account))
-			   vm-imap-account-folder-cache)))
-      ;; unwind-protections
-      (when (and (processp process)
-		 (memq (process-status process) '(open run)))
-	(vm-imap-end-session process))
-      ;;-------------------
-      (vm-buffer-type:exit)
-      ;;-------------------
-      ))))
+	 )
+    (ignore account)
+    ;; On the driver: one command to a server has no more business freezing
+    ;; Emacs than a fetch has.
+    (vm-imap-net-mailbox-command
+     folder (format "CREATE %s" (vm-imap-quote-mailbox-name mailbox))
+     "CREATE" (format "Folder %s created" folder-display))))
 ;;;###autoload (autoload 'vm-imap-create-folder "vm-imap" nil t)
 (defalias 'vm-imap-create-folder 'vm-create-imap-folder)
 
@@ -4947,43 +4757,14 @@ documentation for `vm-spool-files'."
 	   (last-command last-command))
        (list (vm-read-imap-folder-name "Delete IMAP folder: " nil nil)))))
   (let* ((vm-imap-ok-to-ask t)
-	 (account (vm-imap-account-name-for-spec folder))
 	 (mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
 	 (folder-display (or (vm-imap-folder-for-spec folder)
-			     (vm-safe-imapdrop-string folder)))
-	 (sent (vm-imap-net-mailbox-command
-		folder (format "DELETE %s" (vm-imap-quote-mailbox-name mailbox))
-		"DELETE" (format "Folder %s deleted" folder-display)))
-	 process)
-    (unless sent
-    (setq process (vm-imap-make-session folder t :purpose "delete folder"))
-    (if (null process)
-	(error "Couldn't open IMAP session for %s"
-	       (or (vm-imap-folder-for-spec folder)
-		   (vm-safe-imapdrop-string folder))))
-    (unwind-protect
-	(save-current-buffer
-	  ;;-----------------------------
-	  (vm-buffer-type:enter 'process)
-	  ;;-----------------------------
-	  (set-buffer (process-buffer process))
-	  (setq mailbox (nth 3 (vm-imap-parse-spec-to-list folder)))
-	  (setq folder-display (or (vm-imap-folder-for-spec folder)
-				   (vm-safe-imapdrop-string folder)))
-	  (vm-imap-delete-mailbox process mailbox)
-	  (vm-inform 5 "Folder %s deleted" folder-display)
-	  ;; invalidate the folder-cache
-	  (setq vm-imap-account-folder-cache
-		(vm-delete (lambda (a) (equal (car a) account))
-			   vm-imap-account-folder-cache)))
-      ;; unwind-protections
-      (when (and (processp process)
-		 (memq (process-status process) '(open run)))
-	(vm-imap-end-session process))
-      ;;-------------------
-      (vm-buffer-type:exit)
-      ;;-------------------
-      ))))
+			     (vm-safe-imapdrop-string folder))))
+    ;; On the driver: one command to a server has no more business freezing
+    ;; Emacs than a fetch has.
+    (vm-imap-net-mailbox-command
+     folder (format "DELETE %s" (vm-imap-quote-mailbox-name mailbox))
+     "DELETE" (format "Folder %s deleted" folder-display))))
 ;;;###autoload (autoload 'vm-imap-delete-folder "vm-imap" nil t)
 (defalias 'vm-imap-delete-folder 'vm-delete-imap-folder)
 
@@ -5012,51 +4793,19 @@ documentation for `vm-spool-files'."
 		   nil t))
        (list source dest))))
   (let* ((vm-imap-ok-to-ask t)
-	 (account (vm-imap-account-name-for-spec source))
 	 (mailbox-source (nth 3 (vm-imap-parse-spec-to-list source)))
-	 (mailbox-dest (nth 3 (vm-imap-parse-spec-to-list dest)))
-	 (sent (vm-imap-net-mailbox-command
-		source (format "RENAME %s %s"
-			       (vm-imap-quote-mailbox-name mailbox-source)
-			       (vm-imap-quote-mailbox-name mailbox-dest))
-		"RENAME"
-		(format "Folder %s renamed to %s"
-			(or (vm-imap-folder-for-spec source)
-			    (vm-safe-imapdrop-string source))
-			(or (vm-imap-folder-for-spec dest)
-			    (vm-safe-imapdrop-string dest)))))
-	 process)
-    (unless sent
-    (setq process (vm-imap-make-session source t :purpose "rename folder"))
-    (if (null process)
-	(error "Couldn't open IMAP session for %s"
-	       (or (vm-imap-folder-for-spec source)
-		   (vm-safe-imapdrop-string source))))
-    (unwind-protect
-	(save-current-buffer
-	  ;;-----------------------------
-	  (vm-buffer-type:enter 'process)
-	  ;;-----------------------------
-	  (set-buffer (process-buffer process))
-	  (setq mailbox-source (nth 3 (vm-imap-parse-spec-to-list source)))
-	  (setq mailbox-dest (nth 3 (vm-imap-parse-spec-to-list dest)))
-	  (vm-imap-rename-mailbox process mailbox-source mailbox-dest)
-	  (vm-inform 5 "Folder %s renamed to %s" 
-		     (or (vm-imap-folder-for-spec source)
-			 (vm-safe-imapdrop-string source))
-		     (or (vm-imap-folder-for-spec dest)
-			 (vm-safe-imapdrop-string dest)))
-	  ;; invalidate the folder-cache
-	  (setq vm-imap-account-folder-cache
-		(vm-delete (lambda (a) (equal (car a) account))
-			   vm-imap-account-folder-cache)))
-      ;;-------------------
-      (vm-buffer-type:exit)
-      ;;-------------------
-      (when (and (processp process)
-		 (memq (process-status process) '(open run)))
-	(vm-imap-end-session process))
-      ))))
+	 (mailbox-dest (nth 3 (vm-imap-parse-spec-to-list dest))))
+    ;; On the driver, as the other mailbox commands are.
+    (vm-imap-net-mailbox-command
+     source (format "RENAME %s %s"
+		    (vm-imap-quote-mailbox-name mailbox-source)
+		    (vm-imap-quote-mailbox-name mailbox-dest))
+     "RENAME"
+     (format "Folder %s renamed to %s"
+	     (or (vm-imap-folder-for-spec source)
+		 (vm-safe-imapdrop-string source))
+	     (or (vm-imap-folder-for-spec dest)
+		 (vm-safe-imapdrop-string dest))))))
 ;;;###autoload (autoload 'vm-imap-rename-folder "vm-imap" nil t)
 (defalias 'vm-imap-rename-folder 'vm-rename-imap-folder)
 
@@ -5094,54 +4843,22 @@ them."
   (require 'ehelp)
   (setq vm-last-visit-imap-account account)
   (let ((vm-imap-ok-to-ask t)
-	spec process mailbox-list mailbox-status-list) ;; folder
-    (setq spec (vm-imap-spec-for-account account))
+	(spec (vm-imap-spec-for-account account)))
+    (unless spec
+      (error (concat "No IMAP account named %S in `vm-imap-account-alist',"
+		     " so there is nothing to list")
+	     account))
     ;; A listing is a command per mailbox, so it is the slowest thing VM asks
-    ;; a server for and the one worst spent frozen.  Through the driver where
-    ;; the maildrop allows it: the list is shown when it arrives.
-    (when (and spec
-	       (vm-imap-net-list-folders
-		spec
-		(lambda (result)
-		  (if (vm-net-error-p result)
-		      (vm-warn 0 2 "Could not list %s: %s" account
-			       (error-message-string result))
-		    (vm-imap-show-folder-list account result filter-new)))))
-      (vm-inform 5 "Asking %s what folders it has..." account)
-      (setq spec nil))
-    (when spec
-    (setq process (and spec (vm-imap-make-session spec t :purpose "folders")))
-					; new session required for STATUS
-    (if (null process)
-	(error "Couldn't open IMAP session for %s"
-	       (or (vm-imap-folder-for-spec spec)
-		   (vm-safe-imapdrop-string spec))))
-    (unwind-protect
-	(progn
-	  (setq mailbox-list 
-		(vm-imap-mailbox-list process nil))
-	  (setq mailbox-status-list
-		(mapcar
-		 (lambda (mailbox)
-		   (condition-case _err
-		       (cons mailbox
-			     (vm-imap-get-mailbox-status process mailbox))
-		     (error (list mailbox 0 0))))
-		 mailbox-list))
-	  (when mailbox-list
-	    (add-to-list 'vm-imap-account-folder-cache 
-			 (cons account mailbox-list))))
-      ;; unwind-protection
-      (when process (vm-imap-end-session process)))
-
-    (setq mailbox-status-list 
-	  (sort mailbox-status-list 
-		(lambda (mbstat1 mbstat2)
-		  (string-lessp (car mbstat1) (car mbstat2)))))
-
-    (vm-imap-show-folder-list account mailbox-status-list filter-new))
-    ))
-
+    ;; a server for and the one worst spent frozen.  On the driver: the list
+    ;; is shown when it arrives.
+    (vm-imap-net-list-folders
+     spec
+     (lambda (result)
+       (if (vm-net-error-p result)
+	   (vm-warn 0 2 "Could not list %s: %s" account
+		    (error-message-string result))
+	 (vm-imap-show-folder-list account result filter-new))))
+    (vm-inform 5 "Asking %s what folders it has..." account)))
 (defun vm-imap-show-folder-list (account mailbox-status-list filter-new)
   "Show what ACCOUNT holds: MAILBOX-STATUS-LIST is (MAILBOX MESSAGES RECENT).
 FILTER-NEW leaves out the mailboxes with nothing new in them.  Split out of
