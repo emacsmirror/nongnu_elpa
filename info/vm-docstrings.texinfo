@@ -2764,11 +2764,8 @@ SPOOLNAME can also be a POP maildrop.
 
     AUTH is the authentication method used to convince the server you
     should have access to the maildrop.  Acceptable values are
-    "pass", "rpop" and "apop".  For "pass", the PASSWORD is sent to
-    the server with the POP PASS command.  For "rpop", the PASSWORD
-    should be the string to be sent to the server via the RPOP
-    command.  In this case the string is not really a secret;
-    authentication is done by other means.  For "apop", an MD5 digest
+    "pass" and "apop".  For "pass", the PASSWORD is sent to
+    the server with the POP PASS command.  For "apop", an MD5 digest
     of the PASSWORD appended to the server timestamp will be sent to
     the server with the APOP command.  In order to use "apop" you
     will have to set the value of ‘vm-pop-md5-program’ appropriately to
