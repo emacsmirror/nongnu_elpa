@@ -1347,14 +1347,29 @@ maildrop asked not to happen; the blocking implementation refuses too."
                  (vm-pop-net-timestamp
                   "+OK POP3 server ready <1896.697170952@dbc.mtview.ca.us>"))))
 
-(ert-deftest vm-pop-net-test-an-auth-the-driver-cannot-do-is-declined ()
-  "REGRESSION: what the driver cannot serve goes to the blocking path.
-Ignoring the field is what made the downgrade possible; refusing is what
-the IMAP side has always done."
+(ert-deftest vm-pop-net-test-rpop-says-it-is-gone ()
+  "REGRESSION: an rpop maildrop is told what happened to rpop.
+
+It was RFC 1081\='s trusted-host scheme: a privileged source port stood for
+the authentication and the password went under another verb.  Nothing
+offers it, and VM no longer serves it either -- so the error names what to
+write instead, rather than reporting an authentication VM does not
+recognise (emacs-vm/vm#822)."
   (vm-pop-mock-with (mock)
-    ;; rpop is served by the blocking implementation and not by this one
-    (should-error (vm-pop-net-open (vm-pop-mock-spec mock "rpop")
-                                   "rpop test" nil)
+    (let ((text-quoting-style 'grave))
+      (let ((message (cadr (should-error
+                            (vm-pop-net-open (vm-pop-mock-spec mock "rpop")
+                                             "rpop test" nil)))))
+        (should (string-match-p "no longer supported" message))
+        (should (string-match-p "pass or apop" message))
+        (should (string-match-p "VM manual" message))))))
+
+(ert-deftest vm-pop-net-test-an-auth-the-driver-cannot-do-is-declined ()
+  "REGRESSION: an authentication VM does not know is refused, not attempted.
+Ignoring the field is what made the apop downgrade possible."
+  (vm-pop-mock-with (mock)
+    (should-error (vm-pop-net-open (vm-pop-mock-spec mock "kerberos_v4")
+                                   "unknown auth" nil)
                   :type 'vm-pop-net-unsupported)
     ;; and the two it does serve are opened
     (dolist (auth '("pass" "apop"))

@@ -1833,12 +1833,9 @@ maildrops because @acronym{POP} does not support multiple mailboxes.
 @vindex vm-pop-md5-program
 @var{AUTH} is the authentication method used to convince the
 server you should have access to the mailbox.  Acceptable
-values for @acronym{POP} are @samp{pass}, @samp{rpop} and @samp{apop}.  For
+values for @acronym{POP} are @samp{pass} and @samp{apop}.  For
 @samp{pass}, the @var{PASSWORD} is sent to the server with
-the @acronym{POP} PASS command.  For @samp{rpop}, the @var{PASSWORD}
-should be the string to be sent to the server via the @acronym{RPOP}
-command.  In this case the string is not really a secret;
-authentication is done by other means.  For @samp{apop}, an
+the @acronym{POP} PASS command.  For @samp{apop}, an
 MD5 digest of the @var{PASSWORD} appended to the server
 time-stamp will be sent to the server with the @acronym{APOP} command.
 If Emacs does not have built in MD5 support, you will have

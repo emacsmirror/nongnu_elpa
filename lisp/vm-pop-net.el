@@ -378,8 +378,14 @@ output.  A maildrop whose password VM has not been told signals
     ;; the blocking path, which does serve it.  Ignoring it meant an `apop'
     ;; maildrop was authenticated with USER and PASS (emacs-vm/vm#823).
     (unless (member auth '("pass" "apop"))
-      (signal 'vm-pop-net-unsupported (list (or auth "no authentication")
-					    source)))
+      (if (equal auth "rpop")
+	  (error (concat "rpop is no longer supported: it relied on a"
+			 " privileged source port and sent the password"
+			 " under another verb.  Write pass or apop in the"
+			 " maildrop instead; see Spool Files in the VM"
+			 " manual"))
+	(signal 'vm-pop-net-unsupported (list (or auth "no authentication")
+					      source))))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")

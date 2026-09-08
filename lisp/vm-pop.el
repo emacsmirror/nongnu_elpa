@@ -597,13 +597,6 @@ Returns the process or nil if the session could not be created."
 		     (setq vm-pop-passwords (cons (list source-nopwd pass)
 						  vm-pop-passwords)))
 		   (setq success t))
-		  ((equal auth "rpop")
-		   (vm-pop-send-command process (format "USER %s" user))
-		   (when (null (vm-pop-read-response process))
-		     (throw 'end-of-session nil))
-		   (vm-pop-send-command process (format "RPOP %s" pass))
-		   (when (null (vm-pop-read-response process))
-		     (throw 'end-of-session nil)))
 		  ((equal auth "apop")
 		   (setq timestamp (vm-parse greeting "[^<]+\\(<[^>]+>\\)")
 			 timestamp (car timestamp))
@@ -629,6 +622,12 @@ Returns the process or nil if the session could not be created."
 		     (setq vm-pop-passwords (cons (list source-nopwd pass)
 						  vm-pop-passwords)))
 		   (setq success t))
+		  ((equal auth "rpop")
+		   (error (concat "rpop is no longer supported: it relied on"
+				  " a privileged source port and sent the"
+				  " password under another verb.  Write pass"
+				  " or apop in the maildrop instead; see"
+				  " Spool Files in the VM manual")))
 		  (t (error "Don't know how to authenticate using %s" auth)))
 	    (setq shutdown nil) ))
       ;; unwind-protection

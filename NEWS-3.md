@@ -8,6 +8,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **`rpop` is no longer a POP authentication method** (emacs-vm/vm#822).
+    It was RFC 1081's trusted-host scheme: a privileged source port stood
+    for the authentication and the password went to the server under another
+    verb.  Essentially no server offers it, VM's implementation only sent the
+    password differently, and it was the one method the asynchronous driver
+    would never have served.
+
+    A maildrop that asks for it now says so and names what to write instead,
+    rather than failing as an authentication VM does not recognise.  Use
+    `pass`, or `apop` where the server offers a timestamp.
+
   * **CRAM-MD5 no longer costs you the asynchronous IMAP driver**
     (emacs-vm/vm#822).  A maildrop asking for it was refused by the driver
     and served by the blocking implementation, so every fetch from such an
