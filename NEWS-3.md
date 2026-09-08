@@ -8,6 +8,39 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **The blocking IMAP and POP implementation is gone** (emacs-vm/vm#822),
+    137 functions and about 4000 lines of `vm-imap.el` and `vm-pop.el`.  Every
+    command a folder can run reaches its server through the asynchronous
+    driver, and nothing waits except where waiting is the point: a message
+    body a save or a copy must have in hand, and folder-name completion.  Both
+    of those wait on the folder's own session, so `C-g` works.
+
+    Nine functions that carried autoload cookies went with it, so an init file
+    that calls one by name will now get a void-function error.  They were
+    internal, documented nowhere, and named no command: `vm-imap-make-session`,
+    `vm-imap-end-session`, `vm-imap-move-mail`, `vm-imap-save-message`,
+    `vm-imap-synchronize-folder`, `vm-imap-folder-check-mail`,
+    `vm-pop-move-mail`, `vm-pop-synchronize-folder` and
+    `vm-pop-folder-check-mail`.  Use the commands instead:
+    `vm-get-new-mail`, `vm-imap-synchronize`, `vm-save-folder`.
+
+  * **A POP server with no UIDL no longer works** (emacs-vm/vm#822).  UIDL is
+    what tells one message from another between sessions, so without it VM
+    cannot say which messages it has already fetched.  The old implementation
+    kept count by deleting each message as it took it, which is not something
+    it can do from a process filter and not what a reader who leaves mail on
+    the server asked for.  VM now says so and fetches nothing, rather than
+    fetching the same mail twice or deleting what you meant to keep.
+
+  * **A POP body line beginning with a dot arrived without it**
+    (emacs-vm/vm#822): `.hidden` came out as `hidden`.  The asynchronous
+    reader undoubled the dot RFC 1939 asks a server to stuff, and then the
+    older cleaning-up pass took a second one off.  Fixed.
+
+  * **Mail fetched from an IMAP maildrop into a babyl folder** was written
+    without the babyl folder header (emacs-vm/vm#822), so the crash box read
+    back as no folder type at all.  Fixed.
+
   * **A bug report now carries the trace of the session still running**
     (emacs-vm/vm#822).  `vm-imap-submit-bug-report` and
     `vm-pop-submit-bug-report` used to end the folder's session so that its

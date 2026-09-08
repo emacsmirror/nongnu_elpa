@@ -203,20 +203,32 @@ configured :host; with ssl = no the port listens but cannot handshake."
 ;;; ------------------------------------------------------------------
 
 (ert-deftest vm-imap-live-test-vm-can-open-a-session ()
-  "VM's own `vm-imap-make-session' reaches the server and authenticates.
-The first test of vm-imap.el itself against a real server, and the point of
-the whole exercise: everything above only proves the harness works."
+  "VM's own driver reaches the server and authenticates.
+The first test of VM's IMAP code itself against a real server, and the point
+of the whole exercise: everything above only proves the harness works."
   (vm-imap-live-skip-unless-server "plain")
   (vm-imap-live-with-vm-account ("plain" "vmtest")
     (let* ((spec (car (car vm-imap-account-alist)))
-           (process nil))
+           (opened (vm-imap-net-open spec "live test" 'may-ask))
+           (session (car opened)))
       (unwind-protect
           (progn
-            (setq process (vm-imap-make-session spec nil :purpose "test"))
-            (should (processp process))
-            (should (memq (process-status process) '(open run))))
-        (when (processp process)
-          (ignore-errors (vm-imap-end-session process)))))))
+            (should (processp (vm-net-session-process session)))
+            (vm-net-start session
+                          (vm-imap-net-one-command-session
+                           (nth 2 opened) (nth 3 opened) "NOOP" "NOOP"))
+            (let ((deadline (+ (float-time) 30)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            ;; it logged in and the server answered a command
+            (should (eq (vm-net-session-state session) 'done)))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))
+        (let ((buffer (vm-net-session-buffer session)))
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer)))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Tier 2 -- saving between IMAP folders keeps attributes (issue #38)
@@ -652,7 +664,7 @@ server behaves towards a keyword it does not know."
         (should (vm-attribute-modflag-of m))
         ;; From here the server takes any flag but that one.
         (setf (vm-imap-relay-reject relay) label)
-        (vm-imap-save-attributes)
+        (should (vm-imap-net-save-attributes))
         (vm-imap-net-wait nil 30)
         ;; The label is still ours ...
         (should (member label (vm-labels-of m)))
@@ -697,7 +709,7 @@ label: the transcript must hold one STORE of it, not three."
         (vm-goto-message n)
         (vm-add-message-labels label 1))
       (setf (vm-imap-relay-reject relay) label)
-      (vm-imap-save-attributes)
+      (should (vm-imap-net-save-attributes))
       (vm-imap-net-wait nil 30)
       (let* ((sent (vm-imap-relay-transcript relay 'client))
              (count 0)

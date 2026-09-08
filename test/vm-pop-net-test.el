@@ -22,11 +22,15 @@
 (require 'vm-net)
 
 (defconst vm-pop-net-test--alice
-  "From: alice@example.com\r\nTo: me@example.com\r\nSubject: badgers\r\n\r\nThe first body.\r\n"
-  "A message for the mock maildrop.")
+  "From: alice@example.com\nTo: me@example.com\nSubject: badgers\n\nThe first body.\n"
+  "A message for the mock maildrop.
+
+Terminated with LF, not CRLF: `vm-pop-mock--send-multiline' splits on LF and
+appends the CRLF itself, so a fixture with CRLF in it goes on the wire as
+CR CR LF and every line comes back with a stray CR (emacs-vm/vm#822).")
 
 (defconst vm-pop-net-test--bob
-  "From: bob@example.com\r\nTo: me@example.com\r\nSubject: otters\r\n\r\nThe second body.\r\n"
+  "From: bob@example.com\nTo: me@example.com\nSubject: otters\n\nThe second body.\n"
   "Another, so a test can tell one from the next.")
 
 (defun vm-pop-net-test--run (mock iterator &optional timeout wait)
@@ -124,6 +128,44 @@ takes the extra one off again."
         (should (string-match-p "^\\.a line that began with a dot" message))))))
 
 ;;; What a server that misbehaves does to a session
+
+(ert-deftest vm-pop-net-test-the-password-is-not-in-the-transcript ()
+  "A session's buffer holds no password.
+
+It is kept as the trace `vm-pop-submit-bug-report' sends, so a credential in
+it would be mailed to the maintainer.  Nothing sent is echoed there at all --
+where the IMAP driver echoes each command and leaves LOGIN's arguments out,
+this writes only what the server said."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    ;; `vm-pop-net-test--run' kills the session buffer, so the session is set
+    ;; up here to keep it and read it afterwards
+    (let* ((buffer (generate-new-buffer " *vm-pop-net-transcript*"))
+           (process (make-network-process
+                     :name "vm-pop-net-transcript" :host 'local
+                     :service (vm-pop-mock-port mock)
+                     :buffer buffer :noquery t :coding 'binary))
+           (session (vm-net-session :process process :name "pop" :timeout 5)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (vm-pop-net-init))
+            (vm-net-start session (vm-pop-net-test--uidl
+                                   (vm-pop-mock-user mock)
+                                   (vm-pop-mock-password mock)))
+            (let ((deadline (+ (float-time) 5)))
+              (while (and (vm-net-session-live-p session)
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq (vm-net-session-state session) 'done))
+            (with-current-buffer buffer
+              (let ((transcript (buffer-string)))
+                (should-not (string-match-p
+                             (regexp-quote (vm-pop-mock-password mock))
+                             transcript))
+                (should-not (string-match-p "PASS" transcript))
+                ;; and it is a transcript of something: the server answered
+                (should (string-match-p "\\+OK" transcript)))))
+        (when (process-live-p process) (delete-process process))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest vm-pop-net-test-a-refused-login-fails-the-session ()
   "A -ERR to PASS ends the session with what the server said, rather than
@@ -1434,6 +1476,78 @@ Ignoring the field is what made the apop downgrade possible."
           (when (process-live-p process) (delete-process process))
           (when (buffer-live-p (vm-net-session-buffer session))
             (kill-buffer (vm-net-session-buffer session))))))))
+
+;;; What the blocking POP session's own tests used to cover (emacs-vm/vm#822)
+
+(defun vm-pop-net-test--fetched-text (mock crash)
+  "Fetch from MOCK into CRASH and answer what was written there."
+  (should (equal (vm-pop-net-test--get-mail mock crash) 1))
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally crash)
+    (buffer-string)))
+
+(ert-deftest vm-pop-net-test-a-doubled-leading-dot-comes-back-single ()
+  "A body line that begins with a dot arrives as it was sent.
+
+The server doubles it, and the reader has to undo that; without it the message
+would end early at its own text, which is the classic POP3 mistake in both
+directions."
+  (vm-pop-net-test--in-a-folder-with-spool
+      (mock :messages (list (concat "From: alice@example.com\n"
+                                    "Subject: dotted\n\n"
+                                    "before\n.hidden line\nafter\n")))
+    (let ((text (vm-pop-net-test--fetched-text mock (nth 2 (car vm-spool-files)))))
+      (should (string-match-p "^\\.hidden line$" text))
+      (should-not (string-match-p "^\\.\\.hidden line$" text))
+      ;; and nothing after it was lost to an early end
+      (should (string-match-p "^after$" text)))))
+
+(ert-deftest vm-pop-net-test-a-wrong-octet-count-does-not-truncate ()
+  "A server that reports the wrong size still gets its message stored whole.
+
+A POP body ends at a dot on a line of its own; the octet count in LIST is for
+the progress report and the size threshold, so getting it wrong must not
+truncate anything."
+  (vm-pop-net-test--in-a-folder-with-spool
+      (mock :lie-about-size t :messages (list vm-pop-net-test--alice))
+    (let ((text (vm-pop-net-test--fetched-text mock (nth 2 (car vm-spool-files)))))
+      (should (string-match-p "badgers" text))
+      (should (string-match-p "The first body" text)))))
+
+(ert-deftest vm-pop-net-test-a-server-with-no-uidl-says-why-it-fetches-nothing ()
+  "A server with no UIDL fetches nothing, and says why.
+
+UIDL is what tells one message from another between sessions, so without it
+nothing here can say which messages have been fetched before.  The blocking
+implementation kept count by deleting each message as it took it, which is
+not something to start from a process filter and is not what a reader who
+leaves mail on the server asked for.  So this refuses and names the reason: a
+maildrop that quietly never arrives is worse than one that says why.
+
+A capability the blocking implementation had and this does not; see
+emacs-vm/vm#822."
+  (vm-pop-net-test--in-a-folder-with-spool
+      (mock :no-uidl t :messages (list vm-pop-net-test--alice
+                                       vm-pop-net-test--bob))
+    (let* ((crash (nth 2 (car vm-spool-files)))
+           (result (vm-pop-net-test--get-mail mock crash)))
+      (should (vm-net-error-p result))
+      (should (string-match-p "no UIDL" (error-message-string result)))
+      ;; nothing was written, rather than mail arriving twice later
+      (should-not (file-exists-p crash)))))
+
+(ert-deftest vm-pop-net-test-the-timeout-is-only-a-backstop ()
+  "A server that answers normally is not cut off by the timeout.
+The point of a timeout is a bound on waiting, not a bound on the session."
+  (vm-pop-net-test--in-a-folder-with-spool
+      (mock :messages (list vm-pop-net-test--alice vm-pop-net-test--bob))
+    (let ((crash (nth 2 (car vm-spool-files)))
+          (vm-pop-server-timeout 2))
+      ;; two messages fetched inside a two-second timeout, and the session
+      ;; finishes rather than being ended by it
+      (should (equal (vm-pop-net-test--get-mail mock crash) 2))
+      (should-not (vm-pop-net-busy-p)))))
 
 (provide 'vm-pop-net-test)
 

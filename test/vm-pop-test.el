@@ -251,72 +251,7 @@
 
 ;;; POP protocol tests with mock network layer
 
-(ert-deftest vm-pop-test-send-command-records ()
-  "Test vm-pop-send-command records command sent."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n" "+OK\r\n")
-    (let ((process vm-test-mock-process))
-      (vm-pop-send-command process "USER testuser")
-      (should (member "USER testuser\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-pop-test-send-command-hides-password ()
-  "Test vm-pop-send-command obscures PASS command in buffer."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n" "+OK\r\n")
-    (let ((process vm-test-mock-process))
-      (vm-pop-send-command process "PASS secret123")
-      ;; Command should be sent
-      (should (member "PASS secret123\r\n" vm-test-mock-commands))
-      ;; But buffer should show <omitted>
-      (should (string-match "PASS <omitted>" (buffer-string))))))
-
-(ert-deftest vm-pop-test-read-response-ok ()
-  "Test vm-pop-read-response returns t for +OK."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (eq (vm-pop-read-response process) t)))))
-
-(ert-deftest vm-pop-test-read-response-ok-with-string ()
-  "Test vm-pop-read-response returns response string when requested."
-  (vm-test-with-pop-session '("+OK Welcome to POP3\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((response (vm-pop-read-response process t)))
-        (should (stringp response))
-        (should (string-match "Welcome" response))))))
-
-(ert-deftest vm-pop-test-read-response-err ()
-  "Test vm-pop-read-response returns nil for -ERR."
-  (vm-test-with-pop-session '("-ERR Authentication failed\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (null (vm-pop-read-response process))))))
-
-(ert-deftest vm-pop-test-read-stat-response ()
-  "Test vm-pop-read-stat-response parses message count and size."
-  (vm-test-with-pop-session '("+OK 5 12345\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-stat-response process)))
-        (should (listp result))
-        (should (= (car result) 5))      ; message count
-        (should (= (cadr result) 12345)))))) ; total size
-
-(ert-deftest vm-pop-test-read-stat-response-empty ()
-  "Test vm-pop-read-stat-response with empty mailbox."
-  (vm-test-with-pop-session '("+OK 0 0\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-stat-response process)))
-        (should (= (car result) 0))
-        (should (= (cadr result) 0))))))
-
-(ert-deftest vm-pop-test-read-list-response ()
-  "Test vm-pop-read-list-response parses message size."
-  (vm-test-with-pop-session '("+OK 1 2048\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-list-response process)))
-        (should (= result 2048))))))
+ ; total size
 
 (ert-deftest vm-pop-test-read-uidl-long-response ()
   "Test vm-pop-read-uidl-long-response parses multi-line UIDL."
@@ -349,60 +284,6 @@
       (should (>= vm-pop-read-point (point-max))))))
 
 ;;; POP session flow tests
-
-(ert-deftest vm-pop-test-login-sequence ()
-  "Test a typical POP login command sequence."
-  (vm-test-with-pop-session
-      '("+OK POP3 server ready\r\n"
-        "+OK User accepted\r\n"
-        "+OK Password accepted\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; Read greeting
-      (should (vm-pop-read-response process))
-      ;; Send USER
-      (vm-pop-send-command process "USER testuser")
-      (should (vm-pop-read-response process))
-      ;; Send PASS
-      (vm-pop-send-command process "PASS secret")
-      (should (vm-pop-read-response process))
-      ;; Verify commands were sent
-      (should (member "USER testuser\r\n" vm-test-mock-commands))
-      (should (member "PASS secret\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-pop-test-stat-list-sequence ()
-  "Test STAT and LIST command sequence."
-  (vm-test-with-pop-session
-      '("+OK 3 5000\r\n"
-        "+OK 1 1500\r\n"
-        "+OK 2 2000\r\n"
-        "+OK 3 1500\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; STAT
-      (let ((stat (vm-pop-read-stat-response process)))
-        (should (= (car stat) 3))
-        (should (= (cadr stat) 5000)))
-      ;; LIST for each message
-      (vm-pop-send-command process "LIST 1")
-      (should (= (vm-pop-read-list-response process) 1500))
-      (vm-pop-send-command process "LIST 2")
-      (should (= (vm-pop-read-list-response process) 2000))
-      (vm-pop-send-command process "LIST 3")
-      (should (= (vm-pop-read-list-response process) 1500)))))
-
-(ert-deftest vm-pop-test-error-handling ()
-  "Test handling of POP error responses."
-  (vm-test-with-pop-session
-      '("+OK Ready\r\n"
-        "-ERR Invalid command\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; First response OK
-      (should (vm-pop-read-response process))
-      ;; Second response is error
-      (vm-pop-send-command process "BADCMD")
-      (should (null (vm-pop-read-response process))))))
 
 ;;; Spec parsing edge cases
 
@@ -559,49 +440,6 @@ the same buffer it reads from, which is what the real session does."
        (aset vm-folder-access-data 1 process)
        (cl-letf (((symbol-function 'vm-pop-send-command) #'ignore))
          ,@body))))
-
-(ert-deftest vm-pop-test-uidl-data-is-the-uids-by-number ()
-  "`vm-pop-get-uidl-data' answers an obarray of UID to message number.
-That is the way round `vm-pop-get-synchronization-data' asks the question:
-it has a UID from the local cache and wants to know which message on the
-server it is."
-  (vm-pop-test--getting-uidl-data
-      '("+OK\r\n1 UID001\r\n2 UID002\r\n3 UID003\r\n.\r\n")
-    (should (equal (vm-pop-test--uidl-obarray-alist (vm-pop-get-uidl-data))
-                   '(("UID001" . "1") ("UID002" . "2") ("UID003" . "3"))))))
-
-(ert-deftest vm-pop-test-uidl-data-without-uidl-support ()
-  "A server that refuses UIDL gives nil, not an empty obarray: the caller
-has to tell \"no UIDs\" from \"no messages\", and only one of those means it
-cannot synchronize at all."
-  (vm-pop-test--getting-uidl-data '("-ERR UIDL not supported\r\n")
-    (should-not (vm-pop-get-uidl-data))))
-
-(ert-deftest vm-pop-test-uidl-data-for-an-empty-mailbox ()
-  "An empty mailbox gives an empty obarray, which is not nil.  The server
-answered; it has nothing to say."
-  (vm-pop-test--getting-uidl-data '("+OK\r\n.\r\n")
-    (let ((there (vm-pop-get-uidl-data)))
-      (should there)
-      (should-not (vm-pop-test--uidl-obarray-alist there)))))
-
-(ert-deftest vm-pop-test-uidl-is-read-in-one-place ()
-  "REGRESSION: `vm-pop-get-uidl-data' reads through
-`vm-pop-read-uidl-long-response' rather than repeating its wait loop.
-
-It used to carry a copy -- the same `re-search-forward' for the dot, the
-same `vm-pop-accept-process-output', the same parser -- so a fix to one
-missed the other, and the asynchronous rewrite (emacs-vm/vm#473) would have
-converted one and left the other blocking."
-  (let ((called nil))
-    (vm-pop-test--getting-uidl-data '("+OK\r\n1 UID001\r\n.\r\n")
-      (cl-letf* ((standard (symbol-function 'vm-pop-read-uidl-long-response))
-                 ((symbol-function 'vm-pop-read-uidl-long-response)
-                  (lambda (&rest args)
-                    (setq called t)
-                    (apply standard args))))
-        (vm-pop-get-uidl-data)))
-    (should called)))
 
 (provide 'vm-pop-test)
 

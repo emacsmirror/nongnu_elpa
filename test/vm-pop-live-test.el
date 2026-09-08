@@ -122,7 +122,9 @@ The end-to-end case: `vm-pop-move-mail' against a server VM did not write."
 		(vm-pop-messages-per-session nil)
 		(vm-pop-bytes-per-session nil)
 		(vm-folder-type 'From_))
-	    (should (vm-pop-move-mail (vm-pop-live-spec server account) dest))
+	    (should (equal (vm-pop-live-test--fetch
+			    (vm-pop-live-spec server account) dest)
+			   1))
 	    (with-temp-buffer
 	      (insert-file-contents dest)
 	      (should (string-match-p (regexp-quote id) (buffer-string)))
@@ -159,7 +161,9 @@ the message must then still be there afterwards."
 		(vm-pop-messages-per-session nil)
 		(vm-pop-bytes-per-session nil)
 		(vm-folder-type 'From_))
-	    (should (vm-pop-move-mail (vm-pop-live-spec server account) dest))
+	    (should (equal (vm-pop-live-test--fetch
+			    (vm-pop-live-spec server account) dest)
+			   1))
 	    (with-temp-buffer
 	      (insert-file-contents dest)
 	      (should (string-match-p (regexp-quote id) (buffer-string))))
@@ -186,14 +190,39 @@ the message must then still be there afterwards."
 		(should found))))
 	(when (file-exists-p dest) (delete-file dest))))))
 
+(defun vm-pop-live-test--fetch (spec dest)
+  "Fetch SPEC into DEST on the driver and wait, answering the result.
+The driver is the only way in; a live test asks for the mail and then has to
+have it, so it waits the way a test does."
+  (let ((answer 'not-called))
+    (should (vm-pop-net-get-mail spec dest
+                                 (lambda (result) (setq answer result))))
+    (let ((deadline (+ (float-time) (or vm-pop-live-timeout 30))))
+      (while (and (eq answer 'not-called) (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
+    (should-not (eq answer 'not-called))
+    (when (vm-net-error-p answer)
+      (error "%s" (error-message-string answer)))
+    answer))
+
 (ert-deftest vm-pop-live-test-check-mail-sees-the-fixture ()
-  "`vm-pop-check-mail' reports mail waiting for a maildrop that has some."
+  "The check reports mail waiting for a maildrop that has some.
+On the driver: the check says whether it asked, and the answer arrives in
+`vm-spooled-mail-waiting'."
   (vm-pop-live-skip-unless-server "pop" "plain")
   (vm-pop-live-test--with-fixture (id server account)
     (ignore id)
-    (let ((vm-pop-server-timeout vm-pop-live-timeout)
-	  (vm-pop-retrieved-messages nil))
-      (should (vm-pop-check-mail (vm-pop-live-spec server account))))))
+    (let ((spec (vm-pop-live-spec server account))
+	  (vm-pop-server-timeout vm-pop-live-timeout)
+	  (vm-pop-retrieved-messages nil)
+	  (answer 'not-called))
+      (should (vm-pop-net-check-mail spec (lambda (result) (setq answer result))))
+      (let ((deadline (+ (float-time) (or vm-pop-live-timeout 30))))
+	(while (and (eq answer 'not-called) (< (float-time) deadline))
+	  (accept-process-output nil 0.05)))
+      (should-not (eq answer 'not-called))
+      (should-not (vm-net-error-p answer))
+      (should answer))))
 
 ;;; TLS
 

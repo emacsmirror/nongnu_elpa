@@ -739,7 +739,11 @@ with none: the same cleaning up the blocking path does, in the same order."
 	  (goto-char (point-max))
 	  (unless (bolp) (insert "\n"))
 	  (setq end (point-marker))
-	  (vm-pop-cleanup-region start end)
+	  ;; No cleaning up here: `vm-pop-net-read-multiline' has already made
+	  ;; the CRLFs LFs and taken the stuffed dots off, and a second pass
+	  ;; over the same text takes a real leading dot with it -- a body line
+	  ;; of ".hidden" arrived as "hidden" (emacs-vm/vm#822).
+	  ;;
 	  ;; Some servers send the separators and some do not, which is what
 	  ;; the type of what arrived says.  Without them the message is a
 	  ;; bare one and is given the folder's own, the same way and in the
@@ -1031,7 +1035,7 @@ none."
 	      (goto-char (point-max))
 	      (unless (bolp) (insert "\n"))
 	      (setq end (point-marker))
-	      (vm-pop-cleanup-region start end)
+	      ;; Already cleaned by the reader; see the note above.
 	      (when (eq (vm-get-folder-type nil start end) 'unknown)
 		(vm-munge-message-separators folder-type start end)
 		(goto-char start)

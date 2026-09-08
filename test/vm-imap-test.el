@@ -442,51 +442,6 @@ simply be added: every cache that exists is named without it."
 
 ;;; vm-imap-send-command tests with mock
 
-(ert-deftest vm-imap-test-send-command-basic ()
-  "Test vm-imap-send-command sends tagged command.
-The tag is this session's next one rather than the constant \"VM\" it used
-to be (emacs-vm/vm#473), and is remembered as the one being waited for."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process)
-          (vm-imap-tag-counter 0)
-          (vm-imap-current-tag nil))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "NOOP")
-      (should (equal vm-imap-current-tag "vm1"))
-      (should (member "vm1 NOOP\r\n" vm-test-mock-commands))
-      (vm-imap-send-command process "NOOP")
-      (should (member "vm2 NOOP\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-imap-test-send-command-custom-tag ()
-  "Test vm-imap-send-command with custom tag."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "CAPABILITY" "A001")
-      ;; Should have sent "A001 CAPABILITY\r\n"
-      (should (member "A001 CAPABILITY\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-imap-test-send-command-hides-login ()
-  "Test vm-imap-send-command hides LOGIN parameters in buffer."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "LOGIN user password")
-      ;; Command should be sent, under this session's tag
-      (should (member (concat vm-imap-current-tag " LOGIN user password\r\n")
-                      vm-test-mock-commands))
-      ;; But buffer should show <omitted>
-      (should (string-match "LOGIN <parameters omitted>" (buffer-string))))))
-
-(ert-deftest vm-imap-test-send-command-no-tag ()
-  "Test vm-imap-send-command with no-tag option."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "DONE" nil t)  ; no-tag = t
-      ;; Should have sent "DONE\r\n" without tag
-      (should (member "DONE\r\n" vm-test-mock-commands)))))
-
 ;;; IMAP plist functions tests
 
 (ert-deftest vm-imap-test-plist-get-basic ()
