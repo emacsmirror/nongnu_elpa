@@ -1806,4 +1806,6 @@ prefix is used or not."
          (make-fj-repo-+-owner-from-git-test
           "http://git@example.org/owner/repo.git" expected)
          (make-fj-repo-+-owner-from-git-test
-          "ssh://git@example.org/owner/repo.git" expected))))
+          "ssh://git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "ssh://git@example.org/owner/repo/pulls/1234" expected))))
