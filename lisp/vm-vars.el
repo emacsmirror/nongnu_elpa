@@ -635,21 +635,19 @@ timing out.  It can be set to nil to never time out."
 		 (integer :tag "Seconds")))
 
 (defcustom vm-imap-max-message-size nil
-  "*The largest message size of IMAP messages that VM should retrieve
-automatically.  
+  "*The largest IMAP message VM retrieves.
 
-If VM encounters an IMAP message larger than this size, the action
-is as follows:
+Nil, the default, means no limit.  A message larger than this is handled as
+follows:
 
-- In IMAP folders, the message is treated as an external message if
-`vm-enable-external-messages' includes `imap'.  Otherwise it is
-retrieved.
+- In an IMAP folder, it is retrieved as its headers alone where
+`vm-enable-external-messages' includes `imap', and its body is fetched from
+the server when the message is read.  Otherwise it is retrieved whole.
 
-- In local folders, the message is skipped if it is part of
-automatic mail retrieval.  During interactive mail retrieval, obtained by
-running `vm-get-new-mail', VM queries you whether it should be retrieved.
-
-A nil value for `vm-imap-max-message-size' means no size limit."
+- From a maildrop, into a local folder, it is left on the server and VM says
+how large it was and what the limit is.  A local folder cannot go back to the
+server for a body later, so headers alone would leave a message that could
+never be read.  Raise the limit and the next `vm-get-new-mail' brings it in."
   :group 'vm-imap
   :type '(choice (const :tag "Unlimited" nil)
                  (integer :tag "Bytes")))
@@ -7104,6 +7102,21 @@ UIDVALIDITY for each message to be expunged.")
   :group 'vm-imap
   :type '(choice (integer :tag "Number of session buffers kept"
 		 (const :tag "No session buffers kept" nil))))
+(defcustom vm-session-trace-max-size 100000
+  "*The most of one session trace a bug report carries, in characters.
+
+A session that fetched the UID and flags of every message in a large mailbox
+leaves most of a megabyte in its trace, and a bug report of that size cannot
+be sent.  Beyond this, the middle of the trace is left out and the report says
+how much: the start says what the server is and what was asked of it, the end
+says where it went wrong, and the thousands of identical FETCH lines between
+them say nothing twice.
+
+Nil carries every trace whole."
+  :group 'vm-helpers
+  :type '(choice (integer :tag "Characters of each trace")
+		 (const :tag "The whole of every trace" nil)))
+
 (defvar vm-imap-session-done nil)
 
 (defvar vm-imap-refused-flags nil

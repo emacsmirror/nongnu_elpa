@@ -189,37 +189,6 @@ prompted for inside a process filter.  That fallback is the only caller of
               (lambda (&rest _) nil)))
      ,@body))
 
-(ert-deftest vm-imap-mock-test-a-blocking-retrieval-leaves-the-size-limit-as-set ()
-  "REGRESSION: retrieving does not write into `vm-imap-max-message-size'.
-Issue #765.  `vm-imap-retrieve-messages' set the option to most-positive-fixnum
-whenever the reader had left it nil, and did not bind it, so one retrieval
-replaced the setting for the rest of the session: the option documents nil as
-no size limit, and customize then showed a number nobody had set."
-  (let ((vm-imap-max-message-size nil))
-    (vm-imap-mock-test--visiting
-        (mock :messages (list vm-imap-mock-test--alice))
-      (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
-      (vm-imap-mock-test--blocking
-        (vm-get-spooled-mail nil))
-      (should (equal (length vm-message-list) 2)))
-    (should-not vm-imap-max-message-size)))
-
-(ert-deftest vm-imap-mock-test-a-blocking-retrieval-still-obeys-the-limit ()
-  "The other side of it: a message over the limit is asked for headers only.
-`vm-enable-external-messages' has to name imap for the limit to mean anything.
-The blocking path decides this per bunch, and the local it now reads is the
-same value the option held."
-  (let ((vm-imap-max-message-size 10)
-        (vm-enable-external-messages '(imap)))
-    (vm-imap-mock-test--visiting
-        (mock :messages (list vm-imap-mock-test--alice))
-      (vm-imap-mock-add-message mock "INBOX" vm-imap-mock-test--bob)
-      (vm-imap-mock-forget-commands mock)
-      (vm-imap-mock-test--blocking
-        (vm-get-spooled-mail nil))
-      (should (equal (length vm-message-list) 2))
-      (should (vm-imap-mock-received-p mock "BODY.PEEK\\[HEADER\\]")))))
-
 (ert-deftest vm-imap-mock-test-an-extra-fetch-item-is-stepped-over ()
   "A server that answers with more than VM asked for still delivers the mail.
 
@@ -484,6 +453,38 @@ and closes the mailbox, which is what expunges them."
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
 
+(ert-deftest vm-imap-mock-test-expunging-spares-what-was-never-retrieved ()
+  "REGRESSION: a message VM has no copy of survives the expunge.
+
+`vm-expunge-imap-messages' deletes what the folder recorded as retrieved and
+nothing else.  Three messages on the server and two recorded, so the third
+has to be there afterwards; a command that deleted whatever it found would
+pass `expunging-what-has-been-retrieved' above, which retrieves both of its
+two and expects an empty mailbox.
+
+The coverage for this was against the blocking path (emacs-vm/vm#822), which
+had no equivalent here.  How it is done is worth knowing and is not visible
+from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
+implicit expunge does the deleting (RFC 3501 6.4.2).  No EXPUNGE command is
+sent, so a test looking for one would conclude nothing had happened."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    ;; a third arrives that this folder never fetched
+    (vm-imap-mock-add-message mock "INBOX"
+                              "From: carol@example.com\nSubject: never fetched\n\nA body.\n")
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 3))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (equal 1 (length (vm-imap-mock-messages mock "INBOX"))))))
+    ;; and it is the one VM never had
+    (let ((text (vm-imap-mock-message-text
+                 (car (vm-imap-mock-messages mock "INBOX")))))
+      (should (string-match-p "Subject: never fetched" text)))))
+
 (ert-deftest vm-imap-mock-test-expunging-forgets-only-what-was-deleted ()
   "What the server deleted is forgotten and what it did not is kept.
 
@@ -664,6 +665,25 @@ is taken off the server behind VM's back, and the list comes back to one."
     (should (equal (length vm-imap-retrieved-messages) 2))
     (vm-imap-mock-test--wait-until
      (lambda () (vm-imap-mock-received-p mock "LOGOUT")))
+    (should (equal (length vm-imap-retrieved-messages) 2))))
+
+(ert-deftest vm-imap-mock-test-pruning-says-so-when-it-cannot-ask ()
+  "With no password for the maildrop, pruning says so and forgets nothing.
+It used to go on to a blocking session, whose process variable was bound to
+nil and never assigned: `(process-buffer nil)', so that half could not run at
+all.  Nothing is remembered as pruned by a look that never happened."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length vm-imap-retrieved-messages) 2))
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-imap-net-mailbox-uids) (lambda (&rest _) nil))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-prune-imap-retrieved-list (vm-imap-mock-spec mock)))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
 ;;; Making, renaming and deleting mailboxes on the server
@@ -1181,80 +1201,6 @@ were printed on their own and again inside the line that followed."
        ,@body)
      (nreverse said)))
 
-(ert-deftest vm-imap-mock-test-a-discarded-keyword-is-reported ()
-  "A server that answers OK to a keyword and does not keep it is complained
-about, naming the keyword.  This is Gmail: a VM label is an IMAP keyword, and
-Gmail takes the STORE, says OK, and stores nothing, so the label was lost with
-nothing said at any point."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice)
-            :drops-keywords t)
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (let ((said (vm-imap-mock-test--warnings
-                  (vm-imap-store-flags process "+" t "1" '("important")))))
-      (should (= (length said) 1))
-      (should (string-match-p "accepted and discarded" (car said)))
-      (should (string-match-p "important" (car said))))
-    ;; and the server really does not have it, which is the thing being detected
-    (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
-
-(ert-deftest vm-imap-mock-test-a-kept-keyword-is-not-reported ()
-  "A server that keeps the keyword is not complained about.  The check has to
-be silent in the ordinary case, since it runs on every label VM stores."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (let ((said (vm-imap-mock-test--warnings
-                  (vm-imap-store-flags process "+" t "1" '("important")))))
-      (should (equal said nil)))
-    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
-
-(ert-deftest vm-imap-mock-test-a-discarded-keyword-is-reported-once ()
-  "Said once per session, not once per message: a folder of a thousand
-messages carrying the same label would otherwise complain a thousand times."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice
-                                    vm-imap-mock-test--bob)
-            :drops-keywords t)
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (let ((said (vm-imap-mock-test--warnings
-                  (vm-imap-store-flags process "+" t "1" '("important"))
-                  (vm-imap-store-flags process "+" t "2" '("important")))))
-      (should (= (length said) 1)))))
-
-(ert-deftest vm-imap-mock-test-a-dropped-keyword-is-still-offered ()
-  "Unlike a refused flag, a discarded one is sent again.  A refusal is an
-error the server means; this is a mailbox that cannot hold keywords, and one
-that gains the ability should start working without restarting Emacs."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice)
-            :drops-keywords t)
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (cl-letf (((symbol-function 'vm-warn) #'ignore))
-      (vm-imap-store-flags process "+" t "1" '("important")))
-    (should-not (member "important" vm-imap-refused-flags))
-    (should (member "important" vm-imap-dropped-flags))
-    ;; the server stops dropping, and the label lands without a restart
-    (setf (vm-imap-mock-drops-keywords mock) nil)
-    (vm-imap-store-flags process "+" t "1" '("important"))
-    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
-
-(ert-deftest vm-imap-mock-test-only-a-keyword-store-asks-for-the-flags-back ()
-  "The protocol's own flags are stored with `.SILENT' as before, so the
-ordinary business of marking messages read costs no extra response; a store
-carrying a keyword asks, because a keyword is what a server may discard."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (vm-imap-store-flags process "+" t "1" '("\\Seen"))
-    (should (seq-find (lambda (line) (string-match-p "FLAGS\\.SILENT" line))
-                      (vm-imap-mock-log mock)))
-    (vm-imap-store-flags process "+" t "1" '("important"))
-    (should (seq-find (lambda (line)
-                        (and (string-match-p "STORE" line)
-                             (string-match-p "+FLAGS (important)" line)))
-                      (vm-imap-mock-log mock)))))
-
 (ert-deftest vm-imap-mock-test-a-label-survives-a-server-that-keeps-no-keyword ()
   "REGRESSION: a synchronise against a server that keeps no keyword leaves the
 folder's labels alone.
@@ -1329,52 +1275,6 @@ carries a keyword at all, so a mailbox with one keeps its say over the rest."
               (and (string-match "Subject: \\(m[0-9]\\)" text)
                    (match-string 1 text))))
           (vm-imap-mock-messages mock "INBOX")))
-
-(ert-deftest vm-imap-mock-test-expunging-takes-only-what-was-retrieved ()
-  "Only the messages the folder retrieved are deleted on the server.
-
-Two things this adds to vm-imap-mock-test-expunging-what-has-been-retrieved
-above, which covers the same command through the asynchronous driver.
-
-It is *selective*: three messages on the server, two of them recorded as
-retrieved, and the third still there afterwards.  The existing test retrieves
-both of its two and expects an empty mailbox, so it would pass equally if the
-command deleted whatever it found.  A message VM has no copy of must survive,
-and nothing said so.
-
-And it is the *blocking* path, which runs where the driver declines and is
-the one a reader gets when VM has not been told the maildrop\'s password.
-
-Also pins how it is done, which is not obvious from the outside: VM marks the
-two with STORE and then sends CLOSE, whose implicit expunge does the deleting
-(RFC 3501 6.4.2).  No EXPUNGE command is sent at all, so a test looking for
-one would conclude nothing had happened."
-  (vm-imap-mock-with (mock :messages vm-imap-expunge-test--messages)
-    (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
-           (vm-imap-passwords
-            (cons (list (vm-imapdrop-sans-password-and-mailbox spec)
-                        (vm-imap-mock-password mock))
-                  vm-imap-passwords)))
-      (should (equal 3 (length (vm-imap-mock-messages mock "INBOX"))))
-      (vm-test-with-real-folder (2)
-        (setq vm-imap-retrieved-messages
-              (list (list "1" "1000" (vm-imapdrop-sans-password spec) 'uid)
-                    (list "3" "1000" (vm-imapdrop-sans-password spec) 'uid)))
-        (cl-letf (((symbol-function 'vm-imap-net-expunge-retrieved)
-                   (lambda (&rest _) nil)))
-          (let ((vm-imap-ok-to-ask nil))
-            (vm-expunge-imap-messages))))
-      ;; the one never retrieved is the one left
-      (should (equal '("m2") (vm-imap-expunge-test--subjects mock)))
-      ;; and it got there by marking those two and closing
-      (should (vm-imap-mock-received-p mock "STORE 1:1 \\+FLAGS.SILENT (\\\\Deleted)"))
-      (should (vm-imap-mock-received-p mock "STORE 3:3 \\+FLAGS.SILENT (\\\\Deleted)"))
-      (should-not (vm-imap-mock-received-p mock "STORE 2:2"))
-      (should (vm-imap-mock-received-p mock "CLOSE")))))
-
-
-;;; Saving the cache as Emacs is left (emacs-vm/vm#798)
 
 (ert-deftest vm-imap-mock-test-a-modified-cache-is-saved-on-exit ()
   "REGRESSION: `vm-save-folder-caches' writes a modified IMAP cache.

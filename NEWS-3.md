@@ -8,6 +8,34 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **A bug report now carries the trace of the session still running**
+    (emacs-vm/vm#822).  `vm-imap-submit-bug-report` and
+    `vm-pop-submit-bug-report` used to end the folder's session so that its
+    trace reached the ring they read.  The sessions are asynchronous now, and
+    ending one would abort a fetch in flight, so the running session's trace
+    goes into the report where it is: a report can be made about a fetch while
+    it is happening, and nothing is closed to collect it.
+
+  * **New option `vm-session-trace-max-size`** (emacs-vm/vm#822), the most of
+    one session trace a bug report carries, 100000 characters by default.  A
+    synchronisation of a large mailbox leaves most of a megabyte of near
+    identical `FETCH` lines behind it, and a report that size cannot be sent.
+    Beyond the limit the middle of the trace is left out and the report says
+    how much; nil sends the whole of every trace.
+
+  * **An IMAP maildrop message over `vm-imap-max-message-size` is left on the
+    server, and VM says so** (emacs-vm/vm#822).  It used to ask, message by
+    message, whether to fetch it, delete it or skip it, showing the headers
+    to decide by.  Nothing can be asked from inside a process filter, and the
+    fetch is asynchronous now, so the question has gone: the message stays
+    where it is and a warning names its size and the limit.  Raise the limit
+    and the next `vm-get-new-mail` brings it in.
+
+    This is what the option always said happened in a local folder.  An IMAP
+    *folder* is unchanged: an oversize message there is fetched as its headers
+    where `vm-enable-external-messages` includes `imap`, and the body comes
+    from the server when it is read.
+
   * **`rpop` is no longer a POP authentication method** (emacs-vm/vm#822).
     It was RFC 1081's trusted-host scheme: a privileged source port stood
     for the authentication and the password went to the server under another

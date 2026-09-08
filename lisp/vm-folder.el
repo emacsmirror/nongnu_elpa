@@ -4626,29 +4626,16 @@ folder."
 	(let ((buffer-undo-list t)) ;; (mp nil) (newlist nil)
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
+	  ;; What the save owes the server goes without waiting: the flags
+	  ;; that changed and the deletions asked for.  What the server has
+	  ;; expunged is deliberately not worked out here -- that means the
+	  ;; flags of every message in the mailbox, nineteen seconds on a
+	  ;; folder of six thousand, and the next fetch and
+	  ;; `vm-imap-synchronize' work it out anyway.
 	  (cond ((eq vm-folder-access-method 'pop)
-		 ;; as for IMAP below: the deletions go without waiting, and
-		 ;; what the server no longer has is the next fetch's business
-		 (unless (vm-pop-net-send-changes)
-		   (vm-pop-synchronize-folder :interactive t
-					      :do-remote-expunges t
-					      :do-local-expunges t
-					      :do-retrieves nil)))
+		 (vm-pop-net-send-changes))
 		((eq vm-folder-access-method 'imap)
-		 ;; What the save owes the server goes without waiting: the
-		 ;; flags that changed and the deletions asked for.  The
-		 ;; blocking synchronisation also worked out what the server
-		 ;; had expunged, which means downloading the flags of every
-		 ;; message in the mailbox -- nineteen seconds on a folder of
-		 ;; six thousand, with Emacs held still, on every quit.  The
-		 ;; next fetch and `vm-imap-synchronize' both work that out
-		 ;; anyway.
-		 (unless (vm-imap-net-send-changes)
-		   (vm-imap-synchronize-folder :interactive t
-					       :do-remote-expunges t
-					       :do-local-expunges t
-					       :do-retrieves nil
-					       :save-attributes t))))
+		 (vm-imap-net-send-changes)))
 	  (vm-discard-fetched-messages)
           ;; remove the message summary file of Thunderbird and force
 	  ;; it to rebuild it.  Expect error if Thunderbird is active.
@@ -5438,20 +5425,9 @@ ignore it."
   (if vm-block-new-mail
       (error "Can't get new mail until you save this folder."))
   (cond ((eq vm-folder-access-method 'pop)
-	 (vm-pop-synchronize-folder :interactive interactive
-				    :do-retrieves t))
+	 (vm-pop-net-get-folder-mail))
 	((eq vm-folder-access-method 'imap)
-	 (let ((do-retrieves (if full 'full t)))
-	   (or (vm-imap-net-get-spooled-mail interactive full)
-	       (if vm-imap-sync-on-get
-		   (progn
-		     (vm-imap-synchronize-folder :interactive interactive
-						 :do-local-expunges t
-						 :do-retrieves do-retrieves
-						 :save-attributes t
-						 :retrieve-attributes t))
-		 (vm-imap-synchronize-folder :interactive interactive
-					     :do-retrieves do-retrieves)))))
+	 (vm-imap-net-get-spooled-mail interactive full))
 	(t (vm-get-spooled-mail-normal interactive))))
 
 (defun vm-spooled-mail-arrived (crash safe-maildrop)
@@ -5480,11 +5456,12 @@ list, and say where they came from."
 
 (defun vm-start-spooled-mail (retrieval-function maildrop crash safe-maildrop)
   "Start fetching MAILDROP into CRASH without waiting, if that can be done.
-Answers with whether it started.  Nil means this maildrop is one that has to
-be fetched the blocking way, and the caller does that.
+Answers with whether it started.  Nil means nothing was started: either the
+maildrop is not one VM fetches over the network, or VM has no password for it
+and the reader, who has been asked, gave none.
 
 SAFE-MAILDROP is the name to show; RETRIEVAL-FUNCTION says which protocol it
-is, being what the blocking path would have called."
+is."
   (let ((folder (current-buffer))
 	(starter (cond ((eq retrieval-function 'vm-imap-move-mail)
 			#'vm-imap-net-move-mail)
@@ -5505,8 +5482,26 @@ is, being what the blocking path would have called."
 			   (t
 			    (vm-inform 5 "No mail from %s." safe-maildrop)))))
 	       t)
-	   (vm-imap-net-unsupported nil)
-	   (vm-pop-net-unsupported nil)))))
+	   (vm-imap-net-no-password nil)
+	   (vm-pop-net-no-password nil)))))
+
+(defun vm-move-spooled-mail (retrieval-function maildrop crash got-mail)
+  "Move MAILDROP into CRASH with RETRIEVAL-FUNCTION, and answer whether to read
+CRASH.  For a spool file, `movemail' and the rest, which VM fetches by waiting.
+
+GOT-MAIL says whether mail has already been appended to this folder.  Once it
+has, an error must not be signalled: the reader would be left looking for mail
+that is neither in the crash box, nor in the spool file, nor visibly in the
+folder.  So it answers t on an error and on a quit, both of which leave it
+unknown whether anything reached the crash box."
+  (if got-mail
+      (condition-case error-data
+	  (funcall retrieval-function maildrop crash)
+	(error (vm-warn 0 2 "%s signaled: %s" retrieval-function error-data)
+	       t)
+	(quit (vm-warn 0 2 "quitting from %s..." retrieval-function)
+	      t))
+    (funcall retrieval-function maildrop crash)))
 
 (defun vm-get-spooled-mail-normal (&optional interactive)
   (if vm-global-block-new-mail
@@ -5569,36 +5564,23 @@ is, being what the blocking path would have called."
 		(setq maildrop 
 		      (expand-file-name maildrop 
 					vm-folder-directory)))
-	      (when (if (vm-start-spooled-mail retrieval-function maildrop
-					       crash safe-maildrop)
-			;; on its way; the crash box is gobbled when it lands
-			nil
-		      (if got-mail
-			;; don't allow errors to be signaled unless no
-			;; mail has been appended to the incore
-			;; copy of the folder.  otherwise the
-			;; user will wonder where the mail is,
-			;; since it is not in the crash box or
-			;; the spool file and doesn't _appear_ to
-			;; be in the folder either.
-			(condition-case error-data
-			    (funcall retrieval-function maildrop crash)
-			  (error (vm-warn 0 2 "%s signaled: %s"
-					  retrieval-function
-					  error-data)
-				 ;; we don't know if mail was
-				 ;; put into the crash box or
-				 ;; not, so return t just to be
-				 ;; safe.
-				 t )
-			  (quit (vm-warn 0 2 "quitting from %s..."
-					 retrieval-function)
-				;; we don't know if mail was
-				;; put into the crash box or
-				;; not, so return t just to be
-				;; safe.
-				t ))
-		      (funcall retrieval-function maildrop crash)))
+	      (when (cond
+		     ((vm-start-spooled-mail retrieval-function maildrop
+					     crash safe-maildrop)
+		      ;; on its way; the crash box is gobbled when it lands
+		      nil)
+		     ((memq retrieval-function
+			    '(vm-imap-move-mail vm-pop-move-mail))
+		      ;; The driver did not start, which for a network maildrop
+		      ;; means VM has no password for it and the reader has
+		      ;; already been asked.  There is nothing else to try: one
+		      ;; way in, and asking again through a second
+		      ;; implementation would put the same question twice.
+		      (vm-inform 5 "No mail from %s, VM has no password for it."
+				 safe-maildrop)
+		      nil)
+		     (t (vm-move-spooled-mail retrieval-function maildrop
+					      crash got-mail)))
 		(when (vm-gobble-crash-box crash)
 		  (setq got-mail t)
 		  (vm-inform 5 "Got mail from %s."

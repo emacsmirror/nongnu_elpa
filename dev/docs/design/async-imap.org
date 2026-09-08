@@ -18,10 +18,16 @@ driver, no dual mode and no per-command choice.  A mode that is never
 exercised is a mode that rots, and keeping one would mean answering every
 question here twice.
 
-The blocking implementation is still in the tree, and what it serves is a
-maildrop the driver declines: one whose password VM has not been told and
-nobody may be asked for, since there is nobody to ask from inside a process
-filter.
+There is one way in, and no fallback anywhere.  Every command a folder can
+run reaches its server through the driver; where the driver does not start,
+nothing else is tried and the reader is told.  The driver declines only for a
+maildrop VM has no password for, and it asks for one first where a reader is
+there to be asked, so a second implementation would only put the same question
+twice.
+
+The blocking implementation is still in the tree and no longer serves
+anything.  What keeps it there is its own tests; it goes when they are
+triaged.
 
 The one-directional point is worth keeping: asynchronous underneath with
 something synchronous on top is available, and the reverse is not, because a
@@ -105,9 +111,9 @@ cache file.
 - Every start goes through =vm-imap-net-take-session=, which is what
   =vm-imap-net-busy-p= reads.
 - Work asked for while a session runs is queued on the folder
-  (=vm-imap-net-when-free=) and run when that one ends.  It answers =later= so
-  that no caller falls back to the blocking path, which would open the second
-  connection this exists to avoid.
+  (=vm-imap-net-when-free=) and run when that one ends.  It answers =later=,
+  which is not a refusal: the work happens on the one connection this folder
+  has.
 - Queued work reads the folder again when it runs rather than using what was
   true when it was asked for.  A body queued for a message since expunged is
   dropped; an expunge list is re-read.

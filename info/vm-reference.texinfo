@@ -2974,6 +2974,22 @@ Default value: @code{"opera"}
 List of command line switches to pass to Opera.
 @end defopt
 
+@defopt vm-session-trace-max-size
+@vindex vm-session-trace-max-size
+The most of one session trace a bug report carries, in characters.
+
+A session that fetched the UID and flags of every message in a large mailbox
+leaves most of a megabyte in its trace, and a bug report of that size cannot
+be sent.  Beyond this, the middle of the trace is left out and the report says
+how much: the start says what the server is and what was asked of it, the end
+says where it went wrong, and the thousands of identical FETCH lines between
+them say nothing twice.
+
+Nil carries every trace whole.
+
+Default value: @code{100000}
+@end defopt
+
 @defopt vm-ssh-program
 @vindex vm-ssh-program
 Name of program to use to run SSH.
@@ -3490,6 +3506,9 @@ Submit a bug report for VM’s IMAP support functionality.
 It is necessary to run @code{vm-imap-start-bug-report} before the problem
 occurrence and this command after the problem occurrence, in
 order to capture the trace of IMAP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it.
 @end deffn
 
 @deffn Command vm-imap-synchronize &optional full
@@ -3538,6 +3557,10 @@ them.
 Prune the X-VM-IMAP-Retrieved header of the current folder by
 examining which messages are still present in SOURCE.  SOURCE
 should be a maildrop folder on an IMAP server.         USR, 2011-04-06
+
+Nothing waits: the mailbox is asked for the UID of every message it holds and
+the header is pruned when the answer comes.  That is the same round trip a
+synchronisation makes, and it used to be just as frozen.
 @end deffn
 
 @deffn Command vm-rename-imap-folder source dest
@@ -3635,21 +3658,19 @@ Default value: @code{1}
 
 @defopt vm-imap-max-message-size
 @vindex vm-imap-max-message-size
-The largest message size of IMAP messages that VM should retrieve
-automatically.  
+The largest IMAP message VM retrieves.
 
-If VM encounters an IMAP message larger than this size, the action
-is as follows:
+Nil, the default, means no limit.  A message larger than this is handled as
+follows:
 
-- In IMAP folders, the message is treated as an external message if
-@code{vm-enable-external-messages} includes @code{imap}.  Otherwise it is
-retrieved.
+- In an IMAP folder, it is retrieved as its headers alone where
+@code{vm-enable-external-messages} includes @code{imap}, and its body is fetched from
+the server when the message is read.  Otherwise it is retrieved whole.
 
-- In local folders, the message is skipped if it is part of
-automatic mail retrieval.  During interactive mail retrieval, obtained by
-running @code{vm-get-new-mail}, VM queries you whether it should be retrieved.
-
-A nil value for @code{vm-imap-max-message-size} means no size limit.
+- From a maildrop, into a local folder, it is left on the server and VM says
+how large it was and what the limit is.  A local folder cannot go back to the
+server for a body later, so headers alone would leave a message that could
+never be read.  Raise the limit and the next @code{vm-get-new-mail} brings it in.
 @end defopt
 
 @defopt vm-imap-message-bunch-size
@@ -7096,6 +7117,9 @@ Submit a bug report for VM’s POP support functionality.
 It is necessary to run @code{vm-pop-start-bug-report} before the problem
 occurrence and this command after the problem occurrence, in
 order to capture the trace of POP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it.
 @end deffn
 
 @appendixsubsec User options

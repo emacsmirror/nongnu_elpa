@@ -607,10 +607,11 @@ exactly this case, leaving `maildrop' nil for `vm-imap-make-session'."
           (vm-imap-account-alist
            '(("imap:mail.example.com:143:*:login:user:*" "work")))
           (session-spec 'unset))
-      (cl-letf (((symbol-function 'vm-imap-make-session)
-                 (lambda (spec &rest _) (setq session-spec spec) nil)))
-        ;; nil session => "could not connect", after the spec is chosen
-        (should-error (vm-imap-save-composition) :type 'error))
+      ;; `vm-imap-net-append-text' is the one way this is filed now
+      ;; (emacs-vm/vm#822), so the spec it is given is what is measured.
+      (cl-letf (((symbol-function 'vm-imap-net-append-text)
+                 (lambda (spec &rest _) (setq session-spec spec) t)))
+        (vm-imap-save-composition))
       (should (equal session-spec
                      "imap:mail.example.com:143:*:login:user:*")))))
 
@@ -752,8 +753,8 @@ expunged, so that destroyed mail with no confirmation (emacs-vm/vm#752).  What
 the prefix means now is every message's flags rather than only the changed
 ones.
 
-The driver is refused so that the blocking path is the one measured; on an
-IMAP folder `vm-imap-net-synchronize' is tried first."
+The driver is the only path, so it is the driver that is measured
+(emacs-vm/vm#822)."
   (vm-test-with-folder
     "From sender@example.com Mon Jan  1 00:00:00 2024
 From: sender@example.com
@@ -767,20 +768,17 @@ Body
     ;; into the compiled command and cannot be stubbed; it asks for the mode
     (setq major-mode 'vm-mode)
     (let ((asked nil))
-      (cl-letf (((symbol-function 'vm-imap-net-synchronize) (lambda (&rest _) nil))
-                ((symbol-function 'vm-establish-new-folder-imap-session)
-                 (lambda (&rest _) t))
-                ((symbol-function 'vm-imap-retrieve-uid-and-flags-data)
-                 (lambda (&rest _) nil))
-                ((symbol-function 'vm-imap-save-attributes) (lambda (&rest _) nil))
+      (cl-letf (((symbol-function 'vm-imap-net-synchronize)
+                 (lambda (&optional full &rest _) (push full asked) t))
                 ((symbol-function 'vm-update-summary-and-mode-line)
-                 (lambda (&rest _) nil))
-                ((symbol-function 'vm-imap-synchronize-folder)
-                 (lambda (&rest arguments)
-                   (push (plist-get arguments :do-remote-expunges) asked))))
+                 (lambda (&rest _) nil)))
         (vm-imap-synchronize nil)
         (vm-imap-synchronize t))
-      (should (equal asked '(t t))))))
+      ;; The prefix reaches the driver as FULL and means every message's
+      ;; flags, not `delete on the server what the cache does not have\='.
+      ;; The expunges the reader made are sent either way, which is
+      ;; `vm-imap-net-synchronize\='s own documented behaviour.
+      (should (equal asked '(t nil))))))
 
 (provide 'vm-imap-test)
 

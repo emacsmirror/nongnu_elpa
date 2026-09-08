@@ -2225,12 +2225,14 @@ machine: the IMAP session and the append are stubbed."
          (sessions nil)
          (mail-header-separator "--text follows this line--")
          (vm-fcc-filed nil))
-     (cl-letf (((symbol-function 'vm-imap-make-session)
-                (lambda (maildrop &rest _) (push maildrop sessions) 'a-process))
-               ((symbol-function 'vm-imap-end-session) #'ignore)
-               ((symbol-function 'vm-imap-append-message)
-                (lambda (_process mailbox string &rest _)
-                  (push (cons mailbox string) appended)))
+     ;; `vm-imap-net-append-text' is the one way a composition is filed on a
+     ;; server now: the blocking session it used to fall back to is gone
+     ;; (emacs-vm/vm#822).
+     (cl-letf (((symbol-function 'vm-imap-net-append-text)
+                (lambda (maildrop mailbox string &rest _)
+                  (push maildrop sessions)
+                  (push (cons mailbox string) appended)
+                  t))
                ((symbol-function 'mail-send) #'ignore)
                ((symbol-function 'vm-mail-mode-remove-tm-hooks) #'ignore))
        (with-temp-buffer

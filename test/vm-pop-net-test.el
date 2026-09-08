@@ -341,10 +341,16 @@ a minute."
 there is nobody to ask from inside a filter, and a caller that meets it uses
 the blocking implementation, which can ask.  So does a protocol this does not
 speak."
+  ;; no password and nobody to ask: the work does not start, quietly
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
-                :type 'vm-pop-net-unsupported)
-  (should-error (vm-pop-net-open "imap:example.com:143:INBOX:login:user:x" "x")
-                :type 'vm-pop-net-unsupported))
+                :type 'vm-pop-net-no-password)
+  ;; but a maildrop that is not POP at all is an error the reader sees:
+  ;; there is no other path to hand it to
+  (let* ((text-quoting-style 'grave)
+         (message (cadr (should-error
+                         (vm-pop-net-open
+                          "imap:example.com:143:INBOX:login:user:x" "x")))))
+    (should (string-match-p "not a POP maildrop type" message))))
 
 ;;; The mail check that runs on a timer
 
@@ -538,6 +544,49 @@ writing one folder is what corrupts it."
   "A session that waits for something that never arrives."
   (iter-yield (lambda () nil))
   'never)
+
+(ert-deftest vm-pop-net-test-expunging-says-so-with-no-password ()
+  "`vm-expunge-pop-messages' says so when the driver cannot start.
+
+It used to fall back to a blocking expunge, a session per maildrop with Emacs
+held for all of them, which is the second implementation this does not have
+any more.  A command that answers a keystroke with silence looks as though it
+worked, so it says what happened instead."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-pop-net-expunge-retrieved) (lambda () nil))
+              ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+              ((symbol-function 'vm-pop-expunge-entries)
+               (lambda (&rest _) (error "the blocking expunge was called")))
+              ((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (with-temp-buffer
+        ;; `vm-select-folder-buffer-and-validate' and
+        ;; `vm-error-if-virtual-folder' are defsubsts, inlined into the
+        ;; compiled command, so stubbing the symbols does nothing: the buffer
+        ;; has to be a folder buffer for real
+        (setq major-mode 'vm-mode)
+        (setq-local vm-pop-retrieved-messages (list (list "uid1" "pop:h:110:p:pass:u:*" 'uidl)))
+        (vm-expunge-pop-messages)
+        ;; the record is untouched: nothing was expunged, so nothing is forgotten
+        (should (equal (length vm-pop-retrieved-messages) 1)))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))))
+
+(ert-deftest vm-imap-net-test-expunging-says-so-with-no-password ()
+  "`vm-expunge-imap-messages' says so when the driver cannot start.
+It discarded the answer, so with no password the command did nothing and said
+nothing."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-imap-net-expunge-retrieved) (lambda () nil))
+              ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+              ((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) said))))
+      (with-temp-buffer
+        ;; a folder buffer for real; see the test above
+        (setq major-mode 'vm-mode)
+        (vm-expunge-imap-messages))
+      (should (seq-find (lambda (line) (string-match-p "no password" line)) said)))))
 
 (ert-deftest vm-pop-net-test-expunging-a-maildrop-does-not-wait ()
   "`vm-expunge-pop-messages' deletes on the server what the folder retrieved,
@@ -1368,9 +1417,13 @@ recognise (emacs-vm/vm#822)."
   "REGRESSION: an authentication VM does not know is refused, not attempted.
 Ignoring the field is what made the apop downgrade possible."
   (vm-pop-mock-with (mock)
-    (should-error (vm-pop-net-open (vm-pop-mock-spec mock "kerberos_v4")
-                                   "unknown auth" nil)
-                  :type 'vm-pop-net-unsupported)
+    (let* ((text-quoting-style 'grave)
+           (message (cadr (should-error
+                           (vm-pop-net-open
+                            (vm-pop-mock-spec mock "kerberos_v4")
+                            "unknown auth" nil)))))
+      (should (string-match-p "kerberos_v4" message))
+      (should (string-match-p "pass, or apop" message)))
     ;; and the two it does serve are opened
     (dolist (auth '("pass" "apop"))
       (let ((opened (vm-pop-net-open (vm-pop-mock-spec mock auth)

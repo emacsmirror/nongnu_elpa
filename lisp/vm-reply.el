@@ -84,6 +84,7 @@
 ;; A cl-defun taking &key arguments: spelling the arglist out here makes the
 ;; compiler count a keyword call wrongly, so it is left unsaid.
 (declare-function vm-imap-make-session "vm-imap" t)
+(declare-function vm-imap-spec-fields "vm-imap" (spec))
 (declare-function vm-imap-net-append-text "vm-imap-net"
 		  (spec mailbox text &optional flags may-ask))
 (declare-function vm-imap-append-message "vm-imap"
@@ -1113,23 +1114,17 @@ in the default directory and put the sent copy in it (issue #605).
 
 The session is opened for this one message and closed again, since a
 composition has no folder whose session it could borrow."
-  (let ((mailbox (nth 3 (vm-imap-parse-spec-to-list spec)))
+  ;; `vm-imap-spec-fields' and not `vm-imap-parse-spec-to-list', which drops
+  ;; an empty field: a maildrop with no mailbox read its `login' as the
+  ;; mailbox and nothing said so (emacs-vm/vm#822).
+  (let ((mailbox (nth 3 (vm-imap-spec-fields spec)))
 	(string (vm-imap-subst-CRLF-for-LF
-		 (buffer-substring-no-properties (point-min) (point-max))))
-	process)
+		 (buffer-substring-no-properties (point-min) (point-max)))))
     (when (or (null mailbox) (equal mailbox ""))
       (error "Not filing in %s: no mailbox in the maildrop specification" spec))
-    ;; Through the driver where the maildrop allows it: sending a message
-    ;; should not stop Emacs while a copy of it goes to a server.
-    (unless (vm-imap-net-append-text spec mailbox string)
-      (setq process (vm-imap-make-session spec nil :purpose "FCC"))
-      (unless process
-	(error "Not filing in %s: could not open an IMAP session" spec))
-      (unwind-protect
-	  (vm-imap-append-message process mailbox string)
-	(when (and (processp process)
-		   (memq (process-status process) '(open run)))
-	  (vm-imap-end-session process))))))
+    ;; On the driver: sending a message should not stop Emacs while a copy
+    ;; of it goes to a server.
+    (vm-imap-net-append-text spec mailbox string)))
 
 (defun vm-do-fcc (header-end)
   "File a copy of this composition in each folder its Fcc headers name.

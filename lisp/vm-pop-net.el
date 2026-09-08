@@ -278,7 +278,8 @@ generator rather than dropping it."
 (defvar vm-pop-server-timeout)
 (defvar vm-pop-retrieved-messages)
 
-(define-error 'vm-pop-net-unsupported "POP maildrop VM cannot open without waiting")
+(define-error 'vm-pop-net-no-password
+  "VM has no password for this POP maildrop")
 
 (defvar vm-stunnel-program)
 (defvar vm-stunnel-program-switches)
@@ -364,7 +365,7 @@ this returns: ssh has to be listening on its forwarded port before there is
 anything to connect to, and `vm-net-attach' gives the session its connection
 when it is.  stunnel is the connection itself, over its standard input and
 output.  A maildrop whose password VM has not been told signals
-`vm-pop-net-unsupported', there being nobody to ask from inside a filter."
+`vm-pop-net-no-password', there being nobody to ask from inside a filter."
   (let* ((parts (vm-pop-parse-spec-to-list source))
 	 (protocol (car parts))
 	 (host (nth 1 parts))
@@ -373,10 +374,12 @@ output.  A maildrop whose password VM has not been told signals
 	 (user (nth 4 parts))
 	 (password (nth 5 parts)))
     (unless (member protocol '("pop" "pop-ssl" "pop-ssh"))
-      (signal 'vm-pop-net-unsupported (list protocol source)))
-    ;; Refusing rather than ignoring: what is not served here has to go to
-    ;; the blocking path, which does serve it.  Ignoring it meant an `apop'
-    ;; maildrop was authenticated with USER and PASS (emacs-vm/vm#823).
+      (error (concat "%s is not a POP maildrop type VM knows.  The types"
+		     " are pop, pop-ssl and pop-ssh; M-x"
+		     " vm-check-configuration checks every maildrop")
+	     protocol))
+    ;; Ignoring this field is what made an `apop' maildrop authenticate with
+    ;; USER and PASS, sending the password in clear (emacs-vm/vm#823).
     (unless (member auth '("pass" "apop"))
       (if (equal auth "rpop")
 	  (error (concat "rpop is no longer supported: it relied on a"
@@ -384,14 +387,16 @@ output.  A maildrop whose password VM has not been told signals
 			 " under another verb.  Write pass or apop in the"
 			 " maildrop instead; see Spool Files in the VM"
 			 " manual"))
-	(signal 'vm-pop-net-unsupported (list (or auth "no authentication")
-					      source))))
+	(error (concat "%s is not a POP authentication VM knows."
+		       "  Write pass, or apop where the server offers a"
+		       " timestamp")
+	       (or auth "no authentication"))))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
     (when (equal password "*")
       ;; "*" means VM is to find the password rather than read it out of the
       ;; maildrop.  VM may already know it; failing that, a command may ask
-      ;; the reader, which is what the blocking path did.
+      ;; the reader.
       (setq password (or (vm-pop-net-known-password source user host port)
 			 (and may-ask
 			      ;; as for IMAP: nothing binds `vm-pop-ok-to-ask'
@@ -414,7 +419,7 @@ output.  A maildrop whose password VM has not been told signals
 		   (if vm-pop-passwords
 		       (mapconcat #'car vm-pop-passwords ", ")
 		     "none"))
-	(signal 'vm-pop-net-unsupported
+	(signal 'vm-pop-net-no-password
 		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))
 	   (session (vm-net-session :name name :timeout vm-pop-server-timeout))
@@ -819,7 +824,7 @@ again."
 			    name (length result)
 			    (if (= (length result) 1) "" "s")))))
       (vm-net-warn 0 "%s: fetched mail is still on the server: %s" name
-	       "the maildrop cannot be opened again without waiting"))))
+	       "VM has no password for the maildrop"))))
 
 
 ;;; A POP folder, which is a maildrop VM keeps a copy of
@@ -855,6 +860,19 @@ again."
 	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
       (current-buffer)))
 
+(defun vm-pop-net-trace-buffers (&optional folder)
+  "The session buffers a bug report about FOLDER should carry, newest first.
+`vm-kept-pop-buffers' and the buffer of the session still running, which is
+not in the ring yet.  See `vm-imap-net-trace-buffers'."
+  (let* ((session (with-current-buffer (vm-pop-net-folder-buffer folder)
+		    vm-pop-net-session))
+	 (live (and session (vm-net-session-live-p session)
+		    (vm-net-session-buffer session))))
+    (seq-filter #'buffer-live-p
+		(if (and live (not (memq live vm-kept-pop-buffers)))
+		    (cons live vm-kept-pop-buffers)
+		  vm-kept-pop-buffers))))
+
 (defvar vm-ml-session)
 (declare-function vm-update-summary-and-mode-line "vm-folder" ())
 
@@ -868,8 +886,8 @@ connection that would write the same folder.")
 (defun vm-pop-net-when-free (name function)
   "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
 NAME says what it is, for the log.  Answers `later' when it was queued: the
-work has not happened yet, and the caller is not to do it the blocking way
-either, which would be the second writer this is avoiding."
+work has not happened yet, and it happens on the one session this folder has
+rather than as the second writer this is avoiding."
   (cond
    ((vm-pop-net-busy-p)
     (setq vm-pop-net-waiting
@@ -1055,8 +1073,8 @@ fetched again."
 
 (defun vm-pop-net-get-folder-mail ()
   "Start fetching this POP folder's new mail, and answer with whether it did.
-Nil means this maildrop is one that cannot be opened without waiting, or a
-session is already running, and the caller is to use the blocking path."
+Nil means nothing was started: VM has no password for the maildrop yet, or a
+session is already running on the folder."
   (let* ((folder (current-buffer))
 	 (source (vm-folder-pop-maildrop-spec))
 	 (folder-type (vm-folder-type-to-write)))
@@ -1087,9 +1105,10 @@ session is already running, and the caller is to use the blocking path."
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
 	    t)
-	(vm-pop-net-unsupported
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	(vm-pop-net-no-password
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 
@@ -1137,9 +1156,9 @@ does whether this runs to the end or is abandoned."
 (defun vm-pop-net-send-changes ()
   "Start deleting on the server what this POP folder has expunged locally.
 
-Answers with whether it did: nil means the maildrop cannot be opened without
-waiting and the caller is to do it the blocking way, `later' that a session
-is already running and these deletions go up next time -- they are in
+Answers with whether it did: nil means nothing was started, VM having no
+password for the maildrop yet; `later' that a session is already running and
+these deletions go up next time -- they are in
 `vm-pop-messages-to-expunge', which is written into the folder file, so
 nothing is lost by waiting.
 
@@ -1197,9 +1216,10 @@ next fetch's business."
 	    (vm-net-inform 6 "%s: deleting %d message%s on the server without waiting"
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)
-	(vm-pop-net-unsupported
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	(vm-pop-net-no-password
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 (defun vm-pop-net-expunge-maildrop (source uidls callback)
@@ -1221,15 +1241,15 @@ whether it started."
 		      (vm-pop-net-expunge-session (nth 1 opened) (nth 2 opened)
 						  uidls))
 	t)
-    (vm-pop-net-unsupported nil)))
+    (vm-pop-net-no-password nil)))
 
 (defun vm-pop-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved by POP.
 
-Answers whether it started; nil means the first maildrop cannot be opened
-without waiting and the caller is to do the lot the blocking way.  One
-maildrop at a time: a POP server serves one session anyway, and they all
-write the same folder.
+Answers whether it started; nil means nothing was started, VM having no
+password for the first maildrop yet, and none after it is answered for
+either.  One maildrop at a time: a POP server serves one session anyway, and
+they all write the same folder.
 
 The folder forgets each maildrop's messages as that maildrop answers for
 them, so an expunge that fails half way leaves the rest to be offered again."
@@ -1287,7 +1307,8 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 		  t)
 		 (first nil)
 		 (t
-		  (vm-net-warn 0 "%s: cannot be deleted from without waiting" name)
+		  (vm-net-warn 0 "%s: not deleted from, VM has no password for it"
+			   name)
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
@@ -1299,8 +1320,9 @@ them, so an expunge that fails half way leaves the rest to be offered again."
 it did.  The answer itself arrives later, in `vm-spooled-mail-waiting',
 which is what the mode line reads.
 
-Nil means the maildrop cannot be opened without waiting, or a session is
-already running -- and one already running will say what arrived anyway."
+Nil means nothing was started: VM has no password for the maildrop yet, or a
+session is already running -- and one already running will say what arrived
+anyway."
   (let ((folder (current-buffer))
 	(source (vm-folder-pop-maildrop-spec)))
     (cond
@@ -1331,9 +1353,10 @@ already running -- and one already running will say what arrived anyway."
 	    (vm-net-inform 6 "%s: checking the server without waiting"
 		       (buffer-name folder))
 	    t)
-	(vm-pop-net-unsupported
-	 (vm-net-inform 6 "%s: leaving it to the blocking path (%s)"
-		    (buffer-name folder) (or (car (cdr reason)) "not supported"))
+	(vm-pop-net-no-password
+	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
+				  " the maildrop yet (%s)")
+		    (buffer-name folder) (or (car (cdr reason)) "no password"))
 	 nil))))))
 
 (provide 'vm-pop-net)
