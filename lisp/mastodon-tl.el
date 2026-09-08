@@ -1965,10 +1965,16 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
                              rendered
                            (with-temp-buffer ;; strip quoted toot URL:
                              (insert rendered)
-                             (goto-char (point-min))
-                             (delete-line)
-                             (delete-line)
-                             (buffer-string))))
+                             ;; item headling plus link may be only
+                             ;; content, in which case we should not
+                             ;; remove it:
+                             (if (> 3 (count-lines (point-min)
+                                                   (point-max)))
+                                 (buffer-string)
+                               (goto-char (point-min))
+                               (delete-line)
+                               (delete-line)
+                               (buffer-string)))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))
     (concat stripped-maybe
