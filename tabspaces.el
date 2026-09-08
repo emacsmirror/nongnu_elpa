@@ -1170,8 +1170,19 @@ This preserves non-project workspaces when using per-project session mode."
   "Save sessions intelligently based on configuration.
 If `tabspaces-session-project-session-store' is set, saves each project
 tab to its own file and non-project tabs to the global file.
-Otherwise, saves everything to the global session file (traditional behavior)."
+Otherwise, saves everything to the global session file (traditional behavior).
+
+Does nothing when `noninteractive' is non-nil.  This is the automatic
+saver, run from `kill-emacs-hook' and from the auto-save timer; under
+`emacs --batch' or `--script' `user-emacs-directory' still points at the
+real configuration, so an unguarded run would overwrite the user's
+session with the batch process's throwaway state.  The interactive
+commands `tabspaces-save-session' and friends are deliberately not
+guarded, so a script that means to save can still call them."
   (cond
+   ;; Never save implicitly from a batch or script run.
+   (noninteractive nil)
+
    ;; Per-project saving enabled
    ((and tabspaces-session
          tabspaces-session-project-session-store)
@@ -1451,8 +1462,11 @@ If PROJECT-OR-SESSION-FILE is:
 
 ;; Make sure session file exists
 (defun tabspaces--create-session-file ()
-  "Create the tabspaces session file if it does not exist."
-  (unless (file-exists-p tabspaces-session-file)
+  "Create the tabspaces session file if it does not exist.
+Does nothing when `noninteractive' is non-nil, so that batch and script
+runs never touch the user's real session file."
+  (unless (or noninteractive
+              (file-exists-p tabspaces-session-file))
     (with-temp-buffer
       (write-file tabspaces-session-file))
     (message "Created tabspaces session file: %s" tabspaces-session-file)))
@@ -1747,7 +1761,10 @@ This uses Emacs `tab-bar' and `project.el'."
          (when tabspaces-use-filtered-buffers-as-default
            ;; Remap switch-to-buffer
            (define-key (current-global-map) [remap switch-to-buffer] #'tabspaces-switch-to-buffer))
-         (when tabspaces-session
+         ;; Never install the exit-time saver or the auto-save timer in a
+         ;; batch or script run: they would overwrite the user's real
+         ;; session file, since -Q does not change `user-emacs-directory'.
+         (when (and tabspaces-session (not noninteractive))
            (add-hook 'kill-emacs-hook #'tabspaces--save-session-smart)
            (tabspaces--setup-session-auto-save))
          (when tabspaces-session-auto-restore
