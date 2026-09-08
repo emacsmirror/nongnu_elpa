@@ -4,7 +4,7 @@
 
 ;; Author: Colin McLear <mclear@fastmail.com>
 ;; Maintainer: Colin McLear
-;; Version: 1.10.1
+;; Version: 1.11.0
 ;; Package-Requires: ((emacs "27.1") (project "0.8.1"))
 ;; Keywords: convenience, frames
 ;; Homepage: https://codeberg.org/mclear-tools/tabspaces
@@ -401,9 +401,14 @@ Only the current window buffers and buffers in
 ;;;; Filter Workspace Buffers
 
 (defun tabspaces--local-buffer-p (buffer)
-  "Return whether BUFFER is in the list of local buffers."
+  "Return whether BUFFER is in the list of local buffers.
+Buried buffers count as local: burying hides a buffer within its
+workspace but does not remove it.  Removal is done by
+`tabspaces-remove-buffer', which takes the buffer out of both the
+`buffer-list' and the `buried-buffer-list' frame parameters."
   (or (member (buffer-name buffer) tabspaces-include-buffers)
-      (memq buffer (frame-parameter nil 'buffer-list))))
+      (memq buffer (frame-parameter nil 'buffer-list))
+      (memq buffer (frame-parameter nil 'buried-buffer-list))))
 
 (defun tabspaces--set-buffer-predicate (frame)
   "Set the buffer predicate of FRAME to `tabspaces--local-buffer-p'."
@@ -418,15 +423,62 @@ Only the current window buffers and buffers in
   "Return a list of all live buffers associated with the current frame and tab.
 A non-nil value of FRAME selects a specific frame instead of the
 current one.  If TABNUM is nil, the current tab is used.  If it is
-non-nil, then specify a tab index in the given frame."
+non-nil, then specify a tab index in the given frame.
+
+Both displayed and buried buffers are returned: burying hides a buffer
+within its workspace but does not remove it from the workspace.  A
+buffer displayed in a window but missing from either frame parameter is
+included too, which happens when `display-buffer' or `set-window-buffer'
+puts a buffer on screen without selecting it.  The result is
+deduplicated and contains only live buffers."
   (let ((list
          (if tabnum
              (let ((tab (nth tabnum (frame-parameter frame 'tabs))))
                (if (eq 'current-tab (car tab))
-                   (frame-parameter frame 'buffer-list)
-                 (cdr (assq 'wc-bl tab))))
-           (frame-parameter frame 'buffer-list))))
-    (seq-filter #'buffer-live-p list)))
+                   (append (frame-parameter frame 'buffer-list)
+                           (reverse (frame-parameter frame 'buried-buffer-list)))
+                 ;; `tab-bar' stashes both frame parameters on a hidden
+                 ;; tab, as `wc-bl' and `wc-bbl'.  Read both, so hidden
+                 ;; tabs answer the same way the current tab does.
+                 (append (cdr (assq 'wc-bl tab))
+                         (reverse (cdr (assq 'wc-bbl tab))))))
+           (append (frame-parameter frame 'buffer-list)
+                   (reverse (frame-parameter frame 'buried-buffer-list))))))
+    ;; Visible buffers are not always registered in either frame
+    ;; parameter, so sweep the frame's windows as well.
+    (unless tabnum
+      (dolist (win (window-list frame))
+        (let ((buf (window-buffer win)))
+          (unless (memq buf list)
+            (push buf list)))))
+    (seq-filter #'buffer-live-p (delete-dups list))))
+
+;;;###autoload
+(defun tabspaces-local-buffer-list (&optional frame)
+  "Return the buffers belonging to the current workspace.
+A non-nil value of FRAME selects a specific frame instead of the current
+one.
+
+This is the public entry point for integrating other packages with
+tabspaces; `tabspaces--buffer-list' is internal.  It is a suitable value
+for consult's `consult-buffer-list-function'.
+
+The list contains every buffer in the current tab, whether displayed,
+buried, or shown in a window without having been selected, plus any
+buffer named in `tabspaces-include-buffers'.  Buffers named in
+`tabspaces-exclude-buffers' are omitted unless they also appear in
+`tabspaces-include-buffers', which takes precedence.  Buffers removed
+with `tabspaces-remove-buffer' are not included.  The result is
+deduplicated and contains only live buffers."
+  (let ((local (tabspaces--buffer-list frame)))
+    (dolist (buf (buffer-list))
+      (when (and (member (buffer-name buf) tabspaces-include-buffers)
+                 (not (memq buf local)))
+        (push buf local)))
+    (seq-filter (lambda (buf)
+                  (or (member (buffer-name buf) tabspaces-include-buffers)
+                      (not (member (buffer-name buf) tabspaces-exclude-buffers))))
+                local)))
 
 ;;;; Project Workspace Helper Functions
 
@@ -528,11 +580,21 @@ to the selected directory DIR."
 ;;;;; Buffer Functions
 
 (defun tabspaces-remove-buffer (&optional buffer)
-  "Bury and remove BUFFER from current tabspace.
+  "Remove BUFFER from current tabspace.
 If BUFFER is nil, remove current buffer.  If
 `tabspaces-remove-to-default' is t then add the buffer to the
 default tabspace after remove, unless we're already in the default
-tabspace, in which case remove from the default as well."
+tabspace, in which case remove from the default as well.
+
+The buffer is taken out of both the `buffer-list' and the
+`buried-buffer-list' frame parameters, so it leaves the workspace
+entirely.  This is what distinguishes removal from burying: a buried
+buffer, such as one left behind by `quit-window', is still a member of
+the workspace and still appears in `tabspaces-local-buffer-list'.
+
+Removal is not permanent.  Displaying the buffer in this tab again, or
+burying it again, makes it a member once more, which is what makes
+`quit-window' behave sensibly on a buffer that was removed earlier."
   (let* ((buffer (get-buffer (or buffer (current-buffer))))
          (in-default-tab (string= (tabspaces--current-tab-name)
                                   tabspaces-default-tab)))
@@ -649,13 +711,15 @@ current tab.  NORECORD and FORCE-SAME-WINDOW are passed to
 
 (defun tabspaces-clear-buffers (&optional frame)
   "Clear the tabspace's buffer list, except for the current buffer.
-If FRAME is nil, use the current frame."
+If FRAME is nil, use the current frame.
+Buried buffers are cleared too, since they are workspace members."
   (interactive)
   (set-frame-parameter frame 'buffer-list
                        (list (if frame
                                  (with-selected-frame frame
                                    (current-buffer))
-                               (current-buffer)))))
+                               (current-buffer))))
+  (set-frame-parameter frame 'buried-buffer-list nil))
 
 ;;;;; Switch or Create Workspace
 ;; Some convenience functions for opening/closing workspaces and buffers.
@@ -1255,7 +1319,8 @@ Does nothing unless both `tabspaces-session' and
 
 ;;;###autoload
 (defun tabspaces-reuse-existing-buffer (name)
-  "Return the buffer named NAME iff it is in the current tab's `buffer-list'.
+  "Return the buffer named NAME iff it belongs to the current tab.
+Displayed and buried buffers both count as belonging to the tab.
 Return nil if no such buffer exists, or if a buffer with NAME exists
 but in another tab.  Intended for use inside restore-fns registered
 via `tabspaces-register-buffer-kind': call this first and fall

@@ -468,5 +468,224 @@ Regression test: `tabspaces--get-project-session-file' used to call
   (dolist (kind '(dired eshell shell vterm eat))
     (should (assq kind tabspaces--buffer-kind-handlers))))
 
+;;;; Batch safety
+
+(ert-deftest tabspaces-test-no-implicit-session-save-in-batch ()
+  "The automatic saver does nothing under `noninteractive'.
+`emacs -Q' does not change `user-emacs-directory', so an unguarded run
+overwrites the user's real session file on exit.  This suite runs in
+batch, so `noninteractive' is already non-nil here."
+  (should noninteractive)
+  (let ((saves 0))
+    (cl-letf (((symbol-function 'tabspaces-save-session)
+               (lambda () (cl-incf saves)))
+              ((symbol-function 'tabspaces-save-all-project-sessions)
+               (lambda () (cl-incf saves)))
+              ((symbol-function 'tabspaces-save-non-project-tabs)
+               (lambda () (cl-incf saves))))
+      (let ((tabspaces-session t)
+            (tabspaces-session-project-session-store nil))
+        (tabspaces--save-session-smart)
+        (should (= saves 0)))
+      (let ((tabspaces-session t)
+            (tabspaces-session-project-session-store 'project))
+        (tabspaces--save-session-smart)
+        (should (= saves 0))))))
+
+(ert-deftest tabspaces-test-no-exit-saver-installed-in-batch ()
+  "Enabling the mode in batch does not install the exit-time saver."
+  (let ((tabspaces-session t)
+        (tabspaces-session-auto-restore nil)
+        (tabspaces-echo-area-enable nil)
+        (kill-emacs-hook nil))
+    (unwind-protect
+        (progn
+          (tabspaces-mode 1)
+          (should-not (memq #'tabspaces--save-session-smart kill-emacs-hook))
+          (should-not tabspaces--session-auto-save-timer))
+      (tabspaces-mode -1))))
+
+(ert-deftest tabspaces-test-create-session-file-is-inert-in-batch ()
+  "`tabspaces--create-session-file' writes nothing under `noninteractive'."
+  (let ((tabspaces-session-file
+         (expand-file-name (make-temp-name "tabspaces-guard-") temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (tabspaces--create-session-file)
+          (should-not (file-exists-p tabspaces-session-file)))
+      (when (file-exists-p tabspaces-session-file)
+        (delete-file tabspaces-session-file)))))
+
+;;;; Workspace membership
+
+;; A workspace contains displayed and buried buffers alike.  Burying, which
+;; is what `quit-window' does, hides a buffer inside its workspace; only
+;; `tabspaces-remove-buffer' takes it out.  See
+;; `tabspaces-test-remove-buffer-clears-frame-lists' above for the removal
+;; half of that contract.
+
+(defmacro tabspaces-tests--with-clean-frame (&rest body)
+  "Run BODY with a predictable frame buffer list and no session writes.
+`tabspaces-session' is bound to nil and `tabspaces-session-file' to a
+temp path.  The `noninteractive' guards in `tabspaces--save-session-smart'
+and `tabspaces--create-session-file' are the real protection, since
+`emacs -Q' does not change `user-emacs-directory'; these bindings are a
+second layer."
+  (declare (indent 0) (debug t))
+  `(let ((tabspaces-session nil)
+         (tabspaces-session-auto-restore nil)
+         (tabspaces-session-auto-save-delay nil)
+         (tabspaces-session-file
+          (expand-file-name "tabspaces-test-session.el" temporary-file-directory))
+         (tabspaces-include-buffers '("*scratch*"))
+         (tabspaces-exclude-buffers nil)
+         (tabspaces-remove-to-default nil))
+     (tab-bar-tabs)
+     (unwind-protect
+         (progn
+           (tabspaces-tests--cleanup)
+           (set-frame-parameter nil 'buffer-list (list (get-buffer-create "*scratch*")))
+           (set-frame-parameter nil 'buried-buffer-list nil)
+           ,@body)
+       (tabspaces-tests--cleanup))))
+
+(defun tabspaces-tests--cleanup ()
+  "Kill the scratch buffers these tests create and drop stale references.
+Killing runs before as well as after each test: a reference to a killed
+buffer left in a frame parameter by an earlier test would otherwise show
+up in a later test's assertions."
+  (dolist (name '("tt-a" "tt-b" "tt-included"))
+    (when (get-buffer name) (kill-buffer name)))
+  (set-frame-parameter nil 'buffer-list
+                       (seq-filter #'buffer-live-p (frame-parameter nil 'buffer-list)))
+  (set-frame-parameter nil 'buried-buffer-list
+                       (seq-filter #'buffer-live-p (frame-parameter nil 'buried-buffer-list))))
+
+(ert-deftest tabspaces-test-displayed-but-unregistered-buffer-is-local ()
+  "A buffer shown via `set-window-buffer' without selection is a member.
+This is how compilation, magit and xref buffers arrive; they land in
+neither frame parameter."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (set-window-buffer (selected-window) buf)
+      (should-not (memq buf (frame-parameter nil 'buffer-list)))
+      (should-not (memq buf (frame-parameter nil 'buried-buffer-list)))
+      (should (memq buf (tabspaces-local-buffer-list))))))
+
+(ert-deftest tabspaces-test-buried-buffer-stays-local ()
+  "Burying hides a buffer within its workspace but does not remove it.
+`quit-window' buries, so pressing q must not drop a buffer from the
+workspace."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (bury-buffer buf)
+      (should-not (memq buf (frame-parameter nil 'buffer-list)))
+      (should (memq buf (frame-parameter nil 'buried-buffer-list)))
+      (should (memq buf (tabspaces-local-buffer-list)))
+      (should (tabspaces--local-buffer-p buf)))))
+
+(ert-deftest tabspaces-test-burying-a-removed-buffer-readds-it ()
+  "Burying a removed buffer puts it back in the workspace.
+`bury-buffer' conses onto `buried-buffer-list' unconditionally, so this
+is Emacs' behavior rather than something tabspaces chooses.  It is also
+the right outcome: in ordinary use a buffer can only be buried from a
+window, and a buffer in one of the tab's windows is a member of the
+workspace again by that fact alone.  Pinned here so a future change that
+tries to track removal as separate state has to argue with this test."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (tabspaces-remove-buffer buf)
+      (should-not (memq buf (tabspaces-local-buffer-list)))
+      (bury-buffer buf)
+      (should (memq buf (tabspaces-local-buffer-list))))))
+
+(ert-deftest tabspaces-test-local-buffer-list-deduplicates ()
+  "`*scratch*' is both an include-buffer and normally in the frame list.
+Without deduplication it would be returned twice on nearly every call,
+and `consult--buffer-query' does not deduplicate."
+  (tabspaces-tests--with-clean-frame
+    (let ((names (mapcar #'buffer-name (tabspaces-local-buffer-list))))
+      (should (equal 1 (seq-count (lambda (n) (equal n "*scratch*")) names))))))
+
+(ert-deftest tabspaces-test-local-buffer-list-excludes-dead-buffers ()
+  "A killed buffer never appears in the list."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (should (memq buf (tabspaces-local-buffer-list)))
+      (kill-buffer buf)
+      (should-not (memq buf (tabspaces-local-buffer-list)))
+      (should (seq-every-p #'buffer-live-p (tabspaces-local-buffer-list))))))
+
+(ert-deftest tabspaces-test-local-buffer-list-adds-include-buffers ()
+  "An include-buffer created after the tab existed is still a member.
+`tabspaces-reset-buffer-list' runs only at tab creation and only
+removes, so such a buffer never enters the frame list on its own.  This
+is why the consult integration points at `tabspaces-local-buffer-list'
+rather than at `consult--frame-buffer-list'."
+  (tabspaces-tests--with-clean-frame
+    (let ((tabspaces-include-buffers '("*scratch*" "tt-included"))
+          (buf (get-buffer-create "tt-included")))
+      (should-not (memq buf (frame-parameter nil 'buffer-list)))
+      (should (memq buf (tabspaces-local-buffer-list))))))
+
+(ert-deftest tabspaces-test-local-buffer-list-honors-exclude-buffers ()
+  "An exclude-buffer is dropped, and include takes precedence over it."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (let ((tabspaces-exclude-buffers '("tt-a")))
+        (should-not (memq buf (tabspaces-local-buffer-list))))
+      (let ((tabspaces-exclude-buffers '("tt-a"))
+            (tabspaces-include-buffers '("*scratch*" "tt-a")))
+        (should (memq buf (tabspaces-local-buffer-list)))))))
+
+(ert-deftest tabspaces-test-clear-buffers-clears-buried-list ()
+  "`tabspaces-clear-buffers' must empty both frame parameters.
+Clearing only `buffer-list' would silently leave buried members behind."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (bury-buffer buf)
+      (should (memq buf (frame-parameter nil 'buried-buffer-list)))
+      (tabspaces-clear-buffers)
+      (should-not (frame-parameter nil 'buried-buffer-list))
+      (should (equal (list (current-buffer)) (frame-parameter nil 'buffer-list))))))
+
+(ert-deftest tabspaces-test-hidden-tab-buffer-list-reads-wc-bbl ()
+  "The TABNUM branch reads both `wc-bl' and `wc-bbl'.
+`tab-bar' stashes both frame parameters on a hidden tab.  Reading only
+`wc-bl' would make `tabspaces-switch-buffer-and-tab' answer differently
+depending on which tab the user is standing in."
+  (tabspaces-tests--with-clean-frame
+    (let ((tab-bar-new-tab-choice "*scratch*")
+          (buf-a (get-buffer-create "tt-a"))
+          (buf-b (get-buffer-create "tt-b")))
+      (unwind-protect
+          (progn
+            ;; Tab 1: one displayed buffer and one buried buffer.
+            (switch-to-buffer buf-a)
+            (switch-to-buffer buf-b)
+            (switch-to-buffer "*scratch*")
+            (bury-buffer buf-b)
+            (let ((from-current (mapcar #'buffer-name (tabspaces--buffer-list))))
+              (should (member "tt-a" from-current))
+              (should (member "tt-b" from-current)))
+            ;; Make tab 1 hidden by moving to a second tab, then read it
+            ;; back by index.
+            (tab-bar-new-tab)
+            (let ((from-hidden (mapcar #'buffer-name (tabspaces--buffer-list nil 0))))
+              (should (member "tt-a" from-hidden))
+              (should (member "tt-b" from-hidden))))
+        (when (> (length (funcall tab-bar-tabs-function)) 1)
+          (tab-bar-close-tab))))))
+
 (provide 'tabspaces-tests)
 ;;; tabspaces-tests.el ends here
