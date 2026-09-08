@@ -1626,11 +1626,23 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
 (declare-function vm-imap-uid-validity-of "vm-message" (m))
 
 (defvar vm-imap-refused-flags)
+(defvar vm-imap-dropped-flags)
+(declare-function vm-imap-keyword-p "vm-imap" (flag))
+(declare-function vm-imap-fetch-response-flags "vm-imap" (response))
 
 (iter-defun vm-imap-net-store-flags-1 (sign uid flags)
   "Send one UID STORE of FLAGS, and read its answer.
 SIGN is \"+\" or \"-\" and UID the message's UID.  Signals
 `vm-imap-normal-error\\=' if the server refuses the command.
+
+Answers with (t . FLAGS), the flags the server reported the message to have
+afterwards, or nil where it reported nothing.  The two differ: a message left
+with no flags reports an empty list, which is the case this is here to catch,
+so \"none\" and \"did not say\" cannot share a value.  The answer costs a
+response line per message, so it is asked for only where there is something to
+check.  A store of nothing but the protocol's own flags uses `.SILENT\\=' and
+asks nothing; one carrying a keyword does not, a keyword being what a server
+may take and discard (emacs-vm/vm#601).
 
 By UID and not by sequence number.  The numbers VM holds are the ones the
 mailbox had when it last read it, and every expunge by anybody else shifts
@@ -1639,11 +1651,44 @@ client had deleted the first sent `STORE 2\\=', which by then was the third
 message, and the server marked that one read instead.  A UID means one
 message for as long as the UIDVALIDITY holds, and a UID the mailbox no longer
 has matches nothing rather than matching a stranger."
-  (iter-yield-from
-   (vm-imap-net-command (format "UID STORE %s %sFLAGS.SILENT %s"
-				uid sign (vm-imap-flag-list-string flags))
-			(format "UID STORE %sFLAGS.SILENT" sign)))
-  t)
+  (let* ((checking (seq-some #'vm-imap-keyword-p flags))
+	 (suffix (if checking "FLAGS" "FLAGS.SILENT"))
+	 (lines (iter-yield-from
+		 (vm-imap-net-command
+		  (format "UID STORE %s %s%s %s" uid sign suffix
+			  (vm-imap-flag-list-string flags))
+		  (format "UID STORE %s%s" sign suffix))))
+	 (reported nil))
+    (when checking
+      (dolist (response lines)
+	(when (vm-imap-response-matches response '* 'atom 'FETCH 'list)
+	  (setq reported (cons t (vm-imap-fetch-response-flags response))))))
+    reported))
+
+(defun vm-imap-net-note-dropped-flags (wanted reported)
+  "Complain about each of WANTED that REPORTED does not have, once per session.
+The server said OK and did not keep it.  REPORTED is what
+`vm-imap-net-store-flags-1\\=' answered: nil where the server said nothing,
+which is a server that did not answer the question rather than one that
+dropped anything.
+
+The flag is not remembered as refused and is offered again: unlike a refusal,
+which is an error the server means, this is a difference of opinion about what
+a mailbox can hold, and a mailbox that gains the ability keeps working."
+  (when reported
+    (let* ((have (cdr reported))
+	   (lost (seq-filter (lambda (flag)
+			       (and (vm-imap-keyword-p flag)
+				    (not (member (downcase flag) have))
+				    (not (member flag vm-imap-dropped-flags))))
+			     wanted)))
+      (when lost
+	(setq vm-imap-dropped-flags (append lost vm-imap-dropped-flags))
+	(vm-net-warn 0 (concat "IMAP server accepted and discarded the label%s"
+			       " %s: set here, absent there.  Gmail does this"
+			       " with every label; see the manual under Gmail")
+		     (if (cdr lost) "s" "")
+		     (mapconcat #'identity lost ", "))))))
 
 (iter-defun vm-imap-net-store-flags (sign uid flags)
   "Store FLAGS, one command if the server will take them, singly if not.
@@ -1664,8 +1709,13 @@ every flag is re-signalled, which leaves the message pending for a later try
     (when wanted
       (let ((error-data nil))
 	(condition-case caught
-	    (progn (iter-yield-from (vm-imap-net-store-flags-1 sign uid wanted))
-		   (setq accepted wanted))
+	    (let ((reported (iter-yield-from
+			     (vm-imap-net-store-flags-1 sign uid wanted))))
+	      (setq accepted wanted)
+	      ;; Only for the adding direction: a keyword still there after a
+	      ;; removal is a different fault, and not one Gmail has.
+	      (when (equal sign "+")
+		(vm-imap-net-note-dropped-flags wanted reported)))
 	  (vm-imap-normal-error (setq error-data caught)))
 	(when error-data
 	  ;; the server refused the lot; find out what it will take, unless
@@ -1673,7 +1723,11 @@ every flag is re-signalled, which leaves the message pending for a later try
 	  (dolist (flag (if (cdr wanted) wanted nil))
 	    (let ((one-failed nil))
 	      (condition-case caught
-		  (iter-yield-from (vm-imap-net-store-flags-1 sign uid (list flag)))
+		  (let ((reported (iter-yield-from
+				   (vm-imap-net-store-flags-1
+				    sign uid (list flag)))))
+		    (when (equal sign "+")
+		      (vm-imap-net-note-dropped-flags (list flag) reported)))
 		(vm-imap-normal-error (setq one-failed caught)))
 	      (if one-failed
 		  (progn (push flag refused)
@@ -3298,6 +3352,43 @@ of (SEQUENCE-NUMBER . UID), oldest first."
 	  (push (cons number uid) wanted))))
     (nreverse wanted)))
 
+(defun vm-imap-net-too-large (data wanted)
+  "Those of WANTED whose message DATA says is over `vm-imap-max-message-size'.
+Answers (KEEP SKIPPED SIZES): the entries to fetch, the entries not to, and
+the size of each skipped one in the same order.  Nil for the limit keeps
+everything.
+
+A maildrop is fetched into a local folder, which cannot go back to the server
+for a body later, so an oversize message is left where it is rather than
+fetched as its headers: that is what `vm-imap-max-message-size' says happens
+in a local folder.  The blocking path asked the reader about each one instead,
+where a reader was there to ask; nothing can be asked from inside a process
+filter, and a question per message on a maildrop of any size is not what a
+fetch should be."
+  (if (not (integerp vm-imap-max-message-size))
+      (list wanted nil nil)
+    (let ((keep nil) (skipped nil) (sizes nil))
+      (dolist (entry wanted)
+	(let ((size (string-to-number
+		     (or (nth 2 (assq (car entry) data)) "0"))))
+	  (if (> size vm-imap-max-message-size)
+	      (progn (push entry skipped) (push size sizes))
+	    (push entry keep))))
+      (list (nreverse keep) (nreverse skipped) (nreverse sizes)))))
+
+(defun vm-imap-net-say-what-was-too-large (source skipped sizes)
+  "Say that SKIPPED were left on SOURCE's server for being SIZES bytes.
+Named, since a message nobody is told about is one nobody knows to go and
+fetch by hand or to raise the limit for."
+  (when skipped
+    (vm-net-warn 0 (concat "%s: %d message%s left on the server, over"
+			   " vm-imap-max-message-size (%d): %s")
+		 (vm-safe-imapdrop-string source)
+		 (length skipped) (if (cdr skipped) "s" "")
+		 vm-imap-max-message-size
+		 (mapconcat (lambda (size) (format "%d bytes" size))
+			    sizes ", "))))
+
 (defun vm-imap-net-write-message (source start end folder-type)
   "Put the message between START and END of SOURCE into the current buffer.
 The same cleaning up the crash box wants: CRLF to LF, and the separators of
@@ -3358,7 +3449,9 @@ and nothing is displayed."
 	       (data (if (zerop count)
 			 nil
 		       (iter-yield-from (vm-imap-net-message-data 1 count))))
-	       (wanted (vm-imap-net-unretrieved data source retrieved))
+	       (sifted (vm-imap-net-too-large
+			data (vm-imap-net-unretrieved data source retrieved)))
+	       (wanted (nth 0 sifted))
 	       (work (generate-new-buffer " *vm-imap-crash*"))
 	       (written 0)
 	       (uids nil))
@@ -3367,6 +3460,8 @@ and nothing is displayed."
 		(with-current-buffer work
 		  (set-buffer-multibyte nil)
 		  (setq-local vm-folder-type folder-type))
+		(vm-imap-net-say-what-was-too-large
+		 source (nth 1 sifted) (nth 2 sifted))
 		(dolist (bunch (vm-imap-bunch-messages (mapcar #'car wanted)))
 		  (let ((arrived nil))
 		    (iter-yield-from

@@ -635,21 +635,19 @@ timing out.  It can be set to nil to never time out."
 		 (integer :tag "Seconds")))
 
 (defcustom vm-imap-max-message-size nil
-  "*The largest message size of IMAP messages that VM should retrieve
-automatically.  
+  "*The largest IMAP message VM retrieves.
 
-If VM encounters an IMAP message larger than this size, the action
-is as follows:
+Nil, the default, means no limit.  A message larger than this is handled as
+follows:
 
-- In IMAP folders, the message is treated as an external message if
-`vm-enable-external-messages' includes `imap'.  Otherwise it is
-retrieved.
+- In an IMAP folder, it is retrieved as its headers alone where
+`vm-enable-external-messages' includes `imap', and its body is fetched from
+the server when the message is read.  Otherwise it is retrieved whole.
 
-- In local folders, the message is skipped if it is part of
-automatic mail retrieval.  During interactive mail retrieval, obtained by
-running `vm-get-new-mail', VM queries you whether it should be retrieved.
-
-A nil value for `vm-imap-max-message-size' means no size limit."
+- From a maildrop, into a local folder, it is left on the server and VM says
+how large it was and what the limit is.  A local folder cannot go back to the
+server for a body later, so headers alone would leave a message that could
+never be read.  Raise the limit and the next `vm-get-new-mail' brings it in."
   :group 'vm-imap
   :type '(choice (const :tag "Unlimited" nil)
                  (integer :tag "Bytes")))

@@ -4286,21 +4286,19 @@ Default value: @code{1}
 @macro vmdocvmimapmaxmessagesize
 @defopt vm-imap-max-message-size
 @vindex vm-imap-max-message-size
-The largest message size of IMAP messages that VM should retrieve
-automatically.  
+The largest IMAP message VM retrieves.
 
-If VM encounters an IMAP message larger than this size, the action
-is as follows:
+Nil, the default, means no limit.  A message larger than this is handled as
+follows:
 
-- In IMAP folders, the message is treated as an external message if
-@code{vm-enable-external-messages} includes @code{imap}.  Otherwise it is
-retrieved.
+- In an IMAP folder, it is retrieved as its headers alone where
+@code{vm-enable-external-messages} includes @code{imap}, and its body is fetched from
+the server when the message is read.  Otherwise it is retrieved whole.
 
-- In local folders, the message is skipped if it is part of
-automatic mail retrieval.  During interactive mail retrieval, obtained by
-running @code{vm-get-new-mail}, VM queries you whether it should be retrieved.
-
-A nil value for @code{vm-imap-max-message-size} means no size limit.
+- From a maildrop, into a local folder, it is left on the server and VM says
+how large it was and what the limit is.  A local folder cannot go back to the
+server for a body later, so headers alone would leave a message that could
+never be read.  Raise the limit and the next @code{vm-get-new-mail} brings it in.
 @end defopt
 
 @end macro

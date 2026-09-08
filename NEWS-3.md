@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **An IMAP maildrop message over `vm-imap-max-message-size` is left on the
+    server, and VM says so** (emacs-vm/vm#822).  It used to ask, message by
+    message, whether to fetch it, delete it or skip it, showing the headers
+    to decide by.  Nothing can be asked from inside a process filter, and the
+    fetch is asynchronous now, so the question has gone: the message stays
+    where it is and a warning names its size and the limit.  Raise the limit
+    and the next `vm-get-new-mail` brings it in.
+
+    This is what the option always said happened in a local folder.  An IMAP
+    *folder* is unchanged: an oversize message there is fetched as its headers
+    where `vm-enable-external-messages` includes `imap`, and the body comes
+    from the server when it is read.
+
   * **`rpop` is no longer a POP authentication method** (emacs-vm/vm#822).
     It was RFC 1081's trusted-host scheme: a privileged source port stood
     for the authentication and the password went to the server under another

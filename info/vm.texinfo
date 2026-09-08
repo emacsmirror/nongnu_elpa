@@ -866,15 +866,18 @@ holds however large it is:
 
 @vindex vm-imap-max-message-size
 @findex vm-get-new-mail
-@vindex vm-auto-get-new-mail
 Another way to reduce the amount of wait is to control how the large messages
 should be handled.  If you set @code{vm-imap-max-message-size} to a positive
-numeric value, VM will not automatically retrieve messages larger than this
-size.  If VM is retrieving messages because you invoked
-@code{vm-get-new-mail} interactively, then VM will ask whether it should
-retrieve the large message.  If VM is retrieving messages automatically
-(e.g. @code{vm-auto-get-new-mail} is set non-@code{nil}) then VM will skip
-the large messages and you can retrieve them later.
+numeric value, VM will not retrieve messages larger than this size from a
+maildrop.  Each one is left on the server, and VM says how large it was and
+what the limit is; raise the limit and the next @code{vm-get-new-mail} brings
+it in.  In earlier releases VM asked, message by message, whether to retrieve
+it, delete it or leave it, and showed you its headers to decide by.
+
+This is about a maildrop, fetched into a local folder, which cannot go back to
+the server for a body later.  In an @acronym{IMAP} folder an oversize message
+is retrieved as its headers alone where @code{vm-enable-external-messages}
+includes @code{imap}, and its body is fetched when you read it.
 
 @cindex expunging, @acronym{IMAP} messages
 @cindex compacting, @acronym{IMAP} servers

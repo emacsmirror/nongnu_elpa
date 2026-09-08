@@ -3467,6 +3467,183 @@ would have a folder of headers with no way to read any of them."
       (should (equal (vm-imap-net-test--get-mail mock) 1))
       (should-not (vm-imap-mock-received-p mock "BODY.PEEK\\[HEADER\\]")))))
 
+;;; A keyword the server takes and discards (emacs-vm/vm#601)
+
+(defmacro vm-imap-net-test--warnings (&rest body)
+  "Run BODY and answer with what it warned about, newest last.
+The driver warns with `vm-net-warn', which goes through `vm-warn'."
+  (declare (indent 0) (debug t))
+  `(let ((said nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _seconds format &rest args)
+                  (push (apply #'format format args) said))))
+       ,@body)
+     (nreverse said)))
+
+(iter-defun vm-imap-net-test--store-flags (sign uid flags)
+  "Log in, select INBOX and store FLAGS on UID, answering what was accepted."
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select "INBOX"))
+  (let ((accepted (iter-yield-from (vm-imap-net-store-flags sign uid flags))))
+    (vm-imap-net-logout)
+    accepted))
+
+(ert-deftest vm-imap-net-test-a-discarded-keyword-is-reported ()
+  "A server that answers OK to a keyword and does not keep it is complained
+about, naming the keyword.  This is Gmail: a VM label is an IMAP keyword, and
+Gmail takes the STORE, says OK, and stores nothing, so the label was lost with
+nothing said at any point."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice) :drops-keywords t)
+    (let ((said (vm-imap-net-test--warnings
+                  (vm-imap-net-test--run
+                   mock (vm-imap-net-test--store-flags "+" "1" '("important"))))))
+      (should (= (length said) 1))
+      (should (string-match-p "accepted and discarded" (car said)))
+      (should (string-match-p "important" (car said))))
+    ;; and the server really does not have it, which is the thing being detected
+    (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-net-test-a-kept-keyword-is-not-reported ()
+  "A server that keeps the keyword is not complained about.  The check has to
+be silent in the ordinary case, since it runs on every label VM stores."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice))
+    (let ((said (vm-imap-net-test--warnings
+                  (vm-imap-net-test--run
+                   mock (vm-imap-net-test--store-flags "+" "1" '("important"))))))
+      (should (equal said nil)))
+    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-net-test-a-discarded-keyword-is-reported-once ()
+  "Said once per session, not once per message: a folder of a thousand
+messages carrying the same label would otherwise complain a thousand times."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice vm-imap-net-test--bob)
+            :drops-keywords t)
+    (let ((said (vm-imap-net-test--warnings
+                  (vm-imap-net-test--run
+                   mock (vm-imap-net-test--store-two-flags)))))
+      (should (= (length said) 1)))))
+
+(iter-defun vm-imap-net-test--store-two-flags ()
+  "Store the same keyword on two messages of one session."
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (iter-yield-from (vm-imap-net-select "INBOX"))
+  (iter-yield-from (vm-imap-net-store-flags "+" "1" '("important")))
+  (iter-yield-from (vm-imap-net-store-flags "+" "2" '("important")))
+  (vm-imap-net-logout))
+
+(ert-deftest vm-imap-net-test-only-a-keyword-store-asks-for-the-flags-back ()
+  "The protocol's own flags are stored with `.SILENT', so the ordinary
+business of marking messages read costs no extra response; a store carrying a
+keyword asks, because a keyword is what a server may discard."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice))
+    (vm-imap-net-test--warnings
+      (vm-imap-net-test--run
+       mock (vm-imap-net-test--store-flags "+" "1" '("\\Seen"))))
+    (should (seq-find (lambda (line) (string-match-p "FLAGS\\.SILENT" line))
+                      (vm-imap-mock-log mock)))
+    (vm-imap-net-test--warnings
+      (vm-imap-net-test--run
+       mock (vm-imap-net-test--store-flags "+" "1" '("important"))))
+    (should (seq-find (lambda (line)
+                        (and (string-match-p "STORE" line)
+                             (string-match-p "+FLAGS (important)" line)))
+                      (vm-imap-mock-log mock)))))
+
+(ert-deftest vm-imap-net-test-a-dropped-keyword-is-still-offered ()
+  "Unlike a refused flag, a discarded one is sent again.  A refusal is an
+error the server means; this is a mailbox that cannot hold keywords, and one
+that gains the ability should start working without restarting Emacs."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice) :drops-keywords t)
+    (vm-imap-net-test--warnings
+      (vm-imap-net-test--run
+       mock (vm-imap-net-test--store-flags "+" "1" '("important"))))
+    (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1)))
+    ;; the server stops dropping, and the label lands without a restart
+    (setf (vm-imap-mock-drops-keywords mock) nil)
+    (vm-imap-net-test--warnings
+      (vm-imap-net-test--run
+       mock (vm-imap-net-test--store-flags "+" "1" '("important"))))
+    (should (member "important" (vm-imap-mock-flags mock "INBOX" 1)))))
+
+(ert-deftest vm-imap-net-test-a-removal-is-not-checked-for-a-dropped-keyword ()
+  "Only the adding direction is checked.  A keyword still there after a
+removal is a different fault, and not one Gmail has; asking on every removal
+would cost a response line for nothing."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice) :drops-keywords t)
+    (let ((said (vm-imap-net-test--warnings
+                  (vm-imap-net-test--run
+                   mock (vm-imap-net-test--store-flags "-" "1" '("important"))))))
+      (should (equal said nil)))))
+
+;;; A message too large for `vm-imap-max-message-size' (emacs-vm/vm#822)
+
+(defconst vm-imap-net-test--whale
+  (concat "From: whale@example.com\nSubject: enormous\n\n"
+          (make-string 4000 ?x) "\n")
+  "A message over four thousand bytes, for the size limit.")
+
+(ert-deftest vm-imap-net-test-a-message-over-the-limit-is-left-on-the-server ()
+  "A maildrop message over `vm-imap-max-message-size' is not fetched, and the
+rest of the mail still is.  It is left on the server rather than fetched as
+its headers: a local folder cannot go back for the body later, which is what
+the option says happens there."
+  (let ((vm-imap-max-message-size 2000)
+        (said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _seconds format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-imap-net-test--spooling (mock :messages
+                                        (list vm-imap-net-test--alice
+                                              vm-imap-net-test--whale
+                                              vm-imap-net-test--bob))
+        (vm-get-new-mail)
+        (should (vm-imap-net-wait nil 10))
+        (should (equal (mapcar #'vm-su-subject vm-message-list)
+                       '("badgers" "otters")))
+        ;; still on the server, so raising the limit would get it
+        (should (equal (length (vm-imap-mock-messages mock "INBOX")) 3))))
+    (let ((about-size (seq-filter (lambda (line)
+                                    (string-match-p "left on the server" line))
+                                  said)))
+      (should (= (length about-size) 1))
+      (should (string-match-p "vm-imap-max-message-size" (car about-size))))))
+
+(ert-deftest vm-imap-net-test-no-limit-fetches-every-message ()
+  "Nil for the limit fetches everything, which is the default.  The size
+check must not cost a message where no limit was asked for."
+  (let ((vm-imap-max-message-size nil))
+    (vm-imap-net-test--spooling (mock :messages
+                                      (list vm-imap-net-test--alice
+                                            vm-imap-net-test--whale))
+      (vm-get-new-mail)
+      (should (vm-imap-net-wait nil 10))
+      (should (equal (mapcar #'vm-su-subject vm-message-list)
+                     '("badgers" "enormous"))))))
+
+(ert-deftest vm-imap-net-test-a-skipped-message-is-not-remembered-as-fetched ()
+  "A message left for its size is not recorded in `vm-imap-retrieved-messages'.
+Recorded, it would never be fetched even after the limit was raised."
+  (let ((vm-imap-max-message-size 2000))
+    (cl-letf (((symbol-function 'vm-warn) #'ignore))
+      (vm-imap-net-test--spooling (mock :messages
+                                        (list vm-imap-net-test--alice
+                                              vm-imap-net-test--whale))
+        (vm-get-new-mail)
+        (should (vm-imap-net-wait nil 10))
+        (should (equal (length vm-message-list) 1))
+        ;; the limit goes up, and the message arrives on the next look
+        (let ((vm-imap-max-message-size 8000))
+          (vm-get-new-mail)
+          (should (vm-imap-net-wait nil 10))
+          (should (equal (mapcar #'vm-su-subject vm-message-list)
+                         '("badgers" "enormous"))))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
