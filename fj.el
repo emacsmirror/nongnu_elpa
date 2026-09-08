@@ -2360,10 +2360,16 @@ URL of a Forgejo repository."
          (components (string-split (string-trim-left
                                     (string-trim-right path ".git") "/")
                                    "/")))
-    ;; In case the protocol prefix is missing, e.g. "git@...", the
+    ;; Maxim: In case the protocol prefix is missing, e.g. "git@...", the
     ;; host name appears in the result; pick only the last two
     ;; components to avoid returning it.
-    (last components 2)))
+    
+    ;; martianh: this also needs to work for links to items, e.g.
+    ;; "https://codeberg.org/guix/guix/pulls/7383", so:
+    (if (string-prefix-p "git@" (car components))
+        ;; we have a git@host.com in the result, skip it:
+        (take 2 (cdr components))
+      (take 2 components))))
 
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
