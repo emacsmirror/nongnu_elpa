@@ -2043,10 +2043,9 @@ TOOT is the data for the quoting toot."
          (cw (not (string-empty-p
                    (mastodon-tl--field 'spoiler_text toot))))
          (quoted (alist-get 'quoted_status data))
-         (foldable
-          (and mastodon-tl--fold-toots-at-length
-               (length> (alist-get 'content quoted)
-                        mastodon-tl--fold-toots-at-length))))
+         (rendered (mastodon-tl--content quoted))
+         (foldable (and mastodon-tl--fold-toots-at-length
+                        (length> rendered mastodon-tl--fold-toots-at-length))))
     (let-alist quoted
       (let ((filters (when .filtered
                        (mastodon-tl--current-filters .filtered))))
@@ -2083,10 +2082,9 @@ TOOT is the data for the quoting toot."
              (propertize ;; buttonize quoted toot body
               ;; quoted text:
               (if foldable
-                  (mastodon-tl--fold-body
-                   (mastodon-tl--content quoted)
-                   (mastodon-search--format-heading "click for full toot"))
-                (mastodon-tl--content quoted))
+                  (mastodon-tl--fold-body rendered
+                               (mastodon-search--format-heading "click for full toot"))
+                rendered)
               'button t
               'keymap mastodon-tl--link-keymap
               'help-echo "Load quoted toot"
