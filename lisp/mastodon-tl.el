@@ -2042,7 +2042,11 @@ TOOT is the data for the quoting toot."
          ;; CW status of quoting toot:
          (cw (not (string-empty-p
                    (mastodon-tl--field 'spoiler_text toot))))
-         (quoted (alist-get 'quoted_status data)))
+         (quoted (alist-get 'quoted_status data))
+         (foldable
+          (and mastodon-tl--fold-toots-at-length
+               (length> (alist-get 'content quoted)
+                        mastodon-tl--fold-toots-at-length))))
     (let-alist quoted
       (let ((filters (when .filtered
                        (mastodon-tl--current-filters .filtered))))
@@ -2078,7 +2082,11 @@ TOOT is the data for the quoting toot."
              "\n"
              (propertize ;; buttonize quoted toot body
               ;; quoted text:
-              (mastodon-tl--content quoted)
+              (if foldable
+                  (mastodon-tl--fold-body
+                   (mastodon-tl--content quoted)
+                   (mastodon-search--format-heading "click for full toot"))
+                (mastodon-tl--content quoted))
               'button t
               'keymap mastodon-tl--link-keymap
               'help-echo "Load quoted toot"
@@ -2316,13 +2324,14 @@ mastodon-content-warning-body."
      'mastodon-content-warning-body cw
      'invisible invis)))
 
-(defun mastodon-tl--fold-body (body)
+(defun mastodon-tl--fold-body (body &optional heading)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
          (cw (get-text-property (1- (length body))
                                 'mastodon-content-warning-body body))
-         (heading (mastodon-tl--read-more-or-less "MORE" cw invis))
+         (heading (or heading
+                      (mastodon-tl--read-more-or-less "MORE" cw invis)))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
