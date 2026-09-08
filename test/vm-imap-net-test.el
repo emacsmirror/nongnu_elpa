@@ -3453,6 +3453,41 @@ signal is what sent the work to the blocking path."
       (should (string-match-p "kerberos_v4" message))
       (should (string-match-p "login, cram-md5 or preauth" message)))))
 
+;;; The message size limit, on the driver (emacs-vm/vm#822)
+;;
+;; `vm-imap-max-message-size' with `vm-enable-external-messages' naming imap
+;; means a message over the limit is fetched as headers only, its body left
+;; on the server.  The coverage for this was against the blocking path, which
+;; is going, and the driver had none -- so it is written here first, and the
+;; blocking tests go after.
+
+(ert-deftest vm-imap-net-test-a-message-over-the-limit-comes-as-headers ()
+  "REGRESSION: a message larger than the limit is fetched headers-only.
+The body is left on the server, which is what `vm-enable-external-messages'
+asks for.  BODY.PEEK[HEADER] rather than BODY.PEEK[] is how the wire shows
+it."
+  (let ((vm-imap-max-message-size 10)
+        (vm-enable-external-messages '(imap)))
+    (vm-imap-net-test--visiting (mock)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
+      (vm-imap-mock-forget-commands mock)
+      (should (equal (vm-imap-net-test--get-mail mock) 2))
+      (should (equal (length vm-message-list) 2))
+      (should (vm-imap-mock-received-p mock "BODY.PEEK\\[HEADER\\]")))))
+
+(ert-deftest vm-imap-net-test-the-limit-means-nothing-without-external-messages ()
+  "REGRESSION: the limit is ignored unless external messages are enabled.
+The whole message comes down, since there is nowhere to leave a body: VM
+would have a folder of headers with no way to read any of them."
+  (let ((vm-imap-max-message-size 10)
+        (vm-enable-external-messages nil))
+    (vm-imap-net-test--visiting (mock)
+      (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+      (vm-imap-mock-forget-commands mock)
+      (should (equal (vm-imap-net-test--get-mail mock) 1))
+      (should-not (vm-imap-mock-received-p mock "BODY.PEEK\\[HEADER\\]")))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
