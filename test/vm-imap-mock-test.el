@@ -484,6 +484,38 @@ and closes the mailbox, which is what expunges them."
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))))
 
+(ert-deftest vm-imap-mock-test-expunging-spares-what-was-never-retrieved ()
+  "REGRESSION: a message VM has no copy of survives the expunge.
+
+`vm-expunge-imap-messages' deletes what the folder recorded as retrieved and
+nothing else.  Three messages on the server and two recorded, so the third
+has to be there afterwards; a command that deleted whatever it found would
+pass `expunging-what-has-been-retrieved' above, which retrieves both of its
+two and expects an empty mailbox.
+
+The coverage for this was against the blocking path (emacs-vm/vm#822), which
+had no equivalent here.  How it is done is worth knowing and is not visible
+from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
+implicit expunge does the deleting (RFC 3501 6.4.2).  No EXPUNGE command is
+sent, so a test looking for one would conclude nothing had happened."
+  (vm-imap-mock-test--spooling
+      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
+    (vm-get-new-mail)
+    (vm-imap-net-wait nil 30)
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
+    ;; a third arrives that this folder never fetched
+    (vm-imap-mock-add-message mock "INBOX"
+                              "From: carol@example.com\nSubject: never fetched\n\nA body.\n")
+    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 3))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (vm-expunge-imap-messages))
+    (should (vm-imap-mock-test--wait-until
+             (lambda () (equal 1 (length (vm-imap-mock-messages mock "INBOX"))))))
+    ;; and it is the one VM never had
+    (let ((text (vm-imap-mock-message-text
+                 (car (vm-imap-mock-messages mock "INBOX")))))
+      (should (string-match-p "Subject: never fetched" text)))))
+
 (ert-deftest vm-imap-mock-test-expunging-forgets-only-what-was-deleted ()
   "What the server deleted is forgotten and what it did not is kept.
 
