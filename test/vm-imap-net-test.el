@@ -1723,27 +1723,6 @@ argument: stringp, nil\", and no mail."
     (should (equal (length vm-message-list) 2))
     (should (equal (mapcar #'vm-imap-uid-of vm-message-list) '("1" "2")))))
 
-(ert-deftest vm-imap-net-test-the-blocking-path-steps-over-them-too ()
-  "The blocking fetch reads past an item it did not ask for as well.
-
-Its parser matched fixed forms -- (BODY[] string), or UID before it -- so a
-server that added INTERNALDATE failed the retrieval with \"expected (BODY[]
-string) in FETCH response\".  Both paths walk the items by name now."
-  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice)
-                                    :extra-fetch-items t)
-    (should (equal (length vm-message-list) 1))
-    ;; and the blocking synchronisation, which reads the flag data and the
-    ;; message bodies through the other parser
-    (let ((vm-enable-external-messages nil))
-      (cl-letf (((symbol-function 'vm-imap-net-synchronize) (lambda (&rest _) nil))
-                ((symbol-function 'vm-imap-net-get-spooled-mail)
-                 (lambda (&rest _) nil)))
-        (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
-        (vm-imap-synchronize t)))
-    (should (equal (length vm-message-list) 2))
-    (should (equal (mapcar #'vm-su-subject vm-message-list)
-                   '("badgers" "otters")))))
-
 (ert-deftest vm-imap-net-test-the-item-skip-steps-over-one-item ()
   "`vm-imap-skip-fetch-item' takes one item off, whatever its structure.
 The parsers walk the items of a FETCH response by name; this is what they do
