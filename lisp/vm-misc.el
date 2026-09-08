@@ -1577,6 +1577,43 @@ how it marked its own soft breaks; VM never unwrapped them."
 	    (random 1000000)
 	    hostname)))
 
+(defvar vm-session-trace-max-size)
+
+(defun vm-insert-one-session-trace (buffer)
+  "Insert BUFFER's text, the middle left out if it is too long to send.
+`vm-session-trace-max-size' says how much; half of it comes from the start and
+half from the end, which are the two ends that say anything.  Nil carries the
+whole trace."
+  (let* ((size (buffer-size buffer))
+	 (limit vm-session-trace-max-size))
+    (if (or (null limit) (<= size limit))
+	(insert-buffer-substring buffer)
+      ;; the positions are BUFFER's, read here rather than by making it
+      ;; current: `insert-buffer-substring' inserts into the buffer that is
+      ;; current, so making BUFFER current copies the trace into itself
+      (let* ((first (with-current-buffer buffer (point-min)))
+	     (last (with-current-buffer buffer (point-max)))
+	     (half (/ limit 2)))
+	(insert-buffer-substring buffer first (+ first half))
+	(insert (format (concat "\n[%d characters left out of the middle of"
+				" this trace; set vm-session-trace-max-size"
+				" to nil for the whole of it]\n")
+			(- size limit)))
+	(insert-buffer-substring buffer (- last half) last)))))
+
+(defun vm-insert-session-traces (protocol buffers)
+  "Insert the text of BUFFERS into a bug report, newest first.
+PROTOCOL names them in the heading, \"IMAP\" or \"POP\".  A dead buffer is
+named and skipped rather than left out silently: a report that is missing a
+session says so."
+  (insert "\n\n" protocol " Trace buffers - most recent first\n\n")
+  (dolist (buffer buffers)
+    (insert "----" (format "%s" buffer) "----------\n")
+    (if (buffer-live-p buffer)
+	(vm-insert-one-session-trace buffer)
+      (insert "(this buffer is gone)\n")))
+  (insert "--------------------------------------------------\n"))
+
 (defun vm-keep-some-buffers (buffer ring-variable number-to-keep 
 				    &optional rename-prefix)
   "Keep the BUFFER in the variable RING-VARIABLE, with NUMBER-TO-KEEP

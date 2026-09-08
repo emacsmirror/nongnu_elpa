@@ -3434,6 +3434,25 @@ List of command line switches to pass to Opera.
 
 @end macro
 
+@macro vmdocvmsessiontracemaxsize
+@defopt vm-session-trace-max-size
+@vindex vm-session-trace-max-size
+The most of one session trace a bug report carries, in characters.
+
+A session that fetched the UID and flags of every message in a large mailbox
+leaves most of a megabyte in its trace, and a bug report of that size cannot
+be sent.  Beyond this, the middle of the trace is left out and the report says
+how much: the start says what the server is and what was asked of it, the end
+says where it went wrong, and the thousands of identical FETCH lines between
+them say nothing twice.
+
+Nil carries every trace whole.
+
+Default value: @code{100000}
+@end defopt
+
+@end macro
+
 @macro vmdocvmsshprogram
 @defopt vm-ssh-program
 @vindex vm-ssh-program
@@ -4101,6 +4120,9 @@ Submit a bug report for VM’s IMAP support functionality.
 It is necessary to run @code{vm-imap-start-bug-report} before the problem
 occurrence and this command after the problem occurrence, in
 order to capture the trace of IMAP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it.
 @end deffn
 
 @end macro
@@ -8387,6 +8409,9 @@ Submit a bug report for VM’s POP support functionality.
 It is necessary to run @code{vm-pop-start-bug-report} before the problem
 occurrence and this command after the problem occurrence, in
 order to capture the trace of POP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it.
 @end deffn
 
 @end macro

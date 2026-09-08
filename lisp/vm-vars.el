@@ -7102,6 +7102,21 @@ UIDVALIDITY for each message to be expunged.")
   :group 'vm-imap
   :type '(choice (integer :tag "Number of session buffers kept"
 		 (const :tag "No session buffers kept" nil))))
+(defcustom vm-session-trace-max-size 100000
+  "*The most of one session trace a bug report carries, in characters.
+
+A session that fetched the UID and flags of every message in a large mailbox
+leaves most of a megabyte in its trace, and a bug report of that size cannot
+be sent.  Beyond this, the middle of the trace is left out and the report says
+how much: the start says what the server is and what was asked of it, the end
+says where it went wrong, and the thousands of identical FETCH lines between
+them say nothing twice.
+
+Nil carries every trace whole."
+  :group 'vm-helpers
+  :type '(choice (integer :tag "Characters of each trace")
+		 (const :tag "The whole of every trace" nil)))
+
 (defvar vm-imap-session-done nil)
 
 (defvar vm-imap-refused-flags nil

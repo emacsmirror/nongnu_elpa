@@ -5044,7 +5044,10 @@ May throw exceptions."
   "Submit a bug report for VM's IMAP support functionality.  
 It is necessary to run `vm-imap-start-bug-report' before the problem
 occurrence and this command after the problem occurrence, in
-order to capture the trace of IMAP sessions during the occurrence."
+order to capture the trace of IMAP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
@@ -5053,28 +5056,9 @@ order to capture the trace of IMAP sessions during the occurrence."
       (vm-inform 5 "Thank you. Preparing the bug report... ")
     (vm-inform 1 (concat "Consider running vm-imap-start-bug-report "
 			 "before the problem occurrence")))
-  (let ((process (if (eq vm-folder-access-method 'imap)
-		     (vm-folder-imap-process))))
-    (if process
-	(vm-imap-end-session process)))
-  (let ((trace-buffer-hook
-	 (lambda ()
-	   (let ((bufs vm-kept-imap-buffers) 
-		 buf)
-	     (insert "\n\n")
-	     (insert "IMAP Trace buffers - most recent first\n\n")
-	     (while bufs
-	       (setq buf (car bufs))
-	       (insert "----") 
-	       (insert (format "%s" buf))
-	       (insert "----------\n")
-	       (insert (with-current-buffer buf
-			 (buffer-string)))
-	       (setq bufs (cdr bufs)))
-	     (insert "--------------------------------------------------\n"))
-	   )))
-    (vm-submit-bug-report nil (list trace-buffer-hook))
-  ))
+  (let ((buffers (vm-imap-net-trace-buffers)))
+    (vm-submit-bug-report
+     nil (list (lambda () (vm-insert-session-traces "IMAP" buffers))))))
 
 
 ;;;###autoload

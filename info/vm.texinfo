@@ -9346,7 +9346,17 @@ run @code{vm-pop-start-bug-report}/@code{vm-imap-start-bug-report}
 before the problem occurrence and @code{vm-pop-submit-bug-report}
 /@code{vm-imap-submit-bug-report} after the problem occurrence.  All
 the server interactions during the interval are captured and
-automatically included in the bug-report.
+automatically included in the bug-report, the session still running
+included: nothing is closed to collect it, so a report can be made about a
+fetch while it is happening.
+
+@vindex vm-session-trace-max-size
+A session that read the flags of every message in a large mailbox leaves most
+of a megabyte behind it, which is more than a bug report can carry.  Beyond
+@code{vm-session-trace-max-size} the middle of a trace is left out and the
+report says how much: what is at the ends is what says anything, the start
+naming the server and what was asked of it and the end showing where it went
+wrong.  Set it to @code{nil} to send the whole of every trace.
 
 @node Internals, Reference, Bugs, Top
 @chapter VM Internals

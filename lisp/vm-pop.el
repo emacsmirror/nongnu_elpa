@@ -1338,7 +1338,10 @@ decides between an existing cache and the name a new one gets."
   "Submit a bug report for VM's POP support functionality.  
 It is necessary to run `vm-pop-start-bug-report' before the problem
 occurrence and this command after the problem occurrence, in
-order to capture the trace of POP sessions during the occurrence."
+order to capture the trace of POP sessions during the occurrence.
+
+The session still running is included, so a report can be made about a fetch
+while it is happening; nothing is closed to collect it."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
@@ -1346,28 +1349,9 @@ order to capture the trace of POP sessions during the occurrence."
 	  (y-or-n-p "Did you run vm-pop-start-bug-report earlier? "))
       (vm-inform 5 "Thank you. Preparing the bug report... ")
     (vm-inform 1 "Consider running vm-pop-start-bug-report before the problem occurrence"))
-  (let ((process (if (eq vm-folder-access-method 'pop)
-		     (vm-folder-pop-process))))
-    (if process
-	(vm-pop-end-session process)))
-  (let ((trace-buffer-hook
-	 (lambda ()
-	   (let ((bufs vm-kept-pop-buffers) 
-		 buf)
-	     (insert "\n\n")
-	     (insert "POP Trace buffers - most recent first\n\n")
-	     (while bufs
-	       (setq buf (car bufs))
-	       (insert "----") 
-	       (insert (format "%s" buf))
-	       (insert "----------\n")
-	       (insert (with-current-buffer buf
-			 (buffer-string)))
-	       (setq bufs (cdr bufs)))
-	     (insert "--------------------------------------------------\n"))
-	   )))
-    (vm-submit-bug-report nil (list trace-buffer-hook))
-  ))
+  (let ((buffers (vm-pop-net-trace-buffers)))
+    (vm-submit-bug-report
+     nil (list (lambda () (vm-insert-session-traces "POP" buffers))))))
 
 ;;;###autoload
 (defun vm-pop-set-default-attributes (m)

@@ -204,6 +204,181 @@ report."
     (should-not (string-match-p "s3cret" report))
     (should (string-match-p "mail\\.example\\.invalid" report))))
 
+;;; The trace of the session still running (emacs-vm/vm#822)
+
+(defun vm-bug-report-test--running-session (buffer)
+  "A live session whose process buffer is BUFFER.
+A process of its own, so `vm-net-session-live-p' answers t: the folder's
+session is what the report has to reach into, and a struct with no process
+is not one."
+  (let ((process (start-process "vm-bug-report-test" buffer "cat")))
+    (set-process-query-on-exit-flag process nil)
+    (vm-net-session :process process :name "imap" :timeout 5)))
+
+(ert-deftest vm-bug-report-test-the-report-carries-the-running-session ()
+  "The trace of the session still running is in the report.
+
+It is not in `vm-kept-imap-buffers', which a session joins only when it ends,
+and it is the one a reader is most likely reporting about.  The command used
+to end the folder's session to flush its trace into the ring; on the driver
+that would abort a fetch in flight."
+  (vm-bug-report-test--in-a-folder
+    (let* ((buffer (get-buffer-create "vm-bug-report-test-live"))
+           (session (vm-bug-report-test--running-session buffer))
+           (hooks nil))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (insert "VM IMAP 3 UID FETCH 1:* (UID RFC822.SIZE FLAGS)\n"))
+            (setq vm-imap-net-session session)
+            (cl-letf (((symbol-function 'vm-submit-bug-report)
+                       (lambda (&optional _pre post) (setq hooks post)))
+                      ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+              (vm-imap-submit-bug-report))
+            (with-temp-buffer
+              (dolist (hook hooks) (funcall hook))
+              (should (string-match-p "UID FETCH 1:\\*" (buffer-string))))
+            ;; and it was not ended to get there
+            (should (vm-net-session-live-p session)))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest vm-bug-report-test-a-running-session-is-not-reported-twice ()
+  "A session already in the ring is not written into the report twice."
+  (vm-bug-report-test--in-a-folder
+    (let* ((buffer (get-buffer-create "vm-bug-report-test-both"))
+           (session (vm-bug-report-test--running-session buffer)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (insert "VM IMAP 1 NOOP\n"))
+            (setq vm-imap-net-session session)
+            (setq vm-kept-imap-buffers (list buffer))
+            (should (equal (vm-imap-net-trace-buffers) (list buffer))))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest vm-bug-report-test-a-session-that-has-gone-is-named-not-skipped ()
+  "A buffer killed since it was kept is named in the report, not left out.
+A report short of a session should say so rather than look complete."
+  (with-temp-buffer
+    (let ((dead (get-buffer-create "vm-bug-report-test-dead")))
+      (kill-buffer dead)
+      (vm-insert-session-traces "IMAP" (list dead))
+      (let ((report (buffer-string)))
+        (should (string-match-p "IMAP Trace buffers" report))
+        (should (string-match-p "this buffer is gone" report))))))
+
+(ert-deftest vm-bug-report-test-no-session-at-all-still-makes-a-report ()
+  "With nothing kept and nothing running, the report has its heading and no
+sessions.  A reader who forgot to arm the trace keeping still gets a report."
+  (vm-bug-report-test--in-a-folder
+    (should (equal (vm-imap-net-trace-buffers) nil))
+    (should (equal (vm-pop-net-trace-buffers) nil))
+    (with-temp-buffer
+      (vm-insert-session-traces "IMAP" nil)
+      (should (string-match-p "IMAP Trace buffers" (buffer-string))))))
+
+(ert-deftest vm-bug-report-test-the-pop-report-carries-its-running-session ()
+  "The same for POP: the session still running is in the report."
+  (vm-bug-report-test--in-a-folder
+    (let* ((buffer (get-buffer-create "vm-bug-report-test-pop-live"))
+           (session (vm-bug-report-test--running-session buffer))
+           (hooks nil))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (insert "VM POP 1 RETR 4\n"))
+            (setq vm-pop-net-session session)
+            (cl-letf (((symbol-function 'vm-submit-bug-report)
+                       (lambda (&optional _pre post) (setq hooks post)))
+                      ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+              (vm-pop-submit-bug-report))
+            (with-temp-buffer
+              (dolist (hook hooks) (funcall hook))
+              (let ((report (buffer-string)))
+                (should (string-match-p "POP Trace buffers" report))
+                (should (string-match-p "RETR 4" report))))
+            (should (vm-net-session-live-p session)))
+        (let ((process (vm-net-session-process session)))
+          (when (process-live-p process) (delete-process process)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+;;; A trace too long to send
+
+(defmacro vm-bug-report-test--with-a-long-trace (var &rest body)
+  "Bind VAR to a buffer holding a long trace, and run BODY."
+  (declare (indent 1) (debug t))
+  `(let ((,var (generate-new-buffer "vm-bug-report-test-long")))
+     (unwind-protect
+         (progn
+           (with-current-buffer ,var
+             (insert "VM IMAP 1 OK [CAPABILITY IMAP4rev1] the start\n")
+             (dotimes (n 400)
+               (insert (format "* %d FETCH (UID %d RFC822.SIZE 1000 FLAGS ())\n"
+                               (1+ n) (1+ n))))
+             (insert "VM IMAP 9 BAD the end\n"))
+           ,@body)
+       (when (buffer-live-p ,var)
+         (with-current-buffer ,var (set-buffer-modified-p nil))
+         (kill-buffer ,var)))))
+
+(ert-deftest vm-bug-report-test-a-long-trace-keeps-both-ends ()
+  "A trace over the limit keeps its start and its end and says what went.
+
+A synchronise of a large mailbox leaves most of a megabyte of identical FETCH
+lines, and a report that size cannot be sent.  What matters is at the ends:
+the start says what the server is and what was asked, the end says where it
+went wrong."
+  (vm-bug-report-test--with-a-long-trace trace
+    (let ((vm-session-trace-max-size 500))
+      (with-temp-buffer
+        (vm-insert-session-traces "IMAP" (list trace))
+        (let ((report (buffer-string)))
+          (should (string-match-p "OK \\[CAPABILITY IMAP4rev1\\] the start" report))
+          (should (string-match-p "BAD the end" report))
+          (should (string-match-p "left out of the middle" report))
+          ;; and it really is shorter than the trace it came from
+          (should (< (length report) (buffer-size trace))))))))
+
+(ert-deftest vm-bug-report-test-a-long-trace-is-not-itself-altered ()
+  "The trace buffer is not written into while it is being reported.
+`insert-buffer-substring' inserts into the buffer that is current, so reading
+the positions by making the trace current copies it into itself."
+  (vm-bug-report-test--with-a-long-trace trace
+    (let ((before (with-current-buffer trace (buffer-string)))
+          (vm-session-trace-max-size 500))
+      (with-temp-buffer
+        (vm-insert-session-traces "IMAP" (list trace)))
+      (should (equal (with-current-buffer trace (buffer-string)) before)))))
+
+(ert-deftest vm-bug-report-test-a-short-trace-is-carried-whole ()
+  "Under the limit nothing is left out, and nothing is said about leaving
+anything out."
+  (vm-bug-report-test--with-a-long-trace trace
+    (let ((vm-session-trace-max-size 1000000))
+      (with-temp-buffer
+        (vm-insert-session-traces "IMAP" (list trace))
+        (let ((report (buffer-string)))
+          (should-not (string-match-p "left out of the middle" report))
+          (should (string-match-p "\\* 200 FETCH" report)))))))
+
+(ert-deftest vm-bug-report-test-no-limit-carries-every-trace-whole ()
+  "Nil for the limit carries the whole of it, which is the way to get a trace
+the elision has cut something out of."
+  (vm-bug-report-test--with-a-long-trace trace
+    (let ((vm-session-trace-max-size nil))
+      (with-temp-buffer
+        (vm-insert-session-traces "IMAP" (list trace))
+        (should-not (string-match-p "left out of the middle" (buffer-string)))
+        (should (string-match-p "\\* 200 FETCH" (buffer-string)))))))
+
 (provide 'vm-bug-report-test)
 
 ;;; vm-bug-report-test.el ends here

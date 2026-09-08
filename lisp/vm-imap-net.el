@@ -3001,6 +3001,24 @@ the folder's, and those buffers name it in `vm-mail-buffer'."
 	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
       (current-buffer)))
 
+(defun vm-imap-net-trace-buffers (&optional folder)
+  "The session buffers a bug report about FOLDER should carry, newest first.
+
+`vm-kept-imap-buffers', which holds the sessions that have ended, and the
+buffer of the session still running if there is one.  A running session is not
+in the ring yet, its buffer going there only when it ends, and it is the one a
+reader is most likely reporting about: the report used to end the folder's
+session to flush its trace, which on the driver would abort a fetch in flight
+rather than tidily close an idle connection."
+  (let* ((session (with-current-buffer (vm-imap-net-folder-buffer folder)
+		    vm-imap-net-session))
+	 (live (and session (vm-net-session-live-p session)
+		    (vm-net-session-buffer session))))
+    (seq-filter #'buffer-live-p
+		(if (and live (not (memq live vm-kept-imap-buffers)))
+		    (cons live vm-kept-imap-buffers)
+		  vm-kept-imap-buffers))))
+
 (defun vm-imap-net-busy-p (&optional folder)
   "Whether FOLDER, or the current buffer's folder, has a session running."
   (with-current-buffer (vm-imap-net-folder-buffer folder)

@@ -860,6 +860,19 @@ again."
 	   (buffer-live-p vm-mail-buffer) vm-mail-buffer)
       (current-buffer)))
 
+(defun vm-pop-net-trace-buffers (&optional folder)
+  "The session buffers a bug report about FOLDER should carry, newest first.
+`vm-kept-pop-buffers' and the buffer of the session still running, which is
+not in the ring yet.  See `vm-imap-net-trace-buffers'."
+  (let* ((session (with-current-buffer (vm-pop-net-folder-buffer folder)
+		    vm-pop-net-session))
+	 (live (and session (vm-net-session-live-p session)
+		    (vm-net-session-buffer session))))
+    (seq-filter #'buffer-live-p
+		(if (and live (not (memq live vm-kept-pop-buffers)))
+		    (cons live vm-kept-pop-buffers)
+		  vm-kept-pop-buffers))))
+
 (defvar vm-ml-session)
 (declare-function vm-update-summary-and-mode-line "vm-folder" ())
 
