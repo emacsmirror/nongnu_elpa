@@ -505,6 +505,22 @@ batch, so `noninteractive' is already non-nil here."
           (should-not tabspaces--session-auto-save-timer))
       (tabspaces-mode -1))))
 
+(ert-deftest tabspaces-test-no-auto-restore-in-batch ()
+  "Enabling the mode in batch does not restore a session.
+Restoring runs the registered restore-fns, and the eshell, shell, vterm
+and eat handlers spawn processes that a batch script never asked for."
+  (let ((restores 0))
+    (cl-letf (((symbol-function 'tabspaces--restore-session-on-startup)
+               (lambda () (cl-incf restores))))
+      (let ((tabspaces-session nil)
+            (tabspaces-session-auto-restore t)
+            (tabspaces-echo-area-enable nil))
+        (unwind-protect
+            (progn
+              (tabspaces-mode 1)
+              (should (= restores 0)))
+          (tabspaces-mode -1))))))
+
 (ert-deftest tabspaces-test-create-session-file-is-inert-in-batch ()
   "`tabspaces--create-session-file' writes nothing under `noninteractive'."
   (let ((tabspaces-session-file
@@ -611,6 +627,41 @@ and `consult--buffer-query' does not deduplicate."
     (let ((names (mapcar #'buffer-name (tabspaces-local-buffer-list))))
       (should (equal 1 (seq-count (lambda (n) (equal n "*scratch*")) names))))))
 
+(ert-deftest tabspaces-test-buffer-list-deduplicates-overlapping-frame-lists ()
+  "A buffer in both frame parameters is returned once.
+The two lists are normally disjoint, since `bury-buffer' moves a buffer
+from one to the other, but they can be made to overlap by direct
+`set-frame-parameter' calls, which is what
+`tabspaces-test-remove-buffer-clears-frame-lists' does.  Without
+`delete-dups' the buffer would appear twice, and
+`consult--buffer-query' does not deduplicate."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (set-frame-parameter nil 'buffer-list
+                           (cons buf (frame-parameter nil 'buffer-list)))
+      (set-frame-parameter nil 'buried-buffer-list (list buf))
+      (should (= 1 (seq-count (lambda (b) (eq b buf))
+                              (tabspaces--buffer-list)))))))
+
+;; Not covered here: that the window sweep passes `nomini' to
+;; `window-list', so an active minibuffer window never contributes its
+;; buffer.  No minibuffer window is ever active under --batch, so a test
+;; asserting it passes whether or not the argument is there.  Verified
+;; instead against the `window-list' docstring, which reads "MINIBUF nil
+;; or omitted means include the minibuffer window only if it's active",
+;; and by inspection in a live session.
+
+(ert-deftest tabspaces-test-current-tab-by-index-matches-implicit ()
+  "Addressing the current tab by index answers like a nil TABNUM.
+`tabspaces-switch-buffer-and-tab' iterates every tab by index, including
+the current one, so the window sweep has to run for both call shapes."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (set-window-buffer (selected-window) buf)
+      (should (memq buf (tabspaces--buffer-list)))
+      (let ((idx (tab-bar--current-tab-index)))
+        (should (memq buf (tabspaces--buffer-list nil idx)))))))
+
 (ert-deftest tabspaces-test-local-buffer-list-excludes-dead-buffers ()
   "A killed buffer never appears in the list."
   (tabspaces-tests--with-clean-frame
@@ -658,6 +709,56 @@ Clearing only `buffer-list' would silently leave buried members behind."
       (tabspaces-clear-buffers)
       (should-not (frame-parameter nil 'buried-buffer-list))
       (should (equal (list (current-buffer)) (frame-parameter nil 'buffer-list))))))
+
+;;;; Consumers of the workspace buffer list
+
+(ert-deftest tabspaces-test-reuse-existing-buffer-finds-buried ()
+  "A restore-fn can reuse a buried buffer instead of recreating it.
+`tabspaces-reuse-existing-buffer' is autoloaded public API that
+third-party buffer-kind handlers call, so buried buffers counting as
+members changes its documented result."
+  (tabspaces-tests--with-clean-frame
+    (let ((buf (get-buffer-create "tt-a")))
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (bury-buffer buf)
+      (should (eq buf (tabspaces-reuse-existing-buffer "tt-a"))))))
+
+(ert-deftest tabspaces-test-store-buffers-includes-buried ()
+  "Session save serializes buried buffers.
+The four savers all funnel through `tabspaces--store-buffers' over
+`tabspaces--buffer-list', so a buried file-visiting buffer that was
+previously dropped is now recorded."
+  (tabspaces-tests--with-clean-frame
+    (let* ((file (make-temp-file "tabspaces-test-buried" nil ".txt"))
+           (buf (find-file-noselect file)))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buf)
+            (switch-to-buffer "*scratch*")
+            (bury-buffer buf)
+            (should (memq buf (frame-parameter nil 'buried-buffer-list)))
+            (should (member file (tabspaces--store-buffers
+                                  (tabspaces--buffer-list)))))
+        (kill-buffer buf)
+        (delete-file file)))))
+
+(ert-deftest tabspaces-test-kill-buffers-close-workspace-kills-buried ()
+  "Closing a workspace kills its buried buffers, sparing include-buffers.
+Before buried buffers counted as members they survived the close and
+outlived the tab as orphans."
+  (tabspaces-tests--with-clean-frame
+    (let ((tab-bar-new-tab-choice "*scratch*")
+          (buf (get-buffer-create "tt-a")))
+      (tab-bar-new-tab)
+      (switch-to-buffer buf)
+      (switch-to-buffer "*scratch*")
+      (bury-buffer buf)
+      (should (memq buf (tabspaces--buffer-list)))
+      (tabspaces-kill-buffers-close-workspace)
+      (should-not (buffer-live-p buf))
+      ;; `*scratch*' is an include-buffer and must survive.
+      (should (buffer-live-p (get-buffer "*scratch*"))))))
 
 (ert-deftest tabspaces-test-hidden-tab-buffer-list-reads-wc-bbl ()
   "The TABNUM branch reads both `wc-bl' and `wc-bbl'.

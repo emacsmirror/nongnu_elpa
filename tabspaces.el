@@ -426,28 +426,34 @@ current one.  If TABNUM is nil, the current tab is used.  If it is
 non-nil, then specify a tab index in the given frame.
 
 Both displayed and buried buffers are returned: burying hides a buffer
-within its workspace but does not remove it from the workspace.  A
+within its workspace but does not remove it from the workspace.  For the
+current tab, whether reached by a nil TABNUM or by its own index, a
 buffer displayed in a window but missing from either frame parameter is
 included too, which happens when `display-buffer' or `set-window-buffer'
-puts a buffer on screen without selecting it.  The result is
+puts a buffer on screen without selecting it.  A hidden tab has no live
+windows to consult, so only its saved lists are read.  The result is
 deduplicated and contains only live buffers."
-  (let ((list
-         (if tabnum
-             (let ((tab (nth tabnum (frame-parameter frame 'tabs))))
-               (if (eq 'current-tab (car tab))
-                   (append (frame-parameter frame 'buffer-list)
-                           (reverse (frame-parameter frame 'buried-buffer-list)))
-                 ;; `tab-bar' stashes both frame parameters on a hidden
-                 ;; tab, as `wc-bl' and `wc-bbl'.  Read both, so hidden
-                 ;; tabs answer the same way the current tab does.
-                 (append (cdr (assq 'wc-bl tab))
-                         (reverse (cdr (assq 'wc-bbl tab))))))
-           (append (frame-parameter frame 'buffer-list)
-                   (reverse (frame-parameter frame 'buried-buffer-list))))))
+  (let* ((tab (and tabnum (nth tabnum (frame-parameter frame 'tabs))))
+         ;; A nil TABNUM means the current tab, and an explicit index can
+         ;; name it too.  Both have to answer the same way, so decide
+         ;; which tab is meant before reading anything.
+         (currentp (or (null tabnum) (eq 'current-tab (car tab))))
+         (list
+          (if currentp
+              (append (frame-parameter frame 'buffer-list)
+                      (reverse (frame-parameter frame 'buried-buffer-list)))
+            ;; `tab-bar' stashes both frame parameters on a hidden tab,
+            ;; as `wc-bl' and `wc-bbl'.  Read both, so hidden tabs answer
+            ;; the same way the current tab does.
+            (append (cdr (assq 'wc-bl tab))
+                    (reverse (cdr (assq 'wc-bbl tab)))))))
     ;; Visible buffers are not always registered in either frame
-    ;; parameter, so sweep the frame's windows as well.
-    (unless tabnum
-      (dolist (win (window-list frame))
+    ;; parameter, so sweep the frame's windows as well.  `nomini' keeps
+    ;; the minibuffer buffer out: this function is documented for use as
+    ;; consult's `consult-buffer-list-function', which runs while the
+    ;; minibuffer is active.
+    (when currentp
+      (dolist (win (window-list frame 'nomini))
         (let ((buf (window-buffer win)))
           (unless (memq buf list)
             (push buf list)))))
@@ -1832,7 +1838,10 @@ This uses Emacs `tab-bar' and `project.el'."
          (when (and tabspaces-session (not noninteractive))
            (add-hook 'kill-emacs-hook #'tabspaces--save-session-smart)
            (tabspaces--setup-session-auto-save))
-         (when tabspaces-session-auto-restore
+         ;; Not in batch either: restoring runs the registered restore-fns,
+         ;; and the eshell, shell, vterm and eat handlers spawn processes
+         ;; a script never asked for.
+         (when (and tabspaces-session-auto-restore (not noninteractive))
            (tabspaces--restore-session-on-startup))
          ;; Setup echo area display if enabled
          (tabspaces--echo-area-setup))
