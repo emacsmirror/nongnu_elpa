@@ -613,7 +613,10 @@ Calls `browse-url'."
 
 (defun mastodon-toot--toot-url ()
   "Return the URL of the base toot at point."
-  (let* ((toot (mastodon-toot--base-toot-or-item-json)))
+  (let* ((toot (or (mastodon-toot--base-toot-or-item-json)
+                   ;; if grabbing toot fails, maybe we are on a profile
+                   ;; with no statuses, so try that:
+                   (mastodon-tl--property 'profile-json))))
     (if (mastodon-tl--field 'reblog toot)
         (alist-get 'url (alist-get 'reblog toot))
       (alist-get 'url toot))))
