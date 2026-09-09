@@ -4695,15 +4695,19 @@ buffer ring.
 @node @acronym{MIME} characters, @acronym{MIME} headers, @acronym{MIME} attachments, Sending @acronym{MIME} Messages
 @unnumberedsec @acronym{MIME} characters
 
-@vindex vm-mime-7bit-composition-charset
-By default, when you type text into a composition buffer VM
-assumes that if all the character codes are less than 128, you
-are using the US-ASCII character set and that is the character
-set declared in the encoding of the message when it is sent.  If
-you are using some other character set, you must specify it by
-setting the variable @code{vm-mime-7bit-composition-charset}.  The
-value of this variable should be a string specifying the character
-set.
+@vindex vm-coding-system-priorities
+@findex vm-determine-proper-charset
+A composition holding nothing but @acronym{ASCII} is sent as
+@code{us-ascii}.  Otherwise VM looks for a character set that can hold
+everything you have typed: @code{vm-coding-system-priorities} is tried in
+order, and where none of them fits, @code{iso-2022-jp}, which can represent
+every character set Emacs knows at the cost of being awkward for a recipient
+outside East Asia.  So set @code{vm-coding-system-priorities} where the
+choice matters to you; a list such as @code{(utf-8)} settles it.
+
+You do not declare the character set of a composition, and there is nothing
+to set for one: Emacs knows which characters are in the buffer, and VM asks
+it (@code{vm-determine-proper-charset}).
 
 Character codes greater than 128 may not be transported reliably
 across the Internet in mail messages.  Some machines will refuse
