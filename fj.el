@@ -109,6 +109,8 @@ etc."
 
 (defvar-local fj-compose-milestone nil)
 
+(defvar-local fj-compose-upload nil)
+
 ;; instance vars
 
 (defvar fj-commit-status-types
@@ -4632,8 +4634,10 @@ LIMIT is for `re-search-forward''s bound argument."
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
-  "C-c C-k" #'fj-compose-cancel
-  "C-c C-c" #'fj-compose-send)
+  "C-c C-k"   #'fj-compose-cancel
+  "C-c C-c"   #'fj-compose-send
+  "C-c C-u"   #'fj-compose-read-upload
+  "C-c C-S-U" #'fj-compose-remove-upload)
 
 (define-minor-mode fj-compose-comment-mode
   "Minor mode for composing comments."
@@ -4650,7 +4654,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-m"   #'fj-compose-read-milestone
   "C-c C-o"   #'fj-compose-read-owner
   "C-c C-S-M" #'fj-compose-remove-milestone
-  "C-c C-S-L" #'fj-compose-remove-labels)
+  "C-c C-S-L" #'fj-compose-remove-labels
+  "C-c C-u"   #'fj-compose-read-upload
+  "C-c C-S-U" #'fj-compose-remove-upload)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -4664,6 +4670,15 @@ LIMIT is for `re-search-forward''s bound argument."
   (setq fj-compose-repo
         (fj-read-user-repo-do
          fj-compose-repo #'fj-repo-dynamic))
+  (fedi-post--update-status-fields))
+
+(defun fj-compose-read-upload ()
+  "Read a file to upload."
+  (interactive)
+  (setq fj-compose-upload
+        (expand-file-name
+         (read-file-name "File to upload: "
+                         nil nil :match)))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-owner ()
@@ -4731,6 +4746,11 @@ Update status fields."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-milestone))
 
+(defun fj-compose-remove-upload ()
+  "Remove milestone from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-upload))
+
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
 EDIT means we are editing.
@@ -4770,6 +4790,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name     . "milestone")
         (prop     . compose-milestone)
         (item-var . fj-compose-milestone)
+        (face     . fj-post-title-face))
+       ((name     . "upload")
+        (prop     . compose-upload)
+        (item-var . fj-compose-upload)
         (face     . fj-post-title-face)))
      init-text quote
      "fj-" fj-compose-autocomplete)
