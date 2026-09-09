@@ -3420,6 +3420,37 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
         ;; otherwise render first page of timeline:
         (fj-item-view-more* page)))))
 
+(defun fj-issue-dynamic (str)
+  "Dynamic issue completion for STR."
+  (fj-destructure-buf-spec (repo owner)
+    (let* ((json (fj-repo-get-issues repo owner "all" nil str)))
+      (cl-loop for x in json
+               collect (concat (number-to-string
+                                (alist-get 'number x))
+                               " | "
+                               (alist-get 'title x))))))
+
+(defun fj-issues-jump ()
+  "Prompt for an issue in current and view it."
+  (interactive)
+  (fj-with-item-tl
+   (fj-destructure-buf-spec (repo owner)
+     ;; the difficulty with this is we want to do dynamic
+     ;; completion matching on issue name and number. instead of
+     ;; annot functions, which means you can only match on one or
+     ;; the other, we concat the two then split again. but this is
+     ;; a hack way to do completing-read, and not all results
+     ;; tolerate it:
+     ;; FIXME: not all issues appear, e.g. search "dummy" in fj.el:
+     (let* ((choice (completing-read
+                     "Issue: "
+                     ;; :match arg fails for some matches, unsure why, so
+                     ;; we disable it:
+                     (completion-table-dynamic #'fj-issue-dynamic :switch)))
+            (num (string-trim
+                  (car (split-string choice "|")))))
+       (fj-item-view repo owner num)))))
+
 (defun fj-reload-paginated-pages (&optional end-page)
   "Reload a page of timeline items.
 Possibly reload more than one page. The idea is that if you reply to an
