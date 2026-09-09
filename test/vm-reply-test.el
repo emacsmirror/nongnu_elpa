@@ -2773,6 +2773,77 @@ make -- which is what happened when this guard was first written."
                           asked))
     (should-not (buffer-live-p composition))))
 
+(ert-deftest vm-reply-test-kill-this-buffer-keeps-the-draft ()
+  "REGRESSION: the key the reporter uses keeps the draft too.
+
+He had `kill-this-buffer' on a key -- \"<f3> runs the command kill-this-buffer
+(found in global-map)\" -- and lost drafts to it (emacs-vm/vm#824).  It is a
+menu-bar command that kills the current buffer, so it reaches `kill-buffer'
+and the guard on `kill-buffer-query-functions' with it; this pins the path he
+actually pressed rather than the `kill-buffer' call the other tests make.
+
+He is not available to check the fix, which is why it is tested here."
+  (require 'menu-bar)
+  (let ((dir (file-name-as-directory (make-temp-file "vm-reply-f3" t)))
+        (said nil)
+        (composition nil)
+        (before (buffer-list)))
+    (unwind-protect
+        (let ((vm-save-killed-messages-folder
+               (expand-file-name "postponed" dir))
+              (vm-folder-directory dir))
+          (cl-letf (((symbol-function 'vm-inform)
+                     (lambda (_level format &rest args)
+                       (push (apply #'format format args) said)))
+                    ;; a question here would be a failure of its own: nothing
+                    ;; should be asked when the draft is kept
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (&rest _) (error "asked, and should not have")))
+                    ((symbol-function 'y-or-n-p)
+                     (lambda (&rest _) (error "asked, and should not have"))))
+            (vm-mail)
+            (setq composition (current-buffer))
+            (goto-char (point-max))
+            (insert "The draft his f3 used to take.\n")
+            (kill-this-buffer))
+          (should-not (buffer-live-p composition))
+          (should (file-exists-p vm-save-killed-messages-folder))
+          (with-temp-buffer
+            (insert-file-contents vm-save-killed-messages-folder)
+            (should (string-match-p "draft his f3 used to take" (buffer-string))))
+          (should (seq-find (lambda (line) (string-match-p "kept as a draft" line))
+                            said)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-kill-this-buffer-asks-when-nothing-is-kept ()
+  "With keeping off, his key asks, and no is taken for an answer."
+  (require 'menu-bar)
+  (let ((vm-save-killed-message nil)
+        (asked nil)
+        (composition nil)
+        (before (buffer-list)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (prompt) (push prompt asked) nil)))
+          (vm-mail)
+          (setq composition (current-buffer))
+          (goto-char (point-max))
+          (insert "Ask me about this one.\n")
+          (kill-this-buffer)
+          (should (= (length asked) 1))
+          (should (string-match-p "has not been sent" (car asked)))
+          (should (buffer-live-p composition)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
