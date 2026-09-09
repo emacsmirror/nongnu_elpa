@@ -152,7 +152,7 @@ point does not move after the listed operations.  Example:
                  (repeat symbol)))
 
 (defcustom elfeed-search-clipboard-type 'PRIMARY
-  "Selects the clipboard `elfeed-search-yank' should use.
+  "Selects the clipboard `elfeed-search-copy-link' should use.
 Choices are the symbols PRIMARY, SECONDARY, or CLIPBOARD."
   :type '(choice (const PRIMARY) (const SECONDARY) (const CLIPBOARD)))
 
@@ -250,7 +250,8 @@ With \\[universal-argument] pressed before, modify all entries of the list."
   "c" #'elfeed-search-clear-filter
   "b" #'elfeed-search-browse-url
   "B" #'elfeed-search-browse-url-secondary
-  "y" #'elfeed-search-yank
+  "y" #'elfeed-search-copy-link
+  "w" #'elfeed-search-copy-link
   "u" #'elfeed-search-tag-unread
   "r" #'elfeed-search-untag-unread
   "n" #'next-line
@@ -276,7 +277,7 @@ With \\[universal-argument] pressed before, modify all entries of the list."
     ["Show entry" elfeed-search-show-entry]
     ["Browse entry" elfeed-search-browse-url]
     ["Browse secondary" elfeed-search-browse-url-secondary]
-    ["Copy URL" elfeed-search-yank]
+    ["Copy link" elfeed-search-copy-link]
     "--"
     ["Add tag" elfeed-search-tag]
     ["Remove tag" elfeed-search-untag]
@@ -1202,7 +1203,7 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive nil elfeed-search-mode)
   (elfeed-search-browse-url t))
 
-(defun elfeed-search-yank ()
+(defun elfeed-search-copy-link ()
   "Copy the selected feed items to clipboard and `kill-ring'."
   (interactive nil elfeed-search-mode)
   (let* ((entries (elfeed-search-selected))
@@ -1211,7 +1212,7 @@ the browser defined by `browse-url-secondary-browser-function'."
     (when entries
       (kill-new links-str)
       (gui-set-selection elfeed-search-clipboard-type links-str)
-      (message "Yanked: %s" links-str)
+      (message "Copied %s" links-str)
       (elfeed-search--after-action 'yank))))
 
 (defun elfeed-search--tag (query tags fun)
@@ -1562,6 +1563,8 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
   #'elfeed-search-tag-unread "4.1.1")
 (define-obsolete-function-alias 'elfeed-search-untag-all-unread
   #'elfeed-search-untag-unread "4.1.1")
+(define-obsolete-function-alias 'elfeed-search-yank
+  #'elfeed-search-copy-link "4.2.0")
 
 (provide 'elfeed-search)
 ;;; elfeed-search.el ends here

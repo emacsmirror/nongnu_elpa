@@ -110,7 +110,6 @@ All attachments are saved in the chosen directory."
   "s" #'elfeed-show-new-live-search
   "b" #'elfeed-show-visit
   "B" #'elfeed-show-visit-secondary
-  "y" #'elfeed-show-yank
   "u" #'elfeed-show-tag-unread
   "+" #'elfeed-show-tag
   "-" #'elfeed-show-untag
@@ -118,7 +117,9 @@ All attachments are saved in the chosen directory."
   "TAB" #'elfeed-show-next-link
   "M-TAB" #'shr-previous-link
   "<backtab>" #'shr-previous-link
-  "c" #'elfeed-kill-link-url-at-point
+  "c" #'elfeed-show-copy-url-at-point
+  "w" #'elfeed-show-copy-link
+  "y" #'elfeed-show-copy-link
   "<mouse-2>" #'shr-browse-url
   "A" #'elfeed-show-add-enclosure-to-playlist
   "P" #'elfeed-show-play-enclosure
@@ -132,8 +133,9 @@ All attachments are saved in the chosen directory."
   '("Elfeed Entry"
     ["Browse entry" elfeed-show-visit]
     ["Browse secondary" elfeed-show-visit-secondary]
-    ["Copy URL" elfeed-show-yank]
+    ["Copy link" elfeed-show-copy-link]
     ["Fetch link" elfeed-show-fetch-link]
+    ["Compose mail" elfeed-show-compose-mail]
     "--"
     ["Add tag" elfeed-show-tag]
     ["Remove tag" elfeed-show-untag]
@@ -323,13 +325,13 @@ the browser defined by `browse-url-secondary-browser-function'."
   (quit-window)
   (elfeed-search :live))
 
-(defun elfeed-show-yank ()
+(defun elfeed-show-copy-link ()
   "Copy the current entry link URL to the clipboard."
   (interactive nil elfeed-show-mode)
   (when-let* ((link (elfeed-entry-link elfeed-show-entry)))
     (kill-new link)
     (gui-set-selection 'PRIMARY link)
-    (message "Yanked: %s" link)))
+    (message "Copied %s" link)))
 
 (defun elfeed-show-tag (&rest tags)
   "Add TAGS to the displayed entry."
@@ -519,13 +521,13 @@ Prompts for ENCLOSURE-INDEX when called interactively."
       (forward-paragraph))
     (shr-next-link)))
 
-(defun elfeed-kill-link-url-at-point ()
+(defun elfeed-show-copy-url-at-point ()
   "Get link URL at point and store in `kill-ring'."
   (interactive nil elfeed-show-mode)
   (let ((url (or (elfeed-get-link-at-point)
                  (thing-at-point-url-at-point))))
     (if url
-        (progn (kill-new url) (message "%s" url))
+        (progn (kill-new url) (message "Copied %s" url))
       (call-interactively #'shr-copy-url))))
 
 (defun elfeed-show-compose-mail ()
@@ -688,6 +690,10 @@ content is stored in the entry metadata under the key :link-content."
 
 (define-obsolete-function-alias 'elfeed-search-new-live
   #'elfeed-show-new-live-search "4.1.1")
+(define-obsolete-function-alias 'elfeed-show-yank
+  #'elfeed-show-copy-link "4.2.0")
+(define-obsolete-function-alias 'elfeed-kill-link-url-at-point
+  #'elfeed-show-copy-url-at-point "4.2.0")
 
 (provide 'elfeed-show)
 ;;; elfeed-show.el ends here

@@ -89,7 +89,7 @@ selected at once by using an active region.
 - =RET=: view selected entry in a buffer
 - =b=: open selected entries in your browser
 - =B=: open selected entries in your secondary browser
-- =y=: copy selected entries URL to the clipboard
+- =w=: copy selected entries URL to the clipboard
 - =r=: tag selected entries as read (=C-u r= to tag all)
 - =u=: tag selected entries as unread (=C-u u= to tag all)
 - =+=: add a specific tag to selected entries
@@ -441,7 +441,7 @@ Inside the show buffer you have these key bindings available:
 - =p=: move to previous entry
 - =s=: restart live search
 - =u=: tag as unread
-- =y=: copy link of post
+- =w=: copy link of post
 - =P=: play enclosure with EMMS
 - =A=: add enclosure to EMMS playlist
 - =TAB=: go to next link
