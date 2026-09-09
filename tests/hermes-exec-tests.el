@@ -124,7 +124,8 @@
 (ert-deftest hermes-exec-test-skips-eval-when-client-disconnected ()
   "A dead connection makes the guarded evaluator skip the eval and report it."
   (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec--connection 'fake-conn))
+  (let ((hermes-exec-enabled t)
+        (hermes-exec--connection 'fake-conn))
     (cl-letf (((symbol-function 'process-live-p)
                (lambda (p) (not (eq p 'fake-conn)))))
       (let ((result (hermes-exec--evaluate-guarded
@@ -162,6 +163,7 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
          (hermes-exec--pending nil)
          (hermes-exec--active nil)
          (hermes-exec-enabled t)
+         (hermes-exec-token "approval-fixture")
          ,sent-var)
      (unwind-protect
          (cl-letf (((symbol-function 'hermes-exec--send-response)
@@ -195,7 +197,9 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (hermes-exec-enabled t)
         (hermes-exec-require-approval t))
     (unwind-protect
-        (cl-letf (((symbol-function 'hermes-exec--display-approval)
+        (cl-letf (((symbol-function 'hermes-exec--loopback-request-p)
+                   (lambda () t))
+                  ((symbol-function 'hermes-exec--display-approval)
                    (lambda (_buffer) nil))
                   ((symbol-function 'hermes-exec--maybe-prompt)
                    #'ignore))
@@ -625,7 +629,9 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   (let* ((hermes-exec-require-approval nil)
          (hermes-exec-max-request-bytes 1048576)
          (raw (hermes-exec-test--raw-request "{\"code\":\"(+ 1 2)\"}"))
-         (response (hermes-exec--request-response raw)))
+         (response (cl-letf (((symbol-function 'hermes-exec--loopback-request-p)
+                              (lambda () t)))
+                     (hermes-exec--request-response raw))))
     (should (string-prefix-p "HTTP/1.1 200 OK" response))))
 
 (ert-deftest hermes-exec-test-request-at-exact-cap-is-allowed ()
@@ -633,7 +639,9 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   (let* ((hermes-exec-require-approval nil)
          (raw (hermes-exec-test--raw-request "{\"code\":\"(+ 1 2)\"}"))
          (hermes-exec-max-request-bytes (string-bytes raw))
-         (response (hermes-exec--request-response raw)))
+         (response (cl-letf (((symbol-function 'hermes-exec--loopback-request-p)
+                              (lambda () t)))
+                     (hermes-exec--request-response raw))))
     (should (string-prefix-p "HTTP/1.1 200 OK" response))))
 
 ;;; Group 5: host resolution
@@ -705,12 +713,19 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
                  (hermes-exec-tests--request "Basic abc")))))
 
 (ert-deftest hermes-exec-test-authorized-without-token ()
-  "With no token configured every request is authorized."
+  "Without a token only an actual loopback boundary is authorized."
   (hermes-exec-tests--without-env-token
-   (let ((hermes-exec-token nil))
-     (should (hermes-exec--request-authorized-p (hermes-exec-tests--request)))
-     (should (hermes-exec--request-authorized-p
-              (hermes-exec-tests--request "Bearer anything"))))))
+   (let* ((hermes-exec-token nil)
+          (hermes-exec-port 0)
+          (hermes-exec--connection nil)
+          (hermes-exec--process (hermes-exec--start-server "127.0.0.1")))
+     (unwind-protect
+         (progn
+           (should (hermes-exec--request-authorized-p
+                    (hermes-exec-tests--request)))
+           (should (hermes-exec--request-authorized-p
+                    (hermes-exec-tests--request "Bearer anything"))))
+       (delete-process hermes-exec--process)))))
 
 (ert-deftest hermes-exec-test-authorized-with-token ()
   "A configured token requires a matching bearer header."
@@ -802,9 +817,181 @@ wins."
   (let ((conn (make-pipe-process :name "hermes-exec-test" :noquery t)))
     (unwind-protect
         (progn
-          (hermes-exec--accept nil conn nil)
-          (should (process-get conn 'hermes-exec-connection)))
+          (hermes-exec--accept 'owner conn nil)
+          (should (eq 'owner (process-get conn 'hermes-exec-connection))))
       (delete-process conn))))
+
+;;; Revocation and disposable socket regressions
+
+(ert-deftest hermes-exec-test-approval-rechecks-enabled-after-window-cleanup ()
+  "Revocation during approval cleanup must precede any evaluation."
+  (hermes-exec-test--with-pending proc sent
+    (let ((hermes-exec-test--canary nil))
+      (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary t)")
+      (cl-letf (((symbol-function 'hermes-exec--close-approval-window)
+                 (lambda () (setq hermes-exec-enabled nil))))
+        (hermes-exec-approve))
+      (should-not hermes-exec-test--canary)
+      (should (string-match-p "disabled" sent))
+      (should-not hermes-exec--active))))
+
+(ert-deftest hermes-exec-test-policy-callback-cannot-bypass-disable ()
+  "A run policy that disables the endpoint cannot evaluate afterwards."
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-test--canary nil)
+        (hermes-exec-require-approval
+         (lambda (_code) (setq hermes-exec-enabled nil))))
+    (should-not (plist-get (hermes-exec--eval-outcome
+                           "(setq hermes-exec-test--canary t)") :ok))
+    (should-not hermes-exec-test--canary)))
+
+(ert-deftest hermes-exec-test-token-removal-fails-closed ()
+  "Token removal cannot downgrade a retained non-loopback socket boundary."
+  (hermes-exec-tests--without-env-token
+   (hermes-exec-test--with-pending proc sent
+     (let ((hermes-exec-host "127.0.0.1")
+           (hermes-exec--process nil)
+           (hermes-exec--connection proc)
+           (hermes-exec-test--canary nil))
+       ;; Socket contacts, not the configured host or current listener, own
+       ;; authorization.  Simulate a non-loopback accepted socket without
+       ;; exposing a real listener outside the disposable loopback lab.
+       (cl-letf (((symbol-function 'process-contact)
+                  (lambda (_process key &rest _)
+                    (and (eq key :local) [100 64 0 1 8237]))))
+         (should (hermes-exec--request-authorized-p
+                  (hermes-exec-tests--request "Bearer approval-fixture")))
+         (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary t)")
+         (setq hermes-exec-token "rotated-fixture")
+         (should-not (hermes-exec--request-authorized-p
+                      (hermes-exec-tests--request "Bearer approval-fixture")))
+         (should (hermes-exec--request-authorized-p
+                  (hermes-exec-tests--request "Bearer rotated-fixture")))
+         (setq hermes-exec-token nil)
+         (should-not (hermes-exec--request-authorized-p
+                      (hermes-exec-tests--request)))
+         (should (string-prefix-p "HTTP/1.1 401"
+                                  (hermes-exec--dispatch
+                                   (hermes-exec-tests--request))))
+         (hermes-exec-approve)
+         (should-not hermes-exec-test--canary)
+         (should (string-match-p "requires a token" sent)))))))
+
+(ert-deftest hermes-exec-test-dead-listener-remains-auth-and-cleanup-owner ()
+  "A dead non-loopback owner cannot be replaced by loopback configuration."
+  (hermes-exec-tests--without-env-token
+   (let* ((owner (make-pipe-process :name "hermes-exec-test-owner" :noquery t))
+          (conn (make-pipe-process :name "hermes-exec-test-owned" :noquery t))
+          (foreign (make-pipe-process :name "hermes-exec-test-foreign" :noquery t))
+          (hermes-exec-host "127.0.0.1")
+          (hermes-exec-token nil)
+          (hermes-exec--process foreign)
+          (hermes-exec--connection conn)
+          (hermes-exec--pending nil)
+          (hermes-exec--active nil))
+     (unwind-protect
+         (progn
+           (hermes-exec--accept owner conn nil)
+           (hermes-exec--accept foreign foreign nil)
+           (delete-process owner)
+           (cl-letf (((symbol-function 'process-contact)
+                      (lambda (proc key &rest _)
+                        (when (eq key :local)
+                          (if (eq proc owner) [100 64 0 1 8237]
+                            [127 0 0 1 8237])))))
+             (should-not (hermes-exec--request-authorized-p
+                          (hermes-exec-tests--request))))
+           (setq hermes-exec--process owner)
+           (hermes-exec-stop)
+           (should-not (process-live-p conn))
+           (should (process-live-p foreign)))
+       (mapc #'delete-process (list owner conn foreign))))))
+
+(ert-deftest hermes-exec-test-unknown-socket-fails-closed ()
+  "A configured loopback host is not proof of an actual loopback listener."
+  (hermes-exec-tests--without-env-token
+   (let ((hermes-exec-token nil)
+         (hermes-exec-host "127.0.0.1")
+         (hermes-exec--process nil)
+         (hermes-exec--connection nil))
+     (should-not (hermes-exec--request-authorized-p
+                  (hermes-exec-tests--request))))))
+
+(defun hermes-exec-test--await (predicate)
+  "Pump disposable socket events until PREDICATE succeeds, at most two seconds."
+  (let ((deadline (+ (float-time) 2)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (should (funcall predicate))))
+
+(defun hermes-exec-test--socket-lifecycle (host &optional restart)
+  "Exercise no-token evaluation and dead-listener teardown on HOST.
+When RESTART is non-nil, replace the dead listener before stopping."
+  (hermes-exec-tests--without-env-token
+   (let ((hermes-exec-host host)
+         (hermes-exec-port 0)
+         (hermes-exec-enabled t)
+         (hermes-exec-token nil)
+         (hermes-exec-require-approval nil)
+         (hermes-exec--process nil)
+         (hermes-exec--pending nil)
+         (hermes-exec--active nil)
+         clients accepted server foreign response)
+     (unwind-protect
+         (progn
+           (hermes-exec-start)
+           (setq server hermes-exec--process
+                 foreign (hermes-exec--start-server host))
+           (should (process-live-p server))
+           (cl-labels ((connect (listener)
+                         (let ((client (make-network-process
+                                        :name "hermes-exec-test-client"
+                                        :host host
+                                        :service (process-contact listener :service)
+                                        :family (if (string-search ":" host) 'ipv6 'ipv4)
+                                        :noquery t :coding 'utf-8-unix
+                                        :filter (lambda (_proc chunk)
+                                                  (setq response (concat response chunk))))))
+                           (push client clients)
+                           (hermes-exec-test--await
+                            (lambda () (hermes-exec--live-connections listener)))
+                           client)))
+             (let ((client (connect server)))
+               (process-send-string client (hermes-exec-test--raw-request
+                                            "{\"code\":\"(+ 40 2)\"}"))
+               (hermes-exec-test--await (lambda () (not (process-live-p client))))
+               (should (string-match-p "\"result\":\"42\"" response)))
+             (connect server)
+             (connect foreign)
+             (setq accepted (car (hermes-exec--live-connections server)))
+             (delete-process server)
+             (should (process-live-p accepted))
+             (let ((hermes-exec--connection accepted))
+               (should (hermes-exec--request-authorized-p
+                        (hermes-exec-tests--request))))
+             (when restart
+               (hermes-exec-start)
+               (should (process-live-p hermes-exec--process))
+               (should-not (eq server hermes-exec--process))
+               (should-not (process-live-p accepted)))
+             (hermes-exec-stop)
+             (should-not (process-live-p accepted))
+             (should (hermes-exec--live-connections foreign))
+             (hermes-exec-stop)))
+       (hermes-exec-stop)
+       (dolist (proc (append clients (hermes-exec--live-connections server)
+                            (hermes-exec--live-connections foreign)
+                            (list server foreign)))
+         (when (processp proc) (delete-process proc)))))))
+
+(ert-deftest hermes-exec-test-real-ipv4-lifecycle ()
+  (hermes-exec-test--socket-lifecycle "127.0.0.1"))
+
+(ert-deftest hermes-exec-test-restart-retires-dead-listener-connections ()
+  (hermes-exec-test--socket-lifecycle "127.0.0.1" t))
+
+(ert-deftest hermes-exec-test-real-ipv6-lifecycle ()
+  (hermes-exec-test--socket-lifecycle "::1"))
 
 ;;; Group 8: bridge registration
 

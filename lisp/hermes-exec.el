@@ -115,7 +115,8 @@ bound."
 (defcustom hermes-exec-token nil
   "Shared bearer token the eval endpoint requires, or nil for loopback-only.
 When nil the endpoint trusts its bind host: `hermes-exec-start' refuses to bind
-anything but a loopback interface and every request is served.  When set to a
+anything but a loopback interface, and existing non-loopback connections
+refuse requests if the token is removed.  When set to a
 string, the endpoint may bind an address reported by local Tailscale and each
 request must present a matching `Authorization: Bearer' header.  Falls back to
 the EMACS_EXEC_TOKEN environment variable when nil, so the Python bridge and
@@ -259,15 +260,36 @@ does not reveal how much of a guessed token was correct."
              ((string-match "\\`[Bb]earer[ \t]+\\(.+\\)\\'" trimmed)))
     (string-trim (match-string 1 trimmed))))
 
+(defun hermes-exec--loopback-process-p (proc)
+  "Return non-nil when PROC's actual local socket address is loopback.
+Unknown addresses fail closed; never consult mutable bind configuration."
+  (let ((address (and (processp proc)
+                      (ignore-errors (process-contact proc :local)))))
+    (and (vectorp address)
+         (or (and (= (length address) 5) (eql (aref address 0) 127))
+             (and (= (length address) 9)
+                  (equal (substring address 0 8) [0 0 0 0 0 0 0 1]))))))
+
+(defun hermes-exec--loopback-request-p ()
+  "Return non-nil when the current request has a loopback socket boundary.
+For accepted connections check both the socket and its exact listener, even
+when that listener has died.  A missing socket identity fails closed."
+  (let* ((proc (or hermes-exec--connection hermes-exec--process))
+         (server (and (processp proc)
+                      (process-get proc 'hermes-exec-connection))))
+    (and (hermes-exec--loopback-process-p proc)
+         (or (not hermes-exec--connection)
+             (hermes-exec--loopback-process-p server)))))
+
 (defun hermes-exec--request-authorized-p (request)
   "Return non-nil when REQUEST may run.
-With no token configured the endpoint is loopback-only and every request passes;
-the bind host is the trust boundary.  With `hermes-exec--expected-token' set the
-request must carry a matching `Authorization: Bearer' header."
+Without a token require an actual loopback socket boundary.  Otherwise REQUEST
+must carry a matching bearer authorization header."
   (let ((expected (hermes-exec--expected-token)))
-    (or (null expected)
+    (if expected
         (and-let* ((presented (hermes-exec--request-bearer request)))
-          (hermes-exec--secure-equal expected presented)))))
+          (hermes-exec--secure-equal expected presented))
+      (hermes-exec--loopback-request-p))))
 
 ;;; Trust policy and risk classification
 ;;
@@ -406,13 +428,20 @@ reading or evaluation signals.  Errors are captured, never thrown."
                          (error-message-string err))))))
 
 (defun hermes-exec--evaluate-guarded (code)
-  "Evaluate CODE unless `hermes-exec--connection' has already died.
-Return the declined plist when the client disconnected before evaluation -- for
-example when a slow approval outlives the bridge's request timeout."
-  (if (and hermes-exec--connection
-           (not (process-live-p hermes-exec--connection)))
-      (list :ok nil :error "Client disconnected before evaluation")
-    (hermes-exec--evaluate code)))
+  "Evaluate CODE only while endpoint and connection policy still permit it.
+Recheck the master switch and non-loopback token requirement after approval
+and policy callbacks, without retaining the request's bearer token."
+  (cond
+   ((not hermes-exec-enabled)
+    (list :ok nil :error "Hermes eval endpoint is disabled"))
+   ((and hermes-exec--connection
+         (not (process-live-p hermes-exec--connection)))
+    (list :ok nil :error "Client disconnected before evaluation"))
+   ((and hermes-exec--connection
+         (not (hermes-exec--expected-token))
+         (not (hermes-exec--loopback-request-p)))
+    (list :ok nil :error "Non-loopback evaluation requires a token"))
+   (t (hermes-exec--evaluate code))))
 
 ;;; Asynchronous approval
 ;;
@@ -852,11 +881,11 @@ dispatched and an incomplete one yields nil."
     (process-put proc 'hermes-buffer nil)
     (hermes-exec--drop-pending proc)))
 
-(defun hermes-exec--accept (_server connection _message)
+(defun hermes-exec--accept (server connection _message)
   "Tag an accepted CONNECTION so `hermes-exec--live-connections' can find it.
 Marking each connection with a process property is more robust than matching by
-the filter it inherits from the server."
-  (process-put connection 'hermes-exec-connection t))
+the filter it inherits from SERVER.  Retain its exact owner for teardown."
+  (process-put connection 'hermes-exec-connection server))
 
 (defun hermes-exec--start-server (host)
   "Return a new eval endpoint server process bound to HOST."
@@ -865,7 +894,7 @@ the filter it inherits from the server."
    :server t
    :host host
    :service hermes-exec-port
-   :family 'ipv4
+   :family (if (string-search ":" host) 'ipv6 'ipv4)
    :log #'hermes-exec--accept
    ;; utf-8-unix, not plain utf-8: a bare coding system auto-detects EOL and
    ;; rewrites CRLF to LF on read, which would strip the "\r\n\r\n" header
@@ -898,6 +927,8 @@ and store the listening process for `hermes-exec-stop'."
         (user-error
          "Refusing to bind non-loopback host %s without a token; set `hermes-exec-token' or EMACS_EXEC_TOKEN"
          host))
+      (when hermes-exec--process
+        (hermes-exec-stop))
       (setq hermes-exec--process (hermes-exec--start-server host))
       (message "Hermes eval endpoint listening on %s:%d" host hermes-exec-port))))
 
@@ -905,11 +936,11 @@ and store the listening process for `hermes-exec-stop'."
   "Return live connection processes accepted by SERVER.
 Connections are tagged at accept time by `hermes-exec--accept', so match that
 process property rather than the inherited filter, excluding SERVER itself."
-  (and (process-live-p server)
+  (and server
        (cl-remove-if-not
         (lambda (conn)
-          (and (not (eq conn server))
-               (process-get conn 'hermes-exec-connection)))
+          (and (process-live-p conn)
+               (eq server (process-get conn 'hermes-exec-connection))))
         (process-list))))
 
 (defun hermes-exec-stop ()

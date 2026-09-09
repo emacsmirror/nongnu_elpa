@@ -346,6 +346,83 @@ touched."
         (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
         (should (zerop reconnects))))))
 
+(ert-deftest hermes-capabilities-down-retires-callbacks-during-backoff ()
+  "Retired socket callbacks cannot dispatch during backoff or touch a successor."
+  (let* ((provider (hermes-capabilities--provider-create
+                    :buffer (current-buffer)))
+         callbacks closed scheduled
+         (dispatches 0)
+         (hermes-capabilities--url-function
+          (lambda () (hermes--promise-resolved '(:url "ws://example.test"))))
+         (hermes-capabilities--open-function
+          (lambda (_url _redacted _secrets &rest handlers)
+            (push handlers callbacks)
+            (if (cdr callbacks) 'socket-b 'socket-a))))
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest args) (push args scheduled) 'retry-timer))
+              ((symbol-function 'websocket-close)
+               (lambda (socket)
+                 (push socket closed)
+                 (should-not (hermes-capabilities--provider-socket provider))
+                 ;; websocket.el can deliver close inline during retirement.
+                 (funcall (plist-get (car callbacks) :on-close))))
+              ((symbol-function 'hermes-capabilities--handle-message)
+               (lambda (&rest _) (cl-incf dispatches))))
+      (hermes-capabilities--connect provider)
+      (let ((old (car callbacks))
+            (generation (hermes-capabilities--provider-generation provider)))
+        (funcall (plist-get old :on-error) "Disconnected")
+        (should (> (hermes-capabilities--provider-generation provider) generation))
+        (should (equal closed '(socket-a)))
+        (should (= (length scheduled) 1))
+        (dolist (phase '(backoff successor))
+          (when (eq phase 'successor)
+            (hermes-capabilities--do-reconnect provider))
+          (let ((current-generation
+                 (hermes-capabilities--provider-generation provider))
+                (backoff (hermes-capabilities--provider-backoff provider)))
+            ;; Exercise stale request ingress as well as terminal callbacks.
+            (funcall (plist-get old :on-message) "{}")
+            (funcall (plist-get old :on-error) "Late error")
+            (funcall (plist-get old :on-close))
+            (should (= dispatches 0))
+            (should (= current-generation
+                       (hermes-capabilities--provider-generation provider)))
+            (should (= backoff (hermes-capabilities--provider-backoff provider)))
+            (should (= (length scheduled) 1))
+            (should (equal closed '(socket-a)))))
+        (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
+        (funcall (plist-get (car callbacks) :on-message) "{}")
+        (should (= dispatches 1))))))
+
+(ert-deftest hermes-capabilities-inline-open-down-does-not-publish-socket ()
+  "A socket returned after an inline down callback is closed, never published."
+  (dolist (event '(:on-error :on-close))
+    (let* ((provider (hermes-capabilities--provider-create
+                      :buffer (current-buffer)))
+           handlers closed scheduled
+           (hermes-capabilities--url-function
+            (lambda () (hermes--promise-resolved '(:url "ws://example.test"))))
+           (hermes-capabilities--open-function
+            (lambda (_url _redacted _secrets &rest callbacks)
+              (setq handlers callbacks)
+              (if (eq event :on-error)
+                  (funcall (plist-get callbacks event) "Inline failure")
+                (funcall (plist-get callbacks event)))
+              'failed-socket)))
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (&rest args) (push args scheduled) 'retry-timer))
+                ((symbol-function 'websocket-close)
+                 (lambda (socket)
+                   (push socket closed)
+                   (funcall (plist-get handlers :on-close)))))
+        (hermes-capabilities--connect provider)
+        (should-not (hermes-capabilities--provider-socket provider))
+        (should (equal closed '(failed-socket)))
+        (should (= (length scheduled) 1))
+        (should (eq (hermes-capabilities--provider-reconnect-timer provider)
+                    'retry-timer))))))
+
 (ert-deftest hermes-capabilities-deferred-connect-failure-retries ()
   "Deferred auth and socket-open failures retry with capped backoff."
   (dolist (failure '(auth open))

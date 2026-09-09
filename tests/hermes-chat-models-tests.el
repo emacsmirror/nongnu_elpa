@@ -38,6 +38,81 @@
    (setq hermes-chat--create-overrides-retry-session-id "new")
    (should (equal (hermes-chat--reasoning-setting-value) "low (pending)"))))
 
+(ert-deftest hermes-chat-detached-settings-reject-unowned-session ()
+  "Detached durable settings fail before prompting or changing local state."
+  (dolist (active '(nil "saved"))
+    (dolist (retry '(nil "another-session"))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--session-id "saved"
+             hermes-chat--dashboard-active-session-id active
+             hermes-chat--create-overrides-retry-session-id retry
+             hermes-chat--model "original"
+             hermes-chat--runtime-flags '(:reasoning-effort "low"))
+       (let ((before (buffer-string)))
+         (cl-letf (((symbol-function 'completing-read)
+                    (lambda (&rest _) (ert-fail "Detached setting prompted")))
+                   ((symbol-function 'hermes-chat--dashboard-control-client)
+                    (lambda () (ert-fail "Detached setting connected"))))
+           (dolist (setter '(hermes-chat-switch-model hermes-chat-set-reasoning))
+             (should (string-match-p
+                      "Reconnect or resume"
+                      (error-message-string
+                       (should-error (call-interactively setter)
+                                     :type 'user-error)))))
+           (should-error (hermes-chat-set-reasoning "high") :type 'user-error)
+           (should-error
+            (hermes-chat--apply-model (current-buffer) nil "next" nil)
+            :type 'user-error))
+         (should (equal (buffer-string) before)))
+       (should (equal hermes-chat--model "original"))
+       (should (equal hermes-chat--runtime-flags '(:reasoning-effort "low")))
+       (should-not hermes-chat--dashboard-create-model)
+       (should-not hermes-chat--dashboard-create-provider)
+       (should-not hermes-chat--dashboard-create-reasoning-effort)))))
+
+(ert-deftest hermes-chat-detached-settings-preserve-fresh-and-owned-retry ()
+  "Fresh chats and exact failed-create retries retain pending settings."
+  (dolist (session '(nil "retry"))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--session-id session
+           hermes-chat--create-overrides-retry-session-id session)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
+                (lambda (&optional _client)
+                  '((providers . (((slug . "p") (authenticated . t)
+                                    (models . ("next"))))))))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt choices &rest _) (car choices)))
+               ((symbol-function 'hermes-chat--dashboard-control-client)
+                (lambda () (ert-fail "Pending setting connected"))))
+       (hermes-chat-switch-model)
+       (hermes-chat-set-reasoning "high"))
+     (should (equal hermes-chat--dashboard-create-model "next"))
+     (should (equal hermes-chat--dashboard-create-provider "p"))
+     (should (equal hermes-chat--dashboard-create-reasoning-effort "high"))
+     (should (equal (hermes-chat--model-setting-value) "next (pending)"))
+     (should (equal (hermes-chat--reasoning-setting-value) "high (pending)"))
+     (should (equal hermes-chat--create-overrides-retry-session-id session))
+     ;; Exercise the unchanged create/resume gate, not just the pending labels.
+     (let ((client (hermes-test--dashboard-client)) calls continued)
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id (or session "created")
+             hermes-chat--dashboard-session-ready-p t)
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+                  (lambda (_client key value &rest args)
+                    (push (cons key value) calls)
+                    (funcall (plist-get args :resolve) '((ok . t))))))
+         (funcall (if session #'hermes-chat--dashboard-apply-retry-overrides
+                    #'hermes-chat--dashboard-apply-create-overrides)
+                  client (lambda () (setq continued t))
+                  hermes-chat--lifecycle-generation #'ert-fail))
+       (should continued)
+       (should (equal (nreverse calls)
+                      '(("model" . "next --provider p")
+                        ("reasoning" . "high")))))
+     (should-not hermes-chat--dashboard-create-model)
+     (should-not hermes-chat--dashboard-create-reasoning-effort)
+     (should-not hermes-chat--create-overrides-retry-session-id))))
+
 (ert-deftest hermes-chat-setting-values-create-in-flight-is-pending ()
   "The newly attached session has not confirmed in-flight create overrides."
   (hermes-test-with-chat-buffer

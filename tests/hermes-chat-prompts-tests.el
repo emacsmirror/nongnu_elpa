@@ -879,7 +879,8 @@ stays available."
       (hermes-test--emit-dashboard-prompt
        client "secret.expire" '((request_id . "req-expired")))
       (should (gethash "req-current" hermes-chat--pending-prompts))
-      (let ((header (hermes-test--header-line-string)))
+      ;; Test expiry ownership independently of checkout-name/header compaction.
+      (let ((header (substring-no-properties (hermes-chat--header-line 200))))
         (should (string-match-p "Secret requested" header))
         (should (string-match-p "Current secret" header))
         (should-not (string-match-p "expired" header)))

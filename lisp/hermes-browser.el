@@ -326,34 +326,65 @@ client that DONE releases.  Shared by the dashboard browser commands."
                    (hermes-dashboard-transport-release client)))))
     (funcall fn client done)))
 
+(defvar-local hermes-browser--request-generation nil
+  "Token of the newest asynchronous request for this buffer.")
+
+(defun hermes-browser--dispatch-guard (client &optional current-p)
+  "Return a transport-entry predicate for this browser and CLIENT.
+CURRENT-P, when non-nil, supplies ownership captured before acquisition."
+  (let ((buffer (current-buffer))
+        (mode major-mode)
+        (generation hermes-browser--request-generation)
+        (instance hermes-instance)
+        (value (copy-tree hermes-instance))
+        (scope (and (hermes-dashboard-transport-client-p client)
+                    (list (hermes-dashboard-transport-client-generation client)
+                          (hermes-dashboard-transport--api-client-base-url client)))))
+    (lambda ()
+      (and (if current-p (funcall current-p)
+             (and (hermes-browser--request-current-mode-p buffer generation mode)
+                  (eq instance (buffer-local-value 'hermes-instance buffer))
+                  (equal value instance)))
+           (or (null scope)
+               (equal scope
+                      (list (hermes-dashboard-transport-client-generation client)
+                            (hermes-dashboard-transport--api-client-base-url client))))))))
+
 (defun hermes-browser--run-on-client (make-promise &optional on-success on-error)
-  "Run MAKE-PROMISE on a dashboard client, releasing it when its promise settles.
-MAKE-PROMISE receives the CLIENT and returns a promise.  ON-SUCCESS, when given,
-receives the resolved result.  ON-ERROR, when given, receives a rejection;
-otherwise current request owners report rejections with a `Hermes:' message.
-Shared by the dashboard browser commands."
-  (let ((owner hermes-browser--request-error-owner))
-    (hermes-browser--with-client
-     (lambda (client done)
-       (hermes--promise-catch
-        (hermes--promise-then
-         (condition-case err
-             (hermes--promise-finally (funcall make-promise client) done)
-           ((error quit)
-            (funcall done)
-            (hermes--promise-rejected (error-message-string err))))
-         on-success)
-        (or on-error
-            (lambda (reason)
-              (when (or (null owner)
-                        (apply #'hermes-browser--request-current-mode-p owner))
-                (message "Hermes: %s" reason)))))))))
+  "Run MAKE-PROMISE on a client released when its promise settles.
+MAKE-PROMISE receives CLIENT.  ON-SUCCESS receives the result; ON-ERROR
+receives a rejection.  Synchronous acquisition errors and quits notify
+ON-ERROR before re-signalling the original condition.
+Browser REST mutations retain their owner through authentication."
+  (let* ((owner hermes-browser--request-error-owner)
+         (current-p (hermes-browser--dispatch-guard nil))
+         (failure (or on-error
+                      (lambda (reason)
+                        (when (or (null owner)
+                                  (apply #'hermes-browser--request-current-mode-p owner))
+                          (message "Hermes: %s" reason)))))
+         entered)
+    (condition-case err
+        (hermes-browser--with-client
+         (lambda (client done)
+           (setq entered t)
+           (let ((hermes-dashboard-transport--api-dispatch-guard
+                  (hermes-browser--dispatch-guard client current-p)))
+             (hermes--promise-catch
+              (hermes--promise-then
+               (condition-case err
+                   (hermes--promise-finally (funcall make-promise client) done)
+                 ((error quit)
+                  (funcall done)
+                  (hermes--promise-rejected (error-message-string err))))
+               on-success)
+              failure))))
+      ((error quit)
+       (unless entered (funcall failure (error-message-string err)))
+       (signal (car err) (cdr err))))))
 
 (defvar hermes-browser--request-sequence 0
   "Sequence used to issue request tokens that are unique across mode resets.")
-
-(defvar-local hermes-browser--request-generation nil
-  "Token of the newest asynchronous request for this buffer.")
 
 (defun hermes-browser--next-request-generation ()
   "Issue and return a new request token for the current buffer."

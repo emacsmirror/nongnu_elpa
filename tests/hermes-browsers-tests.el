@@ -590,72 +590,140 @@
     (should (eq (get-text-property 0 'face (aref entry 2))
                 'hermes-browser-message))))
 
-(ert-deftest hermes-rollback-list-fetches-and-renders ()
-  "Listing fetches rollback.list with the live session id and renders it."
-  (let (stopped seen-session)
-    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
-              ((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "sid-live"))
-              ((symbol-function 'hermes-dashboard-transport-acquire)
-               (lambda (&rest _) 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-release)
-               (lambda (client &rest _) (setq stopped client)))
-              ((symbol-function 'hermes-dashboard-transport-rollback-list)
-               (lambda (_client &rest args)
-                 (setq seen-session (plist-get args :session-id))
-                 (funcall (plist-get args :resolve)
-                          '((checkpoints . (((hash . "h1") (message . "m1")))))))))
-      (unwind-protect
-          (progn
-            (hermes-list-rollbacks)
-            (should (eq stopped 'fake-client))
-            (should (equal seen-session "sid-live"))
-            (with-current-buffer "*Hermes Rollbacks*"
-              (should (derived-mode-p 'hermes-rollback-mode))
-              (should (equal (caar tabulated-list-entries) "h1"))))
-        (when (get-buffer "*Hermes Rollbacks*") (kill-buffer "*Hermes Rollbacks*"))))))
+(defmacro hermes-test--with-rollback (&rest body)
+  "Run BODY with isolated source chats A and B and a rollback browser."
+  (declare (indent 0) (debug t))
+  `(let ((chat-a (generate-new-buffer " *rollback chat A*"))
+         (chat-b (generate-new-buffer " *rollback chat B*"))
+         (browser (generate-new-buffer " *rollback browser*"))
+         (instance '("test" . "https://example.test"))
+         (hermes-instances '(("test" . "https://example.test")))
+         calls)
+     (unwind-protect
+         (cl-letf (((symbol-function 'hermes-chat--dashboard-client-live-p)
+                    (lambda (client) (memq client '(client-a client-b))))
+                   ((symbol-function 'hermes-browser--existing-client)
+                    (lambda () 'client-b))
+                   ((symbol-function 'hermes-dashboard-transport-call-fn)
+                    (lambda (method client &rest args)
+                      (push (list method client args) calls)
+                      (hermes--promise-resolved
+                       (if (eq method #'hermes-dashboard-transport-rollback-list)
+                           '((checkpoints . (((hash . "hash-a")))))
+                         '((success . t) (diff . "test diff")))))))
+           (dolist (entry (list (list chat-a 'client-a "session-a")
+                               (list chat-b 'client-b "session-b")))
+             (with-current-buffer (car entry)
+               (setq major-mode 'hermes-chat-mode)
+               (setq-local hermes-instance instance
+                           hermes-chat--dashboard-client (nth 1 entry)
+                           hermes-chat--dashboard-active-session-id (nth 2 entry)
+                           hermes-chat--dashboard-session-ready-p t
+                           hermes-chat--transport-generation 1
+                           hermes-chat--lifecycle-generation 1)))
+           (with-current-buffer browser
+             (hermes-rollback-mode)
+             (hermes-browser--own-instance instance)
+             (setq hermes-rollback--owner
+                   (hermes-rollback--chat-owner chat-a instance))
+             (hermes-rollback--revert)
+             (goto-char (point-min))
+             ,@body))
+       (dolist (buffer (list browser chat-a chat-b))
+         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
-(ert-deftest hermes-rollback-list-without-live-session-rejects ()
-  "Without a live chat session the fetch rejects and the client is released."
-  (let (stopped reported)
-    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
-              ((symbol-function 'hermes-rollback--live-session-id) (lambda () nil))
-              ((symbol-function 'hermes-dashboard-transport-acquire)
-               (lambda (&rest _) 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-release)
-               (lambda (client &rest _) (setq stopped client)))
-              ((symbol-function 'hermes-dashboard-transport-rollback-list)
-               (lambda (&rest _) (error "Must not reach the RPC")))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (push (apply #'format fmt args) reported))))
-      (hermes-list-rollbacks)
-      (should (eq stopped 'fake-client))
-      (should (cl-some (lambda (m) (string-match-p "live chat session" m))
-                       reported)))))
+(ert-deftest hermes-rollback-list-reorder-diff-restore-keeps-attachment ()
+  "Reordering live chats never mixes A's checkpoints with B's attachment."
+  (hermes-test--with-rollback
+    (should (equal (caar tabulated-list-entries) "hash-a"))
+    (cl-letf (((symbol-function 'buffer-list)
+               (lambda (&rest _) (ert-fail "Actions must not scan chats")))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (prompt)
+                 (should (string-match-p "working tree" prompt))
+                 (should (string-match-p "rewind conversation history" prompt))
+                 (should (string-match-p "session-a" prompt))
+                 t))
+              ((symbol-function 'hermes-rollback--display-diff) #'ignore)
+              ((symbol-function 'hermes-rollback--revert) #'ignore))
+      (hermes-rollback-show-diff)
+      (hermes-rollback-restore))
+    (should (= (length calls) 3))
+    (dolist (call calls)
+      (should (eq (nth 1 call) 'client-a))
+      (should (equal (plist-get (if (eq (car call)
+                                         #'hermes-dashboard-transport-rollback-list)
+                                     (nth 2 call) (cdr (nth 2 call)))
+                               :session-id)
+                     "session-a")))
+    (should (equal (car (nth 2 (car calls))) "hash-a"))
+    (should-not hermes-rollback--snapshot)))
 
-(ert-deftest hermes-rollback-diff-passes-session-id ()
-  "The diff command threads the live session id into rollback.diff."
-  (let (seen-session seen-hash)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "sid-live"))
-              ((symbol-function 'hermes-browser--existing-client)
-               (lambda () 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-rollback-diff)
-               (lambda (_client hash &rest args)
-                 (setq seen-hash hash
-                       seen-session (plist-get args :session-id))
-                 (funcall (plist-get args :resolve) '((diff . "")))))
-              ((symbol-function 'hermes-rollback--display-diff)
-               (lambda (&rest _))))
-      (with-temp-buffer
-        (hermes-rollback-mode)
-        (setq tabulated-list-entries '(("hash-1" ["hash-1" "" ""])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-rollback-show-diff))
-      (should (equal seen-hash "hash-1"))
-      (should (equal seen-session "sid-live")))))
+(ert-deftest hermes-rollback-selection-prefers-source-and-disambiguates ()
+  "Selection prefers the current chat, otherwise asks among eligible chats."
+  (hermes-test--with-rollback
+    (with-current-buffer chat-a
+      (should (eq (car (hermes-rollback--choose-owner instance)) chat-a)))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt choices &rest _)
+                 (should (= (length choices) 2))
+                 (car (cl-find chat-b choices :key #'cadr)))))
+      (should (eq (car (hermes-rollback--choose-owner instance)) chat-b)))))
+
+(ert-deftest hermes-rollback-selection-excludes-other-instances ()
+  "Other-instance chats cannot supply a session even when they are first."
+  (hermes-test--with-rollback
+    (with-current-buffer chat-b
+      (setq hermes-instance '("other" . "https://other.example.test")))
+    (cl-letf (((symbol-function 'buffer-list) (lambda (&rest _) (list chat-b chat-a))))
+      (should (eq (car (hermes-rollback--choose-owner instance)) chat-a)))
+    (with-current-buffer chat-a (setq hermes-chat--dashboard-session-ready-p nil))
+    (should-error (hermes-rollback--choose-owner instance) :type 'user-error)))
+
+(ert-deftest hermes-rollback-selection-revalidates-after-prompt ()
+  "A chat replaced during disambiguation cannot dispatch a checkpoint read."
+  (hermes-test--with-rollback
+    (let ((before (length calls)))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt choices &rest _)
+                   (with-current-buffer chat-a
+                     (setq hermes-chat--dashboard-client 'client-b))
+                   (car (cl-find chat-a choices :key #'cadr)))))
+        (should-error (hermes-list-rollbacks) :type 'user-error)
+        (should (= before (length calls)))))))
+
+(ert-deftest hermes-rollback-pending-restore-cannot-reuse-snapshot ()
+  "Pending restore disables repeated actions; a newer read owns its completion."
+  (hermes-test--with-rollback
+    (let ((promise (hermes--promise-make)) messages)
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'hermes-dashboard-transport-call-fn)
+                 (lambda (&rest _) promise))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+        (hermes-rollback-restore)
+        (should-error (hermes-rollback-restore) :type 'user-error)
+        (should-error (hermes-rollback-show-diff) :type 'user-error))
+      (hermes-rollback--revert)
+      (let ((snapshot hermes-rollback--snapshot) (before (length calls)))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (hermes--promise-resolve promise '((success . t))))
+        (should (eq snapshot hermes-rollback--snapshot))
+        (should (= before (length calls)))
+        (should-not messages)))))
+
+(ert-deftest hermes-rollback-public-list-binds-source ()
+  "The public list command binds the source chat before displaying its browser."
+  (hermes-test--with-rollback
+    (unwind-protect
+        (progn
+          (with-current-buffer chat-a (hermes-list-rollbacks))
+          (with-current-buffer "*Hermes Rollbacks*"
+            (should (eq (car hermes-rollback--owner) chat-a))
+            (should hermes-rollback--snapshot)
+            (should (equal (caar tabulated-list-entries) "hash-a"))))
+      (when (get-buffer "*Hermes Rollbacks*") (kill-buffer "*Hermes Rollbacks*")))))
 
 (ert-deftest hermes-rollback-display-diff-fontifies ()
   "The diff view renders the unified diff through diff-mode."
@@ -1562,136 +1630,136 @@
               #'hermes-list-profiles)))
 
 (ert-deftest hermes-rollback-diff-ignores-stale-result ()
-  "An older rollback diff cannot replace the result of a newer request."
-  (let ((first (hermes--promise-make))
-        (second (hermes--promise-make))
-        (calls 0)
-        displayed)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "session"))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _)
-                 (setq calls (1+ calls))
-                 (if (= calls 1) first second)))
-              ((symbol-function 'hermes-rollback--display-diff)
-               (lambda (_hash result)
-                 (push (hermes-transport--get result 'diff) displayed))))
-      (with-temp-buffer
-        (hermes-rollback-mode)
-        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
+  "Only the newest diff request may display its result."
+  (hermes-test--with-rollback
+    (let ((first (hermes--promise-make)) (second (hermes--promise-make))
+          (count 0) displayed)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-call-fn)
+                 (lambda (&rest _) (if (= (cl-incf count) 1) first second)))
+                ((symbol-function 'hermes-rollback--display-diff)
+                 (lambda (_hash result) (push result displayed))))
         (hermes-rollback-show-diff)
         (hermes-rollback-show-diff)
-        (hermes--promise-resolve second '((diff . "new")))
-        (hermes--promise-resolve first '((diff . "old"))))
-      (should (equal displayed '("new"))))))
+        (hermes--promise-resolve second 'new)
+        (hermes--promise-resolve first 'old)
+        (should (equal displayed '(new)))))))
 
-(ert-deftest hermes-rollback-diff-ignores-killed-origin ()
-  "A rollback diff response is ignored after its list buffer dies."
-  (let ((promise (hermes--promise-make)) displayed)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "session"))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
-              ((symbol-function 'hermes-rollback--display-diff)
-               (lambda (&rest _) (setq displayed t))))
-      (let ((origin (generate-new-buffer " *Hermes rollback origin*")))
-        (with-current-buffer origin
-          (hermes-rollback-mode)
-          (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
-          (tabulated-list-print)
-          (goto-char (point-min))
-          (hermes-rollback-show-diff))
-        (kill-buffer origin)
-        (hermes--promise-resolve promise '((diff . "late")))
-        (should-not displayed)))))
+(ert-deftest hermes-rollback-diff-rejects-retired-attachment ()
+  "A pending diff cannot project after detach, replacement, reset or kill."
+  (dolist (change '(detach client session transport lifetime instance kill-browser kill-chat))
+    (hermes-test--with-rollback
+      (let ((promise (hermes--promise-make)) displayed)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-call-fn)
+                   (lambda (&rest _) promise))
+                  ((symbol-function 'hermes-rollback--display-diff)
+                   (lambda (&rest _) (setq displayed t))))
+          (hermes-rollback-show-diff)
+          (hermes-test--retire-rollback change chat-a browser)
+          (hermes--promise-resolve promise '((diff . "late")))
+          (should-not displayed))))))
+
+(defun hermes-test--retire-rollback (change chat browser)
+  "Apply attachment CHANGE to CHAT or its BROWSER."
+  (pcase change
+    ('kill-browser (kill-buffer browser))
+    ('kill-chat (kill-buffer chat))
+    ('snapshot (with-current-buffer browser (hermes-rollback--revert)))
+    (_ (with-current-buffer chat
+         (pcase change
+           ('detach (setq hermes-chat--dashboard-session-ready-p nil))
+           ('client (setq hermes-chat--dashboard-client 'client-b))
+           ('session (setq hermes-chat--dashboard-active-session-id "session-new"))
+           ('transport (cl-incf hermes-chat--transport-generation))
+           ('lifetime (cl-incf hermes-chat--lifecycle-generation))
+           ('instance (setq hermes-instance '("other" . "https://other.example.test"))))))))
+
+(ert-deftest hermes-rollback-restore-revalidates-after-confirmation ()
+  "Every attachment replacement or refresh during confirmation prevents dispatch."
+  (dolist (change '(detach client session transport lifetime instance snapshot kill-chat))
+    (hermes-test--with-rollback
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (&rest _)
+                   (hermes-test--retire-rollback change chat-a browser) t)))
+        (should-error (hermes-rollback-restore) :type 'user-error)
+        (should-not (cl-find #'hermes-dashboard-transport-rollback-restore calls
+                             :key #'car))))))
+
+(ert-deftest hermes-rollback-stale-snapshot-rejects-before-prompt ()
+  "A detached or reassigned source invalidates visible checkpoint actions."
+  (dolist (change '(detach client session transport lifetime instance kill-chat))
+    (hermes-test--with-rollback
+      (hermes-test--retire-rollback change chat-a browser)
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (&rest _) (ert-fail "Must reject before confirmation"))))
+        (should-error (hermes-rollback-restore) :type 'user-error)
+        (should-error (hermes-rollback-show-diff) :type 'user-error)))))
+
+(ert-deftest hermes-rollback-refresh-invalidates-snapshot-until-owned-response ()
+  "A pending list disables old actions and cannot publish a retired attachment."
+  (hermes-test--with-rollback
+    (let ((promise (hermes--promise-make)))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-call-fn)
+                 (lambda (&rest _) promise)))
+        (hermes-rollback--revert)
+        (should-not hermes-rollback--snapshot)
+        (should-error (hermes-rollback-restore) :type 'user-error)
+        (with-current-buffer chat-a (setq hermes-chat--dashboard-client 'client-b))
+        (hermes--promise-resolve promise '((checkpoints . (((hash . "stale"))))))
+        (should-not hermes-rollback--snapshot)
+        (should-not (equal (caar tabulated-list-entries) "stale"))))))
+
+(ert-deftest hermes-rollback-instance-retarget-clears-owner-and-snapshot ()
+  "Browser instance invalidation clears checkpoint authority as well as rows."
+  (hermes-test--with-rollback
+    (hermes-browser--own-instance '("other" . "https://other.example.test"))
+    (should-not hermes-rollback--owner)
+    (should-not hermes-rollback--snapshot)
+    (should-not tabulated-list-entries)))
 
 (ert-deftest hermes-rollback-restore-rejects-false-success ()
-  "A rollback response declaring failure does not report success or refresh."
-  (let (messages refreshed)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "session"))
-              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-catch
-                  (hermes--promise-then (funcall make-promise 'client) on-success)
-                  (lambda (reason) (push reason messages)))))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) (hermes--promise-resolved
-                                   '((success . :false) (error . "denied")))))
-              ((symbol-function 'hermes-rollback--revert)
-               (lambda (&rest _) (setq refreshed t)))
-              ((symbol-function 'message)
-               (lambda (format-string &rest args)
-                 (push (apply #'format format-string args) messages))))
-      (with-temp-buffer
-        (hermes-rollback-mode)
-        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-rollback-restore))
-      (should-not refreshed)
-      (should (cl-some (lambda (text) (string-match-p "denied" text)) messages))
-      (should-not (cl-some (lambda (text) (string-match-p "restored" text)) messages)))))
+  "Failure never reports success or refreshes, and disables repeat mutation."
+  (hermes-test--with-rollback
+    (let (messages refreshed)
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'hermes-dashboard-transport-call-fn)
+                 (lambda (&rest _)
+                   (hermes--promise-resolved '((success . :false) (error . "denied")))))
+                ((symbol-function 'hermes-rollback--revert)
+                 (lambda (&rest _) (setq refreshed t)))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+        (hermes-rollback-restore)
+        (should-not refreshed)
+        (should-not hermes-rollback--snapshot)
+        (should (cl-some (lambda (text) (string-match-p "denied" text)) messages))
+        (should-not (cl-some (lambda (text) (string-match-p "restored" text)) messages))))))
 
 (ert-deftest hermes-rollback-restore-refreshes-origin-on-success ()
-  "A successful rollback starts a fresh read in its originating buffer."
-  (let (refreshed)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "session"))
-              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) (hermes--promise-resolved '((success . t)))))
-              ((symbol-function 'hermes-rollback--revert)
-               (lambda (&rest _) (setq refreshed (current-buffer))))
-              ((symbol-function 'message) #'ignore))
-      (with-temp-buffer
-        (hermes-rollback-mode)
-        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (let ((origin (current-buffer)))
-          (hermes-rollback-restore)
-          (should (eq refreshed origin)))))))
+  "A successful restore refreshes the original attachment."
+  (hermes-test--with-rollback
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (hermes-rollback-restore)
+      (should hermes-rollback--snapshot)
+      (should (eq (caar calls) #'hermes-dashboard-transport-rollback-list))
+      (should (eq (nth 1 (car calls)) 'client-a)))))
 
 (ert-deftest hermes-rollback-late-restore-does-not-report-or-refresh ()
-  "An instance A restore cannot report or refresh after retargeting to B."
-  (let ((promise (hermes--promise-make)) messages refreshed)
-    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
-               (lambda () "session"))
-              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
-              ((symbol-function 'hermes-rollback--revert)
-               (lambda (&rest _) (setq refreshed t)))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (push (apply #'format fmt args) messages))))
-      (with-temp-buffer
-        (hermes-rollback-mode)
-        (hermes-browser--own-instance '("a" . "http://a"))
-        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-rollback-restore)
-        (hermes-browser--own-instance '("b" . "http://b"))
-        (hermes--promise-resolve promise '((success . t)))
-        (should-not refreshed)
-        (should-not messages)))))
+  "Retired restore completions cannot report success or refresh another owner."
+  (dolist (change '(detach client session transport lifetime instance kill-browser kill-chat))
+    (hermes-test--with-rollback
+      (let ((promise (hermes--promise-make)) messages refreshed)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-dashboard-transport-call-fn)
+                   (lambda (&rest _) promise))
+                  ((symbol-function 'hermes-rollback--revert)
+                   (lambda (&rest _) (setq refreshed t)))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (hermes-rollback-restore)
+          (hermes-test--retire-rollback change chat-a browser)
+          (hermes--promise-resolve promise '((success . t)))
+          (should-not refreshed)
+          (should-not messages))))))
 
 (ert-deftest hermes-subagents-interrupt-refreshes-after-newer-read ()
   "A completed interrupt starts a fresh read despite an intervening refresh."

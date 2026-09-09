@@ -178,6 +178,7 @@ filesystem actions must then fail closed rather than infer a root."
   (hermes-plugins--idle)
   (hermes-browser--next-request-generation)
   (let* ((buffer (current-buffer))
+         (generation hermes-browser--request-generation)
          (current-p (hermes-plugins--guard)))
     (setq hermes-plugins--busy mutation
           hermes-plugins--snapshot nil
@@ -194,6 +195,10 @@ filesystem actions must then fail closed rather than infer a root."
               (with-current-buffer buffer (setq hermes-plugins--busy nil)))))))
      #'ignore
      (lambda (_reason)
+       (when (hermes-browser--request-current-mode-p
+              buffer generation 'hermes-plugins-mode)
+         (with-current-buffer buffer
+           (setq hermes-plugins--busy nil)))
        (when (funcall current-p)
          (with-current-buffer buffer
            (hermes-plugins--render nil "Connection failed (details withheld)")))))))

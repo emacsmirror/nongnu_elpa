@@ -610,23 +610,27 @@ The browser returns to the backend callback URL, which must be reachable."
 
 (defun hermes-mcp--begin-operation (context kind name env client done)
   "Own CONTEXT's KIND request for NAME with ENV using CLIENT and DONE cleanup."
-  (let ((operation (list :context context :kind kind :name name :client client
-                         :done done :deadline (+ (float-time) 600)
-                         :timer nil :timeout nil :flow nil :action nil
-                         :opened nil :closed nil)))
+  (let* ((operation (list :context context :kind kind :name name :client client
+                          :done done :deadline (+ (float-time) 600)
+                          :timer nil :timeout nil :flow nil :action nil
+                          :opened nil :closed nil))
+         (guard (hermes-browser--dispatch-guard client)))
     (setq hermes-mcp--operation operation)
     (setf (plist-get operation :timeout)
           (run-at-time 600 nil #'hermes-mcp--operation-failed operation))
     (hermes-mcp--operation-request
      operation
      (lambda ()
-       (if (eq kind 'oauth)
-           (hermes-mcp--api "POST" (hermes-mcp--server-path name "/auth")
-                            nil nil :client client)
-         (hermes-mcp--api "POST" "/catalog/install"
-                          `((name . ,name) (enable . t)
-                            (env . ,(or env (make-hash-table :test #'equal))))
-                          nil :secrets (mapcar #'cdr env) :client client)))
+       (let ((hermes-dashboard-transport--api-dispatch-guard
+              (lambda () (and (funcall guard)
+                              (hermes-mcp--operation-current-p operation)))))
+         (if (eq kind 'oauth)
+             (hermes-mcp--api "POST" (hermes-mcp--server-path name "/auth")
+                              nil nil :client client)
+           (hermes-mcp--api "POST" "/catalog/install"
+                            `((name . ,name) (enable . t)
+                              (env . ,(or env (make-hash-table :test #'equal))))
+                            nil :secrets (mapcar #'cdr env) :client client))))
      (lambda (result) (hermes-mcp--operation-started operation result)))))
 
 (defun hermes-mcp--operation-request (operation request success)

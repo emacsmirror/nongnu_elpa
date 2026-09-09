@@ -219,7 +219,12 @@ profile selection; the API has no profile parameter."
       (setq-local header-line-format '(:eval (hermes-system--header-line)))
       (setq hermes-system--heading heading
             hermes-system--path path
-            hermes-system--query query))
+            hermes-system--query query)
+      ;; Mode reset retires the old owner, so its text cannot remain a snapshot.
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (propertize heading 'face 'bold) "\n\nLoading…\n")
+        (goto-char (point-min))))
     (pop-to-buffer buffer)
     (hermes-system--fetch buffer)))
 

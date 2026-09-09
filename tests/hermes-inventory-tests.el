@@ -5,6 +5,41 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-inventory-mutation-acquisition-settles-and-retries ()
+  (dolist (condition '(error quit))
+    (dolist (replace '(nil t))
+      (with-temp-buffer
+        (hermes-inventory-mode)
+        (setq hermes-instance (list :id "test" :name "test" :url "http://example.test"))
+        (let ((hermes-instances (list hermes-instance))
+              (client (make-hermes-dashboard-transport-client :base-url "http://example.test"))
+              (successor (list 'successor)) (attempts 0) (released 0))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                    ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                    ((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _)
+                       (cl-incf attempts)
+                       (if (> attempts 1) client
+                         (when replace
+                           (hermes-browser--next-request-generation)
+                           (setq hermes-inventory--mutation-in-flight successor))
+                         (signal condition '("acquisition failed")))))
+                    ((symbol-function 'hermes-dashboard-transport-release)
+                     (lambda (_) (cl-incf released)))
+                    ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                     (lambda (&rest _) (hermes--promise-resolved '(:ok t)))))
+            (should (eq condition
+                        (condition-case err
+                            (progn (hermes-inventory--run-mutation (lambda (_) (hermes--promise-resolved nil)) #'ignore) nil)
+                          ((error quit) (car err)))))
+            (if replace
+                (should (eq hermes-inventory--mutation-in-flight successor))
+              (should-not hermes-inventory--mutation-in-flight)
+              (hermes-inventory--run-mutation (lambda (_) (hermes--promise-resolved nil)) #'ignore)
+              (should (= attempts 2))
+              (should (= released 1))
+              (should-not hermes-inventory--mutation-in-flight))))))))
+
 (ert-deftest hermes-inventory-toolset-rows ()
   "Toolset rows map name/enabled/count/description."
   (let ((rows (hermes-inventory--toolset-rows

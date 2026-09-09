@@ -1896,18 +1896,25 @@ with the synchronous path, and re-resolved when the configured URL changes."
           (json-error (error "Dashboard configuration is not valid JSON"))))
     (plist-get response :body)))
 
+(defvar hermes-dashboard-transport--api-dispatch-guard nil
+  "Optional predicate authorizing browser mutations at HTTP transport entry.
+The asynchronous REST helper captures this dynamic binding across auth waits.")
+
 (cl-defun hermes-dashboard-transport--api-request-1-async
-    (method path &key body query headers secrets timeout retry base-url)
+    (method path &key body query headers secrets timeout retry base-url current-p)
   "Return a promise of dashboard REST METHOD PATH using resolved auth.
 BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; RETRY refreshes
 auth and retries once when the request fails.  BASE-URL, when non-nil, pins
-authentication and retries to that dashboard endpoint."
+authentication and retries to that dashboard endpoint.
+CURRENT-P, when non-nil, must authorize each HTTP dispatch after auth."
   (let* ((base-url (or base-url
                        (hermes-dashboard-transport--api-base-url)))
          (hermes-dashboard-transport-url base-url))
     (hermes--promise-then
      (hermes-dashboard-transport-api-auth-async)
      (lambda (auth)
+       (when (and current-p (not (funcall current-p)))
+         (error "Retired browser operation"))
        (let ((request (hermes-dashboard-transport--api-request-plist
 		       auth method path :body body :query query
 		       :headers headers :secrets secrets :timeout timeout)))
@@ -1923,7 +1930,7 @@ authentication and retries to that dashboard endpoint."
                   (hermes-dashboard-transport--api-request-1-async
                    method path :body body :query query :headers headers
                    :secrets secrets :timeout timeout :retry nil
-                   :base-url base-url))
+                   :base-url base-url :current-p current-p))
               (hermes--promise-rejected
 	       (hermes-dashboard-transport--redact-secret
 	        reason (plist-get request :secrets)))))))))))
@@ -1948,20 +1955,25 @@ Mirrors `hermes-dashboard-transport-api-request' but resolves asynchronously so
 callers never block Emacs.  BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend
 the request.  CLIENT pins the dashboard base URL.  Its live session token is
 used when present; otherwise REST auth is resolved for that endpoint."
-  (cond
-   ((hermes-dashboard-transport--api-client-token client)
-    (hermes-dashboard-transport--api-request-with-client-async
-     client method path :body body :query query :headers headers
-     :secrets secrets :timeout timeout))
-   ((hermes-dashboard-transport-client-p client)
-    (hermes-dashboard-transport--api-request-1-async
-     method path :body body :query query :headers headers :secrets secrets
-     :timeout timeout :retry (equal method "GET")
-     :base-url (hermes-dashboard-transport--api-client-base-url client)))
-   (t
-    (hermes-dashboard-transport--api-request-1-async
-     method path :body body :query query :headers headers :secrets secrets
-     :timeout timeout :retry (equal method "GET")))))
+  (let ((current-p (and (not (equal method "GET"))
+                        hermes-dashboard-transport--api-dispatch-guard)))
+    (when (and current-p (not (funcall current-p)))
+      (error "Retired browser operation"))
+    (cond
+     ((hermes-dashboard-transport--api-client-token client)
+      (hermes-dashboard-transport--api-request-with-client-async
+       client method path :body body :query query :headers headers
+       :secrets secrets :timeout timeout))
+     ((hermes-dashboard-transport-client-p client)
+      (hermes-dashboard-transport--api-request-1-async
+       method path :body body :query query :headers headers :secrets secrets
+       :timeout timeout :retry (equal method "GET")
+       :base-url (hermes-dashboard-transport--api-client-base-url client)
+       :current-p current-p))
+     (t
+      (hermes-dashboard-transport--api-request-1-async
+       method path :body body :query query :headers headers :secrets secrets
+       :timeout timeout :retry (equal method "GET") :current-p current-p)))))
 
 ;;; Profile and model caches
 

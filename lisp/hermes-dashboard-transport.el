@@ -1525,13 +1525,12 @@ paths so they always agree on the resolved target."
                        hermes-dashboard-transport-url)))
          (host (or host (plist-get target :host)))
          (port (or port (plist-get target :port)))
+         (mode (hermes-dashboard-transport--resolved-start-mode
+                start-mode host remote-url))
          (remote-url (or remote-url
-                         (and from-url
-                              (not (hermes-dashboard-transport--loopback-host-p host))
+                         (and from-url (eq mode 'remote)
                               hermes-dashboard-transport-url))))
-    (list :mode (hermes-dashboard-transport--resolved-start-mode
-                 start-mode host remote-url)
-          :host host :port port :remote-url remote-url)))
+    (list :mode mode :host host :port port :remote-url remote-url)))
 
 (cl-defun hermes-dashboard-transport-start
     (&key callback host port command token base-environment

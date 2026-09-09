@@ -3344,6 +3344,49 @@ This is the contract that replaces hand-mirroring every event name: an invented
       (should (equal opened-url
                      "ws://100.64.0.10:9119/api/ws?token=remote-token")))))
 
+(ert-deftest hermes-transport-dashboard-forced-loopback-retains-configured-url ()
+  "Forced remote loopback uses the configured scheme and prefix for dial and key."
+  (dolist (host '("localhost" "127.0.0.1" "[::1]"))
+    (dolist (selection '(keyword option))
+      (let* ((hermes-dashboard-transport-url
+              (format "https://%s:9443/hermes" host))
+             (hermes-dashboard-transport-start-mode
+              (if (eq selection 'option) 'remote 'auto))
+             (hermes-dashboard-transport-remote-auth-method 'token)
+             (hermes-dashboard-transport-ready-timeout nil)
+             (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+             (args (when (eq selection 'keyword) '(:start-mode remote)))
+             opened-url
+             (hermes-dashboard-transport-make-process-function
+              (lambda (&rest _) (ert-fail "Remote attach must not spawn")))
+             (hermes-dashboard-transport-websocket-open-function
+              (lambda (url _client) (setq opened-url url) 'fake-websocket)))
+        (let ((client (apply #'hermes-dashboard-transport-acquire
+                             :token "remote-token" args)))
+          (should (equal (hermes-dashboard-transport-client-base-url client)
+                         hermes-dashboard-transport-url))
+          (should (eq (gethash hermes-dashboard-transport-url
+                              hermes-dashboard-transport--clients)
+                      client))
+          (should (equal (hermes-dashboard-transport-client-endpoint-key client)
+                         hermes-dashboard-transport-url))
+          (should (equal opened-url
+                         (format "wss://%s:9443/hermes/api/ws?token=remote-token"
+                                 host))))))))
+
+(ert-deftest hermes-transport-dashboard-auto-loopback-still-spawns ()
+  "A loopback URL does not force remote attachment in auto mode."
+  (let ((hermes-dashboard-transport-url "https://localhost:9443/hermes")
+        (hermes-dashboard-transport-start-mode 'auto)
+        spawned)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--start-spawn)
+               (lambda (&rest args) (setq spawned args))))
+      (hermes-dashboard-transport-start)
+      (should (equal (plist-get spawned :host) "localhost"))
+      (should (= (plist-get spawned :port) 9443))
+      (should (equal (hermes-dashboard-transport--endpoint-key)
+                     '(spawn "localhost" 9443))))))
+
 (ert-deftest hermes-transport-dashboard-remote-start-contains-throwing-callback ()
   "A failing legacy callback cannot strand remote startup before socket open."
   :tags '(candidate-4a)

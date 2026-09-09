@@ -134,19 +134,26 @@ Fence success and failure against buffer, instance and profile changes."
     (setq hermes-tool-setup--pending (cons owner suffix))
     (hermes-browser--run-on-client
      (lambda (client)
-       (hermes-dashboard-transport-api-request-async
-        method path :client client :body body :query query :secrets secrets))
+       (let* ((guard hermes-dashboard-transport--api-dispatch-guard)
+              (hermes-dashboard-transport--api-dispatch-guard
+               (lambda () (and (hermes-tool-setup--current-p owner)
+                               (or (null guard) (funcall guard))))))
+         (hermes-dashboard-transport-api-request-async
+          method path :client client :body body :query query :secrets secrets)))
      (lambda (result)
        (when (hermes-tool-setup--current-p owner)
          (with-current-buffer (car owner)
            (setq hermes-tool-setup--busy nil hermes-tool-setup--pending nil)
            (funcall success result))))
      (lambda (_reason)
+       ;; Release this request even if its instance retired during acquisition.
        ;; Do not echo backend errors which may repeat credential input.
-       (when (hermes-tool-setup--current-p owner)
+       (when (hermes-browser--request-current-mode-p
+              (car owner) (cadr owner) 'hermes-tool-setup-mode)
          (with-current-buffer (car owner)
-           (setq hermes-tool-setup--busy nil hermes-tool-setup--pending nil)
-           (message "Hermes: tool setup request failed; refresh to check state")))))))
+           (setq hermes-tool-setup--busy nil hermes-tool-setup--pending nil)))
+       (when (hermes-tool-setup--current-p owner)
+         (message "Hermes: tool setup request failed; refresh to check state"))))))
 
 (defun hermes-tool-setup-refresh (&rest _)
   "Recheck provider readiness without invoking a model or a tool."

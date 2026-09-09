@@ -213,14 +213,25 @@ identity is part of the selection."
                   (plist-get context :transport-generation))
                (not (hermes-chat--active-turn-p)))))))
 
+(defun hermes-chat--require-setting-session ()
+  "Refuse settings on detached sessions unless their create retry is owned."
+  (let ((session (or hermes-chat--session-id
+                     hermes-chat--dashboard-active-session-id)))
+    (when (and session
+               (not (hermes-chat--dashboard-session-attached-p))
+               (not (equal session
+                           hermes-chat--create-overrides-retry-session-id)))
+      (user-error "Reconnect or resume this chat before changing its settings"))))
+
 (defun hermes-chat--apply-model (buffer client candidate confirm &optional context)
   "Set CANDIDATE on BUFFER's session via CLIENT.
-CONFIRM acknowledges an expensive-model confirmation prompt.  When BUFFER
-has no live session yet, the choice is stored buffer-locally and applied
-through `config.set' right after the next session is created."
+CONFIRM acknowledges an expensive-model confirmation prompt.  A fresh chat
+or owned failed-create retry stores the choice locally for `config.set'.
+Other detached sessions must reconnect or resume first."
   (if (not (hermes-chat--model-switch-current-p context))
       (message "Hermes: model switch is stale or the chat is busy")
     (with-current-buffer buffer
+      (hermes-chat--require-setting-session)
       (if (hermes-chat--dashboard-session-attached-p)
           (hermes-dashboard-transport-config-set
            client "model" (hermes-chat--model-config-value candidate)
@@ -337,10 +348,12 @@ confirmation prompt."
 The model list is served from the shared cache; with a prefix argument REFRESH,
 refetch it from the dashboard instead.  Before the first session, a cached pick
 is stored locally without connecting; a cold or refreshed catalog may open the
-shared dashboard socket but does not create a session."
+shared dashboard socket but does not create a session.  Detached sessions
+must reconnect or resume first, except for an owned failed-create retry."
   (interactive "P")
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
+  (hermes-chat--require-setting-session)
   (let ((client (and (hermes-chat--dashboard-client-live-p
                       hermes-chat--dashboard-client)
                      hermes-chat--dashboard-client))

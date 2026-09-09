@@ -88,6 +88,37 @@
         (when-let* ((buffer (get-buffer "*Hermes Status*")))
           (kill-buffer buffer))))))
 
+(ert-deftest hermes-system-reopen-clears-previous-instance-content ()
+  "Status and log views do not relabel an old snapshot as a new instance."
+  (dolist (spec '((hermes-system-status . "*Hermes Status*")
+                  (hermes-system-logs . "*Hermes Logs*")))
+    (let ((instance '("Alpha" . "http://alpha.invalid")) callbacks)
+      (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+                ((symbol-function 'pop-to-buffer) #'ignore)
+                ((symbol-function 'hermes-browser--run-on-client)
+                 (lambda (_make &optional success _error)
+                   (push success callbacks))))
+        (unwind-protect
+            (progn
+              (funcall (car spec))
+              (funcall (car callbacks) '((lines . ("ALPHA-ONLY PROCESS"))))
+              (with-current-buffer (cdr spec)
+                (should (string-match-p "ALPHA-ONLY" (buffer-string))))
+              (setq instance '("Beta" . "http://beta.invalid"))
+              (funcall (car spec))
+              (with-current-buffer (cdr spec)
+                (should (equal hermes-instance instance))
+                (should (string-match-p "Loading" (buffer-string)))
+                (should-not (string-match-p "ALPHA-ONLY" (buffer-string))))
+              (funcall (cadr callbacks) '((lines . ("ALPHA-LATE PROCESS"))))
+              (with-current-buffer (cdr spec)
+                (should-not (string-match-p "ALPHA" (buffer-string))))
+              (funcall (car callbacks) '((lines . ("BETA-ONLY PROCESS"))))
+              (with-current-buffer (cdr spec)
+                (should (string-match-p "BETA-ONLY" (buffer-string)))))
+          (when-let* ((buffer (get-buffer (cdr spec))))
+            (kill-buffer buffer)))))))
+
 (ert-deftest hermes-system-log-filters-use-backend-query ()
   "Native controls send the server's minimum-level and component filters."
   (with-temp-buffer

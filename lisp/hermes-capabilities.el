@@ -518,10 +518,17 @@ re-registers."
 (defun hermes-capabilities--on-down (provider generation &optional message)
   "Drop PROVIDER's GENERATION, report MESSAGE, and reconnect with backoff."
   (when (hermes-capabilities--current-generation-p provider generation)
-    (when message
-      (message "Hermes capabilities: %s" message))
-    (setf (hermes-capabilities--provider-socket provider) nil)
-    (hermes-capabilities--reconnect provider)))
+    (let ((socket (hermes-capabilities--provider-socket provider))
+          (retired-generation (1+ generation)))
+      ;; Fence callbacks before closing: websocket-close can call on-close inline.
+      (setf (hermes-capabilities--provider-generation provider) retired-generation
+            (hermes-capabilities--provider-socket provider) nil)
+      (when (and socket (fboundp 'websocket-close))
+        (ignore-errors (websocket-close socket)))
+      (when message
+        (message "Hermes capabilities: %s" message))
+      (when (hermes-capabilities--current-generation-p provider retired-generation)
+        (hermes-capabilities--reconnect provider)))))
 
 (defun hermes-capabilities--reconnect (provider)
   "Schedule a bounded-backoff reconnect for PROVIDER."
@@ -562,27 +569,31 @@ re-registers."
       (funcall hermes-capabilities--url-function)
       (lambda (auth)
         (when (hermes-capabilities--current-generation-p provider generation)
-          (setf (hermes-capabilities--provider-socket provider)
-                (funcall hermes-capabilities--open-function
-                         (plist-get auth :url)
-                         (plist-get auth :redacted-url)
-                         (plist-get auth :secrets)
-                         :on-message
-                         (lambda (text)
-                           (when (hermes-capabilities--current-generation-p
-                                  provider generation)
-                             (hermes-capabilities--handle-message provider text)))
-                         :on-close
-                         (lambda ()
-                           (hermes-capabilities--on-down provider generation))
-                         :on-error
-                         (lambda (msg)
-                           (hermes-capabilities--on-down
-                            provider generation msg)))))))
+          (let ((socket
+                 (funcall hermes-capabilities--open-function
+                          (plist-get auth :url)
+                          (plist-get auth :redacted-url)
+                          (plist-get auth :secrets)
+                          :on-message
+                          (lambda (text)
+                            (when (hermes-capabilities--current-generation-p
+                                   provider generation)
+                              (hermes-capabilities--handle-message provider text)))
+                          :on-close
+                          (lambda ()
+                            (hermes-capabilities--on-down provider generation))
+                          :on-error
+                          (lambda (msg)
+                            (hermes-capabilities--on-down
+                             provider generation msg)))))
+            ;; Construction can call on-error/on-close before returning a socket.
+            (if (hermes-capabilities--current-generation-p provider generation)
+                (setf (hermes-capabilities--provider-socket provider) socket)
+              (when (and socket (fboundp 'websocket-close))
+                (ignore-errors (websocket-close socket))))))))
      (lambda (reason)
-       (when (hermes-capabilities--current-generation-p provider generation)
-         (message "Hermes capabilities: connect failed: %s" reason)
-         (hermes-capabilities--reconnect provider))))))
+       (hermes-capabilities--on-down
+        provider generation (format "Connect failed: %s" reason))))))
 
 (defun hermes-capabilities--teardown (provider)
   "Tear down PROVIDER: stop reconnecting, close the socket, drop the kill hook.

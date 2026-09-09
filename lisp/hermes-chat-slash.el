@@ -38,6 +38,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-dashboard)
+(require 'hermes-chat-models)
 
 
 (defvar hermes-chat--dashboard-active-session-id)
@@ -390,6 +391,7 @@ accepted explicit spelling of the default session scope."
   "Read reasoning with a known default, refusing a changed prompt owner."
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before changing reasoning"))
+  (hermes-chat--require-setting-session)
   (let* ((buffer (current-buffer))
          (client hermes-chat--dashboard-client)
          (generation hermes-chat--lifecycle-generation)
@@ -413,12 +415,15 @@ accepted explicit spelling of the default session scope."
 (defun hermes-chat-set-reasoning (&optional effort)
   "Set reasoning EFFORT for this session or its first turn.
 In a fresh chat, store the choice locally and apply it after `session.create'
-but before the first prompt.  A live chat uses the owned session command path."
+but before the first prompt.  A live chat uses the owned session command path.
+Detached sessions must reconnect or resume first, except for an owned
+failed-create retry."
   (interactive (list (hermes-chat--read-reasoning-effort)))
   (unless (member effort hermes-chat--reasoning-efforts)
     (user-error "Unsupported reasoning effort: %s" effort))
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before changing reasoning"))
+  (hermes-chat--require-setting-session)
   (if (hermes-chat--dashboard-session-attached-p)
       (hermes-chat--dashboard-set-reasoning effort)
     (setq hermes-chat--dashboard-create-reasoning-effort effort
