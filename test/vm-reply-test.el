@@ -2622,6 +2622,157 @@ aliases true."
                                   (buffer-substring start (point))))))
       (ignore asked))))
 
+;;; Killing a composition that has writing in it (emacs-vm/vm#824)
+
+(defmacro vm-reply-test--killing-a-composition (setup &rest body)
+  "Make a composition, run SETUP in it, kill it, and run BODY.
+BODY sees `asked' -- what a question was put about, newest first -- and
+`composition', the buffer, which is alive if the kill was refused."
+  (declare (indent 1) (debug t))
+  `(let ((asked nil)
+         (composition nil)
+         (before (buffer-list)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'yes-or-no-p)
+                    (lambda (prompt) (push prompt asked) nil))
+                   ((symbol-function 'y-or-n-p)
+                    (lambda (prompt) (push prompt asked) nil)))
+           (vm-mail)
+           (setq composition (current-buffer))
+           ,setup
+           (kill-buffer composition)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
+
+(ert-deftest vm-reply-test-killing-a-written-composition-keeps-it ()
+  "REGRESSION: a composition with writing in it is not lost when it is killed.
+
+Reported by a user who had lost countless drafts: a composition buffer belongs
+to no file, so `kill-buffer' does not put the question it puts about an unsaved
+file, and everything bound to it took the draft with no warning.  His words:
+\"It will only kill the buffer when there are no pending changes.  Only in a VM
+reply buffer will this happen\" (emacs-vm/vm#824).
+
+The writing is kept as a draft, and VM says where.  No question: the reader
+asked to kill the buffer, and keeping what was in it costs them nothing."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-reply-keep" t)))
+        (said nil))
+    (unwind-protect
+        (let ((vm-save-killed-messages-folder
+               (expand-file-name "postponed" dir))
+              (vm-folder-directory dir))
+          (cl-letf (((symbol-function 'vm-inform)
+                     (lambda (_level format &rest args)
+                       (push (apply #'format format args) said))))
+            (vm-reply-test--killing-a-composition
+                (progn (goto-char (point-max))
+                       (insert "A draft I would rather not lose.\n"))
+              (should (equal asked nil))
+              (should-not (buffer-live-p composition))))
+          ;; the draft is on disk, and the reader was told where
+          (should (file-exists-p vm-save-killed-messages-folder))
+          (should (> (nth 7 (file-attributes vm-save-killed-messages-folder)) 0))
+          (with-temp-buffer
+            (insert-file-contents vm-save-killed-messages-folder)
+            (should (string-match-p "A draft I would rather not lose"
+                                    (buffer-string))))
+          (should (seq-find (lambda (line)
+                              (string-match-p "kept as a draft" line))
+                            said)))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-killing-a-written-composition-asks-when-not-kept ()
+  "With keeping turned off, VM asks instead of losing the writing.
+
+`vm-save-killed-message' nil says not to keep it, and then the question is
+all that stands between a keystroke and the writing."
+  (let ((vm-save-killed-message nil))
+    (vm-reply-test--killing-a-composition
+        (progn (goto-char (point-max))
+               (insert "A draft I would rather not lose.\n"))
+      (should (= (length asked) 1))
+      (should (string-match-p "has not been sent" (car asked)))
+      ;; and the answer was no, so it is still here
+      (should (buffer-live-p composition)))))
+
+(ert-deftest vm-reply-test-killing-an-untouched-composition-does-not-ask ()
+  "A composition nothing has been written in goes without a question.
+
+VM writes the headers itself, so a composition is modified from the moment it
+appears; asking about that would put a question in the way of every abandoned
+`vm-mail'."
+  (vm-reply-test--killing-a-composition nil
+    (should (equal asked nil))
+    (should-not (buffer-live-p composition))))
+
+(ert-deftest vm-reply-test-killing-a-blank-composition-does-not-ask ()
+  "Whitespace is not writing."
+  (vm-reply-test--killing-a-composition
+      (progn (goto-char (point-max)) (insert "  \n\t\n"))
+    (should (equal asked nil))
+    (should-not (buffer-live-p composition))))
+
+(ert-deftest vm-reply-test-killing-a-sent-composition-does-not-ask ()
+  "A composition that has been sent goes without a question.
+Sending leaves the buffer unmodified, which is what says the writing in it is
+no longer only here."
+  (vm-reply-test--killing-a-composition
+      (progn (goto-char (point-max))
+             (insert "Sent already.\n")
+             (set-buffer-modified-p nil))
+    (should (equal asked nil))
+    (should-not (buffer-live-p composition))))
+
+(ert-deftest vm-reply-test-the-question-can-be-turned-off ()
+  "`vm-confirm-killing-a-composition' nil restores the old behaviour."
+  (vm-reply-test--killing-a-composition
+      (progn (goto-char (point-max))
+             (insert "Kill this without asking.\n")
+             (setq-local vm-confirm-killing-a-composition nil))
+    (should (equal asked nil))
+    (should-not (buffer-live-p composition))))
+
+(ert-deftest vm-reply-test-agreeing-to-the-question-kills-the-composition ()
+  "Yes kills it, which is what the reader asked for."
+  (let ((composition nil)
+        (before (buffer-list)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (vm-mail)
+          (setq composition (current-buffer))
+          (goto-char (point-max))
+          (insert "Really do go away.\n")
+          (kill-buffer composition)
+          (should-not (buffer-live-p composition)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
+
+(ert-deftest vm-reply-test-no-question-where-the-kill-saves-the-draft ()
+  "No question where killing the composition will offer to keep it.
+
+`vm-postpone-mode' puts `vm-save-killed-message-hook' on the local
+`kill-buffer-hook', and `vm-postpone-unfinished-compositions' kills a
+composition for the express purpose of reaching it.  Asking first would put
+two questions in a row and, answered no, would stop the save it exists to
+make -- which is what happened when this guard was first written."
+  (require 'vm-postpone)
+  (vm-reply-test--killing-a-composition
+      (progn (goto-char (point-max))
+             (insert "A draft the kill hook will offer to keep.\n")
+             (setq-local vm-save-killed-message 'ask))
+    ;; the hook had its own say; what matters is that the guard did not
+    (should-not (seq-find (lambda (prompt)
+                            (string-match-p "has not been sent" prompt))
+                          asked))
+    (should-not (buffer-live-p composition))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

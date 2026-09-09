@@ -5332,11 +5332,27 @@ folder carefully if you do: it has to hold whatever the message holds.
 Sometimes, you might want to interrupt the composing of a message and
 continue it later.  This is called @dfn{postponing}.
 
+@vindex vm-save-killed-message
+@vindex vm-save-killed-messages-folder
+Killing a composition you have written in keeps it as a draft, in
+@code{vm-save-killed-messages-folder}, and VM says where it went and which
+key takes it up again.  A composition buffer belongs to no file, so Emacs does
+not put the question it puts about an unsaved file, and anything bound to
+@code{kill-buffer} took an unsent message with no warning.  Nothing is kept
+for a composition you have written nothing in.
+
+@vindex vm-confirm-killing-a-composition
+@code{vm-save-killed-message} says what happens: @code{always}, the default,
+keeps it; @code{ask} asks each time; @code{nil} keeps nothing, and then
+@code{vm-confirm-killing-a-composition} asks before the writing is lost.  Set
+that to @code{nil} as well and a kill takes the writing with it, as it did in
+earlier releases.
+
 @findex vm-postpone-mode
 @kbd{C-c C-d} and @code{vm-continue-postponed-message} below are VM's own and
-need nothing switched on.  The rest of @file{vm-postpone.el} does: four keys
-that insert a header field, and the offer to keep a composition you kill
-unsent as a draft.  Switch it on in your @code{vm-init-file}:
+need nothing switched on, as is keeping a killed composition, above.  What
+@file{vm-postpone.el} adds is four keys that insert a header field.  Switch
+them on in your @code{vm-init-file}:
 
 @lisp
 (vm-postpone-mode 1)
@@ -5344,7 +5360,9 @@ unsent as a draft.  Switch it on in your @code{vm-init-file}:
 
 @noindent
 The mode is autoloaded, so no @code{require} is needed.  Turning it off with
-@code{(vm-postpone-mode -1)} takes those keys and that offer away again.
+@code{(vm-postpone-mode -1)} takes those keys away again.  It does not affect
+what happens to a composition you kill; that is
+@code{vm-save-killed-message}, above.
 
 Loading the file installed them in earlier releases, so @code{(require
 'vm-postpone)} was how one switched it on.  That still loads the file but no

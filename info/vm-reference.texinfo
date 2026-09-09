@@ -7660,9 +7660,13 @@ C-c C-d in a composition files it in
 M-x vm-continue-postponed-message to take it up again.  That
 key is bound by VM itself and works whether this mode is on or off.
 
-What turning this on adds is four keys that insert a header field, and the
-arrangement by which a composition killed unsent is offered as a draft.
-Turning it off undoes both, and leaves any postponed folder where it is.
+What turning this on adds is four keys that insert a header field.  Turning it
+off takes them away again and leaves any postponed folder where it is.
+
+It used to arrange for a composition killed unsent to be kept as a draft as
+well, which meant a reader who had not switched it on lost the writing to any
+key bound to @code{kill-buffer}.  Every composition arranges that now; see
+@code{vm-save-killed-message} (emacs-vm/vm#824).
 
 Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
 loads it whenever it is asked about a VM option, so loading no longer enables:
@@ -7811,12 +7815,20 @@ Default value:
 
 @defopt vm-save-killed-message
 @vindex vm-save-killed-message
-How @code{vm-save-killed-message-hook} handles saving of a mail as a draft.
-If set to @code{ask} it will ask whether to save the mail as draft or not.
-If set to @code{always} it will save without asking.
-If set to nil it will never save them nor it will ask.
+What killing a composition with writing in it does with the writing.
 
-Default value: @code{ask}
+@code{always}, the default, files it in @code{vm-save-killed-messages-folder} and says
+so.  Nothing is lost by killing a composition, which is what a reader who has
+lost drafts to a keystroke needs (emacs-vm/vm#824).
+
+@code{ask} asks whether to keep it.  Nil neither keeps it nor asks, and then
+@code{vm-confirm-killing-a-composition} is what stands between a keystroke and the
+writing.
+
+A composition nothing has been written in is not kept and is not asked about,
+whichever this is.
+
+Default value: @code{always}
 @end defopt
 
 @defopt vm-save-killed-messages-folder
@@ -8759,6 +8771,21 @@ you’d prefer something more widely used outside of Japan be used instead,
 you could load the @code{latin-unity} and @code{un-define} libraries under XEmacs
 21.4, and initialize this list to something like ‘(iso-8859-1 iso-8859-15
 utf-8)’.
+@end defopt
+
+@defopt vm-confirm-killing-a-composition
+@vindex vm-confirm-killing-a-composition
+Whether VM asks before a composition with writing in it is killed.
+
+A composition buffer belongs to no file, so Emacs kills it without the
+question it asks about an unsaved file: @code{kill-buffer} and everything bound to
+it, @code{kill-this-buffer} included, took an unsent reply with no warning
+(emacs-vm/vm#824).  Nil restores that.
+
+The question is not asked for a composition nothing has been written in, nor
+for one that has been sent.
+
+Default value: @code{t}
 @end defopt
 
 @defopt vm-confirm-mail-send
