@@ -1723,6 +1723,87 @@ others: the killed buffer is passed over rather than selected."
                                        'all))
     (should (member "urgent" (vm-virtual-test--known-labels virt-a)))))
 
+
+;;; Leaving a virtual folder keeps the summary on display (emacs-vm/vm#821)
+
+(defmacro vm-virtual-test--with-a-displayed-folder (spec &rest body)
+  "Visit a folder of `vm-virtual-test--assorted', summarize it, run BODY.
+SPEC is (FOLDER-VAR).  A real visit with real windows, so `vm-display' is
+not stubbed the way `vm-virtual-test--with-real-folder' stubs it: a test of
+what the windows show is vacuous without it, because nothing then displays
+anything."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-virtual-quit" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((,(car spec) (expand-file-name "real-folder" dir))
+               (vm-virtual-folder-alist nil)
+               (vm-init-file nil)
+               (vm-preferences-file nil)
+               (vm-confirm-quit nil)
+               (vm-frame-per-folder nil)
+               (vm-frame-per-summary nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-visit-when-saving nil))
+           (write-region vm-virtual-test--assorted nil ,(car spec) nil 'quiet)
+           (vm-visit-folder ,(car spec))
+           (vm-summarize)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
+       (delete-directory dir t))))
+
+(defun vm-virtual-test--displayed-buffers ()
+  "The buffers the windows of the selected frame show."
+  (mapcar #'window-buffer (window-list)))
+
+(ert-deftest vm-virtual-test-leaving-a-virtual-folder-keeps-the-summary ()
+  "REGRESSION: `q' in a virtual folder leaves the real folder summarized.
+
+Reported by @goeran: after leaving a virtual folder the summary was displayed
+nowhere and a keystroke was needed to bring it back (emacs-vm/vm#821).
+
+`vm-quit' undisplays its own summary and presentation buffers before killing
+them, and `vm-undisplay-buffer' hands the window to whatever `other-buffer'
+answers.  Leaving a virtual folder that is the real folder's presentation
+buffer, `vm-virtual-quit' having just presented into it to carry the message
+pointer across, so the summary lost its window to the presentation of the
+same folder.
+
+Asserts on which buffers are displayed, not how many windows there are: the
+window count was right throughout and the buffer in it was wrong."
+  (vm-virtual-test--with-a-displayed-folder (folder)
+    (let ((real (current-buffer))
+          (summary vm-summary-buffer))
+      (should (memq summary (vm-virtual-test--displayed-buffers)))
+      (setq vm-virtual-folder-alist
+            (list (list "everything" (list (list folder) '(header "Subject")))))
+      (vm-visit-virtual-folder "everything")
+      (should (eq major-mode 'vm-virtual-mode))
+      (should-not (memq summary (vm-virtual-test--displayed-buffers)))
+      (vm-quit)
+      (should (buffer-live-p real))
+      (should (buffer-live-p summary))
+      (should (memq summary (vm-virtual-test--displayed-buffers))))))
+
+(ert-deftest vm-virtual-test-leaving-the-only-folder-leaves-no-folder ()
+  "Quitting the last folder has none to return to, and must still work.
+Putting the folder left on display is the case above; here there is none,
+which the fix has to pass over rather than fail on.  Asserted on what is
+left rather than on the function that answers it, so it holds whichever way
+that is written."
+  (vm-virtual-test--with-a-displayed-folder (_folder)
+    (let ((folder (current-buffer)))
+      (vm-quit)
+      (should-not (buffer-live-p folder))
+      (should-not (seq-find (lambda (buffer)
+                              (with-current-buffer buffer
+                                (memq major-mode '(vm-mode vm-virtual-mode))))
+                            (buffer-list))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
