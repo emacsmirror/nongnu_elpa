@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.40
+;; Version: 0.41
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -1593,6 +1593,16 @@ Optionally, NO-CONFIRM means don't ask before deleting."
                            (lambda (_)
                              (message "issue deleted!")))))))
 
+;;; JUMP TO REPO
+
+(defun fj-jump-to-repo ()
+  "Jump to repo issues listing.
+Reads a string of \"OWNER/REPO\", slash-separated."
+  (interactive)
+  (let* ((owner-repo (read-string "Owner/repo: "))
+         (split (split-string owner-repo "/")))
+    (fj-list-issues-do (nth 1 split) (nth 0 split))))
+
 ;;; PULL REQUESTS
 ;; TODO: owner args not `fj-user'
 
@@ -2366,10 +2376,11 @@ URL of a Forgejo repository."
     
     ;; martianh: this also needs to work for links to items, e.g.
     ;; "https://codeberg.org/guix/guix/pulls/7383", so:
-    (if (string-prefix-p "git@" (car components))
-        ;; we have a git@host.com in the result, skip it:
-        (take 2 (cdr components))
-      (take 2 components))))
+    (take 2
+          (if (string-prefix-p "git@" (car components))
+              ;; we have a git@host.com in the result, skip it:
+              (cdr components)
+            components))))
 
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
@@ -3510,6 +3521,10 @@ ENDPOINT is the API endpoint to hit."
             (format "Fetch %s from %s as new branch?" branch head))
        ;; mayb we want to check out PR, and magit-status or sth?:
        ;; FIXME: assumes we are in repo:
+       (when (and (not (magit-inside-worktree-p :noerror))
+                  (y-or-n-p "No local repo. Open one with magit?"))
+         ;; if we are not in a repo, read one and open:
+         (magit-status (magit-read-repository)))
        (magit-fetch-refspec remote refspec nil)))))
 
 ;;; TIMELINE ITEMS
@@ -3682,7 +3697,7 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
           ("review"
            (fj-format-review item ts format-str user))
           ("review_request"
-           (fj-format-assignee format-str user assignee ts))
+           (fj-format-review-request format-str user assignee ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -3707,6 +3722,14 @@ is new branch."
           (propertize user 'face 'fj-name-face)
           (propertize old 'face 'fj-name-face)
           (propertize new 'face 'fj-name-face)))
+
+(defun fj-format-review-request (format-str user reviewer ts)
+  "Format an assignee timeline item.
+FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
+assigned to. TS is a timeline timestamp."
+  (let ((user (propertize user 'face 'fj-name-face))
+        (reviewer (propertize reviewer 'face 'fj-name-face)))
+    (format format-str user reviewer ts)))
 
 (defun fj-format-assignee (format-str user assignee ts)
   "Format an assignee timeline item.
@@ -4542,7 +4565,10 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-match-next-handle (limit)
   "A font-lock match function for handles.
 LIMIT is for `re-search-forward''s bound argument."
-  (re-search-forward "@[[:alnum:]_-]+" limit :no-error))
+  (re-search-forward
+   ;; no preceding slash, as that may be a @ in a URL:
+   "[^/]@[[:alnum:]_-]+"
+   limit :no-error))
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."

@@ -1798,6 +1798,7 @@ Mock test of `fj-list-issues-do'."
 (ert-deftest fj-test-repo-+-owner-from-git ()
   "This should succeed whether a fully specified URL with the protocol
 prefix is used or not."
+  ;; tests `fj-repo-+-owner-from-git' and `fj-owner+repo-from-url'
   (let ((expected '("owner" "repo")))
     (and (make-fj-repo-+-owner-from-git-test
           "git@example.org/owner/repo.git" expected)
@@ -1806,6 +1807,12 @@ prefix is used or not."
          (make-fj-repo-+-owner-from-git-test
           "http://git@example.org/owner/repo.git" expected)
          (make-fj-repo-+-owner-from-git-test
-          "ssh://git@example.org/owner/repo.git" expected)
-         (make-fj-repo-+-owner-from-git-test
-          "ssh://git@example.org/owner/repo/pulls/1234" expected))))
+          "ssh://git@example.org/owner/repo.git" expected))))
+
+(ert-deftest fj-test-owner+repo-from-url ()
+  "Test for `fj-owner+repo-from-url' as used in `fj-shr-link-follow'."
+  ;; we have tested the other forms in the previous test
+  (should
+   (equal '("owner" "repo")
+          (fj-owner+repo-from-url
+           "https://example.org/owner/repo/pulls/1234"))))
