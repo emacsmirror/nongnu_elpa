@@ -3521,6 +3521,10 @@ ENDPOINT is the API endpoint to hit."
             (format "Fetch %s from %s as new branch?" branch head))
        ;; mayb we want to check out PR, and magit-status or sth?:
        ;; FIXME: assumes we are in repo:
+       (when (and (not (magit-inside-worktree-p :noerror))
+                  (y-or-n-p "No local repo. Open one with magit?"))
+         ;; if we are not in a repo, read one and open:
+         (magit-status (magit-read-repository)))
        (magit-fetch-refspec remote refspec nil)))))
 
 ;;; TIMELINE ITEMS
