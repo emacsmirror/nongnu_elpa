@@ -8,17 +8,24 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
-  * **VM asks before killing a composition you have written in**
-    (emacs-vm/vm#824).  A composition buffer belongs to no file, so Emacs did
-    not put the question it puts about an unsaved file, and `kill-buffer` and
-    everything bound to it, `kill-this-buffer` included, took an unsent
-    message with no warning.  One user gave up on VM over it, having lost
-    countless drafts.
+  * **Killing a composition you have written in keeps it as a draft**
+    (emacs-vm/vm#824), in `vm-save-killed-messages-folder`, with VM saying
+    where it went and which key takes it up again.  A composition buffer
+    belongs to no file, so Emacs did not put the question it puts about an
+    unsaved file, and `kill-buffer` and everything bound to it,
+    `kill-this-buffer` included, took an unsent message with no warning.  One
+    user gave up on VM over it, having lost countless drafts.
 
-    You are not asked about a composition you have written nothing in, nor
-    about one already sent, nor when killing it will offer to keep it as a
-    draft, which is what `vm-postpone-mode` arranges.  The new option
-    `vm-confirm-killing-a-composition` set to nil restores the old behaviour.
+    Nothing is kept for a composition you have written nothing in, and
+    nothing is said about it either.
+
+    `vm-save-killed-message` had this in it already, but only for those who
+    had switched `vm-postpone-mode` on, which is not the default and which
+    also binds four keys nobody asked for.  Every composition arranges it
+    now, and the option's default changes from `ask` to `always`: set it back
+    to `ask` to be asked each time, or to nil not to keep drafts at all.  Nil
+    leaves the new option `vm-confirm-killing-a-composition`, on by default,
+    to ask before the writing is lost.
 
   * **Visiting a folder says that it is getting new mail** (emacs-vm/vm#825),
     where it used to say the totals of the folder as it stood.  The fetch is

@@ -900,14 +900,22 @@ configuration."
 ;; And now do some cool stuff when killing a mail buffer
 ;; This was inspired by Uwe Brauer
 (defcustom vm-save-killed-message
-  'ask
-  "How `vm-save-killed-message-hook' handles saving of a mail as a draft.
-If set to `ask' it will ask whether to save the mail as draft or not.
-If set to `always' it will save without asking.
-If set to nil it will never save them nor it will ask."
-  :type '(choice (const ask)
-                 (const always)
-                 (const :tag "never" nil))
+  'always
+  "What killing a composition with writing in it does with the writing.
+
+`always', the default, files it in `vm-save-killed-messages-folder' and says
+so.  Nothing is lost by killing a composition, which is what a reader who has
+lost drafts to a keystroke needs (emacs-vm/vm#824).
+
+`ask' asks whether to keep it.  Nil neither keeps it nor asks, and then
+`vm-confirm-killing-a-composition' is what stands between a keystroke and the
+writing.
+
+A composition nothing has been written in is not kept and is not asked about,
+whichever this is."
+  :type '(choice (const :tag "keep it" always)
+                 (const :tag "ask" ask)
+                 (const :tag "never keep it" nil))
   :group 'vm-postpone)
 
 (defcustom vm-save-killed-messages-folder
@@ -919,25 +927,45 @@ If set to nil it will never save them nor it will ask."
 (defun vm-add-save-killed-message-hook ()
   (add-hook 'kill-buffer-hook 'vm-save-killed-message-hook nil t))
 
+;;;###autoload
 (defun vm-remove-save-killed-message-hook ()
+  "Stop keeping this composition as a draft when it is killed.
+On `mail-send-hook' and `vm-postpone-message-hook' in every composition
+buffer: the writing is somewhere else by then."
   (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
 
+;;;###autoload
 (defun vm-save-killed-message-hook ()
-  (if (or (and (equal vm-save-killed-message 'ask)
-               (y-or-n-p (format "Save `%s' as draft in folder `%s'? "
-                                 (buffer-name)
-                                 vm-save-killed-messages-folder)))
-          (equal vm-save-killed-message 'always))
-      (vm-postpone-message vm-save-killed-messages-folder t)
-    (message "`%s' is gone forever!" (buffer-name))))
+  "Keep this composition as a draft, as `vm-save-killed-message' says to.
 
-(defconst vm-postpone-hooks
-  '((vm-mail-mode-hook        . vm-add-save-killed-message-hook)
-    (mail-send-hook           . vm-remove-save-killed-message-hook)
-    (vm-postpone-message-hook . vm-remove-save-killed-message-hook))
+On `kill-buffer-hook' in every composition buffer.  A composition nothing has
+been written in is neither kept nor asked about nor complained over: VM writes
+the headers itself, so every composition is modified from the moment it
+appears, and a `vm-mail' typed by mistake is not a draft."
+  (when (vm-composition-worth-keeping-p)
+    (let ((name (buffer-name)))
+      (if (or (eq vm-save-killed-message 'always)
+              (and (eq vm-save-killed-message 'ask)
+                   (y-or-n-p (format "Save `%s' as draft in folder `%s'? "
+                                     name vm-save-killed-messages-folder))))
+          (progn
+            (vm-postpone-message vm-save-killed-messages-folder t)
+            ;; said, since nobody asked for it: a draft nobody knows about is
+            ;; one nobody goes back to
+            (vm-inform 5 "%s kept as a draft in %s; %s takes it up again"
+                       name vm-save-killed-messages-folder
+                       (substitute-command-keys
+                        "\\[vm-continue-postponed-message]")))
+        (vm-inform 1 "%s is gone forever" name)))))
+
+(defconst vm-postpone-hooks nil
   "The hooks `vm-postpone-mode' adds to, and what it adds.
-They arrange for a composition killed unsent to be offered as a draft, which
-is what `vm-save-killed-message' asks for.")
+
+Nothing now.  It used to arrange for a composition killed unsent to be kept as
+a draft, which meant that a reader who had not switched the mode on lost the
+writing to any key bound to `kill-buffer'.  Every composition arranges it, in
+`vm-new-composition-buffer' (emacs-vm/vm#824).  What the mode still does is
+bind four keys.")
 
 (defun vm-postpone--drop-empty-prefix (prefix)
   "Take PREFIX out of `vm-mail-mode-map' if this mode left it holding nothing.
@@ -979,9 +1007,13 @@ key is described for it."
 \\<vm-mode-map>\\[vm-continue-postponed-message] to take it up again.  That
 key is bound by VM itself and works whether this mode is on or off.
 
-What turning this on adds is four keys that insert a header field, and the
-arrangement by which a composition killed unsent is offered as a draft.
-Turning it off undoes both, and leaves any postponed folder where it is.
+What turning this on adds is four keys that insert a header field.  Turning it
+off takes them away again and leaves any postponed folder where it is.
+
+It used to arrange for a composition killed unsent to be kept as a draft as
+well, which meant a reader who had not switched it on lost the writing to any
+key bound to `kill-buffer'.  Every composition arranges that now; see
+`vm-save-killed-message' (emacs-vm/vm#824).
 
 Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
 loads it whenever it is asked about a VM option, so loading no longer enables:

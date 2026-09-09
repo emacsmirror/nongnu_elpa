@@ -1896,6 +1896,9 @@ buffers.")
   (setq vm-compositions-exist (> vm-composition-buffer-count 0))
   (vm-update-ml-composition-buffer-count))
 
+(declare-function vm-save-killed-message-hook "vm-postpone" ())
+(declare-function vm-remove-save-killed-message-hook "vm-postpone" ())
+
 (defun vm-composition-worth-keeping-p (&optional buffer)
   "Whether BUFFER holds a composition with anything in it.
 A composition begun and abandoned untouched is not worth a question, still
@@ -1928,15 +1931,21 @@ for one that has been sent."
 (defvar vm-save-killed-message)
 
 (defun vm-composition-kill-buffer-saves-it-p ()
-  "Whether killing this composition will offer to keep it as a draft.
-`vm-postpone-mode' puts `vm-save-killed-message-hook' on the local
-`kill-buffer-hook', and `vm-save-killed-message' says whether it saves, asks,
-or does neither.  Where it will speak for itself there is nothing to ask
-first, and `vm-postpone-unfinished-compositions' kills a composition for the
-express purpose of reaching it."
-  (and (boundp 'vm-save-killed-message)
-       vm-save-killed-message
-       (memq 'vm-save-killed-message-hook kill-buffer-hook)))
+  "Whether killing this composition will keep it as a draft.
+
+`vm-save-killed-message-hook' on the local `kill-buffer-hook' is what keeps
+it, and `vm-save-killed-message' says whether it keeps, asks, or does neither.
+Where it will speak for itself there is nothing to ask first, and
+`vm-postpone-unfinished-compositions' kills a composition for the express
+purpose of reaching it.
+
+The hook is autoloaded, so vm-postpone.el may not be loaded when this runs:
+query functions run before `kill-buffer-hook' does.  It is loaded here rather
+than guessing, since the answer turns on an option defined there and the kill
+about to happen would load it a moment later anyway."
+  (and (memq 'vm-save-killed-message-hook kill-buffer-hook)
+       (progn (require 'vm-postpone) vm-save-killed-message)
+       t))
 
 (defun vm-composition-kill-buffer-query ()
   "Ask before this composition is killed with writing in it.
@@ -1954,10 +1963,19 @@ the buffer alone.  See `vm-confirm-killing-a-composition'."
   (setq vm-compositions-exist t)
   (add-hook 'kill-buffer-hook 'vm-forget-composition-buffer nil t)
   (add-hook 'vm-mail-send-hook 'vm-forget-composition-buffer nil t)
-  ;; On the query hook rather than `kill-buffer-hook': that one runs after the
-  ;; decision is made and cannot stop the kill, which is why
-  ;; `vm-save-killed-message-hook' can only offer to save the draft
-  ;; afterwards, and only when `vm-postpone-mode' is on.
+  ;; Killing this composition keeps what is written in it, as
+  ;; `vm-save-killed-message' says to.  Every composition, rather than only
+  ;; those made while `vm-postpone-mode' is on: a reader who had not switched
+  ;; that on lost the writing to any key bound to `kill-buffer'
+  ;; (emacs-vm/vm#824).  Taken off again when the message is sent or postponed,
+  ;; there being nothing to keep then.
+  (add-hook 'kill-buffer-hook #'vm-save-killed-message-hook nil t)
+  (add-hook 'mail-send-hook #'vm-remove-save-killed-message-hook nil t)
+  (add-hook 'vm-postpone-message-hook #'vm-remove-save-killed-message-hook
+	    nil t)
+  ;; And a question where nothing will be kept.  On the query hook rather than
+  ;; `kill-buffer-hook': that one runs after the decision is made and cannot
+  ;; stop the kill.
   (add-hook 'kill-buffer-query-functions #'vm-composition-kill-buffer-query
 	    nil t)
   (vm-update-ml-composition-buffer-count))
