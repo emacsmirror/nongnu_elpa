@@ -4168,6 +4168,28 @@ The setting of `vm-expunge-before-quit' is ignored."
 
 (defvar dired-listing-switches)		; defined only in FSF Emacs?
 
+(defun vm-folder-left-after-quitting ()
+  "The folder buffer a quit leaves behind, or nil if it quit the last one.
+`buffer-list' is in most-recently-used order, so the first VM folder in it
+is the one the reader came from."
+  (seq-find (lambda (buffer)
+	      (with-current-buffer buffer
+		(memq major-mode '(vm-mode vm-virtual-mode))))
+	    (buffer-list)))
+
+(defun vm-display-folder-left-after-quitting ()
+  "Put the summary of the folder a quit returns to back on display.
+The quitting folder\='s windows go with it, and `vm-undisplay-buffer' hands
+them to whatever `other-buffer' answers.  On leaving a virtual folder that
+is the real folder\='s presentation buffer, `vm-virtual-quit' having just
+presented into it, so the summary was left displayed nowhere and the reader
+had to press a key to bring it back (emacs-vm/vm#821)."
+  (let ((folder (vm-folder-left-after-quitting)))
+    (when folder
+      (with-current-buffer folder
+	(when (buffer-live-p vm-summary-buffer)
+	  (vm-display vm-summary-buffer t nil nil))))))
+
 ;;;###autoload
 (defun vm-quit (&optional no-expunge no-change)
   "Quit visiting the current folder, saving changes.  If the folder is
@@ -4297,6 +4319,9 @@ changes should be discarded."
       ;; coming from kill-buffer
       (set-buffer-modified-p nil)	; folder buffer
       (kill-buffer (current-buffer)))
+
+    ;; 7. Put the folder the reader is left in back on display.
+    (vm-display-folder-left-after-quitting)
     (vm-update-summary-and-mode-line)))
 
 (defun vm-start-itimers-if-needed ()
