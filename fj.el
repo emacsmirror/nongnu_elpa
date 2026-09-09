@@ -3697,7 +3697,7 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
           ("review"
            (fj-format-review item ts format-str user))
           ("review_request"
-           (fj-format-assignee format-str user assignee ts))
+           (fj-format-review-request format-str user assignee ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -3722,6 +3722,14 @@ is new branch."
           (propertize user 'face 'fj-name-face)
           (propertize old 'face 'fj-name-face)
           (propertize new 'face 'fj-name-face)))
+
+(defun fj-format-review-request (format-str user reviewer ts)
+  "Format an assignee timeline item.
+FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
+assigned to. TS is a timeline timestamp."
+  (let ((user (propertize user 'face 'fj-name-face))
+        (reviewer (propertize reviewer 'face 'fj-name-face)))
+    (format format-str user reviewer ts)))
 
 (defun fj-format-assignee (format-str user assignee ts)
   "Format an assignee timeline item.
