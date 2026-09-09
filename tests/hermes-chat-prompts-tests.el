@@ -1112,7 +1112,7 @@ stays available."
         (funcall resolve-first '((resolved . 1)))
         (let ((prompt (gethash "approval:sid-prompt"
                                hermes-chat--pending-prompts))
-              (header (hermes-test--header-line-string)))
+              (header (substring-no-properties (hermes-chat--header-line 200))))
           (should prompt)
           (should (equal (plist-get prompt :prompt-count) 1))
           (should (string-match-p "second approval"
@@ -1139,7 +1139,7 @@ stays available."
         (funcall resolve-first '((resolved . 1)))
         (let ((prompt (gethash "approval:sid-prompt"
                                hermes-chat--pending-prompts))
-              (header (hermes-test--header-line-string)))
+              (header (substring-no-properties (hermes-chat--header-line 200))))
           (should prompt)
           (should (equal (plist-get prompt :prompt-count) 1))
           (should (string-match-p "second approval"
