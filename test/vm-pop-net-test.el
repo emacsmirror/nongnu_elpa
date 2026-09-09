@@ -1549,6 +1549,34 @@ The point of a timeout is a bound on waiting, not a bound on the session."
       (should (equal (vm-pop-net-test--get-mail mock crash) 2))
       (should-not (vm-pop-net-busy-p)))))
 
+(ert-deftest vm-pop-net-test-a-message-over-the-limit-is-named ()
+  "A message left for its size is named, with the size and the limit.
+
+It stays on the server, so raising the limit is all it takes -- but only for
+a reader who is told it is there.  The IMAP side says the same
+(`vm-imap-net-say-what-was-too-large')."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _seconds format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+        (let ((answer 'not-called)
+              (vm-pop-server-timeout 3)
+              (vm-pop-max-message-size 10)
+              (vm-pop-messages-per-session nil))
+          (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
+                            (lambda (result) (setq answer result)))
+          (let ((deadline (+ (float-time) 20)))
+            (while (and (eq answer 'not-called) (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should-not answer))))
+    (let ((about (seq-filter (lambda (line)
+                               (string-match-p "left on the server" line))
+                             said)))
+      (should (= (length about) 1))
+      (should (string-match-p "vm-pop-max-message-size" (car about)))
+      (should (string-match-p "bytes" (car about))))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here

@@ -3132,17 +3132,24 @@ messages."
 
 (defun vm-imap-net-unfinished-p (&optional folder)
   "Whether FOLDER has work with the server outstanding.
-A session running, or something waiting to run when that one ends."
-  (with-current-buffer (vm-imap-net-folder-buffer folder)
-    (or (and vm-imap-net-session
-	     (vm-net-session-live-p vm-imap-net-session))
-	(and vm-imap-net-waiting t))))
+A session running, or something waiting to run when that one ends.
+
+A folder that has been killed has none: its session may still be finishing,
+but nothing is waiting for it here, and `with-current-buffer' on a dead
+buffer would signal in the middle of a wait."
+  (let ((buffer (vm-imap-net-folder-buffer folder)))
+    (and (buffer-live-p buffer)
+	 (with-current-buffer buffer
+	   (or (and vm-imap-net-session
+		    (vm-net-session-live-p vm-imap-net-session))
+	       (and vm-imap-net-waiting t))))))
 
 (defun vm-imap-net-wait (&optional folder seconds)
   "Wait for FOLDER's work with the server to finish, up to SECONDS.
-For a caller that has to have the mail before it goes on -- a test, or a
-command that was asked to do something with what arrives.  Nothing in VM's
-own path calls this: waiting is what the conversion is for getting rid of.
+For a caller that has to have the mail before it goes on: a body a save or a
+copy must have in hand (`vm-load-bodies-through-the-driver'), folder-name
+completion, or a test.  Those are the only places VM waits on purpose, and
+the wait is `accept-process-output', so C-g works.
 
 What is queued behind the running session counts as unfinished: a body asked
 for during a fetch runs when the fetch ends, and a caller waiting for the

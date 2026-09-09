@@ -546,21 +546,35 @@ Nothing waits: this returns as soon as the connection is made."
   "Which of UIDS are to be fetched, as (NUMBER . UID) in server order.
 
 Left out: what RETRIEVED already has from SOURCE, and what is larger than
-`vm-pop-max-message-size'.  Cut at `vm-pop-messages-per-session' if that
-is set, so a maildrop with a thousand messages in it is not one session."
-  (let ((wanted nil))
+`vm-pop-max-message-size'.  What is left for its size is named, since a
+message nobody is told about is one nobody knows to raise the limit for; it
+stays on the server, so raising the limit is all it takes.  Cut at
+`vm-pop-messages-per-session' if that is set, so a maildrop with a thousand
+messages in it is not one session."
+  (let ((wanted nil)
+	(too-large nil))
     (dolist (pair uids)
       (let* ((number (car pair))
 	     (uid (cdr pair))
 	     (seen (assoc uid retrieved))
-	     (size (cdr (assq number sizes))))
-	(when (and (not (and seen
-			     (equal (nth 1 seen) source)
-			     (eq (nth 2 seen) 'uidl)))
-		   (or (null vm-pop-max-message-size)
-		       (null size)
-		       (<= size vm-pop-max-message-size)))
-	  (push pair wanted))))
+	     (size (cdr (assq number sizes)))
+	     (had (and seen
+		       (equal (nth 1 seen) source)
+		       (eq (nth 2 seen) 'uidl))))
+	(cond
+	 (had nil)
+	 ((and vm-pop-max-message-size size
+	       (> size vm-pop-max-message-size))
+	  (push size too-large))
+	 (t (push pair wanted)))))
+    (when too-large
+      (vm-net-warn 0 (concat "%s: %d message%s left on the server, over"
+			     " vm-pop-max-message-size (%d): %s")
+		   (vm-safe-popdrop-string source)
+		   (length too-large) (if (cdr too-large) "s" "")
+		   vm-pop-max-message-size
+		   (mapconcat (lambda (size) (format "%d bytes" size))
+			      (nreverse too-large) ", ")))
     (setq wanted (nreverse wanted))
     (if vm-pop-messages-per-session
 	(seq-take wanted vm-pop-messages-per-session)

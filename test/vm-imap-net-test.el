@@ -3798,6 +3798,91 @@ folder read back afterwards as the two that were sent."
                              (push (vm-imap-net-test--move-into type (cdr spec))
                                    complaints))))))))
 
+(ert-deftest vm-imap-net-test-a-killed-folder-has-nothing-outstanding ()
+  "A folder that has been killed reads as finished rather than signalling.
+
+`vm-imap-net-unfinished-p' is what a wait looks at, and a wait is now
+something a command does -- a save of a message whose body is still on the
+server.  `with-current-buffer' on a dead buffer would signal in the middle
+of it."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((folder (current-buffer)))
+      (should-not (vm-imap-net-unfinished-p folder))
+      (set-buffer-modified-p nil)
+      (kill-buffer folder)
+      ;; the question is answerable, and the answer is no
+      (should-not (vm-imap-net-unfinished-p folder))
+      (should (vm-imap-net-wait folder 1)))))
+
+(ert-deftest vm-imap-net-test-loading-a-body-says-it-is-on-its-way ()
+  "`vm-load-message' says the bodies were asked for, not that they arrived.
+
+Nothing waits on this path: the fetch shows each message again as its body
+lands.  Saying \"1 message body loaded\" when the fetch has only just started
+tells the reader the opposite of what happened."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (said nil))
+      (vm-unload-message 1 t)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-load-message 1))
+      (should (seq-find (lambda (line) (string-match-p "Retrieving 1 message body" line))
+                        said))
+      (should-not (seq-find (lambda (line) (string-match-p "bodies loaded\|body loaded" line))
+                            said))
+      (should (vm-imap-net-wait nil 10)))))
+
+(ert-deftest vm-imap-net-test-loading-a-body-with-no-password-says-so-once ()
+  "`vm-load-message' says so when the fetch cannot start, and loads nothing.
+
+The messages used to fall through to a loop that asked the driver again for
+each of them; now the one answer covers the lot, and the reader is told the
+reason rather than being told that bodies were loaded.  They keep their flag,
+so a later try still fetches them.
+
+The count of asks is not asserted: presenting the current message asks for
+its body too, and how often that happens is presentation's business.
+
+This passes against the code before the change as well: the per-message loop
+reached the same warning by a longer route.  It pins the property, not the
+change."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((vm-enable-external-messages '(imap))
+          (asked 0)
+          (warned nil)
+          (said nil))
+      (vm-unload-message 2 t)
+      (should (vm-body-to-be-retrieved-of (car vm-message-list)))
+      (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list)))
+      (cl-letf (((symbol-function 'vm-imap-net-load-message-bodies)
+                 (lambda (&rest _) (setq asked (1+ asked)) nil))
+                ((symbol-function 'vm-warn)
+                 (lambda (_level _seconds format &rest args)
+                   (push (apply #'format format args) warned)))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-goto-message 1)
+        (vm-load-message 2))
+      (should (> asked 0))
+      ;; the reason is given
+      (should (seq-find (lambda (line) (string-match-p "no password" line))
+                        warned))
+      ;; and no load is claimed: what it says about loading, if anything, is
+      ;; that none happened.  Taking the messages off the list either way used
+      ;; to report "1 message body loaded" with nothing loaded.
+      (let ((about-loading (seq-find (lambda (line)
+                                       (string-match-p "loaded" line))
+                                     said)))
+        (should about-loading)
+        (should (string-prefix-p "No " about-loading)))
+      ;; both still want their bodies, for a later try
+      (should (vm-body-to-be-retrieved-of (car vm-message-list)))
+      (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list))))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

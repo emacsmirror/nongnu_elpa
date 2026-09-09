@@ -32,6 +32,13 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     the server asked for.  VM now says so and fetches nothing, rather than
     fetching the same mail twice or deleting what you meant to keep.
 
+  * **A POP maildrop message over `vm-pop-max-message-size` is left on the
+    server, and VM now says so** (emacs-vm/vm#822), naming its size and the
+    limit, as the IMAP side does.  It used to be passed over in silence.  The
+    manual said VM asked, message by message, whether to fetch it; it has not
+    asked since the fetch became asynchronous, and the manual says what
+    happens now.
+
   * **A POP body line beginning with a dot arrived without it**
     (emacs-vm/vm#822): `.hidden` came out as `hidden`.  The asynchronous
     reader undoubled the dot RFC 1939 asks a server to stuff, and then the

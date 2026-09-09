@@ -764,13 +764,14 @@ from the @acronym{POP} mailbox in the same way as it retrieves it from system
 mailbox.  The retrieved messages can be automatically removed from the
 @acronym{POP} mailbox or retained until a later expunge (compact) operation.
 
-By default VM will retrieve all the messages from a @acronym{POP} mailbox
-before returning control of Emacs to you.  If the mailbox is
-large, the wait could be considerable.
+VM retrieves the messages while you carry on reading: the fetch is started
+and Emacs comes straight back to you, the messages arrive a bunch at a time,
+and the mode line says how far it has got.  Two options bound what one
+session fetches, which is worth setting for a mailbox large enough that you
+would rather have it in pieces:
 
 @vindex vm-pop-bytes-per-session
-Neither of these is set by default, so VM retrieves whatever the mailbox
-holds however large it is:
+Neither is set by default, so VM retrieves whatever the mailbox holds:
 
 @vmdocvmpopmessagespersession
 
@@ -778,15 +779,11 @@ holds however large it is:
 
 @vindex vm-pop-max-message-size
 @findex vm-get-new-mail
-@vindex vm-auto-get-new-mail
-Another way to reduce the amount of wait is to control how the large messages
-should be handled.  If you set @code{vm-pop-max-message-size} to a positive
-numeric value, VM will not automatically retrieve messages larger than this
-size.  If VM is retrieving messages because you invoked
-@code{vm-get-new-mail} interactively, then VM will ask whether it should
-retrieve the large message.  If VM is retrieving messages automatically
-(e.g. @code{vm-auto-get-new-mail} is set non-@code{nil}) then VM will skip
-the large messages and you can retrieve them later.
+You can also say how large a message VM will fetch at all.  If you set
+@code{vm-pop-max-message-size} to a positive numeric value, VM leaves a
+message larger than that on the server and says how large it was and what the
+limit is; raise the limit and the next @code{vm-get-new-mail} brings it in.
+In earlier releases VM asked, message by message, whether to retrieve it.
 
 @cindex expunging, @acronym{POP} servers
 @cindex compacting, @acronym{POP} servers
@@ -852,13 +849,14 @@ the same way as it retrieves it from system mailbox.  The retrieved
 messages can be automatically removed from the @acronym{IMAP} mailbox or
 retained until a later expunge operation.
 
-By default VM will retrieve all the messages from an @acronym{IMAP} mailbox
-before returning control of Emacs to you.  If the mailbox is
-large, the wait could be considerable.
+VM retrieves the messages while you carry on reading: the fetch is started
+and Emacs comes straight back to you, the messages arrive a bunch at a time,
+and the mode line says how far it has got.  Two options bound what one
+session fetches, which is worth setting for a mailbox large enough that you
+would rather have it in pieces:
 
 @vindex vm-imap-bytes-per-session
-Neither of these is set by default, so VM retrieves whatever the mailbox
-holds however large it is:
+Neither is set by default, so VM retrieves whatever the mailbox holds:
 
 @vmdocvmimapmessagespersession
 

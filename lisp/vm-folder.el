@@ -7248,6 +7248,8 @@ thread are loaded."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Load"))
 	(n 0)
+	;; bodies the driver was asked for, which are not loaded yet
+	(asked 0)
 	;; fetch-method
 	m mm
 	(need-refresh (not (vm-body-retrieved-of (vm-current-message)))))
@@ -7259,14 +7261,23 @@ thread are loaded."
 	  ;; and nothing waits for the answer.  This is the reading path, so a
 	  ;; body that has not arrived is no reason to hold Emacs; the fetch's
 	  ;; own callback shows the message again when it lands.
+	  ;;
+	  ;; So they are not counted as loaded: they are on their way, and
+	  ;; `asked' is what the reader is told about instead of `count'.
 	  (let ((wanted (vm-imap-messages-to-fetch mlist)))
 	    (when wanted
-	      (vm-inform 8 "Retrieving %s message bodies..." (length wanted))
-	      (vm-imap-net-load-message-bodies wanted)
-	      (setq n (length wanted))
-	      (setq mlist (seq-remove
-			   (lambda (m) (memq (vm-real-message-of m) wanted))
-			   mlist))))
+	      (if (vm-imap-net-load-message-bodies wanted)
+		  (progn
+		    (setq asked (length wanted))
+		    (setq mlist (seq-remove
+				 (lambda (m) (memq (vm-real-message-of m) wanted))
+				 mlist)))
+		;; nothing was started, so say so rather than reporting a load
+		;; that did not happen; the messages keep their flag and can be
+		;; asked for again
+		(vm-warn 0 2 "No message body loaded: VM has no password for %s"
+			 (buffer-name (vm-buffer-of (car wanted))))
+		(setq mlist nil))))
 	  (while mlist
 	    (setq m (car mlist))
 	    (setq mm (vm-real-message-of m))
@@ -7291,10 +7302,15 @@ thread are loaded."
       (vm-update-summary-and-mode-line))
       (when need-refresh
 	(vm-preview-current-message))
-      (if (= count 1)
-	  (vm-inform 5 "Message body loaded")
-	(vm-inform 5 "%s message bodies loaded" 
-		   (if (= count 0) "No" count))))
+      (cond
+       ;; asked for and on their way: the fetch shows each message again as
+       ;; its body lands, so saying they are loaded here would be wrong
+       ((> asked 0)
+	(vm-inform 5 "Retrieving %d message bod%s..."
+		   asked (if (= asked 1) "y" "ies")))
+       ((= count 1) (vm-inform 5 "Message body loaded"))
+       (t (vm-inform 5 "%s message bodies loaded"
+		     (if (= count 0) "No" count)))))
     ))
 
 ;;;###autoload
@@ -7342,8 +7358,8 @@ thread are retrieved."
 	    (setq n (length bunch))
 	    (vm-inform 8 "Retrieving %s message bodies..." n)
 	    (set-buffer (vm-buffer-of (vm-real-message-of (car bunch))))
-	    (dolist (mm (vm-load-bodies-through-the-driver
-			 (mapcar #'vm-real-message-of bunch)))
+	    ;; `vm-messages-to-fetch-together' answers with the real messages
+	    (dolist (mm (vm-load-bodies-through-the-driver bunch))
 	      (vm-register-fetched-message mm))
 	    (setq mlist (seq-remove
 			 (lambda (m) (memq (vm-real-message-of m) bunch))
@@ -7390,9 +7406,11 @@ Signals when the fetch cannot be started or does not finish."
       ;; `accept-process-output'.
       (unless (vm-imap-net-wait folder
 				(or vm-imap-server-timeout most-positive-fixnum))
-	(error (concat "The server did not answer in %s seconds; raise"
-		       " vm-imap-server-timeout or set it to nil to wait")
-	       vm-imap-server-timeout))
+	(if vm-imap-server-timeout
+	    (error (concat "The server did not answer in %s seconds; raise"
+			   " vm-imap-server-timeout or set it to nil to wait")
+		   vm-imap-server-timeout)
+	  (error "The folder went away while its server was being waited for")))
       (let ((missing (seq-remove #'vm-body-retrieved-of messages)))
 	(when missing
 	  (error "The server did not send %d message bod%s"
