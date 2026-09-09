@@ -23,7 +23,7 @@
 # Process this file with autoconf to produce a new configure script
 
 AC_PREREQ([2.69])
-AC_INIT([VM],[8.3.3snapshot],[viewmail-info@nongnu.org])
+AC_INIT([VM],[9.0.0snapshot],[viewmail-info@nongnu.org])
 AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
 AC_CONFIG_SRCDIR([configure.ac])
 

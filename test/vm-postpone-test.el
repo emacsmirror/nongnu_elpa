@@ -265,7 +265,7 @@ it did -- to an unbound variable of that name, not to the group."
   "The vm-decode-postponed-mime-* names are no longer defined.
 
 They were aliases from vm-pine, marked obsolete in 8.2.0 and dropped in
-8.3.3; what they pointed at is still here under its own name."
+9.0.0; what they pointed at is still here under its own name."
   (should-not (fboundp 'vm-decode-postponed-mime-message))
   (should-not (fboundp 'vm-decode-postponed-mime-button))
   (should (fboundp 'vm-mime-convert-to-attachment-buttons))

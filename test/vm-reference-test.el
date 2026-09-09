@@ -477,8 +477,9 @@ means editing the manual again when it is.  \"In earlier releases\" needs no
 upkeep.  Naming a version that has been out for years, as the manual does for
 8.2.0, is another matter and is left alone.
 
-The tree has also said two things at once: 8.3.3 in one obsolescence marker
-and 8.4.0 in three others, which is what made this worth pinning."
+The tree has also said two things at once: fifty-one obsolescence markers
+naming 8.3.3 while two named 8.4.0, neither of which is the release they
+landed in, which is what made this worth pinning."
   (let* ((version (with-temp-buffer
                     (insert-file-contents
                      (expand-file-name "../lisp/vm.el" vm-test-dir))
