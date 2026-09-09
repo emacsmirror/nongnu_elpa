@@ -1092,7 +1092,9 @@ fetched again."
 (defun vm-pop-net-get-folder-mail ()
   "Start fetching this POP folder's new mail, and answer with whether it did.
 Nil means nothing was started: VM has no password for the maildrop yet, or a
-session is already running on the folder."
+session is already running on the folder.  `started' means the fetch is under
+way and has not happened yet; see `vm-imap-net-get-spooled-mail', whose answer
+this matches."
   (let* ((folder (current-buffer))
 	 (source (vm-folder-pop-maildrop-spec))
 	 (folder-type (vm-folder-type-to-write)))
@@ -1122,7 +1124,7 @@ session is already running on the folder."
 	     folder))
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
-	    t)
+	    'started)
 	(vm-pop-net-no-password
 	 (vm-net-inform 6 (concat "%s: not started, VM has no password for"
 				  " the maildrop yet (%s)")

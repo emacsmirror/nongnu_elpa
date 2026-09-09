@@ -8,6 +8,15 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **Visiting a folder says that it is getting new mail** (emacs-vm/vm#825),
+    where it used to say the totals of the folder as it stood.  The fetch is
+    asynchronous, so at that moment it has not brought anything in yet, and
+    what a reader was told last was the cached count: on a folder with a large
+    cache, where reading the mailbox takes a while before the first message
+    arrives, that reads as nothing having happened.  `vm-get-new-mail` says
+    the same.  The mail arrives as it always did, and the arrival still
+    reports what came.
+
   * **The blocking IMAP and POP implementation is gone** (emacs-vm/vm#822),
     137 functions and about 4000 lines of `vm-imap.el` and `vm-pop.el`.  Every
     command a folder can run reaches its server through the asynchronous

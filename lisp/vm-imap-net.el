@@ -3094,9 +3094,14 @@ what the folder was given once and no longer holds, which is what two prefix
 arguments to `vm-get-new-mail' ask for.
 
 Nil means nothing was started: VM has no password for the maildrop and
-nobody can be asked for one from here.  Anything else means the fetch
-is under way: it has not happened yet, and this returns before it does, so
-the folder is usable while it runs and says what arrived when it lands.
+nobody can be asked for one from here.  `started' means the fetch is under
+way and has not happened yet: this returns before it does, so the folder is
+usable while it runs and says what arrived when it lands.
+
+`started' and not t, because the caller says what the folder holds when this
+answers and would otherwise say what it held before the fetch -- a visit that
+reported the cached count as though the fetch were done, which reads as
+nothing having happened (emacs-vm/vm#825).
 
 A folder already fetching is left to finish.  The mail check runs from a
 timer, and two fetches writing into one folder would interleave their
@@ -3105,7 +3110,7 @@ messages."
     (cond
      ((vm-imap-net-busy-p)
       (vm-net-inform 6 "%s: already fetching" (buffer-name folder))
-      t)
+      'started)
      (t
       (condition-case reason
 	  (progn
@@ -3125,7 +3130,7 @@ messages."
 		   full))
 	    (vm-net-inform 6 "%s: fetching new mail without waiting"
 		       (buffer-name folder))
-	    t)
+	    'started)
 	(vm-imap-net-no-password
 	 (vm-imap-net-say-no-password folder reason)
 	 nil))))))

@@ -3883,6 +3883,53 @@ change."
       (should (vm-body-to-be-retrieved-of (car vm-message-list)))
       (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list))))))
 
+(ert-deftest vm-imap-net-test-a-started-fetch-says-it-started ()
+  "`vm-imap-net-get-spooled-mail' answers `started', not t.
+
+The caller says what the folder holds when this answers.  With t it could not
+tell a fetch that had begun from mail that had arrived, so a visit reported
+the cached count as though the fetch were done -- which reads as nothing
+having happened, and is what was reported (emacs-vm/vm#825)."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
+    ;; nothing has arrived yet: that is what `started' says
+    (should (equal (length vm-message-list) 0))
+    (should (vm-imap-net-wait nil 10))
+    (should (equal (length vm-message-list) 1))))
+
+(ert-deftest vm-imap-net-test-a-folder-already-fetching-says-started-too ()
+  "A folder with a fetch running answers `started' as well: the mail is on
+its way either way, and the caller must not report a count as final."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
+    (should (vm-imap-net-busy-p))
+    (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
+    (should (vm-imap-net-wait nil 10))))
+
+(ert-deftest vm-imap-net-test-a-visit-says-it-is-getting-new-mail ()
+  "Visiting a folder says a fetch is under way rather than the old totals.
+
+What `vm-emit-totals-blurb' counts at that moment is what the fetch has not
+changed yet, and on a folder with a cache that is the old count.  The arrival
+says what came (emacs-vm/vm#825)."
+  (vm-imap-net-test--visiting (mock)
+    (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (level format &rest args)
+                   (when (<= level 5)
+                     (push (apply #'format format args) said)))))
+        ;; the folder is visited, so this is step [16] of `vm' on its own
+        (let ((vm-auto-get-new-mail t))
+          (when (eq (vm-get-spooled-mail nil) 'started)
+            (vm-inform 5 "%s: getting new mail..." (buffer-name)))))
+      (should (seq-find (lambda (line)
+                          (string-match-p "getting new mail" line))
+                        said)))
+    (should (vm-imap-net-wait nil 10))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here
