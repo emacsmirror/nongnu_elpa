@@ -1593,6 +1593,16 @@ Optionally, NO-CONFIRM means don't ask before deleting."
                            (lambda (_)
                              (message "issue deleted!")))))))
 
+;;; JUMP TO REPO
+
+(defun fj-jump-to-repo ()
+  "Jump to repo issues listing.
+Reads a string of \"OWNER/REPO\", slash-separated."
+  (interactive)
+  (let* ((owner-repo (read-string "Owner/repo: "))
+         (split (split-string owner-repo "/")))
+    (fj-list-issues-do (nth 1 split) (nth 0 split))))
+
 ;;; PULL REQUESTS
 ;; TODO: owner args not `fj-user'
 
