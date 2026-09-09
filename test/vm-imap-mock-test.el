@@ -87,77 +87,7 @@ would otherwise land in the user's home."
 
 ;;; The session
 
-(ert-deftest vm-imap-mock-test-a-session-logs-in-and-reads-capabilities ()
-  "VM greets, asks CAPABILITY and logs in, in that order.
-The capability list is what the rest of the session is decided by, so it has
-to survive being parsed: the mock offers UIDPLUS and NAMESPACE."
-  (vm-imap-mock-with (mock)
-    (let* ((vm-imap-server-timeout 10)
-           (process (vm-imap-make-session (vm-imap-mock-spec mock) nil
-                                          :purpose "test")))
-      (should (processp process))
-      (unwind-protect
-          (with-current-buffer (process-buffer process)
-            (should (memq 'IMAP4REV1 vm-imap-capabilities))
-            (should (memq 'UIDPLUS vm-imap-capabilities))
-            (should (vm-imap-mock-received-p mock "\\`[^ ]+ CAPABILITY\\'"))
-            (should (vm-imap-mock-received-p mock "LOGIN")))
-        (delete-process process)
-        (kill-buffer (process-buffer process))))))
-
-(ert-deftest vm-imap-mock-test-a-bad-password-is-refused ()
-  "A LOGIN the server answers NO gives no session, rather than a broken one."
-  (vm-imap-mock-with (mock :password "secret")
-    (let* ((vm-imap-server-timeout 10)
-           (spec (replace-regexp-in-string ":secret\\'" ":wrong"
-                                           (vm-imap-mock-spec mock)))
-           (process (vm-imap-make-session spec nil :purpose "test")))
-      (should-not (processp process))
-      (should (vm-imap-mock-received-p mock "LOGIN")))))
-
-(ert-deftest vm-imap-mock-test-selecting-a-mailbox-reports-what-is-in-it ()
-  "SELECT gives back the message count and the UID validity.
-Those two are what VM decides on: the count drives the fetch and a changed
-UID validity means the cache it holds is worthless."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice
-                                    vm-imap-mock-test--bob))
-    (let ((result (vm-imap-select-mailbox process "INBOX" t)))
-      (should (equal (nth 0 result) 2))         ; messages
-      (should (equal (nth 2 result) "1000"))    ; uid validity
-      (should (nth 3 result)))))                ; read-write
-
-(ert-deftest vm-imap-mock-test-examine-selects-read-only ()
-  "Asking for a read-only selection sends EXAMINE, and the mailbox comes back
-read-only.  The server says which it gave in the [READ-ONLY] of its tagged
-OK, and VM has to read it: believing a read-only mailbox writable is
-believing it may store flags and expunge there."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (let ((result (vm-imap-select-mailbox process "INBOX" t t)))
-      (should (equal (nth 0 result) 1))
-      (should-not (nth 3 result))
-      (should (vm-imap-mock-received-p mock "EXAMINE"))
-      (should-not (vm-imap-mock-received-p mock "\\`[^ ]+ SELECT")))))
-
-(ert-deftest vm-imap-mock-test-a-missing-mailbox-is-an-error ()
-  "Selecting a mailbox the server does not have fails rather than pretending."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (should-error (vm-imap-select-mailbox process "no-such-box" t))))
-
-(ert-deftest vm-imap-mock-test-uids-come-back-in-order ()
-  "The UID list pairs each message number with the server's UID for it.
-This is the mapping the whole IMAP folder is built on: a number is only good
-for this session, a UID is what survives one."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice
-                                    vm-imap-mock-test--bob))
-    (vm-imap-select-mailbox process "INBOX" t)
-    (let ((uids (vm-imap-get-uid-list process 1 2)))
-      (should (equal (sort (mapcar #'car uids) #'<) '(1 2)))
-      (should (equal (cdr (assq 1 uids)) "1"))
-      (should (equal (cdr (assq 2 uids)) "2")))))
+                ; read-write
 
 ;;; Fetching a folder
 
@@ -261,55 +191,7 @@ own attributes are set from."
     (should-not (vm-unread-flag (car vm-message-list)))
     (should (vm-new-flag (cadr vm-message-list)))))
 
-(ert-deftest vm-imap-mock-test-storing-a-flag-reaches-the-server ()
-  "A flag VM sets is a STORE the server sees, and it sticks."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (vm-imap-select-mailbox process "INBOX" t)
-    (vm-imap-send-command process "UID STORE 1 +FLAGS.SILENT (\\Deleted)")
-    (should (vm-imap-read-ok-response process))
-    (should (member "\\Deleted" (vm-imap-mock-flags mock "INBOX" 1)))))
-
-(ert-deftest vm-imap-mock-test-expunge-removes-only-the-deleted ()
-  "EXPUNGE takes away the messages flagged \\Deleted and leaves the rest."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list (cons vm-imap-mock-test--alice '("\\Deleted"))
-                                    vm-imap-mock-test--bob))
-    (vm-imap-select-mailbox process "INBOX" nil)
-    (vm-imap-send-command process "EXPUNGE")
-    (should (vm-imap-read-expunge-response process))
-    (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1))
-    (should (equal (vm-imap-mock-message-uid
-                    (car (vm-imap-mock-messages mock "INBOX")))
-                   2))))
-
 ;;; When the server does not play along
-
-(ert-deftest vm-imap-mock-test-a-refused-select-is-an-error ()
-  "A SELECT the server answers NO stops the session with an error rather
-than leaving VM to fetch from a mailbox it never selected."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice)
-            :refuse "SELECT")
-    (should-error (vm-imap-select-mailbox process "INBOX" t))))
-
-(ert-deftest vm-imap-mock-test-a-dropped-connection-is-noticed ()
-  "A server that hangs up mid-command is an error, not a wait for a
-response that is never coming."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice)
-            :drop-on "SELECT")
-    (should-error (vm-imap-select-mailbox process "INBOX" t))))
-
-(ert-deftest vm-imap-mock-test-a-session-survives-a-server-without-uidplus ()
-  "UIDPLUS is an extension, and a server without it is still usable.
-VM asks for capabilities before it asks for anything else, so what it does
-with a shorter list is worth knowing."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice) :no-uidplus t)
-    (should-not (memq 'UIDPLUS vm-imap-capabilities))
-    (should (memq 'IMAP4REV1 vm-imap-capabilities))
-    (should (equal (nth 0 (vm-imap-select-mailbox process "INBOX" t)) 1))))
 
 (ert-deftest vm-imap-mock-test-a-truncated-fetch-is-an-error ()
   "A download the server cuts off short is an error, not half a message.
@@ -343,25 +225,6 @@ where the command was typed."
         (delete-directory cache t)))))
 
 ;;; Mailboxes
-
-(ert-deftest vm-imap-mock-test-listing-the-mailboxes ()
-  "LIST names the mailboxes on the server."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (vm-imap-mock-add-message mock "Archive" vm-imap-mock-test--bob)
-    (let ((names (vm-imap-mailbox-list process nil)))
-      (should (member "INBOX" names))
-      (should (member "Archive" names)))))
-
-(ert-deftest vm-imap-mock-test-creating-and-deleting-a-mailbox ()
-  "CREATE makes a mailbox and DELETE takes it away, and the server agrees
-with VM about which ones exist afterwards."
-  (vm-imap-mock-test--with-session
-      (mock process :messages (list vm-imap-mock-test--alice))
-    (vm-imap-create-mailbox process "Later")
-    (should (member "Later" (vm-imap-mock-mailbox-names mock)))
-    (vm-imap-delete-mailbox process "Later")
-    (should-not (member "Later" (vm-imap-mock-mailbox-names mock)))))
 
 ;;; Retrieving from an IMAP maildrop, and external message bodies
 ;;
@@ -1036,74 +899,7 @@ outstanding, and why the asynchronous rewrite needs this first."
       (should (equal (car tags) "vm1"))
       (should-not (member "VM" tags)))))
 
-(ert-deftest vm-imap-mock-test-a-second-session-numbers-from-one-again ()
-  "The counter belongs to the session, not to Emacs: two sessions each start
-at vm1, which is what makes a trace buffer readable."
-  (dotimes (_ 2)
-    (vm-imap-mock-test--with-session (mock process)
-      (should (equal (car (vm-imap-mock-test--tags mock)) "vm1"))
-      (should (equal (with-current-buffer (process-buffer process)
-                       vm-imap-current-tag)
-                     (car (last (vm-imap-mock-test--tags mock))))))))
-
-(ert-deftest vm-imap-mock-test-a-response-is-matched-against-the-tag-sent ()
-  "`VM' in a response pattern means the tag of the command being waited for.
-A response carrying another tag is not the answer: that is the whole point
-of tagging commands separately."
-  (vm-imap-mock-test--with-session (mock process)
-    (let ((vm-imap-current-tag "vm7"))
-      (goto-char (point-max))
-      (let ((start (point)))
-        (insert "vm7 OK FETCH completed\r\n")
-        (goto-char start)
-        (setq vm-imap-read-point start)
-        (should (vm-imap-response-matches (vm-imap-read-response process)
-                                          'VM 'OK)))
-      (let ((start (point-max)))
-        (goto-char start)
-        (insert "vm6 OK FETCH completed\r\n")
-        (goto-char start)
-        (setq vm-imap-read-point start)
-        (should-not (vm-imap-response-matches (vm-imap-read-response process)
-                                              'VM 'OK))))))
-
 ;;; The buffer-type stack comes back the way it was (emacs-vm/vm#705)
-
-(ert-deftest vm-imap-mock-test-a-session-leaves-the-buffer-type-stack-alone ()
-  "REGRESSION: establishing a writable session pushes one buffer-type frame
-and pops one.
-
-`vm-establish-writable-imap-session' popped on its success path and popped
-again in its unwind-protect, which runs on that path too, so it came back
-having eaten the caller's frame.  The assertions that would have noticed are
-`vm-assert' and inert by default, and the stack is what tells VM whether it
-is in a folder buffer or a process buffer."
-  (vm-imap-mock-test--visiting (mock :messages (list vm-imap-mock-test--alice))
-    (let* ((spec (vm-imap-mock-spec mock))
-           (before (length vm-buffer-types))
-           (process (vm-establish-writable-imap-session spec)))
-      (should process)
-      (should (equal (length vm-buffer-types) before))
-      (vm-imap-end-session process))))
-
-(ert-deftest vm-imap-mock-test-expunging-leaves-the-buffer-type-stack-alone ()
-  "The same for the remote expunge, which used `vm-buffer-type:set' -- which
-replaces the top of the stack rather than pushing one -- and then popped in
-its unwind-protect, so it too came back a frame short."
-  (vm-imap-mock-test--visiting
-      (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
-    (let ((before (length vm-buffer-types))
-          (uid (vm-imap-uid-of (car vm-message-list)))
-          (validity (vm-folder-imap-uid-validity)))
-      (should uid)
-      ;; what vm-quit leaves behind for the next session to act on
-      (setq vm-imap-messages-to-expunge (list (cons uid validity)))
-      (vm-imap-expunge-remote-messages)
-      (vm-imap-net-wait nil 10)
-      (should (equal (length vm-buffer-types) before))
-      ;; and the message really went, so this is the expunge path and not an
-      ;; early return that never reached the stack at all
-      (should (equal (length (vm-imap-mock-messages mock "INBOX")) 1)))))
 
 (ert-deftest vm-imap-mock-test-a-bunch-costs-one-round-trip ()
   "Retrieval asks for a bunch of bodies and nothing else.
@@ -1588,16 +1384,3 @@ that were sent."
           (error (format "%s / %s: %s" type body (error-message-string err))))
       (when (file-exists-p dest) (delete-file dest)))))
 
-(ert-deftest vm-imap-mock-test-a-separator-shaped-body-arrives-whole ()
-  "Mail arriving from an IMAP maildrop lands as one message whatever it holds.
-Every folder type VM will create, crossed with the bodies that a type would
-otherwise read as a separator: twenty-four moves, each of two messages, each
-folder read back afterwards as the two that were sent."
-  (should (equal nil
-                 (delq nil
-                       (let (complaints)
-                         (dolist (type '(From_ mboxcl2 mmdf babyl)
-                                       (nreverse complaints))
-                           (dolist (spec vm-imap-mock-test--separator-bodies)
-                             (push (vm-imap-mock-test--move-into type (cdr spec))
-                                   complaints))))))))

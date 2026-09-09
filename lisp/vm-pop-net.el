@@ -546,21 +546,35 @@ Nothing waits: this returns as soon as the connection is made."
   "Which of UIDS are to be fetched, as (NUMBER . UID) in server order.
 
 Left out: what RETRIEVED already has from SOURCE, and what is larger than
-`vm-pop-max-message-size'.  Cut at `vm-pop-messages-per-session' if that
-is set, so a maildrop with a thousand messages in it is not one session."
-  (let ((wanted nil))
+`vm-pop-max-message-size'.  What is left for its size is named, since a
+message nobody is told about is one nobody knows to raise the limit for; it
+stays on the server, so raising the limit is all it takes.  Cut at
+`vm-pop-messages-per-session' if that is set, so a maildrop with a thousand
+messages in it is not one session."
+  (let ((wanted nil)
+	(too-large nil))
     (dolist (pair uids)
       (let* ((number (car pair))
 	     (uid (cdr pair))
 	     (seen (assoc uid retrieved))
-	     (size (cdr (assq number sizes))))
-	(when (and (not (and seen
-			     (equal (nth 1 seen) source)
-			     (eq (nth 2 seen) 'uidl)))
-		   (or (null vm-pop-max-message-size)
-		       (null size)
-		       (<= size vm-pop-max-message-size)))
-	  (push pair wanted))))
+	     (size (cdr (assq number sizes)))
+	     (had (and seen
+		       (equal (nth 1 seen) source)
+		       (eq (nth 2 seen) 'uidl))))
+	(cond
+	 (had nil)
+	 ((and vm-pop-max-message-size size
+	       (> size vm-pop-max-message-size))
+	  (push size too-large))
+	 (t (push pair wanted)))))
+    (when too-large
+      (vm-net-warn 0 (concat "%s: %d message%s left on the server, over"
+			     " vm-pop-max-message-size (%d): %s")
+		   (vm-safe-popdrop-string source)
+		   (length too-large) (if (cdr too-large) "s" "")
+		   vm-pop-max-message-size
+		   (mapconcat (lambda (size) (format "%d bytes" size))
+			      (nreverse too-large) ", ")))
     (setq wanted (nreverse wanted))
     (if vm-pop-messages-per-session
 	(seq-take wanted vm-pop-messages-per-session)
@@ -739,7 +753,11 @@ with none: the same cleaning up the blocking path does, in the same order."
 	  (goto-char (point-max))
 	  (unless (bolp) (insert "\n"))
 	  (setq end (point-marker))
-	  (vm-pop-cleanup-region start end)
+	  ;; No cleaning up here: `vm-pop-net-read-multiline' has already made
+	  ;; the CRLFs LFs and taken the stuffed dots off, and a second pass
+	  ;; over the same text takes a real leading dot with it -- a body line
+	  ;; of ".hidden" arrived as "hidden" (emacs-vm/vm#822).
+	  ;;
 	  ;; Some servers send the separators and some do not, which is what
 	  ;; the type of what arrived says.  Without them the message is a
 	  ;; bare one and is given the folder's own, the same way and in the
@@ -1031,7 +1049,7 @@ none."
 	      (goto-char (point-max))
 	      (unless (bolp) (insert "\n"))
 	      (setq end (point-marker))
-	      (vm-pop-cleanup-region start end)
+	      ;; Already cleaned by the reader; see the note above.
 	      (when (eq (vm-get-folder-type nil start end) 'unknown)
 		(vm-munge-message-separators folder-type start end)
 		(goto-char start)

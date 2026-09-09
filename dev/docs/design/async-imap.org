@@ -25,9 +25,17 @@ maildrop VM has no password for, and it asks for one first where a reader is
 there to be asked, so a second implementation would only put the same question
 twice.
 
-The blocking implementation is still in the tree and no longer serves
-anything.  What keeps it there is its own tests; it goes when they are
-triaged.
+The blocking implementation is gone: 137 functions and about 4000 lines of
+=vm-imap.el= and =vm-pop.el=, and the 60-odd tests that were the only thing
+still reaching them.  What is left in those two files is the folder-side code
+the driver calls -- specs, cache file names, passwords, flag arithmetic,
+response parsing -- and the two bug-report commands.
+
+Two things wait on purpose, and both wait on the driver, so =C-g= works:
+
+- a message body a save or a copy must have in hand, since a message written
+  without its body is worse than a wait.  =vm-load-bodies-through-the-driver=.
+- folder-name completion, since TAB has to answer with the names it has.
 
 The one-directional point is worth keeping: asynchronous underneath with
 something synchronous on top is available, and the reverse is not, because a
@@ -98,9 +106,9 @@ Both are the caller's own doing rather than a gap in the conversion.
   One connection, read by the asynchronous code, and =accept-process-output=
   leaves C-g working.  What is asked for once is cached.
 - A body a caller must have in hand, when saving or copying a message, is
-  fetched the blocking way rather than left to arrive later.  A message
-  written without its body is worse than a wait.  Presentation, which can wait
-  for it, takes the driver: =:may-arrive-later=.
+  fetched on the driver and waited for rather than left to arrive later.  A
+  message written without its body is worse than a wait.  Presentation, which
+  can wait for it, does not: =:may-arrive-later=.
 
 ** One session per folder
 
@@ -117,9 +125,9 @@ cache file.
 - Queued work reads the folder again when it runs rather than using what was
   true when it was asked for.  A body queued for a message since expunged is
   dropped; an expunge list is re-read.
-- The paths that still block, =vm-establish-new-folder-imap-session= and its
-  POP counterpart, wait for the folder's own session first and refuse rather
-  than proceed if it is still running.
+- Work that has to be waited for waits on the folder's own session, which is
+  what queueing behind it means; nothing opens a second connection to be able
+  to wait on it.
 
 ** A session that stops
 
@@ -146,8 +154,8 @@ mock server, a fresh fetch of a thousand messages:
 : byte-compiled   0.8s wall, worst pause 0.19s
 : from source     173s wall, worst pause 58s
 
-Uncompiled it behaves exactly like the blocking implementation it replaces, so
-VM says so once a session (=vm-imap-net-check-compiled=).
+Uncompiled it behaves the way the blocking implementation used to, so VM says
+so once a session (=vm-imap-net-check-compiled=).
 
 *** The UIDs the folder already holds
 
@@ -166,11 +174,10 @@ Two things keep the answer live, which a per-bunch snapshot did not:
 - =vm-message-list-generation= counts what an append-only reader cannot
   follow.  Every site that rewrites the list or takes a message out of it
   increments it, and the table is then filled again from nothing.
-- Both fetch paths append messages and give them their UIDs afterwards, so the
-  table can meet a message that has none yet.  The asynchronous path tells the
-  table each UID as it sets it (=vm-imap-net-note-held-message=) and the
-  blocking one forgets the table afterwards
-  (=vm-imap-net-forget-held-uids=).
+- A fetch appends messages and gives them their UIDs afterwards, so the table
+  can meet a message that has none yet.  It tells the table each UID as it
+  sets it (=vm-imap-net-note-held-message=), and a folder that leaves forgets
+  the table (=vm-imap-net-forget-held-uids=).
 
 Allocation is not what this saves: hash table storage is not Lisp vectors in
 Emacs 30, so the counters barely move.
@@ -183,11 +190,12 @@ through =iter-yield-from=.  Over a fetch of 6500 messages that is 340,000
 generator instantiations against 2,011 waits, so 99.4% of the parse paid for
 the machinery of waiting and never waited.
 
-Per response line, against the same tokens parsed by the blocking reader:
+Per response line, measured when the blocking reader was still there to
+compare against:
 
 | reader                      | conses | vector words |
 |-----------------------------+--------+--------------|
-| blocking, plain functions   |     84 |          112 |
+| plain functions             |     84 |          112 |
 | driven, a generator a token |  3,775 |       23,279 |
 
 That is 323M vector words to bring in 13MB of mail, and it is what the garbage

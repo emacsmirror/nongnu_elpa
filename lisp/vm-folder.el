@@ -4192,8 +4192,7 @@ changes should be discarded."
 	      (list this-command 'quitting))
   (if (and vm-folder-read-only vm-preserve-read-only-folders-on-disk)
       (setq no-change t))
-  (let ((virtual (eq major-mode 'vm-virtual-mode))
-	(process nil))
+  (let ((virtual (eq major-mode 'vm-virtual-mode)))
 
     ;; 1. Save folder if necessary
     ;; Why are we saving before expunging?  USR, 2012-11-12
@@ -4275,13 +4274,6 @@ changes should be discarded."
     ;;    nothing.  Nothing is lost that is not still on the server.
     (vm-imap-net-stop)
     (vm-pop-net-stop)
-    (cond ((and (eq vm-folder-access-method 'pop)
-		(setq process (vm-folder-pop-process)))
-	   (vm-pop-end-session process))
-	  ((and (eq vm-folder-access-method 'imap)
-		(setq process (vm-folder-imap-process)))
-	   (vm-imap-end-session process))
-	  )
     (message "")			; why this?  USR, 2010-05-03
 
     (let ((summary-buffer vm-summary-buffer)
@@ -5315,47 +5307,19 @@ anyway, which is what the check was going to ask."
 	       (delete maildrop vm-mail-checks-outstanding))
 	 (signal (car err) (cdr err)))))))
 
-(defvar vm-mail-check-failed nil
-  "Whether the last check of this folder's server for new mail failed.
-The periodic check runs every `vm-mail-check-interval' seconds, so a
-server VM cannot ask -- most often one whose password it does not hold --
-would otherwise report the same failure for as long as Emacs runs
-(emacs-vm/vm#712).")
-(make-variable-buffer-local 'vm-mail-check-failed)
-
-(defun vm-check-folder-for-mail (interactive check)
-  "Call CHECK to ask this folder's server whether it has new mail.
-INTERACTIVE says whether a question may be asked, and is passed to CHECK.
-
-A check that is not interactive comes from the mail-check timer, which can
-neither answer a password prompt nor do anything with the same failure every
-`vm-mail-check-interval' seconds.  Such a failure is reported once and the
-folder is then left alone until a check succeeds again; set
-`vm-mail-check-interval' to nil to stop checking altogether."
-  (if interactive
-      (funcall check interactive)
-    (condition-case err
-	(prog1 (funcall check nil)
-	  (setq vm-mail-check-failed nil))
-      (error
-       (unless vm-mail-check-failed
-	 (setq vm-mail-check-failed t)
-	 (vm-warn 0 0 "%s: not checking for new mail: %s"
-		  (buffer-name) (error-message-string err)))
-       nil))))
-
 (defun vm-check-for-spooled-mail (&optional interactive this-buffer-only)
   (if vm-global-block-new-mail
       nil
     (if (and vm-folder-access-method this-buffer-only)
+	;; On the driver, which answers whether it asked rather than whether
+	;; there is mail: the answer arrives in `vm-spooled-mail-waiting',
+	;; which is what the mode line reads.  A check that fails says so at
+	;; level 6 and is not repeated at the reader, so the once-per-failure
+	;; bookkeeping the blocking check needed has nothing to do here.
 	(cond ((eq vm-folder-access-method 'pop)
-	       (or (vm-pop-net-folder-check-mail)
-		   (vm-check-folder-for-mail interactive
-					     #'vm-pop-folder-check-mail)))
+	       (vm-pop-net-folder-check-mail))
 	      ((eq vm-folder-access-method 'imap)
-	       (or (vm-imap-net-folder-check-mail)
-		   (vm-check-folder-for-mail interactive
-					     #'vm-imap-folder-check-mail))))
+	       (vm-imap-net-folder-check-mail)))
       (let ((triples (vm-compute-spool-files (not this-buffer-only)))
 	    ;; since we could accept-process-output here (POP code),
 	    ;; a timer process might try to start retrieving mail
@@ -5379,35 +5343,33 @@ folder is then left alone until a check succeeds again; set
 	    (when (or this-buffer (not this-buffer-only))
 		  (if (file-exists-p crash)
 		      (setq mail-waiting t)
-		    (cond ((vm-imap-folder-spec-p maildrop)
-			   (setq meth 'vm-imap-check-mail))
-			  ((vm-pop-folder-spec-p maildrop)
-			   (setq meth 'vm-pop-check-mail))
-			  (t (setq meth 'vm-spool-check-mail)))
+		    (setq meth
+			  (cond ((vm-imap-folder-spec-p maildrop) 'imap)
+				((vm-pop-folder-spec-p maildrop) 'pop)
+				(t 'spool)))
 		    (cond
-		     ;; A maildrop VM can ask without waiting is asked without
-		     ;; waiting: the check is started here and its answer
-		     ;; arrives at `vm-note-mail-waiting'.  What this round
-		     ;; contributes is the answer the last one got
-		     ;; (emacs-vm/vm#473).
-		     ((or (and (eq meth 'vm-pop-check-mail)
-			       (vm-pop-net-checkable-p maildrop))
-			  (and (eq meth 'vm-imap-check-mail)
-			       (vm-imap-net-checkable-p maildrop)))
+		     ;; A spool file is looked at here and now: it is a file,
+		     ;; and there is no session to be had with it.
+		     ((eq meth 'spool)
+		      (setq mail-waiting
+			    (or mail-waiting (vm-spool-check-mail maildrop))))
+		     ;; A network maildrop is asked without waiting: the check
+		     ;; is started here and its answer arrives at
+		     ;; `vm-note-mail-waiting'.  What this round contributes is
+		     ;; the answer the last one got (emacs-vm/vm#473).
+		     ((if (eq meth 'imap)
+			  (vm-imap-net-checkable-p maildrop)
+			(vm-pop-net-checkable-p maildrop))
 		      (vm-start-mail-check maildrop)
 		      (setq mail-waiting
 			    (or mail-waiting (vm-mail-waiting-p maildrop))))
-		     ((not interactive)
-		      ;; allow no error to be signaled
-		      (condition-case nil
-			  (setq mail-waiting
-				(or mail-waiting
-				    (funcall meth maildrop)))
-			(error nil)))
+		     ;; Not checkable: VM has no password for it and nobody can
+		     ;; be asked from here.  Nothing is contributed rather than
+		     ;; the same question being put a second time by a blocking
+		     ;; check; the last answer, if there was one, still stands.
 		     (t
 		      (setq mail-waiting
-			    (or mail-waiting
-				(funcall meth maildrop))))))))
+			    (or mail-waiting (vm-mail-waiting-p maildrop))))))))
 	  (setq triples (cdr triples)))
 	mail-waiting ))))
 
@@ -5461,12 +5423,11 @@ maildrop is not one VM fetches over the network, or VM has no password for it
 and the reader, who has been asked, gave none.
 
 SAFE-MAILDROP is the name to show; RETRIEVAL-FUNCTION says which protocol it
-is."
+is, and is `imap', `pop' or `vm-spool-move-mail' -- the first two name no
+function, being the two protocols the driver fetches."
   (let ((folder (current-buffer))
-	(starter (cond ((eq retrieval-function 'vm-imap-move-mail)
-			#'vm-imap-net-move-mail)
-		       ((eq retrieval-function 'vm-pop-move-mail)
-			#'vm-pop-net-get-mail))))
+	(starter (cond ((eq retrieval-function 'imap) #'vm-imap-net-move-mail)
+		       ((eq retrieval-function 'pop) #'vm-pop-net-get-mail))))
     (and starter
 	 (condition-case nil
 	     (progn
@@ -5543,13 +5504,13 @@ unknown whether anything reached the crash box."
 		 (setq safe-maildrop 
 		       (or (vm-imap-account-name-for-spec maildrop)
 			   (vm-safe-imapdrop-string maildrop)))
-		 (setq retrieval-function 'vm-imap-move-mail))
+		 (setq retrieval-function 'imap))
 		((vm-pop-folder-spec-p maildrop)
 		 (setq non-file-maildrop t)
 		 (setq safe-maildrop 
 		       (or (vm-pop-find-name-for-spec maildrop)
 			   (vm-safe-popdrop-string maildrop)))
-		 (setq retrieval-function 'vm-pop-move-mail))
+		 (setq retrieval-function 'pop))
 		(t (setq retrieval-function 'vm-spool-move-mail)))
 	  (setq crash (expand-file-name crash vm-folder-directory))
 	  (when (eq (current-buffer) (vm-get-file-buffer in))
@@ -5569,8 +5530,7 @@ unknown whether anything reached the crash box."
 					     crash safe-maildrop)
 		      ;; on its way; the crash box is gobbled when it lands
 		      nil)
-		     ((memq retrieval-function
-			    '(vm-imap-move-mail vm-pop-move-mail))
+		     ((memq retrieval-function '(imap pop))
 		      ;; The driver did not start, which for a network maildrop
 		      ;; means VM has no password for it and the reader has
 		      ;; already been asked.  There is nothing else to try: one
@@ -7288,6 +7248,8 @@ thread are loaded."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Load"))
 	(n 0)
+	;; bodies the driver was asked for, which are not loaded yet
+	(asked 0)
 	;; fetch-method
 	m mm
 	(need-refresh (not (vm-body-retrieved-of (vm-current-message)))))
@@ -7295,24 +7257,27 @@ thread are loaded."
     (unwind-protect
 	(save-excursion
 	  (vm-inform 8 "Retrieving message body...")
-	  ;; IMAP bodies go through the driver where the maildrop allows it:
-	  ;; one command for all of them, and nothing waits for the answer.
+	  ;; IMAP bodies go through the driver: one command for all of them,
+	  ;; and nothing waits for the answer.  This is the reading path, so a
+	  ;; body that has not arrived is no reason to hold Emacs; the fetch's
+	  ;; own callback shows the message again when it lands.
+	  ;;
+	  ;; So they are not counted as loaded: they are on their way, and
+	  ;; `asked' is what the reader is told about instead of `count'.
 	  (let ((wanted (vm-imap-messages-to-fetch mlist)))
-	    (when (and wanted (vm-imap-net-load-message-bodies wanted))
-	      (setq mlist (seq-remove
-			   (lambda (m) (memq (vm-real-message-of m) wanted))
-			   mlist))))
-	  ;; More than one body to fetch from the same IMAP folder is one
-	  ;; command, not one each (issue #185).
-	  (let ((bunch (vm-messages-to-fetch-together mlist)))
-	    (when bunch
-	      (setq n (length bunch))
-	      (vm-inform 8 "Retrieving %s message bodies..." n)
-	      (set-buffer (vm-buffer-of (car bunch)))
-	      (setq count (+ count (length (vm-fetch-imap-messages bunch))))
-	      (setq mlist (seq-remove
-			   (lambda (m) (memq (vm-real-message-of m) bunch))
-			   mlist))))
+	    (when wanted
+	      (if (vm-imap-net-load-message-bodies wanted)
+		  (progn
+		    (setq asked (length wanted))
+		    (setq mlist (seq-remove
+				 (lambda (m) (memq (vm-real-message-of m) wanted))
+				 mlist)))
+		;; nothing was started, so say so rather than reporting a load
+		;; that did not happen; the messages keep their flag and can be
+		;; asked for again
+		(vm-warn 0 2 "No message body loaded: VM has no password for %s"
+			 (buffer-name (vm-buffer-of (car wanted))))
+		(setq mlist nil))))
 	  (while mlist
 	    (setq m (car mlist))
 	    (setq mm (vm-real-message-of m))
@@ -7337,10 +7302,15 @@ thread are loaded."
       (vm-update-summary-and-mode-line))
       (when need-refresh
 	(vm-preview-current-message))
-      (if (= count 1)
-	  (vm-inform 5 "Message body loaded")
-	(vm-inform 5 "%s message bodies loaded" 
-		   (if (= count 0) "No" count))))
+      (cond
+       ;; asked for and on their way: the fetch shows each message again as
+       ;; its body lands, so saying they are loaded here would be wrong
+       ((> asked 0)
+	(vm-inform 5 "Retrieving %d message bod%s..."
+		   asked (if (= asked 1) "y" "ies")))
+       ((= count 1) (vm-inform 5 "Message body loaded"))
+       (t (vm-inform 5 "%s message bodies loaded"
+		     (if (= count 0) "No" count)))))
     ))
 
 ;;;###autoload
@@ -7381,13 +7351,15 @@ thread are retrieved."
 		     count (vm-interactive-p) "Retrieve")))
       (save-excursion
 	;; More than one to fetch from the same IMAP folder is one command,
-	;; not one each (issue #185).
+	;; not one each (issue #185).  This caller must have the bodies, so it
+	;; waits; see `vm-load-bodies-through-the-driver'.
 	(let ((bunch (vm-messages-to-fetch-together mlist)))
 	  (when bunch
 	    (setq n (length bunch))
 	    (vm-inform 8 "Retrieving %s message bodies..." n)
 	    (set-buffer (vm-buffer-of (vm-real-message-of (car bunch))))
-	    (dolist (mm (vm-fetch-imap-messages bunch))
+	    ;; `vm-messages-to-fetch-together' answers with the real messages
+	    (dolist (mm (vm-load-bodies-through-the-driver bunch))
 	      (vm-register-fetched-message mm))
 	    (setq mlist (seq-remove
 			 (lambda (m) (memq (vm-real-message-of m) bunch))
@@ -7407,6 +7379,63 @@ thread are retrieved."
 	  (when (vm-interactive-p)
 	    (vm-update-summary-and-mode-line))))
       )))
+
+(declare-function vm-imap-net-load-message-bodies "vm-imap-net" (messages))
+(declare-function vm-imap-net-wait "vm-imap-net" (&optional folder seconds))
+(declare-function vm-body-retrieved-of "vm-message" (m))
+
+(defun vm-load-bodies-through-the-driver (messages)
+  "Fetch the bodies of MESSAGES on the driver and wait for them.
+They must be in one folder.  Answers MESSAGES.  One command for all of them
+rather than one each (issue #185), which is what the driver does with a list.
+
+For a caller that must have the bodies in hand: it is saving or copying them,
+and a message whose body has not arrived would be written as an empty one.  So
+this waits, on the folder's own session rather than on a second connection
+into it, and `accept-process-output' leaves C-g working.
+
+Signals when the fetch cannot be started or does not finish."
+  (when messages
+    (let ((folder (vm-buffer-of (car messages))))
+      (unless (vm-imap-net-load-message-bodies messages)
+	(error "VM has no password for this maildrop yet"))
+      ;; `vm-imap-server-timeout' nil means never time out, which is what it
+      ;; says and what the blocking fetch did; `vm-imap-net-wait' would read
+      ;; nil as its own default of 30 seconds.  C-g is the way out of a wait
+      ;; with no deadline, and works because the wait is
+      ;; `accept-process-output'.
+      (unless (vm-imap-net-wait folder
+				(or vm-imap-server-timeout most-positive-fixnum))
+	(if vm-imap-server-timeout
+	    (error (concat "The server did not answer in %s seconds; raise"
+			   " vm-imap-server-timeout or set it to nil to wait")
+		   vm-imap-server-timeout)
+	  (error "The folder went away while its server was being waited for")))
+      (let ((missing (seq-remove #'vm-body-retrieved-of messages)))
+	(when missing
+	  (error "The server did not send %d message bod%s"
+		 (length missing) (if (cdr missing) "ies" "y"))))))
+  messages)
+
+(defun vm-load-body-through-the-driver (mm may-arrive-later)
+  "Fetch MM's body on the driver, waiting unless MAY-ARRIVE-LATER.
+Answers `settled' when the body is in the folder and the driver has already
+made room for it, inserted it and settled it, and nil when it is not to be
+waited for.
+
+MAY-ARRIVE-LATER nil means the caller is saving or copying the message; see
+`vm-load-bodies-through-the-driver'."
+  (cond
+   (may-arrive-later
+    (unless (vm-imap-net-load-message-bodies (list mm))
+      (error "VM has no password for this maildrop yet"))
+    nil)
+   (t
+    (vm-load-bodies-through-the-driver (list mm))
+    ;; `vm-imap-net-store-body' has made room, inserted and settled the body
+    ;; already, so the caller must not do any of it again: settling a settled
+    ;; message moves the markers and leaves the text empty.
+    'settled)))
 
 (cl-defun vm-retrieve-real-message-body (mm &key
 					  (fetch nil) (register nil)
@@ -7434,23 +7463,20 @@ Gives an error if unable to retrieve message."
 	     (modified (buffer-modified-p))
 	     (fetch-result nil))
 	 (vm-make-room-for-message-body mm)
-	 ;; MAY-ARRIVE-LATER goes through the driver, where the maildrop allows
-	 ;; it: nothing waits, and a body wanted while a fetch is running is
-	 ;; fetched when that one ends rather than by a second session writing
-	 ;; this same folder.  The message is shown without its body for now and
-	 ;; the fetch's own callback shows it again when it lands.
+	 ;; MAY-ARRIVE-LATER does not wait: the message is shown without its
+	 ;; body for now and the fetch's own callback shows it again when it
+	 ;; lands.  A body wanted while a fetch is running is fetched when that
+	 ;; one ends rather than by a second session writing this same folder.
 	 ;;
 	 ;; Without it the body has to be here when this returns -- the caller
-	 ;; is saving the message, or copying it -- and a message whose body
-	 ;; has not arrived would be written without one.  That path blocks, and
-	 ;; waits for the folder's own session first rather than opening a
-	 ;; second one.
+	 ;; is saving the message, or copying it -- and a message whose body has
+	 ;; not arrived would be written without one.  So this waits, on the
+	 ;; same driver and the same session, the way folder-name completion
+	 ;; does; `accept-process-output' leaves C-g working.
 	 (condition-case err
 	     (setq fetch-result
-		   (if (and may-arrive-later
-			    (eq fetch-method 'imap)
-			    (vm-imap-net-load-message-bodies (list mm)))
-		       nil
+		   (if (eq fetch-method 'imap)
+		       (vm-load-body-through-the-driver mm may-arrive-later)
 		     (apply (intern (format "vm-fetch-%s-message" fetch-method))
 			    mm nil)))
 	   (error 
@@ -7460,11 +7486,11 @@ Gives an error if unable to retrieve message."
 	      (vm-warn 0 0 "Unable to load message; %s" 
 		       (error-message-string err)))))
 	 (when fetch-result
-	   (vm-settle-message-body mm modified)
+	   (unless (eq fetch-result 'settled)
+	     (vm-settle-message-body mm modified))
 	   (when register
 	     (vm-register-fetched-message mm))))))))
 
-(declare-function vm-fetch-imap-messages "vm-imap" (mlist))
 
 (defun vm-messages-to-fetch-together (mlist)
   "The messages of MLIST whose bodies can be fetched in one IMAP command.

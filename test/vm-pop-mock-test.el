@@ -73,98 +73,9 @@ between tests."
 
 ;;; Sessions and authentication
 
-(ert-deftest vm-pop-mock-test-session-opens ()
-  "A session can be opened, and it authenticates with USER and PASS."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
-    (let* ((vm-pop-server-timeout 10)
-	   (process (vm-pop-make-session (vm-pop-mock-spec mock) nil)))
-      (should process)
-      (should (process-live-p process))
-      (vm-pop-end-session process)
-      (should (equal '("USER vmtest" "PASS secret")
-		     (seq-take (vm-pop-mock-commands mock) 2)))
-      (should (vm-pop-mock-received-p mock "\\`QUIT")))))
-
-(ert-deftest vm-pop-mock-test-session-uses-apop ()
-  "With apop in the maildrop, VM authenticates with APOP and not with PASS.
-The mock checks the digest against the timestamp it greeted with, so this
-fails rather than passes if VM sends something that only looks like APOP."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
-    (let* ((vm-pop-server-timeout 10)
-	   (process (vm-pop-make-session (vm-pop-mock-spec mock "apop") nil)))
-      (should process)
-      (should (process-live-p process))
-      (vm-pop-end-session process)
-      (should (vm-pop-mock-received-p mock "\\`APOP "))
-      (should-not (vm-pop-mock-received-p mock "\\`PASS ")))))
-
-(ert-deftest vm-pop-mock-test-bad-password-is-refused ()
-  "A wrong password does not yield a usable session."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
-    (let* ((vm-pop-server-timeout 10)
-	   (vm-pop-ok-to-ask nil)
-	   (spec (format "pop:127.0.0.1:%d:pass:vmtest:wrong"
-			 (vm-pop-mock-port mock)))
-	   (process (condition-case nil (vm-pop-make-session spec nil)
-		      (error nil))))
-      (when (and process (process-live-p process))
-	(vm-pop-end-session process))
-      (should (vm-pop-mock-received-p mock "\\`PASS wrong"))
-      ;; Whatever it does with the session, it must not have got as far as
-      ;; looking at the maildrop.
-      (should-not (vm-pop-mock-received-p mock "\\`STAT")))))
-
 ;;; Checking for mail
 
-(ert-deftest vm-pop-mock-test-check-mail-sees-messages ()
-  "`vm-pop-check-mail' reports mail waiting when there is some."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1))
-    (let ((vm-pop-server-timeout 10)
-	  (vm-pop-retrieved-messages nil))
-      (should (vm-pop-check-mail (vm-pop-mock-spec mock))))))
-
-(ert-deftest vm-pop-mock-test-check-mail-on-empty-maildrop ()
-  "An empty maildrop is reported as no mail waiting."
-  (vm-pop-mock-with (mock :messages nil)
-    (let ((vm-pop-server-timeout 10)
-	  (vm-pop-retrieved-messages nil))
-      (should-not (vm-pop-check-mail (vm-pop-mock-spec mock))))))
-
 ;;; Retrieval
-
-(ert-deftest vm-pop-mock-test-retrieves-the-whole-maildrop ()
-  "Both messages arrive in the destination, and both are deleted afterwards."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :messages (list vm-pop-mock-test--message-1
-						 vm-pop-mock-test--message-2))
-    (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-    (let ((text (vm-pop-mock-test--contents dest)))
-      (should (string-match-p "Body of the first message" text))
-      (should (string-match-p "Body of the second message" text))
-      ;; In order, and each introduced by a From_ separator, since that is the
-      ;; folder type these are being appended to.
-      (should (< (string-match "pop-1@example.com" text)
-		 (string-match "pop-2@example.com" text)))
-      (should (= 2 (cl-count-if (lambda (line) (string-prefix-p "From " line))
-			       (split-string text "\n")))))
-    (should (vm-pop-mock-received-p mock "\\`RETR 1"))
-    (should (vm-pop-mock-received-p mock "\\`RETR 2"))
-    (should (vm-pop-mock-received-p mock "\\`DELE 1"))
-    (should (vm-pop-mock-received-p mock "\\`DELE 2"))
-    (should (null (vm-pop-mock-live-messages mock)))))
-
-(ert-deftest vm-pop-mock-test-retrieval-without-uidl ()
-  "A server with no UIDL is coped with, and everything still arrives.
-VM asks for a unique id first and falls back when the server refuses; that
-fallback has never been exercised."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :no-uidl t
-				 :messages (list vm-pop-mock-test--message-1
-						 vm-pop-mock-test--message-2))
-    (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-    (let ((text (vm-pop-mock-test--contents dest)))
-      (should (string-match-p "Body of the first message" text))
-      (should (string-match-p "Body of the second message" text)))))
 
 (ert-deftest vm-pop-mock-test-truncated-download-stores-nothing ()
   "A download cut off half way leaves no partial message behind.
@@ -189,63 +100,6 @@ corruption, and it would look like a short message rather than an error."
 				       (vm-pop-mock-spec mock) dest)
 		    (error 'signalled))))
       (should (memq result '(nil signalled))))
-    (should (equal "" (vm-pop-mock-test--contents dest)))
-    (should (equal '(1) (vm-pop-mock-live-messages mock)))))
-
-(ert-deftest vm-pop-mock-test-refused-delete-keeps-the-message ()
-  "A refused DELE does not lose the message it could not delete.
-The message is still on the server, so a later session will fetch it: what
-must not happen is VM treating it as gone."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :refuse "\\`DELE"
-				 :messages (list vm-pop-mock-test--message-1
-						 vm-pop-mock-test--message-2))
-    (vm-pop-move-mail (vm-pop-mock-spec mock) dest)
-    (should (vm-pop-mock-received-p mock "\\`DELE 1"))
-    ;; Nothing was actually deleted, whatever VM was told.
-    (should (equal '(1 2) (vm-pop-mock-live-messages mock)))))
-
-(ert-deftest vm-pop-mock-test-refused-delete-is-reported ()
-  "REGRESSION: a refused DELE is reported rather than passed over in silence.
-Issue #555.  DELE failing makes `vm-pop-move-mail' abandon the rest of the
-maildrop and return success -- message 2 here is never even fetched -- and it
-used to do that with nothing said, under a comment reading \"DELE can't
-fail\".  Nothing is lost, since the message is still on the server, but a fetch
-that stops after one of two messages and reports success has to say why."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :refuse "\\`DELE"
-				 :messages (list vm-pop-mock-test--message-1
-						 vm-pop-mock-test--message-2))
-    (let ((warnings nil))
-      (cl-letf (((symbol-function 'vm-warn)
-		 (lambda (_level _delay format &rest args)
-		   (push (apply #'format format args) warnings))))
-	(vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-      (should (cl-find-if (lambda (w) (string-match-p "DELE 1 failed" w))
-			  warnings))
-      ;; And the thing the warning is about: it did stop early.
-      (should-not (vm-pop-mock-received-p mock "\\`RETR 2")))))
-
-(ert-deftest vm-pop-mock-test-wrong-octet-count-is-survivable ()
-  "A server that reports the wrong size still gets its message stored whole.
-A POP body ends at a dot on a line of its own; the octet count in LIST is for
-the progress report and the size threshold, so getting it wrong must not
-truncate anything."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :lie-about-size t
-				 :messages (list vm-pop-mock-test--message-1))
-    (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-    (let ((text (vm-pop-mock-test--contents dest)))
-      (should (string-match-p "Body of the first message" text))
-      (should (string-match-p "Message-ID: <pop-1@example.com>" text)))))
-
-(ert-deftest vm-pop-mock-test-too-large-message-is-left-alone ()
-  "A message over `vm-pop-max-message-size' is neither retrieved nor deleted."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :messages (list vm-pop-mock-test--message-1))
-    (let ((vm-pop-max-message-size 10))
-      (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-    (should-not (vm-pop-mock-received-p mock "\\`RETR"))
     (should (equal "" (vm-pop-mock-test--contents dest)))
     (should (equal '(1) (vm-pop-mock-live-messages mock)))))
 
@@ -366,23 +220,6 @@ small response arrives in one piece (emacs-vm/vm#626)."
 	      (converse "STAT" "\\`\\+OK 2 ")))
 	(when (process-live-p process) (delete-process process))))))
 
-(ert-deftest vm-pop-mock-test-mock-doubles-a-leading-dot ()
-  "A line of the message that begins with a dot is sent doubled.
-Without that the message would end early at its own text, which is the classic
-POP3 mistake in both directions."
-  (vm-pop-mock-test--retrieving (mock dest
-				 :messages (list (concat
-						  "From: alice@example.com\n"
-						  "Subject: dotted\n\n"
-						  "before\n"
-						  ".hidden line\n"
-						  "after\n")))
-    (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-    (let ((text (vm-pop-mock-test--contents dest)))
-      ;; The whole message arrived, dot line included and undoubled again.
-      (should (string-match-p "^\\.hidden line$" text))
-      (should (string-match-p "^after$" text)))))
-
 (ert-deftest vm-pop-mock-test-a-client-without-a-filter-loses-what-arrives ()
   "The trap behind issue #626, demonstrated on two clients side by side.
 
@@ -434,52 +271,6 @@ ever started buffering for a filterless process."
         (when (process-live-p process) (delete-process process))))))
 
 ;;; A server that goes quiet (emacs-vm/vm#639)
-
-(ert-deftest vm-pop-mock-test-a-silent-server-times-out ()
-  "REGRESSION: a POP server that accepts and then says nothing is given up on.
-Issue #639.
-
-VM passed no timeout at any of its five POP reads, so `vm-pop-server-timeout'
-guarded only the connect.  A server that answered the greeting and then went
-quiet left Emacs waiting for ever, with nothing to do but C-g -- and C-g in
-the middle of a retrieval is how mail goes missing.
-
-The mock here answers the greeting and the login and then ignores STAT, which
-is the first thing VM asks for afterwards.  With the timeout honoured the
-command gives up and says so; without it this test does not fail, it hangs."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1)
-                          :silent-on "\\`STAT")
-    (let ((vm-pop-server-timeout 2)
-          (dest (make-temp-file "vm-pop-silent"))
-          (started (float-time)))
-      (unwind-protect
-          (let ((text-quoting-style 'grave))
-            ;; the read gives up and signals; what to do about it is the
-            ;; caller's business, and vm-get-spooled-mail turns it into a
-            ;; warning
-            (should (equal (cadr (should-error
-                                  (vm-pop-move-mail (vm-pop-mock-spec mock)
-                                                    dest)))
-                           "Timed out waiting for a response from the POP server"))
-            ;; it gave up near the timeout rather than waiting on
-            (should (< (- (float-time) started) 30))
-            ;; and the server did hear the command it declined to answer
-            (should (vm-pop-mock-received-p mock "\\`STAT")))
-        (ignore-errors (delete-file dest))))))
-
-(ert-deftest vm-pop-mock-test-the-timeout-is-only-a-backstop ()
-  "A server that answers normally is not cut off by the timeout.
-The point of the change is a bound on waiting, not a bound on the session."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1
-                                          vm-pop-mock-test--message-2))
-    (let ((vm-pop-server-timeout 2)
-          (dest (make-temp-file "vm-pop-not-silent")))
-      (unwind-protect
-          (progn
-            (should (vm-pop-move-mail (vm-pop-mock-spec mock) dest))
-            (should (string-match-p "Body of the first message"
-                                    (vm-pop-mock-test--contents dest))))
-        (ignore-errors (delete-file dest))))))
 
 ;;; Visiting a POP folder (emacs-vm/vm#632)
 ;;
@@ -586,86 +377,6 @@ server."
      (setq vm-pop-messages-to-expunge (list "uid1"))
      ,@body))
 
-(ert-deftest vm-pop-mock-test-a-server-expunge-keeps-the-record-of-what-was-fetched ()
-  "REGRESSION: expunging on the server leaves the folder's record of what it
-fetched alone.
-
-Issue #759.  `vm-pop-synchronize-folder' passed its expunge queue to
-`vm-expunge-pop-messages' by overwriting `vm-pop-retrieved-messages', which
-is the list that stops a message being fetched twice and is written into the
-folder's `X-VM-POP-Retrieved' header on every save.  The folder came out of a
-save remembering the queue instead, ready to fetch again what it already had,
-and with the maildrop's password in the header: the entries were built from
-`vm-folder-pop-maildrop-spec', which carries it."
-  (vm-pop-mock-test--visiting
-      (mock :messages (list vm-pop-mock-test--message-1
-                            vm-pop-mock-test--message-2))
-    (vm-pop-mock-test--with-a-local-expunge mock
-      (vm-pop-synchronize-folder :do-remote-expunges t)
-      ;; the record of what the folder has had is as it was
-      (should (equal vm-pop-retrieved-messages retrieved))
-      (should-not (cl-find-if (lambda (entry)
-                                (string-match-p "secret" (nth 1 entry)))
-                              vm-pop-retrieved-messages))
-      ;; and the maildrop was told about the one message the queue named
-      (should (equal (vm-pop-mock-live-messages mock) '(2)))
-      (should-not vm-pop-messages-to-expunge))))
-
-(ert-deftest vm-pop-mock-test-a-refused-server-expunge-is-offered-again ()
-  "REGRESSION: a maildrop that refuses a DELE is reported, and what it would
-not delete stays queued for next time.
-
-Issue #760.  The loop skipped the rest of a maildrop by throwing to a `catch'
-that the handler had already left, so a refused DELE came out as
-\(no-catch replay t): the warning was printed, and then the error took the
-count and the trouble report with it and reached the caller, which for a save
-is `vm-pop-synchronize-folder'."
-  (vm-pop-mock-test--visiting
-      (mock :messages (list vm-pop-mock-test--message-1)
-            :refuse "\\`DELE")
-    (vm-pop-mock-test--with-a-local-expunge mock
-      (let ((warnings nil))
-        (cl-letf (((symbol-function 'vm-warn)
-                   (lambda (_level _seconds &rest args)
-                     (push (apply #'format args) warnings)))
-                  ((symbol-function 'display-buffer) #'ignore))
-          (vm-pop-synchronize-folder :do-remote-expunges t))
-        (should (cl-find-if (lambda (w)
-                              (string-match-p "DELE 1 failed" w))
-                            warnings)))
-      (should (vm-pop-mock-received-p mock "\\`DELE 1"))
-      ;; the message is still there, and still owed to the maildrop
-      (should (equal (vm-pop-mock-live-messages mock) '(1)))
-      (should (equal vm-pop-messages-to-expunge (list "uid1")))
-      (should (equal vm-pop-retrieved-messages retrieved)))))
-
-(ert-deftest vm-pop-mock-test-an-expunge-without-uidl-keeps-its-queue ()
-  "A maildrop that answers UIDL with -ERR is left alone and keeps its queue:
-without UIDL there is no telling which message is which, and deleting the
-wrong one is worse than deleting none.
-
-Issue #760 for the UIDL half, which threw to the same absent `catch'.  The
-warning names the maildrop and no longer a message number, there being no one
-message to name: it used to print whatever the last DELE was, or nil."
-  (vm-pop-mock-with (mock :messages (list vm-pop-mock-test--message-1)
-                          :no-uidl t)
-    (let* ((vm-pop-server-timeout 10)
-           (spec (vm-pop-mock-spec mock))
-           (entries (list (list "uid1" spec 'uidl)))
-           (warnings nil)
-           left)
-      (cl-letf (((symbol-function 'vm-warn)
-                 (lambda (_level _seconds &rest args)
-                   (push (apply #'format args) warnings)))
-                ((symbol-function 'display-buffer) #'ignore))
-        (setq left (vm-pop-expunge-entries entries)))
-      (should (equal left entries))
-      (should-not (vm-pop-mock-received-p mock "\\`DELE"))
-      (should (cl-find-if (lambda (w) (string-match-p "UIDL failed on" w))
-                          warnings))
-      (should-not (cl-find-if (lambda (w) (string-match-p "UIDL nil" w))
-                              warnings)))))
-
 ;;; Arriving mail whose body looks like a folder separator
 
 ;; Everything above retrieves messages whose bodies are ordinary prose.  What
@@ -731,22 +442,6 @@ that were sent."
                         (t nil)))))
           (error (format "%s: %s" type (error-message-string err))))
       (when (file-exists-p dest) (delete-file dest)))))
-
-(ert-deftest vm-pop-mock-test-a-separator-shaped-body-arrives-whole ()
-  "Mail arriving from POP lands as one message whatever its body looks like.
-Every folder type VM will create, crossed with the bodies that a type would
-otherwise read as a separator: twenty-four retrievals, each of two messages,
-each folder read back afterwards as the two that were sent."
-  (should (equal nil
-                 (delq nil
-                       (let (complaints)
-                         (dolist (type '(From_ mboxcl2 mmdf babyl)
-                                       (nreverse complaints))
-                           (dolist (spec vm-pop-mock-test--separator-bodies)
-                             (let ((c (vm-pop-mock-test--retrieve-into
-                                       type (cdr spec))))
-                               (push (and c (format "%s / %s" c (car spec)))
-                                     complaints)))))))))
 
 (provide 'vm-pop-mock-test)
 

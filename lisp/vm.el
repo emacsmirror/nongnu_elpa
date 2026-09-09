@@ -288,8 +288,12 @@ deleted messages.  Use `###' to expunge deleted messages."
 	       (vm-set-folder-pop-maildrop-spec remote-spec))
 	      ((eq access-method 'imap)
 	       (vm-set-folder-imap-maildrop-spec remote-spec)
-	       (vm-register-folder-garbage 
-		'vm-kill-folder-imap-session nil)
+	       ;; No garbage action for the session.  The blocking one
+	       ;; registered `vm-kill-folder-imap-session' here, which ended a
+	       ;; session that sat idle between commands.  A driver session is
+	       ;; meant to outlive the folder buffer -- a quit writes the file
+	       ;; and kills the buffer while the flags are still going up --
+	       ;; and stopping it on kill-buffer would lose them.
 	       )))
 
 

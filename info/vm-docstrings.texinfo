@@ -4149,24 +4149,6 @@ that destroyed mail nobody asked it to (emacs-vm/vm#752).
 
 @end macro
 
-@macro vmdocvmimapunsetbodyretrieve
-@deffn Command vm-imap-unset-body-retrieve
-@findex vm-imap-unset-body-retrieve
-Unset the body-to-be-retrieved flag of all the messages.  May
-  be needed if the folder has become corrupted somehow.
-@end deffn
-
-@end macro
-
-@macro vmdocvmimapunsetbytecounts
-@deffn Command vm-imap-unset-byte-counts
-@findex vm-imap-unset-byte-counts
-Unset the byte counts of all the messages, so that the size of the
-downloaded bodies will be displayed.
-@end deffn
-
-@end macro
-
 @macro vmdocvmlistimapfolders
 @deffn Command vm-list-imap-folders account &optional filter-new
 @findex vm-list-imap-folders

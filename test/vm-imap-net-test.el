@@ -107,7 +107,7 @@ leaving the caller to work out that nothing happened."
 
 (ert-deftest vm-imap-net-test-the-password-is-not-in-the-transcript ()
   "The session buffer is a transcript, and LOGIN's arguments are left out of
-it, as the blocking implementation leaves them out."
+it.  The buffer is kept as the trace `vm-imap-submit-bug-report' sends."
   (vm-imap-net-test--with-session (mock)
     (vm-imap-net-test--run mock (vm-imap-net-test--login "vmtest" "secret"))
     (with-current-buffer vm-imap-net-test--buffer
@@ -687,28 +687,6 @@ tracked."
   "A session that waits for something that never arrives."
   (iter-yield (lambda () nil))
   'never)
-
-(ert-deftest vm-imap-net-test-a-blocking-session-waits-for-the-running-one ()
-  "The paths that still block wait for the folder's own session first.
-
-Whatever has not been converted must not open a second connection into a
-folder that an asynchronous session is writing: two sets of messages, flags
-and expunges going into one buffer and one cache file is how a folder gets
-corrupted.  A session that never finishes is refused rather than joined."
-  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
-    (let ((session (vm-net-session :name "stuck"))
-          (vm-imap-server-timeout 0.5))
-      (setf (vm-net-session-buffer session)
-            (generate-new-buffer " *vm-imap-net-test-stuck*"))
-      (vm-net-start session (vm-imap-net-test--never-finishes))
-      (setq vm-imap-net-session session)
-      (should (vm-imap-net-busy-p))
-      (unwind-protect
-          ;; it waits, and says so rather than opening a second connection
-          (should-error (vm-establish-new-folder-imap-session t "test" nil))
-        (vm-net-abandon session)
-        (let ((buffer (vm-net-session-buffer session)))
-          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest vm-imap-net-test-a-queued-body-for-a-gone-message-is-dropped ()
   "A body queued for a message the folder no longer has is not asked for.
@@ -2876,7 +2854,7 @@ password that was never remembered, the other one that was thrown away."
 ;;; What the reader costs
 
 (ert-deftest vm-imap-net-test-the-reader-is-not-a-hundred-times-slower ()
-  "Reading a response is within reach of the blocking reader's speed.
+  "Reading a response line costs a fraction of a millisecond, not 100 of them.
 
 A single `unwind-protect' inside `vm-imap-net-read-object' cost 100
 milliseconds a response line -- generator.el re-establishes one on every
@@ -2885,11 +2863,9 @@ a server on this machine took 82 seconds of CPU because of it.  With the
 form gone it is a quarter of a millisecond a line.
 
 Timed rather than counted, since what went wrong was a constant factor and
-nothing else would have shown it.  Two bounds, both loose: 200 lines in under
-a second, where the old reader took twenty, and within 200 times the blocking
-reader, where the pathology was four thousand.  A ratio alone is too tight --
-the blocking reader takes a couple of milliseconds and a busy machine's noise
-is that big."
+nothing else would have shown it.  The bound is loose: 200 lines in under a
+second, where the pathology took twenty.  It used to be checked against the
+blocking reader as well, which is gone."
   (let* ((lines 200)
          (response (with-temp-buffer
                      (dotimes (i lines)
@@ -2897,17 +2873,7 @@ is that big."
                                        (1+ i) (1+ i) (+ 500 i))))
                      (insert "vm1 OK FETCH completed\r\n")
                      (buffer-string)))
-         (blocking 0)
          (driven 0))
-    (with-temp-buffer
-      (insert response)
-      (setq vm-imap-read-point (point-min))
-      (goto-char (point-min))
-      (let ((start (float-time)) (n 0))
-        (while (< n lines)
-          (vm-imap-read-response nil)
-          (setq vm-imap-read-point (point) n (1+ n)))
-        (setq blocking (- (float-time) start))))
     (with-temp-buffer
       (insert response)
       (vm-imap-net-init)
@@ -2918,9 +2884,8 @@ is that big."
             (while t (iter-next iterator))
           (iter-end-of-sequence nil))
         (setq driven (- (float-time) start))))
-    (should (> blocking 0))
-    (should (< driven 1.0))
-    (should (< driven (* 200 (max blocking 0.001))))))
+    (should (> driven 0))
+    (should (< driven 1.0))))
 
 (iter-defun vm-imap-net-test--read-lines (n)
   "Read N response lines through the driver's reader."
@@ -3040,23 +3005,16 @@ plan's own check having been made before any of this was asked for."
                         #'string-lessp)))
           (vm-imap-mock-messages mock "INBOX")))
 
-(defun vm-imap-net-test--mark-read-after-a-shift (driven)
+(defun vm-imap-net-test--mark-read-after-a-shift ()
   "Mark the folder's second message read after the mailbox has shifted.
 Another client expunges the first message, so every sequence number VM holds
-is one too high.  DRIVEN nil sends the flags the blocking way instead.
-Answers with the server's flags afterwards."
-  (let ((answer nil)
-        (off (lambda (&rest _) nil)))
+is one too high.  Answers with the server's flags afterwards."
+  (let ((answer nil))
     (vm-imap-net-test--visiting (mock :messages
                                       (list "From: a@example.com\nSubject: one\n\nOne.\n"
                                             "From: b@example.com\nSubject: two\n\nTwo.\n"
                                             "From: c@example.com\nSubject: three\n\nThree.\n"))
       (should (equal (length vm-message-list) 3))
-      (unless driven
-        ;; the blocking path sends the flags down a session of its own, and
-        ;; reads the server's numbers into the folder as its callers do
-        (vm-establish-new-folder-imap-session t "flag test" nil)
-        (vm-imap-retrieve-uid-and-flags-data))
       ;; another client deletes the first message, after VM has read the
       ;; mailbox and before it sends anything
       (setf (vm-imap-mock-message-expunged
@@ -3069,9 +3027,7 @@ Answers with the server's flags afterwards."
         (should (equal (vm-folder-imap-uid-msn "2") 2))
         (vm-set-unread-flag second nil)
         (vm-set-attribute-modflag-of second t))
-      (cl-letf (((symbol-function 'vm-imap-net-save-attributes)
-                 (if driven (symbol-function 'vm-imap-net-save-attributes) off)))
-        (vm-imap-save-attributes))
+      (should (vm-imap-net-save-attributes))
       (vm-imap-net-wait nil 10)
       (setq answer (vm-imap-net-test--flags-on-the-server mock)))
     answer))
@@ -3085,12 +3041,11 @@ the server is told nothing until the next command; a STORE by number then
 reaches whatever is at that position now.  Marking VM's second message read
 set \\Seen on the third.
 
-Both paths send it as UID STORE, so the number the folder cached cannot
-target a stranger; a UID the mailbox no longer has matches nothing."
-  (dolist (driven '(t nil))
-    (let ((flags (vm-imap-net-test--mark-read-after-a-shift driven)))
-      ;; UID 1 is gone; UID 2 is the one that was marked, UID 3 untouched
-      (should (equal flags '((2 "\\seen") (3)))))))
+It is sent as UID STORE, so the number the folder cached cannot target a
+stranger; a UID the mailbox no longer has matches nothing."
+  (let ((flags (vm-imap-net-test--mark-read-after-a-shift)))
+    ;; UID 1 is gone; UID 2 is the one that was marked, UID 3 untouched
+    (should (equal flags '((2 "\\seen") (3))))))
 
 
 ;;; Fetching what the folder was given once and no longer holds (#751)
@@ -3643,6 +3598,290 @@ Recorded, it would never be fetched even after the limit was raised."
           (should (vm-imap-net-wait nil 10))
           (should (equal (mapcar #'vm-su-subject vm-message-list)
                          '("badgers" "enormous"))))))))
+
+;;; A body the caller must have in hand (emacs-vm/vm#822)
+
+(ert-deftest vm-imap-net-test-a-body-that-cannot-wait-comes-on-the-driver ()
+  "A caller that must have the body now gets it, on the driver, with a wait.
+
+`vm-retrieve-real-message-body' without `:may-arrive-later' is a save or a
+copy: a message whose body has not arrived would be written as an empty one.
+It used to fetch through the blocking implementation, a second connection into
+a folder the driver may be writing.  It waits on the folder's own session
+instead, which is what folder-name completion does."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (vm-imap-server-timeout 10)
+          (message (car vm-message-list))
+          (called nil))
+      (vm-unload-message 1 t)
+      (should (vm-body-to-be-retrieved-of message))
+      (cl-letf (((symbol-function 'vm-fetch-imap-message)
+                 (lambda (&rest _) (setq called t) nil)))
+        ;; the answer is not the point and is not a documented one; the body
+        ;; being in the folder when this returns is
+        (vm-retrieve-real-message-body message :fail t))
+      ;; the body is here, and the blocking fetch was not used to get it
+      (should-not called)
+      (should-not (vm-body-to-be-retrieved-of message))
+      (should (string-match-p "The first body"
+                              (vm-imap-net-test--body-of message))))))
+
+(ert-deftest vm-imap-net-test-a-body-that-cannot-wait-reports-a-silent-server ()
+  "A server that never answers is an error, not an empty message body.
+The caller is saving or copying, so answering with no body would write one."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (vm-imap-server-timeout 0.5)
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      (should (vm-body-to-be-retrieved-of message))
+      ;; the folder never reads as finished, so the wait runs out
+      (cl-letf (((symbol-function 'vm-imap-net-unfinished-p) (lambda (&rest _) t)))
+        (let ((error-data (should-error (vm-retrieve-real-message-body
+                                         message :fail t)
+                                        :type 'error)))
+          (should (string-match-p "did not answer"
+                                  (error-message-string error-data)))
+          ;; the option is named, since raising it is the answer
+          (should (string-match-p "vm-imap-server-timeout"
+                                  (error-message-string error-data))))))))
+
+(ert-deftest vm-imap-net-test-a-body-with-no-password-is-an-error ()
+  "With no password the fetch cannot start, and that is an error rather than
+a message written without its body."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      (cl-letf (((symbol-function 'vm-imap-net-load-message-bodies)
+                 (lambda (&rest _) nil)))
+        (let ((error-data (should-error (vm-retrieve-real-message-body
+                                         message :fail t)
+                                        :type 'error)))
+          (should (string-match-p "no password"
+                                  (error-message-string error-data))))))))
+
+(ert-deftest vm-imap-net-test-a-body-that-may-arrive-later-does-not-wait ()
+  "With `:may-arrive-later' nothing waits, which is the reading path."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (message (car vm-message-list)))
+      (vm-unload-message 1 t)
+      ;; does not wait: the body is not here when this returns
+      (vm-retrieve-real-message-body message :may-arrive-later t)
+      (should (vm-body-to-be-retrieved-of message))
+      (should (vm-imap-net-wait nil 10))
+      (should-not (vm-body-to-be-retrieved-of message)))))
+
+;;; What the blocking session's own tests used to cover (emacs-vm/vm#822)
+
+(iter-defun vm-imap-net-test--select-only (mailbox)
+  "Log in and select MAILBOX, and answer what SELECT said."
+  (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
+  (prog1 (iter-yield-from (vm-imap-net-select mailbox))
+    (vm-imap-net-logout)))
+
+(ert-deftest vm-imap-net-test-a-refused-select-stops-the-session ()
+  "A SELECT the server answers NO stops the session with an error rather than
+leaving VM to fetch from a mailbox it never selected."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice) :refuse "SELECT")
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--select-only "INBOX"))))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (vm-net-session-error session)))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-the-server-has-not-got-stops-the-session ()
+  "Selecting a mailbox the server does not have fails rather than pretending."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice))
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--select-only "no-such-box"))))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (vm-net-session-error session)))))
+
+(ert-deftest vm-imap-net-test-a-server-without-uidplus-is-still-usable ()
+  "UIDPLUS is an extension, and a server without it is still usable.
+VM asks for capabilities before it asks for anything else, so what it does
+with a shorter list is worth knowing."
+  (vm-imap-net-test--with-session
+      (mock :messages (list vm-imap-net-test--alice) :no-uidplus t)
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--select-only "INBOX"))))
+      (should (eq (vm-net-session-state session) 'done))
+      ;; SELECT still answers with what the mailbox holds
+      (should (equal (nth 0 (vm-net-session-value session)) 1)))))
+
+;;; A body a folder type would otherwise read as a separator
+
+(defconst vm-imap-net-test--separator-bodies
+  '(("plain"              . "an ordinary body line.")
+    ("a From_ line"       . "text\nFrom nobody@example.com Mon Jan  1 00:00:00 2024")
+    ("a From_ line first" . "From nobody@example.com Mon Jan  1 00:00:00 2024\nrest")
+    ("an mmdf separator"  . "text\n\001\001\001\001\nmore")
+    ("a babyl separator"  . "text\n\037\014\nmore")
+    ("8-bit"              . "Gr\303\274\303\237e"))
+  "Bodies that a folder of some type would otherwise read as a separator.")
+
+(defun vm-imap-net-test--message-with (n body)
+  "A message numbered N carrying BODY."
+  (concat "From: alice@example.com\nTo: vmtest@example.com\n"
+          (format "Subject: message %d\nMessage-ID: <imap-%d@example.com>\n\n" n n)
+          body "\n"))
+
+(defun vm-imap-net-test--messages-in (file type)
+  "Read FILE as a folder of TYPE; answer (TYPE-READ . COUNT).
+`vm-build-message-list' asks `vm-get-folder-type' rather than trusting the
+caller, so the buffer is given a name that states the type, as a folder VM
+visits has."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (insert-file-contents file)
+    (setq-local buffer-file-name (vm-folder-name-for-type file type))
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (cons vm-folder-type (length vm-message-list))))
+
+(defun vm-imap-net-test--move-into (type body)
+  "Move two messages, the first carrying BODY, into a folder of TYPE.
+On the driver, which is the only way in; answers a complaint, or nil when the
+folder reads back as the two messages that were sent."
+  (let ((dest (make-temp-file "vm-imap-net-dest"))
+        (folder (generate-new-buffer " *vm-imap-net-move*")))
+    (unwind-protect
+        (condition-case err
+            (vm-imap-mock-with (mock :messages
+                                     (list (vm-imap-net-test--message-with 1 body)
+                                           (vm-imap-net-test--message-with 2 "second body")))
+              (let ((vm-imap-server-timeout 10)
+                    (vm-imap-expunge-after-retrieving t)
+                    (vm-imap-auto-expunge-alist nil)
+                    (vm-imap-max-message-size nil)
+                    (done nil))
+                (with-current-buffer folder
+                  (vm-test-init-folder-variables)
+                  (setq vm-folder-type type)
+                  (setq vm-imap-retrieved-messages nil)
+                  (should (vm-imap-net-move-mail
+                           (vm-imap-mock-spec mock) dest
+                           (lambda (result) (setq done (or result t)))))
+                  (let ((deadline (+ (float-time) 10)))
+                    (while (and (not done) (< (float-time) deadline))
+                      (accept-process-output nil 0.05)))
+                  (when (vm-net-error-p done)
+                    (error "%s" (error-message-string done))))
+                (let ((read (vm-imap-net-test--messages-in dest type)))
+                  (cond ((not (eq (car read) type))
+                         (format "%s / %s: read back as %s" type body (car read)))
+                        ((/= 2 (cdr read))
+                         (format "%s / %s: %d messages, not 2" type body (cdr read)))
+                        (t nil)))))
+          (error (format "%s / %s: %s" type body (error-message-string err))))
+      (when (buffer-live-p folder)
+        (with-current-buffer folder (set-buffer-modified-p nil))
+        (kill-buffer folder))
+      (when (file-exists-p dest) (delete-file dest)))))
+
+(ert-deftest vm-imap-net-test-a-separator-shaped-body-arrives-whole ()
+  "Mail arriving from an IMAP maildrop lands as one message whatever it holds.
+Every folder type VM will create, crossed with the bodies that a type would
+otherwise read as a separator: twenty-four moves, each of two messages, each
+folder read back afterwards as the two that were sent."
+  (should (equal nil
+                 (delq nil
+                       (let (complaints)
+                         (dolist (type '(From_ mboxcl2 mmdf babyl)
+                                       (nreverse complaints))
+                           (dolist (spec vm-imap-net-test--separator-bodies)
+                             (push (vm-imap-net-test--move-into type (cdr spec))
+                                   complaints))))))))
+
+(ert-deftest vm-imap-net-test-a-killed-folder-has-nothing-outstanding ()
+  "A folder that has been killed reads as finished rather than signalling.
+
+`vm-imap-net-unfinished-p' is what a wait looks at, and a wait is now
+something a command does -- a save of a message whose body is still on the
+server.  `with-current-buffer' on a dead buffer would signal in the middle
+of it."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((folder (current-buffer)))
+      (should-not (vm-imap-net-unfinished-p folder))
+      (set-buffer-modified-p nil)
+      (kill-buffer folder)
+      ;; the question is answerable, and the answer is no
+      (should-not (vm-imap-net-unfinished-p folder))
+      (should (vm-imap-net-wait folder 1)))))
+
+(ert-deftest vm-imap-net-test-loading-a-body-says-it-is-on-its-way ()
+  "`vm-load-message' says the bodies were asked for, not that they arrived.
+
+Nothing waits on this path: the fetch shows each message again as its body
+lands.  Saying \"1 message body loaded\" when the fetch has only just started
+tells the reader the opposite of what happened."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-enable-external-messages '(imap))
+          (said nil))
+      (vm-unload-message 1 t)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-load-message 1))
+      (should (seq-find (lambda (line) (string-match-p "Retrieving 1 message body" line))
+                        said))
+      (should-not (seq-find (lambda (line) (string-match-p "bodies loaded\|body loaded" line))
+                            said))
+      (should (vm-imap-net-wait nil 10)))))
+
+(ert-deftest vm-imap-net-test-loading-a-body-with-no-password-says-so-once ()
+  "`vm-load-message' says so when the fetch cannot start, and loads nothing.
+
+The messages used to fall through to a loop that asked the driver again for
+each of them; now the one answer covers the lot, and the reader is told the
+reason rather than being told that bodies were loaded.  They keep their flag,
+so a later try still fetches them.
+
+The count of asks is not asserted: presenting the current message asks for
+its body too, and how often that happens is presentation's business.
+
+This passes against the code before the change as well: the per-message loop
+reached the same warning by a longer route.  It pins the property, not the
+change."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((vm-enable-external-messages '(imap))
+          (asked 0)
+          (warned nil)
+          (said nil))
+      (vm-unload-message 2 t)
+      (should (vm-body-to-be-retrieved-of (car vm-message-list)))
+      (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list)))
+      (cl-letf (((symbol-function 'vm-imap-net-load-message-bodies)
+                 (lambda (&rest _) (setq asked (1+ asked)) nil))
+                ((symbol-function 'vm-warn)
+                 (lambda (_level _seconds format &rest args)
+                   (push (apply #'format format args) warned)))
+                ((symbol-function 'vm-inform)
+                 (lambda (_level format &rest args)
+                   (push (apply #'format format args) said))))
+        (vm-goto-message 1)
+        (vm-load-message 2))
+      (should (> asked 0))
+      ;; the reason is given
+      (should (seq-find (lambda (line) (string-match-p "no password" line))
+                        warned))
+      ;; and no load is claimed: what it says about loading, if anything, is
+      ;; that none happened.  Taking the messages off the list either way used
+      ;; to report "1 message body loaded" with nothing loaded.
+      (let ((about-loading (seq-find (lambda (line)
+                                       (string-match-p "loaded" line))
+                                     said)))
+        (should about-loading)
+        (should (string-prefix-p "No " about-loading)))
+      ;; both still want their bodies, for a later try
+      (should (vm-body-to-be-retrieved-of (car vm-message-list)))
+      (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list))))))
 
 (provide 'vm-imap-net-test)
 

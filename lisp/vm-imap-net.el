@@ -64,8 +64,7 @@
 
 (defvar vm-imap-net-read-point nil
   "Where in the process buffer the next response begins.
-Buffer-local to a session's process buffer, as `vm-imap-read-point\\=' is for
-the blocking implementation.")
+Buffer-local to a session's process buffer.")
 (make-variable-buffer-local 'vm-imap-net-read-point)
 
 (defvar vm-imap-net-tag 0
@@ -421,10 +420,9 @@ Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols, as
 (defun vm-imap-net-remember-password (password)
   "Remember PASSWORD for this session's maildrop, the server having taken it.
 
-After the login and not before: an entry in `vm-imap-passwords' is what
-the operations that still block look the password up in, and a wrong one
-there is a login that fails without anybody being asked anything.  The
-blocking path writes it at the same point, and for the same reason."
+After the login and not before: an entry in `vm-imap-passwords' is what the
+next session looks the password up in, and a wrong one there is a login that
+fails without anybody being asked anything."
   (let ((key vm-imap-net-password-key))
     (when (and key (stringp password) (not (equal password ""))
 	       (not (equal password "*"))
@@ -780,7 +778,7 @@ and the generators it runs inside rebuild their closures on every call from
 source, through `cconv-make-interpreted-closure'.  Measured on a mock
 server, fetching a thousand messages takes 0.8 seconds compiled and three
 minutes from source, with Emacs held for tens of seconds at a time -- which
-looks exactly like the blocking implementation this replaces.  A reader
+looks exactly like the blocking implementation VM used to have.  A reader
 testing an uncompiled tree would draw the wrong conclusion, so VM says so
 rather than being slow silently."
   (unless (or vm-imap-net-said-it-is-uncompiled
@@ -1254,9 +1252,9 @@ save landing in the middle of a bunch used to write to the cache file -- and
 after a crash there, the next fetch had no UID for it and brought it again, so
 the reader had it twice.
 
-The same cleaning up the blocking path does, in the same order: CRLF to LF,
-the separators the folder's own type wants, and the headers that go with
-them."
+The cleaning up a crash box wants, in the order the blocking path did it:
+CRLF to LF, the separators the folder's own type wants, and the headers that
+go with them."
   (with-current-buffer holding
     (save-excursion
       (save-restriction
@@ -2632,9 +2630,8 @@ to be rewritten while another is being answered for."
 
 This one waits, up to SECONDS, and says so: it is what completion is built
 on, and completion has to answer with the names it has.  What it does not do
-is open a second connection or run the blocking implementation -- the session
-is the driver's, and the wait is `accept-process-output', so C-g still
-works.
+is open a second connection -- the session is the folder's own, and the wait
+is `accept-process-output', so C-g still works.
 
 SELECTABLE-ONLY leaves out the names the server marks \\Noselect."
   (let ((names nil)
@@ -2962,8 +2959,8 @@ while it does.
 FULL-RETRIEVE asks for the messages the folder was given once and no longer
 holds; see `vm-imap-net-plan\\='.
 
-Signals `vm-imap-net-no-password' where VM has no password yet, which
-is a caller\\='s cue to use the blocking implementation."
+Signals `vm-imap-net-no-password' where VM has no password yet, and there is
+nothing else to try: nobody can be asked for one from inside a filter."
   (let* ((folder (current-buffer))
 	 (opened (vm-imap-net-open source "IMAP fetch" may-ask))
 	 (session (car opened))
@@ -3135,17 +3132,24 @@ messages."
 
 (defun vm-imap-net-unfinished-p (&optional folder)
   "Whether FOLDER has work with the server outstanding.
-A session running, or something waiting to run when that one ends."
-  (with-current-buffer (vm-imap-net-folder-buffer folder)
-    (or (and vm-imap-net-session
-	     (vm-net-session-live-p vm-imap-net-session))
-	(and vm-imap-net-waiting t))))
+A session running, or something waiting to run when that one ends.
+
+A folder that has been killed has none: its session may still be finishing,
+but nothing is waiting for it here, and `with-current-buffer' on a dead
+buffer would signal in the middle of a wait."
+  (let ((buffer (vm-imap-net-folder-buffer folder)))
+    (and (buffer-live-p buffer)
+	 (with-current-buffer buffer
+	   (or (and vm-imap-net-session
+		    (vm-net-session-live-p vm-imap-net-session))
+	       (and vm-imap-net-waiting t))))))
 
 (defun vm-imap-net-wait (&optional folder seconds)
   "Wait for FOLDER's work with the server to finish, up to SECONDS.
-For a caller that has to have the mail before it goes on -- a test, or a
-command that was asked to do something with what arrives.  Nothing in VM's
-own path calls this: waiting is what the conversion is for getting rid of.
+For a caller that has to have the mail before it goes on: a body a save or a
+copy must have in hand (`vm-load-bodies-through-the-driver'), folder-name
+completion, or a test.  Those are the only places VM waits on purpose, and
+the wait is `accept-process-output', so C-g works.
 
 What is queued behind the running session counts as unfinished: a body asked
 for during a fetch runs when the fetch ends, and a caller waiting for the
@@ -3428,11 +3432,24 @@ FOLDER-TYPE where the server sent none of its own."
       (set-marker to nil))
     (goto-char (point-max))))
 
+(declare-function vm-convert-folder-header "vm-folder" (old new))
+
 (defun vm-imap-net-append-crash-box (work crash-box)
-  "Append what is in WORK to CRASH-BOX, and empty WORK."
+  "Append what is in WORK to CRASH-BOX, and empty WORK.
+
+A babyl crash box wants the folder header at the start of it, and only when
+it is empty: babyl is the one type VM writes that has one, and a file without
+it reads back as no type at all.  The blocking path wrote it in
+`vm-imap-retrieve-to-target', per message and under the same emptiness test."
   (with-current-buffer work
     (let ((coding-system-for-write 'binary)
 	  (selective-display nil))
+      (when (and (eq vm-folder-type 'babyl)
+		 (let ((attributes (file-attributes crash-box)))
+		   (or (null attributes) (equal 0 (nth 7 attributes)))))
+	(save-excursion
+	  (goto-char (point-min))
+	  (vm-convert-folder-header nil vm-folder-type)))
       (write-region (point-min) (point-max) crash-box t 'quiet))
     (erase-buffer)))
 
