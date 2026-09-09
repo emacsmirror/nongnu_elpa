@@ -73,6 +73,7 @@ This manual corresponds to VM version @value{VERSION}.
 
 @menu
 * Preface::             What is VM?
+* Installation::        How to get VM and make Emacs find it.
 * Introduction::        Overview of the VM interface.
 * Starting Up::         What happens when you start VM.
 * Setting Up::          A worked configuration, one piece at a time.
@@ -131,7 +132,7 @@ Rights:
 @end menu
 @end ifnottex
 
-@node Preface, Introduction, Top, Top
+@node Preface, Installation, Top, Top
 @unnumbered What is VM?
 
 @cindex Rmail
@@ -145,9 +146,7 @@ in a familiar environment.  You might have even used other Emacs-based
 mail readers such as Rmail and Gnus.  If you are new to Emacs, you can
 start using VM via the menubar and toolbar until you become familiar
 with it.  Then you can move on to keyboard shortcuts and advanced
-features.  VM runs in GNU Emacs, and needs version 28.1 or later.  It supported XEmacs
-for many years, and no longer does: nothing has been tested there for a long
-time and none of the test suite ran there.
+features.  VM runs in GNU Emacs, and needs version 28.1 or later.
 
 Emacs provides a powerful text-based user interface for VM users, with
 facilities for quick navigation, incremental searching , sophisticated
@@ -180,14 +179,15 @@ tools and html rendering tools.
 @cindex Thunderbird
 VM can read and store mail on your file system (both local and
 remote).  It can also handle mail stored in remote file servers
-running @acronym{POP} and @acronym{IMAP} protocols.  The local folders are stored in a
-Unix-standard @code{mbox} format, which is also used by most other
-mail readers including Thunderbird.  In fact, VM can seamlessly
-operate on Thunderbird folders and, if you use a remote mail server,
-you can view the same folders in VM and Thunderbird concurrently.  In
-addition, VM can also store mail in the @code{Babyl} format used by
-Emacs Rmail.  So, it is also possible to inter-operate with Rmail if
-you have archived mail in that format.
+running @acronym{POP} and @acronym{IMAP} protocols.  The local folders are stored in
+@code{mbox} format, which many other mail readers use as well, so a folder
+another reader wrote in that format is one VM can open.  Thunderbird is one
+of them where it has been told to store mail as mbox rather than as maildir,
+which VM cannot read at all.  VM also handles the @code{Babyl} format used
+by Emacs Rmail, so archived Rmail folders can be read too.
+
+Where mail is on an @acronym{IMAP} server, two readers can of course see it
+at once, VM being one of them.
 
 @cindex maildir
 @cindex newsgroups
@@ -195,8 +195,8 @@ you have archived mail in that format.
 There are also a few things that VM cannot (yet) do.  It does not have the
 ability to deal with maildir folders.  It cannot be used to read newsgroups
 and @acronym{RSS} feeds.  It does not have its own mail filtering tools.
-However, active development of VM is continuing.  It may acquire some of
-these features before long.
+VM is actively developed, so this list is worth checking against the newest
+@file{NEWS} file rather than taken as permanent.
 
 VM has been found most useful by professional users who must deal with
 large quantities of email in the course of their work, and deal with
@@ -207,13 +207,49 @@ hope you will too!
 -- VM Development Team
 
 
-@node Introduction, Starting Up, Preface, Top
+@node Installation, Introduction, Preface, Top
+@unnumbered Installing VM
+
+@cindex installing VM
+@cindex @acronym{ELPA}
+@cindex package-install
+VM is a package on NonGNU @acronym{ELPA}, which Emacs 28.1 and later know
+about without being told:
+
+@example
+M-x package-install @key{RET} vm @key{RET}
+@end example
+
+@noindent
+That is the whole of it.  Nothing else has to be loaded or required: VM's
+commands are autoloaded, so @kbd{M-x vm} works from the next keystroke, and
+@code{package-install} arranges for VM to be there in later sessions too.
+
+@cindex source, building from
+@cindex git
+To build from source instead, clone
+@url{https://gitlab.com/emacs-vm/vm} and follow @file{INSTALL.md} in it.
+That is the way to run what is being worked on rather than what was last
+released, and the way to send a patch that applies.
+
+@cindex distributions, packaged VM
+A distribution may package VM as well, and such a package can be years
+behind: one that predates every release named in @ref{History and
+Administration} has been seen in the wild.  Check what you have with
+@kbd{M-x vm-view-news}, whose first entry names the version, and prefer
+@acronym{ELPA} unless you have a reason not to.
+
+@xref{Introduction}, for what to type once it is installed, and
+@ref{Setting Up} for a configuration built one piece at a time.
+
+@node Introduction, Starting Up, Installation, Top
 @unnumbered Overview
 
-VM (View Mail) is an Emacs subsystem that allows UNIX mail to be read
-and disposed of within Emacs.  Commands exist to do the normal things
-expected of a mail user agent, such as generating replies, saving
-messages to folders, deleting messages and so on.  There are other more
+VM (View Mail) reads and disposes of your mail inside Emacs, whether it is
+in a file on this machine or on a @acronym{POP} or @acronym{IMAP} server.
+Commands exist to do the normal things expected of a mail user agent, such
+as generating replies, saving messages to folders, deleting messages and so
+on.  There are other more
 advanced commands that do tasks like bursting and creating digests,
 message forwarding, and organizing message presentation according to
 various criteria.
@@ -405,6 +441,18 @@ files with other folders by setting the variable
 @node Starting Up, Setting Up, Introduction, Top
 @chapter Starting Up
 
+@findex vm
+@findex vm-setup
+@findex vm-check-configuration
+@kbd{M-x vm} is how you begin, and on a machine whose mail is already where
+Emacs expects it that is all you need.  Otherwise VM has to be told where
+your mail is: @kbd{M-x vm-setup} asks for what it needs and writes the
+answers to a file, @kbd{M-x vm-check-configuration} says what is still
+missing, and @ref{Setting Up} builds a configuration one piece at a time.
+
+The rest of this chapter is what happens when VM starts, which is worth
+knowing when something does not.
+
 @findex vm-load-init-file
 @vindex vm-init-file
 @cindex configuration settings
@@ -428,38 +476,6 @@ directory, @file{~/.emacs.d/elpa/vm-@var{version}/}, where it came from
 @acronym{ELPA}.  It names servers and addresses that do not exist, so it is
 to be read and taken from rather than used as it stands.
 
-@cindex key bindings, where to put them
-@cindex global-set-key, in the init file
-@quotation Warning
-That is the first time VM is started, not the first time Emacs is started.
-Anything in @code{vm-init-file} that has to be in effect @emph{before} VM runs
-cannot go there, because until VM has run once the file has not been read.
-
-A global key binding is the case that catches people.  A
-@code{global-set-key} in @code{vm-init-file} does nothing until something else
-has already started VM, and until then the key does whatever Emacs had it
-doing.  Bound to @code{vm-continue-what-message-other-window}, say,
-@kbd{C-x m} stays @code{compose-mail} and starts a new message, which looks
-like VM ignoring the drafts it was asked about.  Every press after the first
-is right, which makes it a puzzling thing to debug.
-
-Put such bindings in your Emacs init file instead.  VM's commands are
-autoloaded, so binding one before VM is loaded is fine: pressing the key loads
-VM, which then reads @code{vm-init-file}.
-
-A binding in one of VM's own keymaps does belong in @code{vm-init-file}: the
-map has to exist before anything can be defined in it, which is exactly what
-being read after VM has started buys you.
-
-@example
-;; in the Emacs init file: works from the first keystroke
-(global-set-key "\C-xm" 'vm-continue-what-message-other-window)
-
-;; in vm-init-file: vm-mode-map exists by the time this is read
-(define-key vm-mode-map "m" 'vm-continue-what-message)
-@end example
-@end quotation
-
 @vindex vm-preferences-file
 @cindex .vm.preferences
 @cindex preferences settings
@@ -472,22 +488,21 @@ can considerably reduce clutter in the @file{.vm} file.
 
 Invoking @code{vm-load-init-file} with a prefix argument (e.g.,
 @kbd{C-u}) causes the @code{vm-init-file} to be loaded without the
-@code{vm-preferences-file}.  VM will work with all its default
-settings for the variables.  This is similar to invoking emacs via
-@code{emacs -Q}.  If you ever find a problem with VM's behavior, it is
-a good idea to run it without the @code{vm-preferences-file} in order
-to check if the problem might have been caused by the preferences
-settings.
+@code{vm-preferences-file}.  VM then works with its default settings for everything the
+preferences file would have changed, while still reading
+@code{vm-init-file}.  If you ever find a problem with VM's behaviour, it is
+a good idea to run it that way to see whether the preferences caused it.
 
 @findex vm
 @vindex vm-primary-inbox
 @vindex vm-auto-get-new-mail
 @cindex primary inbox
 @kbd{M-x vm} causes VM to visit a folder known as your @dfn{primary
-inbox}, specified by the variable @code{vm-primary-inbox}.  If the
-variable @code{vm-auto-get-new-mail} is set 
-non-@code{nil}, VM will gather any new mail that has arrived
-and integrate it into your primary inbox.  The default setting for your
+inbox}, specified by the variable @code{vm-primary-inbox}.  It also gathers
+any new mail that has arrived and puts it in that folder, which is what
+@code{vm-auto-get-new-mail} asks for and is its default; set it to
+@code{nil} and @kbd{g} (@code{vm-get-new-mail}) is the only way mail
+arrives.  The default setting for your
 primary inbox is the local file @file{~/INBOX}, but a variety of
 other options are available.
 
@@ -6768,8 +6783,10 @@ string depicting the new arrow.  You should set this variable before VM
 creates the summary buffer.
 
 
-You can have a summary generated automatically at VM startup
-by setting the variable @code{vm-startup-with-summary} non-nil.
+A summary is generated at startup, which is what
+@code{vm-startup-with-summary} says and is its default.  Set it to
+@code{nil} for a folder window alone, or to a number to have the summary
+only for a folder holding at least that many messages.
 @xref{Starting Up}.
 
 All VM commands are available in the summary buffer just as they are in
@@ -8563,6 +8580,28 @@ Modes you want on from the start, if they are switched on by a function
 rather than by a variable: @code{(vm-biff-mode 1)}, for instance.
 @end itemize
 
+@cindex key bindings, where to put them
+@cindex global-set-key, in the init file
+A global key binding is the case that catches people.  A
+@code{global-set-key} in @file{~/.vm} does nothing until something else has
+already started VM, because until VM has run once the file has not been read.
+Bound to @code{vm-continue-what-message-other-window}, say, @kbd{C-x m} stays
+@code{compose-mail} and starts a new message, which looks like VM ignoring the
+drafts it was asked about.  Every press after the first is right, which makes
+it a puzzling thing to debug.
+
+A binding in one of VM's own keymaps does belong in @file{~/.vm}: the map has
+to exist before anything can be defined in it, which is exactly what being
+read after VM has started buys you.
+
+@example
+;; in the Emacs init file: works from the first keystroke
+(global-set-key "\C-xm" 'vm-continue-what-message-other-window)
+
+;; in ~/.vm: vm-mode-map exists by the time this is read
+(define-key vm-mode-map "m" 'vm-continue-what-message)
+@end example
+
 @cindex Customize
 Settings made with Customize are written to your @code{custom-file}, which is
 your init file unless you have said otherwise.  Emacs loads that at startup
@@ -9071,8 +9110,9 @@ lines are kept and the oldest go first.
 vm-biff pops up a summary frame when mail arrives, in the manner of
 @command{xbiff}, so you can see what has come in without leaving what you are
 doing.  Switch it on with @code{(vm-biff-mode 1)}, which is autoloaded, and off
-again with @code{(vm-biff-mode -1)}.  Something has to go looking for the mail
-for it to have anything to show, so set @code{vm-auto-get-new-mail} as well.
+again with @code{(vm-biff-mode -1)}.  Something has to go looking for the mail for it to have anything to show,
+which @code{vm-auto-get-new-mail} does by default; a folder that has it set
+to @code{nil} shows nothing until @kbd{g}.
 
 Loading the file no longer switches it on: it works by putting a function on
 @code{vm-arrived-messages-hook}, and merely having a file loaded should not
@@ -9257,7 +9297,8 @@ Please let us know if any contributors have been missed out.
 @item Version 8.1.0, released 21 March, 2010.
 @item Version 8.1.1, released 25 April, 2010.
 @item Version 8.1.2, released 5 March, 2012.
-@item Version 8.2.0, planned for release in March, 2013.
+@item Version 8.2.0b1, the last of the 8.2 betas.  Version 8.2.0 itself was
+never released.
 @item Version 8.3.0, released 22 December 2025
 @item Version 8.3.1, released 27 December 2025
 @item Version 8.3.2, released 29 December 2025

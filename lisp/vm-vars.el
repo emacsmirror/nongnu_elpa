@@ -2427,10 +2427,10 @@ this character set unless the buffer contains a byte with the high bit set.
 This variable specifies what character set VM should assume if
 no such a character is found.
 
-This variable is unused in XEmacs/MULE.  Since multiple character
-sets can be displayed in a single buffer under MULE, VM will map
-the file coding system of the composition buffer to a single MIME
-character set that can display all the buffer's characters."
+Not consulted: Emacs decides a composition buffer's coding system itself,
+and VM maps that to a MIME character set which can hold everything the buffer
+holds.  Its sibling `vm-mime-8bit-composition-charset' was removed for the
+same reason (emacs-vm/vm#697)."
   :group 'vm-mime
   :type 'string)
 
@@ -2780,13 +2780,9 @@ and when VM is previewing a message (see `vm-preview-lines') VM
 indicates that there is more text by placing the glyph specified
 by this variable at the end of the displayed text.
 
-Under XEmacs, the value of `vm-page-continuation-glyph' can be a
-string or a glyph object.
-
-Under FSF Emacs, `vm-page-continuation-glyph' must be a string."
+The value is a string."
   :group 'vm-presentation
-  :type '(choice (string)
-		 (sexp :tag "Glyph object (XEmacs only)")))
+  :type 'string)
 
 (defconst vm-default-window-configuration
   ;; startup = folder on bottom, summary on top
@@ -4711,7 +4707,8 @@ end of the message to the end of message."
 
 (defcustom vm-display-xfaces nil
   "*Non-nil means display images as specified in X-Face headers.
-This requires XEmacs with native xface support compiled in."
+It needs the `uncompface' program, named by `vm-uncompface-program', which is
+what decodes the header into an image."
   :group 'vm-presentation
   :type 'boolean)
 
@@ -5928,11 +5925,10 @@ as in other buffers."
   "*List of coding systems for VM to use, for outgoing mail, in order of
 preference.
 
-If you find that your outgoing mail is being encoded in `iso-2022-jp' and
-you'd prefer something more widely used outside of Japan be used instead,
-you could load the `latin-unity' and `un-define' libraries under XEmacs
-21.4, and initialize this list to something like `(iso-8859-1 iso-8859-15
-utf-8)'. "
+Nil lets Emacs choose.  Set it where Emacs picks a coding system your
+recipients cannot read: a list such as `(utf-8)', or `(iso-8859-1
+iso-8859-15 utf-8)' to prefer the narrower ones where they will do, puts your
+own order on the choice."
   :group 'vm-compose
   :type '(choice (const nil)
 		 (repeat :tag "Coding system" symbol)))
