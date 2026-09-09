@@ -50,6 +50,8 @@ which will display feed items.
 - =@=: add current date to the filter
 - ~=~: only include current feed
 - =~=: exclude current feed
+- =o=: change sort order (by date, by feed)
+- =O=: reverse order
 
 This buffer will be empty until you add your feeds to the =elfeed-feeds= list and
 initiate an update with =M-x elfeed-update= (or press =G= in the Elfeed buffer).
