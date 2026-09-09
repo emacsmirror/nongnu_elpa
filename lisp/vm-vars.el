@@ -2420,20 +2420,6 @@ one after another."
   :group 'vm-mime
   :type 'string)
 
-(defcustom vm-mime-7bit-composition-charset "us-ascii"
-  "*Character set that VM should assume if it finds no character codes > 128
-in a composition buffer.  Composition buffers are assumed to use
-this character set unless the buffer contains a byte with the high bit set.
-This variable specifies what character set VM should assume if
-no such a character is found.
-
-Not consulted: Emacs decides a composition buffer's coding system itself,
-and VM maps that to a MIME character set which can hold everything the buffer
-holds.  Its sibling `vm-mime-8bit-composition-charset' was removed for the
-same reason (emacs-vm/vm#697)."
-  :group 'vm-mime
-  :type 'string)
-
 (defcustom vm-mime-8bit-text-transfer-encoding 'quoted-printable
   "*Symbol specifying what kind of transfer encoding to use on 8bit
 text.  Characters with the high bit set cannot safely pass

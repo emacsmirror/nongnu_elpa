@@ -4393,22 +4393,6 @@ Non-nil value means VM should try to infer a MIME object’s
 @end example
 @end defopt
 
-@defopt vm-mime-7bit-composition-charset
-@vindex vm-mime-7bit-composition-charset
-Character set that VM should assume if it finds no character codes > 128
-in a composition buffer.  Composition buffers are assumed to use
-this character set unless the buffer contains a byte with the high bit set.
-This variable specifies what character set VM should assume if
-no such a character is found.
-
-Not consulted: Emacs decides a composition buffer’s coding system itself,
-and VM maps that to a MIME character set which can hold everything the buffer
-holds.  Its sibling @code{vm-mime-8bit-composition-charset} was removed for the
-same reason (emacs-vm/vm#697).
-
-Default value: @code{"us-ascii"}
-@end defopt
-
 @defopt vm-mime-8bit-header-charsets
 @vindex vm-mime-8bit-header-charsets
 Coding systems to try on header text that arrives as raw 8-bit bytes.

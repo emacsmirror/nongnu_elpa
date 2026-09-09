@@ -8,6 +8,14 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 8.x.x released
 
+  * **`vm-mime-7bit-composition-charset` is removed** (emacs-vm/vm#697).  It
+    was consulted nowhere, so setting it did nothing, and the manual told you
+    to set it to declare a composition's character set.  Emacs knows which
+    characters are in the buffer and VM asks it; set
+    `vm-coding-system-priorities` to put your own order on the answer.  Its
+    sibling `vm-mime-8bit-composition-charset` went earlier for the same
+    reason.
+
   * **Killing a composition you have written in keeps it as a draft**
     (emacs-vm/vm#824), in `vm-save-killed-messages-folder`, with VM saying
     where it went and which key takes it up again.  A composition buffer

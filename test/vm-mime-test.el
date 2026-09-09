@@ -4016,6 +4016,17 @@ had no effect since Emacs 20 decided a buffer's charset for itself
   (should-not (fboundp 'vm-mime-set-8bit-composition-charset))
   (should-not (boundp 'vm-mime-8bit-composition-charset)))
 
+(ert-deftest vm-mime-test-the-7bit-composition-charset-is-gone ()
+  "`vm-mime-7bit-composition-charset' is removed.
+
+It was consulted nowhere in the tree, so setting it did nothing, and the
+manual told a reader to set it to declare a composition's character set.
+Emacs knows what is in the buffer and `vm-determine-proper-charset' asks it;
+`vm-coding-system-priorities' is what puts your own order on the answer.  Its
+sibling `vm-mime-8bit-composition-charset' went for the same reason
+(emacs-vm/vm#697)."
+  (should-not (boundp 'vm-mime-7bit-composition-charset)))
+
 (ert-deftest vm-mime-test-emacs-w3-is-gone ()
   "Emacs/W3 is no longer offered as an HTML viewer (emacs-vm/vm#707).
 The browser was dropped from Emacs and is in no archive, so `auto-select'
