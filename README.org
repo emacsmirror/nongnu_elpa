@@ -427,8 +427,26 @@ search listing. The content will be displayed in a separate buffer using
 =elfeed-show-mode=, rendered using Emacs' built-in shr package. This requires an
 Emacs compiled with =libxml= bindings, which provides the necessary HTML parser.
 
-Sometimes displaying images can slow down or even crash Emacs. Set
-=shr-inhibit-images= to disable images if this is a problem.
+Inside the show buffer you have these key bindings available:
+
+- =+=: add tag
+- =-=: remove tag
+- =b=: visit entry in primary browser
+- =B=: visit entry in secondary browser
+- =R=: toggle readable mode (see also the =:readable= feed option)
+- =c=: save url at point
+- =f=: fetch link and display it in buffer (see also the =:fetch-link= feed option)
+- =m=: compose mail based on entry
+- =n=: move to next entry
+- =p=: move to previous entry
+- =s=: restart live search
+- =u=: tag as unread
+- =y=: copy link of post
+- =P=: play enclosure with EMMS
+- =A=: add enclosure to EMMS playlist
+- =TAB=: go to next link
+- =SPC=: go to next page
+- =S-SPC=, =DEL=: go to previous page
 
 ** Web Interface
 
