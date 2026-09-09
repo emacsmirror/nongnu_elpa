@@ -245,9 +245,18 @@ format account:mailbox."
     nil)))
 
 ;;;###autoload
+;;;###autoload
 (defun vm-imap-spec-for-account (account)
   "Returns the IMAP maildrop spec for ACCOUNT, by looking up
-`vm-imap-account-alist' or nil if there is no such account."
+`vm-imap-account-alist' or nil if there is no such account.
+
+VM is initialised first, since that is what reads the init file where
+`vm-imap-account-alist' is set: a command of one's own that names an account
+--- (vm-visit-imap-folder (vm-imap-spec-for-account \"work\")) --- is
+otherwise answered with nil the first time it is run in an Emacs session and
+with the spec every time after, VM having been initialised by the failed
+attempt (emacs-vm/vm#826)."
+  (vm-session-initialization)
   (car (rassoc (list account) vm-imap-account-alist)))
 
 ;;;###autoload

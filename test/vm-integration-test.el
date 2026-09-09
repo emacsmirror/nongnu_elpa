@@ -1306,6 +1306,88 @@ a typo, and a typo here is silent: `vm-char-to-int' asked `fboundp' of
                   unaccounted)))))
     (should-not unaccounted)))
 
+(defun vm-integration-test--in-a-cold-emacs (form)
+  "Evaluate FORM in an Emacs where VM is only autoloaded, and answer what it
+printed.  A cold start is the only place the first-call bugs show: the suite's
+own Emacs has VM loaded and initialised long before any test runs."
+  (with-temp-buffer
+    (let ((status (call-process
+		   (expand-file-name invocation-name invocation-directory)
+		   nil t nil "-batch" "-Q" "-L" vm-test-lisp-dir
+		   "--eval" "(require 'vm-autoloads)"
+		   "--eval" (prin1-to-string form))))
+      (should (equal status 0))
+      (buffer-string))))
+
+(ert-deftest vm-integration-test-an-account-lookup-answers-on-a-cold-start ()
+  "`vm-imap-spec-for-account' answers the first time it is called.
+
+`vm-imap-account-alist' is set in the init file, which VM reads when it
+initialises, so a command of one's own naming an account was answered with nil
+the first time and with the spec every time after -- the failed attempt having
+initialised VM on its way to the error.  What the reader saw was a command
+that did nothing until they ran it twice (emacs-vm/vm#826).
+
+In a child Emacs, since the suite's own has VM initialised already."
+  (let ((printed
+	 (vm-integration-test--in-a-cold-emacs
+	  '(let ((vm-init-file nil)
+		 (vm-preferences-file nil))
+	     ;; as an init file does, but reached only through initialisation
+	     (add-hook 'vm-mode-hook #'ignore)
+	     (setq vm-session-beginning t)
+	     (advice-add 'vm-load-init-file :override
+			 (lambda (&rest _)
+			   (setq vm-imap-account-alist
+				 '(("imap:mail.example:143:INBOX:login:me:*"
+				    "work")))))
+	     (princ (format "cold=%S" (vm-imap-spec-for-account "work")))))))
+    (should (string-match-p "cold=\"imap:mail.example:143:INBOX:login:me:\\*\""
+			    printed))))
+
+(ert-deftest vm-integration-test-visiting-a-non-maildrop-says-what-is-wrong ()
+  "`vm-visit-imap-folder' refuses a folder that is not an IMAP maildrop.
+
+Nil is what an account lookup answers for an account VM has not got, and it
+used to be turned into the primary inbox and then read as a maildrop:
+\"Wrong type argument: consp, nil\" from `vm-imap-normalize-spec', which says
+nothing about the cause (emacs-vm/vm#826)."
+  (dolist (bad '(nil "~/INBOX" "notanaccount"))
+    (let ((error-data (should-error (vm-visit-imap-folder bad nil)
+				    :type 'error)))
+      (should (string-match-p "is not an IMAP maildrop"
+			      (error-message-string error-data)))
+      ;; and it names what to do about it
+      (should (string-match-p "vm-imap-account-alist"
+			      (error-message-string error-data))))))
+
+(ert-deftest vm-integration-test-initialization-does-not-run-twice-at-once ()
+  "`vm-session-initialization' does not start again from inside itself.
+
+Its guard is cleared at the end of the work, so anything reached from the
+middle of it -- the init file, and whatever that calls -- would start the work
+again.  `vm-imap-spec-for-account' asks for initialisation now, and an init
+file may call it."
+  (let ((printed
+	 (vm-integration-test--in-a-cold-emacs
+	  '(let ((depth 0)
+		 (deepest 0))
+	     (advice-add 'vm-load-init-file :override
+			 (lambda (&rest _)
+			   ;; what an init file that names an account does
+			   (vm-imap-spec-for-account "work")))
+	     (advice-add 'vm-session-initialization :around
+			 (lambda (original &rest args)
+			   (setq depth (1+ depth))
+			   (setq deepest (max deepest depth))
+			   (prog1 (apply original args)
+			     (setq depth (1- depth)))))
+	     (vm-session-initialization)
+	     (princ (format "deepest=%d" deepest))))))
+    ;; entered twice -- the outer call and the one from the init file -- and
+    ;; the inner one does no work rather than starting over
+    (should (string-match-p "deepest=2" printed))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
