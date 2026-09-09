@@ -2013,7 +2013,6 @@ Return an alist, with each cons being (name . id)"
      resp
      (lambda (resp)
        (let ((json (fj-resp-json resp)))
-         (message "%s" (prin1-to-string json))
          (fj-view-reload)
          (message "Label %s added to #%s!" (car choice) issue))))))
 
