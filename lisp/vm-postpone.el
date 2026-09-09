@@ -1265,18 +1265,6 @@ mode too, and postponing it into a VM folder is not VM's business."
     (and (eq major-mode 'mail-mode)
          (eq (current-local-map) vm-mail-mode-map))))
 
-(defun vm-composition-worth-keeping-p (&optional buffer)
-  "Whether BUFFER holds a composition with anything in it.
-A composition begun and abandoned untouched is not worth a question, still
-less a draft in the postponed folder."
-  (with-current-buffer (or buffer (current-buffer))
-    (and (buffer-modified-p)
-         (save-excursion
-           (goto-char (point-min))
-           (and (re-search-forward
-                 (concat "^" (regexp-quote mail-header-separator) "$") nil t)
-                (re-search-forward "[^ \t\n]" nil t))))))
-
 (defun vm-unfinished-compositions ()
   "The composition buffers with something in them, oldest first."
   (nreverse

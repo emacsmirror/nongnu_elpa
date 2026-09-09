@@ -5332,6 +5332,17 @@ folder carefully if you do: it has to hold whatever the message holds.
 Sometimes, you might want to interrupt the composing of a message and
 continue it later.  This is called @dfn{postponing}.
 
+@vindex vm-confirm-killing-a-composition
+Whether or not you switch any of that on, VM asks before a composition you
+have written in is killed.  A composition buffer belongs to no file, so Emacs
+does not put the question it puts about an unsaved file, and anything bound to
+@code{kill-buffer} took an unsent message with no warning.  Answer no and the
+composition stays where it is.  You are not asked about one you have written
+nothing in, nor about one already sent, nor when killing it will offer to keep
+it as a draft, which is what the mode below arranges.  Set
+@code{vm-confirm-killing-a-composition} to @code{nil} for the older
+behaviour.
+
 @findex vm-postpone-mode
 @kbd{C-c C-d} and @code{vm-continue-postponed-message} below are VM's own and
 need nothing switched on.  The rest of @file{vm-postpone.el} does: four keys

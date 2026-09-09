@@ -8761,6 +8761,21 @@ you could load the @code{latin-unity} and @code{un-define} libraries under XEmac
 utf-8)’.
 @end defopt
 
+@defopt vm-confirm-killing-a-composition
+@vindex vm-confirm-killing-a-composition
+Whether VM asks before a composition with writing in it is killed.
+
+A composition buffer belongs to no file, so Emacs kills it without the
+question it asks about an unsaved file: @code{kill-buffer} and everything bound to
+it, @code{kill-this-buffer} included, took an unsent reply with no warning
+(emacs-vm/vm#824).  Nil restores that.
+
+The question is not asked for a composition nothing has been written in, nor
+for one that has been sent.
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-confirm-mail-send
 @vindex vm-confirm-mail-send
 Non-nil means ask before sending a mail message.
