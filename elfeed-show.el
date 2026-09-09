@@ -330,7 +330,7 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive nil elfeed-show-mode)
   (when-let* ((link (elfeed-entry-link elfeed-show-entry)))
     (kill-new link)
-    (gui-set-selection 'PRIMARY link)
+    (gui-set-selection elfeed-search-clipboard-type link)
     (message "Copied %s" link)))
 
 (defun elfeed-show-tag (&rest tags)
