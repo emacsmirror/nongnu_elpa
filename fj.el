@@ -1759,9 +1759,13 @@ With arg CLOSE, also close ISSUE."
          (url (format "repos/%s/%s/issues/%s/comments" owner repo issue))
          (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
-         (response (fj-post url params)))
-    (fedi-http--triage response
-                       (lambda (_)
+         (resp (fj-post url params)))
+    (fedi-http--triage resp
+                       (lambda (resp)
+                         (when fj-compose-upload
+                           (let* ((json (fj-resp-json resp))
+                                  (id (alist-get 'id json)))
+                             (fj-post-attachment repo owner id fj-compose-upload)))
                          (if (not close)
                              (message "comment created!")
                            (fj-issue-close repo owner issue)
@@ -1786,6 +1790,49 @@ NEW-BODY is the new comment text to send."
     (fedi-http--triage response
                        (lambda (_)
                          (message "comment edited!")))))
+
+;;; FILE UPLOAD/ATTACHMENT
+
+(defun fj--prep-file-upload (filename)
+  "Return the request data to upload for FILENAME.
+Returns a cons of the multipart form data boundary, and the data of the
+file."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally filename)
+    (let ((boundary (buffer-hash)))
+      (goto-char (point-min))
+      (insert "--" boundary "\r\n"
+              (format "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n\r\n"
+                      (file-name-nondirectory filename)))
+      (goto-char (point-max))
+      (insert "\r\n" "--" boundary "--" "\r\n")
+      `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
+
+(defun fj-post-attachment (repo owner comment-id filepath)
+  "Make POST request to upload FILEPATH.
+REPO OWNER COMMENT-ID FILEPATH.
+The upload is asynchronous."
+  (message "Uploading file for comment %s..." comment-id)
+  (fj-authorized-request "POST"
+    (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
+                             owner repo comment-id))
+           (url (fj-api endpoint))
+           (data (fj--prep-file-upload filepath))
+           (url-request-extra-headers
+            (append url-request-extra-headers
+                    `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                                 (car data))))))
+           (url-request-data (cdr data)))
+      (url-retrieve url #'fj--post-file-upload-cb
+                    `(,filepath)))))
+
+(defun fj--post-file-upload-cb (status filename)
+  "Callback for `fj--post-file-upload'.
+STATUS is the HTTP response, FILENAME the uploaded file."
+  (let ((json (fj-resp-json status)))
+    (message "Upload result: %s" json)))
+
 
 ;;; ISSUE/COMMENT REACTIONS
 ;; render reactions
