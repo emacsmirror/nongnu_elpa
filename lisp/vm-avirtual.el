@@ -1470,7 +1470,7 @@ The element gets added to the `element-name' sublist of the
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-obsolete-function-alias 'vmpc-virtual-check-selector
-  'vm-pcrisis-virtual-check-selector "8.3.3")
+  'vm-pcrisis-virtual-check-selector "9.0.0")
 
 (provide 'vm-avirtual)
 ;;; vm-avirtual.el ends here

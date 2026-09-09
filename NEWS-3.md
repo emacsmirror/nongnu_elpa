@@ -6,7 +6,7 @@ since that version to see how you might be affected.
 Earlier releases are in NEWS-2.md, 8.0.0 through 8.2.0b1, and NEWS-1.md, 4.10
 through 7.19.  This is the newest file, so new entries go at the front of it.
 
-## VM 8.x.x released
+## VM 9.0.0 released
 
   * **`vm-mime-7bit-composition-charset` is removed** (emacs-vm/vm#697).  It
     was consulted nowhere, so setting it did nothing, and the manual told you

@@ -1145,7 +1145,7 @@ the replacement does not exist.")
 (defun vm-integration-test--vm-own-name-p (symbol)
   "Whether SYMBOL is one of VM\='s own names rather than Emacs\='s.
 `vmpc-' as well as `vm-': the Personality Crisis names were renamed in
-8.3.3 and the old ones kept as obsolete aliases."
+9.0.0 and the old ones kept as obsolete aliases."
   (string-match-p "\\`vm\\(pc\\)?-" (symbol-name symbol)))
 
 (defun vm-integration-test--obsolete-calls-in (file)

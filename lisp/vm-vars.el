@@ -1009,7 +1009,7 @@ consulted."
   :type 'boolean)
 
 (define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
-  'vm-trust-content-length "8.3.3")
+  'vm-trust-content-length "9.0.0")
 
 (defcustom vm-trust-content-length
   (eq vm-default-folder-type 'mboxcl2)
@@ -1239,7 +1239,7 @@ signature wears `vm-signature-face'.  Headers are a separate matter, decided
 by `vm-highlighted-header-regexp'.
 
 Set this in the init file.  Off by default because it changes how every
-message looks.  Before VM 8.3.3 the same colouring came from the bundled
+message looks.  In earlier releases the same colouring came from the bundled
 u-vm-color add-on, which had to be wired up by hand and is gone
 (emacs-vm/vm#811)."
   :group 'vm-faces
@@ -2162,7 +2162,7 @@ If non-nil, overrides `vm-imagemagick-program' for convert operations."
   :type '(choice (const :tag "Use vm-imagemagick-program" nil)
 		 file))
 (make-obsolete-variable 'vm-imagemagick-convert-program
-			'vm-imagemagick-program "8.4.0")
+			'vm-imagemagick-program "9.0.0")
 
 (defcustom vm-imagemagick-identify-program nil
   "Obsolete. Use `vm-imagemagick-program' instead.
@@ -2171,7 +2171,7 @@ If non-nil, overrides `vm-imagemagick-program' for identify operations."
   :type '(choice (const :tag "Use vm-imagemagick-program" nil)
 		 file))
 (make-obsolete-variable 'vm-imagemagick-identify-program
-			'vm-imagemagick-program "8.4.0")
+			'vm-imagemagick-program "9.0.0")
 
 (defun vm-mime-image-type-converters (program)
   "Return the image conversions PROGRAM can do, as converter alist entries.

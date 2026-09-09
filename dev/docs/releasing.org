@@ -149,7 +149,7 @@ each packager watches and how to correct it; until that is corrected they only
 learn of a release by being told.
 
 Name the release number, never a snapshot version.  What they package is what
-they are told to package, and =8.3.3snapshot= is not something anyone should
+they are told to package, and =9.0.0snapshot= is not something anyone should
 be shipping.
 
 - Fedora: @goeran packages it and already builds from git.  Tell him the tag

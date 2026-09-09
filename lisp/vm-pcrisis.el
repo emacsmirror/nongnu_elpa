@@ -81,7 +81,7 @@ the message being composed (reply, forward, new mail, etc.)."
   :group  'vm)
 
 (define-obsolete-variable-alias 'vmpc-conditions
-  'vm-pcrisis-conditions "8.3.3")
+  'vm-pcrisis-conditions "9.0.0")
 (defcustom vm-pcrisis-conditions ()
   "*List of conditions which will be checked by pcrisis."
   :type '(repeat (list (choice :tag "Condition name"
@@ -90,7 +90,7 @@ the message being composed (reply, forward, new mail, etc.)."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-actions
-  'vm-pcrisis-actions "8.3.3")
+  'vm-pcrisis-actions "9.0.0")
 (defcustom vm-pcrisis-actions ()
   "*List of actions.
 Actions are associated with conditions from `vm-pcrisis-conditions' by one of
@@ -137,7 +137,7 @@ Checks if the condition and all the actions exist."
 		     (string))))))
 
 (define-obsolete-variable-alias 'vmpc-default-rules
-  'vm-pcrisis-default-rules "8.3.3")
+  'vm-pcrisis-default-rules "9.0.0")
 (defvaralias 'vmpc-actions-alist 'vm-pcrisis-default-rules)
 (defcustom vm-pcrisis-default-rules ()
   "A default list of condition-action rules used for replying, forwarding,
@@ -148,7 +148,7 @@ specific variables such as `vm-pcrisis-reply-rules'."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-reply-rules
-  'vm-pcrisis-reply-rules "8.3.3")
+  'vm-pcrisis-reply-rules "9.0.0")
 (defvaralias 'vmpc-reply-alist 'vm-pcrisis-reply-rules)
 (defcustom vm-pcrisis-reply-rules ()
   "A list of condition-action rules used during reply."
@@ -157,7 +157,7 @@ specific variables such as `vm-pcrisis-reply-rules'."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-forward-rules
-  'vm-pcrisis-forward-rules "8.3.3")
+  'vm-pcrisis-forward-rules "9.0.0")
 (defvaralias 'vmpc-forward-alist 'vm-pcrisis-forward-rules)
 (defcustom vm-pcrisis-forward-rules ()
   "A list of condition-action rules used when forwarding."
@@ -166,7 +166,7 @@ specific variables such as `vm-pcrisis-reply-rules'."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-automorph-rules
-  'vm-pcrisis-automorph-rules "8.3.3")
+  'vm-pcrisis-automorph-rules "9.0.0")
 (defvaralias 'vmpc-automorph-alist 'vm-pcrisis-automorph-rules)
 (defcustom vm-pcrisis-automorph-rules ()
   "Alist associating conditions with actions from `vm-pcrisis-actions'
@@ -176,7 +176,7 @@ when automorphing."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-mail-rules
-  'vm-pcrisis-mail-rules "8.3.3")
+  'vm-pcrisis-mail-rules "9.0.0")
 (defvaralias 'vmpc-mail-alist 'vm-pcrisis-mail-rules)
 (defcustom vm-pcrisis-mail-rules ()
   "An alist associating conditions with actions from `vm-pcrisis-actions'
@@ -186,7 +186,7 @@ when composing a message starting from a folder."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-newmail-rules
-  'vm-pcrisis-newmail-rules "8.3.3")
+  'vm-pcrisis-newmail-rules "9.0.0")
 (defvaralias 'vmpc-newmail-alist 'vm-pcrisis-newmail-rules)
 (defcustom vm-pcrisis-newmail-rules ()
   "An alist associating conditions with actions from `vm-pcrisis-actions'
@@ -196,7 +196,7 @@ when composing."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-resend-rules
-  'vm-pcrisis-resend-rules "8.3.3")
+  'vm-pcrisis-resend-rules "9.0.0")
 (defvaralias 'vmpc-resend-alist 'vm-pcrisis-resend-rules)
 (defcustom vm-pcrisis-resend-rules ()
   "An alist associating conditions with actions from `vm-pcrisis-actions'
@@ -206,7 +206,7 @@ when resending."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-default-profile
-  'vm-pcrisis-default-profile "8.3.3")
+  'vm-pcrisis-default-profile "9.0.0")
 (defcustom vm-pcrisis-default-profile "default"
   "*The default profile to select if no profile was found."
   :type '(choice (const :tag "None" nil)
@@ -214,7 +214,7 @@ when resending."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-auto-profiles-file
-  'vm-pcrisis-auto-profiles-file "8.3.3")
+  'vm-pcrisis-auto-profiles-file "9.0.0")
 (defcustom vm-pcrisis-auto-profiles-file "~/.vmpc-auto-profiles"
   "File in which to save information used by `vm-pcrisis-prompt-for-profile'.
 When set to the symbol `BBDB', profiles will be stored there."
@@ -223,7 +223,7 @@ When set to the symbol `BBDB', profiles will be stored there."
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-auto-profiles-expunge-days
-  'vm-pcrisis-auto-profiles-expunge-days "8.3.3")
+  'vm-pcrisis-auto-profiles-expunge-days "9.0.0")
 (defcustom vm-pcrisis-auto-profiles-expunge-days 100
   "*Number of days after which to expunge old address-profile associations.
 Performance may suffer noticeably if this file becomes enormous, but in other
@@ -234,14 +234,14 @@ right for you will depend on how often you send email to new addresses using
   :group 'vm-pcrisis)
 
 (define-obsolete-variable-alias 'vmpc-current-state
-  'vm-pcrisis-current-state "8.3.3")
+  'vm-pcrisis-current-state "9.0.0")
 (defvar vm-pcrisis-current-state nil
   "The current state of pcrisis.
 It is one of `reply', `forward', `resend', `automorph', `mail', or `newmail'.
 It controls which actions/functions can/will be run.") 
 
 (define-obsolete-variable-alias 'vmpc-current-buffer
-  'vm-pcrisis-current-buffer "8.3.3")
+  'vm-pcrisis-current-buffer "9.0.0")
 (defvar vm-pcrisis-current-buffer nil
   "The current buffer, i.e. `none' or `composition'.
 It is `none' before running an adviced VM function and `composition' afterward,
@@ -251,7 +251,7 @@ i.e. when within the composition buffer.")
   "Alist of headers from the original message saved for later use.")
 
 (define-obsolete-variable-alias 'vmpc-actions-to-run
-  'vm-pcrisis-actions-to-run "8.3.3")
+  'vm-pcrisis-actions-to-run "9.0.0")
 (defvar vm-pcrisis-actions-to-run nil
   "The actions to run.")
 
@@ -297,7 +297,7 @@ i.e. when within the composition buffer.")
   "Whether to forbid the cursor from entering the signature.")
 
 (define-obsolete-variable-alias 'vmpc-expect-default-signature
-  'vm-pcrisis-expect-default-signature "8.3.3")
+  'vm-pcrisis-expect-default-signature "9.0.0")
 (defcustom vm-pcrisis-expect-default-signature t
   "Whether a signature is inserted by something other than Personality Crisis.
 Emacs inserts one when `mail-signature' is set, taking it from that variable or
@@ -1332,7 +1332,7 @@ The special action \"none\" will result in an empty action list."
 (put 'vm-pcrisis-read-actions 'vm-called-by-vm t)
 
 (define-obsolete-variable-alias 'vmpc-prompt-for-profile-headers
-  'vm-pcrisis-prompt-for-profile-headers "8.3.3")
+  'vm-pcrisis-prompt-for-profile-headers "9.0.0")
 (defcustom vm-pcrisis-prompt-for-profile-headers
   '((composition ("To" "CC" "BCC"))
     (default     ("From" "Sender" "Reply-To" "From" "Resent-From")))
@@ -2155,69 +2155,69 @@ repeating itself is the point."
 ;; so a configuration names them without calling them.
 
 (define-obsolete-function-alias 'vmpc-add-header
-  'vm-pcrisis-add-header "8.3.3")
+  'vm-pcrisis-add-header "9.0.0")
 (define-obsolete-function-alias 'vmpc-automorph
-  'vm-pcrisis-automorph "8.3.3")
+  'vm-pcrisis-automorph "9.0.0")
 (define-obsolete-function-alias 'vmpc-backward-tab-header-or-tab-stop
-  'vm-pcrisis-backward-tab-header-or-tab-stop "8.3.3")
+  'vm-pcrisis-backward-tab-header-or-tab-stop "9.0.0")
 (define-obsolete-function-alias 'vmpc-body-match
-  'vm-pcrisis-body-match "8.3.3")
+  'vm-pcrisis-body-match "9.0.0")
 (define-obsolete-function-alias 'vmpc-build-actions-to-run-list
-  'vm-pcrisis-build-actions-to-run-list "8.3.3")
+  'vm-pcrisis-build-actions-to-run-list "9.0.0")
 (define-obsolete-function-alias 'vmpc-build-true-conditions-list
-  'vm-pcrisis-build-true-conditions-list "8.3.3")
+  'vm-pcrisis-build-true-conditions-list "9.0.0")
 (define-obsolete-function-alias 'vmpc-composition-buffer
-  'vm-pcrisis-composition-buffer "8.3.3")
+  'vm-pcrisis-composition-buffer "9.0.0")
 (define-obsolete-function-alias 'vmpc-delete-header
-  'vm-pcrisis-delete-header "8.3.3")
+  'vm-pcrisis-delete-header "9.0.0")
 (define-obsolete-function-alias 'vmpc-fix-auto-profiles-file
-  'vm-pcrisis-fix-auto-profiles-file "8.3.3")
+  'vm-pcrisis-fix-auto-profiles-file "9.0.0")
 (define-obsolete-function-alias 'vmpc-folder-account-match
-  'vm-pcrisis-folder-account-match "8.3.3")
+  'vm-pcrisis-folder-account-match "9.0.0")
 (define-obsolete-function-alias 'vmpc-folder-match
-  'vm-pcrisis-folder-match "8.3.3")
+  'vm-pcrisis-folder-match "9.0.0")
 (define-obsolete-function-alias 'vmpc-header-match
-  'vm-pcrisis-header-match "8.3.3")
+  'vm-pcrisis-header-match "9.0.0")
 (define-obsolete-function-alias 'vmpc-insert-header
-  'vm-pcrisis-insert-header "8.3.3")
+  'vm-pcrisis-insert-header "9.0.0")
 (define-obsolete-function-alias 'vmpc-load-auto-profiles
-  'vm-pcrisis-load-auto-profiles "8.3.3")
+  'vm-pcrisis-load-auto-profiles "9.0.0")
 (define-obsolete-function-alias 'vmpc-migrate-profiles-to-BBDB
-  'vm-pcrisis-migrate-profiles-to-BBDB "8.3.3")
+  'vm-pcrisis-migrate-profiles-to-BBDB "9.0.0")
 (define-obsolete-function-alias 'vmpc-mode
-  'vm-pcrisis-mode "8.3.3")
+  'vm-pcrisis-mode "9.0.0")
 (define-obsolete-function-alias 'vmpc-my-identities
-  'vm-pcrisis-my-identities "8.3.3")
+  'vm-pcrisis-my-identities "9.0.0")
 (define-obsolete-function-alias 'vmpc-none-true-yet
-  'vm-pcrisis-none-true-yet "8.3.3")
+  'vm-pcrisis-none-true-yet "9.0.0")
 (define-obsolete-function-alias 'vmpc-only-from-match
-  'vm-pcrisis-only-from-match "8.3.3")
+  'vm-pcrisis-only-from-match "9.0.0")
 (define-obsolete-function-alias 'vmpc-other-cond
-  'vm-pcrisis-other-cond "8.3.3")
+  'vm-pcrisis-other-cond "9.0.0")
 (define-obsolete-function-alias 'vmpc-pre-function
-  'vm-pcrisis-pre-function "8.3.3")
+  'vm-pcrisis-pre-function "9.0.0")
 (define-obsolete-function-alias 'vmpc-pre-signature
-  'vm-pcrisis-pre-signature "8.3.3")
+  'vm-pcrisis-pre-signature "9.0.0")
 (define-obsolete-function-alias 'vmpc-prompt-for-profile
-  'vm-pcrisis-prompt-for-profile "8.3.3")
+  'vm-pcrisis-prompt-for-profile "9.0.0")
 (define-obsolete-function-alias 'vmpc-read-actions
-  'vm-pcrisis-read-actions "8.3.3")
+  'vm-pcrisis-read-actions "9.0.0")
 (define-obsolete-function-alias 'vmpc-run-action
-  'vm-pcrisis-run-action "8.3.3")
+  'vm-pcrisis-run-action "9.0.0")
 (define-obsolete-function-alias 'vmpc-run-actions
-  'vm-pcrisis-run-actions "8.3.3")
+  'vm-pcrisis-run-actions "9.0.0")
 (define-obsolete-function-alias 'vmpc-signature
-  'vm-pcrisis-signature "8.3.3")
+  'vm-pcrisis-signature "9.0.0")
 (define-obsolete-function-alias 'vmpc-substitute-header
-  'vm-pcrisis-substitute-header "8.3.3")
+  'vm-pcrisis-substitute-header "9.0.0")
 (define-obsolete-function-alias 'vmpc-substitute-replied-header
-  'vm-pcrisis-substitute-replied-header "8.3.3")
+  'vm-pcrisis-substitute-replied-header "9.0.0")
 (define-obsolete-function-alias 'vmpc-tab-header-or-tab-stop
-  'vm-pcrisis-tab-header-or-tab-stop "8.3.3")
+  'vm-pcrisis-tab-header-or-tab-stop "9.0.0")
 (define-obsolete-function-alias 'vmpc-toggle-no-automorph
-  'vm-pcrisis-toggle-no-automorph "8.3.3")
+  'vm-pcrisis-toggle-no-automorph "9.0.0")
 (define-obsolete-function-alias 'vmpc-true-conditions
-  'vm-pcrisis-true-conditions "8.3.3")
+  'vm-pcrisis-true-conditions "9.0.0")
 
 (provide 'vm-pcrisis)
 ;;; vm-pcrisis.el ends here

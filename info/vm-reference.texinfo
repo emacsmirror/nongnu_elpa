@@ -1307,7 +1307,7 @@ signature wears @code{vm-signature-face}.  Headers are a separate matter, decide
 by @code{vm-highlighted-header-regexp}.
 
 Set this in the init file.  Off by default because it changes how every
-message looks.  Before VM 8.3.3 the same colouring came from the bundled
+message looks.  In earlier releases the same colouring came from the bundled
 u-vm-color add-on, which had to be wired up by hand and is gone
 (emacs-vm/vm#811).
 @end defopt
