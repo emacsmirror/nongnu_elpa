@@ -704,7 +704,7 @@ ignored.  For non existing tokens or errors during evaluation one will get
 a warning.
 
 RSTART and REND bound the text to expand.  Given neither, the whole
-message body is expanded, or the region under XEmacs."
+message body is expanded."
   (interactive)
   
   (let ((token-regexp (concat (regexp-quote vm-serial-cookie)

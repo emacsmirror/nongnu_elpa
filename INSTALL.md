@@ -15,7 +15,7 @@ manual and arranges the autoloads.
 
 The source is at <https://gitlab.com/emacs-vm/vm>.
 
-VM needs GNU Emacs 28.1 or later.  XEmacs is no longer supported.
+VM needs GNU Emacs 28.1 or later.
 
 ### 0. Generate the configure script
 
