@@ -3585,7 +3585,7 @@ ENDPOINT is the API endpoint to hit."
        (when (and (not (magit-inside-worktree-p :noerror))
                   (y-or-n-p "No local repo. Open one with magit?"))
          ;; if we are not in a repo, read one and open:
-         (magit-status (magit-read-repository)))
+         (magit-status-setup-buffer (magit-read-repository)))
        (magit-fetch-refspec remote refspec nil)))))
 
 ;;; TIMELINE ITEMS
