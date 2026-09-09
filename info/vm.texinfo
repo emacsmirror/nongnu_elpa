@@ -3320,7 +3320,8 @@ that you can come back to them later.  You can do so with
 message turns the flag off.  In the Summary display, the flagged
 messages are highlighted using the
 @code{vm-summary-high-priority} face.  (@xref{predefined summary
-faces}.)
+faces}.)  The flag is kept in the folder from session to session, like the
+other message attributes (@pxref{Message Attributes}).
 
 @kindex !
 It is on @kbd{!}.
@@ -6432,6 +6433,22 @@ visit of the current folder.
 @item unread
 The message was retrieved from a spool file during some
 past visit of the folder but is still unread.
+@cindex flagged messages
+@cindex flagging messages
+@item flagged
+You have marked the message as one to come back to, with @kbd{!}
+(@code{vm-toggle-flag-message}).  VM attaches no meaning of its own to it:
+nothing you flag is treated differently, and no command reads the flag except
+the ones that show it and select on it.  A flagged message shows @samp{!} in the summary
+and is highlighted with the @code{vm-summary-high-priority} face
+(@pxref{predefined summary faces}), and @kbd{V !} gathers the flagged
+messages of a folder into a virtual folder (@pxref{Virtual Folders}).  It is
+not the same as marking a message, which is a selection that lasts for the
+session (@pxref{Marking Messages}).  On an @acronym{IMAP} server it is the
+@code{\Flagged} flag, so it is the same flag other mail programs show as a
+star or a flag.  One character in the summary carries whichever of deleted,
+new, unread and flagged applies first, so a message you flag before reading
+shows @samp{N} until you read it (@pxref{Summary Format}).
 @item filed
 The message has been saved to some folder.
 @item written
@@ -6823,6 +6840,9 @@ attribute indicators (always four characters wide)
 @*
 The first char is  `D', `N', `U' or `!' for deleted, new, unread
 and flagged messages respectively, and ` ' if none of the conditions apply.
+A message can be several of those at once and the column holds one
+character, so it shows the first that applies in the order given
+(@pxref{Message Attributes}).
 @*
 The second char is `F', `W' or ` ' for filed (saved) or written
 messages.
@@ -6838,7 +6858,8 @@ longer version of attributes indicators (seven characters
 wide).@*
 @*
 The first char is  `D', `N', `U' or `!' for deleted, new, unread
-and flagged messages respectively, and ` ' if none of the conditions apply.
+and flagged messages respectively, the first that applies, and ` ' if none
+of the conditions apply.
 @*
 The second is `R' or ` ', for message replied to.
 @*
@@ -6857,7 +6878,8 @@ The seventh is `e' or ` ', for messages that have been edited.
 shorter version of the attribute indicators (one character wide).
 @*
 `D', `N', `U' or `!' for deleted, new, unread
-and flagged messages respectively, and ` ' if none of the conditions apply.
+and flagged messages respectively, the first that applies, and ` ' if none
+of the conditions apply.
 
 @item *
 message mark, `*' if the message is marked, ` ' otherwise
@@ -7638,7 +7660,7 @@ matches message if it is not new and hasn't been read.
 matches message if it is not new and hasn't been read.
 Same as the @code{unread} selector.
 @item flagged
-matches message if it is flagged.
+matches message if it is flagged (@pxref{Message Attributes}).
 @item unflagged
 matches message if it is not flagged.
 @item replied

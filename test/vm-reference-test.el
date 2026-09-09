@@ -689,6 +689,50 @@ own heading, not among the ones to type."
              (push symbol missing))))))
     (should (equal nil (sort missing #'string<)))))
 
+
+;;; Every attribute a reader can set is described in the manual
+
+(defconst vm-reference-test--attributes-not-in-the-table
+  '(;; not an attribute: the manual says it is what negates both new and unread
+    "read"
+    ;; alias names, for BABYL and for IMAP, documented as aliases where the
+    ;; selectors are: recent is new, unseen is unread, answered is replied
+    "recent" "unseen" "answered"
+    ;; offered by completion and rejected by `vm-set-message-attribute',
+    ;; which warns "Invalid attribute" for both (emacs-vm/vm#827)
+    "expanded" "collapsed")
+  "Names in `vm-supported-attribute-names' that the table need not carry.")
+
+(defun vm-reference-test--attributes-in-the-manual ()
+  "The attribute names the Message Attributes table of the manual describes."
+  (with-temp-buffer
+    (insert-file-contents vm-reference-test--manual)
+    (goto-char (point-min))
+    (should (re-search-forward "^@node Message Attributes," nil t))
+    (should (re-search-forward "^@table @code" nil t))
+    (let ((end (save-excursion (re-search-forward "^@end table") (point)))
+          (names nil))
+      (while (re-search-forward "^@item \\([a-z]+\\)$" end t)
+        (push (match-string 1) names))
+      names)))
+
+(ert-deftest vm-reference-test-every-settable-attribute-is-described ()
+  "REGRESSION: an attribute a reader can set is described in the manual.
+
+`flagged' was not.  It is stored in the folder like the rest, `!' toggles it,
+the summary shows it as `!\=', a virtual folder can select on it and an IMAP
+server keeps it as \\Flagged, and the one place the manual explains what an
+attribute means did not mention it.  So the `!\=' in a summary line could not
+be looked up, which is what the maintainer noticed (emacs-vm/vm#776)."
+  (let ((described (vm-reference-test--attributes-in-the-manual))
+        (missing nil))
+    (dolist (name vm-supported-attribute-names)
+      (unless (or (string-prefix-p "un" name)
+                  (member name vm-reference-test--attributes-not-in-the-table)
+                  (member name described))
+        (push name missing)))
+    (should-not missing)))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
