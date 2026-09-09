@@ -121,6 +121,7 @@
 |            | mastodon-profile-open-statuses-no-reblogs        | Open a profile buffer showing statuses without reblogs.                        |
 |            | mastodon-profile-open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
 |            | mastodon-profile-open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
+|            | mastodon-profile-open-statuses-only-toots        | Open a profile buffer showing neither boosts nor replies.                      |
 | C-c #      | mastodon-profile-open-statuses-tagged            | Prompt for a TAG and display a profile with statuses containing it.            |
 |            | mastodon-profile-own-featured-tags               | Display your own featured tags.                                                |
 |            | mastodon-profile-remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
@@ -280,6 +281,7 @@
 | E          | mastodon-views-edit-list                         | Prompt for a list and edit the name and replies policy.                        |
 |            | mastodon-views-edit-list-at-point                | Edit list at point.                                                            |
 | RET        | mastodon-views-edit-scheduled-as-new             | Edit scheduled status as new toot.                                             |
+|            | mastodon-views-instance-desc-lemmy               | Show instance description for a lemmy server.                                  |
 |            | mastodon-views-instance-desc-misskey             | Show instance description for a misskey/firefish server.                       |
 |            | mastodon-views-reload-collection                 | Reload current collection view.                                                |
 | R          | mastodon-views-remove-account-from-list          | Prompt for a list, select an account and remove from list.                     |
