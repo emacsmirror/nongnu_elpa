@@ -2749,6 +2749,63 @@ Buffer-local variable `fj-previous-window-config' holds the config."
    (fj-render-markdown body)
    'utf-8))
 
+(require 'eww)
+
+(defun fj-tag-input (dom)
+  "Render tag input DOM."
+  ;; hacked off eww-tag-input
+  (let ((type (downcase (or (dom-attr dom 'type) "text")))
+	(start (point)))
+    (cond
+     ((or (equal type "checkbox")
+	  (equal type "radio"))
+      (fj-form-checkbox dom)) ;ours
+     ((equal type "file")
+      (eww-form-file dom))
+     ((equal type "submit")
+      (eww-form-submit dom))
+     ((equal type "hidden")
+      (let ((form eww-form)
+            (name (dom-attr dom 'name)))
+        ;; Don't add <input type=hidden> elements repeatedly.
+        (while (and form
+        	    (or (not (consp (car form)))
+        		(not (eq (caar form) 'hidden))
+        		(not (equal (plist-get (cdr (car form)) :name)
+        			    name))))
+          (setq form (cdr form)))
+        (unless form
+          (nconc eww-form (list
+        		   (list 'hidden
+        			 :name name
+        			 :value (or (dom-attr dom 'value) "")))))))
+     (t
+      (eww-form-text dom)))
+    (unless (or (= start (point))
+                (equal type "submit"))
+      (put-text-property start (1+ start) 'help-echo "Input field")
+      ;; Mark this as an element we can TAB to.
+      (put-text-property start (1+ start) 'shr-tab-stop t))))
+
+(defun fj-form-checkbox (dom)
+  "Render checkbox DOM."
+  ;; hacked off eww-form-checkbox
+  (let ((start (point)))
+    (if (dom-attr dom 'checked)
+	(insert eww-form-checkbox-selected-symbol)
+      (insert eww-form-checkbox-symbol))
+    (add-face-text-property start (point) 'highlight) ;ours
+    (put-text-property start (point) 'eww-form
+		       (list :eww-form eww-form
+			     :value (dom-attr dom 'value)
+			     :type (downcase (dom-attr dom 'type))
+			     :checked (dom-attr dom 'checked)
+			     :name (dom-attr dom 'name)))
+    (put-text-property start (point) 'keymap eww-checkbox-map)
+    ;; Pretend to touch-screen.el that this is a button.
+    (put-text-property start (point) 'button t)
+    (insert " ")))
+
 (defun fj-render-item-bodies (&optional point)
   "Render all item bodies in the buffer.
 Uses property fj-item-body to find them.
@@ -2766,6 +2823,10 @@ Optionally start from POINT."
                                   tab-width ;; review comments
                                 2)))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
+                (shr-external-rendering-functions
+                 (append
+                  shr-external-rendering-functions
+                  '((input . fj-tag-input))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
