@@ -5697,20 +5697,26 @@ files."
 	  ((or (null arg) full)
 	   ;; This is redundant now.  USR, 2011-12-26
 	   (vm-inform 5 "%s: Checking for %s..." folder description)
-	   (if (vm-get-spooled-mail t full)
-	       (progn
-		 ;; say this NOW, before the non-previewers read
-		 ;; a message, alter the new message count and
-		 ;; confuse themselves.
-		 (setq totals-blurb (vm-emit-totals-blurb))
-		 (vm-display nil nil '(vm-get-new-mail) '(vm-get-new-mail))
-		 (if (vm-thoughtfully-select-message)
-		     (vm-present-current-message)
-		   (vm-update-summary-and-mode-line))
-		 (vm-inform 5 "%s" totals-blurb))
-	     (vm-inform 5 "%s: No %s" folder description)
-	     (and (vm-interactive-p) (vm-sit-for 4) (vm-inform 5 ""))
-	     ))
+	   (let ((got (vm-get-spooled-mail t full)))
+	     (cond
+	      ;; Under way, and nothing has arrived yet: what the folder holds
+	      ;; is what it held before, and the arrival says what came
+	      ;; (emacs-vm/vm#825).
+	      ((eq got 'started)
+	       (vm-inform 5 "%s: getting %s..." folder description))
+	      (got
+	       ;; say this NOW, before the non-previewers read
+	       ;; a message, alter the new message count and
+	       ;; confuse themselves.
+	       (setq totals-blurb (vm-emit-totals-blurb))
+	       (vm-display nil nil '(vm-get-new-mail) '(vm-get-new-mail))
+	       (if (vm-thoughtfully-select-message)
+		   (vm-present-current-message)
+		 (vm-update-summary-and-mode-line))
+	       (vm-inform 5 "%s" totals-blurb))
+	      (t
+	       (vm-inform 5 "%s: No %s" folder description)
+	       (and (vm-interactive-p) (vm-sit-for 4) (vm-inform 5 ""))))))
 	  (t
 	   (let ((buffer-read-only nil)
 		 folder mcount)

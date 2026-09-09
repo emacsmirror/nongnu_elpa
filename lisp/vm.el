@@ -428,12 +428,23 @@ deleted messages.  Use `###' to expunge deleted messages."
 		 (not vm-block-new-mail)
 		 (not vm-folder-read-only))
 	(vm-inform 6 "%s: Checking for new mail..." (buffer-name))
-	(when (vm-get-spooled-mail interactive)
-	  (setq totals-blurb (vm-emit-totals-blurb))
-	  (if (vm-thoughtfully-select-message)
-	      (vm-present-current-message)
-	    (vm-update-summary-and-mode-line)))
-	(vm-inform 5 "%s" totals-blurb))
+	(let ((got (vm-get-spooled-mail interactive)))
+	  (cond
+	   ;; The fetch is under way and nothing has arrived yet.  Saying the
+	   ;; totals here would say what the folder held before it, which on a
+	   ;; folder with a cache is the old count and reads as nothing having
+	   ;; happened; the arrival says what came (emacs-vm/vm#825).
+	   ((eq got 'started)
+	    ;; not the totals: `totals-blurb' names the folder itself, and
+	    ;; what it counts is what the fetch has not changed yet
+	    (vm-inform 5 "%s: getting new mail..." (buffer-name)))
+	   (got
+	    (setq totals-blurb (vm-emit-totals-blurb))
+	    (if (vm-thoughtfully-select-message)
+		(vm-present-current-message)
+	      (vm-update-summary-and-mode-line))
+	    (vm-inform 5 "%s" totals-blurb))
+	   (t (vm-inform 5 "%s" totals-blurb)))))
 
       ;; [17] Display copyright and copying info.
       (when (and interactive (not vm-startup-message-displayed))
