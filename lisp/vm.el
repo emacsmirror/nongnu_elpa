@@ -878,6 +878,18 @@ visited folder."
   (vm-session-initialization)
   (vm-check-for-killed-folder)
   (vm-select-folder-buffer-if-possible)
+  ;; Before anything else does: a folder that is not a maildrop is read as
+  ;; one further down, and `vm-imap-normalize-spec' fails on it with
+  ;; "Wrong type argument: consp, nil" and no hint of the cause.  Nil is what
+  ;; `vm-imap-spec-for-account' answers for an account VM has not got, which
+  ;; is what a command naming an account hands over (emacs-vm/vm#826).
+  (unless (and (stringp folder) (vm-imap-folder-spec-p folder))
+    (error (concat "%s is not an IMAP maildrop."
+		   "  A command that names an account gets nil from"
+		   " vm-imap-spec-for-account until vm-imap-account-alist"
+		   " has that account in it; M-x vm-check-configuration"
+		   " lists the accounts VM knows")
+	   (if folder (format "%S" folder) "Nothing")))
   (setq vm-last-visit-imap-folder folder)
   (vm folder :access-method 'imap
       :interactive interactive :read-only read-only))
@@ -1507,13 +1519,28 @@ attributes, adding/deleting labels etc."
                                           (vm-count-messages-in-file f))))))))
 
 ;;;###autoload
+(defvar vm-session-initializing nil
+  "Whether `vm-session-initialization' is running.
+
+Its own guard, `vm-session-beginning', is cleared at the end of the work
+rather than the start, so anything reached from the middle of it -- the init
+file it loads, and whatever that calls -- would start the work again.  A
+lookup that initialises VM so as to answer at all
+(`vm-imap-spec-for-account') is exactly such a caller.")
+
+;;;###autoload
 (defun vm-session-initialization ()
   "If this is the first time VM has been run in this Emacs session,
 do some necessary preparations.  Otherwise, update the count of
-draft messages."
-  (if (or (not (boundp 'vm-session-beginning))
-	  vm-session-beginning)
-      (progn
+draft messages.
+
+Autoloaded, so that configuration code and the autoloaded functions that ask
+for initialisation before they can answer -- `vm-imap-spec-for-account' --
+reach it without vm.el having been loaded by something else first."
+  (if (and (or (not (boundp 'vm-session-beginning))
+	       vm-session-beginning)
+	   (not vm-session-initializing))
+      (let ((vm-session-initializing t))
         (require 'vm-macro)
         (require 'vm-vars)
         (require 'vm-misc)
