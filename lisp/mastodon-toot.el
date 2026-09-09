@@ -1413,10 +1413,10 @@ File is actually attached to the toot upon posting."
 (defun mastodon-toot--attachment-from-desc (desc)
   "Return an attachment based on its description DESC."
   (car
-   (compat-call member-if
-     (lambda (x)
-       (rassoc desc x))
-     mastodon-toot--media-attachments)))
+   (member-if
+    (lambda (x)
+      (rassoc desc x))
+    mastodon-toot--media-attachments)))
 
 (defun mastodon-toot-edit-media-description ()
   "Prompt for an attachment, and update its description."

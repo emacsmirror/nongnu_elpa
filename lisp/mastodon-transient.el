@@ -61,10 +61,10 @@
     (message "prefix's scope: %s \ntransient-args: %s\n last: %s"
              scope args
              (length
-              (compat-call member-if
-                (lambda (x)
-                  (equal (car x) 'one))
-                args)))))
+              (member-if
+               (lambda (x)
+                 (equal (car x) 'one))
+               args)))))
 
 ;; some JSON fields that are returned under the "source" field need to be
 ;; sent back in the format source[key], while some others are sent kust as
@@ -247,10 +247,10 @@ Do not add more than the server's maximum setting."
   :transient 'transient--do-stay
   (let* ((args (transient-args (oref transient-current-prefix command)))
          (choice-count (length
-                        (compat-call member-if
-                          (lambda (x)
-                            (equal (car x) 'one))
-                          args)))
+                        (member-if
+                         (lambda (x)
+                           (equal (car x) 'one))
+                         args)))
          (inc (1+ choice-count))
          (next (number-to-string inc))
          (next-symbol (pcase inc
@@ -322,10 +322,10 @@ Do not add more than the server's maximum setting."
   "Finish setting poll details."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
-  (let* ((options (compat-call member-if
-                    (lambda (x)
-                      (eq (car x) 'one))
-                    args))
+  (let* ((options (member-if
+                   (lambda (x)
+                     (eq (car x) 'one))
+                   args))
          (opt-vals (cl-loop for x in options
                             collect (cdr x)))
          (lengths (mapcar #'length opt-vals))
