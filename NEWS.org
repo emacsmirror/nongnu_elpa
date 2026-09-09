@@ -1,7 +1,38 @@
 #+title: emacs-hermes Changelog
 
-* Unreleased
+* Version 0.6.0 (2026-09-09)
 
+- Added local image drafts from files and PNG clipboard data.  Images can be
+  previewed or removed before submission; selecting them does not upload them.
+  Failed or uncertain submissions retain bytes in an in-memory recovery view
+  for explicit inspection and manual recovery.  Image staging is shared by a
+  backend session, so do not use another client to send into that session.
+- Rendered Markdown tables inline with wrapped cells and a copy-source action.
+  Tables reflow to the narrowest displaying window, account for line-number
+  gutters, and preserve the transcript, draft, and undo history during resize.
+- Added =hermes-chat-quote-region= to append selected transcript text as a
+  Markdown quote to the draft.  It preserves existing input and never sends or
+  queues the quote, including while a turn is running.
+- Added =M-x hermes-files= to browse backend-managed files and open inert text
+  or image previews without file-local variables or evaluation.  The viewer
+  can save validated bytes to a new local file, never overwrite an existing
+  destination.  Reads are capped at 4 MiB and listings at 2000 entries.
+- Added native pairing and webhook management, tool-provider setup, and agent
+  plugin installation, enablement, update, removal, and context-engine choice.
+  Commands retain their owning instance and reject stale confirmations or
+  unprovable mutation targets.
+- Expanded MCP management with server creation and removal, reviewed catalog
+  installation, backend-owned OAuth, and progress monitoring.  Cancelling
+  monitoring does not imply cancellation of a remote installation.
+- Added system-log source, level, component, and line-count filters, optional
+  auto-refresh, and popup controls.  Worker views can open logs when the
+  backend publishes an exact transcript or child-session identity.
+- Added optional chat-header and process icons, with text fallbacks.  Settings
+  menus show reported values and distinguish pending create-time choices from
+  active settings.
+- Preserved browser position and instance ownership across refreshes, kept
+  asynchronous completion from displacing later window choices, and settled
+  failed initial client acquisition so views can be retried.
 - Added =M-x hermes-dashboard-restart= in chat buffers.  After confirming its
   shared impact, it restarts the Emacs-owned dashboard and eagerly reattaches
   live chats to their durable sessions without replacing buffers or drafts.
@@ -9,6 +40,23 @@
   sending.  The backend may recover interrupted turns under its own policy;
   Emacs never resends input.  Remote dashboards are not restarted: use
   =hermes-dashboard-reconnect= for an idle socket reconnect.
+- Rechecked eval enablement immediately before execution, kept non-loopback
+  connections authenticated when token configuration changes, and closed
+  accepted connections when stopping or replacing a dead listener.  IPv6
+  loopback listeners now use the correct address family.
+- Retired capability sockets before reconnect backoff so late callbacks cannot
+  dispatch requests or affect a replacement connection.
+- Preserved HTTPS and URL path prefixes when explicitly attaching to a
+  loopback dashboard in remote mode.
+- Kept rollback checkpoints tied to the session attachment that listed them;
+  switching chats, reconnecting, or changing the owner retires old selections.
+- Rechecked management mutation ownership after authentication waits, and
+  released busy state when client acquisition fails or is cancelled.
+- Refused model and reasoning changes on detached durable sessions instead of
+  silently losing them during resume.  Fresh chats and owned failed-create
+  retries still support pending settings.
+- Cleared old status and log content when reopening a view, before assigning
+  the next response to its new instance.
 
 * Version 0.5.0 (2026-09-05)
 
