@@ -2366,10 +2366,11 @@ URL of a Forgejo repository."
     
     ;; martianh: this also needs to work for links to items, e.g.
     ;; "https://codeberg.org/guix/guix/pulls/7383", so:
-    (if (string-prefix-p "git@" (car components))
-        ;; we have a git@host.com in the result, skip it:
-        (take 2 (cdr components))
-      (take 2 components))))
+    (take 2
+          (if (string-prefix-p "git@" (car components))
+              ;; we have a git@host.com in the result, skip it:
+              (cdr components)
+            components))))
 
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
