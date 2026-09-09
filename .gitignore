@@ -48,7 +48,12 @@ commit.msg
 /lisp/vm-cus-load.el
 
 .emacs.bak/
-/.claude/
+# Claude Code's own directory: settings.local.json is personal, and
+# CLAUDE.md is guidance for the project and is tracked.  The contents
+# rather than the directory, since git cannot re-include a file whose
+# parent directory is excluded.
+/.claude/*
+!/.claude/CLAUDE.md
 /test/coverage-results.txt
 /test/forms-coverage-results.txt
 /test/line-coverage-results.txt
