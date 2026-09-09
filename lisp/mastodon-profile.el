@@ -875,11 +875,11 @@ SKIP-PINNED means don't display pinned toots."
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
            (args `(("limit" . ,mastodon-tl--timeline-posts-count)
-                   ,(when max-id `("max_id" . ,max-id-str))
-                   ,(when no-reblogs '("exclude_reblogs" . "t"))
-                   ,(when no-replies '("exclude_replies" . "t"))
-                   ,(when only-media '("only_media" . "t"))
-                   ,(when tag `("tagged" . ,tag))))
+                   ,@(when max-id `(("max_id" . ,max-id-str)))
+                   ,@(when no-reblogs '(("exclude_reblogs" . "t")))
+                   ,@(when no-replies '(("exclude_replies" . "t")))
+                   ,@(when only-media '(("only_media" . "t")))
+                   ,@(when tag `(("tagged" . ,tag)))))
            (endpoint (format "accounts/%s/%s" .id endpoint-type))
            (url (mastodon-http--api endpoint))
            (buffer (concat "*mastodon-" .acct "-"
