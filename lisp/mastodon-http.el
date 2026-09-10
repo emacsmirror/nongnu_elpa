@@ -412,26 +412,32 @@ The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
     (set-buffer-multibyte nil)
     (insert-file-contents-literally filename)
     (let ((boundary (buffer-hash)))
-      (goto-char (point-min))
-      (insert "--" boundary "\r\n"
-              (format "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n\r\n"
-                      (file-name-nondirectory filename)))
-      (goto-char (point-max))
-      (insert "\r\n" "--" boundary "--" "\r\n")
-      `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
+      `(,boundary . ,(buffer-substring-no-properties
+                      (point-min) (point-max))))))
 
-(defun mastodon-http--post-media-attachment (url filename caption)
+(require 'mm-url)
+
+(defun mastodon-http--post-media-attachment (url filepath caption)
   "Make POST request to upload FILENAME with CAPTION to the server's media URL.
 The upload is asynchronous. On succeeding,
 `mastodon-toot--media-attachment-ids' is set to the id(s) of the
 item uploaded, and `mastodon-toot--update-status-fields' is run."
   (mastodon-http--authorized-request "POST"
-    (let* ((data (mastodon-http--post-media-prep-file filename))
+    (let* ((data (mastodon-http--post-media-prep-file filepath))
+           (filename (file-name-nondirectory filepath))
+           (mime-type (mailcap-file-name-to-mime-type filename))
            (url-request-extra-headers
-            (append url-request-extra-headers ; auth set in macro
-                    `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                                 (car data))))))
-           (url-request-data (cdr data))
+            (append
+             url-request-extra-headers ; auth set in macro
+             `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                          (car data))))))
+           (url-request-data
+            (mm-url-encode-multipart-form-data
+             `(("file" . (("name" . "file") ;; API param
+                          ("filename" . ,filename)
+                          ("content-type" . ,mime-type)
+                          ("filedata" . ,(cdr data)))))
+             (car data)))
            (params `(("description" . ,caption)))
            (url (mastodon-http--concat-params-to-url url params)))
       (url-retrieve url #'mastodon-http--post-media-callback
