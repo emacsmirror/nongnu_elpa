@@ -1517,6 +1517,13 @@ If TYPE is :pull, get a pull request, not issue."
                            (if (eq type :pull) "pulls" "issues") number)))
     (fj-get endpoint)))
 
+(defun fj-issue-success-maybe-upload (resp repo owner)
+  "In sucess function with RESP, upload attachment if present."
+  (when fj-compose-upload
+    (let* ((json (fj-resp-json resp))
+           (index (alist-get 'number json)))
+      (fj-post-issue-attachment repo owner index fj-compose-upload))))
+
 (defun fj-issue-post (repo user title body &optional labels
                            assignees closed due-date milestone ref)
   "POST a new issue to REPO owned by USER.
@@ -1536,8 +1543,13 @@ CLOSED, DUE-DATE, REF."
                                           collect (cdr x))))
                   (fedi-opt-params assignees closed
                                    (due-date :alias "due_date")
-                                   milestone ref))))
-    (fj-post url params :json)))
+                                   milestone ref)))
+         (resp (fj-post url params :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-issue-success-maybe-upload resp repo user)
+       (message "Issue created!")))))
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
@@ -1549,8 +1561,13 @@ OWNER is the repo owner."
   (let* ((params (fedi-opt-params
                   title body state assignee assignees due_date
                   milestone ref unset_due_date updated_at))
-         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
-    (fj-patch endpoint params)))
+         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue))
+         (resp (fj-patch endpoint params)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-issue-success-maybe-upload resp repo owner)
+       (message "Issue edited!")))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
   "Edit ISSUE title in REPO.
@@ -1748,6 +1765,13 @@ OWNER is the repo owner."
                            owner repo comment)))
     (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))
 
+(defun fj-comment-success-upload-maybe (resp repo owner)
+  "In comment success function with RESP, maybe upload file."
+  (when fj-compose-upload
+    (let* ((json (fj-resp-json resp))
+           (id (alist-get 'id json)))
+      (fj-post-comment-attachment repo owner id fj-compose-upload))))
+
 (defun fj-issue-comment (&optional repo owner issue comment
                                    close)
   "Add COMMENT to ISSUE in REPO.
@@ -1760,16 +1784,14 @@ With arg CLOSE, also close ISSUE."
          (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
          (resp (fj-post url params)))
-    (fedi-http--triage resp
-                       (lambda (resp)
-                         (when fj-compose-upload
-                           (let* ((json (fj-resp-json resp))
-                                  (id (alist-get 'id json)))
-                             (fj-post-attachment repo owner id fj-compose-upload)))
-                         (if (not close)
-                             (message "comment created!")
-                           (fj-issue-close repo owner issue)
-                           (message "comment created, issue closed!"))))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-comment-success-upload-maybe resp repo owner)
+       (if (not close)
+           (message "comment created!")
+         (fj-issue-close repo owner issue)
+         (message "comment created, issue closed!"))))))
 
 (defun fj-comment-patch (repo owner id &optional params issue json)
   "Edit comment with ID in REPO owned by OWNER.
@@ -1785,11 +1807,13 @@ NEW-BODY is the new comment text to send."
   (let* ((repo (fj-read-user-repo repo))
          (id (or id (fj--property 'fj-comment-id)))
          (owner (or owner (fj--repo-owner)))
-         (response (fj-comment-patch repo owner id
-                                     `(("body" . ,new-body)))))
-    (fedi-http--triage response
-                       (lambda (_)
-                         (message "comment edited!")))))
+         (resp (fj-comment-patch repo owner id
+                               `(("body" . ,new-body)))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-comment-success-upload-maybe resp repo owner)
+       (message "comment edited!")))))
 
 ;;; FILE UPLOAD/ATTACHMENT
 
@@ -1842,6 +1866,7 @@ The upload is asynchronous."
 (defun fj--post-file-upload-cb (_status filename)
   "Callback for `fj--post-file-upload'.
 STATUS is the HTTP response, FILENAME the uploaded file."
+  (setq fj-compose-upload nil)
   (message "File %s uploaded!" filename))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
