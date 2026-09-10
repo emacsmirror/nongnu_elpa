@@ -1835,13 +1835,13 @@ STATUS is the HTTP response, FILENAME the uploaded file."
   (message "File %s uploaded!" filename))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
-  ""
+  "Delete asset with ASSET-ID in REPO by OWNER for COMMENT-ID."
   (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets/%s"
                            owner repo comment-id asset-id)))
     (fj-delete endpoint)))
 
 (defun fj-delete-issue-asset (repo owner issue-id asset-id)
-  ""
+  "Delete asset with ASSET-ID in REPO by OWNER for ISSUE-ID."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/assets/%s"
                            owner repo issue-id asset-id)))
     (fj-delete endpoint)))
@@ -1871,7 +1871,7 @@ STATUS is the HTTP response, FILENAME the uploaded file."
              (fedi-http--triage
               resp
               ;; FIXME: reload, or remove without reloading?
-              (lambda (resp)
+              (lambda (_resp)
                 (message "Attachment deleted!"))))))))))
 
 ;;; ISSUE/COMMENT REACTIONS
