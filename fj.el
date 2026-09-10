@@ -1801,33 +1801,43 @@ NEW-BODY is the new comment text to send."
     (let ((boundary (buffer-hash)))
       `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
 
-(defun fj-post-attachment (repo owner comment-id filepath)
-  "Make POST request to upload FILEPATH.
-REPO OWNER COMMENT-ID FILEPATH.
+(defun fj-post-comment-attachment (repo owner id filepath)
+  "REPO OWNER ID FILEPATH"
+  (let ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
+                          owner repo id)))
+    (fj-post-attachment endpoint id filepath)))
+
+(defun fj-post-issue-attachment (repo owner id filepath)
+  "REPO OWNER ID FILEPATH"
+  (let ((endpoint (format "repos/%s/%s/issues/%s/assets"
+                          owner repo id)))
+    (fj-post-attachment endpoint id filepath)))
+
+(defun fj-post-attachment (endpoint id filepath)
+"Make POST request to upload FILEPATH to ENDPOINT.
+ID is the item to attach it to, comment or issue/PR.
 The upload is asynchronous."
-  (message "Uploading file for comment %s..." comment-id)
-  (fj-authorized-request "POST"
-    (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
-                             owner repo comment-id))
-           (filename (file-name-nondirectory filepath))
-           (mime-type (mailcap-file-name-to-mime-type filepath))
-           (params `(("name" . ,filename)))
-           (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
-           (data (fj--prep-file-raw-blob filepath))
-           (url-request-extra-headers
-            (append
-             url-request-extra-headers
-             `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                          (car data))))))
-           (url-request-data
-            (mm-url-encode-multipart-form-data
-             `(("file" . (("name" . "attachment") ;; API param
-                          ("filename" . ,filename)
-                          ("content-type" . ,mime-type)
-                          ("filedata" . ,(cdr data)))))
-             (car data))))
-      (url-retrieve url #'fj--post-file-upload-cb
-                    `(,filename)))))
+(message "Uploading file for %s..." id)
+(fj-authorized-request "POST"
+  (let* ((filename (file-name-nondirectory filepath))
+         (mime-type (mailcap-file-name-to-mime-type filepath))
+         (params `(("name" . ,filename)))
+         (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
+         (data (fj--prep-file-raw-blob filepath))
+         (url-request-extra-headers
+          (append
+           url-request-extra-headers
+           `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                        (car data))))))
+         (url-request-data
+          (mm-url-encode-multipart-form-data
+           `(("file" . (("name" . "attachment") ;; API param
+                        ("filename" . ,filename)
+                        ("content-type" . ,mime-type)
+                        ("filedata" . ,(cdr data)))))
+           (car data))))
+    (url-retrieve url #'fj--post-file-upload-cb
+                  `(,filename)))))
 
 (defun fj--post-file-upload-cb (_status filename)
   "Callback for `fj--post-file-upload'.
