@@ -3342,7 +3342,8 @@ This is in contrast to merely setting it to 0."
   "Render download URLS of attachment data ASSETS.
 Creates a markdown link, with attachment name as display text.
 Renders it on the server, adds `fj-item-body' property so our rendering
-works on the resulting html."
+works on the resulting html.
+Adds PROPS to the link's properties."
   (concat
    "📎 " (substring fedi-horiz-bar 3)
    "\n"
