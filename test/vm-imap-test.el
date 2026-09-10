@@ -730,9 +730,9 @@ Body
         (vm-imap-synchronize nil)
         (vm-imap-synchronize t))
       ;; The prefix reaches the driver as FULL and means every message's
-      ;; flags, not `delete on the server what the cache does not have\='.
+      ;; flags, not `delete on the server what the cache does not have\\='.
       ;; The expunges the reader made are sent either way, which is
-      ;; `vm-imap-net-synchronize\='s own documented behaviour.
+      ;; `vm-imap-net-synchronize's own documented behaviour.
       (should (equal asked '(t nil))))))
 
 (provide 'vm-imap-test)

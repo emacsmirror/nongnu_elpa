@@ -63,9 +63,9 @@ Set it to 0, no, off or mock to run the mock servers alone on a machine that
 has test/vm-live-config.el.  The mock tests always run either way.")
 
 (defconst vm-test-optional-environment-variable "VM_TEST_OPTIONAL"
-  "Environment variable saying whether VM\='s optional companions are in play.
+  "Environment variable saying whether VM\\='s optional companions are in play.
 Set it to 0, no or off to run as a machine without BBDB, emacs-w3m and vcard
-does, on one where `make optional-packages\=' has installed them.")
+does, on one where `make optional-packages\\=' has installed them.")
 
 (defun vm-test-environment-refuses-p (variable)
   "Whether VARIABLE, an environment variable, says no."

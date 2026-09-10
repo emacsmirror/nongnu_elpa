@@ -523,8 +523,8 @@ its own map."
   "The X-Mailer of a real composition says which editor built it.
 Issue #520 was reported against the header, not against the helper that makes
 part of it, so this looks at the header: \"VM 8.3.x under 31.0.50\" was what
-the reporter saw, and the editor\='s name was the missing part.  It also has to
-stay short -- `emacs-version\=' the function follows the version with a build
+the reporter saw, and the editor\\='s name was the missing part.  It also has to
+stay short -- `emacs-version' the function follows the version with a build
 number, a platform and a date, none of which belongs in a header."
   (vm-reply-test--in-folder (vm-reply-test--one-message)
     (vm-mail-from-folder)
@@ -544,9 +544,9 @@ number, a platform and a date, none of which belongs in a header."
 ;;; Drag and drop into a composition (#531)
 
 (ert-deftest vm-reply-test-composition-takes-drops-the-portable-way ()
-  "A composition installs VM\='s handlers in `dnd-protocol-alist\='.
+  "A composition installs VM\\='s handlers in `dnd-protocol-alist'.
 This is how a dropped file becomes an attachment, and it is what replaced
-the `[ns-drag-file]\=' binding VM carried for Mac and NextStep -- whose own
+the `[ns-drag-file]\\=' binding VM carried for Mac and NextStep -- whose own
 comment said to remove it once this existed.  Removed in #531, after the
 maintainer confirmed on a Mac that dropping a file on a composition attaches
 it."
@@ -559,9 +559,9 @@ it."
 
 (ert-deftest vm-reply-test-no-nextstep-drag-binding ()
   "REGRESSION: the Mac/NextStep drag binding is gone, and so is its command.
-Modern Emacs dispatches a drop through `dnd-protocol-alist\=' on every window
-system, NS included, so `[ns-drag-file]\=' was a second path that no longer
-ran -- and `vm-ns-attach-file\=' read `ns-input-file\=', which nothing sets any
+Modern Emacs dispatches a drop through `dnd-protocol-alist' on every window
+system, NS included, so `[ns-drag-file]\\=' was a second path that no longer
+ran -- and `vm-ns-attach-file' read `ns-input-file', which nothing sets any
 more."
   (should-not (lookup-key vm-mail-mode-map [ns-drag-file]))
   (should-not (fboundp 'vm-ns-attach-file)))

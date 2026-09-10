@@ -1022,13 +1022,13 @@ not calls anything makes."
   "What byte-compiling FILE reports, or nil when it reports nothing.
 
 In a subprocess because compiling loads what the file requires, and because
-`byte-compile-file\=' writes a .elc beside its input: the copy it is given
+`byte-compile-file' writes a .elc beside its input: the copy it is given
 here is in a directory of its own.
 
 Compiling rather than reading, because reading finds only what stops the
 reader.  A form with the wrong number of arguments reads perfectly well and
 fails when it runs, which is how (setq A one two) sat in the example
-configuration: `setq\=' with an odd number of arguments, two alternative
+configuration: `setq' with an odd number of arguments, two alternative
 values offered as if you could give both."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-example" t)))
          (copy (expand-file-name "example-config.el" dir)))
@@ -1050,7 +1050,7 @@ values offered as if you could give both."
                   ;; lexical-binding cookie and needs none, and it names
                   ;; variables and functions of packages that are not
                   ;; installed on the machine running this, each behind a
-                  ;; `(require ... nil t)\=' that decides at run time.  A
+                  ;; `(require ... nil t)\\=' that decides at run time.  A
                   ;; compiler that cannot see them says so about every one.
                   ;;
                   ;; What is left, and what this is for, is a form that would
@@ -1073,7 +1073,7 @@ values offered as if you could give both."
   "REGRESSION: example.vm has no form that would fail when it ran.
 
 emacs-vm/vm#790.  Reading it is not enough: a form with the wrong number of
-arguments reads and then fails.  `(setq vm-primary-inbox POP IMAP)\=' offered
+arguments reads and then fails.  `(setq vm-primary-inbox POP IMAP)\\=' offered
 two alternative values as if you could give both, so loading the file
 answered
 
@@ -1143,7 +1143,7 @@ An entry is a promise that the call is guarded so that it runs only where
 the replacement does not exist.")
 
 (defun vm-integration-test--vm-own-name-p (symbol)
-  "Whether SYMBOL is one of VM\='s own names rather than Emacs\='s.
+  "Whether SYMBOL is one of VM\\='s own names rather than Emacs\\='s.
 `vmpc-' as well as `vm-': the Personality Crisis names were renamed in
 9.0.0 and the old ones kept as obsolete aliases."
   (string-match-p "\\`vm\\(pc\\)?-" (symbol-name symbol)))
@@ -1155,7 +1155,7 @@ docstring is not a hit.  A name inside `fboundp' counts: that is how the
 three found for emacs-vm/vm#818 were hidden, an `fboundp' guard being
 enough to stop the byte compiler warning about what it guards.
 
-VM\='s own deprecated names are left out.  They are aliases VM made and
+VM\\='s own deprecated names are left out.  They are aliases VM made and
 keeps on purpose, `vm-integration-test-obsolete-names-point-somewhere'
 covers them, and the `define-obsolete-function-alias' that makes each one
 names it in a position this walk cannot tell from a call."
@@ -1174,8 +1174,8 @@ names it in a position this walk cannot tell from a call."
 (defun vm-integration-test--walk-for-obsolete (form report)
   "Call REPORT with every obsolete function FORM calls or asks `fboundp' of.
 
-Walks with a stack rather than recursion: VM\='s alists hold dotted pairs,
-which `dolist\=' will not take, and some of its lists are long enough that
+Walks with a stack rather than recursion: VM\\='s alists hold dotted pairs,
+which `dolist' will not take, and some of its lists are long enough that
 recursing down the cdrs would run out of depth."
   (let ((pending (list form)))
     (while pending
@@ -1265,8 +1265,8 @@ the list rather than leave a name in it that means nothing."
     ;; never seen it.  The guard is what stops the menus being built twice.
     vm-menu-undo-menu)
   "Function names VM tests `fboundp' of on purpose, and may go on testing.
-Each is either from an optional package, or newer than VM\='s floor of Emacs
-28.1, or one of VM\='s own that loading VM does not define.  Most of VM\='s own
+Each is either from an optional package, or newer than VM\\='s floor of Emacs
+28.1, or one of VM\\='s own that loading VM does not define.  Most of VM\\='s own
 are not here: loading VM defines them, so the test sees them as present.")
 
 (defun vm-integration-test--guarded-names-in (file)
@@ -1387,6 +1387,45 @@ file may call it."
     ;; entered twice -- the outer call and the one from the init file -- and
     ;; the inner one does no work rather than starting over
     (should (string-match-p "deepest=2" printed))))
+
+(defun vm-integration-test--ineffective-escapes-in (file)
+  "Every line of FILE holding an escape of `=' that does nothing.
+A docstring shows a literal apostrophe by carrying the two characters
+backslash and `=', which `substitute-command-keys' then reads as quoting
+what follows.  Written with one backslash the Lisp reader eats it, the
+string holds a bare `=', and the reader of the docstring sees it."
+  (let ((found nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (search-forward "\\=" nil t)
+        (unless (eq (char-before (- (point) 2)) ?\\)
+          (push (format "%s:%d" (file-name-nondirectory file)
+                        (line-number-at-pos))
+                found))))
+    (nreverse found)))
+
+(ert-deftest vm-integration-test-no-docstring-escapes-an-equals-sign-uselessly ()
+  "REGRESSION: no docstring in lisp/ shows a spurious `=' to its reader.
+
+`(documentation \\='vm-v8-key-bindings)' rendered \"the bindings are in
+\\=`vm-mode-map=\\=' and\", and `vm-display-folder-left-after-quitting' rendered
+\"The quitting folder=\\='s windows\".  156 places across lisp/ and test/ had
+one, in two forms: a `symbol\\=' reference whose closing quote was escaped for
+no reason, and an apostrophe in a word escaped with one backslash where two
+are needed.  relint reports them and was being read as a false positive
+because the convention it complains about looks right (emacs-vm/vm#829).
+
+Only lisp/ is scanned, those being the docstrings a user reads, and because
+this file has to be able to write the two characters itself."
+  (let ((offenders nil))
+    (dolist (file (directory-files (expand-file-name "../lisp" vm-test-dir)
+                                   t "\\.el\\'"))
+      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
+        (setq offenders (append offenders
+                                (vm-integration-test--ineffective-escapes-in
+                                 file)))))
+    (should-not offenders)))
 
 (provide 'vm-integration-test)
 

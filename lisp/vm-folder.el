@@ -4179,9 +4179,9 @@ is the one the reader came from."
 
 (defun vm-display-folder-left-after-quitting ()
   "Put the summary of the folder a quit returns to back on display.
-The quitting folder\='s windows go with it, and `vm-undisplay-buffer' hands
+The quitting folder\\='s windows go with it, and `vm-undisplay-buffer' hands
 them to whatever `other-buffer' answers.  On leaving a virtual folder that
-is the real folder\='s presentation buffer, `vm-virtual-quit' having just
+is the real folder\\='s presentation buffer, `vm-virtual-quit' having just
 presented into it, so the summary was left displayed nowhere and the reader
 had to press a key to bring it back (emacs-vm/vm#821)."
   (let ((folder (vm-folder-left-after-quitting)))

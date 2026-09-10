@@ -1444,7 +1444,7 @@ sites pass while a file is being compiled."
 
 (ert-deftest vm-misc-test-a-paragraph-indented-past-the-column-is-left-alone ()
   "REGRESSION: filling leaves a paragraph whose prefix is wider than the column.
-Issue #540.  `vm-forward-paragraph' reads a paragraph\='s indentation as its
+Issue #540.  `vm-forward-paragraph' reads a paragraph\\='s indentation as its
 prefix, and quoted HTML converted to a page 100000 columns wide arrived
 indented by some 900 columns.  Filling that to 70 could only put one word on
 each line, which is what the reply held."

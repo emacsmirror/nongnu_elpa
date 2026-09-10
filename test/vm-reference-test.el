@@ -65,7 +65,7 @@ which is what the first version of this generator did to
 (ert-deftest vm-reference-test-drops-the-arglist-trailer ()
   "A compiled function's trailing \"(fn ARGS)\" line is not documentation.
 The line can hold parentheses of its own when the arglist has keywords, as
-`vm-expunge-folder\='s does: \"(fn &key (QUIET nil) ...)\"."
+`vm-expunge-folder's does: \"(fn &key (QUIET nil) ...)\"."
   (should (string-match-p "(fn " (documentation 'vm-expunge-folder t)))
   (dolist (command '(vm-scroll-forward vm-expunge-folder))
     (should-not (string-match-p "(fn " (vm-reference-command-documentation command))))
@@ -173,7 +173,7 @@ that no other build produced."
 
 (ert-deftest vm-reference-test-collects-commands-with-their-options ()
   "A command joins the options of the same area, in one section.
-VM declares every `defcustom\=' in vm-vars.el, so filing options by the file
+VM declares every `defcustom' in vm-vars.el, so filing options by the file
 that defines them puts all 500 in a single section; they are filed by
 customization group instead, which is what Customize shows and what the
 manual's own chapters follow."
@@ -317,10 +317,10 @@ neither."
 The other direction from the test above, which asks it of the commands the
 manual names by hand.  84 interactive functions were neither autoloaded nor
 documented (emacs-vm/vm#715); the ones VM invokes for itself now say so with
-`vm-called-by-vm\=' and are listed apart, and what is left is what a reader
+`vm-called-by-vm' and are listed apart, and what is left is what a reader
 types, which `M-x' has to find.
 
-The exemptions are by file, in `vm-reference-test--no-cookie-files\=', so a
+The exemptions are by file, in `vm-reference-test--no-cookie-files', so a
 new command in any other file has to carry a cookie."
   (vm-reference-load-everything)
   (let* ((lisp (expand-file-name "../lisp" vm-test-dir))
@@ -412,8 +412,8 @@ definition so that the appendix lists it apart from the commands.")
 
 (ert-deftest vm-reference-test-what-is-marked-called-by-vm-is-a-command ()
   "Nothing carries the mark but a command.
-The mark moves an entry out of the appendix\='s command list, so putting one
-on a function that is not `interactive\=' at all hides nothing and means the
+The mark moves an entry out of the appendix\\='s command list, so putting one
+on a function that is not `interactive' at all hides nothing and means the
 mark is wrong."
   (vm-reference-load-everything)
   (let ((wrong nil))
@@ -429,9 +429,9 @@ carries the mark, beside its own definition.
 
 The appendix listed 431 commands as though a reader might type any of them,
 a dozen toolbar handlers among them (emacs-vm/vm#715).  This is what stops
-the next handler joining them: a new `vm-toolbar-\=' command with no
-`(put ... \='vm-called-by-vm t)\=' after it fails here.  Read from the files
-rather than from the running Emacs, since a menu `easy-menu-define\=' builds
+the next handler joining them: a new `vm-toolbar-' command with no
+`(put ... \\='vm-called-by-vm t)\\=' after it fails here.  Read from the files
+rather than from the running Emacs, since a menu `easy-menu-define' builds
 when VM installs its menus is a command that no file defines."
   (vm-reference-load-everything)
   (let ((unmarked nil))
@@ -462,7 +462,7 @@ when it was counted, and nothing had noticed them going.")
 (ert-deftest vm-reference-test-commands-documented-by-hand-stay-documented ()
   "Every command in `vm-reference-test--documented-by-hand' is still indexed.
 The other direction from `vm-reference-test-documented-commands-are-autoloaded':
-that one keeps the manual\='s commands reachable, this one keeps the reachable
+that one keeps the manual\\='s commands reachable, this one keeps the reachable
 commands in the manual."
   (let ((indexed (vm-reference-test--manual-symbols))
         (missing nil))
@@ -720,9 +720,9 @@ own heading, not among the ones to type."
   "REGRESSION: an attribute a reader can set is described in the manual.
 
 `flagged' was not.  It is stored in the folder like the rest, `!' toggles it,
-the summary shows it as `!\=', a virtual folder can select on it and an IMAP
+the summary shows it as `!', a virtual folder can select on it and an IMAP
 server keeps it as \\Flagged, and the one place the manual explains what an
-attribute means did not mention it.  So the `!\=' in a summary line could not
+attribute means did not mention it.  So the `!' in a summary line could not
 be looked up, which is what the maintainer noticed (emacs-vm/vm#776)."
   (let ((described (vm-reference-test--attributes-in-the-manual))
         (missing nil))

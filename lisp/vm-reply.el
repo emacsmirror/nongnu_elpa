@@ -2644,9 +2644,9 @@ headers."
   "Ask before sending if this composition's Bcc could reach the other recipients.
 
 A Bcc header is a promise: the addresses in it are told nothing to the people
-who receive the message.  With `send-mail-function\=' set to
-`sendmail-send-it\=', VM and Emacs keep the header in the message they hand
-to `sendmail-program\=' and trust that program to take it out, because with
+who receive the message.  With `send-mail-function' set to
+`sendmail-send-it', VM and Emacs keep the header in the message they hand
+to `sendmail-program' and trust that program to take it out, because with
 -t those addresses are also how it learns whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).

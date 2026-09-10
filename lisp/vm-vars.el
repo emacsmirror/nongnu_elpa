@@ -6132,8 +6132,8 @@ get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
 (defun vm-v8-key-bindings ()
   "Install the key bindings VM 8 gives its own commands.
 
-Nothing needs to call this: the bindings are in `vm-mode-map\=' and
-`vm-mode-virtual-map\=' to begin with.  It is here because the manual told
+Nothing needs to call this: the bindings are in `vm-mode-map' and
+`vm-mode-virtual-map' to begin with.  It is here because the manual told
 readers to put it in their preferences file, back when these keys were not
 bound and typing one reported that it had an optional binding
 (emacs-vm/vm#632).  Calling it binds what is bound already."
@@ -7473,24 +7473,24 @@ what `vm-mail-check-recipients' looks for."
   :type 'boolean)
 
 (defconst vm-senders-that-remove-bcc '(smtpmail-send-it)
-  "The `send-mail-function\=' values known to remove Bcc themselves.
+  "The `send-mail-function' values known to remove Bcc themselves.
 
-`smtpmail-send-it\=' works out the recipients first, in
-`smtpmail-deduce-address-list\=', and then deletes the header, in
-`smtpmail-do-bcc\='.  Nothing reaches the server carrying it.
+`smtpmail-send-it' works out the recipients first, in
+`smtpmail-deduce-address-list', and then deletes the header, in
+`smtpmail-do-bcc'.  Nothing reaches the server carrying it.
 
-`sendmail-send-it\=' is not here and cannot be.  It passes -t and leaves the
+`sendmail-send-it' is not here and cannot be.  It passes -t and leaves the
 header in place, because with -t those addresses are how the transport
 learns to deliver to them: delete the header first and the Bcc recipients
 get nothing.  So it hands the header out and the transport is trusted to
 remove it.  A real sendmail does.  Whether the program behind
-`sendmail-program\=' does is outside Emacs.")
+`sendmail-program' does is outside Emacs.")
 
 (defcustom vm-check-bcc-removal t
   "*Non-nil means refuse to send a message whose Bcc could reach the recipients.
 
-VM refuses when a composition carries a Bcc header and `send-mail-function\='
-is not one of `vm-senders-that-remove-bcc\='.  Such a function hands the
+VM refuses when a composition carries a Bcc header and `send-mail-function'
+is not one of `vm-senders-that-remove-bcc'.  Such a function hands the
 header to a program outside Emacs and trusts it to remove it, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on
 the message learns who was blind copied (emacs-vm/vm#815).

@@ -1228,7 +1228,7 @@ again, online, and save: the two deletions should go out."
 
 (ert-deftest vm-imap-live-test-several-bodies-are-fetched-together ()
   "Loading four message bodies is one IMAP command, not four.
-`vm-load-message\=' asked for each body with its own `UID FETCH\=', so reading a
+`vm-load-message' asked for each body with its own `UID FETCH\\=', so reading a
 folder of external messages cost a round trip apiece.  Issue #185."
   (vm-imap-live-skip-unless-server "plain")
   (require 'vm)
@@ -1290,14 +1290,14 @@ folder of external messages cost a round trip apiece.  Issue #185."
 (ert-deftest vm-imap-live-test-bunched-fetch-keeps-bodies-out-of-headers ()
   "REGRESSION: bodies fetched in one command each land after their own headers.
 Issue #500 again, on the path issue #185 added.  The single-message test above
-covers `vm-retrieve-real-message-body\=', where `vm-fetch-imap-message\=' does the
-insertion inside a `save-excursion\=' and point is controlled throughout.
+covers `vm-retrieve-real-message-body', where `vm-fetch-imap-message' does the
+insertion inside a `save-excursion' and point is controlled throughout.
 
-`vm-fetch-imap-messages\=' has neither of those protections.  It inserts into the
+`vm-fetch-imap-messages' has neither of those protections.  It inserts into the
 folder buffer from the process buffer as each response arrives, re-narrowing to
 a different message every time, and leaves point after the text it inserted --
-which is why `vm-settle-message-body\=' has to put point back before its
-`\\n\\n\=' search.  Several messages in one buffer, markers on all of them, and
+which is why `vm-settle-message-body' has to put point back before its
+`\\n\\n\\=' search.  Several messages in one buffer, markers on all of them, and
 the narrowing moving between them is what README.headers-only described:
 body appearing in the midst of headers.
 
@@ -1571,7 +1571,7 @@ requires."
 (ert-deftest vm-imap-live-test-copying-makes-the-mailbox-if-it-is-missing ()
   "REGRESSION: saving between two folders on one server makes the target if
 it is not there.  Issue #690.  Against a real server because the answer to
-CREATE on an existing mailbox, and to COPY into a missing one, is the server\='s
+CREATE on an existing mailbox, and to COPY into a missing one, is the server\\='s
 to give: dovecot says NO [TRYCREATE], which is what the copy path used to fail
 on."
   (vm-imap-live-skip-unless-server "plain")

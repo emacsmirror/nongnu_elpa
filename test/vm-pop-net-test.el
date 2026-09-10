@@ -470,7 +470,7 @@ folder file, so the next save offers them again."
 QUIT is what makes a POP server act on a session's DELEs, and RFC 1939 3.5
 lets it answer -ERR when it could not remove them.  VM wrote QUIT blind and
 never read that answer, so it struck the messages off
-`vm-pop-messages-to-expunge\=' while the maildrop still had them."
+`vm-pop-messages-to-expunge' while the maildrop still had them."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
                                     :refuse "\\`QUIT")
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
@@ -496,7 +496,7 @@ never read that answer, so it struck the messages off
   "A request to delete a message the maildrop no longer lists is done with.
 
 Someone else deleted it, or an earlier session did and its answer was lost.
-The request stayed on `vm-pop-messages-to-expunge\=' either way, so every save
+The request stayed on `vm-pop-messages-to-expunge' either way, so every save
 opened a session to ask for a message that was not there -- for ever.  What
 the maildrop does not list is settled; what it lists and would not delete
 stays, so the next save offers that again."
@@ -895,7 +895,7 @@ A DELE takes effect at the QUIT that ends the session, and that QUIT is sent
 whether the session finished or failed.  Deleting as the messages come down
 would therefore commit the deletion of messages whose text went with the
 session that failed: fetched, deleted on the server, written nowhere.  What
-deletes them is `vm-pop-net-delete-fetched\=', once the crash box is on disk."
+deletes them is `vm-pop-net-delete-fetched', once the crash box is on disk."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
     (let ((vm-pop-expunge-after-retrieving t)
           (vm-pop-auto-expunge-alist nil))
@@ -1025,11 +1025,11 @@ nothing: that list is what stops a folder filling with duplicates."
 (ert-deftest vm-pop-net-test-two-maildrops-into-one-folder-take-turns ()
   "Two POP maildrops among a folder's spool files are fetched in turn.
 
-`vm-get-new-mail\=' starts each without waiting, so both ran at once against
+`vm-get-new-mail' starts each without waiting, so both ran at once against
 one folder: two crash boxes written and gobbled into one buffer, and the
 folder's session slot pointing at the second while the first went on
-unowned -- invisible to `vm-pop-net-busy-p\=', to the mode line and to
-`vm-pop-net-stop\='.  There was no refusal on this side at all."
+unowned -- invisible to `vm-pop-net-busy-p', to the mode line and to
+`vm-pop-net-stop'.  There was no refusal on this side at all."
   (vm-pop-mock-with (one :messages (list "From: a@example.com\nSubject: from-one\n\nA.\n"))
     (vm-pop-mock-with (two :messages (list "From: b@example.com\nSubject: from-two\n\nB.\n"))
       (let* ((dir (file-name-as-directory (make-temp-file "vm-pop-two" t)))
@@ -1441,7 +1441,7 @@ maildrop asked not to happen; the blocking implementation refuses too."
 (ert-deftest vm-pop-net-test-rpop-says-it-is-gone ()
   "REGRESSION: an rpop maildrop is told what happened to rpop.
 
-It was RFC 1081\='s trusted-host scheme: a privileged source port stood for
+It was RFC 1081\\='s trusted-host scheme: a privileged source port stood for
 the authentication and the password went under another verb.  Nothing
 offers it, and VM no longer serves it either -- so the error names what to
 write instead, rather than reporting an authentication VM does not

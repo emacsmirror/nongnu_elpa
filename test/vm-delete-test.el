@@ -898,9 +898,9 @@ starts at, so a range that is already mixed comes out uniform."
                    (vm-delete-test--flags #'vm-flagged-flag)))))
 
 (ert-deftest vm-delete-test-expunge-moves-the-message-list-generation ()
-  "Expunging a message moves `vm-message-list-generation\='.
+  "Expunging a message moves `vm-message-list-generation'.
 Anything following the list by its conses is told that way that a message has
-gone and its cons may be the one that left.  `vm-imap-net-uids-held\=' follows
+gone and its cons may be the one that left.  `vm-imap-net-uids-held' follows
 it so, a fetch asking it once per arriving message."
   (vm-test-with-folder
     "From sender@example.com Mon Jan  1 00:00:00 2024
@@ -1031,7 +1031,7 @@ every save."
 ;;; What an expunge tells a POP maildrop (emacs-vm/vm#758)
 
 (defmacro vm-delete-test--in-a-pop-folder (&rest body)
-  "Run BODY in a folder whose access method is `pop\=', its messages given UIDLs.
+  "Run BODY in a folder whose access method is `pop', its messages given UIDLs.
 The maildrop spec carries a password, as a configured one does: what is
 recorded has to name the maildrop without it."
   (declare (indent 0) (debug t))

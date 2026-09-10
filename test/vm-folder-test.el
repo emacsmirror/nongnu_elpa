@@ -399,7 +399,7 @@
   "Finding an MMDF trailing separator leaves point on it.
 Where the message is over is what the function is for; it used to be checked
 by its return value, which meant nothing here.  `vm-build-message-list' then
-read that value as saying point was on the *next* message\='s leading
+read that value as saying point was on the *next* message\\='s leading
 separator, and no mmdf folder could be read at all (emacs-vm/vm#786).  Now
 every arm but the From_ header-block one answers nil, so the position is the
 only thing left to assert, and the only thing that was ever true."
@@ -1756,7 +1756,7 @@ A folder is mail from strangers, so VM visits one with
 (ert-deftest vm-folder-test-a-hard-linked-folder-says-so ()
   "Visiting a folder with another name warns that saving will break it.
 `file-precious-flag' writes a temporary file and renames it into place, so
-the folder\='s name gets a new inode and the other name keeps the old mail.
+the folder\\='s name gets a new inode and the other name keeps the old mail.
 Symbolic links are preserved (#532); hard links cannot be, so VM says so
 rather than let the other name quietly stop following the folder."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-hardlink" t)))
@@ -2058,10 +2058,10 @@ on the next write, so this is checked rather than assumed."
 
 (ert-deftest vm-folder-test-content-length-folder-is-untouched ()
   "An mboxcl2 folder parses by its own rule, as before.
-`vm-find-trailing-message-separator\=' takes a different branch for it, and the
+`vm-find-trailing-message-separator' takes a different branch for it, and the
 header-block search is not on that path: its message boundaries come from the
 byte count, which is the whole point of the format.  Built by hand rather than
-with `vm-test-with-folder\=', which resets `vm-trust-content-length\='
+with `vm-test-with-folder', which resets `vm-trust-content-length'
 to nil while setting the buffer up."
   (with-temp-buffer
     (vm-test-init-folder-variables)
@@ -2471,7 +2471,7 @@ of a `Content-Length'.  An existing folder is read as what it is."
 
 (ert-deftest vm-folder-test-a-new-folder-is-named-for-the-default-type ()
   "REGRESSION: mboxcl2 as the default names the folder VM creates.
-Issue #767.  A folder\='s type is read back from its name, so creating mboxcl2
+Issue #767.  A folder\\='s type is read back from its name, so creating mboxcl2
 under a name that says nothing leaves a folder read as From_ next time and
 split wherever a body line begins \"From \", which is what
 `vm-error-if-name-contradicts-type' refuses to do on a conversion."
@@ -5095,7 +5095,7 @@ puts a message boundary inside a body.  Nothing here is guessed at."
 (ert-deftest vm-folder-test-a-cache-that-looks-like-mboxcl2-says-so ()
   "Looking like the other format is worth one warning, naming the way out.
 Renaming the file is all it takes where the folder really is mboxcl2, and
-that is the reader\='s call, not VM\='s."
+that is the reader\\='s call, not VM\\='s."
   (vm-folder-test-with-file
       (file "imap-cache-0123456789abcdef" vm-folder-test--two-with-lengths)
     (let ((vm-trust-content-length nil)
@@ -5222,8 +5222,8 @@ interactive so that the offer is put at all."
 
 (defun vm-folder-test--convert (type)
   "Change this folder to TYPE as a reader typing the command would.
-The command decides whether to offer the deletion with `vm-interactive-p\=',
-a macro over `called-interactively-p\=', which in batch answers no however
+The command decides whether to offer the deletion with `vm-interactive-p',
+a macro over `called-interactively-p', which in batch answers no however
 the call is made: `funcall-interactively' does not change it.  So the function
 is stubbed, and only around this call.  Stubbed for a whole test body, with
 the folder visited inside it, six of these took 25 seconds each."
