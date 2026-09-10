@@ -1806,7 +1806,16 @@ file."
               (format "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n\r\n"
                       (file-name-nondirectory filename)))
       (goto-char (point-max))
-      (insert "\r\n" "--" boundary "--" "\r\n")
+      (insert "\r\n" "--" boundary "\r\n")
+      `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
+
+(defun fj--prep-file-raw-blob (filename)
+  "Return the request data to upload for FILENAME."
+  (with-temp-buffer
+    ;; (switch-to-buffer (current-buffer))
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally filename)
+    (let ((boundary (buffer-hash)))
       `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
 
 (defun fj-post-attachment (repo owner comment-id filepath)
@@ -1818,12 +1827,20 @@ The upload is asynchronous."
     (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
                              owner repo comment-id))
            (url (fj-api endpoint))
-           (data (fj--prep-file-upload filepath))
+           ;; (data (fj--prep-file-upload filepath))
+           (data (fj--prep-file-raw-blob filepath))
+           (boundary-str (concat "-----" (car data)))
            (url-request-extra-headers
             (append url-request-extra-headers
                     `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                                 (car data))))))
-           (url-request-data (cdr data)))
+                                                 boundary-str)))))
+           (url-request-data
+            (mm-url-encode-multipart-form-data
+             `(("file" . (("name" . "file")
+                          ("filename" . ,(file-name-nondirectory filepath))
+                          ("content-type" . "image/jpg")
+                          ("filedata" . ,(cdr data)))))
+             boundary-str)))
       (url-retrieve url #'fj--post-file-upload-cb
                     `(,filepath)))))
 
