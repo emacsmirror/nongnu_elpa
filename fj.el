@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <martianh@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
+;; Package-Requires: ((emacs "29.1") (compat "31.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.42
@@ -53,6 +53,7 @@
 (require 'markdown-mode)
 (require 'shr)
 (require 'mm-url)
+(require 'compat)
 
 (require 'fj-transient)
 
@@ -1306,9 +1307,9 @@ Return the issue number."
   "From CANDS, return the data for CHOICE.
 CHOICE is a string returned by `completing-read'."
   (car
-   (cl-member-if (lambda (c)
-                   (string= (car c) choice))
-                 cands)))
+   (member-if (lambda (c)
+                (string= (car c) choice))
+              cands)))
 
 (defun fj-cycle-sort-or-relation ()
   "Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'."
@@ -2484,9 +2485,9 @@ Optionally specify its FACE or VERBATIM-FACE."
   "Nil if the host of URL is a member of `fj-non-fj-hosts'.
 Otherwise t."
   (let* ((parsed (url-generic-parse-url url)))
-    (not (cl-member-if (lambda (x)
-                         (string-prefix-p x (url-host parsed)))
-                       fj-non-fj-hosts))))
+    (not (member-if (lambda (x)
+                      (string-prefix-p x (url-host parsed)))
+                    fj-non-fj-hosts))))
 
 (defun fj-owner+repo-from-url (url)
   "Return the owner (or organization) and repository names from URL.
