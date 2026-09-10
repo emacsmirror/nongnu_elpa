@@ -1793,26 +1793,9 @@ NEW-BODY is the new comment text to send."
 
 ;;; FILE UPLOAD/ATTACHMENT
 
-(defun fj--prep-file-upload (filename)
-  "Return the request data to upload for FILENAME.
-Returns a cons of the multipart form data boundary, and the data of the
-file."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (insert-file-contents-literally filename)
-    (let ((boundary (buffer-hash)))
-      (goto-char (point-min))
-      (insert "--" boundary "\r\n"
-              (format "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n\r\n"
-                      (file-name-nondirectory filename)))
-      (goto-char (point-max))
-      (insert "\r\n" "--" boundary "\r\n")
-      `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
-
 (defun fj--prep-file-raw-blob (filename)
   "Return the request data to upload for FILENAME."
   (with-temp-buffer
-    ;; (switch-to-buffer (current-buffer))
     (set-buffer-multibyte nil)
     (insert-file-contents-literally filename)
     (let ((boundary (buffer-hash)))
@@ -1826,23 +1809,25 @@ The upload is asynchronous."
   (fj-authorized-request "POST"
     (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
                              owner repo comment-id))
-           (url (fj-api endpoint))
-           ;; (data (fj--prep-file-upload filepath))
+           (filename (file-name-nondirectory filepath))
+           (mime-type (mailcap-file-name-to-mime-type filepath))
+           (params `(("name" . ,filename)))
+           (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
            (data (fj--prep-file-raw-blob filepath))
-           (boundary-str (concat "-----" (car data)))
            (url-request-extra-headers
-            (append url-request-extra-headers
-                    `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                                 boundary-str)))))
+            (append
+             url-request-extra-headers
+             `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                          (car data))))))
            (url-request-data
             (mm-url-encode-multipart-form-data
-             `(("file" . (("name" . "file")
-                          ("filename" . ,(file-name-nondirectory filepath))
-                          ("content-type" . "image/jpg")
+             `(("file" . (("name" . "attachment") ;; API param
+                          ("filename" . ,filename)
+                          ("content-type" . ,mime-type)
                           ("filedata" . ,(cdr data)))))
-             boundary-str)))
+             (car data))))
       (url-retrieve url #'fj--post-file-upload-cb
-                    `(,filepath)))))
+                    `(,filename)))))
 
 (defun fj--post-file-upload-cb (status filename)
   "Callback for `fj--post-file-upload'.
