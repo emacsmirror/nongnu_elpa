@@ -1833,6 +1833,45 @@ STATUS is the HTTP response, FILENAME the uploaded file."
   (let ((json (fj-resp-json status)))
     (message "Upload result: %s" json)))
 
+(defun fj-delete-comment-asset (repo owner comment-id asset-id)
+  ""
+  (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets/%s"
+                           owner repo comment-id asset-id)))
+    (fj-delete endpoint)))
+
+(defun fj-delete-issue-asset (repo owner issue-id asset-id)
+  ""
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/assets/%s"
+                           owner repo issue-id asset-id)))
+    (fj-delete endpoint)))
+
+(defun fj-delete-attachment ()
+  "Delete attachment at point."
+  ;; FIXME: add item (issue/PR) request too:
+  (interactive)
+  ;; FIXME: handle multiple assets, completing-read (need to change data
+  ;; properties):
+  (fj-with-own-comment
+   ;; FIXME: who has perms to remove attachments? (admin/owner and/or own
+   ;; comment?)
+   (fj-destructure-buf-spec (repo owner)
+     ;; FIXME: get attachment name too:
+     (let ((comment-id (fj--property 'fj-comment-id))
+           ;; due to async assets display, we only have this prop on the
+           ;; actual asset display part, not on the rest of the comment:
+           (attachment-id (fj--property 'fj-attachment-id)))
+       (if (not attachment-id)
+           (user-error "No attachment at point?")
+         (when (y-or-n-p
+                (format "Delete attachment %s?"
+                        (alist-get 'name (fj--property 'fj-attachment))))
+           (let ((resp (fj-delete-comment-asset
+                        repo owner comment-id attachment-id)))
+             (fedi-http--triage
+              resp
+              ;; FIXME: reload, or remove without reloading?
+              (lambda (resp)
+                (message "Attachment deleted!"))))))))))
 
 ;;; ISSUE/COMMENT REACTIONS
 ;; render reactions
