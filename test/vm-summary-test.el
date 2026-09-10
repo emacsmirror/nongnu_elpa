@@ -801,6 +801,31 @@ signalled in place of reporting anything."
         (vm-su-do-recipients m)
         (should (string-match-p "50% off" shown))))))
 
+;;; The date format the summary parses (emacs-vm/vm#831)
+
+(defun vm-summary-test--parses-as-a-date (string)
+  "Whether `vm-su-rfc822-date-format' matches STRING."
+  (and (string-match vm-su-rfc822-date-format string) t))
+
+(ert-deftest vm-summary-test-the-date-format-allows-space-and-dash ()
+  "Spaces and the dashes the comment promises both separate the fields.
+\"Some slop is allowed e.g. dashes between the monthday, month and year
+because such malformed headers have been observed.\""
+  (should (vm-summary-test--parses-as-a-date "13 Jan 2026 10:00:00 GMT"))
+  (should (vm-summary-test--parses-as-a-date "13-Jan-2026 10:00:00 GMT"))
+  (should (vm-summary-test--parses-as-a-date "Mon, 13 Jan 2026 10:00:00 -0800")))
+
+(ert-deftest vm-summary-test-the-date-format-allows-nothing-else-between ()
+  "REGRESSION: the separator is space, tab, newline or dash, and no more.
+
+The class was written `[ \\t\\n---]', extra hyphens to get a literal one,
+which Emacs reads as the range from newline to hyphen: 37 characters rather
+than 4, among them `!' and every other punctuation mark below `0'.  So
+`13!Jan!2026' parsed as a date (emacs-vm/vm#831)."
+  (should-not (vm-summary-test--parses-as-a-date "13!Jan!2026 10:00:00 GMT"))
+  (should-not (vm-summary-test--parses-as-a-date "13(Jan)2026 10:00:00 GMT"))
+  (should-not (vm-summary-test--parses-as-a-date "13*Jan*2026 10:00:00 GMT")))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here

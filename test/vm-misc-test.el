@@ -1737,6 +1737,28 @@ reading format=flowed."
     (dolist (line (split-string wrapped "\n"))
       (should-not (string-match-p "[ \t]\\'" line)))))
 
+;;; Parsing a date out of a header (emacs-vm/vm#831)
+
+(ert-deftest vm-misc-test-parse-date-reads-a-conforming-date ()
+  "`vm-parse-date' answers the six fields of an RFC 822 date."
+  (should (equal (vm-parse-date "Mon, 5 Jan 2026 12:00:00 -0800")
+                 ["Mon" "5" "Jan" "2026" "12:00:00" "-0800"]))
+  (should (equal (vm-parse-date "Tue, 6 Feb 2026 01:02:03 +0530")
+                 ["Tue" "6" "Feb" "2026" "01:02:03" "+0530"])))
+
+(ert-deftest vm-misc-test-parse-date-takes-no-comma-for-a-timezone-sign ()
+  "REGRESSION: only `+' and `-' introduce a numeric timezone.
+
+The class was written `[+---]', three hyphens to get a literal one, which
+Emacs reads as `+' followed by the range `+' to `-'.  That range holds the
+comma, so a date whose year followed a comma was read as a timezone:
+`January 5,2026 12:00:00' gave a timezone of \",2026\" (emacs-vm/vm#831)."
+  (let ((parsed (vm-parse-date "January 5,2026 12:00:00")))
+    (should-not (string-match-p "," (aref parsed 5))))
+  ;; and a comma where a sign belongs is not a timezone either
+  (let ((parsed (vm-parse-date "Mon, 5 Jan 2026 12:00:00 ,0100")))
+    (should-not (string-match-p "," (aref parsed 5)))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
