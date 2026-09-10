@@ -1843,36 +1843,35 @@ Add it to issue with ID in REPO by OWNER."
     (fj-post-attachment endpoint id filepath)))
 
 (defun fj-post-attachment (endpoint id filepath)
-"Make POST request to upload FILEPATH to ENDPOINT.
+  "Make POST request to upload FILEPATH to ENDPOINT.
 ID is the item to attach it to, comment or issue/PR.
 The upload is asynchronous."
-(message "Uploading file for %s..." id)
-(fj-authorized-request "POST"
-  (let* ((filename (file-name-nondirectory filepath))
-         (mime-type (mailcap-file-name-to-mime-type filepath))
-         (params `(("name" . ,filename)))
-         (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
-         (data (fj--prep-file-raw-blob filepath))
-         (url-request-extra-headers
-          (append
-           url-request-extra-headers
-           `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                        (car data))))))
-         (url-request-data
-          (mm-url-encode-multipart-form-data
-           `(("file" . (("name" . "attachment") ;; API param
-                        ("filename" . ,filename)
-                        ("content-type" . ,mime-type)
-                        ("filedata" . ,(cdr data)))))
-           (car data))))
-    (url-retrieve url #'fj--post-file-upload-cb
-                  `(,filename)))))
+  (message "Uploading file for %s..." id)
+  (fj-authorized-request "POST"
+    (let* ((filename (file-name-nondirectory filepath))
+           (mime-type (mailcap-file-name-to-mime-type filepath))
+           (params `(("name" . ,filename)))
+           (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
+           (data (fj--prep-file-raw-blob filepath))
+           (url-request-extra-headers
+            (append
+             url-request-extra-headers
+             `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                          (car data))))))
+           (url-request-data
+            (mm-url-encode-multipart-form-data
+             `(("file" . (("name" . "attachment") ;; API param
+                          ("filename" . ,filename)
+                          ("content-type" . ,mime-type)
+                          ("filedata" . ,(cdr data)))))
+             (car data))))
+      (url-retrieve url #'fj--post-file-upload-cb))))
 
-(defun fj--post-file-upload-cb (_status filename)
+(defun fj--post-file-upload-cb (_status)
   "Callback for `fj--post-file-upload'.
 STATUS is the HTTP response, FILENAME the uploaded file."
-  (setq fj-compose-upload nil)
-  (message "File %s uploaded!" filename))
+  (let* ((json (fj-resp-json (current-buffer))))
+    (message "File %s uploaded!" (alist-get 'name json))))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
   "Delete asset with ASSET-ID in REPO by OWNER for COMMENT-ID."
