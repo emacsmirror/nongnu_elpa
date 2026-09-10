@@ -1912,6 +1912,7 @@ STATUS is the HTTP response, FILENAME the uploaded file."
               resp
               ;; FIXME: reload, or remove without reloading?
               (lambda (_resp)
+                (fj-view-reload)
                 (message "Attachment deleted!"))))))))))
 
 ;;; ISSUE/COMMENT REACTIONS
