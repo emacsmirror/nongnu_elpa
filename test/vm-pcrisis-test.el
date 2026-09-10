@@ -792,7 +792,7 @@ is not.")
 ;;; Advice tests
 
 (defmacro vm-pcrisis-test-with-mode (&rest body)
-  "Run BODY with `vm-pcrisis-mode\=' on, restoring it afterwards.
+  "Run BODY with `vm-pcrisis-mode' on, restoring it afterwards.
 Since #561 the advice is installed by the mode rather than by loading the file,
 so a test about the advice has to switch it on."
   (declare (indent 0) (debug t))
@@ -1214,7 +1214,7 @@ case and having to say so was the fault."
 (ert-deftest vm-pcrisis-test-a-quoted-signature-is-not-the-compositions-own ()
   "Expecting a default signature does not take a quoted one for it.
 The search is now run for everyone, so what it can reach matters: a signature
-in included text is prefixed by `vm-included-text-prefix\=', and the line looked
+in included text is prefixed by `vm-included-text-prefix', and the line looked
 for is exactly \"-- \".  Were it found, (vm-pcrisis-signature \"\") would delete
 the tail of the message being replied to."
   (let ((vm-pcrisis-expect-default-signature t))

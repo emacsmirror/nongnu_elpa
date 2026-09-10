@@ -211,9 +211,9 @@ Signals when they run out, which stands for C-g at that question: a test
 that returned nil instead would go on to the next question with an answer
 no reader could have given.
 
-The signal is `vm-setup-test-no-answer' and not `quit\=', which ert takes
+The signal is `vm-setup-test-no-answer' and not `quit', which ert takes
 for an interruption of the whole run rather than a result.  Either unwinds
-out of `vm-setup\=' at the same point, which is what these tests are
+out of `vm-setup' at the same point, which is what these tests are
 about."
   (push prompt vm-setup-test--questions)
   (unless vm-setup-test--answers (signal 'vm-setup-test-no-answer nil))

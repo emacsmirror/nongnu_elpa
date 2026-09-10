@@ -6673,8 +6673,8 @@ Not documented.
 @findex vm-current-key-bindings
 Install the key bindings VM 8 gives its own commands.
 
-Nothing needs to call this: the bindings are in @code{vm-mode-map=} and
-@code{vm-mode-virtual-map=} to begin with.  It is here because the manual told
+Nothing needs to call this: the bindings are in @code{vm-mode-map} and
+@code{vm-mode-virtual-map} to begin with.  It is here because the manual told
 readers to put it in their preferences file, back when these keys were not
 bound and typing one reported that it had an optional binding
 (emacs-vm/vm#632).  Calling it binds what is bound already.
@@ -6730,8 +6730,8 @@ that no signing is done
 @findex vm-v8-key-bindings
 Install the key bindings VM 8 gives its own commands.
 
-Nothing needs to call this: the bindings are in @code{vm-mode-map=} and
-@code{vm-mode-virtual-map=} to begin with.  It is here because the manual told
+Nothing needs to call this: the bindings are in @code{vm-mode-map} and
+@code{vm-mode-virtual-map} to begin with.  It is here because the manual told
 readers to put it in their preferences file, back when these keys were not
 bound and typing one reported that it had an optional binding
 (emacs-vm/vm#632).  Calling it binds what is bound already.
@@ -8710,8 +8710,8 @@ Don’t call this function from a program.
 @vindex vm-check-bcc-removal
 Non-nil means refuse to send a message whose Bcc could reach the recipients.
 
-VM refuses when a composition carries a Bcc header and @code{send-mail-function=}
-is not one of @code{vm-senders-that-remove-bcc=}.  Such a function hands the
+VM refuses when a composition carries a Bcc header and @code{send-mail-function}
+is not one of @code{vm-senders-that-remove-bcc}.  Such a function hands the
 header to a program outside Emacs and trusts it to remove it, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on
 the message learns who was blind copied (emacs-vm/vm#815).
@@ -9228,9 +9228,9 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 Ask before sending if this composition’s Bcc could reach the other recipients.
 
 A Bcc header is a promise: the addresses in it are told nothing to the people
-who receive the message.  With @code{send-mail-function=} set to
-@code{sendmail-send-it=}, VM and Emacs keep the header in the message they hand
-to @code{sendmail-program=} and trust that program to take it out, because with
+who receive the message.  With @code{send-mail-function} set to
+@code{sendmail-send-it}, VM and Emacs keep the header in the message they hand
+to @code{sendmail-program} and trust that program to take it out, because with
 -t those addresses are also how it learns whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).

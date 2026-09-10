@@ -405,7 +405,7 @@ anything waiting for it: the whole fetch happens in the process filter."
                                     (vm-text-end-of message))))
 
 (ert-deftest vm-imap-net-test-a-message-already-here-is-not-fetched-again ()
-  "The UID of every message the folder holds is compared with the server\='s,
+  "The UID of every message the folder holds is compared with the server\\='s,
 and only what is missing is asked for -- so a second fetch sends no FETCH of
 a body at all."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
@@ -533,7 +533,7 @@ about it, rather than the callback never coming."
 
 (ert-deftest vm-imap-net-test-a-changed-flag-goes-to-the-server ()
   "Marking a message read in the folder stores \\Seen on the server, in the
-same session as the fetch and before the server\='s own flags are read -- or
+same session as the fetch and before the server\\='s own flags are read -- or
 what was just fetched would be written back over the change."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (should (equal (length vm-message-list) 1))
@@ -802,8 +802,8 @@ server, with no confirmation and no floor.  A cache truncated, restored from a
 partial backup or read as the wrong type says exactly what a reader who
 expunged says, and puts the whole mailbox on that list (emacs-vm/vm#752).
 
-Server deletions come from `vm-imap-messages-to-expunge\=', which
-`vm-expunge-folder\=' fills as the reader expunges; here it is emptied first, so
+Server deletions come from `vm-imap-messages-to-expunge', which
+`vm-expunge-folder' fills as the reader expunges; here it is emptied first, so
 what the folder has lost is all the synchronise could go on."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
                                                     vm-imap-net-test--bob))
@@ -1241,7 +1241,7 @@ Emacs carries on, which is the point of the whole conversion."
 
 (ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-left-to-the-old-path ()
   "A maildrop this cannot open without waiting answers nil, which is the
-caller\='s cue to use the blocking implementation rather than to fail."
+caller\\='s cue to use the blocking implementation rather than to fail."
   (vm-imap-net-test--visiting (mock)
     (cl-letf (((symbol-function 'vm-folder-imap-maildrop-spec)
                (lambda () "imap-ssh:host:143:INBOX:login:someone:*")))
@@ -1725,11 +1725,11 @@ rather than in the middle of a value."
 (ert-deftest vm-imap-net-test-expunging-what-is-gone-settles ()
   "An expunge request for a UID the mailbox no longer has is done with.
 
-`vm-expunge-imap-messages\=' works from `vm-imap-retrieved-messages\=', and only
+`vm-expunge-imap-messages' works from `vm-imap-retrieved-messages', and only
 what the server expunged was struck off it.  A UID the mailbox no longer had
 stayed, so the command opened a session for it again every time it was run --
 for ever.  A UID that is not there is a deletion that has already happened,
-which is what `vm-imap-net-note-expunged\=' says of the folder\='s own list."
+which is what `vm-imap-net-note-expunged' says of the folder\\='s own list."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((spec (vm-imapdrop-sans-password (vm-imap-mock-spec mock)))
           (validity (vm-folder-imap-uid-validity)))
@@ -1749,7 +1749,7 @@ which is what `vm-imap-net-note-expunged\=' says of the folder\='s own list."
   "A session that has something to warn about does not hold Emacs to say it.
 
 The server refuses every STORE, so saving the flags of two messages warns
-twice.  Each warning was `sit-for\=' 2 in a process filter: four seconds of
+twice.  Each warning was `sit-for' 2 in a process filter: four seconds of
 Emacs stopped, for work that takes a tenth of one.  Timed rather than counted
 -- what is wrong with a pause is the wall clock."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
@@ -1797,7 +1797,7 @@ binds `debug-on-error' and batch has nobody to debug for."
 (ert-deftest vm-imap-net-test-the-flush-timer-may-fire-mid-fetch ()
   "VM's own flush timer writing the folder does not spoil a fetch.
 
-`vm-flush-interval\=' is 90 seconds by default, so `vm-flush-cached-data-all-folders\='
+`vm-flush-interval' is 90 seconds by default, so `vm-flush-cached-data-all-folders'
 runs in every VM session and writes X-VM headers into folder buffers, while a
 fetch is collecting a bunch to put into the same folder.  Here the flush is
 made to fire after every message that arrives."
@@ -1837,7 +1837,7 @@ made to fire after every message that arrives."
 (ert-deftest vm-imap-net-test-two-maildrops-into-one-folder-take-turns ()
   "Two maildrops among a folder's spool files are fetched one after the other.
 
-`vm-get-new-mail\=' walks the spool files and starts each fetch without waiting,
+`vm-get-new-mail' walks the spool files and starts each fetch without waiting,
 so the second was started while the first was still running: two sessions
 writing one folder, one buffer and one cache file.  The folder's own refusal
 came too late -- the second session was already talking to a server, and
@@ -2977,7 +2977,7 @@ The fetch is not abandoned over it -- the other messages are new mail."
 
 The plan said the UID was new; by the time the text arrived the folder had
 it.  Writing it would put the message in twice, so it is left out and said
-out loud -- which is `vm-imap-net-uid-held-p\=' at the point of writing, the
+out loud -- which is `vm-imap-net-uid-held-p' at the point of writing, the
 plan's own check having been made before any of this was asked for."
   (let ((said nil))
     (vm-imap-net-test--visiting (mock)
@@ -3225,7 +3225,7 @@ UIDs without asking the table anything."
 
 (ert-deftest vm-imap-net-test-a-fetch-tells-the-held-uid-table-what-it-wrote ()
   "A fetch puts what it wrote into the held-UID table as it goes.
-Read straight out of the table, without asking `vm-imap-net-uids-held\=' --
+Read straight out of the table, without asking `vm-imap-net-uids-held' --
 which would walk the list and find the message whether the fetch had said
 anything or not.  The table is there because the plan built it."
   (vm-imap-net-test--visiting (mock)

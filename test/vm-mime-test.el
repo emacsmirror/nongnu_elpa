@@ -2635,11 +2635,11 @@ converter does with it.  Skipped where lynx is not installed."
             (should (<= (length line) column))))))))
 
 (ert-deftest vm-mime-test-a-centred-table-is-not-indented-by-hundreds-of-columns ()
-  "REGRESSION: quoted HTML is converted to a page a reader\='s width, not 100000.
+  "REGRESSION: quoted HTML is converted to a page a reader\\='s width, not 100000.
 Issue #540.  Asked for a width no line would reach, w3m lays the page out
 that wide and centres a centred table in it, so every line came back indented
 by some 900 columns.  Cited and filled, `vm-forward-paragraph' then read the
-indentation as the paragraph\='s prefix and the reply held one word a line.
+indentation as the paragraph\\='s prefix and the reply held one word a line.
 Skipped where w3m is not installed."
   (skip-unless (executable-find "w3m"))
   (let ((centred (concat "<html><body>"

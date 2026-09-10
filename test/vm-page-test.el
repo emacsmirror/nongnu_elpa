@@ -86,8 +86,8 @@
 
 (defmacro vm-page-test-with-paged-message (&rest body)
   "Show a three-page message read, and run BODY in the buffer showing it.
-`vm-honor-page-delimiters\=' is on, and the message carries a header that
-`vm-visible-headers\=' hides, so exposing them is observable."
+`vm-honor-page-delimiters' is on, and the message carries a header that
+`vm-visible-headers' hides, so exposing them is observable."
   (declare (indent 0) (debug t))
   `(let* ((dir (file-name-as-directory (make-temp-file "vm-page-test" t)))
           (file (expand-file-name "folder" dir))
@@ -134,10 +134,10 @@
   (vm-narrow-to-page))
 
 (ert-deftest vm-page-test-exposing-headers-keeps-the-page ()
-  "REGRESSION: `t\=' on a later page left you looking at the first one.
-`vm-narrow-to-page\=' narrows to the page point is in, and
-`vm-expose-hidden-headers\=' sent point to the top of the message first, so
-whoever pressed `t\=' on page three was thrown back to page one -- which the
+  "REGRESSION: `t' on a later page left you looking at the first one.
+`vm-narrow-to-page' narrows to the page point is in, and
+`vm-expose-hidden-headers' sent point to the top of the message first, so
+whoever pressed `t' on page three was thrown back to page one -- which the
 reporter took for the command having failed.  Issue #513."
   (vm-page-test-with-paged-message
     (vm-page-test--goto-last-page)
@@ -163,7 +163,7 @@ reporter took for the command having failed.  Issue #513."
   "Pressing it twice puts the headers back.
 The state used to be read off the narrowing -- exposed meant the visible
 region began at the message rather than at its visible headers -- which a
-page narrowing makes meaningless, so it is kept in `vm-headers-exposed\='."
+page narrowing makes meaningless, so it is kept in `vm-headers-exposed'."
   (vm-page-test-with-paged-message
     (vm-page-test--goto-last-page)
     (let ((page-start (point-min)))
@@ -189,7 +189,7 @@ Nothing is skipped past: the text that was being read is still there."
       (should (equal page-end (point-max))))))
 
 (ert-deftest vm-page-test-exposing-headers-without-page-delimiters ()
-  "With `vm-honor-page-delimiters\=' nil the old rule still decides.
+  "With `vm-honor-page-delimiters' nil the old rule still decides.
 Nothing narrows to a page there, so the visible region says whether the
 headers are exposed, and that is what the command reads."
   (vm-page-test-with-paged-message

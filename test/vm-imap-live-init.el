@@ -58,7 +58,7 @@ opt-in.  Bind this to nil to keep a configured checkout from using the network
 
 The default answers VM_TEST_LIVE, so `make test-mock' and
 `VM_TEST_LIVE=0 make test' run the mock servers alone on a machine that has a
-live one.  See `vm-test-live-wanted-p\='.")
+live one.  See `vm-test-live-wanted-p'.")
 
 (defvar vm-live-config-file
   (expand-file-name "vm-live-config.el" vm-test-dir)

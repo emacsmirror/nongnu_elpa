@@ -350,7 +350,7 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 (defvar vm-imap-mock-permanent-flags
   "\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*"
   "What the mock answers for PERMANENTFLAGS at SELECT.
-The `\\*\=' at the end is the server saying it keeps keywords of its own.
+The `\\*\\=' at the end is the server saying it keeps keywords of its own.
 Bind this without it for a server that does not, which is what Gmail
 answers and what makes a label set in VM disappear (emacs-vm/vm#601).")
 

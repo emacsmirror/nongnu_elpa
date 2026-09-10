@@ -40,10 +40,10 @@ BODY runs with the process buffer current, which is where VM's own IMAP
 functions read their responses from -- called anywhere else they read an
 empty buffer and time out.
 
-`vm-buffer-types\=' says `process\=' while BODY runs, because that is what a real
+`vm-buffer-types' says `process' while BODY runs, because that is what a real
 caller has done by the time it gets here: VM pushes the type on its way into a
 connection, and the functions BODY calls assert it.  Without it these tests
-fail with VM's assertions checked -- `test-runner --assert\=' -- which is a test
+fail with VM's assertions checked -- `test-runner --assert\\=' -- which is a test
 setting up a state no caller is in rather than anything wrong with VM."
   (declare (indent 1) (debug t))
   `(vm-imap-mock-with (,(car spec) ,@(cddr spec))
@@ -825,8 +825,8 @@ down here at all."
 (ert-deftest vm-imap-mock-test-copying-makes-the-mailbox-if-it-is-missing ()
   "REGRESSION: saving to a folder that does not exist yet makes it, whichever
 path the save takes.  Issue #690: the append path sent CREATE first and the
-copy path did not, so `S\=' to a new folder name worked from a file folder and
-failed with the server\='s NO [TRYCREATE] from an IMAP one -- a difference the
+copy path did not, so `S' to a new folder name worked from a file folder and
+failed with the server\\='s NO [TRYCREATE] from an IMAP one -- a difference the
 user did not ask for and cannot see."
   (vm-imap-mock-test--visiting
       (mock :messages (list vm-imap-mock-test--alice))
@@ -863,7 +863,7 @@ verbosity ordinary progress is reported at."
 
 (ert-deftest vm-imap-mock-test-creating-a-mailbox-leaves-the-parents-alone ()
   "REGRESSION: creating a mailbox inside a directory asks for that mailbox
-and nothing else.  Issue #691: `vm-imap-create-mailbox\=' walked the name and
+and nothing else.  Issue #691: `vm-imap-create-mailbox' walked the name and
 sent a CREATE for each parent first -- \"vmtest/\" for \"vmtest/saved\" -- which
 a server refuses as a name in its own right, and then read one response too
 many, so the session was out of step with what it had asked.  RFC 3501 has

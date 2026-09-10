@@ -70,7 +70,7 @@
 (ert-deftest vm-postpone-test-no-variable-alias-for-the-old-group-name ()
   "REGRESSION: the old group name is not aliased as though it were a variable.
 This group was `vm-pine' before 8.4.0, and the file carried
-\(defvaralias \='vm-pine \='vm-postpone\) with a comment calling it a group
+\(defvaralias \\='vm-pine \\='vm-postpone\) with a comment calling it a group
 alias.  Neither name is a variable, so what that did was make `vm-pine' a
 variable alias pointing at nothing, and Customize has no group-alias mechanism
 for it to have meant.  Both lines are gone.
@@ -539,9 +539,9 @@ used to (emacs-vm/vm#788)."
        (delete-directory dir t))))
 
 (ert-deftest vm-postpone-test-a-composition-is-recognised ()
-  "A composition VM started is one; another package\='s is not.
-Mail mode alone is not the test -- postponing somebody else\='s composition
-into a VM folder is not VM\='s business."
+  "A composition VM started is one; another package\\='s is not.
+Mail mode alone is not the test -- postponing somebody else\\='s composition
+into a VM folder is not VM\\='s business."
   (vm-postpone-test-with-composition
     (should (vm-composition-buffer-p composition))
     (should (vm-composition-worth-keeping-p composition))
@@ -562,7 +562,7 @@ into a VM folder is not VM\='s business."
     (should-not (memq composition (vm-unfinished-compositions)))))
 
 (ert-deftest vm-postpone-test-exit-postpones-without-asking ()
-  "With `vm-save-killed-message\=' `always\=', leaving Emacs writes the draft."
+  "With `vm-save-killed-message' `always', leaving Emacs writes the draft."
   (vm-postpone-test-with-composition
     (let ((vm-save-killed-message 'always))
       (should (vm-postpone-unfinished-compositions))
@@ -573,7 +573,7 @@ into a VM folder is not VM\='s business."
         (should (string-match-p "a few words" (buffer-string)))))))
 
 (ert-deftest vm-postpone-test-exit-asks-and-takes-no-for-an-answer ()
-  "With `ask\=', declining leaves the composition alone."
+  "With `ask', declining leaves the composition alone."
   (vm-postpone-test-with-composition
     (let ((vm-save-killed-message 'ask)
           (asked nil))
@@ -592,7 +592,7 @@ into a VM folder is not VM\='s business."
       (should (file-exists-p drafts)))))
 
 (ert-deftest vm-postpone-test-exit-can-be-left-to-emacs ()
-  "With `vm-save-killed-message\=' nil nothing happens, as before."
+  "With `vm-save-killed-message' nil nothing happens, as before."
   (vm-postpone-test-with-composition
     (let ((vm-save-killed-message nil))
       (cl-letf (((symbol-function 'y-or-n-p)
@@ -613,7 +613,7 @@ Losing a draft is a reason to say so, not to stand in the doorway."
       (should (buffer-live-p composition)))))
 
 (ert-deftest vm-postpone-test-the-exit-hook-is-registered ()
-  "Starting VM puts the offer on `kill-emacs-query-functions\='.
+  "Starting VM puts the offer on `kill-emacs-query-functions'.
 Not done as vm-postpone.el loads: loading a file should not change how Emacs
 behaves."
   (should (memq 'vm-postpone-unfinished-compositions

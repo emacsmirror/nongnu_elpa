@@ -764,7 +764,7 @@ would make one undo command do nothing.  Squeezing them is what stops that."
 (ert-deftest vm-undo-test-describe-names-the-flag-and-its-two-states ()
   "Undoing a flag change says which flag, and which way the undo goes.
 A record is (FUNCTION MESSAGE VALUE) where VALUE is what undoing will set --
-`vm-set-xxxx-flag\=' records `(not flag)\=' -- so a record carrying t reads
+`vm-set-xxxx-flag' records `(not flag)\\=' -- so a record carrying t reads
 undeleted -> deleted: the state it is in now, and the state it goes to."
   (vm-test-with-folder
       (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"

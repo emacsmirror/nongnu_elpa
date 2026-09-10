@@ -74,8 +74,8 @@ which is what a real Emacs would be running between keystrokes."
 
 (iter-defun vm-net-test--read-line ()
   "Wait until there is a line in the buffer, and answer with it.
-Searching from `point-min\=' each time round: the filter leaves point at the
-end of what it inserted, and a search from there finds nothing.  VM\='s own
+Searching from `point-min' each time round: the filter leaves point at the
+end of what it inserted, and a search from there finds nothing.  VM\\='s own
 parsers keep a read point of their own for the same reason."
   (while (not (save-excursion (goto-char (point-min))
                               (re-search-forward "\n" nil t)))
@@ -609,12 +609,12 @@ outside: over, and never reported."
 (ert-deftest vm-net-test-the-driver-says-things-without-stopping ()
   "Nothing the driver says holds Emacs still.
 
-`vm-warn\=' keeps its message on screen with `sit-for\=', and `vm-inform\=' does
-the same for `vm-verbal-time\='.  The driver speaks from process filters,
+`vm-warn' keeps its message on screen with `sit-for', and `vm-inform' does
+the same for `vm-verbal-time'.  The driver speaks from process filters,
 sentinels and timers, where a pause is Emacs stopped -- two seconds per
 warning, and a folder whose server refused a flag per message stopped for two
 seconds each time: four seconds to save two messages' flags, where the work
-itself takes a tenth of one.  A `sit-for\=' there also runs timers and other
+itself takes a tenth of one.  A `sit-for' there also runs timers and other
 filters, which is the re-entry the driver's own guards refuse."
   (let ((paused nil))
     (cl-letf (((symbol-function 'vm-pause)

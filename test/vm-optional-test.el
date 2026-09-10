@@ -113,12 +113,12 @@ manual appendix silently loses its options.  That is what this catches."
 (ert-deftest vm-optional-test-bbdb-names-resolve ()
   "Every BBDB function and variable VM names exists in BBDB.
 It did not until #567: VM was written against BBDB 2.x and nine of the names
-it used were gone -- `bbdb-record-net\=', `bbdb-record-raw-notes\=',
-`bbdb-record-putprop\=', `bbdb-get-field\=', `bbdb-save-db\=',
-`bbdb-get-addresses\=' and three 2.x variables.  Two more were present but
-had changed meaning: `bbdb-split\=' swapped its arguments, and
-`bbdb-create-internal\=' reordered its positional ones so that an address
-landed in the record\='s `aka\=' field."
+it used were gone -- `bbdb-record-net', `bbdb-record-raw-notes',
+`bbdb-record-putprop', `bbdb-get-field', `bbdb-save-db',
+`bbdb-get-addresses' and three 2.x variables.  Two more were present but
+had changed meaning: `bbdb-split' swapped its arguments, and
+`bbdb-create-internal' reordered its positional ones so that an address
+landed in the record\\='s `aka' field."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-avirtual)
   (require 'vm-pcrisis)
