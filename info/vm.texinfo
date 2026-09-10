@@ -4505,13 +4505,17 @@ removes it.
 @vmdocvmmailautosavedirectory
 
 @vindex vm-mail-header-from
+@vindex mail-setup-with-from
 @vindex vm-mail-mode-hidden-headers
 When a mail composition buffer is created, VM initializes it with
-header lines that you can fill in.  The @code{From} header is usually
-standard and contains your email address.  You can have VM fill it in
-for you
-automatically by setting the variable @code{vm-mail-header-from}.  (It is
-@code{nil} by default.)  
+header lines that you can fill in.  The @code{From} header holds your
+address, built from @code{user-full-name} and @code{user-mail-address} in
+the style @code{mail-from-style} names, which is what Emacs would have put
+on the message as it sent it.  Setting @code{mail-setup-with-from} to
+@code{nil} leaves the header out, for a transport that writes its own; the
+copies an @code{Fcc} or @code{IMAP-FCC} header files then name no sender,
+since they are written before the message is sent.  Setting
+@code{vm-mail-header-from} to a string uses that instead.  
 
 @findex vm-mail-from-folder
 @vmdocvmmailusesenderaddress
