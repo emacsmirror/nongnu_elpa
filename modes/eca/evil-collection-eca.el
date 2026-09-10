@@ -41,7 +41,44 @@
   (evil-collection-bind 'eca-chat-mode-map
                         'repl-submit 'eca-chat--key-pressed-return
                         'repl-newline 'eca-chat--key-pressed-newline
-                        'repl-force-newline 'eca-chat--key-pressed-newline))
+                        'repl-force-newline 'eca-chat--key-pressed-newline
+                        'refresh 'eca-chat-reset
+                        'refresh-all 'eca-restart
+                        'find-file 'eca-chat-select
+                        'describe-mode 'eca-transient-menu
+                        'next-item 'eca-chat-go-to-next-expandable-block
+                        'prev-item 'eca-chat-go-to-prev-expandable-block
+                        'next-section 'eca-chat-go-to-next-user-message
+                        'prev-section 'eca-chat-go-to-prev-user-message
+                        'section-toggle 'eca-chat-toggle-expandable-block
+                        'zoom-in 'eca-chat-image-zoom-in
+                        'zoom-out 'eca-chat-image-zoom-out
+                        'zoom-reset 'eca-chat-image-zoom-reset)
+
+  (when evil-collection-want-g-bindings
+    (evil-collection-define-key 'normal 'eca-chat-mode-map
+      "gs" 'eca-chat-cycle-agent
+      "gm" 'eca-chat-select-agent
+      "gv" 'eca-chat-select-model
+      "go" 'eca-chat-select
+      "gp" 'eca-chat-copy-at-point
+      "gt" 'eca-chat-timeline
+      "gF" 'eca-chat-new
+      "gq" 'eca-chat--key-pressed-queue
+      "ga" 'eca-chat-tool-call-accept-all
+      "gA" 'eca-chat-tool-call-accept-next
+      "gy" 'eca-chat-tool-call-accept-all-and-remember
+      "gn" 'eca-chat-tool-call-reject-next
+      "g," 'eca-settings
+      "gM" 'eca-mcp-toggle-server
+      "gV" 'eca-chat-select-variant
+      "gT" 'eca-chat-talk
+      "gO" 'eca-chat-load-older-history
+      "gd" 'eca-chat-clear-prompt
+      "gk" 'eca-chat-clear
+      "gK" 'eca-chat-delete
+      "gN" 'eca-chat-rename
+      "gz" 'eca-chat-save-image-at-point)))
 
 (provide 'evil-collection-eca)
 ;;; evil-collection-eca.el ends here
