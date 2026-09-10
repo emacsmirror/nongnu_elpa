@@ -1518,7 +1518,8 @@ If TYPE is :pull, get a pull request, not issue."
     (fj-get endpoint)))
 
 (defun fj-issue-success-maybe-upload (resp repo owner)
-  "In sucess function with RESP, upload attachment if present."
+  "In sucess function with RESP, upload attachment if present.
+REPO and OWNER are where to upload it."
   (when fj-compose-upload
     (let* ((json (fj-resp-json resp))
            (index (alist-get 'number json)))
@@ -1766,7 +1767,8 @@ OWNER is the repo owner."
     (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))
 
 (defun fj-comment-success-upload-maybe (resp repo owner)
-  "In comment success function with RESP, maybe upload file."
+  "In comment success function with RESP, maybe upload file.
+REPO and OWNER are where to upload it."
   (when fj-compose-upload
     (let* ((json (fj-resp-json resp))
            (id (alist-get 'id json)))
@@ -1826,13 +1828,15 @@ NEW-BODY is the new comment text to send."
       `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
 
 (defun fj-post-comment-attachment (repo owner id filepath)
-  "REPO OWNER ID FILEPATH"
+  "Post comment attachment at FILEPATH.
+Add it to comment with ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
                           owner repo id)))
     (fj-post-attachment endpoint id filepath)))
 
 (defun fj-post-issue-attachment (repo owner id filepath)
-  "REPO OWNER ID FILEPATH"
+  "Post issue attachment at FILEPATH.
+Add it to issue with ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/issues/%s/assets"
                           owner repo id)))
     (fj-post-attachment endpoint id filepath)))
