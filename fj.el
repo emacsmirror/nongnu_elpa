@@ -2969,20 +2969,29 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
         ;; don't have assets, so we skip them:
         (if (not (string= (alist-get 'type comment) "comment"))
             ""
-          (fj--placeholder-str "assets" 'fj-assets))
+          (fj--placeholder-str "assets"
+                             'fj-assets t
+                             'fj-comment comment
+                             'fj-comment-author .user.username
+                             'fj-comment-id .id))
         ;; reactions
-        (fj--placeholder-str "reacs" 'fj-reactions)
+        (fj--placeholder-str "reacs"
+                           'fj-reactions t
+                           'fj-comment comment
+                           'fj-comment-author .user.username
+                           'fj-comment-id .id)
         (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id))))
 
-(defun fj--placeholder-str (str property)
-  "Return a placeholder string STR with text PROPERTY."
+(defun fj--placeholder-str (str &rest props)
+  "Return an invisible placeholder string STR with text PROPS."
   (concat "\n"
-          (propertize (format "[%s]" str)
-                      'invisible t
-                      property t)
+          (apply #'propertize
+                 (format "[%s]" str)
+                 'invisible t
+                 props)
           "\n"))
 
 (defun fj-render-assets-async ()
@@ -3022,10 +3031,12 @@ MARKER is where we insert the assets."
         ;; goto marker for this match:
         (goto-char
          (marker-position marker))
-        (delete-region (pos-bol) (pos-bol 3)) ;; remove placeholder + newline
-        (when assets
-          (insert
-           (fj-format-assets-urls assets))))
+        (let ((props (text-properties-at (point))))
+          ;; remove placeholder + newline:
+          (delete-region (pos-bol) (pos-bol 3))
+          (when assets
+            (insert
+             (fj-format-assets-urls assets props)))))
       ;; delete marker for this match:
       (set-marker marker nil))))
 
@@ -3219,9 +3230,9 @@ RELOAD mean we reloaded."
                        'fj-item-body t)
            ;; attachments:
            (when .assets
-             (fj--placeholder-str "assets" 'fj-assets))
+             (fj--placeholder-str "assets" 'fj-assets t))
            "\n"
-           (fj--placeholder-str "reac" 'fj-reactions)
+           (fj--placeholder-str "reac" 'fj-reactions t)
            fedi-horiz-bar fedi-horiz-bar
            "\n\n")
           'fj-item-number number
@@ -3241,7 +3252,18 @@ RELOAD mean we reloaded."
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
 
-(defun fj-format-assets-urls (assets)
+(defun fj-plist-delete (plist property)
+  ;; stolen from `org-plist-delete'
+  "Delete PROPERTY from PLIST.
+This is in contrast to merely setting it to 0."
+  (let (p)
+    (while plist
+      (if (not (eq property (car plist)))
+	  (setq p (plist-put p (car plist) (nth 1 plist))))
+      (setq plist (cddr plist)))
+    p))
+
+(defun fj-format-assets-urls (assets &optional props)
   "Render download URLS of attachment data ASSETS.
 Creates a markdown link, with attachment name as display text.
 Renders it on the server, adds `fj-item-body' property so our rendering
@@ -3250,15 +3272,19 @@ works on the resulting html."
    "📎 " (substring fedi-horiz-bar 3)
    "\n"
    (propertize
-    (mapconcat (lambda (x)
-                 (let-alist x
-                   (propertize
-                    (fj-propertize-shr-link .browser_download_url
-                                          .name
-                                          .id)
-                    'fj-attachment x
-                    'fj-attachment-id (alist-get 'id x))))
-               assets "\n")
+    (mapconcat
+     (lambda (x)
+       (let-alist x
+         (apply #'propertize
+                (fj-propertize-shr-link .browser_download_url
+                                      .name
+                                      .id)
+                'fj-attachment x
+                'fj-attachment-id (alist-get 'id x)
+                (fj-plist-delete
+                 (fj-plist-delete props 'fontified)
+                 'invisible))))
+     assets "\n")
     'fj-item-body t)
    "\n"))
 
