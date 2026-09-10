@@ -2139,10 +2139,9 @@ Return an alist, with each cons being (name . id)"
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
-     (lambda (resp)
-       (let ((json (fj-resp-json resp)))
-         (fj-view-reload)
-         (message "Label %s added to #%s!" (car choice) issue))))))
+     (lambda (_resp)
+       (fj-view-reload)
+       (message "Label %s added to #%s!" (car choice) issue)))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
