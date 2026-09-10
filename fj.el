@@ -3050,17 +3050,17 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
             ""
           (fj--placeholder-str "assets"
                              'fj-assets t
-                             'fj-comment comment
+                             'fj-comment t
                              'fj-comment-author .user.username
                              'fj-comment-id .id))
         ;; reactions
         (fj--placeholder-str "reacs"
                            'fj-reactions t
-                           'fj-comment comment
+                           'fj-comment t
                            'fj-comment-author .user.username
                            'fj-comment-id .id)
         (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
-       'fj-comment comment
+       'fj-comment t
        'fj-comment-author .user.username
        'fj-comment-id .id))))
 
@@ -3598,7 +3598,7 @@ Alternatively, call OP on them instead."
    (fj-destructure-buf-spec (repo owner)
      (let ((id (fj--property 'fj-comment-id))
            (body (alist-get 'body
-                            (fj--property 'fj-comment))))
+                            (fj--property 'fj-item-data))))
        (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
        (setq fj-compose-repo repo
              fj-compose-repo-owner owner
