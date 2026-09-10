@@ -3029,7 +3029,7 @@ Optionally start from POINT."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-format-comment (repo owner comment &optional author no-bar)
+(defun fj-format-comment (_repo owner comment &optional author no-bar)
   "Format COMMENT in REPO by OWNER.
 AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
   (let-alist comment
@@ -3939,9 +3939,9 @@ is new branch."
           (propertize new 'face 'fj-name-face)))
 
 (defun fj-format-review-request (format-str user reviewer ts)
-  "Format an assignee timeline item.
-FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
-assigned to. TS is a timeline timestamp."
+  "Format an review request timeline item.
+FORMAT-STR is the base string. USER is the agent, REVIEWER is the one to
+review. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
         (reviewer (propertize reviewer 'face 'fj-name-face)))
     (format format-str user reviewer ts)))
