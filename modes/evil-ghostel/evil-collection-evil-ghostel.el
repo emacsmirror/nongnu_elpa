@@ -33,12 +33,33 @@
 (require 'evil-ghostel nil t)
 
 (defvar evil-ghostel-mode-map)
+(defvar evil-ghostel--escape-mode)
 
 (defconst evil-collection-evil-ghostel-maps '(evil-ghostel-mode-map))
+
+(defcustom evil-collection-evil-ghostel-escape 'evil
+  "Where insert-state ESC is routed in `evil-ghostel' buffers.
+
+The default is `evil', matching `evil-collection-vterm' and
+`evil-collection-eat', where ESC leaves insert state unless the user
+toggles terminal routing.
+
+Valid values are those accepted by `evil-ghostel--escape-mode':
+`auto', `terminal', and `evil'."
+  :type '(choice (const :tag "Auto (evil-ghostel default)" auto)
+                 (const :tag "Default to terminal" terminal)
+                 (const :tag "Default to evil/emacs" evil))
+  :group 'evil-collection)
+
+(defun evil-collection-evil-ghostel-set-escape ()
+  "Apply `evil-collection-evil-ghostel-escape' in this Ghostel buffer."
+  (setq evil-ghostel--escape-mode evil-collection-evil-ghostel-escape))
 
 ;;;###autoload
 (defun evil-collection-evil-ghostel-setup ()
   "Set up `evil' bindings for `evil-ghostel'."
+  (add-hook 'evil-ghostel-mode-hook
+            #'evil-collection-evil-ghostel-set-escape)
   (evil-collection-bind 'evil-ghostel-mode-map
                               'term-toggle-escape
                               'evil-ghostel-toggle-send-escape))
