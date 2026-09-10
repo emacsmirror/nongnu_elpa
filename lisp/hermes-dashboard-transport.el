@@ -1027,9 +1027,28 @@ It is called with the tokenized URL and the dashboard client.")
   (json-serialize frame))
 
 (defun hermes-dashboard-transport--decode-frame (text)
-  "Decode JSON-RPC TEXT into an alist frame."
+  "Decode JSON-RPC TEXT, retaining exact JSON types for task snapshots."
   (if (stringp text)
-      (hermes-transport-json-parse text)
+      (let* ((frame (hermes-transport-json-parse text))
+             (params (hermes-transport--get frame 'params))
+             (type (hermes-transport--get params 'type))
+             (payload (hermes-transport--get params 'payload)))
+        ;; An explicit empty list clears the panel; null or false must not.
+        (if (and (equal (hermes-transport--get frame 'method) "event")
+                 (or (equal type "todo.updated")
+                     (and (equal type "tool.complete")
+                          (member (hermes-transport--get payload 'name)
+                                  '("todo_list" "todo")))))
+            (hermes-transport-json-parse-lossless text)
+          (when-let* ((result (hermes-transport--get frame 'result))
+                      ((hermes-transport--field-present-p result 'todo_state)))
+            ;; Preserve just this snapshot's JSON types; ordinary RPC callers
+            ;; still receive the established alist/list result representation.
+            (setf (alist-get 'todo_state result)
+                  (hermes-transport--get
+                   (hermes-transport--get
+                    (hermes-transport-json-parse-lossless text) 'result) 'todo_state)))
+          frame))
     text))
 
 (defun hermes-dashboard-transport--jsonrpc-request (id method params)
@@ -1138,13 +1157,18 @@ Reject the pending request through REJECT when the WebSocket send fails."
       client (list :method method :reject reject)
       (hermes-dashboard-transport--send-failure-message client method err)))))
 
+(defvar hermes-dashboard-transport-dispatch-guard nil
+  "Optional predicate captured by RPCs and checked immediately before sending.
+A retired request is rejected and its pending timer is cancelled.")
+
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
 message when provided.  The frame is deferred until CLIENT becomes ready, so
 callers never wait on the connection handshake themselves.  Return the request
 id."
-  (let* ((id (hermes-dashboard-transport--next-id client))
+  (let* ((guard hermes-dashboard-transport-dispatch-guard)
+         (id (hermes-dashboard-transport--next-id client))
          (pending (hermes-dashboard-transport--ensure-pending client))
          (frame (hermes-dashboard-transport--jsonrpc-request id method params))
          (timer (hermes-dashboard-transport--arm-request-timer client id method)))
@@ -1158,7 +1182,11 @@ id."
      client
      (lambda ()
        (when (gethash id pending)
-         (hermes-dashboard-transport--send-frame client id method frame reject)))
+         (if (and guard (not (funcall guard)))
+             (hermes-dashboard-transport--reject-pending-request
+              client (hermes-dashboard-transport--take-pending client id)
+              "Retired browser operation")
+           (hermes-dashboard-transport--send-frame client id method frame reject))))
      (lambda (reason)
        (when (hermes-dashboard-transport--take-pending client id)
          (hermes-dashboard-transport--reject-pending-request

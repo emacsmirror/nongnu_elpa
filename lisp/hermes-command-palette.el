@@ -31,6 +31,7 @@
     ("New chat" . hermes-chat)
     ("Switch chat" . hermes-switch-to-chat)
     ("Sessions" . hermes-list-sessions)
+    ("Projects" . hermes-list-projects)
     ("Profiles" . hermes-list-profiles)
     ("Messaging" . hermes-list-messaging-platforms)
     ("Cron jobs" . hermes-list-crons)

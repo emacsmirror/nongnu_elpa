@@ -37,7 +37,10 @@
 (require 'subr-x)
 (require 'hermes-chat-format)
 (require 'hermes-chat-render)
+(require 'hermes-preview-format)
 (require 'hermes-dashboard-api)
+
+(autoload 'hermes-preview-open "hermes-preview")
 
 (defvar hermes-instance)
 (defvar hermes-instances)
@@ -420,7 +423,54 @@ lifted into inline images."
       (hermes-chat--insert-transient-content entry))
      ((not (string-empty-p content))
       (hermes-chat--insert-entry-content
-       content (eq (plist-get entry :status) 'streaming))))))
+       content (eq (plist-get entry :status) 'streaming))))
+    (hermes-chat--insert-previews entry)))
+
+(defun hermes-chat--preview-owner ()
+  "Capture this chat attachment for an explicit output preview action."
+  (let ((client hermes-chat--dashboard-client))
+    (list (current-buffer) hermes-chat--lifecycle-generation
+          (copy-sequence hermes-chat--dashboard-active-session-id) client
+          (and client (hermes-dashboard-transport-client-generation client))
+          (and client (hermes-dashboard-transport--api-client-base-url client)))))
+
+(defun hermes-chat--preview-button (button)
+  "Open the exact output descriptor retained on BUTTON."
+  (hermes-preview-open (button-get button 'hermes-preview-descriptor)
+                       (button-get button 'hermes-preview-owner)))
+
+(defun hermes-chat--insert-previews (entry)
+  "Insert compact output preview actions for ENTRY, without fetching anything."
+  (dolist (descriptor (hermes-preview-entry entry))
+    (insert "  ")
+    (insert-text-button
+     "[Preview]" 'face 'link 'follow-link t
+     'help-echo (concat "Inert preview: " (plist-get descriptor :label))
+     'hermes-preview-descriptor descriptor
+     'hermes-preview-owner (hermes-chat--preview-owner)
+     'action #'hermes-chat--preview-button)
+    (insert " " (propertize
+                 (truncate-string-to-width
+                  (prin1-to-string (plist-get descriptor :label)) 70 nil nil t)
+                 'face 'shadow) "\n")))
+
+(defun hermes-chat-preview-output ()
+  "Choose a generated output from this chat and open its inert preview."
+  (interactive)
+  (let ((button (next-button (point-min))) candidates)
+    (while button
+      (when (button-get button 'hermes-preview-descriptor)
+        (push (cons (format "%d: %s" (1+ (length candidates))
+                            (plist-get (button-get button 'hermes-preview-descriptor)
+                                       :label))
+                    (list (button-get button 'hermes-preview-descriptor)
+                          (button-get button 'hermes-preview-owner)))
+              candidates))
+      (setq button (next-button (button-end button))))
+    (unless candidates (user-error "No generated outputs in this chat"))
+    (let* ((choices (nreverse candidates))
+           (choice (completing-read "Preview output: " choices nil t)))
+      (apply #'hermes-preview-open (cdr (assoc choice choices))))))
 
 (defun hermes-chat--input-position ()
   "Return the numeric input marker position."

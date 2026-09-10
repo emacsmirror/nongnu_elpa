@@ -383,11 +383,83 @@ Browser REST mutations retain their owner through authentication."
        (unless entered (funcall failure (error-message-string err)))
        (signal (car err) (cdr err))))))
 
+(defvar-local hermes-browser--status nil
+  "Visible status of the current browser read.")
+
+(defvar-local hermes-browser--owned-cleanup nil
+  "Cleanup thunk for this buffer's short, guarded remote operation.")
+
+(defun hermes-browser--retire-owned ()
+  "Release this buffer's pending operation without retrying remote writes."
+  (when hermes-browser--owned-cleanup
+    (funcall hermes-browser--owned-cleanup)))
+
+(defun hermes-browser--run-owned (make-promise current-p success failure)
+  "Run MAKE-PROMISE under CURRENT-P and settle via SUCCESS or FAILURE.
+MAKE-PROMISE receives a client and a dispatch predicate.  Capture CURRENT-P
+before prompting.  All callbacks run in the owner buffer.  Killing the owner,
+changing mode, or issuing a new generation releases its client and RPC timers;
+an already dispatched mutation may still complete remotely."
+  (let ((buffer (current-buffer))
+        (token (list 'browser-operation))
+        cleanup)
+    (condition-case err
+        (hermes-browser--with-client
+         (lambda (client done)
+           (if (not (buffer-live-p buffer)) (funcall done)
+             (with-current-buffer buffer
+               (let* ((guard (hermes-browser--dispatch-guard client current-p))
+                      (closed nil)
+                      subscription
+                      (active (lambda () (and (not closed) (funcall guard)))))
+		 (setq cleanup
+                       (lambda ()
+			 (unless closed
+			   (setq closed t)
+			   (when subscription
+                             (hermes-dashboard-transport-unsubscribe client subscription))
+			   (hermes-dashboard-transport-cancel-owner-requests client token)
+			   (when (buffer-live-p buffer)
+                             (with-current-buffer buffer
+                               (when (eq hermes-browser--owned-cleanup cleanup)
+				 (setq hermes-browser--owned-cleanup nil)
+				 (when (member hermes-browser--status '("Loading" "Saving"))
+				   (setq hermes-browser--status "Interrupted; g reconcile")))))
+			   (funcall done))))
+		 (if (not (funcall active)) (funcall cleanup)
+		   (setq hermes-browser--owned-cleanup cleanup)
+		   (when (hermes-dashboard-transport-client-p client)
+                     (setq subscription
+			   (hermes-dashboard-transport-subscribe client nil cleanup)))
+		   (add-hook 'kill-buffer-hook #'hermes-browser--retire-owned nil t)
+		   (add-hook 'change-major-mode-hook #'hermes-browser--retire-owned nil t)
+		   (let ((hermes-dashboard-transport--api-dispatch-guard active)
+			 (hermes-dashboard-transport-dispatch-guard active)
+			 (hermes-dashboard-transport-request-owner token))
+                     (hermes--promise-finally
+                      (hermes--promise-catch
+                       (hermes--promise-then
+			(condition-case err (funcall make-promise client active)
+			  ((error quit)
+			   (hermes--promise-rejected (error-message-string err))))
+			(lambda (result)
+			  (when (funcall active)
+                            (with-current-buffer buffer (funcall success result)))))
+                       (lambda (reason)
+			 (when (funcall active)
+			   (with-current-buffer buffer (funcall failure reason)))))
+                      cleanup))))))))
+      ((error quit)
+       (when cleanup (funcall cleanup))
+       (when (funcall current-p)
+         (with-current-buffer buffer (funcall failure (error-message-string err))))))))
+
 (defvar hermes-browser--request-sequence 0
   "Sequence used to issue request tokens that are unique across mode resets.")
 
 (defun hermes-browser--next-request-generation ()
   "Issue and return a new request token for the current buffer."
+  (hermes-browser--retire-owned)
   (setq hermes-browser--request-generation
         (cl-incf hermes-browser--request-sequence)))
 
@@ -413,9 +485,6 @@ Uses `notifications-notify' when D-Bus notifications are available, and quietly
 degrades to a `message' on systems or builds without them.  Optional EVENT
 applies the shared notification policy.  Optional BUFFER is the notice target."
   (hermes-notifications-notify event title body :buffer buffer))
-
-(defvar-local hermes-browser--status nil
-  "Visible status of the current browser read.")
 
 (defun hermes-browser--setup-status ()
   "Expose read status and contextual help in this browser's mode line."
@@ -572,6 +641,7 @@ command `hermes-list-NAME'.  BODY is a plist:
   :command         list-command symbol when it differs from `hermes-list-NAME';
                    it must match the caller's `(autoload ...)' cookie
   :fetch           function (CLIENT -> promise) that starts asynchronous I/O
+  :refresh         optional command owning a custom guarded refresh lifecycle
   :rows            pure function (RESULT -> list of `tabulated-list' entries)
   :keys            extra bindings, spliced into `defvar-keymap'
   :help            command descriptions for `keymap-popup-annotate'
@@ -656,7 +726,9 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          ,@(and on-result `((funcall ,on-result result))))
        (defun ,revert (&rest _)
          ,(format "Refresh the %s browser without re-displaying it." title)
-         (hermes-browser--own-instance (hermes-instance-resolve))
+         (if ,(plist-get body :refresh)
+             (funcall ,(plist-get body :refresh))
+           (hermes-browser--own-instance (hermes-instance-resolve))
          (let* ((target (current-buffer))
                 (instance hermes-instance)
                 (generation (hermes-browser--next-request-generation))
@@ -677,7 +749,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
                   (when (funcall current-p)
                     (with-current-buffer target (,render result))))
                 on-error)
-             ((error quit) (funcall on-error (error-message-string err))))))
+             ((error quit) (funcall on-error (error-message-string err)))))))
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)

@@ -36,6 +36,7 @@
 (require 'subr-x)
 (require 'hermes-chat)
 (require 'hermes-sessions)
+(require 'hermes-projects)
 (require 'hermes-inventory)
 (require 'hermes-rollback)
 (require 'hermes-subagents)
@@ -163,6 +164,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :group "Resources"
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
+  "T" ("Projects" hermes-list-projects)
   :group "Manage"
   "F" ("Profiles" hermes-list-profiles)
   "M" ("Messaging" hermes-list-messaging-platforms)

@@ -1949,14 +1949,16 @@ BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request."
      (hermes-dashboard-transport--api-response-body method path response))))
 
 (cl-defun hermes-dashboard-transport-api-request-async
-    (method path &key body query headers secrets client timeout)
+    (method path &key body query headers secrets client timeout current-p)
   "Return a promise of authenticated dashboard REST METHOD PATH.
 Mirrors `hermes-dashboard-transport-api-request' but resolves asynchronously so
 callers never block Emacs.  BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend
 the request.  CLIENT pins the dashboard base URL.  Its live session token is
-used when present; otherwise REST auth is resolved for that endpoint."
-  (let ((current-p (and (not (equal method "GET"))
-                        hermes-dashboard-transport--api-dispatch-guard)))
+used when present; otherwise REST auth is resolved for that endpoint.
+CURRENT-P optionally fences reads as well as writes across authentication."
+  (let ((current-p (or current-p
+                       (and (not (equal method "GET"))
+                            hermes-dashboard-transport--api-dispatch-guard))))
     (when (and current-p (not (funcall current-p)))
       (error "Retired browser operation"))
     (cond

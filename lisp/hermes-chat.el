@@ -443,6 +443,7 @@ and `upsert-entry'.  Other types return (STATE)."
          (next-id (plist-get entry :id)))
     (hermes-chat--insert-entry entry)
     (hermes-chat--images-rotate assistant-id next-id)
+    (hermes-chat-todos--rotate assistant-id next-id)
     (setq hermes-chat--dashboard-interim-assistant-id assistant-id
           hermes-chat--pending-assistant-id next-id
           hermes-chat--dashboard-stream-assistant-id next-id)))
@@ -463,6 +464,7 @@ and `upsert-entry'.  Other types return (STATE)."
        (hermes-chat--assistant-done-content assistant-id content) t))))
 
 (require 'hermes-chat-images)
+(require 'hermes-chat-todos)
 
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
   "Apply one boundary EFFECT for ASSISTANT-ID.
@@ -517,9 +519,11 @@ stays side-effect-light."
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
   "Reduce EVENT, persist the new turn state, and apply its effects in order.
-Captures session identity first.  ASSISTANT-ID scopes the transcript effects.
-The boundary persists NEW-STATE and replays the effects; it makes no decisions
+ASSISTANT-ID scopes task and transcript effects; session identity is captured
+before reducing the transcript.  The boundary persists NEW-STATE and replays
+its effects; it makes no decisions
 of its own."
+  (hermes-chat-todos--accept assistant-id event)
   (hermes-chat--capture-session-identity event)
   (pcase-let ((`(,new-state . ,effects)
                (hermes-chat--turn-reduce
@@ -598,6 +602,7 @@ of its own."
   (pcase-let ((`(,_user-id . ,assistant-id)
                (hermes-chat--insert-backend-turn content)))
     (hermes-chat--clear-active-tools)
+    (hermes-chat-todos--begin assistant-id)
     (setq hermes-chat--pending-assistant-id assistant-id
           hermes-chat--dashboard-stream-assistant-id assistant-id
           hermes-chat--dashboard-running-p t
@@ -898,6 +903,7 @@ extends the input instead of prepending a blank line to it."
     (hermes-chat--set-header-state
      :status 'pending :activity "Waiting for Hermes"
      :assistant-id assistant-id :last-tool nil :started (current-time))
+    (hermes-chat-todos--begin assistant-id)
     (setq hermes-chat--pending-assistant-id assistant-id
           hermes-chat--dashboard-stream-assistant-id (and dashboard-p assistant-id)
           hermes-chat--dashboard-suppress-stream-p nil
@@ -2306,7 +2312,10 @@ Do not wrap into the composer or modify its draft."
        hermes-chat-set-directory
        :inapt-if #'hermes-chat--active-turn-p)
   "b" ("Switch chat buffer" hermes-switch-to-chat)
-  "P" ("Queue side panel" hermes-chat-queue-panel))
+  :group "Panels"
+  "P" ("Queue side panel" hermes-chat-queue-panel)
+  "o" ("Preview output" hermes-chat-preview-output)
+  "T" ("Live tasks" hermes-chat-show-todos))
 
 (keymap-popup-define hermes-chat-info-map
   "Inspect chat activity and connection state."
@@ -2445,6 +2454,8 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (add-hook 'after-change-major-mode-hook #'hermes-chat--disable-linters 90 t)
   (add-hook 'hermes-chat-lifecycle-invalidation-hook
             #'hermes-chat--images-invalidate nil t)
+  (add-hook 'hermes-chat-lifecycle-invalidation-hook
+            #'hermes-chat-todos--clear nil t)
   (add-hook 'hermes-chat-submit-inhibit-functions
             #'hermes-chat--images-inhibit nil t)
   (hermes-chat--setup-buffer))

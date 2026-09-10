@@ -432,5 +432,71 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
    resolve reject))
 
 
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-list "projects.list"
+  "Send `projects.list' for CLIENT using PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-get "projects.get"
+  "Send `projects.get' for CLIENT using ID PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-create "projects.create"
+  "Send `projects.create' for CLIENT using NAME FOLDERS PRIMARY-PATH USE PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (name folders primary-path use profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-update "projects.update"
+  "Send `projects.update' for CLIENT using ID NAME PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id name profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-add-folder "projects.add_folder"
+  "Send `projects.add_folder' for CLIENT using ID PATH LABEL IS-PRIMARY PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id path label is-primary profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-remove-folder "projects.remove_folder"
+  "Send `projects.remove_folder' for CLIENT using ID PATH PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id path profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-set-primary "projects.set_primary"
+  "Send `projects.set_primary' for CLIENT using ID PATH PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id path profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-archive "projects.archive"
+  "Send `projects.archive' for CLIENT using ID RESTORE PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id restore profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-delete "projects.delete"
+  "Send `projects.delete' for CLIENT using ID PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-set-active "projects.set_active"
+  "Send `projects.set_active' for CLIENT using ID PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (id profile))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-projects-project-sessions "projects.project_sessions"
+  "Read project sessions on CLIENT with PROJECT-ID, SESSION-LIMIT and PROFILE.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (project-id session-limit profile))
+
 (provide 'hermes-dashboard-rpc)
 ;;; hermes-dashboard-rpc.el ends here

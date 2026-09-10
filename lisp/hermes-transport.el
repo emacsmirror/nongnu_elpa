@@ -642,10 +642,59 @@ persistent result entry instead of a transient status line."
                 :type 'diff)
      :content content)))
 
+(defun hermes-transport--todo-item (item)
+  "Return one validated todo ITEM as plain data, or nil."
+  (let ((id (hermes-transport--get item 'id))
+        (content (hermes-transport--get item 'content))
+        (status (hermes-transport--get item 'status))
+        (parent (hermes-transport--get item 'parent)))
+    (when (and (stringp id) (not (string-empty-p id))
+               (stringp content) (not (string-empty-p content))
+               (member status '("pending" "in_progress" "completed" "cancelled")))
+      (list :id id :content content :status status
+            :parent (and (stringp parent) parent)))))
+
+(defun hermes-transport--todo-snapshot (value)
+  "Return a validated full todo snapshot from structured VALUE, or nil.
+Accept JSON result strings, never tool arguments or presentation prose.
+Reject a malformed list atomically, including malformed explicit revisions."
+  (let* ((object (if (stringp value)
+                     (condition-case nil
+                         (hermes-transport-json-parse-lossless value)
+                       (error nil))
+                   value))
+         (todos (hermes-transport--get object 'todos))
+         (revision (hermes-transport--get object 'revision))
+         (revision-p (hermes-transport--field-present-p object 'revision))
+         (items (and (or (vectorp todos) (consp todos))
+                     (mapcar #'hermes-transport--todo-item todos))))
+    (when (and (not (hermes-transport--get object 'error))
+               (not (memq (hermes-transport--get object 'success) '(:false :json-false)))
+               (or (vectorp todos) (consp todos))
+               (cl-every #'identity items)
+               (= (length items) (length (delete-dups
+                                          (mapcar (lambda (item) (plist-get item :id)) items))))
+               (or (not revision-p) (and (integerp revision) (>= revision 0))))
+      (list :items items :revision revision))))
+
+(defun hermes-dashboard-transport--todo-event (type params payload)
+  "Return a full todo event from TYPE, PARAMS and PAYLOAD, or nil."
+  (when-let* ((snapshot (hermes-transport--todo-snapshot payload)))
+    (append (hermes-dashboard-transport--event-base type params payload)
+            (list :type 'todo :snapshot snapshot))))
+
 (defun hermes-dashboard-transport--tool-complete-events (type params payload)
   "Return normalized `tool.complete' events for TYPE/PARAMS/PAYLOAD."
-  (let ((events (list (hermes-dashboard-transport--tool-event
-                       type params payload "completed"))))
+  (let ((events (delq nil
+                      (list (hermes-dashboard-transport--tool-event
+                             type params payload "completed")
+                            (when (member (hermes-transport--get payload 'name)
+                                          '("todo_list" "todo"))
+                              (hermes-dashboard-transport--todo-event
+                               type params
+                               (if (hermes-transport--field-present-p payload 'todos)
+                                   payload
+                                 (hermes-transport--get payload 'result))))))))
     (if-let* ((diff (hermes-dashboard-transport--inline-diff-event
                      type params payload)))
         (append events (list diff))
@@ -1025,6 +1074,9 @@ an Unknown error."
       ("tool.complete"
        (hermes-dashboard-transport--tool-complete-events
         type params payload))
+      ("todo.updated"
+       (when-let* ((event (hermes-dashboard-transport--todo-event type params payload)))
+         (list event)))
       ("tool.generating"
        (list (hermes-dashboard-transport--tool-generating-event
               type params payload)))

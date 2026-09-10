@@ -148,7 +148,7 @@
     (should (eq (keymap-lookup hermes-dashboard-mode-map (car binding))
                 (cdr binding)))
     (should (commandp (cdr binding))))
-  (should-not (keymap-lookup hermes-dashboard-mode-map "T"))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "T") #'hermes-list-projects))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "g") #'hermes-dashboard-refresh))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "n") #'hermes-dashboard-next))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "p") #'hermes-dashboard-previous))

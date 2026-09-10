@@ -38,6 +38,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
+(require 'hermes-chat-todos)
 (require 'hermes-chat-images)
 (require 'hermes-chat-prompts)
 (require 'hermes-notifications)
@@ -749,6 +750,7 @@ Repeated refresh while busy coalesces; it does not authorize a later retry."
 
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
+  (hermes-chat-todos--disconnect)
   (let ((detached (hermes-chat--work-stop)))
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-running-p nil
@@ -879,7 +881,8 @@ so a new session can be started afterwards."
                   (or (plist-get context :idle-count) 0))))
     (hermes-chat--reset-submit-assistant assistant-id)
     (setq hermes-chat--prepared-submit-assistant-id assistant-id))
-  (hermes-chat--dashboard-activate-server-queued-turn assistant-id))
+  (hermes-chat--dashboard-activate-server-queued-turn assistant-id)
+  (when assistant-id (hermes-chat-todos--begin assistant-id)))
 
 (defun hermes-chat--dashboard-note-session-info (event)
   "Record working-directory and idle state from session-info EVENT."
@@ -947,7 +950,10 @@ FALLBACK-ID is the assistant id captured by the transport callback."
     hermes-chat--server-queued-assistant-id)
    (hermes-chat--dashboard-stream-assistant-id)
    (hermes-chat--dashboard-suppress-stream-p
-    (and (hermes-chat--dashboard-terminal-event-p event) fallback-id))
+    ;; Task snapshots describe the runtime even when its transcript is withheld.
+    (and (or (eq (plist-get event :type) 'todo)
+             (hermes-chat--dashboard-terminal-event-p event))
+         fallback-id))
    (t fallback-id)))
 
 (defun hermes-chat--dashboard-finish-assistant (assistant-id)
@@ -1097,7 +1103,7 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
       (hermes-chat--maybe-refresh-session-title))
     (unless (memq (plist-get event :type)
                   '(delta interim done error thinking status progress tool
-                          commentary diff unknown))
+                          commentary diff unknown todo))
       (message "Unknown Hermes transport event: %S" event))))
 
 (defun hermes-chat--handle-transport-event (assistant-id event)
@@ -1121,6 +1127,9 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (hermes-chat--dashboard-handle-message-start assistant-id))
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
+   ((and (eq (plist-get event :type) 'todo)
+         (not (equal (plist-get event :session-id)
+                     hermes-chat--dashboard-active-session-id))) nil)
    ((hermes-chat--stale-assistant-event-p assistant-id event) nil)
    ((hermes-chat--server-queued-prior-event-p assistant-id event) nil)
    ((hermes-chat--interrupted-assistant-event-p assistant-id event)
@@ -1235,6 +1244,9 @@ shared client."
       (setq hermes-chat--dashboard-active-session-id active-id
             hermes-chat--session-id stored-id
             hermes-chat--dashboard-session-ready-p t)
+      (hermes-chat-todos--attach
+       active-id (hermes-transport--get result 'todo_state)
+       (eq (hermes-transport--get result 'running) t))
       (when (hermes-transport--field-present-p result 'running)
         (setq hermes-chat--dashboard-running-p
               (eq (hermes-transport--get result 'running) t)))
@@ -1621,7 +1633,8 @@ Built with `list' so each call yields its own plist; the result is handed to
               hermes-chat--dashboard-suppress-stream-p nil)
         (hermes-chat--handle-transport-event
          assistant-id
-         (hermes-chat--dashboard-reattach-status-event)))))))
+         (hermes-chat--dashboard-reattach-status-event))))))
+  (hermes-chat-todos--reattach))
 
 (defun hermes-chat--dashboard-ensure-client (&optional callback)
   "Return this buffer's shared dashboard client, acquiring one when needed.

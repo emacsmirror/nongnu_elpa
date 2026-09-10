@@ -39,6 +39,15 @@
 (require 'hermes-chat)
 (require 'hermes-session-title)
 
+(defvar-local hermes-sessions--catalogue-profile nil
+  "Explicit backend profile for stored catalogue paging, or nil for RPC.")
+(defvar-local hermes-sessions--catalogue-offset 0
+  "Requested stored catalogue window offset, independent of pinned extras.")
+(defvar-local hermes-sessions--catalogue-next-offset 0
+  "Next requested window, advanced only after successful readback.")
+(defvar-local hermes-sessions--catalogue-total nil
+  "Last backend count for stored catalogue paging.")
+
 (defvar-local hermes-sessions--session-map nil
   "Hash table mapping session ids to session alists in a browser buffer.")
 
@@ -117,7 +126,9 @@
                       'hermes-browser-source)
                      (hermes-browser--face-cell
                       (hermes-transport--display-field session 'profile)
-                      'hermes-browser-profile)))))
+                      'hermes-browser-profile)
+                     (hermes-browser--status-cell
+                      (symbol-name (hermes-sessions--pin-state session)))))))
    sessions))
 
 (defun hermes-sessions--result-sessions (result)
@@ -140,6 +151,9 @@
 
 (defun hermes-sessions--record-result (result)
   "Cache RESULT's sessions by durable id for the row commands."
+  (setq hermes-sessions--catalogue-total (hermes-transport--get result 'total))
+  (when-let* ((offset (hermes-transport--get result 'offset)))
+    (setq hermes-sessions--catalogue-next-offset (+ offset 100)))
   (setq hermes-sessions--session-map
         (hermes-sessions--sessions-by-id
          (hermes-sessions--result-sessions result))))
@@ -150,9 +164,56 @@ BODY and QUERY extend the request."
   (hermes-dashboard-transport-api-request-async
    method path :body body :query query :client client))
 
+
+
+(defun hermes-sessions-list-stored ()
+  "Browse a backend profile's stored sessions, including authoritative pins."
+  (interactive)
+  (let* ((buffer (current-buffer))
+         (current (hermes-browser--dispatch-guard nil))
+         (profile (read-string "Stored sessions backend profile: " "default")))
+    (when (and (funcall current) (not (string-empty-p profile)))
+      (with-current-buffer buffer
+	(setq hermes-sessions--catalogue-profile profile
+              hermes-sessions--catalogue-offset 0
+              hermes-sessions--search-query nil
+              hermes-sessions--all-profiles nil)
+	(hermes-sessions--revert)))))
+
+(defun hermes-sessions-next-page ()
+  "Append the next stored-session window, deduplicating pinned backfill."
+  (interactive)
+  (unless hermes-sessions--catalogue-profile
+    (user-error "Open Stored catalogue first"))
+  (when (or (not (numberp hermes-sessions--catalogue-total))
+            (< hermes-sessions--catalogue-next-offset hermes-sessions--catalogue-total))
+    (setq hermes-sessions--catalogue-offset hermes-sessions--catalogue-next-offset)
+    (hermes-sessions--revert)))
+
+(defun hermes-sessions--catalogue (client)
+  "Read one requested stored catalogue window from CLIENT."
+  (let ((offset hermes-sessions--catalogue-offset)
+        (previous (and (> hermes-sessions--catalogue-offset 0)
+                       (hash-table-values hermes-sessions--session-map))))
+    (hermes--promise-then
+     (hermes-sessions--rest
+      client "GET" "/api/sessions" nil
+      `((profile . ,hermes-sessions--catalogue-profile)
+        (limit . 100) (offset . ,hermes-sessions--catalogue-offset)
+        (archived . ,hermes-sessions--archived-filter)))
+     (lambda (result)
+       ;; New authoritative rows replace older copies; limit counts windows,
+       ;; not the potentially larger response containing pinned extras.
+       `((sessions . ,(hash-table-values
+                       (hermes-sessions--sessions-by-id
+                        (append previous (hermes-transport--get result 'sessions)))))
+         (offset . ,offset)
+         (total . ,(hermes-transport--get result 'total)))))))
+
 (defun hermes-sessions--fetch (client)
   "Return current session browser result through CLIENT."
   (cond
+   (hermes-sessions--catalogue-profile (hermes-sessions--catalogue client))
    (hermes-sessions--search-query
     (hermes-sessions--rest
      client "GET" "/api/sessions/search" nil
@@ -171,15 +232,19 @@ BODY and QUERY extend the request."
 
 (defun hermes-sessions--scope-description ()
   "Return the active query scope from this session browser."
-  (if hermes-sessions--search-query
+  (cond
+   (hermes-sessions--catalogue-profile
+    (format "Stored sessions · %s · Through window %d · g refresh, > next"
+            hermes-sessions--catalogue-profile hermes-sessions--catalogue-offset))
+   (hermes-sessions--search-query
       (format "Hermes Sessions · Search: %s · Profile: %s"
               (truncate-string-to-width hermes-sessions--search-query 24 nil nil t)
-              (or hermes-sessions--search-profile "dashboard default"))
-    (format "Hermes Sessions · Archived: %s · Profiles: %s"
+              (or hermes-sessions--search-profile "dashboard default")))
+   (t (format "Hermes Sessions · Archived: %s · Profiles: %s"
             hermes-sessions--archived-filter
             (if (or hermes-sessions--all-profiles
                     (not (equal hermes-sessions--archived-filter "exclude")))
-                "all" "dashboard default"))))
+                "all" "dashboard default")))))
 
 ;;;###autoload (autoload 'hermes-list-sessions "hermes-sessions" nil t)
 (hermes-define-list-browser sessions
@@ -191,7 +256,7 @@ BODY and QUERY extend the request."
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   :columns [("Session" 22 t) ("Title" 36 t) ("Msgs" 6 t) ("Source" 12 t)
-            ("Profile" 14 t)]
+            ("Profile" 14 t) ("Pin" 9 t)]
   :description #'hermes-sessions--scope-description
   :help (:group "Open"
          hermes-sessions-open "Resume chat"
@@ -202,6 +267,11 @@ client just for the listing."
          hermes-sessions-delete "Delete"
          hermes-sessions-archive "Archive"
          hermes-sessions-unarchive "Unarchive"
+         :group "Stored"
+         hermes-sessions-list-stored "Stored catalogue"
+         hermes-sessions-next-page "Next window"
+         :group "Keep"
+         hermes-sessions-toggle-pin #'hermes-sessions--pin-label
          :row
          :group "Scope"
          hermes-sessions-toggle-archived "Toggle archived"
@@ -215,6 +285,11 @@ client just for the listing."
                          '(hermes-sessions--session-map)))
   :keys ("RET" #'hermes-sessions-open
          "v" #'hermes-sessions-view
+         "k" #'hermes-sessions-toggle-pin
+         "l" #'hermes-sessions-list-stored
+         ">" #'hermes-sessions-next-page
+         "f" #'hermes-sessions-view
+         "b" #'quit-window
          "r" #'hermes-sessions-rename
          "d" #'hermes-sessions-delete
          "a" #'hermes-sessions-archive
@@ -229,6 +304,11 @@ client just for the listing."
   :parent special-mode-map
   "RET" #'hermes-sessions-open
   "g" #'hermes-sessions-view
+  "k" #'hermes-sessions-toggle-pin
+  "n" #'forward-line
+  "p" #'previous-line
+  "f" #'forward-char
+  "b" #'backward-char
   "r" #'hermes-sessions-rename
   "d" #'hermes-sessions-delete
   "a" #'hermes-sessions-archive
@@ -246,6 +326,8 @@ client just for the listing."
   hermes-sessions-delete "Delete"
   hermes-sessions-archive "Archive"
   hermes-sessions-unarchive "Unarchive"
+  :group "Keep"
+  hermes-sessions-toggle-pin #'hermes-sessions--pin-label
   :group "View"
   hermes-sessions-view "Refresh"
   describe-mode "Describe mode"
@@ -287,7 +369,8 @@ client just for the listing."
                                   hermes-sessions--search-query)
                      (read-string "Profile (blank for dashboard default): "
                                   hermes-sessions--search-profile)))
-  (setq hermes-sessions--search-query
+  (setq hermes-sessions--catalogue-profile nil
+        hermes-sessions--search-query
         (hermes-transport--non-blank-string query)
         hermes-sessions--search-profile
         (hermes-transport--non-blank-string profile))
@@ -296,17 +379,150 @@ client just for the listing."
 (defun hermes-sessions-list-all-profiles ()
   "List sessions aggregated across every Hermes profile."
   (interactive)
-  (setq hermes-sessions--all-profiles t
+  (setq hermes-sessions--catalogue-profile nil
+        hermes-sessions--all-profiles t
         hermes-sessions--search-query nil)
   (hermes-sessions--revert))
 
 (defun hermes-sessions-toggle-archived ()
   "Toggle the browser between active and archived sessions."
   (interactive)
-  (setq hermes-sessions--archived-filter
+  (setq hermes-sessions--catalogue-offset 0
+        hermes-sessions--archived-filter
         (if (equal hermes-sessions--archived-filter "only") "exclude" "only")
         hermes-sessions--search-query nil)
   (hermes-sessions--revert))
+
+
+;;; Server-owned pin state
+
+(defun hermes-sessions--pin-state (session)
+  "Return SESSION's known pin state, or `unknown' when not exposed."
+  (let ((value (hermes-transport--get session 'pinned)))
+    (cond ((memq value '(t 1)) 'pinned)
+          ((memq value '(:false 0)) 'unpinned)
+          ;; REST normalization can preserve an explicit nil JSON false.
+          ((and (null value)
+                (cl-some (lambda (key)
+                           (not (eq (hermes-transport--member-value session key)
+                                    hermes-transport--missing)))
+                         (hermes-transport--key-candidates 'pinned))) 'unpinned)
+          (t 'unknown))))
+
+(defun hermes-sessions--pin-label ()
+  "Return a pin action label with the selected session's current value."
+  (format "Pin: %s" (condition-case nil
+                        (hermes-sessions--pin-state
+                         (hermes-sessions--selected-session))
+                      (user-error 'unknown))))
+
+
+(defun hermes-sessions--with-field (session key value)
+  "Return a copy of SESSION with KEY shadowed by VALUE."
+  (cond ((hash-table-p session)
+         (let ((copy (copy-hash-table session))) (puthash key value copy) copy))
+        ((hermes-transport--plist-p session)
+         (append (list (intern (concat ":" (symbol-name key))) value) session))
+        (t (cons (cons key value) session))))
+
+(defun hermes-sessions--pin-project (session state &optional profile)
+  "Render authoritative pin STATE for SESSION in this owner only.
+Retain readback PROFILE for later pins without changing the row identity."
+  (let* ((identity (hermes-sessions--identity session))
+         (updated (hermes-sessions--with-field session 'pinned state))
+         (updated (if profile (hermes-sessions--with-field updated 'pin_profile profile)
+                    updated)))
+    (if (derived-mode-p 'hermes-session-detail-mode)
+        (hermes-browser--preserve-reading-position
+         (lambda ()
+           (hermes-sessions--render-detail-contents
+            updated hermes-sessions--detail-messages hermes-sessions--detail-count)))
+      (puthash identity updated hermes-sessions--session-map)
+      (when-let* ((entry (assoc identity tabulated-list-entries)))
+        (aset (cadr entry) 5
+              (hermes-browser--status-cell
+               (symbol-name (hermes-sessions--pin-state updated))))
+        (hermes-browser--preserve-reading-position
+         (lambda () (tabulated-list-print t)))))))
+
+(defun hermes-sessions--pin-request (write value)
+  "Read the selected pin, or WRITE explicit VALUE and reconcile its record.
+Never retry a mutation after an uncertain outcome."
+  (when hermes-browser--owned-cleanup
+    (user-error "Pin request pending; refresh to reconcile before another change"))
+  (let* ((session (hermes-sessions--selected-session))
+         (identity (copy-tree (hermes-sessions--identity session)))
+         (profile (or (hermes-sessions--profile session)
+                      (hermes-sessions--non-empty-field session 'pin_profile)))
+         (path (concat "/api/sessions/"
+                       (url-hexify-string (hermes-sessions--id session))))
+         (buffer (current-buffer)))
+    (hermes-browser--next-request-generation)
+    (let* ((owner (hermes-browser--dispatch-guard nil))
+           (current (lambda ()
+                      (and (funcall owner)
+                           (with-current-buffer buffer
+                             (equal identity
+                                    (condition-case nil
+                                        (hermes-sessions--identity
+                                         (hermes-sessions--selected-session))
+                                      (user-error nil))))))))
+      (hermes-sessions--pin-project session 'unknown)
+      (setq hermes-browser--status (if write "Saving" "Loading"))
+      (hermes-browser--run-owned
+       (lambda (client guard)
+         (let ((readback (lambda (_receipt)
+                           (if (funcall guard)
+                               (hermes-dashboard-transport-api-request-async
+                                "GET" path :query (and profile `((profile . ,profile)))
+                                :client client :current-p guard)
+                             (hermes--promise-rejected "Retired pin readback")))))
+           (if write
+               (hermes--promise-then
+                (hermes--promise-catch
+                 (hermes-sessions--rest
+                  client "PATCH" path
+                  (append (and profile `((profile . ,profile)))
+                          `((pinned . ,value))))
+                 ;; The write may have happened: read once, never resend it.
+                 (lambda (_reason) nil))
+                readback)
+             (funcall readback nil))))
+       current
+       (lambda (result)
+         (unless (and (equal (hermes-sessions--id result) (cdr identity))
+                      (or (null profile)
+                          (not (hermes-sessions--profile result))
+                          (equal profile (hermes-sessions--profile result))))
+           (error "Pin readback returned another session"))
+         (let ((state (hermes-sessions--pin-state result)))
+           (hermes-sessions--pin-project
+            session (pcase state ('pinned t) ('unpinned :false) (_ 'unknown))
+            (hermes-sessions--profile result))
+           (setq hermes-browser--status
+                 (if (eq state 'unknown) "Pin unavailable on this backend"
+                   (format "Pin: %s (read back)" state)))))
+       (lambda (reason)
+         (hermes-sessions--pin-project session 'unknown)
+         (hermes-browser--read-error reason))))))
+
+(defun hermes-sessions-pin ()
+  "Pin the selected stored session on its owning backend profile."
+  (interactive)
+  (hermes-sessions--pin-request t t))
+
+(defun hermes-sessions-unpin ()
+  "Unpin the selected stored session on its owning backend profile."
+  (interactive)
+  (hermes-sessions--pin-request t :false))
+
+(defun hermes-sessions-toggle-pin ()
+  "Toggle a known pin, or fetch its unknown state without changing it."
+  (interactive)
+  (pcase (hermes-sessions--pin-state (hermes-sessions--selected-session))
+    ('pinned (hermes-sessions-unpin))
+    ('unpinned (hermes-sessions-pin))
+    (_ (hermes-sessions--pin-request nil nil))))
 
 (defun hermes-sessions--set-archived (archived)
   "Set the selected session's ARCHIVED state through dashboard REST."
@@ -499,6 +715,7 @@ COUNT, when non-nil, is the total history count reported by the gateway."
           (source (hermes-transport--display-field session 'source)))
       (insert (format "Session: %s\n" (if (string-empty-p title) id title)))
       (insert (format "ID: %s\n" id))
+      (insert (format "Pin: %s\n" (hermes-sessions--pin-state session)))
       (unless (string-empty-p source)
         (insert (format "Source: %s\n" source)))
       (insert (format "Messages: %s\n\n" (or count (length messages)))))
