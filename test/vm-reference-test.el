@@ -733,6 +733,28 @@ be looked up, which is what the maintainer noticed (emacs-vm/vm#776)."
         (push name missing)))
     (should-not missing)))
 
+;;; The generated files do not depend on the machine that generated them
+
+(ert-deftest vm-reference-test-the-generated-texinfo-ignores-the-locale ()
+  "REGRESSION: the quoting style of the build machine changes nothing.
+
+`text-quoting-style' defaults to asking whether curved quotes can be
+displayed, so the answer depends on the locale of whoever runs the build.
+`substitute-command-keys' then returns grave quotes, which
+`vm-reference-mark-up-quotes' does not match, and 2480 lines of each
+generated file come out with `symbol' where @code{symbol} belongs.  Both
+files are committed, so a reader in a C locale had a dirty working tree
+after every build and nothing they could do about it (emacs-vm/vm#830).
+
+Includes nil, which is the value that asks the terminal and so the one that
+was doing the damage."
+  (dolist (style '(curve grave nil))
+    (let ((text-quoting-style style))
+      (should (equal "See @code{vm-quit} now."
+                     (vm-reference-prose "See `vm-quit' now.")))
+      (should (equal "@code{vm-quit} and @code{vm-save-folder}."
+                     (vm-reference-prose "`vm-quit' and `vm-save-folder'."))))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here

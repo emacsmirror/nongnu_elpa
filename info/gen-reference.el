@@ -104,16 +104,16 @@ build produced."
   "Load every VM module from source, so that every symbol is defined.
 
 From source because a compiled function does not carry the argument names
-its definition was written with: `vm-reorder-message-headers\=' comes back
+its definition was written with: `vm-reorder-message-headers' comes back
 as \"arg1 &rest rest\" from the .elc and \"message &rest --cl-rest--\"
 from the .el.  Which of those the manual says must not depend on whether
-anyone ran `make\=' first (issue #699).
+anyone ran `make' first (issue #699).
 
-`require\=' is shadowed rather than `load-suffixes\=' narrowed: narrowing it
+`require' is shadowed rather than `load-suffixes' narrowed: narrowing it
 sends Emacs looking for a cl-macs.el that an installed Emacs does not ship.
 Loading each file twice does not work either -- a second load replaces the
-file\='s `load-history\=' entry, and a definition guarded by `fboundp\=' is not
-made again, so `symbol-file\=' forgets it.  That is what dropped the
+file\\='s `load-history' entry, and a definition guarded by `fboundp' is not
+made again, so `symbol-file' forgets it.  That is what dropped the
 vm-toolbar-*-command aliases out of the manual while this was being
 written."
   (let* ((dir (or (locate-library "vm-vars")
@@ -145,11 +145,20 @@ written."
   "Expand `\\\\[command]' and `\\\\{keymap}' in STRING against VM's own keymap.
 `substitute-command-keys' reads the keymaps of the current buffer, and in a
 batch Emacs that is not a VM buffer, so `\\\\[vm-scroll-forward]' would come
-out as \"M-x vm-scroll-forward\" instead of the key it is bound to."
+out as \"M-x vm-scroll-forward\" instead of the key it is bound to.
+
+`text-quoting-style' is bound because its default asks the terminal whether
+it can show curved quotes, so the answer depends on the locale of whoever
+runs the build.  In a C locale `substitute-command-keys' returns grave
+quotes, `vm-reference-mark-up-quotes' matches none of them, and 2480 lines
+of each generated file come out differently: every `symbol' left as it was
+rather than turned into @code.  Both files are committed, so that is a dirty
+working tree on every build for that reader (emacs-vm/vm#830)."
   (with-temp-buffer
     (when (boundp 'vm-mode-map)
       (use-local-map vm-mode-map))
-    (substitute-command-keys string)))
+    (let ((text-quoting-style 'curve))
+      (substitute-command-keys string))))
 
 (defun vm-reference-command-documentation (symbol)
   "The docstring SYMBOL was written with, without what Emacs adds to it.
@@ -319,14 +328,14 @@ defining file would put all of them in one section."
 (defun vm-reference-callback-p (symbol)
   "Whether VM invokes SYMBOL for itself rather than a reader typing it.
 A toolbar button, a menu entry, a mouse binding, a keymap entry, a mode of
-one of VM\='s own buffers, or a function written into a hook or an option.
-Such a function is `interactive\=' because something has to be able to invoke
+one of VM\\='s own buffers, or a function written into a hook or an option.
+Such a function is `interactive' because something has to be able to invoke
 it, and the appendix lists it under its own heading rather than among the
 commands, so that a reader looking for something to type is not offered a
 dozen toolbar handlers (emacs-vm/vm#715).  Nothing stops a reader calling
 one.
 
-The mark is `vm-called-by-vm\=', put beside the definition in lisp/ rather
+The mark is `vm-called-by-vm', put beside the definition in lisp/ rather
 than kept in a list here: a list away from the code is a list that goes out
 of date, and the definition is where whoever adds a toolbar handler is
 looking."
@@ -338,18 +347,18 @@ looking."
         ((custom-variable-p symbol) 'option)))
 
 (defun vm-reference-ours-p (symbol)
-  "Whether SYMBOL is VM\='s to document.
-Almost every one of VM\='s names starts with vm, and asking only that left the
+  "Whether SYMBOL is VM\\='s to document.
+Almost every one of VM\\='s names starts with vm, and asking only that left the
 two BBDB commands in vm-avirtual.el out of the appendix altogether:
-`bbdb/vm-set-virtual-folder-alist\=' and its by-mail-alias twin
+`bbdb/vm-set-virtual-folder-alist' and its by-mail-alias twin
 (emacs-vm/vm#715).  So a name that merely mentions vm is asked the real
 question, which is where the definition is.
 
-The name is asked first because `symbol-file\=' is not free and the answer is
+The name is asked first because `symbol-file' is not free and the answer is
 no for every command in Emacs, and because it is asked at all: vm-vars.el
-carries `(defvar pop-up-frames nil)\=' so the compiler knows the name, which
-puts that file last in the variable\='s `load-history\=' entry and would file an
-Emacs option in VM\='s appendix."
+carries `(defvar pop-up-frames nil)\\=' so the compiler knows the name, which
+puts that file last in the variable\\='s `load-history' entry and would file an
+Emacs option in VM\\='s appendix."
   (let ((name (symbol-name symbol)))
     (or (string-prefix-p "vm" name)
         (and (string-match-p "vm" name)
@@ -359,7 +368,7 @@ Emacs option in VM\='s appendix."
 (defun vm-reference-classify (symbol option-areas by-title)
   "File SYMBOL under its section title in BY-TITLE, if it belongs there.
 What kind of thing SYMBOL is comes first because it is the cheap question:
-`vm-reference-ours-p\=' reads `symbol-file\=' for a name that is not vm-
+`vm-reference-ours-p' reads `symbol-file' for a name that is not vm-
 prefixed, and asking that of every atom in Emacs made the sweep 0.07s into
 3.1s.  Of the tens of thousands of atoms only a few thousand are commands or
 user options at all."
@@ -376,7 +385,7 @@ user options at all."
         #'string<))
 
 (defvar vm-reference-modules-cache nil
-  "The module file names, read once: `vm-reference-ours-p\=' asks per symbol.")
+  "The module file names, read once: `vm-reference-ours-p' asks per symbol.")
 
 (defun vm-reference-modules ()
   "The VM modules the build lists, as file names."
@@ -384,7 +393,7 @@ user options at all."
       (setq vm-reference-modules-cache
             (vm-reference-module-files
              (file-name-directory (or (locate-library "vm-vars")
-                                      (error "VM is not on `load-path\='")))))))
+                                      (error "VM is not on `load-path'")))))))
 
 (defun vm-reference-collect ()
   "Return an alist of (TITLE COMMANDS OPTIONS CALLBACKS), sorted by title."
@@ -409,15 +418,15 @@ user options at all."
 
 (defun vm-reference-argument-name (argument)
   "ARGUMENT as the manual should print it.
-`cl-defun\=' expands its `&rest\=' argument to the internal name
-`--cl-rest--\=', which says nothing to a reader of the manual."
+`cl-defun' expands its `&rest\\=' argument to the internal name
+`--cl-rest--', which says nothing to a reader of the manual."
   (let ((name (format "%s" argument)))
     (if (string-match "\\`--cl-\\(.+\\)--\\'" name)
         (match-string 1 name)
       name)))
 
 (defvar vm-reference-autoloaded nil
-  "Every command `lisp/vm-autoloads.el\=' autoloads, or nil before it is read.")
+  "Every command `lisp/vm-autoloads.el\\=' autoloads, or nil before it is read.")
 
 (defun vm-reference-autoloaded-p (symbol)
   "Whether SYMBOL is autoloaded, according to the generated loaddefs.
