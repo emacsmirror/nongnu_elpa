@@ -1399,8 +1399,8 @@ field in the summary.				 	USR, 2012-10-13"
   ;; Some slop is allowed e.g. dashes between the monthday, month and year
   ;; because such malformed headers have been observed.
   (concat "\\(\\([a-z][a-z][a-z]\\),\\)?[ \t\n]*"
-	  "\\([0-9][0-9]?\\)[ \t\n---]*"
-	  "\\([a-z][a-z][a-z]\\)[ \t\n---]*"
+	  "\\([0-9][0-9]?\\)[ \t\n-]*"
+	  "\\([a-z][a-z][a-z]\\)[ \t\n-]*"
 	  "\\([0-9]*[0-9][0-9]\\)[ \t\n]*"
 	  "\\([0-9:]+\\)[ \t\n]*"
 	  "\\([a-z][a-z]?[a-z]?\\|\\(-\\|\\+\\)[01][0-9][0-9][0-9]\\)"))
