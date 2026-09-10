@@ -726,6 +726,27 @@ from the user, and one typo should not abandon the rest of it."
       (should (vm-new-flag m))
       (should (null (vm-deleted-flag m))))))
 
+(ert-deftest vm-undo-test-every-offered-attribute-name-is-accepted ()
+  "REGRESSION: completion offers no name the setter rejects.
+
+`vm-supported-attribute-names' is the completion table of
+`vm-set-message-attributes', so every name in it is one a reader can arrive
+at by typing @key{TAB}.  Two of them, \"expanded\" and \"collapsed\", had no arm
+in `vm-set-message-attribute' from the day they were added in 2010: they are
+thread folding states of a thread root rather than attributes, and belong to
+the virtual folder selectors, where they work.  Completing to either warned
+\"Invalid attribute\" and did nothing (emacs-vm/vm#827)."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list))
+          (rejected nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (_level _time format &rest args)
+                   (push (apply #'format format args) rejected))))
+        (dolist (name vm-supported-attribute-names)
+          (vm-set-message-attribute m name)))
+      (vm-update-summary-and-mode-line)
+      (should-not rejected))))
+
 ;;; What a boundary is and when there is one, in place of a test that the
 ;;; functions were bound.
 

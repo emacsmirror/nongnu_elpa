@@ -697,10 +697,7 @@ own heading, not among the ones to type."
     "read"
     ;; alias names, for BABYL and for IMAP, documented as aliases where the
     ;; selectors are: recent is new, unseen is unread, answered is replied
-    "recent" "unseen" "answered"
-    ;; offered by completion and rejected by `vm-set-message-attribute',
-    ;; which warns "Invalid attribute" for both (emacs-vm/vm#827)
-    "expanded" "collapsed")
+    "recent" "unseen" "answered")
   "Names in `vm-supported-attribute-names' that the table need not carry.")
 
 (defun vm-reference-test--attributes-in-the-manual ()

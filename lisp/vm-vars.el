@@ -6862,8 +6862,12 @@ individual help on each selector by checking the function
     "unfiled"
     "unwritten"
     "unedited"
-    "expanded"
-    "collapsed"
+    ;; Not "expanded" or "collapsed": they are thread folding states of a
+    ;; thread root, over `vm-folded-flag', and work as virtual folder
+    ;; selectors and summary faces.  Neither is a per-message attribute, and
+    ;; `vm-set-message-attribute' never had an arm for either, so completing
+    ;; to one warned "Invalid attribute" (issue #827).
+
     ;; for babyl cogniscenti
     "recent"
     "unseen"
