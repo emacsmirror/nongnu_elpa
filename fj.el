@@ -1829,11 +1829,10 @@ The upload is asynchronous."
       (url-retrieve url #'fj--post-file-upload-cb
                     `(,filename)))))
 
-(defun fj--post-file-upload-cb (status filename)
+(defun fj--post-file-upload-cb (_status filename)
   "Callback for `fj--post-file-upload'.
 STATUS is the HTTP response, FILENAME the uploaded file."
-  (let ((json (fj-resp-json status)))
-    (message "Upload result: %s" json)))
+  (message "File %s uploaded!" filename))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
   ""
