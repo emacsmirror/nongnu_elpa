@@ -102,17 +102,23 @@
 ;; the account that actually receives :to, which may mean adding a server entry
 ;; for your own IMAP account.
 ;;
-;; :wait is how long delivery may take.  Sixty seconds is enough for a server
-;; that receives the mail directly; a mailbox that is a mirror -- mbsync,
-;; offlineimap -- needs however long the mirror takes, or the mail is there and
-;; the test has stopped looking.
+;; :wait is how long delivery may take, and it wants to be generous.  Measured
+;; over 68 sends to one real address with an mbsync mirror: 60 to 110 seconds
+;; usually, a tail reaching 150, and three that had not arrived at 180.  A
+;; deadline near the middle of that makes the send pass fail for the mail
+;; system rather than for VM, which teaches whoever reads the summary to
+;; ignore it.  Ten minutes costs nothing when the mail is on time, since the
+;; test stops as soon as it arrives.
+;;
+;; A mailbox that is a mirror -- mbsync, offlineimap -- needs however long the
+;; mirror takes on top of delivery itself.
 
 ;; (setq vm-send-test-config
 ;;       '(:from           "you@example.com"
 ;;         :to             "you@example.com"
 ;;         :verify-server  "your-own-account"
 ;;         :verify-mailbox "INBOX"
-;;         :wait           60))
+;;         :wait           600))
 
 ;; (setq send-mail-function 'sendmail-send-it
 ;;       sendmail-program "/opt/local/bin/msmtp"
