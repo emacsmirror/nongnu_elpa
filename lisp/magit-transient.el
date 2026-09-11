@@ -39,6 +39,7 @@
   ((scope       :initarg :scope)
    (global      :initarg :global      :initform nil)
    (default     :initarg :default     :initform nil)
+   (location                          :initform nil)
    (accessible-format                 :initform "%i%k %d is %v")))
 
 (defclass magit--git-variable:choices (magit--git-variable)
@@ -62,24 +63,29 @@
                (funcall (oref obj scope) obj)))))
 
 (cl-defmethod transient-init-value ((obj magit--git-variable))
-  (let ((variable (format (oref obj variable)
-                          (oref obj scope)))
-        (arg (if (oref obj global) "--global" "--local")))
-    (oset obj variable variable)
-    (oset obj value
-          (cond ((oref obj multi-value)
-                 (magit-get-all arg variable))
-                ((magit-get arg variable))))))
+  (oset obj variable (format (oref obj variable) (oref obj scope)))
+  (cond-let
+    ((oref obj global)
+     (oset obj location 'global)
+     (oset obj value (magit--git-variable-get obj "--global")))
+    ([_(magit-get-boolean "extensions.worktreeConfig")]
+     [val (magit--git-variable-get obj "--worktree")]
+     (oset obj location 'worktree)
+     (oset obj value val))
+    (t
+     (oset obj location 'local)
+     (oset obj value (magit--git-variable-get obj "--local")))))
 
-(cl-defmethod transient-init-value ((obj magit--git-variable:boolean))
-  (let ((variable (format (oref obj variable)
-                          (oref obj scope)))
-        (arg (if (oref obj global) "--global" "--local")))
-    (oset obj variable variable)
-    (oset obj value
-          (with-temp-buffer
-            (and (zerop (magit-process-git t "config" "--bool" arg variable))
-                 (buffer-substring (point-min) (1- (point-max))))))))
+(defun magit--git-variable-get (obj arg)
+  (let ((var (oref obj variable)))
+    (cond
+      ((cl-typep obj 'magit--git-variable:boolean)
+       (with-temp-buffer
+         (and (zerop (magit-process-git t "config" "--bool" arg var))
+              (buffer-substring (point-min) (1- (point-max))))))
+      ((oref obj multi-value)
+       (magit-get-all arg var))
+      ((magit-get arg var)))))
 
 ;;;; Read
 
@@ -91,6 +97,19 @@
                    (expand-file-name url)
                  url))
              (cl-call-next-method obj)))))
+
+(cl-defmethod transient-infix-read :around ((obj magit--git-variable))
+  (pcase (list (and (= (prefix-numeric-value current-prefix-arg) 16)
+                    (magit-get-boolean "extensions.worktreeConfig"))
+               (oref obj location))
+    ('(t local)
+     (oset obj location 'worktree)
+     (oref obj value))
+    ('(t worktree)
+     (oset obj location 'local)
+     (magit-set nil "--worktree" (oref obj variable))
+     (magit--git-variable-get obj "--local"))
+    (_ (cl-call-next-method obj))))
 
 (cl-defmethod transient-infix-read ((obj magit--git-variable:choices))
   (let ((choices (oref obj choices)))
@@ -134,7 +153,7 @@
 
 (cl-defmethod transient-infix-set ((obj magit--git-variable) value)
   (let ((variable (oref obj variable))
-        (arg (if (oref obj global) "--global" "--local")))
+        (arg (format "--%s" (oref obj location))))
     (oset obj value value)
     (if (oref obj multi-value)
         (magit-set-all value arg variable)
@@ -158,8 +177,10 @@
 ;;;; Draw
 
 (cl-defmethod transient-format-description ((obj magit--git-variable))
-  (or (oref obj description)
-      (oref obj variable)))
+  (concat (and (eq (oref obj location) 'worktree)
+               "worktree's ")
+          (or (oref obj description)
+              (oref obj variable))))
 
 (cl-defmethod transient-format-value ((obj magit--git-variable))
   (cond-let*
@@ -193,11 +214,13 @@
        (propertize "]" 'face 'transient-inactive-value)))))
 
 (defun magit--git-variable-list-choices (obj)
-  (let* ((variable (oref obj variable))
-         (choices  (oref obj choices))
+  (let* ((choices  (oref obj choices))
          (value    (oref obj value))
-         (global   (and (not (oref obj global))
-                        (magit-git-string "config" "--global" variable)))
+         (location (oref obj location))
+         (local    (and (eq location 'worktree)
+                        (magit--git-variable-get obj "--local")))
+         (global   (and (not (eq location 'global))
+                        (magit--git-variable-get obj "--global")))
          (defaultp (oref obj default))
          (default  (if (functionp defaultp) (funcall defaultp obj) defaultp))
          (fallback (oref obj fallback))
@@ -206,7 +229,14 @@
                               (concat fallback ":" $)))))
     (when (functionp choices)
       (setq choices (funcall choices)))
-    (cons (cond (global
+    (cons (cond (local
+                 (propertize (concat "local:" local)
+                             'face (cond (value
+                                          'transient-inactive-value)
+                                         ((member local choices)
+                                          'transient-value)
+                                         ('font-lock-warning-face))))
+                (global
                  (propertize (concat "global:" global)
                              'face (cond (value
                                           'transient-inactive-value)
