@@ -226,7 +226,7 @@ function for MAJOR-MODE."
           (subed-msecs-to-timestamp (or start 0))
           (subed-msecs-to-timestamp (or stop (+ (or start 0)
                                                 subed-default-subtitle-length)))
-          (replace-regexp-in-string "\n" "\\n" (or text ""))))
+          (replace-regexp-in-string "\n" "\\\\n" (or text ""))))
 
 (cl-defmethod subed--prepend-subtitle (&context (major-mode subed-ass-mode)
                                                 &optional id start stop text comment)
@@ -285,7 +285,8 @@ function for MAJOR-MODE."
 (cl-defmethod subed--auto-insert (&context (major-mode subed-ass-mode))
   "Set up an empty SubStation Alpha file.
 Use the format-specific function for MAJOR-MODE."
-  (insert "[Script Info]
+  (when (string= (string-trim (buffer-string)) "")
+    (insert "[Script Info]
 ScriptType: v4.00+
 PlayResX: 384
 PlayResY: 288
@@ -296,7 +297,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Default,Arial,16,&Hffffff,&Hffffff,&H0,&H0,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,0
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"))
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")))
 
 ;;;###autoload
 (define-derived-mode subed-ass-mode subed-mode "Subed-ASS"
