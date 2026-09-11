@@ -83,7 +83,7 @@ Return a list of ((start . ?), (end . ?) (text . ?))."
                                          ))))
                    (setq last-start (alist-get 'start rec))
                    rec))
-               text-elements))))
+             text-elements))))
 
 (defun subed-word-data--extract-words-from-youtube-vtt (file &optional from-string)
   "Extract the timing from FILE which is a VTT from YouTube.
@@ -95,30 +95,32 @@ If FROM-STRING is non-nil, treat FILE as the data itself."
         (insert file)
       (insert-file-contents file))
     (let ((list (subed-subtitle-list))
+          (filter-for-c (string-match "<c>" (buffer-string)))
           results
           s
           start
           stop
           i)
       (dolist (sub list)
-        (when (string-match "<c>" (elt sub 3))
+        (when (or (not filter-for-c) (string-match "<c>" (elt sub 3)))
           (setq s (elt sub 3))
           (setq i 0)
           (setq start (elt sub 1))
           (while (and (< i (length s))
-                      (string-match "\\(.+?\\)<\\([0-9]+:[0-9]+:[0-9]+\\.[0-9]+\\)>" s i))
+                      (string-match "\\(.*?\\)<\\([0-9]+:[0-9]+:[0-9]+\\.[0-9]+\\)>" s i))
             (setq stop (1- (save-match-data (subed-timestamp-to-msecs (match-string 2 s)))))
-            (push `((text . ,(save-match-data
-                               (string-trim (replace-regexp-in-string "</?c>" "" (match-string 1 s)))))
-                    (start . ,start)
-                    (end . ,stop))
-                  results)
+            (when (> (length (match-string 1 s)) 0)
+              (push `((text . ,(save-match-data
+                                 (string-trim (replace-regexp-in-string "</?c>" "" (match-string 1 s)))))
+                      (start . ,start)
+                      (end . ,stop))
+                    results))
             (setq i (match-end 0)
                   start (1+ stop)))
           (if (and (< i (length s))
                    (not (string= "" (string-trim (substring s i)))))
               (push `((text . ,(string-trim
-                              (save-match-data (replace-regexp-in-string "</?c>" "" (substring s i)))))
+                                (save-match-data (replace-regexp-in-string "</?c>" "" (substring s i)))))
                       (start . ,start)
                       (end . ,(elt sub 2)))
                     results))))
@@ -816,6 +818,31 @@ Discard previous word data."
       (when (>= (subed-word-data-match-ratio) subed-word-data-subtitle-match-threshold)
         (throw 'found (point))))))
 
+;;; Chunk subtitles into groups of words
+
+;;;###autoload
+(defun subed-word-data-chunk-into-words (num-words)
+  "Split subtitles into NUM-WORDS at a time.
+Parse the word data from the current buffer.  The word data should have
+been added with `subed-word-data-add-word-timestamps' so that you can correct spelling
+or placement."
+  (let ((word-data (subed-word-data--extract-words-from-youtube-vtt (buffer-string) t))
+        result)
+    (mapcar
+     (lambda (list)
+       (list
+        0
+        (alist-get 'start (car list))
+        (alist-get 'end (car (last list)))
+        (mapconcat
+         (lambda (o)
+           (alist-get 'text o))
+         list
+         " "
+         )))
+     (seq-partition
+      word-data
+      num-words))))
 
 (provide 'subed-word-data)
 ;;; subed-word-data.el ends here
