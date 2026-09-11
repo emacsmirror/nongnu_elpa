@@ -1960,8 +1960,7 @@ If none, return emptry string."
   (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
-                         grouped " ")
-              "\n")
+                         grouped " "))
     ""))
 
 (defun fj-render-comment-reactions (reactions)
@@ -3066,7 +3065,11 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
                            'fj-comment t
                            'fj-comment-author .user.username
                            'fj-comment-id .id)
-        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
+        (if no-bar ""
+          (concat
+           "\n"
+           (propertize (concat fedi-horiz-bar fedi-horiz-bar)
+                       'fj-item-end t))))
        'fj-comment t
        'fj-comment-author .user.username
        'fj-comment-id .id))))
@@ -3077,8 +3080,7 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
           (apply #'propertize
                  (format "[%s]" str)
                  'invisible t
-                 props)
-          "\n"))
+                 props)))
 
 (defun fj-render-assets-async ()
   "Render assets in current item view asynchonously."
@@ -3089,30 +3091,34 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
                    (text-property-search-forward 'fj-assets))
         (fj-destructure-buf-spec (repo owner)
           (let ((id (fedi--property 'fj-comment-id))
-                ;; create marker for this match:
-                (marker (copy-marker
-                         (prop-match-beginning assets-match))))
+                ;; create markers for this match:
+                (marker-start (copy-marker
+                               (prop-match-beginning assets-match)
+                               t)) ;; move on insertion
+                (marker-end (copy-marker
+                             (prop-match-end assets-match)
+                             t))) ;; move on insertion
             (if (not id)
                 ;; we are at an item (issue/PR), not a comment:
                 ;; it has assets data already
-                (fj-render-item-assets marker)
+                (fj-render-item-assets marker-start marker-end)
               ;; comment, we must fetch it:
               (fj-get-comment-async repo owner id
                                   #'fj-render-comment-assets-cb
-                                  marker))
-            ;; avoid matching just entered data:
-            (goto-char (prop-match-end assets-match))))))))
+                                  marker-start marker-end))
+            ;; avoid matching just entered data. move forward to horiz bar at and of item:
+            (goto-char (next-single-property-change (point) 'fj-item-end))))))))
 
-(defun fj-render-item-assets (marker)
+(defun fj-render-item-assets (marker-start marker-end)
   "Render assets for item, an issue or PR.
-MARKER is where we insert the assets."
+MARKER-START and MARKER-END is the range where we insert the assets."
   (let* ((item (fedi--property 'fj-item-data)))
-    (fj-render-comment-assets-cb item marker)))
+    (fj-render-comment-assets-cb item marker-start marker-end)))
 
-(defun fj-render-comment-assets-cb (data marker)
+(defun fj-render-comment-assets-cb (data marker-start marker-end)
   "Render assets in DATA.
-MARKER is where we insert the assets."
-  (with-current-buffer (marker-buffer marker)
+MARKER-START and MARKER-END is the range where we insert the assets."
+  (with-current-buffer (marker-buffer marker-start)
     ;; we are in the while loop in `fj-render-assets-async', so if we
     ;; save-excursion here, it returns point to before the insertion of
     ;; assets, meaning the text-prop search matches again, then writes
@@ -3124,15 +3130,18 @@ MARKER is where we insert the assets."
             (assets (alist-get 'assets data)))
         ;; goto marker for this match:
         (goto-char
-         (marker-position marker))
+         (marker-position marker-start))
         (let ((props (text-properties-at (point))))
-          ;; remove placeholder + newline:
-          (delete-region (pos-bol) (pos-bol 3))
-          (when assets
-            (insert
-             (fj-format-assets-urls assets props))))
-        ;; delete marker for this match:
-        (set-marker marker nil)))))
+          ;; remove placeholder:
+          (delete-region (marker-position marker-start)
+                         (marker-position marker-end))
+          (if assets
+              (insert
+               (fj-format-assets-urls assets props))
+            (delete-line)))
+        ;; delete markers for this match:
+        (set-marker marker-start nil)
+        (set-marker marker-end nil)))))
 
 (defun fj-render-reactions-async ()
   "Render reactions in current item view asynchonously."
@@ -3144,50 +3153,52 @@ MARKER is where we insert the assets."
         (fj-destructure-buf-spec (repo owner)
           (let ((comment-id (fedi--property 'fj-comment-id))
                 (issue (fedi--property 'fj-item-number))
-                ;; create marker for this match:
-                (marker (copy-marker
-                         (prop-match-beginning reac-match)
-                         ;; insertion marker type: reactions come after
-                         ;; assets, so if we set reacs marker then insert
-                         ;; assets, we need marker to be moved to after
-                         ;; the inserted assets:
-                         t)))
+                ;; create markers for this match:
+                (marker-start (copy-marker
+                               (prop-match-beginning reac-match)
+                               t)) ;; move on insertion
+                (marker-end (copy-marker
+                             (prop-match-end reac-match)
+                             t)))  ;; move on insertion
             (if issue
                 ;; we are at an item (issue/PR):
                 (fj-get-issue-reactions-async
                  repo owner issue
-                 #'fj-render-issue-reactions-cb marker
+                 #'fj-render-issue-reactions-cb marker-start marker-end
                  #'fj-render-issue-reactions)
               ;; comment:
               (fj-get-comment-reactions-async
                repo owner comment-id
-               #'fj-render-comment-reactions-cb marker
-               #'fj-render-comment-reactions :newline))))))))
+               #'fj-render-comment-reactions-cb  marker-start marker-end
+               #'fj-render-comment-reactions))))))))
 
-(defun fj-render-issue-reactions-cb (data marker render-fun)
+(defun fj-render-issue-reactions-cb (data marker-start marker-end render-fun)
   "Render reactions in DATA.
-MARKER is where we insert.
+MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
-  (fj-render-comment-reactions-cb data marker render-fun))
+  (fj-render-comment-reactions-cb data marker-start marker-end render-fun))
 
-(defun fj-render-comment-reactions-cb (data marker render-fun &optional newline)
+(defun fj-render-comment-reactions-cb (data marker-start marker-end
+                                          render-fun)
   "Render reactions in DATA.
-MARKER is where we insert.
+MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
-  (with-current-buffer (marker-buffer marker)
+  (with-current-buffer (marker-buffer marker-start)
     (let ((inhibit-read-only t))
       (save-excursion
         ;; goto marker for this match:
         (goto-char
-         (marker-position marker))
-        ;; remove placeholder + newline:
-        (delete-region (pos-bol) (pos-bol 3))
-        (when data
-          (insert
-           (concat (funcall render-fun data)
-                   (when newline "\n")))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
+         (marker-position marker-start))
+        ;; remove placeholder:
+        (delete-region (marker-position marker-start)
+                       (marker-position marker-end))
+        (if data
+            (insert
+             (concat (funcall render-fun data)))
+          (delete-line)))
+      ;; delete markers for this match:
+      (set-marker marker-start nil)
+      (set-marker marker-end nil))))
 
 (defun fj-format-comment-header (username author owner edited ts)
   "Format a comment header line.
@@ -3314,12 +3325,12 @@ RELOAD mean we reloaded."
            "\n\n"
            (propertize (fj-render-body .body)
                        'fj-item-body t)
-           ;; attachments:
-           (when .assets
-             (fj--placeholder-str "assets" 'fj-assets t))
+           ;; attachments and reactions:
+           (fj--placeholder-str "assets" 'fj-assets t)
            (fj--placeholder-str "reacs" 'fj-reactions t)
            "\n"
-           fedi-horiz-bar fedi-horiz-bar
+           (propertize (concat fedi-horiz-bar fedi-horiz-bar)
+                       'fj-item-end t)
            "\n\n")
           'fj-item-number number
           'fj-repo repo
@@ -3372,8 +3383,7 @@ Adds PROPS to the link's properties."
                  (fj-plist-delete props 'fontified)
                  'invisible))))
      assets "\n")
-    'fj-item-body t)
-   "\n"))
+    'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
