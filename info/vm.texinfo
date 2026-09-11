@@ -1024,27 +1024,41 @@ appropriately.  (However, such inference is not fully automatic.  See
 below.)
 
 @vindex vm-mboxcl2-strict
-Every message in an mboxcl2 folder must carry a @code{Content-Length}:
-that header is how the end of a message is found, so a message written
-without one cannot be read back.  VM writes one on every message it puts
-in such a folder, and refuses to read a message that has none, naming it.
-Another mailer that does not may leave a folder VM will not open.  To
-repair one, give @code{vm-change-folder-type} a prefix argument: it asks
-for a file and converts it on disk, without visiting it, which is the only
-way in when the folder cannot be read.  Converting a folder to the type it
-already claims is the repair: every length is recomputed, and the
-folder as it was is kept in a backup file, named as Emacs names one when
-saving a buffer.  Changing a visited folder's type keeps a backup too.  Two
-prefix arguments write the repaired folder to a file you name and leave the
-broken one alone, which is the way to compare the two before parting with
-either.
+Every message in an mboxcl2 folder carries a @code{Content-Length} header,
+which is how the end of a message is found.
 
-A length that is wrong rather than missing needs the same repair and gives
-no sign of needing it: the folder opens, because VM falls back on searching
-for the next separator, while anything that believes the header, which is
-what the format is for, takes the wrong bytes.  The folder's own type is
-offered by @code{vm-change-folder-type} for this reason, so it can be run on
-a folder that is open in front of you.
+@itemize
+@item
+VM writes one on every message it puts in such a folder.
+@item
+VM refuses to read a message that has none, and names it.  A folder written
+by a mailer that omits the header is one VM will not open.
+@item
+A length that is wrong rather than missing gives no sign of it.  The folder
+opens, VM falling back on a search for the next separator, while anything
+that believes the header, which is what the format is for, reads the wrong
+bytes.
+@end itemize
+
+@noindent
+@code{vm-change-folder-type} is the repair for both.  Converting a folder to
+the type it already claims recomputes every length.
+
+@itemize
+@item
+A prefix argument asks for a file and converts it on disk without visiting
+it, which is the only way in when the folder cannot be read.
+@item
+Two prefix arguments write the result to a file you name and leave the
+original alone, for comparing the two before parting with either.
+@item
+Either way the folder as it was is kept in a backup file, named as Emacs
+names one when saving a buffer.  Changing a visited folder's type keeps a
+backup too.
+@item
+The folder's own type is among the types offered, so the repair can be run
+on a folder that is open in front of you.
+@end itemize
 
 @vindex vm-folder-type-by-extension-alist
 A folder that does not exist yet has no contents to examine, so a name
@@ -3470,21 +3484,22 @@ except html, and of the images only JPEG.
 @cindex Content-Disposition
 @vindex vm-mime-honor-content-disposition
 @cindex attachments
-The @acronym{MIME} objects in messages come with a header called
-@dfn{Content-Disposition}, which specifies whether the @acronym{MIME} object
-should be displayed as part of the message display (the ``inline''
-disposition) or whether it should be displayed as a button that should be
-invoked to view the object (the @dfn{attachment} disposition).  However, not
-all mail clients do a good job of adding this header.  It is not uncommon to
-find mail clients that declare all @acronym{MIME} objects to be ``inline''
-and others that declare all @acronym{MIME} objects to be ``attachment''.
-The variable @code{vm-mime-honor-content-disposition} can be customized to
-tell VM whether it should follow the suggestions in the Content-Disposition
-headers.  A value of @code{t} means that they should be always honored and a
-value of @code{nil} means that they should be ignored.  It can also be set
-to the symbol @code{internal-only}, which means that the Content-Disposition
-suggestions should be honored for only the internally displayable types.
+A @acronym{MIME} object carries a @dfn{Content-Disposition} header saying
+how it is meant to be shown: @samp{inline}, as part of the message, or as an
+@dfn{attachment}, a button you invoke to see it.  It is a suggestion, and
+one many mail clients make badly, some declaring every object inline and
+others declaring every object an attachment.
+@code{vm-mime-honor-content-disposition} says how much notice VM takes:
+
+@table @code
+@item t
+Always follow the header.
+@item nil
+Ignore it.
+@item internal-only
+Follow it for the types VM can display itself.
 (@xref{Internal display of @acronym{MIME} attachments}.)
+@end table
 
 @unnumberedsubsubsec Viewing @acronym{MIME} structure
 
@@ -6148,20 +6163,22 @@ folder on interactive saves.
 
 
 @vindex vm-visit-when-saving
-VM can save messages to a folder in two distinct ways.  The message can be
-appended directly to the folder on disk, or the folder can be visited as
-Emacs would visit any other file and the message appended to that
-buffer.  In the latter method you must save the buffer yourself to change
-the on-disk copy of the folder.  The variable @code{vm-visit-when-saving}
-controls which method is used.  A value of @code{t} causes VM to always
-visit a folder before saving message to it.  A @code{nil} value causes VM
-to always append directly to the folder file.  In this case VM will not
-save messages to the disk copy of a folder that is being visited.  This
-restriction is necessary to insure that the buffer and on-disk copies of
-the folder are consistent. If the value of @code{vm-visit-when-saving} is
-not @code{nil} and not @code{t} (@code{not-always}, the default), VM will append to
-the folder's buffer if the buffer is currently being visited, otherwise VM
-will append to the file itself.
+A message is saved either by appending it to the folder file on disk, or by
+visiting the folder as Emacs visits any file and appending to that buffer,
+which you then have to save yourself.  @code{vm-visit-when-saving} decides
+which:
+
+@table @code
+@item not-always
+The default.  Append to the folder's buffer when it is being visited, and to
+the file otherwise.
+@item t
+Always visit the folder first.
+@item nil
+Always append to the file.  VM then refuses to save into the disk copy of a
+folder that is being visited, which would leave the buffer and the file
+disagreeing.
+@end table
 
 @vindex vm-delete-after-saving
 @vindex vm-delete-after-archiving
@@ -6440,19 +6457,25 @@ past visit of the folder but is still unread.
 @cindex flagged messages
 @cindex flagging messages
 @item flagged
-You have marked the message as one to come back to, with @kbd{!}
-(@code{vm-toggle-flag-message}).  VM attaches no meaning of its own to it:
-nothing you flag is treated differently, and no command reads the flag except
-the ones that show it and select on it.  A flagged message shows @samp{!} in the summary
-and is highlighted with the @code{vm-summary-high-priority} face
-(@pxref{predefined summary faces}), and @kbd{V !} gathers the flagged
-messages of a folder into a virtual folder (@pxref{Virtual Folders}).  It is
-not the same as marking a message, which is a selection that lasts for the
-session (@pxref{Marking Messages}).  On an @acronym{IMAP} server it is the
-@code{\Flagged} flag, so it is the same flag other mail programs show as a
-star or a flag.  One character in the summary carries whichever of deleted,
-new, unread and flagged applies first, so a message you flag before reading
-shows @samp{N} until you read it (@pxref{Summary Format}).
+A message you marked to come back to, with @kbd{!}
+(@code{vm-toggle-flag-message}).  VM attaches no meaning of its own to it.
+
+@itemize
+@item
+The summary shows @samp{!}, in the @code{vm-summary-high-priority} face
+(@pxref{predefined summary faces}).  One character carries whichever of
+deleted, new, unread and flagged applies first, so a message flagged before
+it is read shows @samp{N} until you read it (@pxref{Summary Format}).
+@item
+@kbd{V !} gathers a folder's flagged messages into a virtual folder
+(@pxref{Virtual Folders}).
+@item
+On an @acronym{IMAP} server it is the @code{\Flagged} flag, which other mail
+programs show as a star or a flag.
+@item
+Not the same as marking a message, which is a selection lasting only for the
+session (@pxref{Marking Messages}).
+@end itemize
 @item filed
 The message has been saved to some folder.
 @item written
@@ -6543,20 +6566,20 @@ list.  All of them can be undone with @code{vm-undo}.
 
 @vindex vm-flush-interval
 @cindex auto-save
-All message attributes are stored in the folder.  In order for
-attribute changes to be saved to disk, they must be written to
-the folder's buffer prior to the buffer being saved.  The
-variable @code{vm-flush-interval} controls how often that is done.  A
-value of @code{t} means write the new attributes to the folder
-buffer whenever a change occurs.  A value of @code{nil} means
-wait until just before the folder is saved before writing out the
-attributes.  VM will work faster with this setting, but if Emacs
-or your system crashes, the auto-save file will contain no useful
-data pertaining to message attribute changes.  The auto-save file
-will still reflect message edits and expunges.  @xref{Crash
-Recovery}.  A positive integer value @var{n} instructs VM to write
-out attribute changes every @var{n} seconds.  The default value
-of this variable is @code{t}.
+Message attributes live in the folder, and reach the disk only by being
+written into the folder's buffer before that buffer is saved.
+@code{vm-flush-interval} says when they are written:
+
+@table @code
+@item t
+The default.  At every change.
+@item nil
+Not until the folder is saved.  Faster, but a crash then leaves the
+auto-save file with no record of the attribute changes.  It still holds the
+message edits and expunges.  @xref{Crash Recovery}.
+@item @var{n}
+Every @var{n} seconds, @var{n} being a positive integer.
+@end table
 
 @node Sorting Messages, Digests, Message Attributes, Top
 @chapter Sorting Messages
@@ -7436,10 +7459,16 @@ subject @samp{greeting} had a hotel offer and you wanted to find it, you can
 first create a search folder of messages with subject @samp{greeting},
 browse through them to find the message that had the hotel offer, and then
 quit the search folder.  VM will return you to the copy of the same message
-in the original folder.  (You can go back to the previously viewed message
-in the original folder by doing @code{vm-goto-message-last-seen}.  To
-inhibit changing the current message in the original message entirely, quit
-the search folder using @code{vm-quit-no-change}.)
+in the original folder.
+
+@itemize
+@item
+@code{vm-goto-message-last-seen} goes back to the message you were reading
+in the original folder before that.
+@item
+@code{vm-quit-no-change} leaves the original folder's current message where
+it was.
+@end itemize
 
 Search folders also form an efficient way to search for some string in the
 text of messages.  The key binding @kbd{V t}
