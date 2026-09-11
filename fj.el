@@ -4908,7 +4908,7 @@ Update status fields."
   (fj-compose-remove-variable 'fj-compose-milestone))
 
 (defun fj-compose-remove-upload ()
-  "Remove milestone from item being composed."
+  "Remove attachment file from item being composed."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-upload))
 
