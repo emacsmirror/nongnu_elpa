@@ -157,7 +157,8 @@ VECTOR means return json arrays as vectors."
 (defun fedi-http--post (url &optional params headers json silent)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
 JSON means we are posting a JSON payload, so we add headers and
-json-string PARAMS."
+json-string PARAMS.
+SILENT means don't message."
   (let* ((url-request-method "POST")
          (url-request-data
           (when params
