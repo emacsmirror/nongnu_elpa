@@ -46,6 +46,7 @@
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
+(require 'compat)
 
 (eval-when-compile
   (require 'mastodon-tl))
@@ -1415,9 +1416,10 @@ File is actually attached to the toot upon posting."
 (defun mastodon-toot--attachment-from-desc (desc)
   "Return an attachment based on its description DESC."
   (car
-   (cl-member-if (lambda (x)
-                   (rassoc desc x))
-                 mastodon-toot--media-attachments)))
+   (member-if
+    (lambda (x)
+      (rassoc desc x))
+    mastodon-toot--media-attachments)))
 
 (defun mastodon-toot-edit-media-description ()
   "Prompt for an attachment, and update its description."
