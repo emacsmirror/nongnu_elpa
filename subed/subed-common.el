@@ -3096,6 +3096,27 @@ Example:
         (warn "Could not get file duration for %s" filename) ;; mark as invalid
         nil)))))
 
+(defun subed-insert-subtitle-for-gap ()
+  "Insert a subtitle between the previous subtitle and the current one."
+  (interactive)
+  (when (string= (string-trim (buffer-string)) "")
+    (subed-auto-insert))
+  (let ((start-ms
+         (+
+          (save-excursion (subed-backward-subtitle-text)
+                          (subed-subtitle-msecs-stop))
+          subed-subtitle-spacing))
+        (stop-ms
+         (-
+          (save-excursion (subed-forward-subtitle-text)
+                          (subed-subtitle-msecs-start))
+          subed-subtitle-spacing)))
+    (subed-backward-subtitle-text)
+    (subed-append-subtitle
+     nil
+     start-ms
+     stop-ms)))
+
 (defun subed-insert-subtitle-for-whole-file ()
   "Insert a subtitle that starts at 0 until the end of the current file.
 
