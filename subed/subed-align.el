@@ -81,7 +81,8 @@ Modifies SUBTITLES and returns the modified list."
     (if (region-active-p) (max (point) (mark)) (point-max))))
   (let* ((format (cond
 									((derived-mode-p 'subed-vtt-mode) "VTT")
-									((derived-mode-p 'subed-srt-mode) "SRT")))
+									((derived-mode-p 'subed-srt-mode) "SRT")
+                  (t "VTT")))             ; convert back to the original format
          (input-mode major-mode)
          (input-subtitles
           (seq-reduce
@@ -95,9 +96,7 @@ Modifies SUBTITLES and returns the modified list."
 				 (temp-file
           (concat (make-temp-name "subed-align")
                   "."
-                  (if (buffer-file-name)
-											(file-name-extension (buffer-file-name))
-										(downcase format))))
+                  (downcase format)))
 				 (ignore-before (save-excursion
 													(goto-char beg)
 													(unless (subed-subtitle-msecs-start)
