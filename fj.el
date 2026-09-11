@@ -3360,7 +3360,7 @@ Adds PROPS to the link's properties."
                                       .name
                                       .id)
                 'fj-attachment x
-                'fj-attachment-id (alist-get 'id x)
+                'fj-attachment-id .id
                 (fj-plist-delete
                  (fj-plist-delete props 'fontified)
                  'invisible))))
