@@ -3082,11 +3082,11 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
                  'invisible t
                  props)))
 
-(defun fj-render-assets-async ()
+(defun fj-render-assets-async (&optional start)
   "Render assets in current item view asynchonously."
   (let (assets-match)
     (save-excursion
-      (goto-char (point-min))
+      (goto-char (or start (point-min)))
       (while (setq assets-match
                    (text-property-search-forward 'fj-assets))
         (fj-destructure-buf-spec (repo owner)
@@ -3143,11 +3143,11 @@ MARKER-START and MARKER-END is the range where we insert the assets."
         (set-marker marker-start nil)
         (set-marker marker-end nil)))))
 
-(defun fj-render-reactions-async ()
+(defun fj-render-reactions-async (&optional start)
   "Render reactions in current item view asynchonously."
   (let (reac-match)
     (save-excursion
-      (goto-char (point-min))
+      (goto-char (or start (point-min)))
       (while (setq reac-match
                    (text-property-search-forward 'fj-reactions))
         (fj-destructure-buf-spec (repo owner)
@@ -3542,10 +3542,15 @@ END-PAGE should be a string of the highest page number to paginate to."
                          (text-property-search-forward 'fj-item-data)
                          (point)))))
                 (fj-render-item-bodies render-point)))
-            ;; async render assets:
-            (fj-render-assets-async)
-            ;; async render reactions
-            (fj-render-reactions-async)
+            (let ((async-point
+                   (if (and init-page
+                            (= (string-to-number init-page) 1))
+                       (point-min)
+                     point)))
+              ;; async render assets:
+              (fj-render-assets-async async-point)
+              ;; async render reactions
+              (fj-render-reactions-async async-point))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
