@@ -316,7 +316,7 @@ See also `subed-subtitle-id-at-msecs'."
 Return point or nil if point is still on the same subtitle.
 If there is no subtitle that contains that time and WHEN-NOT-FOUND is `after',
 go to the subtitle after that time.
-See also `subed-vtt--subtitle-id-at-msecs'."
+See also `subed-jump-to-subtitle-id-at-msecs' and `subed-vtt--subtitle-id-at-msecs'."
 	(when (subed-jump-to-subtitle-id-at-msecs msecs when-not-found)
 		(subed-jump-to-subtitle-text)))
 
@@ -809,27 +809,61 @@ Reports an error if the number of lines does not match."
   "Functions to call with the the subtitle list.
 Return a filtered subtitle list.")
 
-(defun subed-section-comments-as-chapters ()
+(defun subed-section-comments-list (&optional subtitle-list)
+  "Return chapter comments for SUBTITLE-LIST."
+  (seq-keep
+   (lambda (o)
+     (when (elt o 4)
+       (list (elt o 0)
+             (elt o 1)
+             (elt o 2)
+             (elt o 4))))
+   (seq-reduce
+    (lambda (prev val)
+      (funcall val prev))
+    subed-section-comments-as-chapters-functions
+	  (or subtitle-list (subed-subtitle-list)))))
+
+(defun subed-section-comments-as-chapters (&optional use-subtitles)
   "Copy subtitle comments as chapters for video descriptions."
-  (interactive)
-  (let ((result (mapconcat
+  (interactive (list current-prefix-arg))
+  (let* ((result (mapconcat
 								 (lambda (sub)
-									 (if (elt sub 4)
-											 (concat (format-seconds "%02h:%z%02m:%02s"
-																							 (floor (/ (elt sub 1) 1000)))
-															 " "
-															 (string-trim (elt sub 4))
-															 "\n")
-										 ""))
-                 (seq-reduce
-                  (lambda (prev val)
-                    (funcall val prev))
-                  subed-section-comments-as-chapters-functions
-								  (subed-subtitle-list))
+									 (concat (format-seconds "%02h:%z%02m:%02s"
+																					 (floor (/ (elt sub 1) 1000)))
+													 " "
+													 (string-trim (elt sub 3))
+													 "\n"))
+                 (if use-subtitles
+                     (subed-subtitle-list)
+                   (subed-section-comments-list))
 								 "")))
     (when (called-interactively-p 'any)
       (kill-new result))
     result))
+
+(defun subed-section-comments-for-ffmpeg (chapters output-file)
+  "Format CHAPTERS in FFmpeg format for OUTPUT-FILE.
+Merge it with a command like:
+ffmpeg -i input.webm -i chapters.txt -map_metadata 1 -c copy output.webm
+
+CHAPTERS is a list of items such as (nil start-ms stop-ms text).
+See `subed-chapter-list'."
+  (interactive
+   (list (subed-chapter-list (subed-subtitle-list))
+         (read-file-name "Output file for chapters: ")))
+  (write-region
+   (concat ";FFMETADATA1\n\n"
+           (mapconcat
+            (lambda (o)
+              (format
+               "[CHAPTER]\nTIMEBASE=1/1000\nSTART=%s\nEND=%s\ntitle=%s\n"
+               (elt o 1)
+               (elt o 2)
+               (elt o 3)))
+            chapters "\n"))
+   nil
+   output-file))
 
 (subed-define-generic-function sanitize ()
   "Sanitize this file."
@@ -1911,6 +1945,24 @@ Can be added to `subed-subtitle-merged-hook'."
       (goto-char (match-beginning 0))
     (goto-char (point-max)))
   (activate-mark))
+
+(defun subed-group-by-speaker (subtitle-list)
+  "Segment subtitle-list by speaker name.
+Return a list of lists: ((speaker cue1 cue2 cue3) (speaker cue4 cue5) ...)"
+  (let (result last-speaker current-segment)
+    (seq-map-indexed
+     (lambda (cue i)
+       (if (or (string-match "^\\[\\(.+?\\)\\]: " (elt cue 3)) (eq i 0))
+           (progn
+             (when current-segment
+               (push (cons last-speaker (nreverse current-segment)) result))
+             (setq last-speaker (match-string 1 (elt cue 3)))
+             (setq current-segment (list cue)))
+         (push cue current-segment)))
+     subtitle-list)
+    (when last-speaker
+      (push (cons last-speaker (nreverse current-segment)) result))
+    (nreverse result)))
 
 ;;; Replay time-adjusted subtitle
 
