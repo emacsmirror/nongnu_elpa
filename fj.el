@@ -3311,7 +3311,7 @@ RELOAD mean we reloaded."
            (when .assets
              (fj--placeholder-str "assets" 'fj-assets t))
            "\n"
-           (fj--placeholder-str "reac" 'fj-reactions t)
+           (fj--placeholder-str "reacs" 'fj-reactions t)
            fedi-horiz-bar fedi-horiz-bar
            "\n\n")
           'fj-item-number number
