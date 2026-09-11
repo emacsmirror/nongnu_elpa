@@ -1366,6 +1366,41 @@ the mailbox if the server has not got one."
                  (vm-imap-mock-message-text (car saved))))))))
 
 
+(ert-deftest vm-imap-net-test-an-appended-message-keeps-its-flagged-attribute ()
+  "REGRESSION: a flagged message saved to a mailbox is flagged there.
+
+`vm-imap-net-message-flags' sent \\Answered and \\Seen and nothing else, so
+saving a message to an IMAP folder dropped the flagged attribute on the way
+(emacs-vm/vm#828).  Asserts on the flags the server was given, which is the
+thing that was wrong: the message arrived either way.
+
+The labels are a separate matter and stay dropped, since a keyword is what a
+server may refuse, and refusing costs the copy rather than the flag."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list))
+          (answer 'not-called))
+      (vm-set-flagged-flag message t)
+      (vm-set-replied-flag message t)
+      (vm-set-unread-flag message nil)
+      (vm-add-message-labels "urgent" 1)
+      (vm-imap-net-save-messages (vm-imap-mock-spec mock) "Archive"
+                                 (list message)
+                                 (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (equal answer 1)))
+    (let ((saved (car (vm-imap-mock-messages mock "Archive"))))
+      (should saved)
+      (let ((flags (vm-imap-mock-message-flags saved)))
+        (should (member "\\Flagged" flags))
+        (should (member "\\Answered" flags))
+        (should (member "\\Seen" flags))
+        ;; never \Deleted: a copy is not saved in order to be deleted
+        (should-not (member "\\Deleted" flags))
+        ;; and no keyword, which is the half this does not fix
+        (should-not (member "urgent" flags))))))
+
 ;;; What only happens because nothing waits
 ;;
 ;; A session runs between whatever else Emacs is doing, so the things that go

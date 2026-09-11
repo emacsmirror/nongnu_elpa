@@ -2250,10 +2250,20 @@ than left empty."
 
 (defun vm-imap-net-message-flags (message)
   "The flags to store MESSAGE under, as an IMAP flag list.
+
+The system flags only.  A keyword is what the server may not take: RFC 3501
+has it answer NO to an APPEND naming a flag it does not support, which loses
+the copy rather than a flag, and whether it takes one is in the
+PERMANENTFLAGS of the destination mailbox, which this has not selected.  So
+a label, and `filed', `written', `forwarded' and `redistributed', do not
+travel with a saved copy, where the sync path sends all of them as keywords
+to a mailbox it has selected (emacs-vm/vm#828).
+
 Not \\Deleted: a message is not saved into a mailbox in order to be deleted
 from it."
   (let ((flags nil))
     (when (vm-replied-flag message) (push "\\Answered" flags))
+    (when (vm-flagged-flag message) (push "\\Flagged" flags))
     (unless (vm-unread-flag message) (push "\\Seen" flags))
     (format "(%s)" (mapconcat #'identity flags " "))))
 
