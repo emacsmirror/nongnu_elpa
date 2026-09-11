@@ -3092,7 +3092,9 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
               ;; comment, we must fetch it:
               (fj-get-comment-async repo owner id
                                   #'fj-render-comment-assets-cb
-                                  marker))))))))
+                                  marker))
+            ;; avoid matching just entered data:
+            (goto-char (prop-match-end assets-match))))))))
 
 (defun fj-render-item-assets (marker)
   "Render assets for item, an issue or PR.
@@ -3104,19 +3106,26 @@ MARKER is where we insert the assets."
   "Render assets in DATA.
 MARKER is where we insert the assets."
   (with-current-buffer (marker-buffer marker)
-    (let ((inhibit-read-only t)
-          (assets (alist-get 'assets data)))
-      ;; goto marker for this match:
-      (goto-char
-       (marker-position marker))
-      (let ((props (text-properties-at (point))))
-        ;; remove placeholder + newline:
-        (delete-region (pos-bol) (pos-bol 3))
-        (when assets
-          (insert
-           (fj-format-assets-urls assets props))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
+    ;; we are in the while loop in `fj-render-assets-async', so if we
+    ;; save-excursion here, it returns point to before the insertion of
+    ;; assets, meaning the text-prop search matches again, then writes
+    ;; over the inserted assets. but if we don't save excursion, point is
+    ;; moved on loading a view. we have a save excursion in the parent
+    ;; function, but maybe `with-current-buffer' nullifies it:
+    (save-excursion
+      (let ((inhibit-read-only t)
+            (assets (alist-get 'assets data)))
+        ;; goto marker for this match:
+        (goto-char
+         (marker-position marker))
+        (let ((props (text-properties-at (point))))
+          ;; remove placeholder + newline:
+          (delete-region (pos-bol) (pos-bol 3))
+          (when assets
+            (insert
+             (fj-format-assets-urls assets props))))
+        ;; delete marker for this match:
+        (set-marker marker nil)))))
 
 (defun fj-render-reactions-async ()
   "Render reactions in current item view asynchonously."
