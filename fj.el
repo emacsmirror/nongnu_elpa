@@ -1567,12 +1567,11 @@ Return response buffer."
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params)))
 
-(defun fj-issue-edit (&optional repo owner id new-body)
+(defun fj-issue-edit (&optional repo owner id title new-body)
   "Edit comment with ID in REPO.
 OWNER is the repo owner.
 NEW-BODY is the new comment text to send."
-  (let* ((resp (fj-comment-patch repo owner id
-                               `(("body" . ,new-body)))))
+  (let* ((resp (fj-issue-patch repo owner id title new-body)))
     (fedi-http--triage
      resp
      (lambda (resp)
