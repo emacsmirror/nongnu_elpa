@@ -1416,15 +1416,18 @@ no reason, and an apostrophe in a word escaped with one backslash where two
 are needed.  relint reports them and was being read as a false positive
 because the convention it complains about looks right (emacs-vm/vm#829).
 
-Only lisp/ is scanned, those being the docstrings a user reads, and because
-this file has to be able to write the two characters itself."
+lisp/ and info/ are scanned, the first being the docstrings a user reads and
+the second `info/gen-reference.el', which had 27 of these and was missed the
+first time.  test/ is not, because this file has to be able to write the two
+characters itself."
   (let ((offenders nil))
-    (dolist (file (directory-files (expand-file-name "../lisp" vm-test-dir)
-                                   t "\\.el\\'"))
-      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
-        (setq offenders (append offenders
-                                (vm-integration-test--ineffective-escapes-in
-                                 file)))))
+    (dolist (dir '("../lisp" "../info"))
+      (dolist (file (directory-files (expand-file-name dir vm-test-dir)
+                                     t "\\.el\\'"))
+        (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
+          (setq offenders (append offenders
+                                  (vm-integration-test--ineffective-escapes-in
+                                   file))))))
     (should-not offenders)))
 
 (provide 'vm-integration-test)
