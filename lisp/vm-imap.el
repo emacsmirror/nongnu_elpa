@@ -1561,6 +1561,19 @@ rather than only when it was waited for."
 
 ;;; Robert Fenk's draft function for saving messages to IMAP folders.
 
+(defun vm-imap-fcc-mailbox ()
+  "The mailbox the IMAP-FCC header of this composition names, or nil for none.
+Trimmed: the whitespace around a header value is not part of the value, and
+a mailbox name carrying it is a different mailbox, which the server creates
+and files the copy in without anyone asking for it.  Signals when the header
+is there and names nothing."
+  (let ((value (vm-mail-get-header-contents "IMAP-FCC:")))
+    (when value
+      (let ((mailbox (string-trim value)))
+	(when (string-empty-p mailbox)
+	  (error "The IMAP-FCC header names no mailbox; remove it or name one"))
+	mailbox))))
+
 ;;;###autoload
 (defun vm-imap-save-composition ()
   "Saves the current composition in the IMAP folder given by the
@@ -1578,7 +1591,7 @@ would put two copies on the server (issue #605).
 May throw exceptions." 
   ;; FIXME This function should not be throwing exceptions.
   ;; Creates a self-contained IMAP session and destroys it at the end.
-  (let ((mailbox (vm-mail-get-header-contents "IMAP-FCC:"))
+  (let ((mailbox (vm-imap-fcc-mailbox))
 	(mailboxes nil)
 	maildrop
 	(flags nil) string m ;; response

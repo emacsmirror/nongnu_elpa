@@ -2936,6 +2936,66 @@ mailbox has no envelope line at all."
       ;; and the header that asked for the copy is not in the copy
       (should-not (string-match-p "IMAP-FCC" text)))))
 
+;;; The mailbox an IMAP-FCC header names (emacs-vm/vm#836)
+
+(ert-deftest vm-reply-test-an-imap-fcc-mailbox-is-trimmed ()
+  "REGRESSION: whitespace around the header value is not part of the mailbox.
+
+A trailing space is invisible in a composition and in an init file, and
+\"Sent \" is a different mailbox from \"Sent\": VM created it on the server
+and filed the copy there, with nothing to say it had (emacs-vm/vm#836)."
+  (let ((mail-header-separator "--text follows this line--"))
+    (dolist (header '("IMAP-FCC: Sent\n"
+                      "IMAP-FCC: Sent \n"
+                      "IMAP-FCC:  Sent\t\n"))
+      (with-temp-buffer
+        (mail-mode)
+        (insert "To: someone@example.com\n" header
+                mail-header-separator "\nThe body.\n")
+        (should (equal "Sent" (vm-imap-fcc-mailbox)))))))
+
+(ert-deftest vm-reply-test-an-empty-imap-fcc-header-is-refused ()
+  "A header naming nothing is an error, not a mailbox called the empty string.
+VM would otherwise ask the server to create one."
+  (let ((mail-header-separator "--text follows this line--")
+        (text-quoting-style 'grave))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "To: someone@example.com\nIMAP-FCC:   \n"
+              mail-header-separator "\nThe body.\n")
+      (let ((err (should-error (vm-imap-fcc-mailbox) :type 'error)))
+        (should (string-match-p "names no mailbox"
+                                (error-message-string err)))))))
+
+(ert-deftest vm-reply-test-a-trailing-space-does-not-reach-the-server ()
+  "REGRESSION: the mailbox VM asks the server for carries no stray space.
+
+The three tests above pin `vm-imap-fcc-mailbox', which is new, so reverting
+the fix makes them fail by making it void, which demonstrates nothing.  This
+one goes through `vm-imap-save-composition' and asserts on the mailbox name
+that reached the wire, and fails against the old code for the right reason."
+  (let ((asked nil)
+        (mail-header-separator "--text follows this line--")
+        (vm-imap-default-account "work")
+        (vm-imap-account-alist
+         '(("imap-ssl:mail.example.invalid:993:*:login:alice:*" "work"))))
+    (cl-letf (((symbol-function 'vm-imap-net-append-text)
+               (lambda (_maildrop mailbox &rest _) (push mailbox asked) t)))
+      (with-temp-buffer
+        (mail-mode)
+        (insert "To: someone@example.com\nIMAP-FCC: Sent \n"
+                mail-header-separator "\nThe body.\n")
+        (vm-imap-save-composition)))
+    (should (equal asked '("Sent")))))
+
+(ert-deftest vm-reply-test-no-imap-fcc-header-is-not-an-error ()
+  "A composition without the header answers nil, which is what files nothing."
+  (let ((mail-header-separator "--text follows this line--"))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "To: someone@example.com\n" mail-header-separator "\nThe body.\n")
+      (should-not (vm-imap-fcc-mailbox)))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
