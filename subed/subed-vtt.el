@@ -595,8 +595,11 @@ Use the format-specific function for MAJOR-MODE."
                         "\\)"))))
 
 (defun subed-vtt-insert-word-timestamp ()
-  "Insert current playback position as a word timestamp."
+  "Insert current playback position as a word timestamp.
+If at the beginning of a word timestamp, replace the timestamp at point."
   (interactive)
+  (when (looking-at (concat "<" subed--regexp-timestamp ">"))
+    (replace-match ""))
   (insert "<" (subed-msecs-to-timestamp subed-mpv-playback-position) ">"))
 
 ;;; Speaker-related
