@@ -278,10 +278,11 @@ This uses the Aeneas forced aligner."
   "Set the word data using Montreal Forced Aligner."
   (interactive
    (list
-    (or
-     (subed-media-file)
-     (subed-guess-media-file subed-audio-extensions)
-     (read-file-name "Audio file: "))
+    (expand-file-name
+     (or
+      (subed-media-file)
+      (subed-guess-media-file subed-audio-extensions)
+      (read-file-name "Audio file: ")))
     (when (region-active-p) (region-beginning))
     (when (region-active-p) (region-end))))
   ;; MFA expects audio and text
