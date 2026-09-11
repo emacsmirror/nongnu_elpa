@@ -4161,8 +4161,10 @@ Baz.
        (insert mock-srt-data)
        (subed-set-file-clock-start "2026-01-01T10:00:00Z")
        (subed-jump-to-subtitle-id 2)
-       (expect (seq-take (subed-subtitle-clock-start) 2)
-               :to-equal (date-to-time "2026-01-01T10:02:02Z"))))
+       (expect (time-equal-p
+                (seq-take (subed-subtitle-clock-start) 2)
+                (date-to-time "2026-01-01T10:02:02Z"))
+               :not :to-be nil)))
     (describe "when setting the time start for msecs 0"
       (it "works with Emacs time objects."
         (with-temp-srt-buffer

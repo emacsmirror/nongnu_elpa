@@ -2648,7 +2648,7 @@ Again")
          (insert mock-vtt-data)
          (let (result)
            (subed-for-each-subtitle (point-min) (point-max) nil
-             (add-to-list 'result (point)))
+             (push (point) result))
            (expect (length result) :to-equal 3))))
       (it "handles blank lines at the start of a caption."
         (with-temp-vtt-buffer
@@ -2670,14 +2670,14 @@ hi<00:00:03.459><c> welcome</c><00:00:03.850><c> to</c><00:00:03.999><c> another
          (insert mock-vtt-data)
          (let (result)
            (subed-for-each-subtitle (point-min) (point-max) t
-             (add-to-list 'result (point)))
+             (push (point) result))
            (expect (length result) :to-equal 3))))
       (it "handles empty lines."
         (with-temp-vtt-buffer
          (insert mock-vtt-data "\n\n")
          (let (result)
            (subed-for-each-subtitle (point-min) (point-max) t
-             (add-to-list 'result (point)))
+             (push (point) result))
            (expect (length result) :to-equal 3))))))
   (describe "timestamp at point"
     (it "returns nil if not at a timestamp."
