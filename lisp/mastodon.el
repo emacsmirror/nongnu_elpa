@@ -6,8 +6,8 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianh@disroot.org>
 ;; Maintainer: Marty Hiatt <martianh@disroot.org>
-;; Version: 2.1.3
-;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
+;; Version: 2.1.4
+;; Package-Requires: ((emacs "29.1") (compat "31.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.

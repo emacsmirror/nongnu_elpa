@@ -182,6 +182,7 @@ SKIP-PINNED means don't display pinned toots."
   '((statuses   . mastodon-profile-open-statuses)
     (no-boosts  . mastodon-profile-open-statuses-no-reblogs)
     (no-replies . mastodon-profile-open-statuses-no-replies)
+    (toots-only . mastodon-profile-open-statuses-only-toots)
     (only-media . mastodon-profile-open-statuses-only-media)
     (followers  . mastodon-profile-open-followers)
     (following  . mastodon-profile-open-following)
@@ -206,6 +207,8 @@ If a PREFIX argument is provided, prompt for a view type and load."
           ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts)
            (mastodon-profile-open-statuses-no-replies))
           ((mastodon-tl--buffer-type-eq 'profile-statuses-no-replies)
+           (mastodon-profile-open-statuses-only-toots))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts-no-replies)
            (mastodon-profile-open-statuses-only-media))
           ((mastodon-tl--buffer-type-eq 'profile-statuses-only-media)
            (mastodon-profile-open-followers))
@@ -236,6 +239,14 @@ If a PREFIX argument is provided, prompt for a view type and load."
   (if mastodon-profile--account
       (mastodon-profile--make-author-buffer
        mastodon-profile--account :no-reblogs)
+    (user-error "Not in a mastodon profile")))
+
+(defun mastodon-profile-open-statuses-only-toots ()
+  "Open a profile buffer showing neither boosts nor replies."
+  (interactive)
+  (if mastodon-profile--account
+      (mastodon-profile--make-author-buffer
+       mastodon-profile--account :no-reblogs :no-replies)
     (user-error "Not in a mastodon profile")))
 
 (defun mastodon-profile-open-statuses-only-media ()
@@ -864,25 +875,19 @@ SKIP-PINNED means don't display pinned toots."
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
            (args `(("limit" . ,mastodon-tl--timeline-posts-count)
-                   ,(when max-id `("max_id" . ,max-id-str))))
-           (args (cond (no-reblogs
-                        (push '("exclude_reblogs" . "t") args))
-                       (no-replies
-                        (push '("exclude_replies" . "t") args))
-                       (only-media
-                        (push '("only_media" . "t") args))
-                       (tag
-                        (push `("tagged" . ,tag) args))
-                       (t args)))
+                   ,@(when max-id `(("max_id" . ,max-id-str)))
+                   ,@(when no-reblogs '(("exclude_reblogs" . "t")))
+                   ,@(when no-replies '(("exclude_replies" . "t")))
+                   ,@(when only-media '(("only_media" . "t")))
+                   ,@(when tag `(("tagged" . ,tag)))))
            (endpoint (format "accounts/%s/%s" .id endpoint-type))
            (url (mastodon-http--api endpoint))
            (buffer (concat "*mastodon-" .acct "-"
                            (concat endpoint-type
-                                   (cond (no-reblogs "-no-boosts")
-                                         (no-replies "-no-replies")
-                                         (only-media "-only-media")
-                                         (tag (format "-tagged-%s" tag))
-                                         (t "")))
+                                   (when no-reblogs "-no-boosts")
+                                   (when no-replies "-no-replies")
+                                   (when only-media "-only-media")
+                                   (when tag (format "-tagged-%s" tag)))
                            "*"))
            (response (if headers
                          (mastodon-http--get-response url args)
@@ -983,7 +988,8 @@ SKIP-PINNED means don't display pinned toots."
   "Return the type of current profile view.
 Return a member of `mastodon-profile--view-types', based on TYPE,
 NO-REBLOGS, NO-REPLIES, ONLY-MEDIA and TAG."
-  (cond (no-reblogs 'no-boosts)
+  (cond ((and no-reblogs no-replies) 'toots-only)
+        (no-reblogs 'no-boosts)
         (no-replies 'no-replies)
         (only-media 'only-media)
         (tag 'tag)

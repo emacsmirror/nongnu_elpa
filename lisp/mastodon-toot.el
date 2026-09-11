@@ -46,6 +46,7 @@
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
+(require 'compat)
 
 (eval-when-compile
   (require 'mastodon-tl))
@@ -613,7 +614,10 @@ Calls `browse-url'."
 
 (defun mastodon-toot--toot-url ()
   "Return the URL of the base toot at point."
-  (let* ((toot (mastodon-toot--base-toot-or-item-json)))
+  (let* ((toot (or (mastodon-toot--base-toot-or-item-json)
+                   ;; if grabbing toot fails, maybe we are on a profile
+                   ;; with no statuses, so try that:
+                   (mastodon-tl--property 'profile-json))))
     (if (mastodon-tl--field 'reblog toot)
         (alist-get 'url (alist-get 'reblog toot))
       (alist-get 'url toot))))
@@ -1412,9 +1416,10 @@ File is actually attached to the toot upon posting."
 (defun mastodon-toot--attachment-from-desc (desc)
   "Return an attachment based on its description DESC."
   (car
-   (cl-member-if (lambda (x)
-                   (rassoc desc x))
-                 mastodon-toot--media-attachments)))
+   (member-if
+    (lambda (x)
+      (rassoc desc x))
+    mastodon-toot--media-attachments)))
 
 (defun mastodon-toot-edit-media-description ()
   "Prompt for an attachment, and update its description."

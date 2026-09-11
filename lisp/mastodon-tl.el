@@ -37,6 +37,7 @@
 (require 'mastodon-iso)
 (require 'mpv nil :no-error)
 (require 'url-cache)
+(require 'compat)
 
 (autoload 'mastodon-mode "mastodon")
 (autoload 'mastodon-notifications-get "mastodon")
@@ -534,8 +535,14 @@ NO-REFRESH means do no not try to load more items if no next item
 found."
   (interactive)
   (condition-case nil
-      (mastodon-tl--goto-item-pos 'previous-single-property-change
-                       (unless no-refresh 'mastodon-tl-update))
+      (prog1
+          (mastodon-tl--goto-item-pos 'previous-single-property-change
+                           (unless no-refresh 'mastodon-tl-update))
+        ;; ensure top of toot visible (thanks rahguzar!):
+        (let ((start (previous-single-char-property-change
+                      (point) 'item-id nil (point-min))))
+          (unless (pos-visible-in-window-p start)
+            (set-window-start nil start))))
     (t (error "No more items"))))
 
 (defun mastodon-tl--goto-first-item ()
@@ -1675,7 +1682,7 @@ Cycles through values in `mastodon-media--attachments'."
   "Try to fetch URL from `mastodon-media--attachments'.
 The return value is that of `cl-member-if', ie if a match is found, it
 returns the match and the list of which it is the car."
-  (cl-member-if
+  (member-if
    (lambda (attachment)
      (equal url (plist-get attachment :url)))
    (cdr mastodon-media--attachments)))
@@ -1959,10 +1966,16 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
                              rendered
                            (with-temp-buffer ;; strip quoted toot URL:
                              (insert rendered)
-                             (goto-char (point-min))
-                             (delete-line)
-                             (delete-line)
-                             (buffer-string))))
+                             ;; item headling plus link may be only
+                             ;; content, in which case we should not
+                             ;; remove it:
+                             (if (> 3 (count-lines (point-min)
+                                                   (point-max)))
+                                 (buffer-string)
+                               (goto-char (point-min))
+                               (delete-line)
+                               (delete-line)
+                               (buffer-string)))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))
     (concat stripped-maybe
@@ -2030,7 +2043,10 @@ TOOT is the data for the quoting toot."
          ;; CW status of quoting toot:
          (cw (not (string-empty-p
                    (mastodon-tl--field 'spoiler_text toot))))
-         (quoted (alist-get 'quoted_status data)))
+         (quoted (alist-get 'quoted_status data))
+         (rendered (mastodon-tl--content quoted))
+         (foldable (and mastodon-tl--fold-toots-at-length
+                        (length> rendered mastodon-tl--fold-toots-at-length))))
     (let-alist quoted
       (let ((filters (when .filtered
                        (mastodon-tl--current-filters .filtered))))
@@ -2066,7 +2082,10 @@ TOOT is the data for the quoting toot."
              "\n"
              (propertize ;; buttonize quoted toot body
               ;; quoted text:
-              (mastodon-tl--content quoted)
+              (if foldable
+                  (mastodon-tl--fold-body rendered
+                               (mastodon-search--format-heading "click for full toot"))
+                rendered)
               'button t
               'keymap mastodon-tl--link-keymap
               'help-echo "Load quoted toot"
@@ -2304,13 +2323,14 @@ mastodon-content-warning-body."
      'mastodon-content-warning-body cw
      'invisible invis)))
 
-(defun mastodon-tl--fold-body (body)
+(defun mastodon-tl--fold-body (body &optional heading)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
          (cw (get-text-property (1- (length body))
                                 'mastodon-content-warning-body body))
-         (heading (mastodon-tl--read-more-or-less "MORE" cw invis))
+         (heading (or heading
+                      (mastodon-tl--read-more-or-less "MORE" cw invis)))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
@@ -2618,6 +2638,8 @@ call this function after it is set or use something else."
              'profile-statuses-no-boosts)
             ((string-suffix-p "no-replies*" buffer-name)
              'profile-statuses-no-replies)
+            ((string-suffix-p "no-boosts-no-replies*" buffer-name)
+             'profile-statuses-no-boosts-no-replies)
             ((string-suffix-p "only-media*" buffer-name)
              'profile-statuses-only-media)
             ((string-match-p "-tagged-" buffer-name)
@@ -3550,16 +3572,17 @@ We convert and compare their created_at values."
   "Return tags data for all tags in `mastodon-tl-tags-groups'.
 PREFIX is for `mastodon-tl-tag-group-tl'.
 PARAMS is any (e.g. update) params to send."
-  (apply #'append ;; flatten result by one layer of nesting
-         (mapcar (lambda (x)
-                   (mastodon-tl--tag-group-tl x prefix params)) ;; get data
-                 mastodon-tl--tags-groups)))
+  (seq-uniq
+   (apply #'append ;; flatten result by one layer of nesting
+          (mapcar (lambda (x)
+                    (mastodon-tl--tag-group-tl x prefix params)) ;; get data
+                  mastodon-tl--tags-groups))))
 
 (defun mastodon-tl-tag-all-timeline (&optional prefix)
   "Load a timeline of all tags in `mastodon-tl--tags-groups'.
 This will probably be quite slow, as it makes one request for every 4
-tags followed. For a faster alternative, consider `mastodon-tl-tag-group-timeline',
-which loads just one group of 4 tags.
+tags followed. For a faster alternative, consider
+`mastodon-tl-tag-group-timeline', which loads just one group of 4 tags.
 Returns up to 20 items for every 4 tags followed.
 Pagination (adding more items at bottom of buffer) works, but because we
 do the requests then sort by recency client-side, items will not be in

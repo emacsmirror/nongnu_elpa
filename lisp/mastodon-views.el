@@ -887,23 +887,28 @@ BRIEF means show fewer details."
   "Return an instance base url from a user account URL.
 USERNAME is the name to cull.
 If INSTANCE is given, use that."
-  (cond (instance (concat "https://" instance))
-        ;; pleroma URL is https://instance.com/users/username
-        ((string-suffix-p "users/" (url-basepath url))
-         (string-remove-suffix "/users/"
-                               (url-basepath url)))
-        ;; friendica is https://instance.com/profile/user
-        ((string-suffix-p "profile/" (url-basepath url))
-         (string-remove-suffix "/profile/"
-                               (url-basepath url)))
-        ;; snac is https://instance.com/user
-        ((not (string-match-p "@" url))
-         ;; cull trailing slash:
-         (string-trim-right (url-basepath url) "/"))
-        ;; mastodon is https://instance.com/@user
-        (t
-         (string-remove-suffix (concat "/@" username)
-                               url))))
+  (let ((base (url-basepath url)))
+    (cond (instance (concat "https://" instance))
+          ;; pleroma URL is https://instance.com/users/username
+          ((string-suffix-p "users/" base)
+           (string-remove-suffix "/users/"
+                                 base))
+          ;; lemmy URL is https://instance.com/u/username
+          ((string-suffix-p "u/" base)
+           (string-remove-suffix "/u/"
+                                 base))
+          ;; friendica is https://instance.com/profile/user
+          ((string-suffix-p "profile/" base)
+           (string-remove-suffix "/profile/"
+                                 base))
+          ;; snac is https://instance.com/user
+          ((not (string-match-p "@" url))
+           ;; cull trailing slash:
+           (string-trim-right base "/"))
+          ;; mastodon is https://instance.com/@user
+          (t
+           (string-remove-suffix (concat "/@" username)
+                                 url)))))
 
 (defun mastodon-views--get-own-instance ()
   "Return JSON of `mastodon-active-user's instance."
@@ -911,12 +916,13 @@ If INSTANCE is given, use that."
    (mastodon-http--api "instance" "v2") nil nil :vector))
 
 (defun mastodon-views-view-instance-description
-    (&optional user brief instance misskey)
+    (&optional user brief instance server)
   "View the details of the instance the current post's author is on.
 USER means to show the instance details for the logged in user.
 BRIEF means to show fewer details.
 INSTANCE is an instance domain name.
-MISSKEY means the instance is a Misskey or derived server."
+SERVER, a keyword, should be the name of a non-masto server, e.g.
+:misskey, :lemmy."
   (interactive)
   (if user
       (let ((response (mastodon-views--get-own-instance)))
@@ -942,41 +948,60 @@ MISSKEY means the instance is a Misskey or derived server."
                           (alist-get 'username toot) ;; profile
                         (alist-get 'username account)))
             (instance (mastodon-views--get-instance-url url username instance)))
-       (if misskey
-           (let* ((params `(("detail" . ,(or brief t))))
-                  (headers '(("Content-Type" . "application/json")))
-                  (url (concat instance "/api/meta"))
-                  (response
-                   (with-current-buffer (mastodon-http--post url params headers t :json)
-                     (mastodon-http--process-response))))
-             (mastodon-views--instance-response-fun response brief instance :misskey))
-         (let ((response (mastodon-http--get-json
-                          (concat instance "/api/v1/instance") nil nil :vector)))
-           ;; if non-misskey attempt errors, try misskey instance:
-           ;; akkoma i guess should not error here.
-           (if (eq 'error (caar response))
-               (mastodon-views-instance-desc-misskey)
-             (mastodon-views--instance-response-fun response brief instance))))))))
+       (pcase server
+         (:misskey
+          (let* ((params `(("detail" . ,(or brief t))))
+                 (headers '(("Content-Type" . "application/json")))
+                 (url (concat instance "/api/meta"))
+                 (response
+                  (with-current-buffer (mastodon-http--post url params headers t :json)
+                    (mastodon-http--process-response))))
+            (mastodon-views--instance-response-fun response brief instance :misskey)))
+         (:lemmy
+          (let ((response
+                 (mastodon-http--get-json
+                  (concat instance "/api/v3/site") nil nil :vector)))
+            (mastodon-views--instance-response-fun response brief instance :lemmy)))
+         (_
+          (let ((response
+                 (mastodon-http--get-json
+                  (concat instance "/api/v1/instance") nil nil :vector)))
+            ;; if non-misskey attempt errors, try misskey/lemmy instance:
+            ;; akkoma i guess should not error here.
+            (cond
+             ((eq 'error (caar response))
+              (mastodon-views-instance-desc-misskey))
+             ((not response)
+              (mastodon-views-instance-desc-lemmy))
+             (t
+              (mastodon-views--instance-response-fun response brief instance))))))))))
 
 (defun mastodon-views-instance-desc-misskey (&optional user brief instance)
   "Show instance description for a misskey/firefish server.
 USER, BRIEF, and INSTANCE are all for
 `mastodon-views-view-instance-description', which see."
   (interactive)
-  (mastodon-views-view-instance-description user brief instance :miskey))
+  (mastodon-views-view-instance-description user brief instance :misskey))
+
+(defun mastodon-views-instance-desc-lemmy (&optional user brief instance)
+  "Show instance description for a lemmy server.
+USER, BRIEF, and INSTANCE are all for
+`mastodon-views-view-instance-description', which see."
+  (interactive)
+  (mastodon-views-view-instance-description user brief instance :lemmy))
 
 (defun mastodon-views--instance-response-fun (response brief instance
-                                         &optional misskey)
+                                         &optional server)
   "Display instance description RESPONSE in a new buffer.
 BRIEF means to show fewer details.
 INSTANCE is the instance were are working with.
-MISSKEY means the instance is a Misskey or derived server."
+SERVER means the instance is a non-masto (Misskey, Lemmy) server."
   (when response
     (let* ((domain (url-file-nondirectory instance))
            (buf (get-buffer-create
                  (format "*mastodon-instance-%s*" domain))))
       (with-mastodon-buffer buf #'special-mode :other-window
-        (if misskey
+        (if server ;; misskey, lemmy:
             (mastodon-views--insert-json response)
           (condition-case nil
               (progn
