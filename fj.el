@@ -3145,10 +3145,16 @@ MARKER is where we insert the assets."
               ;; comment:
               (fj-get-comment-reactions-async
                repo owner comment-id
-               #'fj-render-reactions-cb marker
-               #'fj-render-comment-reactions))))))))
+               #'fj-render-comment-reactions-cb marker
+               #'fj-render-comment-reactions :newline))))))))
 
-(defun fj-render-reactions-cb (data marker render-fun)
+(defun fj-render-issue-reactions-cb (data marker render-fun)
+  "Render reactions in DATA.
+MARKER is where we insert.
+RENDER-FUN is the function to render DATA with."
+  (fj-render-comment-reactions-cb data marker render-fun))
+
+(defun fj-render-comment-reactions-cb (data marker render-fun &optional newline)
   "Render reactions in DATA.
 MARKER is where we insert.
 RENDER-FUN is the function to render DATA with."
@@ -3163,26 +3169,7 @@ RENDER-FUN is the function to render DATA with."
         (when data
           (insert
            (concat (funcall render-fun data)
-                   "\n"))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
-
-(defun fj-render-issue-reactions-cb (data marker render-fun)
-  "Render reactions in DATA.
-MARKER is where we insert.
-RENDER-FUN is the function to render DATA with."
-  (with-current-buffer (marker-buffer marker)
-    (let ((inhibit-read-only t))
-      (save-excursion
-        ;; goto marker for this match:
-        (goto-char
-         (marker-position marker))
-        ;; remove placeholder:
-        (delete-region (pos-bol) (pos-bol 2))
-        (when data
-          (insert
-           (concat (funcall render-fun data)
-                   "\n"))))
+                   (when newline "\n")))))
       ;; delete marker for this match:
       (set-marker marker nil))))
 
