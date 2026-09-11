@@ -2661,21 +2661,18 @@ not yet committed to disk before the crash.  If so, answering ``no'' means
 you might have to do that expunge again, but this is better than not knowing
 whether the auto-save file was truncated.
 
-Assuming you answered ``yes'', the folder buffer's contents will be
-replaced by the contents of the auto-save file and VM will re-parse the
-folder.  At this point the contents of the folder buffer and the disk
-copy of the folder are different.  Therefore VM will not get new mail
-for this folder until the two copies of the folder are synchronized.
-When you are satisfied that the recovered folder is whole and intact,
-type @kbd{S} to save it to disk.  After you do this, VM will allow you
-to use @kbd{g} to retrieve any new mail that has arrived in the spool
-files for the folder.
-
-Assuming you answered ``no'' to the recovery question, you should type
-@kbd{C-x C-q}, which is bound to @code{vm-toggle-read-only} in VM folder
-buffers.  The folder will be taken out of read-only mode and you can
-read and retrieve your mail normally, ignoring the auto-save file that is
-still on disk.
+@table @asis
+@item If you answered yes
+The folder buffer takes the contents of the auto-save file and VM re-parses
+it.  Buffer and disk copy now differ, so VM fetches no new mail for the
+folder until they agree: when you are satisfied that the recovered folder is
+whole and intact, type @kbd{S} to save it, after which @kbd{g} retrieves new
+mail as usual.
+@item If you answered no
+Type @kbd{C-x C-q}, which is @code{vm-toggle-read-only} in a folder buffer,
+to take the folder out of read-only mode.  Read and retrieve mail normally;
+the auto-save file stays on disk and is ignored.
+@end table
 
 If you are visiting a @acronym{POP} or @acronym{IMAP} folder (rather than a
 local folder) that was modified during a previous crash, the process of
@@ -2756,13 +2753,21 @@ The same settings, in one file you can copy, are installed as
 @cindex setting up, from questions
 Or let VM ask.  @kbd{M-x vm-setup} asks for your name and address, where
 folders are to be kept, where new mail comes from, how mail is to be sent,
-and whether VM should be the mail reader Emacs uses, and writes the answers
-to a file VM loads.  Every question is asked before anything is written, so
-stopping part way through leaves your files as they were; the file to write
-is asked for as the last question, and replacing one that already exists is
-confirmed.  It writes the whole file rather than adding to it, so it
-defaults to @code{vm-preferences-file}, which VM loads after
-@code{vm-init-file} and which nothing else writes.
+and whether VM should be the mail reader Emacs uses, then writes the answers
+to a file VM loads.
+
+@itemize
+@item
+Every question is asked before anything is written, so stopping part way
+through leaves your files as they were.
+@item
+The file to write is the last question, and replacing one that already
+exists is confirmed.
+@item
+It writes the whole file rather than adding to it, so it defaults to
+@code{vm-preferences-file}, which VM loads after @code{vm-init-file} and
+which nothing else writes.
+@end itemize
 
 The one setting it cannot finish is @code{mail-user-agent}: a file VM loads
 is read when VM starts, so @kbd{C-x m} in a fresh Emacs has already
@@ -3833,17 +3838,12 @@ converted to a type that can be displayed, will be displayed as a
 button that allows you to save the body to a file.
 
 @vindex vm-mime-external-content-type-exceptions
-As with the internal type list, there is an exception list that
-you can use to specify types that you do not want displayed
-externally.  When VM is considering whether it should
-automatically launch an external viewer, it will consult the
-variable @code{vm-mime-external-content-type-exceptions}.  If the 
-type to be displayed is listed, VM will not launch a viewer.
-This allows you to setup viewers for types that ordinarily you
-would not want VM to display or for types that you normally want
-to convert to some other type using @code{vm-mime-type-converter-alist}.
-You can still display such a type with an external viewer by using 
-@kbd{$ e}.
+As with the internal type list there is an exception list,
+@code{vm-mime-external-content-type-exceptions}: VM launches no viewer of
+its own accord for a type named there.  So a viewer can be configured for a
+type you do not ordinarily want shown, or for one you usually convert with
+@code{vm-mime-type-converter-alist}, and @kbd{$ e} still displays such a
+type with its external viewer when you ask.
 
 @vindex vm-mime-attachment-auto-suffix-alist
 
@@ -4797,17 +4797,18 @@ further changes.
 
 @kindex C-c C-e
 @kindex C-c C-c
-To encode a @acronym{MIME} message without sending it, use @kbd{C-c C-e}
-(@code{vm-mime-encode-composition}).  This is useful if you use
-PGP and want to sign a message before sending it.  VM will encode
-the message for transport, inserting all necessary headers and
-boundary markers.  You can then sign the message and send it with
-C-c C-c and be confident that VM won't invalidate the signature
-by making further modifications to the message.  Or if you want
-to resume editing the message you can run the Emacs @code{undo}
-(normally bound to @kbd{C-x u}) command which will revert the
-encoded @acronym{MIME} bodies back to tags and you can continue entering
-your composition.
+@kbd{C-c C-e} (@code{vm-mime-encode-composition}) encodes a
+@acronym{MIME} message without sending it, inserting the headers and
+boundary markers transport needs.  From there:
+
+@itemize
+@item
+Sign it and send it with @kbd{C-c C-c}.  VM changes nothing further, so the
+signature stays valid.  This is what the command is for.
+@item
+Or undo, with @kbd{C-x u}, which turns the encoded bodies back into tags for
+you to go on composing.
+@end itemize
 
 @node Sending Secure @acronym{MIME}, Replying, Sending @acronym{MIME} Messages, Sending Messages
 @section Sending Secure @acronym{MIME} Messages
@@ -4980,17 +4981,13 @@ keyserver, which means displaying a signed message may access the network.
 @section Replying
 
 @vindex vm-reply-subject-prefix
-VM has special commands that make it easy to reply to a message.  When a
-reply command is invoked, VM fills in the subject and recipient headers
-for you, since it is apparent whom the message should be sent to and
-what the subject should be.  There is an old convention of prepending
-the string @samp{Re: } to the subject of replies if the string isn't
-present already.  You can customize the string to be prepended in this
-way by setting the variable @code{vm-reply-subject-prefix}.  Its value
-should be a string to prepend to the subject of replies, if the string
-isn't present already.  A @code{nil} value means don't prepend anything
-to the subject (this is the default).  In any case you can edit any of
-the message headers manually, if you wish.
+A reply command fills in the subject and recipient headers for you, both
+being apparent from the message replied to.  You can edit them, and every
+other header, as you please.
+
+By an old convention a reply's subject is prefixed with @samp{Re: } where it
+does not already carry it.  @code{vm-reply-subject-prefix} is the string to
+prepend; @code{nil}, the default, prepends nothing.
 
 @vindex vm-included-text-prefix
 VM also helps you cite material from the message to which you are
@@ -5274,19 +5271,17 @@ will be centered.
 @kindex B
 @cindex resending messages
 @cindex Resent-To header
-You can forward a message ``as is'', without appearing to
-intervene, by @dfn{resending} it.
-Use  the @kbd{B} (@code{vm-resend-message}) command.  VM will
-resend the same original message with its original headers and add
-a @samp{Resent-To} header that you should fill in with the new
-recipients.  Use @kbd{C-c C-c} as usual to send the message.  The
-resent message will be flagged as ``redistributed''.  Note that a
-re-sent message will appear to the recipients as if it came from the
-original sender.  They will notice that you have re-sent the message
-only if they are careful to look for the @code{Resent-To} header.  If
-they reply to the message, the reply will go to the original sender.
-This behavior can be confusing to many users and, so, should be used
-with caution.
+@kbd{B} (@code{vm-resend-message}) @dfn{resends} a message: it goes on with
+its original headers, so that you do not appear to have intervened.  VM adds
+a @samp{Resent-To} header for you to fill in with the new recipients,
+@kbd{C-c C-c} sends it as usual, and the message is flagged
+``redistributed''.
+
+@quotation Caution
+A resent message reaches its new recipients looking as though it came from
+the original sender, and a reply to it goes to that sender.  Only a reader
+who thinks to look at the @code{Resent-To} header sees otherwise.
+@end quotation
 
 @node Saving copies, Postponing Messages, Forwarding Messages, Sending Messages
 @section Saving copies of sent mail
