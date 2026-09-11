@@ -271,7 +271,7 @@ and HEIGHT are dimensions in pixels."
            (list "-accurate_seek"
                  "-ss" (format "%s" from)
                  "-to" (format "%s" to))
-           (list "-i" filename)
+           (list "-i" (expand-file-name filename))
            (list
             "-loglevel"
             "0"

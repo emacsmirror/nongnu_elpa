@@ -3007,7 +3007,7 @@ Example:
              "-print_format" "json"
              "-show_streams"
              "-show_format"
-             filename)
+             (expand-file-name filename))
             (buffer-string)))))
     ;; Check that the file has at least one audio stream.
     (when (eq (seq-find
