@@ -8,6 +8,16 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **A composition carries a `From` header** (emacs-vm/vm#832).  Emacs's
+    `mail-setup-with-from` asks for one and defaults to `t`, and VM read the
+    variable nowhere, so a composition had no `From` header unless
+    `vm-mail-header-from` was set.  The message that went out still got one,
+    added by the sender, but the copies an `Fcc` or `IMAP-FCC` header files
+    are written before the send: a copy in a Sent mailbox on an IMAP server
+    named no sender at all.  The header is built the way Emacs builds it, so
+    what reaches the recipient is unchanged.  Set `mail-setup-with-from` to
+    `nil` for the old behaviour.
+
   * **`vm-mime-7bit-composition-charset` is removed** (emacs-vm/vm#697).  It
     was consulted nowhere, so setting it did nothing, and the manual told you
     to set it to declare a composition's character set.  Emacs knows which

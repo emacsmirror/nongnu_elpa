@@ -2844,6 +2844,98 @@ He is not available to check the fix, which is why it is tested here."
             (with-current-buffer buffer (set-buffer-modified-p nil))
             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
 
+;;; A composition carries a From header, so a filed copy names its sender
+
+(defmacro vm-reply-test--composing (&rest body)
+  "Make a composition with `vm-mail' and run BODY in it.
+`vm-mail' and not a buffer filled in by hand: `vm-mail-internal' is what
+writes the headers, so a test that inserts its own sees none of this."
+  (declare (indent 0) (debug t))
+  `(let ((before (buffer-list))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (mail-signature nil)
+         (user-full-name "Alice Example")
+         (user-mail-address "alice@example.com")
+         (vm-mutable-frame-configuration nil))
+     (unwind-protect
+         (save-window-excursion
+           (vm-mail)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
+
+(ert-deftest vm-reply-test-a-composition-has-a-from-header ()
+  "REGRESSION: a composition names its sender, as Emacs's own `mail' does.
+
+`mail-setup-with-from' asks for that and defaults to t, and VM read the
+variable nowhere.  A composition with no From header is filed by Fcc and by
+IMAP-FCC without one, the copy being made before the send puts it in, so the
+copy in a Sent folder named no sender at all (emacs-vm/vm#832)."
+  (vm-reply-test--composing
+    (let ((mail-setup-with-from t))
+      (should (equal "Alice Example <alice@example.com>"
+                     (vm-mail-get-header-contents "From:"))))))
+
+(ert-deftest vm-reply-test-mail-setup-with-from-nil-inserts-no-from ()
+  "`mail-setup-with-from' nil is how Emacs asks for no From header, and VM
+honours it: the reader whose MTA writes the header wants nothing here."
+  (let ((mail-setup-with-from nil))
+    (vm-reply-test--composing
+      (should-not (vm-mail-get-header-contents "From:")))))
+
+(ert-deftest vm-reply-test-vm-mail-header-from-wins ()
+  "`vm-mail-header-from' still decides the header when it is a string.
+It is VM's own option and more specific than the Emacs one."
+  (let ((vm-mail-header-from "Someone Else <else@example.com>")
+        (mail-setup-with-from t))
+    (vm-reply-test--composing
+      (should (equal "Someone Else <else@example.com>"
+                     (vm-mail-get-header-contents "From:"))))))
+
+(ert-deftest vm-reply-test-an-imap-fcc-copy-names-its-sender ()
+  "REGRESSION: the copy filed on the server carries a From header.
+
+What John Stoffel reported: with an IMAP-FCC header the copy in the Sent
+mailbox had a blank sender, his client showing it as
+\\='\"IMAP-FCC:Sent\"@stoffel.org\\=' (emacs-vm/vm#832).  The copy is built from
+the composition before `mail-send' runs, and `sendmail-send-it' is what used
+to add the From header, so the copy never had one.  A local Fcc hid it: an
+mbox copy gets an envelope From line, which VM itself displays, and an IMAP
+mailbox has no envelope line at all."
+  (let ((appended nil)
+        (vm-fcc-filed nil)
+        (vm-check-recipients nil)
+        (vm-check-for-empty-subject nil)
+        (vm-confirm-mail-send nil)
+        (vm-imap-default-account "work")
+        (vm-imap-account-alist
+         '(("imap-ssl:mail.example.invalid:993:*:login:alice:*" "work"))))
+    (cl-letf (((symbol-function 'vm-imap-net-append-text)
+               (lambda (_maildrop mailbox string &rest _)
+                 (push (cons mailbox string) appended)
+                 t))
+              ((symbol-function 'mail-send) #'ignore)
+              ((symbol-function 'vm-mail-mode-remove-tm-hooks) #'ignore))
+      (vm-reply-test--composing
+        (vm-mail-mode-remove-header "To:")
+        (vm-mail-mode-remove-header "Subject:")
+        (goto-char (point-min))
+        (insert "To: someone@example.com\n"
+                "Subject: a copy on the server\n"
+                "IMAP-FCC: Sent\n")
+        (vm-mail-send)))
+    (should (equal '("Sent") (mapcar #'car appended)))
+    (let ((text (cdr (car appended))))
+      ;; CRLF, which is what APPEND takes, so the line ends in a return
+      (should (string-match-p "\r\nFrom: Alice Example <alice@example.com>\r\n"
+                              text))
+      ;; and the header that asked for the copy is not in the copy
+      (should-not (string-match-p "IMAP-FCC" text)))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

@@ -115,6 +115,7 @@
 (declare-function mail-mode "ext:sendmail" ())
 (declare-function build-mail-aliases "ext:mailalias" (&optional file))
 (declare-function sendmail-sync-aliases "ext:sendmail" ())
+(declare-function mail-insert-from-field "ext:sendmail" ())
 
 (defun vm-add-reply-subject-prefix (message &optional start)
   (when (not start)
@@ -2078,8 +2079,19 @@ Binds the `vm-mail-mode-map' and hooks"
       (setq mail-aliases nil)
       (when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
 	(build-mail-aliases)))
-    (when (stringp vm-mail-header-from)
+    (cond
+     ((stringp vm-mail-header-from)
       (insert "From: " vm-mail-header-from "\n"))
+     (mail-setup-with-from
+      ;; What Emacs's own `mail-setup' does with that variable, which
+      ;; defaults to t, and VM did not: a composition with no From header is
+      ;; filed by Fcc and by IMAP-FCC without one, the copy being made before
+      ;; the send puts it in, so the copy in a Sent folder named no sender at
+      ;; all (emacs-vm/vm#832).  `mail-insert-from-field' is the function
+      ;; `sendmail-send-it' would have used, so what goes to the recipient is
+      ;; the same header either way, and `mail-setup-with-from' set to nil is
+      ;; the Emacs way of asking for neither.
+      (mail-insert-from-field)))
     (setq to (if to 
 		 (vm-decode-mime-encoded-words-in-string to))
 	  guessed-to (if guessed-to 
