@@ -214,56 +214,51 @@
        (propertize "]" 'face 'transient-inactive-value)))))
 
 (defun magit--git-variable-list-choices (obj)
-  (let* ((choices  (oref obj choices))
-         (value    (oref obj value))
-         (location (oref obj location))
-         (local    (and (eq location 'worktree)
-                        (magit--git-variable-get obj "--local")))
-         (global   (and (not (eq location 'global))
-                        (magit--git-variable-get obj "--global")))
-         (defaultp (oref obj default))
-         (default  (if (functionp defaultp) (funcall defaultp obj) defaultp))
-         (fallback (oref obj fallback))
-         (fallback (and fallback
-                        (and$ (magit-get fallback)
-                              (concat fallback ":" $)))))
+  (with-slots (choices value location) obj
     (when (functionp choices)
       (setq choices (funcall choices)))
-    (cons (cond (local
-                 (propertize (concat "local:" local)
-                             'face (cond (value
-                                          'transient-inactive-value)
-                                         ((member local choices)
-                                          'transient-value)
-                                         ('font-lock-warning-face))))
-                (global
-                 (propertize (concat "global:" global)
-                             'face (cond (value
-                                          'transient-inactive-value)
-                                         ((member global choices)
-                                          'transient-value)
-                                         ('font-lock-warning-face))))
-                (fallback
-                 (propertize fallback
-                             'face (if value
-                                       'transient-inactive-value
-                                     'transient-value)))
-                (default
-                 (propertize (if (functionp defaultp)
-                                 (concat "dwim:" default)
-                               (concat "default:" default))
-                             'face (if value
-                                       'transient-inactive-value
-                                     'transient-value))))
-          (mapcar (lambda (choice)
-                    (propertize choice 'face (if (equal choice value)
-                                                 (if (member choice choices)
-                                                     'transient-value
-                                                   'font-lock-warning-face)
-                                               'transient-inactive-value)))
-                  (if (and value (not (member value choices)))
-                      (cons value choices)
-                    choices)))))
+    (cons
+     (cond-let*
+       ([_(eq location 'worktree)]
+        [local (magit--git-variable-get obj "--local")]
+        (propertize (concat "local:" local)
+                    'face (cond (value
+                                 'transient-inactive-value)
+                                ((member local choices)
+                                 'transient-value)
+                                ('font-lock-warning-face))))
+       ([_(not (eq location 'global))]
+        [global (magit--git-variable-get obj "--global")]
+        (propertize (concat "global:" global)
+                    'face (cond (value
+                                 'transient-inactive-value)
+                                ((member global choices)
+                                 'transient-value)
+                                ('font-lock-warning-face))))
+       ([fallback* (oref obj fallback)]
+        [fallback  (magit-get fallback*)]
+        (propertize (concat fallback* ":" fallback)
+                    'face (if value
+                              'transient-inactive-value
+                            'transient-value)))
+       ([default* (oref obj default)]
+        [default  (if (functionp default*) (funcall default* obj) default*)]
+        (propertize (if (functionp default*)
+                        (concat "dwim:" default)
+                      (concat "default:" default))
+                    'face (if value
+                              'transient-inactive-value
+                            'transient-value))))
+     (mapcar (lambda (choice)
+               (propertize choice
+                           'face (if (equal choice value)
+                                     (if (member choice choices)
+                                         'transient-value
+                                       'font-lock-warning-face)
+                                   'transient-inactive-value)))
+             (if (and value (not (member value choices)))
+                 (cons value choices)
+               choices)))))
 
 ;;; _
 (provide 'magit-transient)
