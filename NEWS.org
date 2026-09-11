@@ -2,6 +2,18 @@
 
 * subed news
 
+** Version 1.5.2 - 2026-09-10 - Sacha Chua
+
+- New commands:
+  - subed-insert-subtitle-for-gap to fill the space between two subtitles
+  - subed-section-comments-for-ffmpeg to create a text file for FFmpeg.
+- Minor tweaks:
+  - subed-align: Use VTT as an intermediate format when re-aligning regions inside .ass and other formats not handled by aeneas
+  - Expand more filenames.
+  - Handle <c> in YouTube transcripts
+  - ASS: Insert template only if empty
+  - Update tests for Emacs 31 (thanks Jeff!)
+
 ** Version 1.5.1 - 2026-06-10 - Sacha Chua
 
 - subed-menu: Correctly define the menu so that it appears.
