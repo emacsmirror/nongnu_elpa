@@ -417,55 +417,44 @@ REQ-FUN can be a fedi.el request function such as `fedi-http--post'."
                       (format "Basic %s" auth)))))
     (apply req-fun url args)))
 
-;; ;; TODO: test for curl first?
-;; (defun fedi-http--post-media-attachment (url filename caption)
-;;   "Make POST request to upload FILENAME with CAPTION to the server's media URL.
-;; The upload is asynchronous. On succeeding,
-;; `fedi-toot--media-attachment-ids' is set to the id(s) of the
-;; item uploaded, and `fedi-toot--update-status-fields' is run."
-;;   (let* ((file (file-name-nondirectory filename))
-;;          (request-backend 'curl))
-;;     (request
-;;       url
-;;       :type "POST"
-;;       :params `(("description" . ,caption))
-;;       :files `(("file" . (,file :file ,filename
-;;                                 :mime-type "multipart/form-data")))
-;;       :parser 'json-read
-;;       :headers `(("Authorization" . ,(concat "Bearer "
-;;                                              (fedi-auth--access-token))))
-;;       :sync nil
-;;       :success (cl-function
-;;                 (lambda (&key data &allow-other-keys)
-;;                   (when data
-;;                     (push (alist-get 'id data)
-;;                           fedi-toot--media-attachment-ids) ; add ID to list
-;;                     (message "%s file %s with id %S and caption '%s' uploaded!"
-;;                              (capitalize (alist-get 'type data))
-;;                              file
-;;                              (alist-get 'id data)
-;;                              (alist-get 'description data))
-;;                     (fedi-toot--update-status-fields))))
-;;       :error (cl-function
-;;               (lambda (&key error-thrown &allow-other-keys)
-;;                 (cond
-;;                  ;; handle curl errors first (eg 26, can't read file/path)
-;;                  ;; because the '=' test below fails for them
-;;                  ;; they have the form (error . error message 24)
-;;                  ((not (proper-list-p error-thrown)) ; not dotted list
-;; 		  (message "Got error: %s. Shit went south." (cdr error-thrown)))
-;;                  ;; handle fedi api errors
-;;                  ;; they have the form (error http 401)
-;; 		 ((= (car (last error-thrown)) 401)
-;;                   (message "Got error: %s Unauthorized: The access token is invalid"
-;;                            error-thrown))
-;;                  ((= (car (last error-thrown)) 422)
-;;                   (message "Got error: %s Unprocessable entity: file or file\
-;;  type is unsupported or invalid"
-;;                            error-thrown))
-;;                  (t
-;;                   (message "Got error: %s Shit went south"
-;;                            error-thrown))))))))
+;;; FORM DATA (FILE UPLOADS)
+
+(require 'mm-url)
+
+(defun fedi-http--prep-file-for-formdata (filename)
+  "Return the request data to upload FILENAME.
+Return a cons of the boundary (a hash) and the data."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally filename)
+    (let ((boundary (buffer-hash)))
+      `(,boundary . ,(buffer-substring-no-properties
+                      (point-min) (point-max))))))
+
+(defun fedi-http--post-media-attachment (url filepath params callback cbargs)
+  "POST upload FILEPATH with PARAMS to URL.
+The upload is asynchronous. On succeeding, call CALLBACK.
+CALLBACK is called with args status and CBARGS.
+For status, see `url-retrieve'.
+To access the response buffer in CALLBACK, call `current-buffer'."
+  (let* ((url-request-method "POST")
+         (data (fedi-http--prep-file-for-formdata filepath))
+         (filename (file-name-nondirectory filepath))
+         (mime-type (mailcap-file-name-to-mime-type filename))
+         (url-request-extra-headers
+          (append
+           url-request-extra-headers ; auth set in macro
+           `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                        (car data))))))
+         (url-request-data
+          (mm-url-encode-multipart-form-data
+           `(("file" . (("name" . "file") ;; API param
+                        ("filename" . ,filename)
+                        ("content-type" . ,mime-type)
+                        ("filedata" . ,(cdr data)))))
+           (car data)))
+         (url (fedi-http--concat-params-to-url url params)))
+    (url-retrieve url callback cbargs)))
 
 (provide 'fedi-http)
 ;;; fedi-http.el ends here
