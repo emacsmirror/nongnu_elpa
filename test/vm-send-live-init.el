@@ -55,7 +55,7 @@ Set in the gitignored test/vm-live-config.el; see the template.  A plist:
                    your address, and every test then sends its mail and waits
                    for it in a mailbox it will never reach
   :verify-mailbox  the mailbox to look in there, \"INBOX\" unless said
-  :wait            seconds to wait for delivery, 60 unless said
+  :wait            seconds to wait for delivery, 600 unless said
 
 Sending itself is not described here: the config file sets
 `send-mail-function' and friends however this machine sends mail.")
@@ -153,12 +153,19 @@ Returns its sequence number.  Mail takes its own time, so this polls; it
 signals when the message does not arrive, since a test that goes on to check
 nothing is worse than one that says what went wrong.
 
+The default deadline is ten minutes, and generous on purpose.  Measured over
+68 sends to one real address: 60 to 110 seconds usually, a tail reaching 150,
+and three that had not arrived at 180.  A deadline near the middle of that
+makes this fail for the mail system rather than for VM, and a summary that
+fails for reasons of its own is one nobody reads.  Waiting costs nothing when
+the mail is on time, since this stops as soon as it arrives.
+
 The likely cause is not slowness.  `:verify-server' has to be a server whose
 account receives what is sent to `:to' -- the two are ends of the same
 mailbox -- and a server configured for the live IMAP tests is usually a test
 account that receives nothing at all.  That is what the message says, with
 what the mailbox does hold, since an empty one makes the point on its own."
-  (let ((deadline (+ (float-time) (or seconds (vm-send-live-config :wait 60))))
+  (let ((deadline (+ (float-time) (or seconds (vm-send-live-config :wait 600))))
         (found nil))
     (while (and (not found) (< (float-time) deadline))
       (vm-imap-live-cmd-ok conn "NOOP")
