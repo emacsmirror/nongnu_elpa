@@ -1558,18 +1558,26 @@ CLOSED, DUE-DATE, REF."
           due_date milestone ref unset_due_date updated_at)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS.
-OWNER is the repo owner."
+OWNER is the repo owner.
+Return response buffer."
   ;; PATCH /repos/{owner}/{repo}/issues/{index}
   (let* ((params (fedi-opt-params
                   title body state assignee assignees due_date
                   milestone ref unset_due_date updated_at))
-         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue))
-         (resp (fj-patch endpoint params)))
+         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
+    (fj-patch endpoint params)))
+
+(defun fj-issue-edit (&optional repo owner id new-body)
+  "Edit comment with ID in REPO.
+OWNER is the repo owner.
+NEW-BODY is the new comment text to send."
+  (let* ((resp (fj-comment-patch repo owner id
+                               `(("body" . ,new-body)))))
     (fedi-http--triage
      resp
      (lambda (resp)
        (fj-issue-success-maybe-upload resp repo owner)
-       (message "Issue edited!")))))
+       (message "Issue %s edited!" id)))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
   "Edit ISSUE title in REPO.
@@ -4988,11 +4996,11 @@ With PREFIX, also close issue if sending a comment."
                                         fj-compose-issue-number
                                         body))
                 ('edit-issue
-                 (fj-issue-patch repo
-                                 fj-compose-repo-owner
-                                 fj-compose-issue-number
-                                 fj-compose-issue-title
-                                 body))
+                 (fj-issue-edit repo
+                              fj-compose-repo-owner
+                              fj-compose-issue-number
+                              fj-compose-issue-title
+                              body))
                 (_ ; new issue
                  (fj-issue-post repo
                                 fj-compose-repo-owner
