@@ -144,7 +144,8 @@ for forming a URL.")
   (concat
    "\\(?1:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)" ;; uri prefix
    "[^ \n\t,]*\\)" ;; any old thing, that is, i.e. we allow invalid/unwise chars
-   "\\(\\b\\|\\.\\)")) ;; boundary or terminating period
+   ;; "\\>"
+   "\\b")) ;; boundary
 
 (defvar fedi-post-commit-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
