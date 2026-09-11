@@ -3106,16 +3106,15 @@ MARKER is where we insert the assets."
   (with-current-buffer (marker-buffer marker)
     (let ((inhibit-read-only t)
           (assets (alist-get 'assets data)))
-      (save-excursion
-        ;; goto marker for this match:
-        (goto-char
-         (marker-position marker))
-        (let ((props (text-properties-at (point))))
-          ;; remove placeholder + newline:
-          (delete-region (pos-bol) (pos-bol 3))
-          (when assets
-            (insert
-             (fj-format-assets-urls assets props)))))
+      ;; goto marker for this match:
+      (goto-char
+       (marker-position marker))
+      (let ((props (text-properties-at (point))))
+        ;; remove placeholder + newline:
+        (delete-region (pos-bol) (pos-bol 3))
+        (when assets
+          (insert
+           (fj-format-assets-urls assets props))))
       ;; delete marker for this match:
       (set-marker marker nil))))
 
