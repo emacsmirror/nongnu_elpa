@@ -3130,7 +3130,12 @@ MARKER is where we insert the assets."
                 (issue (fedi--property 'fj-item-number))
                 ;; create marker for this match:
                 (marker (copy-marker
-                         (prop-match-beginning reac-match))))
+                         (prop-match-beginning reac-match)
+                         ;; insertion marker type: reactions come after
+                         ;; assets, so if we set reacs marker then insert
+                         ;; assets, we need marker to be moved to after
+                         ;; the inserted assets:
+                         t)))
             (if issue
                 ;; we are at an item (issue/PR):
                 (fj-get-issue-reactions-async
