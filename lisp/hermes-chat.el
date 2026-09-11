@@ -547,6 +547,7 @@ of its own."
 ;; sibling functions directly, and the siblings' own upward wiring goes
 ;; through the registry variables they define (never `declare-function').
 (require 'hermes-chat-buffer)
+(require 'hermes-chat-draft)
 (require 'hermes-chat-prompts)
 (require 'hermes-chat-dashboard)
 (require 'hermes-chat-models)
@@ -1641,10 +1642,12 @@ forgets both the live and durable session ids so the next send starts fresh."
          (outermost (null active-sink))
          (hermes-chat--reset-clarify-owner-sink
           (or active-sink (list (current-buffer) nil))))
+    (hermes-chat-draft--cancel)
     (run-hooks 'hermes-chat-cleanup-functions)
     (hermes-chat--invalidate-transport-state)
     (hermes-chat--stop-dashboard-client)
     (hermes-chat--setup-buffer)
+    (hermes-chat-draft--activate)
     (hermes-chat--restore-draft-runtime)
     (when outermost
       (hermes-chat--drain-reset-clarify-owners
@@ -2458,7 +2461,8 @@ depth so a globalized linter re-enabled after the mode body is overridden."
             #'hermes-chat-todos--clear nil t)
   (add-hook 'hermes-chat-submit-inhibit-functions
             #'hermes-chat--images-inhibit nil t)
-  (hermes-chat--setup-buffer))
+  (hermes-chat--setup-buffer)
+  (hermes-chat-draft--activate))
 
 ;;;###autoload
 (defun hermes-chat (&optional profile instance)
