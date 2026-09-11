@@ -3100,17 +3100,18 @@ skip variables.
 
 @vmdocvmcircularfolders
 
-A value of @code{t} causes all VM commands to consider folders circular.
-A value of @code{nil} causes all VM commands to signal an error if
-the start or end of the folder would have to be passed to complete the
-command.  For movement commands, this occurs after the message pointer
-has been moved as far as it can go.  For other commands the error occurs
-before any part of the command has been executed, i.e. no deletions, saves,
-etc. will be done unless they can be done in their entirety.  A value
-other than @code{nil} or @code{t} causes only VM's movement
-commands to consider folders circular.  Saves, deletes and undeletes
-will behave as if the value is @code{nil}.  The default value of
-@code{vm-circular-folders} is @code{nil}.
+@table @code
+@item nil
+The default.  Every command signals an error rather than pass the start or
+end of the folder.  A movement command does so once the message pointer has
+gone as far as it can; every other command does so before it has done
+anything at all, so no partial deletion or save is left behind.
+@item t
+Every command treats the folder as circular.
+@item anything else
+Movement commands treat the folder as circular; saves, deletes and
+undeletes behave as under @code{nil}.
+@end table
 
 @vindex vm-follow-summary-cursor
 You can also select messages by using the summary window.
@@ -3295,15 +3296,17 @@ between exposing and hiding headers that would ordinarily be hidden.
 @kindex SPC
 @kindex DEL
 @vindex vm-auto-next-message
-Typing @key{SPC} during a message preview exposes the body of the
-message.  If the message was new or previously unread, it will be
-flagged ``read''.  At this point you can use @key{SPC} to scroll
-forward, and @key{DEL} to scroll backward a windowful of
-text at a time.  A prefix argument @var{n} applied to these commands
-causes VM to scroll forward or backward @var{n} lines.  Typing space
-at the end of a message moves you to the next message.  If the value
-of @code{vm-auto-next-message} is @code{nil}, @key{SPC} will not
-move to the next message; you must type @kbd{n} explicitly.
+@key{SPC} during a message preview exposes the body, flagging the message
+``read'' if it was new or unread.  From there:
+
+@itemize
+@item
+@key{SPC} scrolls forward a windowful and @key{DEL} scrolls backward.  A
+prefix argument @var{n} scrolls @var{n} lines instead.
+@item
+@key{SPC} at the end of a message moves to the next one, unless
+@code{vm-auto-next-message} is @code{nil}, when you type @kbd{n} yourself.
+@end itemize
 
 If the value of @code{vm-honor-page-delimiters} is non-@code{nil}, VM
 will recognize and honor page delimiters.  This means that when you
@@ -4117,16 +4120,18 @@ formatting language that the sender used.
 @vindex vm-mime-alternative-show-method
 @cindex @acronym{MIME} alternative, best
 @cindex @acronym{MIME} alternative, best-internal
-To control how VM displays @samp{multipart/alternative} messages, you must
-set the variable @code{vm-mime-alternative-show-method}.  Its value must be
-a symbol.  A value of @code{best} tells VM to display the message
-using the subpart closest in appearance to what the sender used to
-compose the message.  In the example above this would mean displaying
-the fully featured text subpart, if VM knows how to display that type.
-VM will display the type either internally or externally.  A
-value of @code{best-internal} tells VM to use the closest subpart that
-it can display internally.  External viewers won't be used in this
-case.  A value of @code{all} asks VM to display all the alternatives.
+@code{vm-mime-alternative-show-method} says which alternative VM shows:
+
+@table @code
+@item best
+The subpart closest in appearance to what the sender composed, displayed
+internally or by an external viewer.  In the example above, the fully
+featured text subpart, if VM knows how to display that type.
+@item best-internal
+The closest subpart VM can display itself.  No external viewer is used.
+@item all
+Every alternative.
+@end table
 
 @cindex @acronym{MIME} alternative, favorite
 @cindex @acronym{MIME} alternative, favorite-internal
@@ -4136,13 +4141,11 @@ The value can also be a list of the form
   (favorite @var{TYPE} ...)
 @end example
 
-@noindent with the first element of the list being the symbol @code{favorite}.
-The remaining elements of the list are strings specifying @acronym{MIME} types.
-VM will look for each TYPE in turn in the list of alternatives and
-choose the first matching alternative found that can be displayed.  If
-instead of the symbol @code{favorite}, @code{favorite-internal} is
-used then the first @var{TYPE} that matches an alternative that can be
-displayed internally will be chosen.
+@noindent
+where each @var{TYPE} is a @acronym{MIME} type as a string.  VM takes each
+in turn and shows the first alternative that matches one and can be
+displayed.  @code{favorite-internal} in place of @code{favorite} takes the
+first that VM can display itself.
 
 @vindex vm-auto-displayed-mime-content-type-exceptions
 @cindex @acronym{MIME} alternative, as a button
@@ -6588,19 +6591,18 @@ Every @var{n} seconds, @var{n} being a positive integer.
 @findex vm-sort-messages
 @vindex vm-move-messages-physically
 @kindex G
-In order to make numerous related messages easier to cope with, VM
-provides the command @kbd{G} (@code{vm-sort-messages}), which sorts
-all messages in a folder using one or more sort keys.
-By default the actual order of the messages in the folder is not
-altered; that is, if you looked at the folder file outside of VM the
-message order would be unchanged.  VM numbers and presents the messages
-in a different order internally.  If you want the message order to be
-changed in the folder so that other programs can see the change, you
-can either invoke @code{vm-sort-messages} with a prefix argument, or
-you can set @code{vm-move-messages-physically} non-@code{nil} before
-sorting.  Either way, VM will shift the actual messages around in the
-folder buffer, and when you save the folder, the order change will be
-visible to other programs.
+@kbd{G} (@code{vm-sort-messages}) sorts a folder by one or more sort keys.
+The messages in the file stay where they are: VM numbers and presents them
+in the new order, and a program reading the file sees the old one.  To move
+them for real, so that the new order survives the save and is there for
+anything else that reads the folder, either
+
+@itemize
+@item
+give @code{vm-sort-messages} a prefix argument, or
+@item
+set @code{vm-move-messages-physically} non-@code{nil} before sorting.
+@end itemize
 
 @cindex spam
 Valid sort keys are:
@@ -9453,18 +9455,23 @@ suitable text to explain the problem and send the bug-report message.
 @findex vm-pop-submit-bug-report
 @findex vm-imap-start-bug-report
 @findex vm-imap-submit-bug-report
-For mail server-associated problems dealing with @acronym{POP}/@acronym{IMAP} spool files
-or @acronym{POP}/@acronym{IMAP} folders, the cause of the problem might be in the
-interaction with the mail server.  To identify the cause, it may be
-necessary for the VM maintainer to look at the server interactions
-during the problem occurrence.  To capture the server interactions,
-run @code{vm-pop-start-bug-report}/@code{vm-imap-start-bug-report}
-before the problem occurrence and @code{vm-pop-submit-bug-report}
-/@code{vm-imap-submit-bug-report} after the problem occurrence.  All
-the server interactions during the interval are captured and
-automatically included in the bug-report, the session still running
-included: nothing is closed to collect it, so a report can be made about a
-fetch while it is happening.
+A problem with a @acronym{POP} or @acronym{IMAP} spool file or folder is
+often in the exchange with the server, which the maintainer has to see.  To
+capture it:
+
+@enumerate
+@item
+Run @code{vm-pop-start-bug-report} or @code{vm-imap-start-bug-report}.
+@item
+Provoke the problem.
+@item
+Run @code{vm-pop-submit-bug-report} or @code{vm-imap-submit-bug-report}.
+@end enumerate
+
+@noindent
+Everything exchanged in between goes into the report on its own, a session
+still running included: nothing is closed to collect it, so a report can be
+made about a fetch while it is happening.
 
 @vindex vm-session-trace-max-size
 A session that read the flags of every message in a large mailbox leaves most
