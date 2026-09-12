@@ -1403,6 +1403,7 @@ shared client."
         :stored-id (or hermes-chat--session-id
                        hermes-chat--dashboard-active-session-id)
         :generation hermes-chat--transport-generation
+        :assistant-id hermes-chat--pending-assistant-id
         :delay 0.1
         :terminal-p nil
         :on-idle on-idle))
@@ -1410,7 +1411,7 @@ shared client."
 (defun hermes-chat--dashboard-idle-context-valid-p (context)
   "Return non-nil when idle reconciliation CONTEXT still owns this chat."
   (and (not (plist-get context :terminal-p))
-       hermes-chat--dashboard-running-p
+       (equal (plist-get context :assistant-id) hermes-chat--pending-assistant-id)
        (eq (plist-get context :client) hermes-chat--dashboard-client)
        (equal (plist-get context :active-id)
               hermes-chat--dashboard-active-session-id)
@@ -1454,22 +1455,26 @@ shared client."
   "Poll the session described by CONTEXT until the backend reports idle."
   (hermes-chat--in-buffer (plist-get context :buffer)
     (when (hermes-chat--dashboard-idle-context-valid-p context)
-      (condition-case nil
-          (hermes-dashboard-transport-session-resume
-           (plist-get context :client) (plist-get context :stored-id)
-           :cols (hermes-chat--dashboard-cols)
-           :profile hermes-chat--profile
-           :resolve (lambda (result)
-                      (hermes-chat--in-buffer (plist-get context :buffer)
-                        (hermes-chat--dashboard-handle-idle-result
-                         context result)))
-           :reject (lambda (message)
-                     (hermes-chat--in-buffer (plist-get context :buffer)
-                       (hermes-chat--dashboard-idle-reject context message))))
-        (error
-         (when (hermes-chat--dashboard-idle-context-valid-p context)
-           (hermes-chat--dashboard-reconcile-idle-later
-            (hermes-chat--dashboard-next-idle-context context))))))))
+      ;; A session.info notification may prove idle before this timer fires.
+      ;; It changes backend state, not ownership of the unsettled interrupt.
+      (if (not hermes-chat--dashboard-running-p)
+          (hermes-chat--dashboard-finish-idle-context context)
+        (condition-case nil
+            (hermes-dashboard-transport-session-resume
+             (plist-get context :client) (plist-get context :stored-id)
+             :cols (hermes-chat--dashboard-cols)
+             :profile hermes-chat--profile
+             :resolve (lambda (result)
+                        (hermes-chat--in-buffer (plist-get context :buffer)
+                          (hermes-chat--dashboard-handle-idle-result
+                           context result)))
+             :reject (lambda (message)
+                       (hermes-chat--in-buffer (plist-get context :buffer)
+                         (hermes-chat--dashboard-idle-reject context message))))
+          (error
+           (when (hermes-chat--dashboard-idle-context-valid-p context)
+             (hermes-chat--dashboard-reconcile-idle-later
+              (hermes-chat--dashboard-next-idle-context context)))))))))
 
 (defun hermes-chat--dashboard-schedule-idle-reconciliation (on-idle)
   "Schedule ON-IDLE after this session is authoritatively no longer running."

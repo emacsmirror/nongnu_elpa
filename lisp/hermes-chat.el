@@ -1940,7 +1940,8 @@ durable session continues on send."
   "Send the current Hermes chat input.
 Answer a pending clarification instead of starting a new turn.  For a batch,
 answer only the next unanswered question; use `hermes-chat-respond-to-prompt'
-to answer all remaining questions in the minibuffer."
+to answer all remaining questions in the minibuffer.  During an explicit
+interrupt, queue ordinary input until the interrupted turn settles."
   (interactive)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
@@ -1963,6 +1964,7 @@ to answer all remaining questions in the minibuffer."
               (hermes-chat--handle-slash-content content)
               t)
              ((and (hermes-chat--active-turn-p)
+                   (null hermes-chat--interrupted-assistant-id)
                    (hermes-chat--dashboard-session-attached-p)
                    (null hermes-chat--queued-messages))
               (when hermes-chat--busy-submit-context
