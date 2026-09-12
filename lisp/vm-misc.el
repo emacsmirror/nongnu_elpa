@@ -1490,7 +1490,8 @@ indents a centred paragraph by hundreds of columns (#540)."
 (defun vm-fill-paragraphs-containing-long-lines (width start end)
   "Fill paragraphs spanning more than WIDTH columns in region START to END.
 If WIDTH is the symbol window-width, the current width of the Emacs window
-is used.  The column filled to is vm-paragraph-fill-column either way.
+is used; if it is nil, vm-paragraph-fill-column is.  The column filled to is
+vm-paragraph-fill-column whatever WIDTH says.
 
 vm-word-wrap-paragraphs non-nil wraps the long lines instead, leaving
 every existing line break where it is.  That is the setting to use on
@@ -1502,6 +1503,14 @@ In order to fill also quoted text you will need filladapt.el, the adaptive
 filling of GNU Emacs not working correctly here."
   (when (eq width 'window-width)
     (setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
+  ;; No WIDTH at all means every line longer than the column it would be
+  ;; wrapped to is long.  `vm-word-wrap-paragraphs' documents itself as
+  ;; needing nothing else set, and its three callers pass
+  ;; `vm-fill-paragraphs-containing-long-lines', which is nil for a reader who
+  ;; asked only to wrap: the longlines call this replaced took no width at all,
+  ;; so nothing noticed until it did (emacs-vm/vm#834).
+  (unless width
+    (setq width vm-paragraph-fill-column))
   (if vm-word-wrap-paragraphs
       (vm-word-wrap-long-lines width vm-paragraph-fill-column start end)
     (save-excursion

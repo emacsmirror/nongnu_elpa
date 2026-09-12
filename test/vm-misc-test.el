@@ -1759,6 +1759,31 @@ comma, so a date whose year followed a comma was read as a timezone:
   (let ((parsed (vm-parse-date "Mon, 5 Jan 2026 12:00:00 ,0100")))
     (should-not (string-match-p "," (aref parsed 5)))))
 
+;;; A width of nil (emacs-vm/vm#834)
+
+(ert-deftest vm-misc-test-wrapping-with-no-width-uses-the-fill-column ()
+  "REGRESSION: `vm-word-wrap-paragraphs' alone does not signal.
+
+Reported by @goeran: reading a message gave \"vm-fill-paragraphs-containing
+-long-lines: Wrong type argument: number-or-marker-p, nil\".
+
+`vm-word-wrap-paragraphs' says it needs nothing else set, but its callers
+pass `vm-fill-paragraphs-containing-long-lines' as the width, and that is
+nil for a reader who asked only to wrap.  `vm-word-wrap-long-lines' then
+compares a line length against nil.  The longlines call this replaced took
+no width at all, which is why it went unnoticed for three days.
+
+With no width, a line longer than the column it would be wrapped to is long."
+  (let ((wrapped (vm-misc-test--wrapped nil 40 t)))
+    (should (<= (vm-misc-test--longest-line wrapped) 40))
+    (should (string-match-p "quoted" wrapped))))
+
+(ert-deftest vm-misc-test-filling-with-no-width-uses-the-fill-column ()
+  "The same for filling, which had the same hole for the same reason.
+`fill-column' bound to nil is an error of its own inside `vm-forward-paragraph'."
+  (let ((filled (vm-misc-test--wrapped nil 40 nil)))
+    (should (<= (vm-misc-test--longest-line filled) 40))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
