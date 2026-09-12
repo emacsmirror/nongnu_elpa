@@ -2678,6 +2678,50 @@ other's session."
 (ert-deftest hermes-transport-dashboard-jsonrpc-retired-unknown ()
   (hermes-test--jsonrpc-retired-response 'unknown))
 
+(ert-deftest hermes-transport-dashboard-callback-failure-is-request-local ()
+  "Callback errors and quits settle once without broadcasting frame errors."
+  (dolist (outcome '(resolve reject timeout teardown))
+    (dolist (condition '(error quit))
+      (let* (events diagnostics (calls 0) (sibling-calls 0)
+             (hermes-dashboard-transport-request-timeout nil)
+             (hermes-dashboard-transport-websocket-send-function #'ignore)
+             (client (make-hermes-dashboard-transport-client
+                      :callback (lambda (event) (push event events))))
+             (callback (lambda (_value)
+                         (cl-incf calls)
+                         (signal condition '("private response payload"))))
+             (id (hermes-dashboard-transport-request
+                  client "session.config.get" nil callback callback))
+             (sibling (hermes-dashboard-transport-request
+                       client "ping" nil (lambda (_) (cl-incf sibling-calls))
+                       (lambda (_) (cl-incf sibling-calls)))))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) diagnostics))))
+          (let (escaped-quit)
+            (condition-case nil
+                (pcase outcome
+                  ('resolve (hermes-test--jsonrpc-response client id nil))
+                  ('reject (hermes-test--jsonrpc-response client id t))
+                  ('timeout (hermes-dashboard-transport--on-request-timeout client id))
+                  ('teardown (hermes-dashboard-transport-stop client nil nil t)))
+              (quit (setq escaped-quit t)))
+            (should-not escaped-quit))
+          (should (= calls 1))
+          (should-not events)
+          (unless (eq outcome 'teardown)
+            (should (= sibling-calls 0))
+            (should (gethash sibling (hermes-dashboard-transport-client-pending client)))
+            (hermes-test--jsonrpc-response client sibling nil)
+            (should (= sibling-calls 1))
+            (should (string-match-p "session.config.get" (format "%s" diagnostics))))
+          (hermes-test--jsonrpc-response client id nil)
+          (should (= calls 1))
+          (should-not (string-match-p "private response payload" (format "%s" diagnostics)))
+          (unless (eq outcome 'teardown)
+            (hermes-dashboard-transport--handle-frame client "{bad json")
+            (should (eq (plist-get (car events) :type) 'error))))))))
+
 (ert-deftest hermes-transport-dashboard-jsonrpc-diagnostic-once-and-unsolicited ()
   (let* (events
          (hermes-dashboard-transport-request-timeout nil)

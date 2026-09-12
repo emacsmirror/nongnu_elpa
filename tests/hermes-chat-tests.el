@@ -807,7 +807,7 @@
   (should (equal (hermes-chat--turn-header-props
                   '(:type thinking :event "thinking.delta"
                           :content "(◔_◔) pondering..."))
-                 '(:status thinking :activity "(◔_◔) Pondering"))))
+                 '(:status running :activity "Working"))))
 
 (ert-deftest hermes-chat-commentary-header-labels-reasoning ()
   "Streamed reasoning drives a \"Reasoning\" header activity, not \"Thinking\"."
@@ -4149,7 +4149,7 @@
                         "second answer")))))))
 
 (ert-deftest hermes-chat-dashboard-busy-redirected-result-keeps-current-turn ()
-  "A busy redirect keeps the current assistant without a fake user turn."
+  "A busy redirect preserves the question, full user input and subsequent reply."
   (let ((client (hermes-test--dashboard-client))
         submits interrupts redirect-resolve assistant-id)
     (cl-letf (((symbol-function 'hermes-transport-send)
@@ -4177,6 +4177,8 @@
          (insert "first")
          (hermes-chat-send)
          (setq assistant-id hermes-chat--pending-assistant-id)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "Which approach?")))
          (insert "second")
          (hermes-chat-send)
          (hermes-test--emit-dashboard-event
@@ -4187,24 +4189,268 @@
          (should (equal submits '("second" "first")))
          (should-not interrupts)
          (should-not (hermes-test--queued-contents))
-         (should (= (cl-count 'user (hermes-chat--entries)
-                              :key (lambda (entry) (plist-get entry :role)))
-                    1))
-         (should (= (cl-count 'assistant (hermes-chat--entries)
-                              :key (lambda (entry) (plist-get entry :role)))
-                    1))
-         (should (cl-find-if
-                  (lambda (entry)
-                    (and (eq (plist-get entry :role) 'status)
-                         (equal (plist-get entry :content)
-                                "Redirected: second")))
-                  (hermes-chat--entries)))
+         (should (equal
+                  (mapcar (lambda (entry)
+                            (list (plist-get entry :role) (plist-get entry :content)))
+                          (seq-filter (lambda (entry)
+                                        (memq (plist-get entry :role) '(user assistant)))
+                                      (hermes-chat--entries)))
+                  '((user "first") (assistant "Which approach?")
+                    (user "second") (assistant "continued run"))))
          (should (eq (plist-get (car (last (hermes-chat--entries))) :role)
                      'assistant))
-         (should (equal (plist-get (hermes-test--last-assistant-entry) :id)
-                        assistant-id))
+         (should-not (equal (plist-get (hermes-test--last-assistant-entry) :id)
+                            assistant-id))
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "continued run")))))))
+
+(ert-deftest hermes-chat-dashboard-idle-submit-steered-preserves-user ()
+  "An authoritative steer receipt keeps the full optimistic user turn once."
+  (dolist (terminal-first '(nil t))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (funcall (hermes-chat--submit-resolve-callback
+                (current-buffer) hermes-chat--unsettled-submit-context)
+               '((status . "streaming")))
+      (hermes-test--emit-dashboard-prompt
+       client "message.complete" '((text . "First reply")))
+      (let ((answer (concat "Accepted correction α\n" (make-string 220 ?λ) "\n終わり"))
+            resolve submitted)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (_client text &rest args)
+                     (setq submitted text
+                           resolve (plist-get args :resolve)))))
+          (should-not hermes-chat--pending-assistant-id)
+          (should-not hermes-chat--dashboard-running-p)
+          (insert answer)
+          (hermes-chat-send)
+          (should (equal submitted answer))
+          (let ((assistant-id hermes-chat--pending-assistant-id)
+                (generation hermes-chat--transport-generation)
+                (receipt resolve))
+            (insert "draft stays")
+            (hermes-test--emit-dashboard-prompt
+             client "message.delta" '((text . "Live output")))
+            (when terminal-first
+              (hermes-test--emit-dashboard-prompt
+               client "message.complete" '((text . "Live output"))))
+            (funcall receipt '((status . "steered")))
+            (should (equal
+                     (mapcar (lambda (entry)
+                               (list (plist-get entry :role) (plist-get entry :content)))
+                             (seq-filter (lambda (entry)
+                                           (memq (plist-get entry :role) '(user assistant)))
+                                         (hermes-chat--entries)))
+                     `((user "trigger prompt") (assistant "First reply")
+                       (user ,answer) (assistant "Live output"))))
+            (should (string-match-p (regexp-quote answer) (buffer-string)))
+            (should-not (string-match-p "Steered:" (buffer-string)))
+            (should (equal (hermes-chat-input-string) "draft stays"))
+            (should (= generation hermes-chat--transport-generation))
+            (should (equal hermes-chat--pending-assistant-id
+                           (unless terminal-first assistant-id)))
+            (should-not hermes-chat--unsettled-submit-context)
+            (let ((entries (copy-tree (hermes-chat--entries))))
+              (funcall receipt '((status . "steered")))
+              (should (equal entries (hermes-chat--entries))))
+            (unless terminal-first
+              (hermes-test--emit-dashboard-prompt
+               client "message.complete" '((text . "Live output"))))
+            (should (eq (plist-get (hermes-test--last-assistant-entry) :status) 'done))
+            (hermes-chat-send)
+            (let ((context hermes-chat--unsettled-submit-context)
+                  (pending hermes-chat--pending-assistant-id)
+                  (entries (copy-tree (hermes-chat--entries))))
+              (should context)
+              (funcall receipt '((status . "steered")))
+              (should (eq context hermes-chat--unsettled-submit-context))
+              (should (equal pending hermes-chat--pending-assistant-id))
+              (should (equal entries (hermes-chat--entries))))))))))
+
+(ert-deftest hermes-chat-redirected-segments-preserve-cumulative-finals ()
+  "Repeated redirects split one stream, including corrected cumulative finals."
+  (dolist (final '("Answer" "Q1.Q2.Answer" "Corrected answer"))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (funcall (hermes-chat--submit-resolve-callback
+                (current-buffer) hermes-chat--unsettled-submit-context)
+               '((status . "streaming")))
+      (let ((generation hermes-chat--transport-generation)
+            (answer (concat "Custom α answer\n" (make-string 220 ?x)))
+            resolve)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (_client _text &rest args)
+                     (setq resolve (plist-get args :resolve)))))
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Q1.")))
+          (insert answer)
+          (hermes-chat-send)
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Q2.")))
+          (funcall resolve '((status . "redirected")))
+          (insert "Another answer")
+          (hermes-chat-send)
+          (insert "draft stays")
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Answer")))
+          (hermes-test--emit-dashboard-prompt client "message.complete"
+                                             `((text . ,final) (status . "done")))
+          (funcall resolve '((status . "steered")))
+          (let ((entries (seq-filter
+                          (lambda (entry) (memq (plist-get entry :role) '(user assistant)))
+                          (hermes-chat--entries))))
+            (should (equal (mapcar (lambda (entry) (plist-get entry :content)) entries)
+                           (list "trigger prompt" "Q1." answer "Q2." "Another answer"
+                                 (if (equal final "Corrected answer") final "Answer")))))
+          (should (string-match-p (regexp-quote answer) (buffer-string)))
+          (should (equal (hermes-chat-input-string) "draft stays"))
+          (should (= generation hermes-chat--transport-generation))
+          (should-not hermes-chat--pending-assistant-id))))))
+
+(ert-deftest hermes-chat-redirected-interim-preview-is-not-duplicated ()
+  "Real interim boundaries reset local prefixes and previewed finals settle once."
+  (dolist (boundary '(before after))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (funcall (hermes-chat--submit-resolve-callback
+                (current-buffer) hermes-chat--unsettled-submit-context)
+               '((status . "streaming")))
+      (let (resolve)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (_client _text &rest args)
+                     (setq resolve (plist-get args :resolve)))))
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Question")))
+          (when (eq boundary 'before)
+            (hermes-test--emit-dashboard-prompt client "message.interim" '((text . "Question"))))
+          (insert "User answer")
+          (hermes-chat-send)
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Reply")))
+          (let ((preview (if (eq boundary 'after) "QuestionReply" "Reply")))
+            (hermes-test--emit-dashboard-prompt client "message.interim" `((text . ,preview)))
+            (hermes-test--emit-dashboard-prompt
+             client "message.complete" `((text . ,preview) (status . "done")
+                                         (response_previewed . t))))
+          (funcall resolve '((status . "redirected")))
+          (should (equal
+                   (mapcar (lambda (entry) (plist-get entry :content))
+                           (seq-filter (lambda (entry)
+                                         (memq (plist-get entry :role) '(user assistant)))
+                                       (hermes-chat--entries)))
+                   '("trigger prompt" "Question" "User answer" "Reply"))))))))
+
+(ert-deftest hermes-chat-redirected-tool-completion-keeps-one-row ()
+  "Live tool ownership follows a redirected stream without a stranded row."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let ((assistant-id hermes-chat--pending-assistant-id) resolve)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                 (lambda (_client _text &rest args)
+                   (setq resolve (plist-get args :resolve)))))
+        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Question")))
+        (hermes-chat--handle-transport-event
+         assistant-id '(:type tool :event "tool.start" :tool-call-id "call-1"
+                       :name "terminal" :content "Inspect" :status "running"))
+        (hermes-chat--submit-busy-dashboard-content "Answer")
+        (funcall resolve '((status . "redirected")))
+        (hermes-chat--handle-transport-event
+         hermes-chat--pending-assistant-id
+         '(:type tool :event "tool.complete" :tool-call-id "call-1"
+           :name "terminal" :content "Complete" :status "done"))
+        (let ((tools (seq-filter (lambda (entry) (eq (plist-get entry :role) 'tool))
+                                 (hermes-chat--entries))))
+          (should (= (length tools) 1))
+          (should (equal (hermes-chat--status-name (plist-get (car tools) :status)) "done")))))))
+
+(ert-deftest hermes-chat-redirected-rejection-and-disconnect-preserve-order ()
+  "Unaccepted input remains recoverable; stale receipts cannot insert it."
+  (dolist (outcome '(reject disconnect))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let (resolve reject)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (_client _text &rest args)
+                     (setq resolve (plist-get args :resolve)
+                           reject (plist-get args :reject)))))
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Before")))
+          (hermes-chat--submit-busy-dashboard-content "Unaccepted answer")
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "After")))
+          (if (eq outcome 'reject)
+              (funcall reject "Rejected")
+            (hermes-dashboard-transport--dispatch-event
+             client '(:type status :status "closed" :content "Disconnected")))
+          (should (string-prefix-p "BeforeAfter"
+                                   (plist-get (hermes-test--last-assistant-entry) :content)))
+          (should (hermes-test--control-content-preserved-p "Unaccepted answer"))
+          (let ((entries (copy-tree (hermes-chat--entries)))
+                (draft (hermes-chat-input-string)))
+            (funcall resolve '((status . "redirected")))
+            (should (equal entries (hermes-chat--entries)))
+            (should (equal draft (hermes-chat-input-string)))))))))
+
+(ert-deftest hermes-chat-previewed-final-preserves-later-stream ()
+  "A final receipt for an earlier preview cannot overwrite later assistant text."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.interim" '((text . "Preview")))
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Later response")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete" '((text . "Preview") (status . "done") (response_previewed . t)))
+    (should (equal (plist-get (hermes-test--last-assistant-entry) :content) "Later response"))))
+
+(ert-deftest hermes-chat-redirected-visible-unselected-preserves-draft ()
+  "Redirect receipt and held output leave an unselected chat's editable tail intact."
+  (save-window-excursion
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((chat (current-buffer)) resolve)
+        (set-window-buffer (split-window-right) chat)
+        (switch-to-buffer (get-buffer-create "*scratch*"))
+        (with-current-buffer chat
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                     (lambda (_client _text &rest args)
+                       (setq resolve (plist-get args :resolve)))))
+            (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Question")))
+            (insert "Custom answer")
+            (hermes-chat-send)
+            (insert "draft stays")
+            (let ((offset (- (point) (marker-position hermes-chat--input-marker))))
+              (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "Reply")))
+              (hermes-test--emit-dashboard-prompt client "message.complete" '((text . "Reply")))
+              (funcall resolve '((status . "redirected")))
+              (should (equal (hermes-chat-input-string) "draft stays"))
+              (should (= (- (point) (marker-position hermes-chat--input-marker)) offset))
+              (should (string-match-p "Question" (buffer-substring-no-properties
+                                                  (point-min) hermes-chat--input-marker)))
+              (should (string-match-p "> Custom answer" (buffer-string)))
+              (should-not (eq (window-buffer (selected-window)) chat)))))))))
+
+(ert-deftest hermes-chat-redirected-final-correction-does-not-guess-prefix ()
+  "Without a matching live suffix, a final-only correction is kept verbatim."
+  (dolist (stream '("" "Old draft" "Question restated"))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--insert-entry
+      (list :id "a1" :role 'assistant :status 'streaming
+            :stream-prefix "Question" :content stream))
+     (hermes-chat--handle-transport-event "a1" '(:type done :content "Question restated"))
+     (should (equal (hermes-chat--entry-content-by-id "a1") "Question restated")))))
+
+(ert-deftest hermes-chat-previewed-final-accepts-live-legacy-interim ()
+  "Reloaded code accepts interim entries retained from the previous layout."
+  (dolist (stream '("" "Later response"))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--insert-entry '(:id "old" :role assistant :content "Preview" :status done))
+     (hermes-chat--insert-entry (list :id "live" :role 'assistant :content stream :status 'streaming))
+     (setq hermes-chat--dashboard-interim-assistant-id "old"
+           hermes-chat--pending-assistant-id "live")
+     (hermes-chat--handle-transport-event
+      "live" '(:type done :content "Preview" :response-previewed t))
+     (should (equal
+              (mapcar (lambda (entry) (plist-get entry :content)) (hermes-chat--entries))
+              (if (string-empty-p stream) '("Preview") (list "Preview" stream)))))))
+
+(ert-deftest hermes-chat-provider-wait-is-not-reasoning ()
+  "Provider notices remain neutral activity, never an inferred reasoning state."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
+   (setq hermes-chat--pending-assistant-id "a1"
+         hermes-chat--dashboard-running-p t)
+   (hermes-chat--handle-transport-event
+    "a1" '(:type thinking :event "thinking.delta" :content "Rate limited; waiting 60s"))
+   (should (equal (plist-get hermes-chat--status-state :activity) "Working"))
+   (should (eq (plist-get hermes-chat--status-state :status) 'running))
+   (should hermes-chat--dashboard-running-p)
+   (should (string-match-p "Working…" (buffer-string)))
+   (should-not (string-match-p "Thinking\\|Rate limited" (buffer-string)))))
 
 (ert-deftest hermes-chat-busy-controls-remain-available ()
   (hermes-test-with-chat-buffer
@@ -7387,15 +7633,12 @@
    (should-not (string-match-p "Inspecting The Failing Test"
                            (hermes-chat--header-line 240)))))
 
-(ert-deftest hermes-chat-thinking-activity-keeps-face-titlecases-verb ()
-  "`thinking.delta' content keeps the kawaii face, drops dots, title-cases the verb."
-  (should (equal (hermes-chat--thinking-activity "(◔_◔) pondering...")
-                 "(◔_◔) Pondering"))
-  (should (equal (hermes-chat--thinking-activity "( ͡° ͜ʖ ͡°) cogitating…")
-                 "( ͡° ͜ʖ ͡°) Cogitating"))
-  (should (equal (hermes-chat--thinking-activity "reasoning") "Reasoning"))
-  (should (equal (hermes-chat--thinking-activity "") "Thinking"))
-  (should (equal (hermes-chat--thinking-activity nil) "Thinking")))
+(ert-deftest hermes-chat-thinking-activity-is-neutral ()
+  "Provider notices are activity, not evidence of reasoning."
+  (dolist (content '("(◔_◔) pondering..." "reasoning" "Rate limited; waiting"))
+    (should (equal (hermes-chat--thinking-activity content) "Working")))
+  (should-not (hermes-chat--thinking-activity ""))
+  (should-not (hermes-chat--thinking-activity nil)))
 
 (ert-deftest hermes-chat-reasoning-row-public-lifecycle ()
   "Public callbacks clear only the transient row, never actual commentary."
@@ -7496,7 +7739,7 @@
    (let ((rows (seq-filter (lambda (entry) (eq (plist-get entry :role) 'activity))
                            (hermes-chat--entries))))
      (should (= 1 (length rows)))
-     (should (string-match-p (regexp-quote "Thinking…") (buffer-string)))
+     (should (string-match-p (regexp-quote "Working…") (buffer-string)))
      (should-not (string-match-p "spinner" (buffer-string)))
      (should (equal (plist-get (car (last (hermes-chat--entries))) :id) "a1")))
    (should-not (string-match-p "Reasoning\\|Thinking\\|Running" (hermes-chat--header-line 240)))
@@ -7514,7 +7757,7 @@
      (should-not (string-prefix-p " | " text)))))
 
 (ert-deftest hermes-chat-thinking-event-updates-header-without-entry ()
-  "A `thinking' event shows the face plus verb bare and adds no transcript entry."
+  "Header-only provider activity stays quiet and adds no transcript entry."
   (hermes-test-with-chat-buffer
    (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
      (hermes-chat--handle-transport-event

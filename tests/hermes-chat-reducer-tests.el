@@ -17,7 +17,7 @@
              (list
               (list '(:status-state (:status running :activity "old"))
                     '(:type thinking :content "pondering...")
-                    '(:status thinking :activity "Pondering" :updated (100 200))
+                    '(:status running :activity "Working" :updated (100 200))
                     '(refresh-header reasoning-row))
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)

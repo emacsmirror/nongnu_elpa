@@ -214,15 +214,10 @@ fields, so it collapses to a plain ready state instead of repeating them."
 
 (defun hermes-chat--thinking-header-props (event)
   "Return header props for a `thinking.delta' EVENT.
-A non-empty kawaii spinner sets the `thinking' status with its verb.  An empty
-`thinking.delta' is the gateway's clear signal once the model starts answering
-or runs a tool, so it reverts to the running state instead of inventing a
-literal \"Thinking\" label."
-  (let ((content (or (plist-get event :content) "")))
-    (if (string-empty-p (string-trim content))
-        '(:status running :activity nil)
-      (list :status 'thinking
-            :activity (hermes-chat--thinking-activity content)))))
+Provider notices share this channel with spinner updates; neither proves
+reasoning.  Keep the activity neutral and use empty content only to clear it."
+  (list :status 'running
+        :activity (hermes-chat--thinking-activity (plist-get event :content))))
 
 (defun hermes-chat--interrupted-status-p (status)
   "Return non-nil when STATUS denotes an interrupted turn."
@@ -435,30 +430,46 @@ and `upsert-entry'.  Other types return (STATE)."
                              (or (plist-get event :content) "")))))
     (_ (cons state nil))))
 
-(defun hermes-chat--seal-interim-assistant (assistant-id content)
-  "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
+(defun hermes-chat--rotate-assistant (assistant-id)
+  "Rotate ASSISTANT-ID's presentation without starting another backend turn."
   (hermes-chat--reasoning-row assistant-id nil)
-  (hermes-chat--mark-assistant assistant-id 'done content t)
+  (hermes-chat--mark-assistant assistant-id 'done nil t)
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (next-id (plist-get entry :id)))
     (hermes-chat--insert-entry entry)
     (hermes-chat--images-rotate assistant-id next-id)
     (hermes-chat-todos--rotate assistant-id next-id)
-    (setq hermes-chat--dashboard-interim-assistant-id assistant-id
-          hermes-chat--pending-assistant-id next-id
-          hermes-chat--dashboard-stream-assistant-id next-id)))
+    (hermes-chat--rotate-live-tools assistant-id next-id)
+    (setq hermes-chat--pending-assistant-id next-id
+          hermes-chat--dashboard-stream-assistant-id next-id)
+    next-id))
+
+(defun hermes-chat--seal-interim-assistant (assistant-id content)
+  "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
+  (hermes-chat--mark-assistant
+   assistant-id 'done (hermes-chat--assistant-segment-content assistant-id content) t)
+  (hermes-chat--update-entry
+   assistant-id (lambda (entry) (hermes-chat--entry-with entry :interim-content content)))
+  (hermes-chat--rotate-assistant assistant-id)
+  (setq hermes-chat--dashboard-interim-assistant-id assistant-id))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
   "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."
   (let* ((interim-id hermes-chat--dashboard-interim-assistant-id)
          (interim-node (and interim-id hermes-chat--nodes
                             (gethash interim-id hermes-chat--nodes)))
-         (interim-content (and interim-node
-                               (plist-get (ewoc-data interim-node) :content))))
+         (interim-entry (and interim-node (ewoc-data interim-node)))
+         ;; Live reload retains interim entries created before this metadata.
+         (interim-content (plist-get interim-entry
+                                     (if (plist-member interim-entry :interim-content)
+                                         :interim-content
+                                       :content))))
     (if (and interim-content (equal interim-content content))
-        (progn
-          (hermes-chat--remove-entry assistant-id)
-          (hermes-chat--mark-assistant interim-id 'done content t))
+        (if (string-empty-p (or (hermes-chat--entry-content-by-id assistant-id) ""))
+            (progn
+              (hermes-chat--remove-entry assistant-id)
+              (hermes-chat--mark-assistant interim-id 'done nil t))
+          (hermes-chat--mark-assistant assistant-id 'done nil t))
       (hermes-chat--mark-assistant
        assistant-id 'done
        (hermes-chat--assistant-done-content assistant-id content) t))))
@@ -616,18 +627,23 @@ of its own."
      :status 'pending :activity "Waiting for Hermes"
      :assistant-id assistant-id)))
 
-(defun hermes-chat--busy-submit-resolved (content result &optional before-node)
-  "Apply backend busy-input RESULT for CONTENT before BEFORE-NODE."
-  (pcase (hermes-chat--status-name
-          (hermes-chat--result-string result 'status))
-    ("queued" (hermes-chat--record-server-queued-content content))
-    ((and status (or "steered" "redirected"))
-     (hermes-chat--insert-entry
-      (hermes-chat--make-entry
-       'status (format "%s: %s" (capitalize status)
-                       (hermes-chat--preview content)) 'done)
-      (or before-node (hermes-chat--pending-assistant-node))))
-    (_ (hermes-chat--activate-backend-turn content))))
+(defun hermes-chat--accept-redirected-content (context)
+  "Insert CONTEXT's accepted input at the held stream boundary.
+Events have been held since submission, so the original assistant still ends
+at that boundary even when a terminal event preceded the receipt."
+  (let* ((assistant-id (plist-get context :assistant-id))
+         (node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
+         (entry (and node (ewoc-data node))))
+    (unless (string-empty-p (or (plist-get entry :content) ""))
+      (let ((next-id (hermes-chat--rotate-assistant assistant-id))
+            (prefix (concat (plist-get entry :stream-prefix) (plist-get entry :content))))
+        (hermes-chat--update-entry
+         next-id (lambda (next) (hermes-chat--entry-with next :stream-prefix prefix))))))
+  (hermes-chat--insert-entry
+   (hermes-chat--make-entry 'user (plist-get context :content) 'done)
+   (hermes-chat--pending-assistant-node))
+  (when-let* ((admission (plist-get context :admission)))
+    (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id)))
 
 (defun hermes-chat--message-start-event-p (event)
   "Return non-nil when EVENT is an assistant message start."
@@ -661,10 +677,6 @@ of its own."
   "Settle busy submission CONTEXT from backend RESULT and replay held events."
   (let ((content (plist-get context :content))
         (events (hermes-chat--busy-submit-events context))
-        (assistant-node
-         (and hermes-chat--nodes
-              (gethash (plist-get context :assistant-id)
-                       hermes-chat--nodes)))
         (status (hermes-chat--status-name
                  (hermes-chat--result-string result 'status))))
     (hermes-chat--image-admission-ack (plist-get context :admission) result)
@@ -674,8 +686,8 @@ of its own."
        (hermes-chat--record-server-queued-content content)
        (hermes-chat--replay-busy-submit-events context events))
       ((or "steered" "redirected")
-       (hermes-chat--replay-busy-submit-events context events)
-       (hermes-chat--busy-submit-resolved content result assistant-node))
+       (hermes-chat--accept-redirected-content context)
+       (hermes-chat--replay-busy-submit-events context events))
       (_ (hermes-chat--resolve-streaming-busy-submit context content events)))))
 
 (defun hermes-chat--hold-busy-submit-event (event)
@@ -765,17 +777,12 @@ extends the input instead of prepending a blank line to it."
   (insert "\n"))
 
 (defun hermes-chat--busy-submit-steered (context)
-  "Convert CONTEXT's optimistic turn into the backend's active steered turn."
-  (hermes-chat--remove-entry (plist-get context :user-id))
+  "Accept CONTEXT's optimistic turn as the backend's active steered turn."
+  ;; A locally idle client may race another backend turn.  Its full user
+  ;; entry is already in place, so the receipt must not replace it with a preview.
   (when (equal hermes-chat--pending-assistant-id
                (plist-get context :assistant-id))
     (hermes-chat--mark-assistant (plist-get context :assistant-id) 'streaming))
-  (hermes-chat--insert-local-status
-   (format "Steered: %s"
-           (hermes-chat--preview
-            (or (plist-get context :display)
-                (plist-get context :content))))
-   'done)
   (when-let* ((queue-id (plist-get context :queue-id)))
     (hermes-chat--queue-submit-accepted queue-id)))
 

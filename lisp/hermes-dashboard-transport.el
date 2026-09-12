@@ -506,16 +506,18 @@ replacement socket's `gateway.ready'."
    (or message "Hermes dashboard request failed")
    (hermes-dashboard-transport--client-secrets client)))
 
-(defun hermes-dashboard-transport--safe-reject (client reject message method)
-  "Call REJECT with MESSAGE, reporting callback failures for METHOD on CLIENT."
+(defun hermes-dashboard-transport--call-request-callback
+    (client method callback value)
+  "Call CLIENT's METHOD CALLBACK with VALUE, containing errors and quits.
+A settled request callback is not a protocol failure.  Retain only its method
+and condition class in Messages: condition data can contain private payloads."
   (condition-case err
-      (funcall reject message)
-    (error
-     (hermes-dashboard-transport--emit-error
-      client
-      (format "Hermes dashboard reject callback failed: %s"
-              (hermes-dashboard-transport--condition-message client err))
-      method))))
+      (funcall callback value)
+    ((error quit)
+     (hermes-dashboard-transport--attempt
+      #'message "Hermes dashboard %s callback failed (%s)"
+      (hermes-dashboard-transport--normalized-error-message client method)
+      (if (eq (car err) 'quit) "quit" "error")))))
 
 (defun hermes-dashboard-transport--reject-pending-request
     (client request message)
@@ -523,7 +525,8 @@ replacement socket's `gateway.ready'."
   (let ((method (plist-get request :method))
         (reject (plist-get request :reject)))
     (if reject
-        (hermes-dashboard-transport--safe-reject client reject message method)
+        (hermes-dashboard-transport--call-request-callback
+         client method reject message)
       (hermes-dashboard-transport--emit-error client message method))))
 
 (defun hermes-dashboard-transport--pending-requests (client)
@@ -1773,7 +1776,9 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
         (if (car decoded)
             (progn
               (hermes-dashboard-transport--store-session-result client method (cdr decoded))
-              (when resolve (funcall resolve (cdr decoded))))
+              (when resolve
+                (hermes-dashboard-transport--call-request-callback
+                 client method resolve (cdr decoded))))
           (hermes-dashboard-transport--reject-pending-request client pending (cdr decoded)))))))
 
 (defun hermes-dashboard-transport--reject-response (client frame)
@@ -1787,7 +1792,8 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
     (when pending
       (when-let* ((reject (plist-get pending :reject)))
         (setq handled t)
-        (funcall reject message)))
+        (hermes-dashboard-transport--call-request-callback
+         client method reject message)))
     ;; Like successful responses, errors need a pending request owner.
     (when (and pending (not handled))
       (hermes-dashboard-transport--emit-error client message method code))))

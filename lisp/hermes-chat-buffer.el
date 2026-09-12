@@ -411,7 +411,7 @@ lifted into inline images."
      ((eq role 'user)
       (hermes-chat--insert-user-content content))
      ((eq role 'activity)
-      (insert (propertize "Thinking…\n" 'face 'shadow)))
+      (insert (propertize "Working…\n" 'face 'shadow)))
      ((eq role 'commentary)
       (hermes-chat--insert-commentary-content entry))
      ((eq role 'diff)
@@ -955,10 +955,29 @@ With QUIET, leave state-change notification to the caller."
          (not (string-empty-p content))
          (string= content thinking))))
 
+(defun hermes-chat--assistant-segment-content (assistant-id content)
+  "Return ASSISTANT-ID's portion of final or interim CONTENT.
+A local redirect can split a cumulative backend message.  Remove its exact
+saved prefix only when the live suffix corroborates it.  Without that evidence,
+keep ambiguous final-only corrections verbatim rather than risk losing text."
+  (when content
+    (let* ((node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
+           (entry (and node (ewoc-data node)))
+           (prefix (plist-get entry :stream-prefix))
+           (stream (plist-get entry :content))
+           (clean (hermes-chat--sanitize-assistant-content content t)))
+      (if (and (stringp prefix) (not (string-empty-p prefix))
+               (string-prefix-p prefix clean)
+               stream (not (string-empty-p stream))
+               (string-prefix-p stream (substring clean (length prefix)))
+               (not (string-prefix-p stream clean)))
+          (substring clean (length prefix))
+        content))))
+
 (defun hermes-chat--assistant-done-content (assistant-id content)
   "Return ASSISTANT-ID final CONTENT, suppressing thinking-only echo."
   (unless (hermes-chat--thinking-only-final-content-p assistant-id content)
-    content))
+    (hermes-chat--assistant-segment-content assistant-id content)))
 
 (defun hermes-chat--drop-duplicate-thinking (assistant-id)
   "Remove ASSISTANT-ID's reasoning entry when it only repeats the reply.
@@ -1043,6 +1062,25 @@ With QUIET, remove the row without publishing during teardown."
           (hermes-chat--insert-entry
            (list :id id :role 'activity :assistant-id assistant-id)
            (hermes-chat--pending-assistant-node)))))))
+
+(defun hermes-chat--rotate-live-tools (assistant-id next-id)
+  "Transfer active tool rows from ASSISTANT-ID to NEXT-ID."
+  (hermes-chat--preserve-input-point
+   (let ((inhibit-read-only t)
+         (buffer-undo-list t))
+     (dolist (node (hash-table-values hermes-chat--nodes))
+       (let* ((entry (ewoc-data node))
+              (id (plist-get entry :id)))
+         (when (and (memq (plist-get entry :role) '(tool progress))
+                    (equal (hermes-chat--entry-assistant-id entry) assistant-id)
+                    (hermes-chat--active-status-p (plist-get entry :status)))
+           (let ((next (concat next-id (substring id (length assistant-id))))
+                 (metadata (hermes-chat--entry-with
+                            (plist-get entry :metadata) :assistant-id next-id)))
+             (remhash id hermes-chat--nodes)
+             (puthash next node hermes-chat--nodes)
+             (ewoc-set-data node (hermes-chat--entry-with entry :id next :metadata metadata))
+             (ewoc-invalidate hermes-chat--ewoc node))))))))
 
 (defun hermes-chat--settle-transport-entries (assistant-id status)
   "Set active transport entries for ASSISTANT-ID to STATUS."

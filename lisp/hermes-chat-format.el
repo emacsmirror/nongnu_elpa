@@ -217,14 +217,9 @@ Active statuses show a neutral dot rather than the settled checkmark."
                   "message.start: started" "message_start: started")))))
 
 (defun hermes-chat--thinking-activity (content)
-  "Return a header label from a `thinking.delta' CONTENT string.
-CONTENT looks like \"(◔_◔) pondering...\"; keep the kawaii face, drop the
-trailing dots, and title-case the verb.  Fall back to \"Thinking\" when CONTENT
-carries no verb."
-  (let ((text (string-trim-right (or content "") "[.…[:space:]]+")))
-    (if (string-match-p "[A-Za-z]" text)
-        (replace-regexp-in-string "[A-Za-z]+" #'capitalize text t)
-      "Thinking")))
+  "Return neutral activity for non-empty provider notice CONTENT."
+  (unless (string-empty-p (string-trim (or content "")))
+    "Working"))
 
 (defun hermes-chat--abbrev-tokens (n)
   "Return token count N abbreviated, e.g. 45k."
