@@ -490,18 +490,197 @@ stays available."
                   ("req-custom" "q2" "  My explanation: όχι.  "))))
         (should-not (gethash "req-custom" hermes-chat--pending-prompts))))))
 
-(ert-deftest hermes-chat-batch-clarify-rejects-unscoped-chat-tail ()
-  "RET cannot turn one chat-tail string into an empty batch response."
-  (hermes-test-with-dashboard-prompt-session (client)
-    (hermes-test--emit-dashboard-prompt
-     client "clarify.request"
-     '((request_id . "req-batch")
-       (questions . [((qid . "q0") (question . "First question"))
-                     ((qid . "q1") (question . "Second question"))])))
-    (insert "one answer")
-    (should-error (hermes-chat-send) :type 'user-error)
-    (should (equal (hermes-chat-input-string) "one answer"))
-    (should (gethash "req-batch" hermes-chat--pending-prompts))))
+(defun hermes-test--emit-composer-batch (client)
+  "Emit a partially answered batch clarification through CLIENT."
+  (hermes-test--emit-dashboard-prompt
+   client "clarify.request"
+   '((request_id . "req-batch")
+     (answers . ((done . "Earlier answer")))
+     (questions . [((qid . "done") (question . "Already answered"))
+                   ((qid . "q0") (question . "Pick several")
+                    (choices . ["Alpha" "Beta"]) (multi_select . t))
+                   ((qid . "q1") (question . "Explain"))]))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-answers-next-question ()
+  "RET advances one unanswered question without losing answers or newer input."
+  (let (requests resolve notices)
+    (cl-letf (((symbol-function
+               'hermes-dashboard-transport-clarify-question-respond)
+              (lambda (_client request question answer &optional success _reject)
+                (push (list request question answer) requests)
+                (setq resolve success)))
+             ((symbol-function 'hermes-dashboard-transport-clarify-respond)
+              (lambda (&rest _) (ert-fail "Unscoped batch answer"))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                   (lambda (&rest _) (ert-fail "Batch answer became a turn")))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) notices))))
+          (hermes-test--emit-composer-batch client)
+          (should (string-match-p "RET.*C-c C-a" (car notices)))
+          (should (string-match-p "Pick several" (car notices)))
+          (insert "Alpha, custom; όχι\nsecond line")
+          (should (eq (key-binding (kbd "RET")) #'hermes-chat-send))
+          (call-interactively (key-binding (kbd "RET")))
+          (should (equal requests
+                         '(("req-batch" "q0"
+                            ("Alpha, custom; όχι\nsecond line")))))
+          (should (string-empty-p (hermes-chat-input-string)))
+          (insert "/tmp/my explanation")
+          (should-error (hermes-chat-send) :type 'user-error)
+          (should (equal (hermes-chat-input-string) "/tmp/my explanation"))
+          (should (= (length requests) 1))
+          (funcall resolve '((status . "ok") (remaining . ["q1"])))
+          (let ((prompt (gethash "req-batch" hermes-chat--pending-prompts)))
+            (should prompt)
+            (should-not (plist-get prompt :response-token))
+            (should (equal (hermes-chat--batch-clarify-answer-alist prompt)
+                           '(("done" . "Earlier answer")
+                             ("q0" "Alpha, custom; όχι\nsecond line")))))
+          (should-not hermes-chat--retained-clarify-owners)
+          (should (string-match-p "Explain" (car notices)))
+          (should (equal (hermes-chat-input-string) "/tmp/my explanation"))
+          (call-interactively (key-binding (kbd "RET")))
+          (should (equal (car requests)
+                         '("req-batch" "q1" "/tmp/my explanation")))
+          (funcall resolve '((status . "ok") (remaining . [])))
+          (should-not (gethash "req-batch" hermes-chat--pending-prompts))
+          (should-not hermes-chat--retained-clarify-owners)
+          (should-not (hermes-test--queued-contents))
+          (should (string-empty-p (hermes-chat-input-string))))))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-then-questionnaire ()
+  "The optional questionnaire reads only what the composer left unanswered."
+  (let (requests reads)
+    (cl-letf (((symbol-function
+               'hermes-dashboard-transport-clarify-question-respond)
+              (lambda (_client _request question answer &optional resolve _reject)
+                (push (cons question answer) requests)
+                (funcall resolve '((status . "ok")))))
+             ((symbol-function 'read-string)
+              (lambda (prompt &rest _) (push prompt reads) "Because")))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-composer-batch client)
+        (insert "Neither suggestion")
+        (hermes-chat-send)
+        (call-interactively #'hermes-chat-respond-to-prompt)
+        (should (equal reads '("Explain: ")))
+        (should (equal (reverse requests)
+                       '(("q0" "Neither suggestion") ("q1" . "Because"))))
+        (should-not (gethash "req-batch" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-failures-retain-text ()
+  "Rejection, synchronous error and quit retain literal text and release claims."
+  (dolist (mode '(async-reject sync-error sync-quit))
+    (ert-info ((format "failure mode: %s" mode))
+      (let (reject caught)
+        (cl-letf (((symbol-function
+                   'hermes-dashboard-transport-clarify-question-respond)
+                  (lambda (_client _request _qid _answer &optional _resolve failure)
+                    (pcase mode
+                      ('async-reject (setq reject failure))
+                      ('sync-error (error "clarify failed"))
+                      ('sync-quit (signal 'quit '(batch)))))))
+          (hermes-test-with-dashboard-prompt-session (client)
+            (hermes-test--emit-composer-batch client)
+            (insert "Alpha, custom; όχι\nsecond line")
+            (condition-case err
+                (hermes-chat-send)
+              (quit (setq caught err)))
+            (when reject
+              (insert "Newer draft")
+              (funcall reject "clarify failed"))
+            (should (equal (hermes-chat-input-string)
+                           (concat (when reject "Newer draft\n")
+                                   "Alpha, custom; όχι\nsecond line")))
+            (should (equal caught (and (eq mode 'sync-quit) '(quit batch))))
+            (should-not hermes-chat--retained-clarify-owners)
+            (let ((prompt (gethash "req-batch" hermes-chat--pending-prompts)))
+              (should-not (plist-get prompt :response-token))
+              (should (equal (hermes-chat--batch-clarify-answer-alist prompt)
+                             '(("done" . "Earlier answer")))))))))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-expired-restores-input ()
+  "An expired receipt retires the batch but preserves text after a newer draft."
+  (let (resolve)
+    (cl-letf (((symbol-function
+               'hermes-dashboard-transport-clarify-question-respond)
+              (lambda (_client _request _qid _answer &optional success _reject)
+                (setq resolve success))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-composer-batch client)
+        (insert "Retain, literally")
+        (hermes-chat-send)
+        (insert "Newer draft")
+        (funcall resolve '((status . "expired")))
+        (should-not (gethash "req-batch" hermes-chat--pending-prompts))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should (equal (hermes-chat-input-string)
+                       "Newer draft\nRetain, literally"))))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-stale-callbacks ()
+  "Reset, disconnect and prompt replacement fence old batch callbacks."
+  (dolist (action '(reset disconnect replacement))
+    (ert-info ((format "lifecycle action: %s" action))
+      (let (resolve reject)
+        (cl-letf (((symbol-function
+                   'hermes-dashboard-transport-clarify-question-respond)
+                  (lambda (_client _request _qid _answer &optional success failure)
+                    (setq resolve success reject failure))))
+          (hermes-test-with-dashboard-prompt-session (client)
+            (hermes-test--emit-composer-batch client)
+            (insert "Retained, literal answer")
+            (hermes-chat-send)
+            (when (eq action 'disconnect) (insert "Newer draft"))
+            (pcase action
+              ('reset (hermes-chat--reset-transcript))
+              ('disconnect (hermes-chat-disconnect))
+              ('replacement
+               (hermes-test--emit-dashboard-prompt
+                client "clarify.request"
+                '((request_id . "req-batch")
+                  (questions . [((qid . "q0") (question . "Replacement"))])))))
+            (when (eq action 'disconnect)
+              (should (equal (hermes-chat-input-string) "Newer draft"))
+              (let ((recovery hermes-chat--recovery-buffer))
+                (unwind-protect
+                    (progn
+                      (should (buffer-live-p recovery))
+                      (with-current-buffer recovery
+                        (should (string-match-p
+                                 (regexp-quote
+                                  (concat "Delivery uncertain — do not resend automatically"
+                                          "\nContent:\nRetained, literal answer"))
+                                 (buffer-string)))))
+                  (when (buffer-live-p recovery) (kill-buffer recovery)))))
+            (hermes-chat--replace-input-tail "Newer draft")
+            (let ((before (copy-tree
+                           (gethash "req-batch" hermes-chat--pending-prompts))))
+              (funcall resolve '((status . "ok")))
+              (funcall reject "late rejection")
+              (should (equal before
+                             (gethash "req-batch" hermes-chat--pending-prompts)))
+              (should (equal (hermes-chat-input-string) "Newer draft")))))))))
+
+(ert-deftest hermes-chat-batch-clarify-composer-preflight-preserves-draft ()
+  "An invalid question or dead client cannot consume the composer draft."
+  (dolist (mode '(missing-qid empty-qid answered disconnected))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "clarify.request"
+       `((request_id . "req-batch")
+         (answers . ,(when (eq mode 'answered) '((q0 . "Done"))))
+         (questions . [,(pcase mode
+                          ('missing-qid '((question . "No id")))
+                          ('empty-qid '((qid . "") (question . "Empty id")))
+                          (_ '((qid . "q0") (question . "Question"))))])))
+      (when (eq mode 'disconnected)
+        (setf (hermes-dashboard-transport-client-websocket client) nil))
+      (insert "Keep this draft")
+      (should-error (hermes-chat-send) :type 'user-error)
+      (should (equal (hermes-chat-input-string) "Keep this draft"))
+      (should-not hermes-chat--retained-clarify-owners))))
 
 (ert-deftest hermes-chat-batch-clarify-reads-only-unanswered-questions ()
   "Reconnect answers are skipped while remaining question modes stay native."

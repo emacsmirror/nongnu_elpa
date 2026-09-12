@@ -1930,7 +1930,10 @@ durable session continues on send."
     buffer))
 
 (defun hermes-chat-send ()
-  "Send the current Hermes chat input."
+  "Send the current Hermes chat input.
+Answer a pending clarification instead of starting a new turn.  For a batch,
+answer only the next unanswered question; use `hermes-chat-respond-to-prompt'
+to answer all remaining questions in the minibuffer."
   (interactive)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
@@ -1947,14 +1950,7 @@ durable session continues on send."
       (setq sent-p
             (cond
              (clarify-key
-              (when (hermes-chat--batch-clarify-p
-                     (gethash clarify-key hermes-chat--pending-prompts))
-		(user-error
-		 "Use C-c C-a to answer the batched Hermes clarification"))
-              (when (hermes-chat--prompt-response-in-flight-p clarify-key)
-		(user-error "Hermes is accepting the previous prompt response"))
-              (hermes-chat--delete-input-tail)
-              (hermes-chat-respond-to-prompt clarify-key content nil t)
+              (hermes-chat--send-clarify-input clarify-key content)
               t)
              ((hermes-chat--parse-slash content)
               (hermes-chat--handle-slash-content content)

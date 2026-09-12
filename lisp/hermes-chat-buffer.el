@@ -627,6 +627,9 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
     (hermes-chat--protect-transcript)
     (goto-char hermes-chat--input-marker)))
 
+(defvar-local hermes-chat--retained-clarify-owners nil
+  "Oldest-first immutable owners of accepted clarification responses.")
+
 (defvar-local hermes-chat--recovery-buffer nil
   "Editable document holding input preserved by explicit disconnect.")
 (defvar-local hermes-chat--recovery-copies nil
@@ -659,6 +662,9 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
                               :test #'equal)
               collect (list context uncertain (plist-get context :content)
                             (plist-get context :display)))
+     (mapcar (lambda (owner)
+               (list owner uncertain (plist-get owner :text) nil))
+             hermes-chat--retained-clarify-owners)
      (unless (string-empty-p draft)
        (list (list 'draft "Draft — also remains in original chat" draft nil))))))
 
