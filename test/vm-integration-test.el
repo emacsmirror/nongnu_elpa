@@ -1430,6 +1430,61 @@ characters itself."
                                    file))))))
     (should-not offenders)))
 
+(defun vm-integration-test--defcustoms-that-do-not-match-their-type ()
+  "Every VM user option whose default value its own :type rejects, by name.
+
+In a subprocess, for two reasons.  Every file in lisp/ has to be loaded for
+the question to mean anything, since an option in a file this Emacs has not
+loaded has no :type to check and would pass by not being there; and loading
+all of them is a thing to do in an Emacs nothing else runs in.
+
+`cus-edit' as well as `wid-edit', or the `hook' and `face' widgets are
+undefined and every option using one looks broken.  `dnd', or the `function'
+widget rejects `dnd-open-file' in the default of `vm-dnd-protocol-alist',
+which is a real function in a file that happened not to be loaded."
+  (let ((form `(let ((bad nil))
+                 (require 'wid-edit)
+                 (require 'cus-edit)
+                 (require 'dnd nil t)
+                 (require 'vm-autoloads)
+                 (require 'vm)
+                 (dolist (file (directory-files ,vm-test-lisp-dir t "\\.el\\'"))
+                   (unless (member (file-name-nondirectory file)
+                                   '("vm-autoloads.el" "vm-cus-load.el"
+                                     "vm-version-conf.el"))
+                     (load file nil t t)))
+                 (mapatoms
+                  (lambda (s)
+                    (when (and (string-prefix-p "vm" (symbol-name s))
+                               (custom-variable-p s)
+                               (get s 'custom-type))
+                      (unless (widget-apply
+                               (widget-convert (get s 'custom-type))
+                               :match (default-value s))
+                        (push s bad)))))
+                 (prin1 (sort bad #'string<)))))
+    (with-temp-buffer
+      (let ((status (call-process
+                     (expand-file-name invocation-name invocation-directory)
+                     nil t nil "-batch" "-Q" "-L" vm-test-lisp-dir
+                     "--eval" (prin1-to-string form))))
+        (should (equal status 0))
+        (goto-char (point-max))
+        (backward-sexp)
+        (read (current-buffer))))))
+
+(ert-deftest vm-integration-test-every-option-matches-its-own-type ()
+  "REGRESSION: no user option offers Customize a default its :type refuses.
+
+A :type that does not admit the option's own default is a Customize buffer
+that will not save, for a value the code is using at that moment.  Nothing
+else notices: the option works, the docstring is right, and only a reader
+who opens `M-x customize-option' finds out.
+
+Clean over 500 typed options when this was written.  32 more carry no :type
+at all, which is a lesser gap and not what this holds."
+  (should (equal nil (vm-integration-test--defcustoms-that-do-not-match-their-type))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
