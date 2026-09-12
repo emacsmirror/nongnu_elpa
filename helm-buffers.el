@@ -194,6 +194,12 @@ Don't use `setq' to set this."
   "Face used for buffer files modified outside of emacs."
   :group 'helm-buffers-faces)
 
+(defface helm-buffer-renamed-out
+  `((t ,@(and (>= emacs-major-version 27) '(:extend t))
+       :foreground "SpringGreen"))
+  "Face used for buffer files with directory not matching default-directory."
+  :group 'helm-buffers-faces)
+
 (defface helm-buffer-not-saved
   `((t ,@(and (>= emacs-major-version 27) '(:extend t))
        :foreground "IndianRed2"))
@@ -545,6 +551,16 @@ The list is reordered with `helm-buffer-list-reorder-fn'."
            (helm-buffer--show-details
             name name-prefix file-name size mode dir
             'helm-buffer-saved-out 'helm-buffer-process nil details 'modout))
+          ;; The buffer-file-name's directory and default-directory don't match.
+          ;; This happen generally when moving a file to another directory,
+          ;; `set-visited-file-name' modifies `buffer-file-name' but not
+          ;; `default-directory'.
+          ((and file-name
+                (file-exists-p file-name)
+                (not (file-equal-p (file-name-directory file-name) dir)))
+           (helm-buffer--show-details
+            name name-prefix file-name size mode dir
+            'helm-buffer-renamed-out 'helm-buffer-process nil details 'notsaved))
           ;; A new buffer file not already saved on disk (or a deleted file) .=>indianred2
           ((and file-name (not (file-exists-p file-name)))
            (helm-buffer--show-details
