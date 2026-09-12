@@ -1,0 +1,137 @@
+Releasing VM 9.0.0
+
+The mechanics of any release are in releasing.org. This is what 9.0.0 needs
+that a patch release does not. Tracked as
+https://gitlab.com/emacs-vm/vm/-/work_items/813.
+
+* Why the major number moves
+
+Since 8.3.2, released 2025-12-29:
+
+| commits                             |    1343 |
+| files changed                       |     229 |
+| lines added                         | 121,465 |
+| lines removed                       |  18,116 |
+| NEWS entries with no release yet    |      77 |
+| open issues that are Pending        | 315/332 |
+
+Three of those changes are ones a user meets whatever they do:
+
+- IMAP and POP became asynchronous (#473, 63 commits). Every converted path
+  is non-blocking, with no dual mode.
+- XEmacs support was removed (#708). Three thousand lines, and with them the
+  second implementation of menus, toolbars, extents and mouse handling.
+- Personality Crisis was renamed from vmpc- to vm-pcrisis- (#657). 111
+  symbols moved and 50 of them are names a configuration can use, so each
+  of those 50 carries an alias.
+
+95% of the open issues are waiting on this release to reach main. That is
+the argument for making one, and it is separate from the argument about the
+number.
+
+* What the version bump touches
+
+releasing.org lists the four files. Two more things carry a version and are
+easy to miss:
+
+- 53 obsolescence markers name 8.3.3 or 8.4.0 as the version a name was
+  deprecated in. Neither will exist. They all become 9.0.0, except the one
+  that says 8.2.0, which is a real past release, and the one that says 2024.
+  51 say 8.3.3, 2 say 8.4.0.
+- vm-reference-test-the-manual-does-not-name-the-unreleased-version reads
+  the Version: header of lisp/vm.el and fails if the manual names it. Once
+  the header says 9.0.0, any manual sentence naming 9.0.0 has to go, and any
+  sentence dating a change to it should say "In earlier releases" instead.
+
+Every compiled file carries the version it was built against, so the bump
+invalidates all of them. vm-assert-version reports that as it loads, which
+is what it is for. A release build runs make distclean anyway.
+
+* Compatibility: the question to settle first
+
+The ticket says to drop compatibility baggage while the user base is small.
+That is a real argument and it needs a real cost beside it, because of when
+the deprecations were made.
+
+Everything currently deprecated was renamed during this cycle. Checked
+against the 8.3.2 tag, every one of these old names is the name that
+shipped:
+
+| name                               | shipped in 8.3.2 |
+| vmpc-conditions and 49 others      | yes              |
+| vm-trust-From_-with-Content-Length | yes              |
+| vm-always-use-presentation-buffer  | yes              |
+| vm-imagemagick-convert-program     | yes              |
+| vm-imagemagick-identify-program    | yes              |
+| vm-mime-qp-decode-region           | yes              |
+| vmpc-virtual-check-selector        | yes              |
+
+So no released VM has ever warned about any of them. A user upgrading 8.3.2
+to 9.0.0 meets every rename at once, and the aliases are the only thing that
+keeps their .vm working. Removing an alias in 9.0.0 breaks a configuration
+that has never been told anything is wrong with it.
+
+Two positions, and the choice belongs to the maintainer:
+
+- One release of grace. Nothing is removed in the release that first
+  deprecates it. 9.0.0 ships every alias, 10.0.0 removes them. Costs one
+  more release of carrying 52 aliases, which is a defalias each, and three
+  make-obsolete-variable marks beside them.
+- Break now. The user base is small, NEWS is the warning, and the alternative
+  is carrying them for years. Costs a silent breakage for anyone who upgrades
+  without reading NEWS.
+
+The pcrisis aliases are the clearest case for grace: 50 names, all renamed
+six weeks ago, and Personality Crisis is configured by writing those names
+into a file by hand. Leaving them in and deprecated is what the ticket
+already suggests, and the reasoning generalises to the other six.
+
+* vm-pgg
+
+#568 holds this and it is the one drop that is analysed and agreed: every
+vm-pgg entry point has a vm-epg counterpart, reading and composing both, and
+nothing in VM proper requires vm-pgg. 1306 lines.
+
+The same timing problem applies, and harder. vm-epg.el does not exist in
+8.3.2 and vm-pgg's deprecation warning has never appeared in a release. An
+8.3.2 user has vm-pgg as the only PGP support VM offers, working, unwarned.
+
+Dropping it in 9.0.0 also takes the byte-compile-lint baseline from 6
+warnings to 3, since three are vm-pgg requiring pgg, pgg-def and pgg-parse,
+all of which are obsolete in Emacs. The remaining three are docstring widths
+in vm-autoloads, vm-avirtual and vm-pop, so a zero-warning tree is within
+reach of this release if that is wanted.
+
+If it goes, it needs more than deleting the file: vm-vars.el defines the
+vm-pgg Customize group, the manual documents the package in the Sending
+Secure MIME section, and five test files name it.
+
+* What only a person can do
+
+Nine issues carry the Human label and none of them is code:
+
+| #607 | manual testing before the release, a checklist at a real mailbox |
+| #813 | this ticket                                                      |
+| #568 | the vm-pgg decision                                              |
+| #814 | ask NonGNU ELPA to stop shipping the build system                |
+| #816 | the first-run helper, awaiting a decision on the branch          |
+| #695 | introduce Emacs users to the rebooted VM                          |
+| #487 | the old VM description on nongnu.org                             |
+| #478 | distributions that package VM, and what they watch               |
+| #471 | external links still pointing away from GitLab                   |
+
+#607 is the one that gates the release. The rest can follow it.
+
+* Open questions
+
+- The number. 9.0.0 or 8.4.0. The volume above argues for 9.0.0 and the
+  ticket already says so; nothing in the tree depends on the answer except
+  the 53 markers.
+- Grace or break, as above. This decides whether 9.0.0 is a large release
+  that keeps every old name working, or a smaller and sharper one.
+- Whether main moves to develop before or after the release. The ticket
+  notes that moving it first makes testing through a package manager easier,
+  which is true and also means the release is cut from what people are
+  already running.
+- Whether to take the byte lint to zero while the file that carries half of
+  it is being removed anyway.
