@@ -335,16 +335,47 @@ The backend never gates \"always\", so it must not be filtered locally."
       (should (member "Cancel / ignore" seen-candidates)))))
 
 (ert-deftest hermes-chat-read-clarify-allows-free-text-answer ()
-  "Clarify choices are suggestions: completion does not require a match."
-  (let (require-match)
-    (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt _choices &optional _pred match &rest _)
-                 (setq require-match match)
-                 "my own answer")))
-      (should (equal (hermes-chat--read-prompt-response
-                      '(:prompt-type "clarify" :choices ["a" "b"]))
-                     "my own answer"))
-      (should-not require-match))))
+  "Clarify choices are suggestions; return custom text unchanged."
+  (let* ((answer "  My own answer: όχι a or b.  ")
+         (completing-read-function
+          (lambda (_prompt choices predicate require-match &rest _)
+            (should (equal choices '("a" "b")))
+            (should-not predicate)
+            (should-not require-match)
+            answer)))
+    (should (equal (hermes-chat--read-prompt-response
+                    '(:prompt-type "clarify" :choices ["a" "b"]))
+                   answer))))
+
+(ert-deftest hermes-chat-read-batch-clarify-allows-free-text-answer ()
+  "A batched single-select question accepts text outside its suggestions."
+  (let* ((answer "Use neither; keep my answer verbatim.")
+         (completing-read-function
+          (lambda (_prompt choices predicate require-match &rest _)
+            (should (equal choices '("First" "Second")))
+            (should-not predicate)
+            (should-not require-match)
+            answer)))
+    (should
+     (equal (hermes-chat--read-batch-question-response
+             '((qid . "q0") (question . "Pick one")
+               (choices . ["First" "Second"])))
+            answer))))
+
+(ert-deftest hermes-chat-read-batch-clarify-allows-custom-multiple-answers ()
+  "Multi-select suggestions do not restrict any returned answer to a match."
+  (let ((answers '("Alpha" "My own alternative")))
+    (cl-letf (((symbol-function 'completing-read-multiple)
+               (lambda (_prompt choices &optional predicate require-match &rest _)
+                 (should (equal choices '("Alpha" "Beta")))
+                 (should-not predicate)
+                 (should-not require-match)
+                 answers)))
+      (should
+       (equal (hermes-chat--read-batch-question-response
+               '((qid . "q0") (question . "Pick several")
+                 (choices . ["Alpha" "Beta"]) (multi_select . t)))
+              answers)))))
 
 (ert-deftest hermes-chat-approval-ignores-allow-permanent-field ()
   "The gateway approval payload never carries `allow_permanent'.
@@ -423,6 +454,41 @@ stays available."
                 '(("req-batch" "q0" "First")
                   ("req-batch" "q1" ("Alpha" "Beta")))))
         (should-not (gethash "req-batch" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-batch-clarify-sends-custom-interactive-answers ()
+  "Interactive answers reach their question RPCs without choice validation."
+  (let ((completing-read-function
+         (lambda (_prompt _choices _predicate require-match &rest _)
+           (should-not require-match)
+           "Neither suggestion"))
+        requests)
+    (cl-letf (((symbol-function 'completing-read-multiple)
+               (lambda (_prompt _choices &optional _predicate require-match &rest _)
+                 (should-not require-match)
+                 '("Alpha" "Custom option")))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) "  My explanation: όχι.  "))
+              ((symbol-function
+                'hermes-dashboard-transport-clarify-question-respond)
+               (lambda (_client request question answer &optional resolve _reject)
+                 (push (list request question answer) requests)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-custom")
+           (questions . [((qid . "q0") (question . "Pick one")
+                          (choices . ["First" "Second"]))
+                         ((qid . "q1") (question . "Pick several")
+                          (choices . ["Alpha" "Beta"]) (multi_select . t))
+                         ((qid . "q2") (question . "Explain"))])))
+        (hermes-chat-respond-to-prompt "req-custom")
+        (should
+         (equal (nreverse requests)
+                '(("req-custom" "q0" "Neither suggestion")
+                  ("req-custom" "q1" ("Alpha" "Custom option"))
+                  ("req-custom" "q2" "  My explanation: όχι.  "))))
+        (should-not (gethash "req-custom" hermes-chat--pending-prompts))))))
 
 (ert-deftest hermes-chat-batch-clarify-rejects-unscoped-chat-tail ()
   "RET cannot turn one chat-tail string into an empty batch response."
