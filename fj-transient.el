@@ -40,6 +40,7 @@
 (autoload 'fj-get-repo-topics "fj")
 (autoload 'fj-get-current-user-settings "fj")
 (autoload 'fj-repo-+-owner-from-git "fj")
+(autoload 'fj--repo-owner "fj")
 
 (defvar fj-current-repo)
 (defvar fj-user)
