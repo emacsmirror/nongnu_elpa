@@ -4064,9 +4064,10 @@ Renders a review heading and review comments."
                          (_ "reviewed"))))
             (propertize
              (concat
-              (format format-str user state ts) "\n\n"
-              ;; FIXME: only add if we have a comment?:
-              (fj-format-comment repo owner data nil :nobar)
+              (format format-str user state ts)
+              (when (not (string-empty-p .body))
+                (concat "\n\n"
+                        (fj-format-comment repo owner data nil :nobar)))
               (fj-format-grouped-review-comments comments owner ts))
              'fj-review review)))))))
 
