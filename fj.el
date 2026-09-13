@@ -2906,10 +2906,11 @@ Else make a POST request to the server."
                   ;; (switch-to-buffer (current-buffer))
                   ;; grab just the body:
                   (re-search-forward "<body>")
-                  (buffer-substring (point)
-                                    (save-excursion
-                                      (re-search-forward "</body>")
-                                      (pos-bol)))))
+                  (buffer-substring-no-properties
+                   (point)
+                   (save-excursion
+                     (re-search-forward "</body>")
+                     (pos-bol)))))
             (t ; if rendering fails, return unrendered body:
              (with-current-buffer buf
                (erase-buffer)
