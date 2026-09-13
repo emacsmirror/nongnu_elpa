@@ -3,10 +3,10 @@
 ;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <martianh@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
+;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.42
+;; Version: 0.43
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -53,6 +53,7 @@
 (require 'markdown-mode)
 (require 'shr)
 (require 'mm-url)
+(require 'compat)
 
 (require 'fj-transient)
 
@@ -68,6 +69,7 @@
   ;; list of "owner/repo"
   ;; TODO: (owner . repo)
   )
+(make-obsolete-variable 'fj-extra-repos 'fj-favourite-repos "0.43")
 
 (defvar-local fj-current-repo nil)
 
@@ -108,6 +110,8 @@ etc."
 (defvar-local fj-compose-issue-labels nil)
 
 (defvar-local fj-compose-milestone nil)
+
+(defvar-local fj-compose-upload nil)
 
 ;; instance vars
 
@@ -218,6 +222,11 @@ Requires an extra request per repo, so is disabled by default."
   "Whether to display commit messages for commits in PR timelines.
 Requires an extra request per commit, so is disabled by default."
   :type '(boolean))
+
+(defcustom fj-favourite-repos nil
+  "A list of favourite repos, which are strings of the form \"owner/repo\", or
+\"org/repo\". You can jump to these with completion using `fj-jump-to-repo'."
+  :type '(repeat string))
 
 ;;; FACES
 
@@ -1304,9 +1313,9 @@ Return the issue number."
   "From CANDS, return the data for CHOICE.
 CHOICE is a string returned by `completing-read'."
   (car
-   (cl-member-if (lambda (c)
-                   (string= (car c) choice))
-                 cands)))
+   (member-if (lambda (c)
+                (string= (car c) choice))
+              cands)))
 
 (defun fj-cycle-sort-or-relation ()
   "Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'."
@@ -1515,6 +1524,14 @@ If TYPE is :pull, get a pull request, not issue."
                            (if (eq type :pull) "pulls" "issues") number)))
     (fj-get endpoint)))
 
+(defun fj-issue-success-maybe-upload (resp repo owner)
+  "In sucess function with RESP, upload attachment if present.
+REPO and OWNER are where to upload it."
+  (when fj-compose-upload
+    (let* ((json (fj-resp-json resp))
+           (index (alist-get 'number json)))
+      (fj-post-issue-attachment repo owner index fj-compose-upload))))
+
 (defun fj-issue-post (repo user title body &optional labels
                            assignees closed due-date milestone ref)
   "POST a new issue to REPO owned by USER.
@@ -1534,21 +1551,38 @@ CLOSED, DUE-DATE, REF."
                                           collect (cdr x))))
                   (fedi-opt-params assignees closed
                                    (due-date :alias "due_date")
-                                   milestone ref))))
-    (fj-post url params :json)))
+                                   milestone ref)))
+         (resp (fj-post url params :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-issue-success-maybe-upload resp repo user)
+       (message "Issue created!")))))
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
           due_date milestone ref unset_due_date updated_at)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS.
-OWNER is the repo owner."
+OWNER is the repo owner.
+Return response buffer."
   ;; PATCH /repos/{owner}/{repo}/issues/{index}
   (let* ((params (fedi-opt-params
                   title body state assignee assignees due_date
                   milestone ref unset_due_date updated_at))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params)))
+
+(defun fj-issue-edit (&optional repo owner id title new-body)
+  "Edit comment with ID in REPO.
+OWNER is the repo owner.
+NEW-BODY is the new comment text to send."
+  (let* ((resp (fj-issue-patch repo owner id title new-body)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-issue-success-maybe-upload resp repo owner)
+       (message "Issue %s edited!" id)))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
   "Edit ISSUE title in REPO.
@@ -1599,7 +1633,8 @@ Optionally, NO-CONFIRM means don't ask before deleting."
   "Jump to repo issues listing.
 Reads a string of \"OWNER/REPO\", slash-separated."
   (interactive)
-  (let* ((owner-repo (read-string "Owner/repo: "))
+  (let* ((owner-repo (completing-read "Jump to [match or any owner/repo]: "
+                                      fj-favourite-repos))
          (split (split-string owner-repo "/")))
     (fj-list-issues-do (nth 1 split) (nth 0 split))))
 
@@ -1746,6 +1781,14 @@ OWNER is the repo owner."
                            owner repo comment)))
     (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))
 
+(defun fj-comment-success-upload-maybe (resp repo owner)
+  "In comment success function with RESP, maybe upload file.
+REPO and OWNER are where to upload it."
+  (when fj-compose-upload
+    (let* ((json (fj-resp-json resp))
+           (id (alist-get 'id json)))
+      (fj-post-comment-attachment repo owner id fj-compose-upload))))
+
 (defun fj-issue-comment (&optional repo owner issue comment
                                    close)
   "Add COMMENT to ISSUE in REPO.
@@ -1757,13 +1800,15 @@ With arg CLOSE, also close ISSUE."
          (url (format "repos/%s/%s/issues/%s/comments" owner repo issue))
          (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
-         (response (fj-post url params)))
-    (fedi-http--triage response
-                       (lambda (_)
-                         (if (not close)
-                             (message "comment created!")
-                           (fj-issue-close repo owner issue)
-                           (message "comment created, issue closed!"))))))
+         (resp (fj-post url params)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-comment-success-upload-maybe resp repo owner)
+       (if (not close)
+           (message "comment created!")
+         (fj-issue-close repo owner issue)
+         (message "comment created, issue closed!"))))))
 
 (defun fj-comment-patch (repo owner id &optional params issue json)
   "Edit comment with ID in REPO owned by OWNER.
@@ -1779,11 +1824,109 @@ NEW-BODY is the new comment text to send."
   (let* ((repo (fj-read-user-repo repo))
          (id (or id (fj--property 'fj-comment-id)))
          (owner (or owner (fj--repo-owner)))
-         (response (fj-comment-patch repo owner id
-                                     `(("body" . ,new-body)))))
-    (fedi-http--triage response
-                       (lambda (_)
-                         (message "comment edited!")))))
+         (resp (fj-comment-patch repo owner id
+                               `(("body" . ,new-body)))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (fj-comment-success-upload-maybe resp repo owner)
+       (message "comment edited!")))))
+
+;;; FILE UPLOAD/ATTACHMENT
+
+(defun fj--prep-file-raw-blob (filename)
+  "Return the request data to upload for FILENAME."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally filename)
+    (let ((boundary (buffer-hash)))
+      `(,boundary . ,(buffer-substring-no-properties (point-min) (point-max))))))
+
+(defun fj-post-comment-attachment (repo owner id filepath)
+  "Post comment attachment at FILEPATH.
+Add it to comment with ID in REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/issues/comments/%s/assets"
+                          owner repo id)))
+    (fj-post-attachment endpoint id filepath)))
+
+(defun fj-post-issue-attachment (repo owner id filepath)
+  "Post issue attachment at FILEPATH.
+Add it to issue with ID in REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/issues/%s/assets"
+                          owner repo id)))
+    (fj-post-attachment endpoint id filepath)))
+
+(defun fj-post-attachment (endpoint id filepath)
+  "Make POST request to upload FILEPATH to ENDPOINT.
+ID is the item to attach it to, comment or issue/PR.
+The upload is asynchronous."
+  (message "Uploading file for %s..." id)
+  (fj-authorized-request "POST"
+    (let* ((filename (file-name-nondirectory filepath))
+           (mime-type (mailcap-file-name-to-mime-type filepath))
+           (params `(("name" . ,filename)))
+           (url (fedi-http--concat-params-to-url (fj-api endpoint) params))
+           (data (fj--prep-file-raw-blob filepath))
+           (url-request-extra-headers
+            (append
+             url-request-extra-headers
+             `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                          (car data))))))
+           (url-request-data
+            (mm-url-encode-multipart-form-data
+             `(("file" . (("name" . "attachment") ;; API param
+                          ("filename" . ,filename)
+                          ("content-type" . ,mime-type)
+                          ("filedata" . ,(cdr data)))))
+             (car data))))
+      (url-retrieve url #'fj--post-file-upload-cb))))
+
+(defun fj--post-file-upload-cb (_status)
+  "Callback for `fj--post-file-upload'.
+STATUS is the HTTP response, FILENAME the uploaded file."
+  (let* ((json (fj-resp-json (current-buffer))))
+    (message "File %s uploaded!" (alist-get 'name json))))
+
+(defun fj-delete-comment-asset (repo owner comment-id asset-id)
+  "Delete asset with ASSET-ID in REPO by OWNER for COMMENT-ID."
+  (let* ((endpoint (format "repos/%s/%s/issues/comments/%s/assets/%s"
+                           owner repo comment-id asset-id)))
+    (fj-delete endpoint)))
+
+(defun fj-delete-issue-asset (repo owner issue-id asset-id)
+  "Delete asset with ASSET-ID in REPO by OWNER for ISSUE-ID."
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/assets/%s"
+                           owner repo issue-id asset-id)))
+    (fj-delete endpoint)))
+
+(defun fj-delete-attachment ()
+  "Delete attachment at point."
+  ;; FIXME: add item (issue/PR) request too:
+  (interactive)
+  ;; FIXME: handle multiple assets, completing-read (need to change data
+  ;; properties):
+  (fj-with-own-comment
+   ;; FIXME: who has perms to remove attachments? (admin/owner and/or own
+   ;; comment?)
+   (fj-destructure-buf-spec (repo owner)
+     ;; FIXME: get attachment name too:
+     (let ((comment-id (fj--property 'fj-comment-id))
+           ;; due to async assets display, we only have this prop on the
+           ;; actual asset display part, not on the rest of the comment:
+           (attachment-id (fj--property 'fj-attachment-id)))
+       (if (not attachment-id)
+           (user-error "No attachment at point?")
+         (when (y-or-n-p
+                (format "Delete attachment %s?"
+                        (alist-get 'name (fj--property 'fj-attachment))))
+           (let ((resp (fj-delete-comment-asset
+                        repo owner comment-id attachment-id)))
+             (fedi-http--triage
+              resp
+              ;; FIXME: reload, or remove without reloading?
+              (lambda (_resp)
+                (fj-view-reload)
+                (message "Attachment deleted!"))))))))))
 
 ;;; ISSUE/COMMENT REACTIONS
 ;; render reactions
@@ -1824,8 +1967,7 @@ If none, return emptry string."
   (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
-                         grouped " ")
-              "\n")
+                         grouped " "))
     ""))
 
 (defun fj-render-comment-reactions (reactions)
@@ -2011,11 +2153,9 @@ Return an alist, with each cons being (name . id)"
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
-     (lambda (resp)
-       (let ((json (fj-resp-json resp)))
-         (message "%s" (prin1-to-string json))
-         (fj-view-reload)
-         (message "Label %s added to #%s!" (car choice) issue))))))
+     (lambda (_resp)
+       (fj-view-reload)
+       (message "Label %s added to #%s!" (car choice) issue)))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
@@ -2358,9 +2498,9 @@ Optionally specify its FACE or VERBATIM-FACE."
   "Nil if the host of URL is a member of `fj-non-fj-hosts'.
 Otherwise t."
   (let* ((parsed (url-generic-parse-url url)))
-    (not (cl-member-if (lambda (x)
-                         (string-prefix-p x (url-host parsed)))
-                       fj-non-fj-hosts))))
+    (not (member-if (lambda (x)
+                      (string-prefix-p x (url-host parsed)))
+                    fj-non-fj-hosts))))
 
 (defun fj-owner+repo-from-url (url)
   "Return the owner (or organization) and repository names from URL.
@@ -2902,9 +3042,11 @@ Optionally start from POINT."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-format-comment (repo owner comment &optional author no-bar)
+(defun fj-format-comment (_repo owner comment &optional author review)
   "Format COMMENT in REPO by OWNER.
-AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
+AUTHOR is of comment.
+REVIEW means we are formatting a review, so no assets/reactions and we
+format alittle simpler."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at))))
@@ -2914,135 +3056,160 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
          .user.username author owner
          (fj-edited-str-maybe .created_at .updated_at)
          stamp)
-        "\n\n"
+        (unless review "\n\n")
         (propertize (fj-render-body .body)
                     'fj-item-body t)
         ;; this function is currently also used for PR reviews, which
         ;; don't have assets, so we skip them:
         (if (not (string= (alist-get 'type comment) "comment"))
             ""
-          (fj--placeholder-str "assets" 'fj-assets))
+          (unless review
+            (fj--placeholder-str "assets"
+                               'fj-assets t
+                               'fj-comment t
+                               'fj-comment-author .user.username
+                               'fj-comment-id .id)))
         ;; reactions
-        (fj--placeholder-str "reacs" 'fj-reactions)
-        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
-       'fj-comment comment
+        (unless review
+          (fj--placeholder-str "reacs"
+                             'fj-reactions t
+                             'fj-comment t
+                             'fj-comment-author .user.username
+                             'fj-comment-id .id))
+        (if review ""
+          (concat
+           "\n"
+           (propertize (concat fedi-horiz-bar fedi-horiz-bar)
+                       'fj-item-end t))))
+       'fj-comment t
        'fj-comment-author .user.username
        'fj-comment-id .id))))
 
-(defun fj--placeholder-str (str property)
-  "Return a placeholder string STR with text PROPERTY."
+(defun fj--placeholder-str (str &rest props)
+  "Return an invisible placeholder string STR with text PROPS."
   (concat "\n"
-          (propertize (format "[%s]" str)
-                      'invisible t
-                      property t)
-          "\n"))
+          (apply #'propertize
+                 (format "[%s]" str)
+                 'invisible t
+                 props)))
 
-(defun fj-render-assets-async ()
+(defun fj-render-assets-async (&optional start)
   "Render assets in current item view asynchonously."
   (let (assets-match)
     (save-excursion
-      (goto-char (point-min))
+      (goto-char (or start (point-min)))
       (while (setq assets-match
                    (text-property-search-forward 'fj-assets))
         (fj-destructure-buf-spec (repo owner)
           (let ((id (fedi--property 'fj-comment-id))
-                ;; create marker for this match:
-                (marker (copy-marker
-                         (prop-match-beginning assets-match))))
+                ;; create markers for this match:
+                (marker-start (copy-marker
+                               (prop-match-beginning assets-match)
+                               t)) ;; move on insertion
+                (marker-end (copy-marker
+                             (prop-match-end assets-match)
+                             t))) ;; move on insertion
             (if (not id)
                 ;; we are at an item (issue/PR), not a comment:
                 ;; it has assets data already
-                (fj-render-item-assets marker)
+                (fj-render-item-assets marker-start marker-end)
               ;; comment, we must fetch it:
               (fj-get-comment-async repo owner id
                                   #'fj-render-comment-assets-cb
-                                  marker))))))))
+                                  marker-start marker-end))
+            ;; avoid matching just entered data. move forward to horiz bar at and of item:
+            (goto-char (next-single-property-change (point) 'fj-item-end))))))))
 
-(defun fj-render-item-assets (marker)
+(defun fj-render-item-assets (marker-start marker-end)
   "Render assets for item, an issue or PR.
-MARKER is where we insert the assets."
+MARKER-START and MARKER-END is the range where we insert the assets."
   (let* ((item (fedi--property 'fj-item-data)))
-    (fj-render-comment-assets-cb item marker)))
+    (fj-render-comment-assets-cb item marker-start marker-end)))
 
-(defun fj-render-comment-assets-cb (data marker)
+(defun fj-render-comment-assets-cb (data marker-start marker-end)
   "Render assets in DATA.
-MARKER is where we insert the assets."
-  (with-current-buffer (marker-buffer marker)
-    (let ((inhibit-read-only t)
-          (assets (alist-get 'assets data)))
-      (save-excursion
+MARKER-START and MARKER-END is the range where we insert the assets."
+  (with-current-buffer (marker-buffer marker-start)
+    ;; we are in the while loop in `fj-render-assets-async', so if we
+    ;; save-excursion here, it returns point to before the insertion of
+    ;; assets, meaning the text-prop search matches again, then writes
+    ;; over the inserted assets. but if we don't save excursion, point is
+    ;; moved on loading a view. we have a save excursion in the parent
+    ;; function, but maybe `with-current-buffer' nullifies it:
+    (save-excursion
+      (let ((inhibit-read-only t)
+            (assets (alist-get 'assets data)))
         ;; goto marker for this match:
         (goto-char
-         (marker-position marker))
-        (delete-region (pos-bol) (pos-bol 3)) ;; remove placeholder + newline
-        (when assets
-          (insert
-           (fj-format-assets-urls assets))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
+         (marker-position marker-start))
+        (let ((props (text-properties-at (point))))
+          ;; remove placeholder:
+          (delete-region (marker-position marker-start)
+                         (marker-position marker-end))
+          (if assets
+              (insert
+               (fj-format-assets-urls assets props))
+            (delete-line)))
+        ;; delete markers for this match:
+        (set-marker marker-start nil)
+        (set-marker marker-end nil)))))
 
-(defun fj-render-reactions-async ()
+(defun fj-render-reactions-async (&optional start)
   "Render reactions in current item view asynchonously."
   (let (reac-match)
     (save-excursion
-      (goto-char (point-min))
+      (goto-char (or start (point-min)))
       (while (setq reac-match
                    (text-property-search-forward 'fj-reactions))
         (fj-destructure-buf-spec (repo owner)
           (let ((comment-id (fedi--property 'fj-comment-id))
                 (issue (fedi--property 'fj-item-number))
-                ;; create marker for this match:
-                (marker (copy-marker
-                         (prop-match-beginning reac-match))))
+                ;; create markers for this match:
+                (marker-start (copy-marker
+                               (prop-match-beginning reac-match)
+                               t)) ;; move on insertion
+                (marker-end (copy-marker
+                             (prop-match-end reac-match)
+                             t)))  ;; move on insertion
             (if issue
                 ;; we are at an item (issue/PR):
                 (fj-get-issue-reactions-async
                  repo owner issue
-                 #'fj-render-issue-reactions-cb marker
+                 #'fj-render-issue-reactions-cb marker-start marker-end
                  #'fj-render-issue-reactions)
               ;; comment:
               (fj-get-comment-reactions-async
                repo owner comment-id
-               #'fj-render-reactions-cb marker
+               #'fj-render-comment-reactions-cb  marker-start marker-end
                #'fj-render-comment-reactions))))))))
 
-(defun fj-render-reactions-cb (data marker render-fun)
+(defun fj-render-issue-reactions-cb (data marker-start marker-end render-fun)
   "Render reactions in DATA.
-MARKER is where we insert.
+MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
-  (with-current-buffer (marker-buffer marker)
-    (let ((inhibit-read-only t))
-      (save-excursion
-        ;; goto marker for this match:
-        (goto-char
-         (marker-position marker))
-        ;; remove placeholder + newline:
-        (delete-region (pos-bol) (pos-bol 3))
-        (when data
-          (insert
-           (concat (funcall render-fun data)
-                   "\n"))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
+  (fj-render-comment-reactions-cb data marker-start marker-end render-fun))
 
-(defun fj-render-issue-reactions-cb (data marker render-fun)
+(defun fj-render-comment-reactions-cb (data marker-start marker-end
+                                          render-fun)
   "Render reactions in DATA.
-MARKER is where we insert.
+MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
-  (with-current-buffer (marker-buffer marker)
+  (with-current-buffer (marker-buffer marker-start)
     (let ((inhibit-read-only t))
       (save-excursion
         ;; goto marker for this match:
         (goto-char
-         (marker-position marker))
+         (marker-position marker-start))
         ;; remove placeholder:
-        (delete-region (pos-bol) (pos-bol 2))
-        (when data
-          (insert
-           (concat (funcall render-fun data)
-                   "\n"))))
-      ;; delete marker for this match:
-      (set-marker marker nil))))
+        (delete-region (marker-position marker-start)
+                       (marker-position marker-end))
+        (if data
+            (insert
+             (concat (funcall render-fun data)))
+          (delete-line)))
+      ;; delete markers for this match:
+      (set-marker marker-start nil)
+      (set-marker marker-end nil))))
 
 (defun fj-format-comment-header (username author owner edited ts)
   "Format a comment header line.
@@ -3169,12 +3336,12 @@ RELOAD mean we reloaded."
            "\n\n"
            (propertize (fj-render-body .body)
                        'fj-item-body t)
-           ;; attachments:
-           (when .assets
-             (fj--placeholder-str "assets" 'fj-assets))
+           ;; attachments and reactions:
+           (fj--placeholder-str "assets" 'fj-assets t)
+           (fj--placeholder-str "reacs" 'fj-reactions t)
            "\n"
-           (fj--placeholder-str "reac" 'fj-reactions)
-           fedi-horiz-bar fedi-horiz-bar
+           (propertize (concat fedi-horiz-bar fedi-horiz-bar)
+                       'fj-item-end t)
            "\n\n")
           'fj-item-number number
           'fj-repo repo
@@ -3193,26 +3360,41 @@ RELOAD mean we reloaded."
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
 
-(defun fj-format-assets-urls (assets)
+(defun fj-plist-delete (plist property)
+  ;; stolen from `org-plist-delete'
+  "Delete PROPERTY from PLIST.
+This is in contrast to merely setting it to 0."
+  (let (p)
+    (while plist
+      (if (not (eq property (car plist)))
+	  (setq p (plist-put p (car plist) (nth 1 plist))))
+      (setq plist (cddr plist)))
+    p))
+
+(defun fj-format-assets-urls (assets &optional props)
   "Render download URLS of attachment data ASSETS.
 Creates a markdown link, with attachment name as display text.
 Renders it on the server, adds `fj-item-body' property so our rendering
-works on the resulting html."
+works on the resulting html.
+Adds PROPS to the link's properties."
   (concat
    "📎 " (substring fedi-horiz-bar 3)
    "\n"
    (propertize
-    (mapconcat (lambda (x)
-                 (let-alist x
-                   (propertize
-                    (fj-propertize-shr-link .browser_download_url
-                                          .name
-                                          .id)
-                    'fj-attachment x
-                    'fj-attachment-id (alist-get 'id x))))
-               assets "\n")
-    'fj-item-body t)
-   "\n"))
+    (mapconcat
+     (lambda (x)
+       (let-alist x
+         (apply #'propertize
+                (fj-propertize-shr-link .browser_download_url
+                                      .name
+                                      .id)
+                'fj-attachment x
+                'fj-attachment-id .id
+                (fj-plist-delete
+                 (fj-plist-delete props 'fontified)
+                 'invisible))))
+     assets "\n")
+    'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -3327,42 +3509,40 @@ END-PAGE should be a string of the highest page number to paginate to."
             (fj-inspect-profile-requests "item timeline"))
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
-                 (final-load-p
-                  (and end-page
-                       (fj-string-number> end-page page #'=)))
+                 (first-load-p (and init-page
+                                    (= (string-to-number init-page) 1)))
+                 (final-load-p (and end-page
+                                    (fj-string-number> end-page page #'=)))
+                 (paginating (and (not init-page) (not end-page)))
                  (args (if (or init-page final-load-p)
                            viewargs
-                         (plist-put viewargs :page (fj-inc-or-2 page)))))
+                         (plist-put viewargs :page (fj-inc-or-2 page))))
+                 (inhibit-read-only t))
             (setq fj-buffer-spec
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
-            (let ((inhibit-read-only t))
-              ;; remove poss [Load more] button (for reload on nav):
-              (save-excursion
-                (beginning-of-line)
-                (when (looking-at "\\[Loa")
-                  (delete-line)))
+            ;; remove poss [Load more] button (for reload on nav):
+            (save-excursion
+              (beginning-of-line)
+              (when (looking-at "\\[Loa")
+                (delete-line))
               ;; raw render items:
               (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
-            ;; NB: we need to call `fj-render-item-bodies' exactly once,
-            ;; no matter the situation:
+            ;; NB: we need to call `fj-render-item-bodies' exactly once
+            ;; (after it runs on top item only), no matter the situation:
             ;; - on first load
             ;; - on loading another page
             ;; - on reload (`g'), only after loading all pages.
-            (when (or
-                   ;; on first load:
-                   (and init-page (= (string-to-number init-page) 1))
-                   ;; on paginate:
-                   (and (not init-page) (not end-page))
-                   ;; after last reload:
-                   final-load-p)
+            (when (or first-load-p
+                      paginating
+                      final-load-p)
               ;; shr-render-region and regex props:
               (let ((render-point
                      ;; on clicking "Load more", only render from that point:
-                     (if (and (not init-page) (not end-page))
+                     (if paginating
                          point
                        ;; else make render from first item after head item:
                        (save-excursion
@@ -3370,11 +3550,18 @@ END-PAGE should be a string of the highest page number to paginate to."
                          ;; fj-item-body assumes body is not "":
                          (text-property-search-forward 'fj-item-data)
                          (point)))))
-                (fj-render-item-bodies render-point)))
-            ;; async render assets:
-            (fj-render-assets-async)
-            ;; async render reactions
-            (fj-render-reactions-async)
+                (fj-render-item-bodies render-point))
+              ;; async assets render should also run exactly once,
+              ;; the last time we call this cb function. it should cover:
+              ;; - whole buffer on reload
+              ;; - new page items only, on pagination.
+              (let ((async-point (if (or first-load-p final-load-p)
+                                     (point-min) ;; whole buffer
+                                   point))) ;; pagination pointg
+                ;; async render assets:
+                (fj-render-assets-async async-point)
+                ;; async render reactions
+                (fj-render-reactions-async async-point)))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
@@ -3444,7 +3631,7 @@ Alternatively, call OP on them instead."
    (fj-destructure-buf-spec (repo owner)
      (let ((id (fj--property 'fj-comment-id))
            (body (alist-get 'body
-                            (fj--property 'fj-comment))))
+                            (fj--property 'fj-item-data))))
        (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
        (setq fj-compose-repo repo
              fj-compose-repo-owner owner
@@ -3785,9 +3972,9 @@ is new branch."
           (propertize new 'face 'fj-name-face)))
 
 (defun fj-format-review-request (format-str user reviewer ts)
-  "Format an assignee timeline item.
-FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
-assigned to. TS is a timeline timestamp."
+  "Format an review request timeline item.
+FORMAT-STR is the base string. USER is the agent, REVIEWER is the one to
+review. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
         (reviewer (propertize reviewer 'face 'fj-name-face)))
     (format format-str user reviewer ts)))
@@ -3877,9 +4064,10 @@ Renders a review heading and review comments."
                          (_ "reviewed"))))
             (propertize
              (concat
-              (format format-str user state ts) "\n\n"
-              ;; FIXME: only add if we have a comment?:
-              (fj-format-comment repo owner data nil :nobar)
+              (format format-str user state ts)
+              (when (not (string-empty-p .body))
+                (concat "\n\n"
+                        (fj-format-comment repo owner data nil :nobar)))
               (fj-format-grouped-review-comments comments owner ts))
              'fj-review review)))))))
 
@@ -3899,19 +4087,39 @@ data, OWNER is the repo owner, and TS is a timestamp."
                                   when (equal x (alist-get 'diff_hunk c))
                                   collect c)))))
     (cl-loop for x in alist
-             concat (fj-format-diff-+-comments x nil owner ts))))
+             concat (fj-format-diff+comments x nil owner ts))))
 
-(defun fj-format-diff-+-comments (data author owner ts)
+(defun fj-format-diff+comments (data author owner ts)
   "Format a diff hunk followed by its comments.
 DATA is a cons from `fj-format-grouped-review-comments'.
 AUTHOR, OWNER, and TS are for header formatting."
   (concat
    "\n" fedi-horiz-bar "\n"
+   (alist-get 'path (car (cdr data)))
+   "\n"
    (propertize (car data) ;; diff hunk
                'fj-review-diff t)
    "\n"
    (cl-loop for c in (cdr data)
-            concat (fj-format-review-comment c author owner ts))))
+            concat (fj-format-review-comment c author owner ts))
+   ;; we do this separately so we can place it after all comments. one of
+   ;; the review comments will contain resolver data if discussion
+   ;; resolved.
+   (let ((resolver (car (member-if (lambda (x)
+                                     (alist-get 'resolver x))
+                                   (cdr data)))))
+     (when resolver
+       (fj-format-review-resolver resolver)))))
+
+(defun fj-format-review-resolver (review)
+  "Format a resolved string from REVIEW comment data."
+  (let-alist (alist-get 'resolver review)
+    (propertize
+     (format "\n%s marked this discussion as resolved\n%s%s"
+             (propertize .login 'face 'fj-name-face)
+             fedi-horiz-bar fedi-horiz-bar)
+     'fj-review-comment review
+     'line-prefix "\t")))
 
 (defun fj-format-review-comment (comment author owner ts)
   "Format a review COMMENT.
@@ -3926,12 +4134,7 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
        ts)
       "\n"
       (propertize (fj-render-body .body)
-                  'fj-item-body t)
-      (if (not .resolver)
-          ""
-        (format "\n%s marked this discussion as resolved"
-                (propertize .resolver.login 'face 'fj-name-face))))
-     ;; )
+                  'fj-item-body t))
      'fj-review-comment comment
      'line-prefix "\t"))) ;; indent
 
@@ -4633,8 +4836,10 @@ LIMIT is for `re-search-forward''s bound argument."
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
-  "C-c C-k" #'fj-compose-cancel
-  "C-c C-c" #'fj-compose-send)
+  "C-c C-k"   #'fj-compose-cancel
+  "C-c C-c"   #'fj-compose-send
+  "C-c C-u"   #'fj-compose-read-upload
+  "C-c C-S-U" #'fj-compose-remove-upload)
 
 (define-minor-mode fj-compose-comment-mode
   "Minor mode for composing comments."
@@ -4651,7 +4856,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-m"   #'fj-compose-read-milestone
   "C-c C-o"   #'fj-compose-read-owner
   "C-c C-S-M" #'fj-compose-remove-milestone
-  "C-c C-S-L" #'fj-compose-remove-labels)
+  "C-c C-S-L" #'fj-compose-remove-labels
+  "C-c C-u"   #'fj-compose-read-upload
+  "C-c C-S-U" #'fj-compose-remove-upload)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -4665,6 +4872,15 @@ LIMIT is for `re-search-forward''s bound argument."
   (setq fj-compose-repo
         (fj-read-user-repo-do
          fj-compose-repo #'fj-repo-dynamic))
+  (fedi-post--update-status-fields))
+
+(defun fj-compose-read-upload ()
+  "Read a file to upload."
+  (interactive)
+  (setq fj-compose-upload
+        (expand-file-name
+         (read-file-name "File to upload: "
+                         nil nil :match)))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-owner ()
@@ -4732,6 +4948,11 @@ Update status fields."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-milestone))
 
+(defun fj-compose-remove-upload ()
+  "Remove attachment file from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-upload))
+
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
 EDIT means we are editing.
@@ -4771,6 +4992,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name     . "milestone")
         (prop     . compose-milestone)
         (item-var . fj-compose-milestone)
+        (face     . fj-post-title-face))
+       ((name     . "upload")
+        (prop     . compose-upload)
+        (item-var . fj-compose-upload)
         (face     . fj-post-title-face)))
      init-text quote
      "fj-" fj-compose-autocomplete)
@@ -4812,11 +5037,11 @@ With PREFIX, also close issue if sending a comment."
                                         fj-compose-issue-number
                                         body))
                 ('edit-issue
-                 (fj-issue-patch repo
-                                 fj-compose-repo-owner
-                                 fj-compose-issue-number
-                                 fj-compose-issue-title
-                                 body))
+                 (fj-issue-edit repo
+                              fj-compose-repo-owner
+                              fj-compose-issue-number
+                              fj-compose-issue-title
+                              body))
                 (_ ; new issue
                  (fj-issue-post repo
                                 fj-compose-repo-owner
