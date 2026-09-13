@@ -228,6 +228,12 @@ Requires an extra request per commit, so is disabled by default."
 \"org/repo\". You can jump to these with completion using `fj-jump-to-repo'."
   :type '(repeat string))
 
+(defcustom fj-use-markdown-binary nil
+  "Whether to use a local markdown binary to render markdown.
+If you have markdown or pandoc installed, consider enabling this for
+performance."
+  :type '(boolean))
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -2881,12 +2887,6 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 ;;                            '(fj-tab-stop t)
 ;;                            'fj-issue-commit-face)
 ;;     (buffer-string)))
-
-(defcustom fj-use-markdown-binary nil
-  "Whether to use a local markdown binary to render markdown.
-If you have markdown or pandoc installed, consider enabling this for
-performance."
-  :type '(boolean))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
