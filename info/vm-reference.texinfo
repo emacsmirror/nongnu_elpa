@@ -30,7 +30,6 @@ what was so.
 * Reference for Dispose::
 * Reference for Editing messages::
 * Reference for Encryption with EasyPG::
-* Reference for Encryption with PGG (deprecated)::
 * Reference for External::
 * Reference for Faces::
 * Reference for Folders::
@@ -754,7 +753,7 @@ End the edit of a message and copy the result to its folder.
 Like vm-edit-message, but run in a newly created frame.
 @end deffn
 
-@node Reference for Encryption with EasyPG, Reference for Encryption with PGG (deprecated), Reference for Editing messages, Reference
+@node Reference for Encryption with EasyPG, Reference for External, Reference for Editing messages, Reference
 @appendixsec Encryption with EasyPG
 @cindex Encryption with EasyPG
 
@@ -1035,193 +1034,7 @@ choice, and @code{q} aborts sending with an error.
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
 
-@node Reference for Encryption with PGG (deprecated), Reference for External, Reference for Encryption with EasyPG, Reference
-@appendixsec Encryption with PGG (deprecated)
-@cindex Encryption with PGG (deprecated)
-
-@appendixsubsec Commands
-
-@deffn Command vm-pgg-ask-hook
-@findex vm-pgg-ask-hook
-Function to ask to sign or encrypt outgoing messages with PGP/MIME.
-
-Put this function into @code{vm-mail-send-hook} to be asked each time you
-send a message whether or not you want to sign or encrypt the
-message. See @code{vm-pgg-ask-function} to determine which function is
-proposed.
-
-This hook should probably be the last of your hooks if you have several
-other functions there.  Signing crucially relies on the fact that the
-message is not altered afterwards. To put it into @code{vm-mail-send-hook}
-put something like
-
-       (add-hook 'vm-mail-send-hook #'vm-pgg-ask-hook t)
-
-into your VM init file.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-attach-public-key
-@findex vm-pgg-attach-public-key
-Attach your public key to a composition.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-cleartext-decrypt
-@findex vm-pgg-cleartext-decrypt
-Decrypt the contents of the current message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-cleartext-encrypt sign
-@findex vm-pgg-cleartext-encrypt
-Encrypt the composition as cleartext and with a prefix also SIGN it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-cleartext-sign
-@findex vm-pgg-cleartext-sign
-Sign the message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-cleartext-verify
-@findex vm-pgg-cleartext-verify
-Verify the signature in the current message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-compose-mode &optional arg
-@findex vm-pgg-compose-mode
-Minor mode for interfacing with cryptographic functions.
-
-Switch mode on/off according to ARG.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-encrypt &optional sign
-@findex vm-pgg-encrypt
-Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-sign
-@findex vm-pgg-sign
-Sign the composition with PGP/MIME.
-
-If the composition is not encoded so far, it is encoded before signing.
-Signing of already encoded messages is discouraged.
-
-RFC 2015 and its successor 3156 forbid the use of 8bit encoding for signed
-messages, but require to use quoted-printable or base64 instead.  Also lines
-starting with "From " cause trouble and should be quoted.
-
-Thus signing of encoded messages may cause an error.  To avoid this you must
-set @code{vm-mime-8bit-text-transfer-encoding} to something different than 8bit and
-@code{vm-mime-composition-armor-from-lines} to t.
-
-The transfer encoding done by @code{vm-pgg-sign} can be controlled by the variable
-@code{vm-pgg-sign-text-transfer-encoding}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-sign-and-encrypt
-@findex vm-pgg-sign-and-encrypt
-Sign and encrypt the composition as PGP/MIME.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-snarf-keys
-@findex vm-pgg-snarf-keys
-Snarf keys from the current message.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@appendixsubsec User options
-
-@defopt vm-pgg-ask-function
-@vindex vm-pgg-ask-function
-The function to use in @code{vm-pgg-ask-hook}.
-
-Default value: @code{vm-pgg-prompt-for-action}
-@end defopt
-
-@defopt vm-pgg-auto-decrypt
-@vindex vm-pgg-auto-decrypt
-If t, decrypting will happen automatically.
-
-Default value: @code{t}
-@end defopt
-
-@defopt vm-pgg-auto-snarf
-@vindex vm-pgg-auto-snarf
-If t, snarfing of keys will happen automatically.
-
-Default value: @code{t}
-@end defopt
-
-@defopt vm-pgg-cleartext-search-limit
-@vindex vm-pgg-cleartext-search-limit
-Number of bytes to peek into the message for a PGP clear text armor.
-
-Default value: @code{4096}
-@end defopt
-
-@defopt vm-pgg-fetch-missing-keys
-@vindex vm-pgg-fetch-missing-keys
-If t, PGP will try to fetch missing keys from @code{pgg-default-keyserver-address}.
-
-Default value: @code{t}
-@end defopt
-
-@defopt vm-pgg-get-author-headers
-@vindex vm-pgg-get-author-headers
-The list of headers to get the author of a mail that is to be sent.
-If nil, @code{pgg-default-user-id} is used as a fallback.
-
-Default value: @code{("From:" "Sender:")}
-@end defopt
-
-@defopt vm-pgg-sign-text-transfer-encoding
-@vindex vm-pgg-sign-text-transfer-encoding
-The encoding used for signed MIME parts of type text.
-See @code{vm-pgg-sign} for details.
-
-Default value: @code{quoted-printable}
-@end defopt
-
-@appendixsubsec Called by VM
-
-These are invoked by a toolbar button, a menu entry, a mouse
-binding, a keymap entry or a hook rather than typed by name.
-Nothing stops you calling one.
-
-@deffn Command vm-pgg-compose-mode-menu arg1
-@findex vm-pgg-compose-mode-menu
-PGP/MIME compose mode menu.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@deffn Command vm-pgg-prompt-for-action
-@findex vm-pgg-prompt-for-action
-Prompt for an action and return it. See also @code{vm-pgg-prompt-action-alist}.
-
-@emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
-@end deffn
-
-@node Reference for External, Reference for Faces, Reference for Encryption with PGG (deprecated), Reference
+@node Reference for External, Reference for Faces, Reference for Encryption with EasyPG, Reference
 @appendixsec External
 @cindex External
 

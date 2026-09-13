@@ -457,8 +457,8 @@ and the copy with the diagnostics lost.  Nothing warns about this: each
 
 There is no longer an exception.  vm-epg.el and vm-pgg.el both defined the
 three `vm-mime-display-internal-*\' handlers, and whichever loaded last held
-them; vm-pgg defines its own under `vm-pgg-display-internal-*\' and takes the
-shared names only when vm-epg has not (emacs-vm/vm#785)."
+them; vm-pgg was dropped in 9.0.0 and vm-epg has them to itself
+(emacs-vm/vm#568)."
   (let ((seen (make-hash-table :test 'equal))
         (expected nil)
         duplicates)

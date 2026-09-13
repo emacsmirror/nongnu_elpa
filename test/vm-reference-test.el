@@ -74,8 +74,9 @@ The line can hold parentheses of its own when the arglist has keywords, as
 
 (ert-deftest vm-reference-test-drops-advice-notes ()
   "Advice on a command is not documentation of it either.
-vm-pgg and vm-epg both advise `vm-scroll-forward' as they load, and
-`documentation' reports that."
+vm-epg advises `vm-scroll-forward' as it loads, and `documentation' reports
+that.  vm-pgg advised it too until 9.0.0 dropped the package, which is when
+two advices became one and the reason for this stayed the same."
   (require 'vm-epg nil t)
   (dolist (command '(vm-scroll-forward vm-scroll-backward))
     (let ((doc (vm-reference-command-documentation command)))
@@ -302,14 +303,10 @@ neither."
                                  vm-reference-test--not-commands))))
 
 (defconst vm-reference-test--no-cookie-files
-  '("vm-vars.el"                        ; every VM file requires it, and an
+  '("vm-vars.el")                       ; every VM file requires it, and an
                                         ; autoloaded default that reads
                                         ; another variable broke startup
                                         ; (emacs-vm/vm#608)
-    "vm-pgg.el")                        ; deprecated in favour of vm-epg
-                                        ; (emacs-vm/vm#375): reaching its
-                                        ; commands before VM is loaded is not
-                                        ; something to make easier
   "Files whose commands are deliberately not autoloaded, and why.")
 
 (ert-deftest vm-reference-test-every-command-a-reader-types-is-autoloaded ()

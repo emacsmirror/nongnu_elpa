@@ -40,7 +40,6 @@
     ("vm-grepmail"     . "Searching with grepmail")
     ("vm-ps-print"     . "Printing with ps-print")
     ("vm-epg"          . "Encryption with EasyPG")
-    ("vm-pgg"          . "Encryption with PGG (deprecated)")
     ("vm-smime"        . "S/MIME")
     ("vm-menu"         . "Menus")
     ("vm-toolbar"      . "The toolbar")
@@ -163,9 +162,9 @@ working tree on every build for that reader (emacs-vm/vm#830)."
 (defun vm-reference-command-documentation (symbol)
   "The docstring SYMBOL was written with, without what Emacs adds to it.
 Advice on a command puts \"This function has :around advice: ...\" in what
-`documentation' returns -- vm-pgg and vm-epg both advise `vm-scroll-forward'
-as they load -- and a compiled function carries a trailing \"(fn ARGS)\"
-line.  Neither belongs in a manual."
+`documentation' returns, as vm-epg's on `vm-scroll-forward' does, and a
+compiled function carries a trailing \"(fn ARGS)\" line.  Neither belongs in
+a manual."
   (let* ((function (and (fboundp symbol) (indirect-function symbol)))
          (unadvised (if (and function (fboundp 'advice--cd*r))
                         (advice--cd*r function)

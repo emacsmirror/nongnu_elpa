@@ -34,13 +34,13 @@
 ;;
 ;;      (require 'vm-epg)
 ;;
-;; Do NOT load vm-pgg and vm-epg together.  Both define the same MIME
-;; display handlers -- `vm-mime-display-internal-multipart/encrypted',
+;; vm-pgg was removed in VM 9.0.0 and this replaces it.  A copy kept on
+;; `load-path' still conflicts: both define the same MIME display handlers,
+;; `vm-mime-display-internal-multipart/encrypted',
 ;; `vm-mime-display-internal-multipart/signed' and
-;; `vm-mime-display-internal-application/pgp-keys' -- so whichever package
-;; is loaded last silently wins, and the other package's customizations
-;; then have no effect.  vm-pgg is deprecated; remove any `(require
-;; 'vm-pgg)' from your configuration when switching to vm-epg.
+;; `vm-mime-display-internal-application/pgp-keys', so whichever is loaded
+;; last wins and the other's customizations have no effect.  Remove any
+;; `(require 'vm-pgg)' from your configuration.
 ;;
 ;; If you set `vm-mime-auto-displayed-content-types' and/or
 ;; `vm-mime-internal-content-types' make sure that they contain
@@ -1277,8 +1277,7 @@ decrypt failure or an unrecognized structure would make VM fall through and
 re-render the raw ciphertext parts as multipart/mixed.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'encrypted)
   (let* ((part-list (vm-mm-layout-parts layout))
          (header (car part-list))
@@ -1364,8 +1363,7 @@ If the signing key is not in your keyring and `vm-epg-fetch-missing-keys' is
 non-nil, try to fetch it from a keyserver and verify again.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'signed)
   (let* ((part-list (vm-mm-layout-parts layout))
          (message (car part-list))
@@ -1492,8 +1490,7 @@ When `vm-epg-auto-snarf' is nil, insert a button that imports on demand
 instead.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'public-key)
   (if vm-epg-auto-snarf
       (let ((start (point)) end)
@@ -1955,20 +1952,21 @@ to `add-hook':
 
 (defun vm-epg-pgg-conflict-warning ()
   "Return a warning about a vm-pgg/vm-epg conflict, or nil if there is none.
-The two packages define the same `vm-mime-display-internal-*' handlers, so
-whichever is loaded last wins outright and the other's customizations become
-dead settings.  Loading both is always a configuration error."
+The two define the same `vm-mime-display-internal-*' handlers, so whichever
+is loaded last wins outright and the other's customizations become dead
+settings.  Loading both is always a configuration error."
   (when (featurep 'vm-pgg)
     (concat
      "vm-pgg is also loaded.  Do not load both: they define the same\n"
      "vm-mime-display-internal-* handlers, so the one loaded last (vm-epg)\n"
      "now wins and vm-pgg's customizations have no effect.\n"
-     "vm-pgg is deprecated; remove (require 'vm-pgg) from your config.")))
+     "vm-pgg was removed in VM 9.0.0; remove (require 'vm-pgg) from your\n"
+     "config, and the copy of vm-pgg.el that is still on your load-path.")))
 
-;; Warn in this direction too.  vm-pgg warns when it is loaded after vm-epg,
-;; but the common migration order is the other way round -- an existing
-;; configuration already requires vm-pgg and gains a `(require 'vm-epg)' --
-;; and that case would otherwise pass in silence.
+;; VM no longer ships vm-pgg, and a `(require 'vm-pgg)' left in a
+;; configuration now fails to load rather than conflicting.  This stays for
+;; the reader who keeps their own copy on `load-path', where the conflict is
+;; the same as it ever was and nothing else would say so.
 (let ((warning (vm-epg-pgg-conflict-warning)))
   (when warning
     (display-warning 'vm-epg warning)))
