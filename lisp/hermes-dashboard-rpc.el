@@ -83,11 +83,19 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, CWD, and optional runtime choices become request
+COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, CLOSE-ON-DISCONNECT, and optional
+runtime choices become request
 parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
 receive the asynchronous result or error."
-  :keys (cols messages title profile cwd model provider reasoning-effort fast)
+  :keys (cols messages title profile cwd model provider reasoning-effort fast
+               hidden close-on-disconnect)
   :params ((source . "emacs")))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-close "session.close"
+  "Close CLIENT's exact live SESSION-ID, without deleting stored history.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-resume "session.resume"

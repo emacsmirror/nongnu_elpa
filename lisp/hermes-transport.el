@@ -743,7 +743,8 @@ The plist holds :used, :max, and :percent for the model's context window."
           :percent (or (hermes-transport--get usage 'context_percent) 0))))
 
 (defun hermes-dashboard-transport--message-complete-event (type params payload)
-  "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD."
+  "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD.
+The :final-text field preserves literal text when PAYLOAD has no error."
   (let* ((status (hermes-transport--scalar-string
                   (hermes-transport--get payload 'status)))
          (usage (hermes-dashboard-transport--usage-plist payload))
@@ -753,6 +754,11 @@ The plist holds :used, :max, and :percent for the model's context window."
          (event (hermes-dashboard-transport--payload-event
                  type params payload
                  (hermes-dashboard-transport--message-complete-kind payload))))
+    ;; Headless consumers need literal final text, not scalar display coercion.
+    (when (and (stringp (hermes-transport--get payload 'text))
+               (not (hermes-transport--get payload 'error)))
+      (setq event (plist-put event :final-text
+                             (hermes-transport--get payload 'text))))
     (when usage (setq event (plist-put event :usage usage)))
     (when context (setq event (plist-put event :context context)))
     (when status (setq event (plist-put event :status status)))

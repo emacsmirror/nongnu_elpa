@@ -38,6 +38,7 @@
             "lisp/hermes-dashboard-api.el"
             "lisp/hermes-dashboard-transport.el"
             "lisp/hermes-dashboard-rpc.el"
+            "lisp/hermes-request.el"
             "lisp/hermes-chat-format.el"
             "lisp/hermes-preview-format.el"
             "lisp/hermes-chat-render.el"
@@ -92,6 +93,7 @@
           # No directory trees — nested/generated/private files stay out of src.
           # Dot-prefixed basenames stay out of scans and release membership.
           testElFiles = [
+            "hermes-request-tests.el"
             "hermes-admin-tests.el"
             "hermes-browsers-tests.el"
             "hermes-capabilities-tests.el"

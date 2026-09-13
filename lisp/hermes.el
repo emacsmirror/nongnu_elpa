@@ -35,6 +35,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'hermes-chat)
+(autoload 'hermes-request "hermes-request")
 (require 'hermes-sessions)
 (require 'hermes-projects)
 (require 'hermes-inventory)
