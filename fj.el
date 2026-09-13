@@ -4094,11 +4094,31 @@ DATA is a cons from `fj-format-grouped-review-comments'.
 AUTHOR, OWNER, and TS are for header formatting."
   (concat
    "\n" fedi-horiz-bar "\n"
+   (alist-get 'path (car (cdr data)))
+   "\n"
    (propertize (car data) ;; diff hunk
                'fj-review-diff t)
    "\n"
    (cl-loop for c in (cdr data)
-            concat (fj-format-review-comment c author owner ts))))
+            concat (fj-format-review-comment c author owner ts))
+   ;; we do this separately so we can place it after all comments. one of
+   ;; the review comments will contain resolver data if discussion
+   ;; resolved.
+   (let ((resolver (car (member-if (lambda (x)
+                                     (alist-get 'resolver x))
+                                   (cdr data)))))
+     (when resolver
+       (fj-format-review-resolver resolver)))))
+
+(defun fj-format-review-resolver (review)
+  "Format a resolved string from REVIEW comment data."
+  (let-alist (alist-get 'resolver review)
+    (propertize
+     (format "\n%s marked this discussion as resolved\n%s%s"
+             (propertize .login 'face 'fj-name-face)
+             fedi-horiz-bar fedi-horiz-bar)
+     'fj-review-comment review
+     'line-prefix "\t")))
 
 (defun fj-format-review-comment (comment author owner ts)
   "Format a review COMMENT.
@@ -4113,12 +4133,7 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
        ts)
       "\n"
       (propertize (fj-render-body .body)
-                  'fj-item-body t)
-      (if (not .resolver)
-          ""
-        (format "\n%s marked this discussion as resolved"
-                (propertize .resolver.login 'face 'fj-name-face))))
-     ;; )
+                  'fj-item-body t))
      'fj-review-comment comment
      'line-prefix "\t"))) ;; indent
 
