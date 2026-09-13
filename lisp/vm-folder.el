@@ -4365,6 +4365,22 @@ timers of its own and is where the -itimer-function names come from."
 	(setq p (cdr p))))
     p ))
 
+(defun vm-mail-waiting-can-stop-waiting-p ()
+  "Whether mail this folder waits for can stop waiting without VM taking it.
+The current buffer is the folder.
+
+Mail in a local spool stays there until something takes it, so asking again
+while `vm-spooled-mail-waiting' is set costs a check and cannot change the
+answer.  That is the optimisation `vm-mail-check-always' turns off, for the
+reader whose spool another client also reads.
+
+On a server it is not an optimisation.  The mail stops being new without VM
+doing anything -- read on a phone, moved by a server-side filter, taken by
+another Emacs -- and the folder is then waiting for mail that is not there.
+Only a retrieval cleared the flag, so the mode line said Mail for ever
+(emacs-vm/vm#839)."
+  (memq vm-folder-access-method '(imap pop)))
+
 ;; support for vm-mail-check-interval
 (defun vm-check-mail-itimer-function (timer)
   ;; FSF Emacs sets this non-nil, which means the user can't
@@ -4388,7 +4404,8 @@ timers of its own and is where the -itimer-function names come from."
 	  (when (and (eq major-mode 'vm-mode)
 		     (setq found-one t)
 		     (or (not vm-spooled-mail-waiting)
-			 vm-mail-check-always)
+			 vm-mail-check-always
+			 (vm-mail-waiting-can-stop-waiting-p))
 		     ;; to avoid reentrance into the pop and imap code
 		     (not vm-global-block-new-mail))
 	    (setq oldval vm-spooled-mail-waiting)
