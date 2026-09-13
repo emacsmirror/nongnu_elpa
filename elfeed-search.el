@@ -151,10 +151,8 @@ point does not move after the listed operations.  Example:
   :type '(choice (const nil) (const t)
                  (repeat symbol)))
 
-(defcustom elfeed-search-clipboard-type 'PRIMARY
-  "Selects the clipboard `elfeed-search-copy-link' should use.
-Choices are the symbols PRIMARY, SECONDARY, or CLIPBOARD."
-  :type '(choice (const PRIMARY) (const SECONDARY) (const CLIPBOARD)))
+(defvar elfeed-search-clipboard-type nil)
+(make-obsolete-variable 'elfeed-search-clipboard-type nil "4.2.0")
 
 (defcustom elfeed-search-date-format '("%Y-%m-%d" 10 :left)
   "The `format-time-string' format, target width, and alignment for dates.
@@ -1211,7 +1209,6 @@ the browser defined by `browse-url-secondary-browser-function'."
          (links-str (string-join links " ")))
     (when entries
       (kill-new links-str)
-      (gui-set-selection elfeed-search-clipboard-type links-str)
       (message "Copied %s" links-str)
       (elfeed-search--after-action 'yank))))
 

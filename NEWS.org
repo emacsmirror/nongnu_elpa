@@ -5,6 +5,9 @@
 
 - Bind =elfeed-search-copy-link= and =elfeed-show-copy-link= to the key =w=, which
   matches the =M-w= or =C-w= binding to copy/kill something.
+- Mark =elfeed-search-clipboard-type= as obsolete. Configure
+  =interprogram-cut-function=, =select-enable-primary= and =select-enable-clipboard=
+  instead.
 
 * Version 4.2.0 (2026-08-21)
 
