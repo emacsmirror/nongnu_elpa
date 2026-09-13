@@ -3539,16 +3539,18 @@ END-PAGE should be a string of the highest page number to paginate to."
                          ;; fj-item-body assumes body is not "":
                          (text-property-search-forward 'fj-item-data)
                          (point)))))
-                (fj-render-item-bodies render-point)))
-            (let ((async-point
-                   (if (and init-page
-                            (= (string-to-number init-page) 1))
-                       (point-min)
-                     point)))
-              ;; async render assets:
-              (fj-render-assets-async async-point)
-              ;; async render reactions
-              (fj-render-reactions-async async-point))
+                (fj-render-item-bodies render-point))
+              ;; async assets render should also run exactly once,
+              ;; the last time we call this cb function. it should cover:
+              ;; - whole buffer on reload
+              ;; - new page items only, on pagination.
+              (let ((async-point (if (or first-load-p final-load-p)
+                                     (point-min) ;; whole buffer
+                                   point))) ;; pagination pointg
+                ;; async render assets:
+                (fj-render-assets-async async-point)
+                ;; async render reactions
+                (fj-render-reactions-async async-point)))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
