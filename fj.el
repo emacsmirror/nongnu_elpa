@@ -2340,6 +2340,7 @@ Optionally specify REPO and OWNER."
   "u"        #'fj-repo-copy-clone-url
   "L"        #'fj-repo-commit-log
   "j"        #'imenu
+  "J"        #'fj-jump-to-item
   "l"        #'fj-item-label-add
   ;; TODO: conflicts with fj-user-settings-transient:
   ;; "U"        #'fj-copy-pr-url
@@ -3420,18 +3421,32 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
         ;; otherwise render first page of timeline:
         (fj-item-view-more* page)))))
 
+(defvar fj-dynamic-issue-cands nil)
+
 (defun fj-issue-dynamic (str)
   "Dynamic issue completion for STR."
+  ;; FIXME: this queries issue title and body, but then our
+  ;; completing-read only matches same string against titles, it's a fatal
+  ;; fuck-up!
   (fj-destructure-buf-spec (repo owner)
-    (let* ((json (fj-repo-get-issues repo owner "all" nil str)))
-      (cl-loop for x in json
-               collect (concat (number-to-string
-                                (alist-get 'number x))
-                               " | "
-                               (alist-get 'title x))))))
+    (let* ((json (fj-repo-get-issues repo owner "all" "all" str)))
+      (setq fj-dynamic-issue-cands
+            (cl-loop for x in json
+                     collect (cons (alist-get 'title x)
+                                   (number-to-string
+                                    (alist-get 'number x))))))))
 
-(defun fj-issues-jump ()
-  "Prompt for an issue in current and view it."
+(defun fj-issues-affix-fun (cands)
+  "Affixation function for issues completion."
+  (cl-loop for cand in cands
+           for issue = (cdr (assoc cand fj-dynamic-issue-cands #'string=))
+           for prefix = (propertize (concat (string-pad issue 3) " | ")
+                                    'face 'font-lock-comment-face)
+           collect (list cand prefix nil)))
+
+(defun fj-jump-to-item ()
+  "Prompt for a query and load matching issue or PR from current repo.
+This relies on Forgejo server search, which can be fickle."
   (interactive)
   (fj-with-item-tl
    (fj-destructure-buf-spec (repo owner)
@@ -3441,14 +3456,22 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
      ;; the other, we concat the two then split again. but this is
      ;; a hack way to do completing-read, and not all results
      ;; tolerate it:
-     ;; FIXME: not all issues appear, e.g. search "dummy" in fj.el:
-     (let* ((choice (completing-read
-                     "Issue: "
-                     ;; :match arg fails for some matches, unsure why, so
-                     ;; we disable it:
-                     (completion-table-dynamic #'fj-issue-dynamic :switch)))
-            (num (string-trim
-                  (car (split-string choice "|")))))
+     ;; FIXME: not all issues appear, e.g. search "activity" in fj.el:
+     (let* ((completion-extra-properties
+             '(:affixation-function fj-issues-affix-fun))
+            ;; two-step completion, works with same data that
+            ;; `completion-table-dynamic' fails with:
+            ;; (str (read-string "Search issues: "))
+            ;; (queries (fj-issue-dynamic str))
+            ;; (choice (completing-read "Issue title: " queries nil nil
+            ;;                          str)) ;; default to str
+            (choice (completing-read "Issue: "
+                                     (completion-table-dynamic
+                                      (lambda (str)
+                                        (when (length> str 2)
+                                          (fj-issue-dynamic str)))
+                                      :switch)))
+            (num (cdr (assoc choice fj-dynamic-issue-cands))))
        (fj-item-view repo owner num)))))
 
 (defun fj-reload-paginated-pages (&optional end-page)
