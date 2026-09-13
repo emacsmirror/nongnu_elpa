@@ -2882,12 +2882,42 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 ;;                            'fj-issue-commit-face)
 ;;     (buffer-string)))
 
+(defcustom fj-use-markdown-binary nil
+  "Whether to use a local markdown binary to render markdown.
+If you have markdown or pandoc installed, consider enabling this for
+performance."
+  :type '(boolean))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
-  "Render BODY as markdown and decode."
-  (decode-coding-string
-   (fj-render-markdown body)
-   'utf-8))
+  "Render BODY as markdown and decode.
+If `fj-use-markdown-binary' is t, use `markdown-standalone'.
+Else make a POST request to the server."
+  (if fj-use-markdown-binary
+      (with-temp-buffer
+        (insert body)
+        (goto-char (point-min))
+        (let ((old-buf (buffer-string)))
+          (condition-case nil
+              (let ((buf "*fj-md-output*"))
+                (markdown-standalone buf)
+                (with-current-buffer buf
+                  (goto-char (point-min))
+                  ;; (switch-to-buffer (current-buffer))
+                  ;; grab just the body:
+                  (re-search-forward "<body>")
+                  (buffer-substring (point)
+                                    (save-excursion
+                                      (re-search-forward "</body>")
+                                      (pos-bol)))))
+            (t ; if rendering fails, return unrendered body:
+             (with-current-buffer buf
+               (erase-buffer)
+               (insert old-buf))))))
+    ;; server render:
+    (decode-coding-string
+     (fj-render-markdown body)
+     'utf-8)))
 
 (require 'eww)
 
