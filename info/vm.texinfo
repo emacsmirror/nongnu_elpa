@@ -4873,7 +4873,6 @@ message again with the assurance that it won't be double-signed but it
 @cindex @acronym{OpenPGP}
 @cindex @acronym{PGP}/@acronym{MIME}
 @cindex vm-epg
-@cindex vm-pgg
 @inindex @acronym{PGP}/@acronym{MIME}
 For @acronym{OpenPGP} rather than @acronym{S/MIME}, VM provides the
 @samp{vm-epg} package, which uses the @samp{epg} (EasyPG) interface to
@@ -4886,12 +4885,6 @@ For @acronym{OpenPGP} rather than @acronym{S/MIME}, VM provides the
 @noindent
 to your @code{vm-preferences-file} (@pxref{Starting Up}).  To configure it,
 use @kbd{M-x customize-group @key{RET} vm-epg @key{RET}}.
-
-@samp{vm-pgg}, the older package, is deprecated and warns when loaded;
-remove any @code{(require 'vm-pgg)} from your configuration.  It answers for
-the same @acronym{MIME} types, and leaves them to @samp{vm-epg} where both
-are loaded, so having it around no longer costs you anything but the
-warning.
 
 @findex vm-epg-sign
 @findex vm-epg-encrypt

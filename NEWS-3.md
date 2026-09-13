@@ -8,6 +8,29 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`vm-pgg` is removed, and `vm-epg` replaces it** (emacs-vm/vm#568).
+    Both halves of that happen in this release: 8.3.2 had vm-pgg and no
+    vm-epg, so if you are upgrading from it, the package you were using is
+    gone and its replacement is new to you.
+
+    **A configuration with `(require 'vm-pgg)` in it will not start.**  The
+    file is gone, so the `require` signals "Cannot open load file".  Change
+    it to `(require 'vm-epg)`.
+
+    vm-epg does what vm-pgg did: it reads and writes PGP/MIME and inline
+    armour, signs, encrypts, and attaches a public key.  It uses the `epg`
+    (EasyPG) interface to gpg that Emacs comes with, where vm-pgg used
+    `pgg`, which Emacs has had in `lisp/obsolete` since 24.1.
+
+    Your settings do not carry over, the two having different option names,
+    so `M-x customize-group RET vm-epg RET` is worth a visit.  Each command
+    keeps its name bar the prefix: `vm-epg-sign`, `vm-epg-encrypt`,
+    `vm-epg-sign-and-encrypt`, `vm-epg-attach-public-key`.
+
+    If you keep your own copy of `vm-pgg.el` on `load-path`, loading both
+    still conflicts and vm-epg still says so: the two define the same MIME
+    display handlers, and whichever loads last wins.
+
   * **A composition carries a `From` header** (emacs-vm/vm#832).  Emacs's
     `mail-setup-with-from` asks for one and defaults to `t`, and VM read the
     variable nowhere, so a composition had no `From` header unless

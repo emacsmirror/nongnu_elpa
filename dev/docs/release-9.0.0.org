@@ -93,6 +93,14 @@ already suggests, and the reasoning generalises to the other six.
 
 * vm-pgg
 
+Dropped. #568 was decided and the package is gone from the tree: 1306 lines,
+its Customize group, the two isolation tests it needed, and the manual
+paragraph pointing at it. byte-compile-lint reports no warnings at all now,
+the three that were left being vm-pgg requiring pgg, pgg-def and pgg-parse.
+
+What follows is the analysis the decision rested on, kept because the
+upgrade problem it describes is what NEWS-3.md now has to carry.
+
 #568 holds this and it is the one drop that is analysed and agreed: every
 vm-pgg entry point has a vm-epg counterpart, reading and composing both, and
 nothing in VM proper requires vm-pgg. 1306 lines.
@@ -101,26 +109,22 @@ The same timing problem applies, and harder. vm-epg.el does not exist in
 8.3.2 and vm-pgg's deprecation warning has never appeared in a release. An
 8.3.2 user has vm-pgg as the only PGP support VM offers, working, unwarned.
 
-Dropping it in 9.0.0 also takes the byte-compile-lint baseline from 5
-warnings to 2, since three are vm-pgg requiring pgg, pgg-def and pgg-parse,
-all of which are obsolete in Emacs.
+Dropping it took the byte-compile-lint baseline from 3 warnings to 0, those
+three being vm-pgg requiring pgg, pgg-def and pgg-parse, all obsolete in
+Emacs.  The other two of the five were one over-wide docstring, fixed
+separately as #838.
 
-The other two are one docstring: vm-virtual-filter-alist is wider than 80
-columns, and is counted twice because vm-autoloads.el carries a copy of it.
-So a zero-warning tree is one docstring and one regenerated loaddefs away,
-whatever is decided about vm-pgg.
-
-If it goes, it needs more than deleting the file: vm-vars.el defines the
-vm-pgg Customize group, the manual documents the package in the Sending
-Secure MIME section, and five test files name it.
+It needed more than deleting the file, and all of it is done: vm-vars.el
+defined the vm-pgg Customize group, the manual documented the package in the
+Sending Secure MIME section, and five test files named it.
 
 * What only a person can do
 
-Ten issues carry the Human label and none of them is code:
+Nine issues carry the Human label and none of them is code, #568 having
+been decided:
 
 | #607 | manual testing before the release, a checklist at a real mailbox |
 | #813 | this ticket                                                      |
-| #568 | the vm-pgg decision                                              |
 | #814 | ask NonGNU ELPA to stop shipping the build system                |
 | #816 | the first-run helper, awaiting a decision on the branch          |
 | #695 | introduce Emacs users to the rebooted VM                          |
@@ -139,5 +143,5 @@ Ten issues carry the Human label and none of them is code:
   notes that moving it first makes testing through a package manager easier,
   which is true and also means the release is cut from what people are
   already running.
-- Whether to take the byte lint to zero while the file that carries half of
-  it is being removed anyway.
+- The byte lint is at zero, that question having answered itself when vm-pgg
+  went.

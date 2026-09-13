@@ -102,15 +102,11 @@ When work lands, rewrite its design document from plan to description.
 
 ## The manual
 
-Do not explain `vm-epg` by contrast with `vm-pgg`. vm-pgg is deprecated and
-slated for removal, so the comparison will read as nonsense once it is gone
-and sends the reader after a package that is not there. State what vm-epg
-does on its own terms, and put the upgrade contrast in `NEWS-3.md`, which is
-dated rather than evergreen and is where someone coming from the older
-package looks.
-
-The one "do not load both" warning already in the manual is a live conflict
-rather than a comparison, and stays.
+Do not explain `vm-epg` by contrast with `vm-pgg`. vm-pgg was removed in
+9.0.0, so the comparison sends the reader after a package that is not there.
+State what vm-epg does on its own terms. The upgrade contrast lives in
+`NEWS-3.md`, which is dated rather than evergreen and is where someone
+coming from the older package looks.
 
 ## Reporting
 
