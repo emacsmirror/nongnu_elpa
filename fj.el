@@ -3042,9 +3042,11 @@ Optionally start from POINT."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-format-comment (_repo owner comment &optional author no-bar)
+(defun fj-format-comment (_repo owner comment &optional author review)
   "Format COMMENT in REPO by OWNER.
-AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
+AUTHOR is of comment.
+REVIEW means we are formatting a review, so no assets/reactions and we
+format alittle simpler."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at))))
@@ -3054,25 +3056,27 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
          .user.username author owner
          (fj-edited-str-maybe .created_at .updated_at)
          stamp)
-        "\n\n"
+        (unless review "\n\n")
         (propertize (fj-render-body .body)
                     'fj-item-body t)
         ;; this function is currently also used for PR reviews, which
         ;; don't have assets, so we skip them:
         (if (not (string= (alist-get 'type comment) "comment"))
             ""
-          (fj--placeholder-str "assets"
-                             'fj-assets t
+          (unless review
+            (fj--placeholder-str "assets"
+                               'fj-assets t
+                               'fj-comment t
+                               'fj-comment-author .user.username
+                               'fj-comment-id .id)))
+        ;; reactions
+        (unless review
+          (fj--placeholder-str "reacs"
+                             'fj-reactions t
                              'fj-comment t
                              'fj-comment-author .user.username
                              'fj-comment-id .id))
-        ;; reactions
-        (fj--placeholder-str "reacs"
-                           'fj-reactions t
-                           'fj-comment t
-                           'fj-comment-author .user.username
-                           'fj-comment-id .id)
-        (if no-bar ""
+        (if review ""
           (concat
            "\n"
            (propertize (concat fedi-horiz-bar fedi-horiz-bar)
