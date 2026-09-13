@@ -1349,8 +1349,8 @@ The default sort value is \"latest\"."
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
   ;; default sort = latest.
   "Return issues for REPO by OWNER.
-STATE is for issue status, a string of open, closed or all.
-TYPE is item type: issue pull or all.
+STATE is for issue status, a string of \"open\", \"closed\" or \"all\".
+TYPE is item type: a string of \"issue\", \"pull\" or \"all\".
 QUERY is a search term to filter by.
 Optionally limit results to LABELS or MILESTONES, which are
 comma-separated lists.
