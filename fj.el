@@ -3498,42 +3498,40 @@ END-PAGE should be a string of the highest page number to paginate to."
             (fj-inspect-profile-requests "item timeline"))
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
-                 (final-load-p
-                  (and end-page
-                       (fj-string-number> end-page page #'=)))
+                 (first-load-p (and init-page
+                                    (= (string-to-number init-page) 1)))
+                 (final-load-p (and end-page
+                                    (fj-string-number> end-page page #'=)))
+                 (paginating (and (not init-page) (not end-page)))
                  (args (if (or init-page final-load-p)
                            viewargs
-                         (plist-put viewargs :page (fj-inc-or-2 page)))))
+                         (plist-put viewargs :page (fj-inc-or-2 page))))
+                 (inhibit-read-only t))
             (setq fj-buffer-spec
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
-            (let ((inhibit-read-only t))
-              ;; remove poss [Load more] button (for reload on nav):
-              (save-excursion
-                (beginning-of-line)
-                (when (looking-at "\\[Loa")
-                  (delete-line)))
+            ;; remove poss [Load more] button (for reload on nav):
+            (save-excursion
+              (beginning-of-line)
+              (when (looking-at "\\[Loa")
+                (delete-line))
               ;; raw render items:
               (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
-            ;; NB: we need to call `fj-render-item-bodies' exactly once,
-            ;; no matter the situation:
+            ;; NB: we need to call `fj-render-item-bodies' exactly once
+            ;; (after it runs on top item only), no matter the situation:
             ;; - on first load
             ;; - on loading another page
             ;; - on reload (`g'), only after loading all pages.
-            (when (or
-                   ;; on first load:
-                   (and init-page (= (string-to-number init-page) 1))
-                   ;; on paginate:
-                   (and (not init-page) (not end-page))
-                   ;; after last reload:
-                   final-load-p)
+            (when (or first-load-p
+                      paginating
+                      final-load-p)
               ;; shr-render-region and regex props:
               (let ((render-point
                      ;; on clicking "Load more", only render from that point:
-                     (if (and (not init-page) (not end-page))
+                     (if paginating
                          point
                        ;; else make render from first item after head item:
                        (save-excursion
