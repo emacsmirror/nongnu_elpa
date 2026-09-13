@@ -69,6 +69,7 @@
   ;; list of "owner/repo"
   ;; TODO: (owner . repo)
   )
+(make-obsolete-variable 'fj-extra-repos 'fj-favourite-repos "0.43")
 
 (defvar-local fj-current-repo nil)
 
@@ -221,6 +222,11 @@ Requires an extra request per repo, so is disabled by default."
   "Whether to display commit messages for commits in PR timelines.
 Requires an extra request per commit, so is disabled by default."
   :type '(boolean))
+
+(defcustom fj-favourite-repos nil
+  "A list of favourite repos, which are strings of the form \"owner/repo\", or
+\"org/repo\". You can jump to these with completion using `fj-jump-to-repo'."
+  :type '(repeat string))
 
 ;;; FACES
 
@@ -1627,7 +1633,8 @@ Optionally, NO-CONFIRM means don't ask before deleting."
   "Jump to repo issues listing.
 Reads a string of \"OWNER/REPO\", slash-separated."
   (interactive)
-  (let* ((owner-repo (read-string "Owner/repo: "))
+  (let* ((owner-repo (completing-read "Jump to [match or any owner/repo]: "
+                                      fj-favourite-repos))
          (split (split-string owner-repo "/")))
     (fj-list-issues-do (nth 1 split) (nth 0 split))))
 
