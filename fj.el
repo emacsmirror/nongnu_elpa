@@ -4086,9 +4086,9 @@ data, OWNER is the repo owner, and TS is a timestamp."
                                   when (equal x (alist-get 'diff_hunk c))
                                   collect c)))))
     (cl-loop for x in alist
-             concat (fj-format-diff-+-comments x nil owner ts))))
+             concat (fj-format-diff+comments x nil owner ts))))
 
-(defun fj-format-diff-+-comments (data author owner ts)
+(defun fj-format-diff+comments (data author owner ts)
   "Format a diff hunk followed by its comments.
 DATA is a cons from `fj-format-grouped-review-comments'.
 AUTHOR, OWNER, and TS are for header formatting."
