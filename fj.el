@@ -2864,25 +2864,26 @@ Else make a POST request to the server."
         (goto-char (point-min))
         (let ((old-buf (buffer-string))
               (buf "*fj-md-output*"))
-          (condition-case nil
-              (progn
-                (markdown-standalone buf)
-                (with-current-buffer buf
-                  (goto-char (point-min))
-                  ;; (switch-to-buffer (current-buffer))
-                  ;; grab just the body:
-                  (re-search-forward "<body>")
-                  (buffer-substring-no-properties
-                   (point)
-                   (save-excursion
-                     (re-search-forward "</body>")
-                     (pos-bol)))))
-            (t ; if rendering fails, return unrendered body:
-             (with-current-buffer buf
-               (erase-buffer)
-               (insert old-buf))))
-          ;; kill md buffer
-          (kill-buffer buf)))
+          (prog1
+              (condition-case nil
+                  (progn
+                    (markdown-standalone buf)
+                    (with-current-buffer buf
+                      (goto-char (point-min))
+                      ;; (switch-to-buffer (current-buffer))
+                      ;; grab just the body:
+                      (re-search-forward "<body>")
+                      (buffer-substring-no-properties
+                       (point)
+                       (save-excursion
+                         (re-search-forward "</body>")
+                         (pos-bol)))))
+                (t ; if rendering fails, return unrendered body:
+                 (with-current-buffer buf
+                   (erase-buffer)
+                   (insert old-buf))))
+            ;; kill md buffer
+            (kill-buffer buf))))
     ;; server render:
     (decode-coding-string
      (fj-render-markdown body)
