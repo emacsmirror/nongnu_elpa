@@ -338,7 +338,7 @@ Copies the token to the kill ring and returns it."
   "Fetch an auth source token.
 Optionally prompt for a token and save it if needed."
   (if (not fj-host)
-      (user-error "Set `fj-host' to fetch token from auth sources.")
+      (user-error "Set `fj-host' to fetch token from auth sources")
     (let ((host (url-host (url-generic-parse-url fj-host))))
       (nth 1
            (fedi-auth-source-get fj-user host :create)))))
