@@ -1401,6 +1401,48 @@ server may refuse, and refusing costs the copy rather than the flag."
         ;; and no keyword, which is the half this does not fix
         (should-not (member "urgent" flags))))))
 
+(defun vm-imap-net-test--until (predicate seconds)
+  "Wait up to SECONDS for PREDICATE, answering with what it last said."
+  (let ((deadline (+ (float-time) seconds)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (funcall predicate)))
+
+(ert-deftest vm-imap-net-test-the-mail-indicator-clears-when-the-mail-goes ()
+  "REGRESSION: the Mail indicator goes off when the server no longer has mail.
+
+Reported by @diekhans: it stayed on for an IMAP folder with no new mail
+(emacs-vm/vm#839).  `vm-check-mail-itimer-function' did not re-check a folder
+whose `vm-spooled-mail-waiting' was set, which is sound for a local spool,
+where mail stays until something takes it, and wrong for a server, where the
+mail stops being new without VM doing anything: read on a phone, moved by a
+filter, taken by another Emacs.  Only a retrieval cleared the flag.
+
+The mail is taken off the server here rather than fetched, which is the case
+that used to stick: a fetch clears the flag on its own."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((vm-mail-check-interval 60)
+          (vm-mail-check-always nil))
+      (vm-imap-mock-add-message
+       mock "INBOX" "From: bob@example.com\nSubject: new\n\nBody.\n")
+      (vm-imap-net-folder-check-mail)
+      (vm-imap-net-test--until (lambda () vm-spooled-mail-waiting) 10)
+      (should vm-spooled-mail-waiting)
+      ;; and now it is gone from the server, with nothing VM did
+      (setf (cdr (assoc "INBOX" (vm-imap-mock-mailboxes mock)))
+            (list (car (vm-imap-mock-messages mock "INBOX"))))
+      ;; The timer is cancelled and the watchdog let go afterwards.  This
+      ;; leaked both, and an armed `vm-net--watch' is what
+      ;; vm-net-test-a-poll-nobody-made-is-made-by-the-watchdog asserts on,
+      ;; so it failed a thousand tests later in the same Emacs.
+      (let ((timer (run-at-time nil nil #'ignore)))
+        (unwind-protect
+            (vm-check-mail-itimer-function timer)
+          (cancel-timer timer)))
+      (vm-imap-net-test--until (lambda () (null vm-spooled-mail-waiting)) 10)
+      (should-not vm-spooled-mail-waiting)
+      (vm-net--watch))))
+
 ;;; What only happens because nothing waits
 ;;
 ;; A session runs between whatever else Emacs is doing, so the things that go
