@@ -1851,6 +1851,34 @@ comes later, from the session, saying something about the server instead.")
           (when problem (push problem problems)))))
     (nreverse problems)))
 
+(defconst vm-pcrisis-rule-variable-names
+  '(vm-pcrisis-actions vm-pcrisis-conditions
+    vm-pcrisis-default-rules vm-pcrisis-reply-rules vm-pcrisis-forward-rules
+    vm-pcrisis-resend-rules vm-pcrisis-mail-rules vm-pcrisis-newmail-rules
+    vm-pcrisis-automorph-rules)
+  "The variables that say a reader has configured Personality Crisis.
+Named rather than read, so that asking the question does not load
+vm-pcrisis.el: a reader who set one in their init file has interned and set
+it whether the file is loaded or not, and one who set none has nothing to be
+told about (emacs-vm/vm#841).")
+
+(defun vm-pcrisis-configured-but-off-p ()
+  "Whether Personality Crisis has rules and is switched off.
+Switched off, it installs no advice and so says nothing and does nothing,
+which is indistinguishable from working until the reader notices that none
+of their rules ran."
+  (and (not (bound-and-true-p vm-pcrisis-mode))
+       (seq-some (lambda (name) (and (boundp name) (symbol-value name)))
+                 vm-pcrisis-rule-variable-names)))
+
+(defun vm-configuration-problem-pcrisis ()
+  "Personality Crisis configured and switched off, or nil."
+  (when (vm-pcrisis-configured-but-off-p)
+    (concat "Personality Crisis has rules and is switched off, so none of"
+            " them runs.  Add `(vm-pcrisis-mode 1)' to your init file."
+            "  Loading vm-pcrisis.el used to switch it on and no longer"
+            " does")))
+
 (defun vm-configuration-problems ()
   "Everything wrong with this VM configuration, as a list of strings."
   (append
@@ -1859,7 +1887,8 @@ comes later, from the session, saying something about the server instead.")
                    (vm-configuration-problem-from-header)
                    (vm-configuration-problem-sending)
                    (vm-configuration-problem-folder-directory)
-                   (vm-configuration-problem-mail-source)))
+                   (vm-configuration-problem-mail-source)
+                   (vm-configuration-problem-pcrisis)))
    (vm-configuration-problems-maildrops)))
 
 ;;;###autoload

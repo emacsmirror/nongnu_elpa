@@ -115,6 +115,7 @@
 (declare-function mail-mode "ext:sendmail" ())
 (declare-function build-mail-aliases "ext:mailalias" (&optional file))
 (declare-function sendmail-sync-aliases "ext:sendmail" ())
+(declare-function vm-pcrisis-configured-but-off-p "vm" ())
 (declare-function mail-insert-from-field "ext:sendmail" ())
 
 (defun vm-add-reply-subject-prefix (message &optional start)
@@ -2156,6 +2157,32 @@ Emacs throughout the range of versions VM supports."
   (set-keymap-parent vm-mail-mode-map mail-mode-map))
 
 ;;;###autoload
+(defvar vm-said-pcrisis-is-off nil
+  "Whether this session has said that Personality Crisis is switched off.
+Once is enough: the reader is composing, and a line repeated at every
+composition is one they learn to read past.")
+
+(defun vm-say-if-pcrisis-is-off ()
+  "Say once that Personality Crisis has rules and is switched off.
+
+Only where vm-pcrisis.el has not been loaded.  `vm-pcrisis-warn-if-off' says
+it at every composition and is the one to hear, but it reaches
+`vm-mail-mode-hook' as that file loads, so a reader who set the rule
+variables in their init and never loaded it is told nothing by anything.
+That is the quiet half of emacs-vm/vm#561, and this is why the check names
+the variables rather than reading them through the file.
+
+Once, unlike that one: a reader in this state has no vm-pcrisis loaded to
+repeat it, and the line is about their init file rather than about the
+message in front of them."
+  (when (and (not vm-said-pcrisis-is-off)
+             (not (featurep 'vm-pcrisis))
+             (vm-pcrisis-configured-but-off-p))
+    (setq vm-said-pcrisis-is-off t)
+    (vm-warn 0 2 (concat "Personality Crisis has rules and is switched off,"
+                         " so none of them ran.  Add (vm-pcrisis-mode 1) to"
+                         " your init file"))))
+
 (cl-defun vm-mail-internal (&key buffer-name to guessed-to subject
 			       in-reply-to cc references newsgroups)
     "Create a message buffer and set it up according to args.
@@ -2207,6 +2234,7 @@ Binds the `vm-mail-mode-map' and hooks"
     ;; A reader who would rather see the address than the alias in the
     ;; composition puts `mail-abbrevs-setup' on `vm-mail-mode-hook'.  Both
     ;; read the same file; see Composing setup in the VM manual.
+    (vm-say-if-pcrisis-is-off)
     (sendmail-sync-aliases)
     (when (eq mail-aliases t)
       (setq mail-aliases nil)
