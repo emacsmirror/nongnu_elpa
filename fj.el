@@ -2873,11 +2873,11 @@ Else make a POST request to the server."
                    (point)
                    (save-excursion
                      (re-search-forward "</body>")
-                     (pos-bol))))))
-          (t ; if rendering fails, return unrendered body:
-           (with-current-buffer buf
-             (erase-buffer)
-             (insert old-buf)))
+                     (pos-bol)))))
+            (t ; if rendering fails, return unrendered body:
+             (with-current-buffer buf
+               (erase-buffer)
+               (insert old-buf))))
           ;; kill md buffer
           (kill-buffer buf)))
     ;; server render:
