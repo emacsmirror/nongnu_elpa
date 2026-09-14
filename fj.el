@@ -2897,9 +2897,10 @@ Else make a POST request to the server."
       (with-temp-buffer
         (insert body)
         (goto-char (point-min))
-        (let ((old-buf (buffer-string)))
+        (let ((old-buf (buffer-string))
+              (buf "*fj-md-output*"))
           (condition-case nil
-              (let ((buf "*fj-md-output*"))
+              (progn
                 (markdown-standalone buf)
                 (with-current-buffer buf
                   (goto-char (point-min))
@@ -2910,11 +2911,13 @@ Else make a POST request to the server."
                    (point)
                    (save-excursion
                      (re-search-forward "</body>")
-                     (pos-bol)))))
-            (t ; if rendering fails, return unrendered body:
-             (with-current-buffer buf
-               (erase-buffer)
-               (insert old-buf))))))
+                     (pos-bol))))))
+          (t ; if rendering fails, return unrendered body:
+           (with-current-buffer buf
+             (erase-buffer)
+             (insert old-buf)))
+          ;; kill md buffer
+          (kill-buffer buf)))
     ;; server render:
     (decode-coding-string
      (fj-render-markdown body)
