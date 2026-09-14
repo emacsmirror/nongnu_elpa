@@ -3609,17 +3609,21 @@ END-PAGE should be a string of the highest page number to paginate to."
     (save-excursion
       (goto-char point)
       (cond
-       ((and (not json))
+       ((equal 'errors (caar json))
+        (user-error "I am Error: %s - %s"
+                    (alist-get 'message json) json))
+       ((not json)
         ;; FIXME: this called-interactively-p always fails because we are
         ;; in a callback:
         ;; we need to distinguish what exactly? if we reload on nav and
         ;; have no json, we should error here.
         ;; but in what cases should we press on?
         ;; (called-interactively-p 'any))
-        (user-error "No more items"))
-       ((equal 'errors (caar json))
-        (user-error "I am Error: %s - %s"
-                    (alist-get 'message json) json))
+
+        ;; if no items, async render head item:
+        (fj-render-assets-async)
+        (fj-render-reactions-async)
+        (message "No more items"))
        (t
         (fj-destructure-buf-spec (viewargs author owner repo)
           (when fj-inspect-profile-requests
