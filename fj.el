@@ -3423,13 +3423,13 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
         ;; otherwise render first page of timeline:
         (fj-item-view-more* page)))))
 
+;; JUMP TO ITEM:
+
 (defvar fj-dynamic-issue-cands nil)
 
 (defun fj-issue-dynamic (str)
-  "Dynamic issue completion for STR."
-  ;; FIXME: this queries issue title and body, but then our
-  ;; completing-read only matches same string against titles, it's a fatal
-  ;; fuck-up!
+  "Dynamic issue completion for STR.
+Returns a cons of (title . number) for each item matching STR."
   (fj-destructure-buf-spec (repo owner)
     (let* ((json (fj-repo-get-issues repo owner "all" "all" str)))
       (setq fj-dynamic-issue-cands
@@ -3439,42 +3439,104 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
                                     (alist-get 'number x))))))))
 
 (defun fj-issues-affix-fun (cands)
-  "Affixation function for issues completion."
+  "Affixation function for issues completion.
+CANDS is the list of candidates."
   (cl-loop for cand in cands
            for issue = (cdr (assoc cand fj-dynamic-issue-cands #'string=))
            for prefix = (propertize (concat (string-pad issue 3) " | ")
                                     'face 'font-lock-comment-face)
            collect (list cand prefix nil)))
 
-(defun fj-jump-to-item ()
+(defun fj-issues-dynamic-pred (_str cands)
+  "Return CANDS."
+  cands) ;; return all cands, whether match is in title or body
+
+(defun fj-issues-dynamic-pred-title (str cands)
+  "Match STR in CANDS, a list or alist of candidates."
+  ;; match against title str:
+  (cl-remove-if-not
+   (lambda (cand)
+     (string-match-p str
+                     (if (consp cand) (car cand) cand)))
+   cands))
+
+(defun fj-issues-dynamic-fun (str _pred action)
+  "Completion function which doesn't filter results.
+STR PRED and ACTION."
+  (fj-issues-dynamic-fun* str action #'fj-issues-dynamic-pred))
+
+(defun fj-issues-dynamic-fun-title (str _pred action)
+  "Completion function which filters title string results.
+STR PRED and ACTION."
+  (fj-issues-dynamic-fun* str action #'fj-issues-dynamic-pred-title))
+
+(defun fj-issues-dynamic-fun* (str action &optional predicate)
+  "Generic dynamic completion function.
+STR, ACTION.
+PREDICATE is a function to filter results with."
+  (if (or (eq (car-safe action) 'boundaries) (eq action 'metadata))
+      nil
+    (with-current-buffer
+        ;; switch out of minibuffer:
+        (let ((win (minibuffer-selected-window)))
+          (if (window-live-p win) (window-buffer win)
+            (current-buffer)))
+      (when (length> str 2)
+        (let* ((cands (fj-issue-dynamic str))
+               (result (funcall predicate str cands)))
+          ;; we need to return the title strings only:
+          (if (consp (car-safe result))
+              (mapcar #'car result)
+            result))))))
+
+;; in case we want to dispatch on action (as completion functions do):
+;; (pcase action
+;;   ('lambda cands) ;; test-completion
+;;   ('nil ;; try-completion
+;;    (let ((result (fj-issues-dynamic-pred str cands)))
+;;      ;; we need to return the title strings only:
+;;      (if (consp (car-safe result))
+;;          (mapcar #'car result)
+;;        result)))
+;;   ('t ;; all-completion
+;;    (let ((result (fj-issues-dynamic-pred str cands)))
+;;      ;; we need to return the title strings only:
+;;      (if (consp (car-safe result))
+;;          (mapcar #'car result)
+;;        result)))))))))
+
+(defun fj-jump-to-item (&optional prefix)
   "Prompt for a query and load matching issue or PR from current repo.
-This relies on Forgejo server search, which can be fickle."
-  (interactive)
+This relies on Forgejo server search, which can be fickle.
+If PREFIX argument is given, query must be in item title, otherwise it
+may be in item title or body."
+  (interactive "P")
   (fj-with-item-tl
    (fj-destructure-buf-spec (repo owner)
-     ;; the difficulty with this is we want to do dynamic
-     ;; completion matching on issue name and number. instead of
-     ;; annot functions, which means you can only match on one or
-     ;; the other, we concat the two then split again. but this is
-     ;; a hack way to do completing-read, and not all results
-     ;; tolerate it:
      ;; FIXME: not all issues appear, e.g. search "activity" in fj.el:
      (let* ((completion-extra-properties
              '(:affixation-function fj-issues-affix-fun))
-            ;; two-step completion, works with same data that
-            ;; `completion-table-dynamic' fails with:
-            ;; (str (read-string "Search issues: "))
-            ;; (queries (fj-issue-dynamic str))
-            ;; (choice (completing-read "Issue title: " queries nil nil
-            ;;                          str)) ;; default to str
-            (choice (completing-read "Issue: "
-                                     (completion-table-dynamic
-                                      (lambda (str)
-                                        (when (length> str 2)
-                                          (fj-issue-dynamic str)))
-                                      :switch)))
+            (choice
+             (completing-read
+              (format "Jump to item%s: "
+                      (if prefix
+                          " [title only]"
+                        " [title or body]"))
+              ;; `completion-table-dynamic' seems to enforce the "basic"
+              ;; completion style, which doesn't work for us, so we have to
+              ;; roll our own:
+              ;; (completion-table-dynamic
+              ;;  (lambda (str)
+              ;;    (when (length> str 2)
+              ;;      (fj-issue-dynamic str)))
+              ;;  :switch)))
+              (if prefix
+                  #'fj-issues-dynamic-fun-title
+                #'fj-issues-dynamic-fun)))
             (num (cdr (assoc choice fj-dynamic-issue-cands))))
        (fj-item-view repo owner num)))))
+
+;;; TIMELINE PAGINATION
 
 (defun fj-reload-paginated-pages (&optional end-page)
   "Reload a page of timeline items.
