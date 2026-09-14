@@ -224,8 +224,8 @@ Requires an extra request per commit, so is disabled by default."
   :type '(boolean))
 
 (defcustom fj-favourite-repos nil
-  "A list of favourite repos, which are strings of the form \"owner/repo\", or
-\"org/repo\". You can jump to these with completion using `fj-jump-to-repo'."
+  "A list of favourite repos, in the form \"owner/repo\" or \"org/repo\".
+You can jump to these with completion using `fj-jump-to-repo'."
   :type '(repeat string))
 
 (defcustom fj-use-markdown-binary nil
@@ -3090,7 +3090,8 @@ format alittle simpler."
                  props)))
 
 (defun fj-render-assets-async (&optional start)
-  "Render assets in current item view asynchonously."
+  "Render assets in current item view asynchonously.
+START is the point in the buffer to start from."
   (let (assets-match)
     (save-excursion
       (goto-char (or start (point-min)))
@@ -3151,7 +3152,8 @@ MARKER-START and MARKER-END is the range where we insert the assets."
         (set-marker marker-end nil)))))
 
 (defun fj-render-reactions-async (&optional start)
-  "Render reactions in current item view asynchonously."
+  "Render reactions in current item view asynchonously.
+START is the point in the buffer to start from."
   (let (reac-match)
     (save-excursion
       (goto-char (or start (point-min)))
