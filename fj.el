@@ -3564,8 +3564,11 @@ Conditionally called from the end of `fj-item-view-more-cb'."
                            (plist-put viewargs :page new-page)))
           (fj-issue-get-timeline-async
            repo owner number new-page limit
-           #'fj-item-view-more-cb (current-buffer) (point) nil
-           (or end-page page)))))))
+           #'fj-item-view-more-cb (current-buffer)
+           ;; if we are adding pages, do so @ eob, not point!:
+           (if end-page (point-max)
+             (point))
+           nil (or end-page page)))))))
 
 (defun fj-item-view-more ()
   "Load more items to the timeline, if it has more items.
