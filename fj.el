@@ -1194,7 +1194,8 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
   "If we are in a `fj-host' repository, return its name.
 Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
-  (ignore-errors
+  (with-demoted-errors
+      "Error: %S"
     (when (magit-inside-worktree-p)
       ;; FIXME: this is slow, as we just fetch all our repos. why not repo
       ;; search, with dir name, and search repos with exclusive param set
@@ -2972,7 +2973,8 @@ Optionally start from POINT."
                 (props (text-properties-at (1- (point)) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
-            (ignore-errors ;; if we error, don't break the rest of our rendering loop
+            (with-demoted-errors ;; if we error, don't break the rest of our rendering loop
+                "Error: %S"
               (shr-render-region (prop-match-beginning match)
                                  (prop-match-end match)
                                  (current-buffer)))
