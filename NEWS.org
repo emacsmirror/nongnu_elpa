@@ -1,5 +1,27 @@
 #+title: emacs-hermes Changelog
 
+* Version 0.7.0 (unreleased)
+
+- Excluded tests and development files from ELPA packages, preventing test
+  helper load errors during installation.
+- Added inert output previews for backend-managed files and HTML/SVG reply
+  blocks, with source inspection, explicit saving, and image zoom.
+- Added a session-owned live task panel that follows backend snapshots and
+  preserves pending tasks when a turn ends.
+- Added session pinning and named backend workspaces, with profile-scoped
+  management and readback after changes.
+- Added Markdown and code highlighting to editable chat drafts without
+  changing submitted text.
+- Added =hermes-request= for asynchronous prompts in fresh, profile-qualified
+  sessions without borrowing a chat's history.  Requests use the selected
+  profile's model and provider and support cancellation and timeouts.
+- Accepted clarification replies from the composer as well as the minibuffer,
+  preserving free-text answers and handling batched questions in order.
+- Preserved full accepted corrections between assistant reply segments and
+  contained callback failures without failing unrelated chats.
+- Kept queued input pending until an interrupt settles, including when an idle
+  notification arrives before the interrupt response.
+
 * Version 0.6.0 (2026-09-09)
 
 - Added local image drafts from files and PNG clipboard data.  Images can be
