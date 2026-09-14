@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.43
+;; Version: 0.44
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -224,9 +224,15 @@ Requires an extra request per commit, so is disabled by default."
   :type '(boolean))
 
 (defcustom fj-favourite-repos nil
-  "A list of favourite repos, which are strings of the form \"owner/repo\", or
-\"org/repo\". You can jump to these with completion using `fj-jump-to-repo'."
+  "A list of favourite repos, in the form \"owner/repo\" or \"org/repo\".
+You can jump to these with completion using `fj-jump-to-repo'."
   :type '(repeat string))
+
+(defcustom fj-use-markdown-binary nil
+  "Whether to use a local markdown binary to render markdown.
+If you have markdown or pandoc installed, consider enabling this for
+performance."
+  :type '(boolean))
 
 ;;; FACES
 
@@ -331,9 +337,11 @@ Copies the token to the kill ring and returns it."
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
 Optionally prompt for a token and save it if needed."
-  (let ((host (url-host (url-generic-parse-url fj-host))))
-    (nth 1
-         (fedi-auth-source-get fj-user host :create))))
+  (if (not fj-host)
+      (user-error "Set `fj-host' to fetch token from auth sources")
+    (let ((host (url-host (url-generic-parse-url fj-host))))
+      (nth 1
+           (fedi-auth-source-get fj-user host :create)))))
 
 (defun fj-token ()
   "Fetch user access token from auth source, or try to add one.
@@ -1343,8 +1351,8 @@ The default sort value is \"latest\"."
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
   ;; default sort = latest.
   "Return issues for REPO by OWNER.
-STATE is for issue status, a string of open, closed or all.
-TYPE is item type: issue pull or all.
+STATE is for issue status, a string of \"open\", \"closed\" or \"all\".
+TYPE is item type: a string of \"issue\", \"pull\" or \"all\".
 QUERY is a search term to filter by.
 Optionally limit results to LABELS or MILESTONES, which are
 comma-separated lists.
@@ -2334,6 +2342,7 @@ Optionally specify REPO and OWNER."
   "u"        #'fj-repo-copy-clone-url
   "L"        #'fj-repo-commit-log
   "j"        #'imenu
+  "J"        #'fj-jump-to-item
   "l"        #'fj-item-label-add
   ;; TODO: conflicts with fj-user-settings-transient:
   ;; "U"        #'fj-copy-pr-url
@@ -2844,50 +2853,40 @@ Buffer-local variable `fj-previous-window-config' holds the config."
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
-;; FIXME: use this?
-;; (defun fj-body-prop-regexes (str json)
-;;   "Propertize items by regexes in STR.
-;; JSON is the data associated with STR."
-;;   (with-temp-buffer
-;;     (insert str)
-;;     (goto-char (point-min))
-;;     (fedi-propertize-items fedi-post-handle-regex 'handle
-;;                            fj-link-keymap 1 2 nil nil
-;;                            '(fj-tab-stop t))
-;;     (fedi-propertize-items fedi-post-tag-regex 'tag
-;;                            fj-link-keymap 1 2 nil nil
-;;                            '(fj-tab-stop t))
-;;     (fedi-propertize-items fj-team-handle-regex 'team
-;;                            fj-link-keymap 1 2 nil nil
-;;                            '(fj-tab-stop t))
-;;     (fedi-propertize-items fj-repo-tag-regex 'repo-tag
-;;                            fj-link-keymap 1 1 nil nil
-;;                            '(fj-tab-stop t))
-;;     ;; NB: this is required for shr tab stops
-;;     ;; - why doesn't shr always add shr-tab-stop prop?
-;;     ;; - does not add tab-stops for []() links (nor does shr!?)
-;;     ;; - fixed prev breakage here by adding item as link in
-;;     ;; - `fedi-propertize-items'.
-;;     (fedi-propertize-items fedi-post-url-regex 'shr
-;;                            fj-link-keymap 1 1 nil nil
-;;                            '(fj-tab-stop t))
-;;     ;; FIXME: md []() links:
-;;     ;; doesn't work
-;;     ;; (fedi-propertize-items str markdown-regex-link-inline 'shr json
-;;     ;;                              fj-link-keymap 1 1 nil nil
-;;     ;;                              '(fj-tab-stop t))
-;;     (fedi-propertize-items fedi-post-commit-regex 'commit
-;;                            fj-link-keymap 1 1 nil nil
-;;                            '(fj-tab-stop t)
-;;                            'fj-issue-commit-face)
-;;     (buffer-string)))
-
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
-  "Render BODY as markdown and decode."
-  (decode-coding-string
-   (fj-render-markdown body)
-   'utf-8))
+  "Render BODY as markdown and decode.
+If `fj-use-markdown-binary' is t, use `markdown-standalone'.
+Else make a POST request to the server."
+  (if fj-use-markdown-binary
+      (with-temp-buffer
+        (insert body)
+        (goto-char (point-min))
+        (let ((old-buf (buffer-string))
+              (buf "*fj-md-output*"))
+          (condition-case nil
+              (progn
+                (markdown-standalone buf)
+                (with-current-buffer buf
+                  (goto-char (point-min))
+                  ;; (switch-to-buffer (current-buffer))
+                  ;; grab just the body:
+                  (re-search-forward "<body>")
+                  (buffer-substring-no-properties
+                   (point)
+                   (save-excursion
+                     (re-search-forward "</body>")
+                     (pos-bol)))))
+            (t ; if rendering fails, return unrendered body:
+             (with-current-buffer buf
+               (erase-buffer)
+               (insert old-buf))))
+          ;; kill md buffer
+          (kill-buffer buf)))
+    ;; server render:
+    (decode-coding-string
+     (fj-render-markdown body)
+     'utf-8)))
 
 (require 'eww)
 
@@ -3094,7 +3093,8 @@ format alittle simpler."
                  props)))
 
 (defun fj-render-assets-async (&optional start)
-  "Render assets in current item view asynchonously."
+  "Render assets in current item view asynchonously.
+START is the point in the buffer to start from."
   (let (assets-match)
     (save-excursion
       (goto-char (or start (point-min)))
@@ -3155,7 +3155,8 @@ MARKER-START and MARKER-END is the range where we insert the assets."
         (set-marker marker-end nil)))))
 
 (defun fj-render-reactions-async (&optional start)
-  "Render reactions in current item view asynchonously."
+  "Render reactions in current item view asynchonously.
+START is the point in the buffer to start from."
   (let (reac-match)
     (save-excursion
       (goto-char (or start (point-min)))
@@ -3421,6 +3422,121 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
           (fj-reload-paginated-pages)
         ;; otherwise render first page of timeline:
         (fj-item-view-more* page)))))
+
+;; JUMP TO ITEM:
+
+(defvar fj-dynamic-issue-cands nil)
+
+(defun fj-issue-dynamic (str)
+  "Dynamic issue completion for STR.
+Returns a cons of (title . number) for each item matching STR."
+  (fj-destructure-buf-spec (repo owner)
+    (let* ((json (fj-repo-get-issues repo owner "all" "all" str)))
+      (setq fj-dynamic-issue-cands
+            (cl-loop for x in json
+                     collect (cons (alist-get 'title x)
+                                   (number-to-string
+                                    (alist-get 'number x))))))))
+
+(defun fj-issues-affix-fun (cands)
+  "Affixation function for issues completion.
+CANDS is the list of candidates."
+  (cl-loop for cand in cands
+           for issue = (cdr (assoc cand fj-dynamic-issue-cands #'string=))
+           for prefix = (propertize (concat (string-pad issue 3) " | ")
+                                    'face 'font-lock-comment-face)
+           collect (list cand prefix nil)))
+
+(defun fj-issues-dynamic-pred (_str cands)
+  "Return CANDS."
+  cands) ;; return all cands, whether match is in title or body
+
+(defun fj-issues-dynamic-pred-title (str cands)
+  "Match STR in CANDS, a list or alist of candidates."
+  ;; match against title str:
+  (cl-remove-if-not
+   (lambda (cand)
+     (string-match-p str
+                     (if (consp cand) (car cand) cand)))
+   cands))
+
+(defun fj-issues-dynamic-fun (str _pred action)
+  "Completion function which doesn't filter results.
+STR PRED and ACTION."
+  (fj-issues-dynamic-fun* str action #'fj-issues-dynamic-pred))
+
+(defun fj-issues-dynamic-fun-title (str _pred action)
+  "Completion function which filters title string results.
+STR PRED and ACTION."
+  (fj-issues-dynamic-fun* str action #'fj-issues-dynamic-pred-title))
+
+(defun fj-issues-dynamic-fun* (str action &optional predicate)
+  "Generic dynamic completion function.
+STR, ACTION.
+PREDICATE is a function to filter results with."
+  (if (or (eq (car-safe action) 'boundaries) (eq action 'metadata))
+      nil
+    (with-current-buffer
+        ;; switch out of minibuffer:
+        (let ((win (minibuffer-selected-window)))
+          (if (window-live-p win) (window-buffer win)
+            (current-buffer)))
+      (when (length> str 2)
+        (let* ((cands (fj-issue-dynamic str))
+               (result (funcall predicate str cands)))
+          ;; we need to return the title strings only:
+          (if (consp (car-safe result))
+              (mapcar #'car result)
+            result))))))
+
+;; in case we want to dispatch on action (as completion functions do):
+;; (pcase action
+;;   ('lambda cands) ;; test-completion
+;;   ('nil ;; try-completion
+;;    (let ((result (fj-issues-dynamic-pred str cands)))
+;;      ;; we need to return the title strings only:
+;;      (if (consp (car-safe result))
+;;          (mapcar #'car result)
+;;        result)))
+;;   ('t ;; all-completion
+;;    (let ((result (fj-issues-dynamic-pred str cands)))
+;;      ;; we need to return the title strings only:
+;;      (if (consp (car-safe result))
+;;          (mapcar #'car result)
+;;        result)))))))))
+
+(defun fj-jump-to-item (&optional prefix)
+  "Prompt for a query and load matching issue or PR from current repo.
+This relies on Forgejo server search, which can be fickle.
+If PREFIX argument is given, query must be in item title, otherwise it
+may be in item title or body."
+  (interactive "P")
+  (fj-with-item-tl
+   (fj-destructure-buf-spec (repo owner)
+     ;; FIXME: not all issues appear, e.g. search "activity" in fj.el:
+     (let* ((completion-extra-properties
+             '(:affixation-function fj-issues-affix-fun))
+            (choice
+             (completing-read
+              (format "Jump to item%s: "
+                      (if prefix
+                          " [title only]"
+                        " [title or body]"))
+              ;; `completion-table-dynamic' seems to enforce the "basic"
+              ;; completion style, which doesn't work for us, so we have to
+              ;; roll our own:
+              ;; (completion-table-dynamic
+              ;;  (lambda (str)
+              ;;    (when (length> str 2)
+              ;;      (fj-issue-dynamic str)))
+              ;;  :switch)))
+              (if prefix
+                  #'fj-issues-dynamic-fun-title
+                #'fj-issues-dynamic-fun)))
+            (num (cdr (assoc choice fj-dynamic-issue-cands))))
+       (fj-item-view repo owner num)))))
+
+;;; TIMELINE PAGINATION
 
 (defun fj-reload-paginated-pages (&optional end-page)
   "Reload a page of timeline items.
