@@ -1783,7 +1783,7 @@ PERMANENTFLAGS can be wrong both ways: a server may leave a keyword out of it
 and store the keyword anyway, or advertise `\\*' and keep nothing.  That is
 why it warns and changes nothing.
 
-`vm-imap-note-dropped-flags' says the same thing after the fact, having seen
+`vm-imap-net-note-dropped-flags' says the same thing after the fact, having seen
 a keyword come back missing.  This says it at the moment the label is sent,
 which is where the reader still has the label in front of them.
 

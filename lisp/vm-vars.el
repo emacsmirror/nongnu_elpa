@@ -3521,7 +3521,7 @@ A nil value means to use plain text forwarding."
 
 (defcustom vm-mime-forward-saved-attachments t
   "*Non-nil value means that any attachments saved to local files
-using, for example `vm-mime-save-all-attachments', will be
+using, for example `vm-save-all-attachments', will be
 retrieved and re-attached to forwarded messages.  
 
 Nil value means that the messages will be forwarded with external

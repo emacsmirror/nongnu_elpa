@@ -4476,10 +4476,8 @@ buffer for message composition is queried from the minibuffer."
 ;;	 :name :: string) 
 ;;	-> void
 ;; vm-delete-all-attachments :: (&optional count :: int) -> void
-;; vm-mime-delete-all-attachments -- alias to the above
 ;; vm-save-all-attachments :: (&optional
 ;;			       count :: int, directory :: path) -> void
-;; vm-mime-save-all-attachments -- alias to the above
 ;; vm-save-attachments :: (&optional count :: int) -> void
 ;;----------------------------------------------------------------------------
 

@@ -50,7 +50,7 @@ Implemented and on develop.
 - The read-back, =vm-imap-update-message-flags=, gives each message exactly
   the keywords the server reported.  Both the blocking retrieve-attributes
   step and the driver's =vm-imap-net-take-server-flags= go through it.
-- =vm-imap-note-dropped-flags= warns once per session that the server
+- =vm-imap-net-note-dropped-flags= warns once per session that the server
   accepted a keyword and discarded it, naming the label.  The manual says so
   under Gmail.  Before it, the loss was silent.
 - =vm-imap-net-tell-about-keywords= says the same thing before the store
