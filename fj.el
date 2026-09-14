@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.44
+;; Version: 0.45
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -2964,18 +2964,18 @@ Optionally start from POINT."
                                 2)))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
                 (shr-external-rendering-functions
-                 (append
-                  shr-external-rendering-functions
-                  '((input . fj-tag-input))))
+                 (append shr-external-rendering-functions
+                         '((input . fj-tag-input))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
                 (props (text-properties-at (1- (point)) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
-            (shr-render-region (prop-match-beginning match)
-                               (prop-match-end match)
-                               (current-buffer))
+            (ignore-errors ;; if we error, don't break the rest of our rendering loop
+              (shr-render-region (prop-match-beginning match)
+                                 (prop-match-end match)
+                                 (current-buffer)))
             ;; Re-add props (so we can edit when point on body, etc.):
             (add-text-properties (prop-match-beginning match)
                                  (point)
@@ -3564,8 +3564,11 @@ Conditionally called from the end of `fj-item-view-more-cb'."
                            (plist-put viewargs :page new-page)))
           (fj-issue-get-timeline-async
            repo owner number new-page limit
-           #'fj-item-view-more-cb (current-buffer) (point) nil
-           (or end-page page)))))))
+           #'fj-item-view-more-cb (current-buffer)
+           ;; if we are adding pages, do so @ eob, not point!:
+           (if end-page (point-max)
+             (point))
+           nil (or end-page page)))))))
 
 (defun fj-item-view-more ()
   "Load more items to the timeline, if it has more items.
@@ -3609,17 +3612,21 @@ END-PAGE should be a string of the highest page number to paginate to."
     (save-excursion
       (goto-char point)
       (cond
-       ((and (not json))
+       ((equal 'errors (caar json))
+        (user-error "I am Error: %s - %s"
+                    (alist-get 'message json) json))
+       ((not json)
         ;; FIXME: this called-interactively-p always fails because we are
         ;; in a callback:
         ;; we need to distinguish what exactly? if we reload on nav and
         ;; have no json, we should error here.
         ;; but in what cases should we press on?
         ;; (called-interactively-p 'any))
-        (user-error "No more items"))
-       ((equal 'errors (caar json))
-        (user-error "I am Error: %s - %s"
-                    (alist-get 'message json) json))
+
+        ;; if no items, async render head item:
+        (fj-render-assets-async)
+        (fj-render-reactions-async)
+        (message "No more items"))
        (t
         (fj-destructure-buf-spec (viewargs author owner repo)
           (when fj-inspect-profile-requests
