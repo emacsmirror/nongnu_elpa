@@ -2964,18 +2964,18 @@ Optionally start from POINT."
                                 2)))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
                 (shr-external-rendering-functions
-                 (append
-                  shr-external-rendering-functions
-                  '((input . fj-tag-input))))
+                 (append shr-external-rendering-functions
+                         '((input . fj-tag-input))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
                 (props (text-properties-at (1- (point)) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
-            (shr-render-region (prop-match-beginning match)
-                               (prop-match-end match)
-                               (current-buffer))
+            (ignore-errors ;; if we error, don't break the rest of our rendering loop
+              (shr-render-region (prop-match-beginning match)
+                                 (prop-match-end match)
+                                 (current-buffer)))
             ;; Re-add props (so we can edit when point on body, etc.):
             (add-text-properties (prop-match-beginning match)
                                  (point)
