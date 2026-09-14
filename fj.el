@@ -6014,16 +6014,18 @@ Returns a list of strings."
   (interactive)
   ;; FIXME: make it work in source files/magit?
   (fj-destructure-buf-spec (repo owner)
-    (let* ((tags (fj-get-repo-tags))
-           (list (cl-loop for x in tags
-                          collect (alist-get 'name x)))
-           (choice (completing-read "Delete tag: " list))
-           (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
-           (resp (fj-delete endpoint)))
-      (fedi-http--triage
-       resp
-       (lambda (_)
-         (message "Tag %s on %s/%s deleted!" choice owner repo))))))
+    (if (not (and repo owner))
+        (user-error "Not in an fj.el buffer")
+      (let* ((tags (fj-get-repo-tags))
+             (list (cl-loop for x in tags
+                            collect (alist-get 'name x)))
+             (choice (completing-read "Delete tag: " list))
+             (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
+             (resp (fj-delete endpoint)))
+        (fedi-http--triage
+         resp
+         (lambda (_)
+           (message "Tag %s on %s/%s deleted!" choice owner repo)))))))
 
 ;;; ACTIVITIES
 
