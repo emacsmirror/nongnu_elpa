@@ -337,9 +337,11 @@ Copies the token to the kill ring and returns it."
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
 Optionally prompt for a token and save it if needed."
-  (let ((host (url-host (url-generic-parse-url fj-host))))
-    (nth 1
-         (fedi-auth-source-get fj-user host :create))))
+  (if (not fj-host)
+      (user-error "Set `fj-host' to fetch token from auth sources.")
+    (let ((host (url-host (url-generic-parse-url fj-host))))
+      (nth 1
+           (fedi-auth-source-get fj-user host :create)))))
 
 (defun fj-token ()
   "Fetch user access token from auth source, or try to add one.
