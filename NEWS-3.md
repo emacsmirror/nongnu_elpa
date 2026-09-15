@@ -200,7 +200,9 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
   * `M-x vm-setup` asks what VM needs to know and writes the answers to a
     file VM loads (emacs-vm/vm#816): your name and address, where folders are
     to be kept, where new mail comes from, how mail is to be sent, and
-    whether VM should be the mail reader Emacs uses.
+    whether VM should be the mail reader Emacs uses.  It is experimental in
+    this release: what it asks, what it writes, and the file it writes to
+    may change.
 
     Every question is asked before anything is written, so stopping part way
     through leaves your files as they were.  The file to write is the last

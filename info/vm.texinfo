@@ -449,6 +449,8 @@ Emacs expects it that is all you need.  Otherwise VM has to be told where
 your mail is: @kbd{M-x vm-setup} asks for what it needs and writes the
 answers to a file, @kbd{M-x vm-check-configuration} says what is still
 missing, and @ref{Setting Up} builds a configuration one piece at a time.
+@code{vm-setup} is experimental: what it asks, what it writes, and the file
+it writes to may change in a later release.
 
 The rest of this chapter is what happens when VM starts, which is worth
 knowing when something does not.
@@ -2754,7 +2756,8 @@ The same settings, in one file you can copy, are installed as
 Or let VM ask.  @kbd{M-x vm-setup} asks for your name and address, where
 folders are to be kept, where new mail comes from, how mail is to be sent,
 and whether VM should be the mail reader Emacs uses, then writes the answers
-to a file VM loads.
+to a file VM loads.  It is experimental: what it asks, what it writes, and
+the file it writes to may change in a later release.
 
 @itemize
 @item

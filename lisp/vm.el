@@ -2098,6 +2098,9 @@ mail comes from, how mail is to be sent, and whether VM should be the mail
 reader Emacs uses.  Every question is asked before anything is written, so
 stopping part way through leaves your files as they were.
 
+This command is experimental.  What it asks, what it writes, and the file
+it writes to may change in a later release.
+
 The file is asked for, and defaults to `vm-preferences-file', which VM
 loads after `vm-init-file' and which nothing else writes.  Replacing a file
 that already exists is confirmed first.  What is written replaces the whole
