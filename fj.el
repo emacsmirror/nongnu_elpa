@@ -4292,7 +4292,6 @@ Optionally add ITEM data."
               'button t
               'type 'shr
               'item item
-              'fj-tab-stop t
               'category 'shr
               'follow-link t))
 
@@ -5743,33 +5742,28 @@ If it looks like a link to an item, load it."
                              (url-filename parsed) "/")
                             "/"))
                (last (car (last file-split))))
-          (cond
-           ((string-empty-p last) ;; https://codeberg.org
-            (shr-browse-url))
-           ((string-prefix-p "/" item) ;; relativel link (md, inline image)
-            (browse-url (format "%s/%s/%s/%s"
-                                fj-host owner repo item)))
-           (t
-            (pcase (length file-split)
-              ;; user:
-              (1 (fj-user-repos (car owner-repo)))
-              ;; repo (list issues):
-              (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-              ;; listings:
-              (3 (pcase last
-                   ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
-                   ("issues" (fj-list-issues (cadr owner-repo)))
-                   ;; links to range, commit, branch (browse-url):
-                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
-                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
-                   ;; https://codeberg.org/martianh/fj.el/src/branch/dev
-                   (_ (shr-browse-url))))
-              (_ (pcase (car (last file-split 2))
-                   ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
-                   ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
-                   (_ (shr-browse-url))))))))))))
+          (if ((string-empty-p last) ;; https://codeberg.org!
+               (shr-browse-url))
+              (pcase (length file-split)
+                ;; user:
+                (1 (fj-user-repos (car owner-repo)))
+                ;; repo (list issues):
+                (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+                ;; listings:
+                (3 (pcase last
+                     ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                     ("issues" (fj-list-issues (cadr owner-repo)))
+                     ;; links to range, commit, branch (browse-url):
+                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                     ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                     (_ (shr-browse-url))))
+                (_ (pcase (car (last file-split 2))
+                     ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                      (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                     ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                      (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                     (_ (shr-browse-url)))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
