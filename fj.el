@@ -2981,7 +2981,8 @@ Optionally start from POINT."
             ;; Re-add props (so we can edit when point on body, etc.):
             (add-text-properties (prop-match-beginning match)
                                  (point)
-                                 props
+                                 (append props
+                                         '(fj-rendered t))
                                  (current-buffer)))))
       (save-excursion
         (goto-char (or point (point-min)))
@@ -3625,6 +3626,11 @@ END-PAGE should be a string of the highest page number to paginate to."
         ;; but in what cases should we press on?
         ;; (called-interactively-p 'any))
 
+        ;; if we deleted a comment that reduced the number of items by 1,
+        ;; we will end up calling this to the point of having no data, as
+        ;; buf-spec page count will be 1 too many. in that case, we need
+        ;; to still render our item bodies:
+        (fj-render-bodies-final-load-maybe)
         ;; if no items, async render head item:
         (fj-render-assets-async)
         (fj-render-reactions-async)
@@ -3654,7 +3660,6 @@ END-PAGE should be a string of the highest page number to paginate to."
                 (delete-line))
               ;; raw render items:
               (fj-render-timeline json author owner repo))
-            (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
             ;; NB: we need to call `fj-render-item-bodies' exactly once
@@ -3676,7 +3681,8 @@ END-PAGE should be a string of the highest page number to paginate to."
                          ;; fj-item-body assumes body is not "":
                          (text-property-search-forward 'fj-item-data)
                          (point)))))
-                (fj-render-item-bodies render-point))
+                (fj-render-item-bodies render-point)
+                (message "Loading comments... Done"))
               ;; async assets render should also run exactly once,
               ;; the last time we call this cb function. it should cover:
               ;; - whole buffer on reload
@@ -3690,6 +3696,21 @@ END-PAGE should be a string of the highest page number to paginate to."
                 (fj-render-reactions-async async-point)))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
+
+(defun fj-render-bodies-final-load-maybe ()
+  "Call `fj-render-item-bodies' if our first item is not rendered.
+The rendered check checks if it has an fj-rendered prop."
+  (let ((render-point
+         (save-excursion
+           (goto-char (point-min))
+           ;; fj-item-body assumes body is not "":
+           (text-property-search-forward 'fj-item-data)
+           (point))))
+    (when (save-excursion
+            (goto-char (1- render-point))
+            ;; if fj-rendered not there:
+            (not (fj--property 'fj-rendered)))
+      (fj-render-item-bodies render-point))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
