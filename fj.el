@@ -3194,6 +3194,51 @@ MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
   (fj-render-comment-reactions-cb data marker-start marker-end render-fun))
 
+(defun fj-render-linked-source-code ()
+  "Insert source code for any code range permalinks in buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (while (setq match (text-property-search-forward 'shr-url))
+      (fj-insert-permalink-code))))
+
+(defun fj-insert-permalink-code ()
+  "Insert the code range of the permalink at point.
+A URL is considered a permalink if is on `fj-host', has a trailing
+#target, and has as a \"/commit/$hash\" part."
+  (save-excursion
+    (fj-destructure-buf-spec (repo owner)
+      (let* ((inhibit-read-only t)
+             (url (save-excursion
+                    (backward-char)
+                    (fedi--property 'shr-url)))
+             (parsed (url-generic-parse-url url)))
+        ;; when on this instance:
+        (when (and (equal (url-host (url-generic-parse-url fj-host))
+                          (url-host parsed))
+                   ;; and it has # after last /:
+                   (url-target parsed))
+          (let* ((filename (url-filename parsed))
+                 (split (split-string filename "/"))
+                 (lines (mapcar (lambda (x)
+                                  (string-trim-left x "L"))
+                                (split-string (url-target parsed) "-")))
+                 (commit-cut (member "commit" split)))
+            (when commit-cut
+              (let* (;; filepath from filename after "commit/$hash/":
+                     (filepath (string-join
+                                (member (nth 2 commit-cut)
+                                        commit-cut)
+                                "/"))
+                     ;; commit hash from filename:
+                     (ref (nth 1 commit-cut))
+                     (resp (fj-get-repo-file-range
+                            repo owner filepath
+                            (string-to-number (car lines))
+                            (when (> (length lines) 1)
+                              (string-to-number (cadr lines))))))
+                (forward-line)
+                (insert  (concat "\n" resp))))))))))
+
 (defun fj-render-comment-reactions-cb (data marker-start marker-end
                                           render-fun)
   "Render reactions in DATA.
