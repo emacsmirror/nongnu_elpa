@@ -5730,6 +5730,10 @@ If it looks like a link to an item, load it."
                  (fj-list-pulls (cadr owner-repo) (car owner-repo))
                (fj-list-issues (cadr owner-repo)) ;(car owner-repo)
                ))
+          ;; FIXME: links to range, commit, branch:
+          ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+          ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+          ;; https://codeberg.org/martianh/fj.el/src/branch/dev
           (_
            (fj-item-view
             (cadr owner-repo) (car owner-repo) last
