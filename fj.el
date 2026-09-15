@@ -5725,7 +5725,10 @@ If it looks like a link to an item, load it."
   (fj-destructure-buf-spec (repo owner)
     ;; "https://codeberg.org/guix/guix/pulls/7383"
     ;; we might have a link to user/org, to repo, to item...
-    (let* ((item (or item (fj--property 'shr-url)))
+    (let* ((item
+            ;; rel links have no item, so we need to hedge here else we
+            ;; will fail to treat them in the first if clause:
+            (or item (fj--property 'shr-url)))
            (parsed (url-generic-parse-url item)))
       ;; is it a URL we should try to load?:
       (if (not (equal fj-host (concat "https://" (url-host parsed))))
