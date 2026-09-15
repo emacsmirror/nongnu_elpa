@@ -3235,7 +3235,9 @@ A URL is considered a permalink if is on `fj-host', has a trailing
                      (ref (nth 1 commit-cut))
                      (beg (string-to-number (car lines)))
                      (end (when (> (length lines) 1)
-                            (string-to-number (cadr lines))))
+                            ;; max 50 lines:
+                            (max (string-to-number (cadr lines))
+                                 (+ beg 50))))
                      (marker (copy-marker
                               (prop-match-end match)
                               t))) ;; move on insertion
