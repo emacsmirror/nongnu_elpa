@@ -3200,16 +3200,15 @@ Optionally start searching from POINT."
   (save-excursion
     (goto-char (or point (point-min)))
     (while (setq match (text-property-search-forward 'shr-url))
-      (fj-insert-permalink-code))))
+      (fj-insert-permalink-code match))))
 
-(defun fj-insert-permalink-code ()
-  "Insert the code range of the permalink at point.
+(defun fj-insert-permalink-code (match)
+  "Insert the code range of the permalink at point, async.
 A URL is considered a permalink if is on `fj-host', has a trailing
 #target, and has as a \"/commit/$hash\" part."
   (save-excursion
     (fj-destructure-buf-spec (repo owner)
-      (let* ((inhibit-read-only t)
-             (url (save-excursion
+      (let* ((url (save-excursion
                     (backward-char)
                     (fedi--property 'shr-url)))
              (parsed (url-generic-parse-url url)))
@@ -3234,22 +3233,45 @@ A URL is considered a permalink if is on `fj-host', has a trailing
                                 "/"))
                      ;; commit hash from filename:
                      (ref (nth 1 commit-cut))
-                     (resp (fj-get-repo-file-range
-                            repo owner filepath
-                            (string-to-number (car lines))
-                            (when (> (length lines) 1)
-                              (string-to-number (cadr lines))))))
-                (forward-line)
-                (insert
-                 (concat "\n"
-                         (fj-code-range-str resp ext)))))))))))
+                     (beg (string-to-number (car lines)))
+                     (end (when (> (length lines) 1)
+                            (string-to-number (cadr lines))))
+                     (marker (copy-marker
+                              (prop-match-end match)
+                              t))) ;; move on insertion
+                (fj-get-repo-file-async ;;fj-get-repo-file-range-async
+                 repo owner filepath ref
+                 #'fj-insert-permalink-code-cb `(,beg ,end ,marker ,ext))))))))))
 
-(defun fj-code-range-str (resp ext)
+(defun fj-insert-permalink-code-cb (_status beg end marker ext)
+  "Insert get code range from BEG to END and insert at MARKER."
+  (let* ((raw (fj-resp-str (current-buffer)))
+         (str (with-temp-buffer
+                (insert raw)
+                (goto-char (point-min))
+                (forward-line beg)
+                (buffer-substring (point)
+                                  (if (not end)
+                                      (progn (forward-line 1) (point))
+                                    (save-excursion
+                                      (goto-char (point-min))
+                                      (forward-line (1+ end))
+                                      (point)))))))
+    (with-current-buffer (marker-buffer marker)
+      (save-excursion
+        (let ((inhibit-read-only t))
+          (goto-char (marker-position marker))
+          (forward-line)
+          (insert
+           (concat "\n"
+                   (fj-code-range-str str ext))))))))
+
+(defun fj-code-range-str (str ext)
   "Fontify code range and return string.
-RESP is the response string, EXT is the file extension."
+STR is the response string, EXT is the file extension."
   (with-temp-buffer
     (switch-to-buffer (current-buffer))
-    (insert resp)
+    (insert str)
     ;; FIXME: awful hack for fetching mode-fun:
     (if-let* ((fun (alist-get
                     (concat "\\" ext "\\'")
@@ -3257,7 +3279,7 @@ RESP is the response string, EXT is the file extension."
         (funcall fun))
     (font-lock-fontify-region (point-min)
                       (point-max))
-     (buffer-string)))
+    (buffer-string)))
 
 (defun fj-render-comment-reactions-cb (data marker-start marker-end
                                           render-fun)
@@ -3758,7 +3780,9 @@ END-PAGE should be a string of the highest page number to paginate to."
                 ;; async render assets:
                 (fj-render-assets-async async-point)
                 ;; async render reactions
-                (fj-render-reactions-async async-point)))
+                (fj-render-reactions-async async-point)
+                ;; render code ranges:
+                (fj-render-linked-source-code async-point)))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
@@ -4764,6 +4788,13 @@ FILE is a string, including type suffix, and is case-sensitive."
     (fedi-http--triage resp
                        (lambda (resp)
                          (fj-resp-str resp)))))
+
+(defun fj-get-repo-file-async (repo owner file &optional ref cb cbargs)
+  "Return FILE from REPO of OWNER.
+FILE is a string, including type suffix, and is case-sensitive."
+  (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
+         (params (fedi-opt-params ref)))
+    (apply #'fedi-http--get-async (fj-api endpoint) params cb cbargs)))
 
 (defun fj-get-repo-file-range (repo owner file beg &optional end ref)
   "Return FILE from REPO by OWNER.
