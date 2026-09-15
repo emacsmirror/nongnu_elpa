@@ -3021,7 +3021,22 @@ Optionally start from POINT."
       ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
       ;;                        '(fj-tab-stop t))
-      )))
+
+      ;; some shr items don't match (any) url-regex, e.g. rel links:
+      (fj-propertize-shr-items))))
+
+(defun fj-propertize-shr-items ()
+  "Add text properties to shr items in buffer.
+Adds tab-stop, keymap, and type."
+  (save-excursion
+    (goto-char (point-min))
+    (while (setq match (text-property-search-forward 'shr-url))
+      (add-text-properties
+       (prop-match-beginning match)
+       (prop-match-end match)
+       (list 'fj-tab-stop t
+             'keymap fj-link-keymap
+             'type 'shr)))))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -5708,41 +5723,53 @@ Used for hitting RET on a given link."
 (defun fj-shr-link-follow (item)
   "Load an shr.el link ITEM.
 If it looks like a link to an item, load it."
-  ;; "https://codeberg.org/guix/guix/pulls/7383"
-  ;; we might have a link to user/org, to repo, to item...
-  (let ((parsed (url-generic-parse-url item)))
-    ;; is it a URL we should try to load?:
-    (if (not (equal fj-host (concat "https://" (url-host parsed))))
-        (shr-browse-url)
-      (let* ((owner-repo (fj-owner+repo-from-url item))
-             (file-split (split-string
-                          ;; remove leading / to avoid "" in list:
-                          (string-trim-left
-                           (url-filename parsed) "/")
-                          "/"))
-             (last (car (last file-split))))
-        (if (string-empty-p last)
-            (shr-browse-url) ;; https://codeberg.org
-          (pcase (length file-split)
-            ;; user:
-            (1 (fj-user-repos (car owner-repo)))
-            ;; repo (list issues):
-            (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-            ;; listings:
-            (3 (pcase last
-                 ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
-                 ("issues" (fj-list-issues (cadr owner-repo)))
-                 ;; links to range, commit, branch (browse-url):
-                 ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
-                 ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
-                 ;; https://codeberg.org/martianh/fj.el/src/branch/dev
-                 (_ (shr-browse-url))))
-            (_ (pcase (car (last file-split 2))
-                 ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                  (fj-item-view (cadr owner-repo) (car owner-repo) last))
-                 ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                  (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
-                 (_ (shr-browse-url))))))))))
+  (fj-destructure-buf-spec (repo owner)
+    ;; "https://codeberg.org/guix/guix/pulls/7383"
+    ;; we might have a link to user/org, to repo, to item...
+    (let* ((item (or item (fj--property 'shr-url)))
+           (parsed (url-generic-parse-url item)))
+      ;; is it a URL we should try to load?:
+      (if (not (equal fj-host (concat "https://" (url-host parsed))))
+          (if (and (stringp item)
+                   ;; relative link (md, inline image):
+                   (string-prefix-p "/" item))
+              (browse-url (format "%s/%s/%s%s" fj-host owner repo item))
+            ;; something else:
+            (shr-browse-url))
+        (let* ((owner-repo (fj-owner+repo-from-url item))
+               (file-split (split-string
+                            ;; remove leading / to avoid "" in list:
+                            (string-trim-left
+                             (url-filename parsed) "/")
+                            "/"))
+               (last (car (last file-split))))
+          (cond
+           ((string-empty-p last) ;; https://codeberg.org
+            (shr-browse-url))
+           ((string-prefix-p "/" item) ;; relativel link (md, inline image)
+            (browse-url (format "%s/%s/%s/%s"
+                                fj-host owner repo item)))
+           (t
+            (pcase (length file-split)
+              ;; user:
+              (1 (fj-user-repos (car owner-repo)))
+              ;; repo (list issues):
+              (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+              ;; listings:
+              (3 (pcase last
+                   ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                   ("issues" (fj-list-issues (cadr owner-repo)))
+                   ;; links to range, commit, branch (browse-url):
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                   ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                   (_ (shr-browse-url))))
+              (_ (pcase (car (last file-split 2))
+                   ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                   ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                   (_ (shr-browse-url))))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
