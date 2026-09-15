@@ -1194,7 +1194,8 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
   "If we are in a `fj-host' repository, return its name.
 Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
-  (ignore-errors
+  (with-demoted-errors
+      "Error: %S"
     (when (magit-inside-worktree-p)
       ;; FIXME: this is slow, as we just fetch all our repos. why not repo
       ;; search, with dir name, and search repos with exclusive param set
@@ -2972,14 +2973,16 @@ Optionally start from POINT."
                 (props (text-properties-at (1- (point)) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
-            (ignore-errors ;; if we error, don't break the rest of our rendering loop
+            (with-demoted-errors ;; if we error, don't break the rest of our rendering loop
+                "Error: %S"
               (shr-render-region (prop-match-beginning match)
                                  (prop-match-end match)
                                  (current-buffer)))
             ;; Re-add props (so we can edit when point on body, etc.):
             (add-text-properties (prop-match-beginning match)
                                  (point)
-                                 props
+                                 (append props
+                                         '(fj-rendered t))
                                  (current-buffer)))))
       (save-excursion
         (goto-char (or point (point-min)))
@@ -3018,7 +3021,22 @@ Optionally start from POINT."
       ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
       ;;                        '(fj-tab-stop t))
-      )))
+
+      ;; some shr items don't match (any) url-regex, e.g. rel links:
+      (fj-propertize-shr-items))))
+
+(defun fj-propertize-shr-items ()
+  "Add text properties to shr items in buffer.
+Adds tab-stop, keymap, and type."
+  (save-excursion
+    (goto-char (point-min))
+    (while (setq match (text-property-search-forward 'shr-url))
+      (add-text-properties
+       (prop-match-beginning match)
+       (prop-match-end match)
+       (list 'fj-tab-stop t
+             'keymap fj-link-keymap
+             'type 'shr)))))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -3190,6 +3208,95 @@ START is the point in the buffer to start from."
 MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
   (fj-render-comment-reactions-cb data marker-start marker-end render-fun))
+
+(defun fj-render-linked-source-code (&optional point)
+  "Insert source code for any code range permalinks in buffer.
+Optionally start searching from POINT."
+  (save-excursion
+    (goto-char (or point (point-min)))
+    (while (setq match (text-property-search-forward 'shr-url))
+      (fj-insert-permalink-code match))))
+
+(defun fj-insert-permalink-code (match)
+  "Insert the code range of the permalink at point, async.
+A URL is considered a permalink if is on `fj-host', has a trailing
+#target, and has as a \"/commit/$hash\" part."
+  (save-excursion
+    (fj-destructure-buf-spec (repo owner)
+      (let* ((url (save-excursion
+                    (backward-char)
+                    (fedi--property 'shr-url)))
+             (parsed (url-generic-parse-url url)))
+        ;; when on this instance:
+        (when (and (equal (url-host (url-generic-parse-url fj-host))
+                          (url-host parsed))
+                   ;; and it has # after last /:
+                   (url-target parsed))
+          (let* ((filename (url-filename parsed))
+                 (split (split-string filename "/"))
+                 (lines (mapcar (lambda (x)
+                                  (string-trim-left x "L"))
+                                (split-string (url-target parsed) "-")))
+                 (commit-cut (member "commit" split))
+                 (ext (url-file-extension
+                       (last filename))))
+            (when commit-cut
+              (let* (;; filepath from filename after "commit/$hash/":
+                     (filepath (string-join
+                                (member (nth 2 commit-cut)
+                                        commit-cut)
+                                "/"))
+                     ;; commit hash from filename:
+                     (ref (nth 1 commit-cut))
+                     (beg (string-to-number (car lines)))
+                     (end (when (> (length lines) 1)
+                            ;; max 50 lines:
+                            (min (string-to-number (cadr lines))
+                                 (+ beg 50))))
+                     (marker (copy-marker
+                              (prop-match-end match)
+                              t))) ;; move on insertion
+                (fj-get-repo-file-async ;;fj-get-repo-file-range-async
+                 repo owner filepath ref
+                 #'fj-insert-permalink-code-cb `(,beg ,end ,marker ,ext))))))))))
+
+(defun fj-insert-permalink-code-cb (_status beg end marker ext)
+  "Insert get code range from BEG to END and insert at MARKER."
+  (let* ((raw (fj-resp-str (current-buffer)))
+         (str (with-temp-buffer
+                (insert raw)
+                (goto-char (point-min))
+                (forward-line beg)
+                (buffer-substring (point)
+                                  (if (not end)
+                                      (progn (forward-line 1) (point))
+                                    (save-excursion
+                                      (goto-char (point-min))
+                                      (forward-line (1+ end))
+                                      (point)))))))
+    (with-current-buffer (marker-buffer marker)
+      (save-excursion
+        (let ((inhibit-read-only t))
+          (goto-char (marker-position marker))
+          (forward-line)
+          (insert
+           (concat "\n"
+                   (fj-code-range-str str ext))))))))
+
+(defun fj-code-range-str (str ext)
+  "Fontify code range and return string.
+STR is the response string, EXT is the file extension."
+  (with-temp-buffer
+    (switch-to-buffer (current-buffer))
+    (insert str)
+    ;; FIXME: awful hack for fetching mode-fun:
+    (if-let* ((fun (alist-get
+                    (concat "\\" ext "\\'")
+                    auto-mode-alist nil nil #'string=)))
+        (funcall fun))
+    (font-lock-fontify-region (point-min)
+                      (point-max))
+    (buffer-string)))
 
 (defun fj-render-comment-reactions-cb (data marker-start marker-end
                                           render-fun)
@@ -3623,6 +3730,11 @@ END-PAGE should be a string of the highest page number to paginate to."
         ;; but in what cases should we press on?
         ;; (called-interactively-p 'any))
 
+        ;; if we deleted a comment that reduced the number of items by 1,
+        ;; we will end up calling this to the point of having no data, as
+        ;; buf-spec page count will be 1 too many. in that case, we need
+        ;; to still render our item bodies:
+        (fj-render-bodies-final-load-maybe)
         ;; if no items, async render head item:
         (fj-render-assets-async)
         (fj-render-reactions-async)
@@ -3652,7 +3764,6 @@ END-PAGE should be a string of the highest page number to paginate to."
                 (delete-line))
               ;; raw render items:
               (fj-render-timeline json author owner repo))
-            (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
             ;; NB: we need to call `fj-render-item-bodies' exactly once
@@ -3674,7 +3785,8 @@ END-PAGE should be a string of the highest page number to paginate to."
                          ;; fj-item-body assumes body is not "":
                          (text-property-search-forward 'fj-item-data)
                          (point)))))
-                (fj-render-item-bodies render-point))
+                (fj-render-item-bodies render-point)
+                (message "Loading comments... Done"))
               ;; async assets render should also run exactly once,
               ;; the last time we call this cb function. it should cover:
               ;; - whole buffer on reload
@@ -3685,9 +3797,26 @@ END-PAGE should be a string of the highest page number to paginate to."
                 ;; async render assets:
                 (fj-render-assets-async async-point)
                 ;; async render reactions
-                (fj-render-reactions-async async-point)))
+                (fj-render-reactions-async async-point)
+                ;; render code ranges:
+                (fj-render-linked-source-code async-point)))
             ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
+
+(defun fj-render-bodies-final-load-maybe ()
+  "Call `fj-render-item-bodies' if our first item is not rendered.
+The rendered check checks if it has an fj-rendered prop."
+  (let ((render-point
+         (save-excursion
+           (goto-char (point-min))
+           ;; fj-item-body assumes body is not "":
+           (text-property-search-forward 'fj-item-data)
+           (point))))
+    (when (save-excursion
+            (goto-char (1- render-point))
+            ;; if fj-rendered not there:
+            (not (fj--property 'fj-rendered)))
+      (fj-render-item-bodies render-point))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
@@ -4163,7 +4292,6 @@ Optionally add ITEM data."
               'button t
               'type 'shr
               'item item
-              'fj-tab-stop t
               'category 'shr
               'follow-link t))
 
@@ -4676,6 +4804,13 @@ FILE is a string, including type suffix, and is case-sensitive."
     (fedi-http--triage resp
                        (lambda (resp)
                          (fj-resp-str resp)))))
+
+(defun fj-get-repo-file-async (repo owner file &optional ref cb cbargs)
+  "Return FILE from REPO of OWNER.
+FILE is a string, including type suffix, and is case-sensitive."
+  (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
+         (params (fedi-opt-params ref)))
+    (apply #'fedi-http--get-async (fj-api endpoint) params cb cbargs)))
 
 (defun fj-get-repo-file-range (repo owner file beg &optional end ref)
   "Return FILE from REPO by OWNER.
@@ -5587,32 +5722,48 @@ Used for hitting RET on a given link."
 (defun fj-shr-link-follow (item)
   "Load an shr.el link ITEM.
 If it looks like a link to an item, load it."
-  ;; "https://codeberg.org/guix/guix/pulls/7383"
-  ;; we might have a link to user/org, to repo, to item...
-  (let ((parsed (url-generic-parse-url item)))
-    ;; is it a URL we should try to load?:
-    (if (not (equal fj-host (concat "https://"
-                                  (url-host parsed))))
-        (shr-browse-url)
-      (let* ((owner-repo (fj-owner+repo-from-url item))
-             (file-split (split-string
-                          ;; remove leading / to avoid "" in list:
-                          (string-trim-left
-                           (url-filename parsed) "/")
-                          "/"))
-             (last (car (last file-split))))
-        (pcase (length file-split)
-          (1 (fj-user-repos (car owner-repo)))
-          (2
-           (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-          (3 (if (equal "pulls" last)
-                 (fj-list-pulls (cadr owner-repo) (car owner-repo))
-               (fj-list-issues (cadr owner-repo)) ;(car owner-repo)
-               ))
-          (_
-           (fj-item-view
-            (cadr owner-repo) (car owner-repo) last
-            (if (equal "pulls" (nth 2 file-split)) :pull))))))))
+  (fj-destructure-buf-spec (repo owner)
+    ;; "https://codeberg.org/guix/guix/pulls/7383"
+    ;; we might have a link to user/org, to repo, to item...
+    (let* ((item (or item (fj--property 'shr-url)))
+           (parsed (url-generic-parse-url item)))
+      ;; is it a URL we should try to load?:
+      (if (not (equal fj-host (concat "https://" (url-host parsed))))
+          (if (and (stringp item)
+                   ;; relative link (md, inline image):
+                   (string-prefix-p "/" item))
+              (browse-url (format "%s/%s/%s%s" fj-host owner repo item))
+            ;; something else:
+            (shr-browse-url))
+        (let* ((owner-repo (fj-owner+repo-from-url item))
+               (file-split (split-string
+                            ;; remove leading / to avoid "" in list:
+                            (string-trim-left
+                             (url-filename parsed) "/")
+                            "/"))
+               (last (car (last file-split))))
+          (if ((string-empty-p last) ;; https://codeberg.org!
+               (shr-browse-url))
+              (pcase (length file-split)
+                ;; user:
+                (1 (fj-user-repos (car owner-repo)))
+                ;; repo (list issues):
+                (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+                ;; listings:
+                (3 (pcase last
+                     ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                     ("issues" (fj-list-issues (cadr owner-repo)))
+                     ;; links to range, commit, branch (browse-url):
+                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                     ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                     (_ (shr-browse-url))))
+                (_ (pcase (car (last file-split 2))
+                     ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                      (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                     ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                      (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                     (_ (shr-browse-url)))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
