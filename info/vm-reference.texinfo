@@ -6804,6 +6804,21 @@ Non-nil value causes VM’s search command to interpret user input as a
 regular expression instead of as a literal string.
 @end defopt
 
+@defopt vm-suggest-checking-configuration
+@vindex vm-suggest-checking-configuration
+Non-nil means say once per session that the configuration is incomplete.
+One line in the echo area at the first VM start, naming
+vm-check-configuration, where that command would have something to
+report.  It never runs the check itself and never puts up a buffer: someone
+who has deliberately left a setting alone should not be shown a report they
+did not ask for.
+
+Nil says nothing.  Nothing is said either way once the settings VM checks
+are in place, so this is quiet on a working configuration.
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-summary-uninteresting-senders-arrow
 @vindex vm-summary-uninteresting-senders-arrow
 String to display before the recipients when displayed instead of an
@@ -11307,6 +11322,9 @@ Asks for your name and address, where folders are to be kept, where new
 mail comes from, how mail is to be sent, and whether VM should be the mail
 reader Emacs uses.  Every question is asked before anything is written, so
 stopping part way through leaves your files as they were.
+
+This command is experimental.  What it asks, what it writes, and the file
+it writes to may change in a later release.
 
 The file is asked for, and defaults to @code{vm-preferences-file}, which VM
 loads after @code{vm-init-file} and which nothing else writes.  Replacing a file

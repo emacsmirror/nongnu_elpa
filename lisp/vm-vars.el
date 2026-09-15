@@ -146,6 +146,19 @@ in an Emacs session."
   :group 'vm-misc
   :type 'file)
 
+(defcustom vm-suggest-checking-configuration t
+  "*Non-nil means say once per session that the configuration is incomplete.
+One line in the echo area at the first VM start, naming
+vm-check-configuration, where that command would have something to
+report.  It never runs the check itself and never puts up a buffer: someone
+who has deliberately left a setting alone should not be shown a report they
+did not ask for.
+
+Nil says nothing.  Nothing is said either way once the settings VM checks
+are in place, so this is quiet on a working configuration."
+  :group 'vm-misc
+  :type 'boolean)
+
 (defcustom vm-preferences-file "~/.vm.preferences"
   "*Secondary startup file for VM, loaded after `vm-init-file'.  It is
 meant for specifying the preferred settings for VM variables."

@@ -507,6 +507,92 @@ authenticate as nobody."
       (goto-char (point-min))
       (should (equal 'setq (car (read (current-buffer))))))))
 
+;;; Suggesting the check, never running it (emacs-vm/vm#816)
+;;
+;; The maintainer's decision: VM may say that the check would have something
+;; to report, and may not report it.  So what is tested is that a line is
+;; said once, that it names the commands, and that nothing else happens --
+;; no buffer, and nothing at all where there is nothing to say.
+
+(defmacro vm-configuration-test--recording-warnings (var &rest body)
+  "Run BODY with VAR bound to a list that `vm-warn' pushes its text onto."
+  (declare (indent 1))
+  `(let ((,var nil))
+     (cl-letf (((symbol-function 'vm-warn)
+                (lambda (_level _secs &rest args)
+                  (push (apply #'format args) ,var))))
+       ,@body)))
+
+(ert-deftest vm-configuration-test-the-suggestion-is-made-once ()
+  "One line per session, not one per folder visited."
+  (vm-configuration-test--recording-warnings said
+    (vm-configuration-test--with-a-working-setup
+      (let ((mail-user-agent 'message-user-agent)
+            (vm-suggest-checking-configuration t)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (vm-suggest-checking-configuration-maybe)
+        (vm-suggest-checking-configuration-maybe)
+        (should (= 1 (length said)))
+        (should (string-match-p "vm-check-configuration" (car said)))
+        (should (string-match-p "vm-setup" (car said)))
+        ;; and it says how to stop it
+        (should (string-match-p "vm-suggest-checking-configuration"
+                                (car said)))))))
+
+(ert-deftest vm-configuration-test-the-suggestion-counts-in-words ()
+  "One problem reads as one, several as several."
+  (vm-configuration-test--recording-warnings said
+    (vm-configuration-test--with-a-working-setup
+      (let ((mail-user-agent 'message-user-agent)
+            (vm-suggest-checking-configuration t)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (should (string-match-p "1 thing is not set up" (car said))))))
+  (vm-configuration-test--recording-warnings said
+    (vm-configuration-test--with-a-working-setup
+      (let ((mail-user-agent 'message-user-agent)
+            (send-mail-function nil)
+            (vm-suggest-checking-configuration t)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (should (string-match-p "2 things are not set up" (car said)))))))
+
+(ert-deftest vm-configuration-test-nothing-is-said-on-a-working-setup ()
+  "REGRESSION: silence where the settings VM checks are in place.
+The suggestion is for someone who has not finished; anyone who has must
+never see it, or it becomes a line to learn to ignore."
+  (vm-configuration-test--recording-warnings said
+    (vm-configuration-test--with-a-working-setup
+      (let ((vm-suggest-checking-configuration t)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (should-not said)))))
+
+(ert-deftest vm-configuration-test-the-suggestion-can-be-turned-off ()
+  "Nil says nothing at all."
+  (vm-configuration-test--recording-warnings said
+    (vm-configuration-test--with-a-working-setup
+      (let ((mail-user-agent 'message-user-agent)
+            (vm-suggest-checking-configuration nil)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (should-not said)))))
+
+(ert-deftest vm-configuration-test-the-suggestion-shows-no-buffer ()
+  "REGRESSION: suggesting is not reporting.
+Asked for on emacs-vm/vm#816: the check is not to run unasked, so the
+suggestion must not be `vm-check-configuration' by another name."
+  (let ((buffer (get-buffer "*VM Configuration*")))
+    (when buffer (kill-buffer buffer)))
+  (vm-configuration-test--recording-warnings _said
+    (vm-configuration-test--with-a-working-setup
+      (let ((mail-user-agent 'message-user-agent)
+            (vm-suggest-checking-configuration t)
+            (vm-suggested-checking-configuration nil))
+        (vm-suggest-checking-configuration-maybe)
+        (should-not (get-buffer "*VM Configuration*"))))))
+
 (provide 'vm-configuration-test)
 
 ;;; vm-configuration-test.el ends here
