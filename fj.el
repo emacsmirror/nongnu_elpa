@@ -3194,10 +3194,11 @@ MARKER-START and MARKER-END is the range where we insert the assets.
 RENDER-FUN is the function to render DATA with."
   (fj-render-comment-reactions-cb data marker-start marker-end render-fun))
 
-(defun fj-render-linked-source-code ()
-  "Insert source code for any code range permalinks in buffer."
+(defun fj-render-linked-source-code (&optional point)
+  "Insert source code for any code range permalinks in buffer.
+Optionally start searching from POINT."
   (save-excursion
-    (goto-char (point-min))
+    (goto-char (or point (point-min)))
     (while (setq match (text-property-search-forward 'shr-url))
       (fj-insert-permalink-code))))
 
@@ -3222,7 +3223,9 @@ A URL is considered a permalink if is on `fj-host', has a trailing
                  (lines (mapcar (lambda (x)
                                   (string-trim-left x "L"))
                                 (split-string (url-target parsed) "-")))
-                 (commit-cut (member "commit" split)))
+                 (commit-cut (member "commit" split))
+                 (ext (url-file-extension
+                       (last filename))))
             (when commit-cut
               (let* (;; filepath from filename after "commit/$hash/":
                      (filepath (string-join
@@ -3237,7 +3240,24 @@ A URL is considered a permalink if is on `fj-host', has a trailing
                             (when (> (length lines) 1)
                               (string-to-number (cadr lines))))))
                 (forward-line)
-                (insert  (concat "\n" resp))))))))))
+                (insert
+                 (concat "\n"
+                         (fj-code-range-str resp ext)))))))))))
+
+(defun fj-code-range-str (resp ext)
+  "Fontify code range and return string.
+RESP is the response string, EXT is the file extension."
+  (with-temp-buffer
+    (switch-to-buffer (current-buffer))
+    (insert resp)
+    ;; FIXME: awful hack for fetching mode-fun:
+    (if-let* ((fun (alist-get
+                    (concat "\\" ext "\\'")
+                    auto-mode-alist nil nil #'string=)))
+        (funcall fun))
+    (font-lock-fontify-region (point-min)
+                      (point-max))
+     (buffer-string)))
 
 (defun fj-render-comment-reactions-cb (data marker-start marker-end
                                           render-fun)
