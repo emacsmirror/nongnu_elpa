@@ -2379,8 +2379,8 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
   "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY."
   (let* ((profile (or profile "default"))
          (instance (or instance (hermes-instance-context)))
-         (directory (or hermes-chat--launch-project-root directory
-                        hermes-chat--working-directory default-directory))
+         (directory (or directory hermes-chat--working-directory
+                        hermes-chat--launch-project-root default-directory))
          (name (funcall hermes-chat-buffer-name-function
                         profile instance directory)))
     (unless (and (stringp name) (not (string-empty-p name)))

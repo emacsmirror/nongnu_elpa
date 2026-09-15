@@ -55,10 +55,10 @@
 The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
 profile name.  INSTANCE is the owning legacy pair or typed identity; use
 `hermes-instance-id', `hermes-instance-name', and `hermes-instance-url' to read
-it.  DIRECTORY is selected in order from the launch-project root, an explicit
-caller argument, the gateway working directory, or editor `default-directory'.
-The editor fallback is display-only and need not be the gateway cwd.  The
-function must return the complete non-empty buffer name."
+it.  DIRECTORY is selected in order from an explicit caller argument, the
+gateway working directory, the launch-project root, or editor
+`default-directory'.  The editor fallback is display-only and need not be the
+gateway cwd.  The function must return the complete non-empty buffer name."
   :type 'function
   :group 'hermes)
 
@@ -1673,7 +1673,7 @@ PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
 the owning Hermes instance.  A nil INSTANCE is resolved from the current
 context.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-Buffer names identify the instance, profile, and launching project; TITLE stays
+Buffer names identify the instance, profile, and working directory; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
 entry point funnels through."
   (let* ((directory default-directory)

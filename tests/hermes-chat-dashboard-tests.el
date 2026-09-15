@@ -2468,6 +2468,7 @@
        (setq-local hermes-chat--resolved-start-mode 'remote)
        (setq default-directory editor-directory
              hermes-chat--launch-project-root project-root
+             hermes-chat--title "Saved session title"
              hermes-chat--working-directory "/srv/old"
              hermes-chat--dashboard-client client
              hermes-chat--dashboard-session-ready-p t
@@ -2483,6 +2484,7 @@
                             resolve (plist-get args :resolve)))))
            (hermes-chat-set-directory "C:/project")
            (should (equal request '("C:/project" "sid")))
+           (should (equal (buffer-name) initial-name))
            (funcall event-callback
                     '(:type status :event "session.info" :status "ready"
                             :session-id "sid" :cwd "/mnt/c/translated"))
@@ -2491,22 +2493,19 @@
            (should (equal default-directory editor-directory))
            (should (string-match-p
                     "translated" (hermes-test--header-line-string)))
-           (if project-root
-               (should (equal (buffer-name) initial-name))
-             (should (string-match-p "\\[translated\\]" (buffer-name))))
+           (should (string-match-p "\\[translated\\]" (buffer-name)))
            (funcall resolve '((cwd . "/mnt/c/translated")))
            (should (equal default-directory "/mnt/c/translated/"))
            (should (equal hermes-chat--working-directory
                           "/mnt/c/translated"))
-           (if project-root
-               (progn
-                 (should (equal (buffer-name) initial-name))
-                 (should (equal hermes-chat--launch-project-root project-root))
-                 (should (equal
-                          (hermes-chat--project-buffers
-                           project-root (list (current-buffer)))
-                          (list (current-buffer)))))
-             (should (string-match-p "\\[translated\\]" (buffer-name))))))))))
+           (should (string-match-p "\\[translated\\]" (buffer-name)))
+           (should (equal hermes-chat--launch-project-root project-root))
+           (should (equal hermes-chat--title "Saved session title"))
+           (when project-root
+             (should (equal
+                      (hermes-chat--project-buffers
+                       project-root (list (current-buffer)))
+                      (list (current-buffer)))))))))))
 
 (ert-deftest hermes-chat-set-directory-separates-event-response-ownership ()
   "A replacement blocks stale event or response effects at its own boundary."
