@@ -2,6 +2,10 @@
 
 * NEWS
 ** Version 4.0.8
+*** New user var helm-buffers-details
+which allow customizing which columns are displayed in
+`helm-source-buffers-list`.
+
 *** Helm buffer is now read-only
 So it is now impossible to edit it inadvertantly.
 
