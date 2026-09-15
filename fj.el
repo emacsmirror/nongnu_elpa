@@ -5712,8 +5712,7 @@ If it looks like a link to an item, load it."
   ;; we might have a link to user/org, to repo, to item...
   (let ((parsed (url-generic-parse-url item)))
     ;; is it a URL we should try to load?:
-    (if (not (equal fj-host (concat "https://"
-                                  (url-host parsed))))
+    (if (not (equal fj-host (concat "https://" (url-host parsed))))
         (shr-browse-url)
       (let* ((owner-repo (fj-owner+repo-from-url item))
              (file-split (split-string
@@ -5722,22 +5721,28 @@ If it looks like a link to an item, load it."
                            (url-filename parsed) "/")
                           "/"))
              (last (car (last file-split))))
-        (pcase (length file-split)
-          (1 (fj-user-repos (car owner-repo)))
-          (2
-           (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-          (3 (if (equal "pulls" last)
-                 (fj-list-pulls (cadr owner-repo) (car owner-repo))
-               (fj-list-issues (cadr owner-repo)) ;(car owner-repo)
-               ))
-          ;; FIXME: links to range, commit, branch:
-          ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
-          ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
-          ;; https://codeberg.org/martianh/fj.el/src/branch/dev
-          (_
-           (fj-item-view
-            (cadr owner-repo) (car owner-repo) last
-            (if (equal "pulls" (nth 2 file-split)) :pull))))))))
+        (if (string-empty-p last)
+            (shr-browse-url) ;; https://codeberg.org
+          (pcase (length file-split)
+            ;; user:
+            (1 (fj-user-repos (car owner-repo)))
+            ;; repo (list issues):
+            (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+            ;; listings:
+            (3 (pcase last
+                 ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                 ("issues" (fj-list-issues (cadr owner-repo)))
+                 ;; links to range, commit, branch (browse-url):
+                 ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                 ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                 ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                 (_ (shr-browse-url))))
+            (_ (pcase (car (last file-split 2))
+                 ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                  (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                 ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                  (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                 (_ (shr-browse-url))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
