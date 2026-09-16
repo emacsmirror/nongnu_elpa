@@ -2481,16 +2481,20 @@ change it in a running Emacs session, you must use @code{setq-default}.
 @cindex external messages
 @cindex headers-only mode
 @cindex headers only
-Under certain circumstances, it is possible to maintain VM folders in which
-only the headers of messages are loaded into the Folder buffer.  This is
-sometimes called @dfn{headers-only} mode.  The message
-bodies are retained in external sources (file system or remote servers) and
-fetched on demand when the messages are viewed or other operations are
-performed on them.  Using external messages results in a smaller folder size
-and allows a faster operation on machines with limited resources.  However,
-the fetching of message bodies on demand can introduce short delays when
-messages are viewed.  It is also not possible to search in the message
-bodies of external messages.
+A VM folder can hold the headers of its messages and not the bodies, which
+stay where they are, in the file system or on a remote server, and are
+fetched when a message is viewed or operated on.  This is @dfn{headers-only}
+mode.  What it trades:
+
+@itemize
+@item
+The folder is smaller, and VM works faster on a machine with limited
+resources.
+@item
+Viewing a message can pause while its body is fetched.
+@item
+The bodies cannot be searched.
+@end itemize
 
 @vindex vm-enable-external-messages
 To enable external messages, set the variable
@@ -4162,17 +4166,13 @@ they arrived.  Set the variable to @code{nil} to be shown the bytes.
 
 @cindex @acronym{MIME} alternatives
 @cindex multipart/alternative
-@acronym{MIME} allows a message to be sent with its content encoded in multiple
-formats, simultaneously, in the same message.  Such messages have a
-content type of @dfn{multipart/alternative}.  The idea is that the sender
-might have different @acronym{MIME} decoding or display capabilities than some
-of his recipients.  For instance, the sender may be able to compose a
-message using fancy text formatting constructs like tables, italics
-and equations but some of the recipients may only be able to display
-plain text.  The @samp{multipart/alternative} type message is the solution
-to this dilemma.  Such a message would contain at least two text
-subparts, one in plain text and the other in the full featured text
-formatting language that the sender used.
+@acronym{MIME} allows a message to carry its content in several formats at
+once, in the same message, as a @dfn{multipart/alternative}.  It is there
+because the sender's mail program and the recipient's need not display the
+same things: a message composed with tables, italics and equations goes out
+with at least two text subparts, one in the formatting language the sender
+used and one in plain text, and each reader's program shows whichever of them
+it can.
 
 @vindex vm-mime-alternative-show-method
 @cindex @acronym{MIME} alternative, best
@@ -5350,15 +5350,18 @@ nothing has to be added to a hook.
 
 @cindex @acronym{IMAP}-FCC
 @vindex vm-imap-default-account
-If you have multiple @acronym{IMAP} accounts, you might wish to save copies of
-your replies separately in each @acronym{IMAP} account.  This can be done by
-adding an @samp{@acronym{IMAP}-FCC:} header line.  The value of the header field
-should be a plain folder name on the ``current'' @acronym{IMAP} account, e.g.,
-`Sent'.  The ``current'' @acronym{IMAP} account will be determined by the @acronym{IMAP}
-folder from which you start composing the new message (which is called
-the ``parent folder'' for you composition).  If the parent folder is
-not an @acronym{IMAP} folder or if there is no parent folder, then the message
-copy will be saved in a folder on @code{vm-imap-default-account}.
+An @samp{@acronym{IMAP}-FCC:} header files the copy on an @acronym{IMAP}
+account, which is what to use where you have several and want each account's
+replies kept with it.  Its value is a plain folder name on the current
+account, @samp{Sent} for instance.  Which account is the current one:
+
+@table @asis
+@item The parent folder is an @acronym{IMAP} folder
+That folder's account.  The parent folder is the one you started composing
+from.
+@item It is not one, or there is none
+@code{vm-imap-default-account}.
+@end table
 
 @findex vm-imap-save-composition
 As with @samp{FCC:}, VM files this copy itself when you send the message.
@@ -7507,15 +7510,20 @@ selectors:
 
 
 @cindex searching
-When you run @code{vm-quit} on a search folder, the currently selected
-message in the search folder becomes the current message in the underlying
-folder.  So, you can use the search folder facility to search for particular
-messages.  For example, if you knew that one of the messages with the
-subject @samp{greeting} had a hotel offer and you wanted to find it, you can
-first create a search folder of messages with subject @samp{greeting},
-browse through them to find the message that had the hotel offer, and then
-quit the search folder.  VM will return you to the copy of the same message
-in the original folder.
+Running @code{vm-quit} on a search folder makes its selected message the
+current message in the underlying folder, which is what makes a search folder
+a way of finding one message among many.  To find the one about a hotel among
+the messages whose subject is @samp{greeting}:
+
+@enumerate
+@item
+Create a search folder of the messages with that subject.
+@item
+Browse them until you find the one you want.
+@item
+Quit the search folder.  VM leaves you on the same message in the original
+folder.
+@end enumerate
 
 @itemize
 @item
@@ -9569,15 +9577,19 @@ Internal to Emacs, the mbox is loaded into a text buffer (the @dfn{Folder}
 buffer) and individual messages are identified by remembering markers into
 the text buffer.  @xref{Message Internals}.
 
-The Unix @dfn{mbox} format has no specification.  The mail folder is a text
-file consisting of a sequence of messages, with each message consisting of a
-series of headers followed by a message body.  The beginning of each message is
-delineated by a separator line starting with the string ``From '' and the
-end of the message by a blank line.  The leading separator line in VM folder
-is of the form ``From VM ...'' where the ``...''  records the time at which
-VM first saw the message.  The format of the individual messages is as per
-the RFC 2822 specification, except that Line-Feed characters may be used to
-delineate the end of lines in the "Unix" format.
+The Unix @dfn{mbox} format has no specification.  A folder is a text file
+holding a sequence of messages, each of them a series of headers followed by
+a body:
+
+@itemize
+@item
+A separator line beginning ``From '' starts a message and a blank line ends
+it.  The one VM writes reads ``From VM @dots{}'', where the @dots{} records
+the time at which VM first saw the message.
+@item
+The messages themselves are as RFC 2822 has them, except that a Line-Feed
+character may end a line, which is the ``Unix'' form.
+@end itemize
 
 @vindex vm-folder-type
 @cindex From_ folder type
@@ -9589,15 +9601,18 @@ delineate the end of lines in the "Unix" format.
 @inindex BellFrom_ folder type
 @inindex From_with-Content-Length folder type
 @inindex System V
-Three variants of the @code{mbox} format are recognized by VM, called
-@code{From_}, @code{BellFrom_} and @code{From_with-Content-Length}.
-In a @code{From_} type mbox, every message has a leading and trailing
-separator line, as indicated above.  In a @code{BellFrom_} type mbox,
-the trailing separator line can be missing.  (This is so that the 
-mbox's from the old System V format can be handled.)  In a
-@code{From_with-Content-Length} type mbox, the @code{From} separator
-line stores the length of the message.  So, no trailing separator line
-is required.
+Three variants of the @code{mbox} format are recognized by VM:
+
+@table @code
+@item From_
+Every message has a leading and a trailing separator line, as above.
+@item BellFrom_
+The trailing separator line can be missing, which is how the mboxes of the
+old System V format are handled.
+@item From_with-Content-Length
+The @code{From} separator line stores the length of the message, so no
+trailing separator line is needed.
+@end table
 
 @cindex From-stuffing
 @cindex From_ line in message body
@@ -10997,18 +11012,21 @@ into the default or chosen @acronym{MIME} character set using the function
 @inindex encode-coding-string
 @inindex base 64
 @inindex quoted printable
-The headers of email messages can only be in US-ASCII.  So header fields
-in other character sets are encoded using either base-64 or
-quoted-printable encoding (which yield ASCII strings) and annotated
-with the name of the original character set.  Such annotations look
-like @code{=?charset?B?}.  They can apply
-to individual words or sequences of words appearing the in the
-headers.  Note that the annotation @code{?B?} signifies a base-64
-encoding of the byte stream.  Similarly the annotation @code{?Q?} is
-be used to denote the quoted-printable encoding.
-VM decodes such strings using the function @code{decode-coding-string}.
-Conversely, the headers of outgoing messages are encoded using
-@code{encode-coding-string}.
+The headers of email messages can only be in US-ASCII, so a header field in
+another character set is encoded into ASCII and annotated with the name of
+the character set it came from.  An annotation looks like @code{=?charset?B?}
+and applies to a word or to a run of words:
+
+@table @code
+@item ?B?
+The byte stream is base-64 encoded.
+@item ?Q?
+It is quoted-printable.
+@end table
+
+@noindent
+VM decodes such strings with @code{decode-coding-string}, and encodes the
+headers of outgoing messages with @code{encode-coding-string}.
 
 When header lines are MIME-decoded from the original character set into the
 Emacs internal coding, the original character set is still remembered as a
