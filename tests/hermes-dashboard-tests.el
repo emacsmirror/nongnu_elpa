@@ -211,7 +211,7 @@
                  (if (cdr request-urls)
                      (hermes--promise-resolved
                       '(:status 200 :body ((ok . t))))
-                   (hermes--promise-rejected "Request failed (HTTP 401)")))))
+                   (hermes--promise-rejected '(hermes-dashboard-http-error "Request failed (HTTP 401)" 401))))))
       (hermes-dashboard-transport-api-request-async
        "GET" "/api/status" :client client)
       (should (equal (reverse auth-urls)
@@ -243,7 +243,7 @@
              "https://selected.example.test"))
         (hermes-dashboard-transport-api-request-async
          "GET" "/api/status"))
-      (hermes--promise-reject first-request "Request failed (HTTP 401)")
+      (hermes--promise-reject first-request '(hermes-dashboard-http-error "Request failed (HTTP 401)" 401))
       (should (equal (reverse auth-urls)
                      '("https://selected.example.test"
                        "https://selected.example.test")))

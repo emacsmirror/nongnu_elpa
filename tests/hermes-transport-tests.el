@@ -456,7 +456,8 @@
                         :body-text "{\"detail\": \"no board secret-token\"}")))
     (pcase (hermes-dashboard-transport--http-result
             response "http://x?token=<redacted>" '("secret-token"))
-      (`(error . ,message)
+      (`(error hermes-dashboard-http-error ,message ,status)
+       (should (= status 404))
        (should (string-match-p "HTTP 404" message))
        (should (string-match-p "no board <redacted>" message))
        (should-not (string-match-p "secret-token" message)))
@@ -468,7 +469,8 @@
                         :body-text "<html>proxy login secret-token</html>")))
     (pcase (hermes-dashboard-transport--http-result
             response "http://x?token=<redacted>" '("secret-token"))
-      (`(error . ,message)
+      (`(error hermes-dashboard-http-error ,message ,status)
+       (should (= status 200))
        (should (string-match-p "non-JSON body" message))
        (should (string-match-p "HTTP 200" message))
        (should-not (string-match-p "secret-token" message)))
@@ -670,6 +672,75 @@
     (let ((headers (plist-get (cdr (car calls)) :headers)))
       (should (equal (cdr (assoc "X-Hermes-Session-Token" headers)) "ctok")))))
 
+(defun hermes-test--http-status-authority (executor)
+  "Exercise EXECUTOR policy through the real HTTP response boundary."
+  (dolist (case '(("GET" 500 "nested (HTTP 401) fixture-secret" 1 0)
+                  ("GET" 403 "nested (HTTP 401) fixture-secret" 1 0)
+                  ("GET" 401 "nested (HTTP 500) fixture-secret" 2 1)
+                  ("POST" 401 "rejected fixture-secret" 1 0)
+                  ("PUT" 500 "nested (HTTP 401) fixture-secret" 1 0)
+                  ("DELETE" 403 "nested (HTTP 401) fixture-secret" 1 0)))
+    (pcase-let* ((`(,method ,status ,detail ,expected ,expected-auth) case)
+                 (base "http://status.example")
+                 (auth (list :base-url base :secrets '("fixture-secret")))
+                 (hermes-dashboard-transport-url base)
+                 (hermes-dashboard-transport--api-auth auth)
+                 (hermes-dashboard-transport-http-request-function
+                  #'hermes-dashboard-transport--default-http-request)
+                 (hermes-dashboard-transport-http-request-async-function
+                  #'hermes-dashboard-transport--default-http-request-async)
+                 (dispatches 0) (refreshes 0) (reason nil) (result nil))
+      (cl-labels ((response ()
+                   (cl-incf dispatches)
+                   (let ((buffer (generate-new-buffer " *hermes-http-status*")))
+                     (with-current-buffer buffer
+                       (insert (format "HTTP/1.1 %d Test\r\n\r\n%s"
+                                       (if (> dispatches 1) 200 status)
+                                       (if (> dispatches 1) "{\"ok\": true}"
+                                         (json-serialize `((detail . ,detail)))))))
+                     buffer))
+                  (authenticate ()
+                    (cl-incf refreshes)
+                    (copy-sequence auth)))
+        (cl-letf (((symbol-function 'url-retrieve-synchronously)
+                   (lambda (&rest _) (response)))
+                  ((symbol-function 'url-retrieve)
+                   (lambda (_url callback &rest _)
+                     (let ((buffer (response)))
+                       (with-current-buffer buffer
+                         (funcall callback (list :error `(error http ,status))))
+                       buffer)))
+                  ((symbol-function 'hermes-dashboard-transport--api-authenticate)
+                   #'authenticate)
+                  ((symbol-function 'hermes-dashboard-transport--api-authenticate-async)
+                   (lambda () (hermes--promise-resolved (authenticate)))))
+          (if (eq executor 'sync)
+              (condition-case err
+                  (setq result (hermes-dashboard-transport-api-request method "/x"))
+                (error (setq reason (error-message-string err))))
+            (hermes--promise-then
+             (hermes-dashboard-transport-api-request-async method "/x")
+             (lambda (body) (setq result body))
+             (lambda (err) (setq reason err))))))
+      (should (= dispatches expected))
+      (should (= refreshes expected-auth))
+      (if (= expected 2)
+          (should (equal result '((ok . t))))
+        (should (stringp reason))
+        (should (string-match-p (format "HTTP %d" status) reason))
+        (should-not (string-match-p "fixture-secret" reason))
+        (if (= status 401)
+            (should-not hermes-dashboard-transport--api-auth)
+          (should (eq auth hermes-dashboard-transport--api-auth)))))))
+
+(ert-deftest hermes-transport-http-status-authority-sync ()
+  "Only actual HTTP 401 authorizes auth recovery, never diagnostic prose."
+  (hermes-test--http-status-authority 'sync))
+
+(ert-deftest hermes-transport-http-status-authority-async ()
+  "Async recovery uses status; public errors remain sanitized strings."
+  (hermes-test--http-status-authority 'async))
+
 (ert-deftest hermes-transport-dashboard-api-request-async-retries-get-once ()
   (let* ((hermes-dashboard-transport--api-auth nil)
          (hermes-dashboard-transport-remote-auth-method 'token)
@@ -680,7 +751,7 @@
             (setq n (1+ n))
             (if (= n 1)
                 (hermes--promise-rejected
-                 "Hermes dashboard request failed at x (HTTP 401)")
+                 '(hermes-dashboard-http-error "Hermes dashboard request failed at x (HTTP 401)" 401))
               (hermes--promise-resolved (list :status 200 :body '((ok . t)))))))
          result reason)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-token-secret)
@@ -1618,7 +1689,7 @@
                            (auth_flows . ("cookie" "native_pkce"))))))
                 ((string-suffix-p "/auth/native/refresh" url)
                  (hermes--promise-rejected
-                  "Hermes dashboard request failed at /auth/native/refresh (HTTP 401)"))
+                  '(hermes-dashboard-http-error "Hermes dashboard request failed at /auth/native/refresh (HTTP 401)" 401)))
                 ((string-suffix-p "/auth/native/token" url)
                  (hermes--promise-rejected
                   "Hermes dashboard request failed at /auth/native/token (HTTP 400)"))
@@ -1638,6 +1709,297 @@
         (should (string-match-p "native\\|/auth/native/token\\|HTTP 400"
                                 (format "%s" reason)))
         (should (equal (gethash base store) prior))))))
+
+(defmacro hermes-test--with-native-refresh (&rest body)
+  "Run BODY with isolated native credentials and controlled HTTP."
+  (declare (indent 0) (debug t))
+  `(let* ((base "https://native.example/prefix")
+          (hermes-dashboard-transport-url base)
+          (hermes-dashboard-transport-remote-auth-method 'native)
+          (hermes-dashboard-transport--api-auth nil)
+          (hermes-dashboard-transport--native-token-memory
+           (make-hash-table :test #'equal))
+          (hermes-dashboard-transport--native-refreshes
+           (make-hash-table :test #'equal))
+          (old (list :access-token "old-access" :refresh-token "old-refresh"
+                     :expires-at 4102444800))
+          (refresh (hermes--promise-make))
+          (refreshes 0) (stores 0) (aborts 0) requests
+          (hermes-dashboard-transport-http-request-async-function
+           (lambda (url &rest args)
+             (cond
+              ((string-suffix-p "/api/status" url)
+               (hermes--promise-resolved '(:body nil)))
+              ((string-suffix-p "/auth/native/refresh" url)
+               (cl-incf refreshes)
+               (let* ((setter (plist-get args :cancel-setter))
+                      (cancel (lambda ()
+                                (cl-incf aborts)
+                                (hermes--promise-reject refresh "Cancelled"))))
+                 (when setter (funcall setter nil cancel))
+                 (hermes--promise-finally
+                  refresh (lambda ()
+                            (when setter (funcall setter cancel nil))))))
+              (t (push (cons url args) requests)
+                 (hermes--promise-resolved '(:body ((ok . t)))))))))
+     (puthash base old hermes-dashboard-transport--native-token-memory)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-store)
+                (lambda (url tokens &optional current-p)
+                  (should (or (not current-p) (funcall current-p)))
+                  (cl-incf stores)
+                  (puthash url tokens
+                           hermes-dashboard-transport--native-token-memory))))
+       ,@body)))
+
+(defun hermes-test--resolve-native-refresh (promise)
+  "Resolve PROMISE with a rotated synthetic credential."
+  (hermes--promise-resolve
+   promise '(:body ((access_token . "fresh-access")
+                    (refresh_token . "fresh-refresh")
+                    (expires_at . 4102444800)))))
+
+(ert-deftest hermes-transport-native-cache-expiry-before-write ()
+  "Cached native auth expires before the next write dispatch."
+  (hermes-test--with-native-refresh
+    (hermes-dashboard-transport-api-auth-async)
+    (setf (plist-get old :expires-at) 1)
+    (let ((write (hermes-dashboard-transport-api-request-async
+                  "PUT" "/api/example" :body '((value . 1)))))
+      (should (= refreshes 1))
+      (should-not requests)
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state write) 'resolved))
+      (should (= (length requests) 1))
+      (should (equal (caar requests) (concat base "/api/example")))
+      (should (equal (cdr (assoc "Authorization"
+                                (plist-get (cdar requests) :headers)))
+                     "Bearer fresh-access")))))
+
+(ert-deftest hermes-transport-native-rejected-write-explicit-retry ()
+  "Reject once, then refresh for an explicit retry; never replay the write."
+  (hermes-test--with-native-refresh
+    (let ((http hermes-dashboard-transport-http-request-async-function)
+          (attempts 0))
+      (setq hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (if (and (equal (plist-get args :method) "PUT")
+                       (= (cl-incf attempts) 1))
+                  (hermes--promise-rejected
+                   '(hermes-dashboard-http-error "Hermes dashboard request failed at x (HTTP 401)" 401))
+                (apply http url args))))
+      (should (eq (hermes--promise-state
+                   (hermes-dashboard-transport-api-request-async
+                    "PUT" "/api/example")) 'rejected))
+      (should (= attempts 1))
+      (let ((retry (hermes-dashboard-transport-api-request-async
+                    "PUT" "/api/example")))
+        (should (= refreshes 1))
+        (should (= attempts 1))
+        (hermes-test--resolve-native-refresh refresh)
+        (should (eq (hermes--promise-state retry) 'resolved))
+        (should (= attempts 2))))))
+
+(ert-deftest hermes-transport-native-refresh-shared-rest-websocket ()
+  "REST readers and reconnect share rotation; cancelled waiters stay local."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let* ((current t) cancel
+           (ws (hermes-dashboard-transport--remote-native-auth-async
+                "native.example" 443 base nil nil nil
+                (lambda (expected next)
+                  (when (eq cancel expected) (setq cancel next) t))
+                (lambda () current)))
+           (read (hermes-dashboard-transport-api-request-async
+                  "GET" "/api/example"))
+           (write (hermes-dashboard-transport-api-request-async
+                   "PUT" "/api/example")))
+      (should (= refreshes 1))
+      (setq current nil)
+      (funcall cancel)
+      (should (= aborts 0))
+      (should (eq (hermes--promise-state ws) 'rejected))
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state read) 'resolved))
+      (should (eq (hermes--promise-state write) 'resolved))
+      (should (= stores 1))
+      (should (= (length requests) 2)))))
+
+(ert-deftest hermes-transport-native-refresh-retired-write ()
+  "Retired REST owners neither store refresh results nor dispatch writes."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let* ((current t)
+           (write (hermes-dashboard-transport-api-request-async
+                   "PUT" "/api/example" :current-p (lambda () current))))
+      (setq current nil)
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state write) 'rejected))
+      (should (= stores 0))
+      (should-not requests))))
+
+(ert-deftest hermes-transport-native-refresh-preserves-successor ()
+  "A new credential generation wins over a delayed refresh."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let ((write (hermes-dashboard-transport-api-request-async
+                  "PUT" "/api/example"))
+          (successor (list :access-token "other-access"
+                           :refresh-token "other-refresh"
+                           :expires-at 4102444800)))
+      (puthash base successor hermes-dashboard-transport--native-token-memory)
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state write) 'rejected))
+      (should (= stores 0))
+      (should-not requests)
+      (should (eq (gethash base hermes-dashboard-transport--native-token-memory)
+                  successor)))))
+
+(ert-deftest hermes-transport-native-refresh-failure-allows-explicit-attempt ()
+  "A failed shared refresh settles all waiters and releases its owner."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let ((a (hermes-dashboard-transport-api-request-async "GET" "/api/a"))
+          (b (hermes-dashboard-transport-api-request-async "GET" "/api/b")))
+      (should (= refreshes 1))
+      (hermes--promise-reject refresh "Network unavailable")
+      (should (eq (hermes--promise-state a) 'rejected))
+      (should (eq (hermes--promise-state b) 'rejected))
+      (setq refresh (hermes--promise-make))
+      (hermes-dashboard-transport-api-request-async "GET" "/api/c")
+      (should (= refreshes 2))
+      (hermes-test--resolve-native-refresh refresh)
+      (should (= stores 1))
+      (should (= (length requests) 1)))))
+
+(ert-deftest hermes-transport-native-refresh-reconnect-and-rest ()
+  "A real reconnect and REST consumers all receive one rotation."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "native.example" :port 443 :base-url base
+                    :auth-method 'native :refcount 1 :reconnecting-p t))
+           (http hermes-dashboard-transport-http-request-async-function)
+           opened)
+      (setq hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (if (string-suffix-p "/api/auth/ws-ticket" url)
+                  (progn
+                    (push (cons url args) requests)
+                    (hermes--promise-resolved
+                     '(:body ((ticket . "fresh-ticket")))))
+                (apply http url args))))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--open-owned-websocket)
+                 (lambda (_client url _generation) (setq opened url))))
+        (hermes-dashboard-transport--reconnect-attempt client 0)
+        (let ((read (hermes-dashboard-transport-api-request-async
+                     "GET" "/api/example"))
+              (write (hermes-dashboard-transport-api-request-async
+                      "PUT" "/api/example")))
+          (should (= refreshes 1))
+          (should-not requests)
+          (hermes-test--resolve-native-refresh refresh)
+          (should (eq (hermes--promise-state read) 'resolved))
+          (should (eq (hermes--promise-state write) 'resolved))
+          (should (= stores 1))
+          (should (= (length requests) 3))
+          (should (string-suffix-p "?ticket=fresh-ticket" opened))
+          (dolist (request requests)
+            (should (equal (cdr (assoc "Authorization"
+                                      (plist-get (cdr request) :headers)))
+                           "Bearer fresh-access"))))))))
+
+(ert-deftest hermes-transport-native-refresh-retired-and-current-writes ()
+  "One retired mutation does not prevent another current consumer's refresh."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let* ((current t)
+           (retired (hermes-dashboard-transport-api-request-async
+                     "PUT" "/api/old" :current-p (lambda () current)))
+           (live (hermes-dashboard-transport-api-request-async
+                  "PUT" "/api/live")))
+      (setq current nil)
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state retired) 'rejected))
+      (should (eq (hermes--promise-state live) 'resolved))
+      (should (= refreshes stores 1))
+      (should (= (length requests) 1))
+      (should (string-suffix-p "/api/live" (caar requests))))))
+
+(ert-deftest hermes-transport-native-late-rejection-preserves-successor ()
+  "A rejected old bearer cannot invalidate a newer cached credential."
+  (hermes-test--with-native-refresh
+    (let* ((pending (hermes--promise-make))
+           (http hermes-dashboard-transport-http-request-async-function))
+      (setq hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (if (equal (plist-get args :method) "PUT") pending
+                (apply http url args))))
+      (hermes-dashboard-transport-api-request-async "PUT" "/api/example")
+      (let ((next (list :access-token "other-access"
+                        :refresh-token "other-refresh"
+                        :expires-at 4102444800)))
+        (puthash base next hermes-dashboard-transport--native-token-memory)
+        (hermes-dashboard-transport-api-auth-async t)
+        (let ((auth hermes-dashboard-transport--api-auth))
+          (hermes--promise-reject
+           pending '(hermes-dashboard-http-error "Hermes dashboard request failed at x (HTTP 401)" 401))
+          (should (eq auth hermes-dashboard-transport--api-auth))
+          (should (= (plist-get next :expires-at) 4102444800))
+          (should (= refreshes 0)))))))
+
+(ert-deftest hermes-transport-native-late-refresh-rejection-preserves-successor ()
+  "A rejected superseded refresh cannot authorize a new interactive login."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let ((logins 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--native-login-and-store-async)
+                 (lambda (&rest _)
+                   (cl-incf logins)
+                   (hermes--promise-rejected "Unexpected login"))))
+        (let ((request (hermes-dashboard-transport--native-ensure-tokens-async
+                        base nil nil t))
+              (next (list :access-token "other-access"
+                          :refresh-token "other-refresh"
+                          :expires-at 4102444800)))
+          (puthash base next hermes-dashboard-transport--native-token-memory)
+          (hermes--promise-reject
+           refresh '(hermes-dashboard-http-error "Refresh rejected" 401))
+          (should (eq (hermes--promise-state request) 'rejected))
+          (should (= logins 0))
+          (should (= stores 0))
+          (should (eq next (gethash base hermes-dashboard-transport--native-token-memory))))))))
+
+(ert-deftest hermes-transport-native-denied-write-keeps-credentials ()
+  "Authorization denial neither refreshes nor invalidates native credentials."
+  (hermes-test--with-native-refresh
+    (hermes-dashboard-transport-api-auth-async)
+    (let ((auth hermes-dashboard-transport--api-auth)
+          (hermes-dashboard-transport-http-request-async-function
+           (lambda (&rest _)
+             (hermes--promise-rejected
+              '(hermes-dashboard-http-error "Hermes dashboard request failed at x (HTTP 403)" 403)))))
+      (should (eq (hermes--promise-state
+                   (hermes-dashboard-transport-api-request-async
+                    "PUT" "/api/example")) 'rejected))
+      (should (eq auth hermes-dashboard-transport--api-auth))
+      (should (= (plist-get old :expires-at) 4102444800))
+      (should (= refreshes 0)))))
+
+(ert-deftest hermes-transport-native-refresh-signalled-start-releases-owner ()
+  "A signalling HTTP seam cannot strand a shared refresh entry."
+  (hermes-test--with-native-refresh
+    (setf (plist-get old :expires-at) 1)
+    (let ((http hermes-dashboard-transport-http-request-async-function))
+      (setq hermes-dashboard-transport-http-request-async-function
+            (lambda (&rest _) (error "Request startup failed")))
+      (should (eq (hermes--promise-state
+                   (hermes-dashboard-transport--native-ensure-tokens-async base))
+                  'rejected))
+      (setq hermes-dashboard-transport-http-request-async-function http)
+      (let ((retry (hermes-dashboard-transport--native-ensure-tokens-async base)))
+        (should (= refreshes 1))
+        (hermes-test--resolve-native-refresh refresh)
+        (should (eq (hermes--promise-state retry) 'resolved))))))
 
 (ert-deftest hermes-transport-dashboard-native-refresh-preserves-refresh-token ()
   "Access-only refresh responses keep the prior refresh credential."
@@ -3590,6 +3952,8 @@ url.el flags every 4xx/5xx via the callback status; the useless
          "http://safe.test/api" nil)
         (hermes--promise-then promise #'ignore
                               (lambda (reason) (setq rejection reason)))))
+    (should (= (nth 2 rejection) 409))
+    (setq rejection (hermes-dashboard-transport--redact-secret rejection))
     (should (string-match-p "not in a claimable state" rejection))
     (should (string-match-p "HTTP 409" rejection))
     (should-not (string-match-p "peculiar" rejection))))
