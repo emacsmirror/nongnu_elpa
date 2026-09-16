@@ -312,13 +312,16 @@ Invalidate the previous instance's rows and registered caches first."
 (defun hermes-browser--with-client (fn)
   "Call FN with a connected CLIENT and a DONE cleanup thunk.
 Reuses a live chat connection when one exists; otherwise acquires a shared
-client that DONE releases.  Shared by the dashboard browser commands."
+client that DONE releases.  Resolve the endpoint only for acquisition;
+FN runs without shadowing the source buffer's instance ownership."
   (let* ((instance (hermes-instance-resolve))
-         (hermes-instance instance)
-         (hermes-dashboard-transport-url (hermes-instance-url instance))
-         (existing (hermes-browser--existing-client))
+         (existing (let ((hermes-instance instance))
+                     (hermes-browser--existing-client)))
          (client (or existing
-                     (hermes-dashboard-transport-acquire :callback #'ignore)))
+                     (let ((hermes-instance instance)
+                           (hermes-dashboard-transport-url
+                            (hermes-instance-url instance)))
+                       (hermes-dashboard-transport-acquire :callback #'ignore))))
          released
          (done (lambda ()
                  (when (and (not existing) (not released))
