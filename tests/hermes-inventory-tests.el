@@ -472,13 +472,14 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (m p &rest args)
-                 (setq method m
+                 (when (equal m "POST")
+                   (setq method m
                        path p
                        body (plist-get args :body)
-                       requested-client (plist-get args :client))
+                       requested-client (plist-get args :client)))
                  (hermes--promise-resolved '((ok . t) (deleted . ("USER.md"))))))
-              ((symbol-function 'hermes-memory-status)
-               (lambda () (setq refreshed t)))
+              ((symbol-function 'hermes-inventory--render-memory-status)
+               (lambda (&rest _) (setq refreshed t)))
               ((symbol-function 'message) #'ignore))
       (with-temp-buffer
         (hermes-memory-status-mode)
@@ -495,13 +496,12 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "A reset response cannot recreate or refresh a killed memory buffer."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success _on-error)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise))
-              ((symbol-function 'hermes-memory-status)
-               (lambda () (setq refreshed t)))
+              ((symbol-function 'hermes-inventory--render-memory-status)
+               (lambda (&rest _) (setq refreshed t)))
               ((symbol-function 'message) #'ignore))
       (let ((origin (generate-new-buffer " *Hermes memory reset origin*")))
         (with-current-buffer origin
@@ -515,13 +515,12 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "A reset response cannot refresh an origin that left memory status mode."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success _on-error)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise))
-              ((symbol-function 'hermes-memory-status)
-               (lambda () (setq refreshed t)))
+              ((symbol-function 'hermes-inventory--render-memory-status)
+               (lambda (&rest _) (setq refreshed t)))
               ((symbol-function 'message) #'ignore))
       (with-temp-buffer
         (hermes-memory-status-mode)
@@ -662,7 +661,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
     (should (member '("GET" "/api/memory/providers/hindsight/config" nil nil)
                     requests))
     (should (member '("PUT" "/api/memory/providers/hindsight/config"
-                      ((values ("bank_id" . "work-bank"))) nil)
+                      ((values (bank_id . "work-bank"))) nil)
                     requests))
     (should (equal (hermes-transport--get rendered 'active) "hindsight"))))
 
@@ -707,7 +706,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               '((providers . (((name . "retaindb") (status . "needs_config"))))))
         (hermes-memory-configure-provider "retaindb")))
     (should (member '("PUT" "/api/memory/providers/retaindb/config"
-                      ((values ("api_key" . "memory-secret")))
+                      ((values (api_key . "memory-secret")))
                       ("memory-secret"))
                     requests))
     (should-not (seq-some (lambda (text) (string-match-p "memory-secret" text))
@@ -994,6 +993,93 @@ Toolset toggles are global configuration: no `:session-id' is sent."
         (hermes-inventory--fetch (assoc "Toolsets" hermes-inventory--specs))
         (should (string-match-p "Failed" mode-line-process))
         (should (equal reported "Hermes: Renderer failed"))))))
+
+(ert-deftest hermes-memory-reset-input-retirement-prevents-dispatch ()
+  "Public Reset captures ownership before its target and confirmation readers."
+  (dolist (stage '(target confirmation))
+    (dolist (boundary '(current refresh retarget mode kill))
+      (let ((buffer (generate-new-buffer " *memory reset input*")) requests)
+        (cl-labels ((retire ()
+                      (pcase boundary
+                        ('refresh (hermes-memory-status))
+                        ('retarget (hermes-browser--own-instance '("b" . "https://b.invalid")))
+                        ('mode (fundamental-mode))
+                        ('kill (kill-buffer buffer)))))
+          (let ((completing-read-function
+                 (lambda (&rest _) (when (eq stage 'target) (retire)) "all"))
+                (hermes-dashboard-transport-http-request-async-function
+                 (lambda (url &rest args)
+                   (push (list url (plist-get args :method)) requests)
+                   (hermes--promise-resolved '(:status 200 :body nil)))))
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _)
+                         (make-hermes-dashboard-transport-client
+                          :base-url hermes-dashboard-transport-url :token "synthetic")))
+                      ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                      ((symbol-function 'yes-or-no-p)
+                       (lambda (&rest _) (when (eq stage 'confirmation) (retire)) t)))
+              (unwind-protect
+                  (progn
+                    (with-current-buffer buffer
+                      (hermes-memory-status-mode)
+                      (hermes-browser--own-instance '("a" . "https://a.invalid"))
+                      (call-interactively #'hermes-memory-reset))
+                    (should (= (cl-count "POST" requests :key #'cadr :test #'equal)
+                               (if (eq boundary 'current) 1 0))))
+                (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
+
+(ert-deftest hermes-memory-configuration-retains-auth-and-readback-owner ()
+  "Schema input, PUT and readback retain one owner through separate auth waits."
+  (dolist (retirement '(nil prompt write readback))
+    (let* ((client (make-hermes-dashboard-transport-client :base-url "https://a.invalid"))
+           (auth (hermes--promise-resolved '(:base-url "https://a.invalid")))
+           (buffer (generate-new-buffer " *memory configure*"))
+           (releases 0) methods
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (let ((method (plist-get args :method)))
+                (push method methods)
+                (setq auth (hermes--promise-make))
+                (hermes--promise-resolved
+                 (list :status 200 :body
+                       (cond
+                        ((equal method "PUT")
+                         (should (equal (gethash "api_key"
+                                                 (gethash "values" (json-parse-string (plist-get args :data))))
+                                        "synthetic"))
+                         '((ok . t)))
+                        ((string-suffix-p "/config" url)
+                         '((fields . (((key . "api_key") (kind . "secret"))))))
+                        (t '((active . "fixture"))))))))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _) auth))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt choices &rest _) (car choices)))
+                ((symbol-function 'read-passwd)
+                 (lambda (&rest _)
+                   (should (eq (current-buffer) buffer))
+                   (when (eq retirement 'prompt) (fundamental-mode))
+                   "synthetic")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (hermes-memory-status-mode)
+                (setq hermes-memory--status '((providers . (((name . "fixture"))))))
+                (hermes-memory-configure-provider "fixture"))
+              (should (equal methods '("GET")))
+              (when (eq retirement 'write) (with-current-buffer buffer (fundamental-mode)))
+              (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
+              (when (eq retirement 'readback) (with-current-buffer buffer (fundamental-mode)))
+              (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
+              (should (equal (reverse methods)
+                             (pcase retirement
+                               ((or 'prompt 'write) '("GET"))
+                               ('readback '("GET" "PUT"))
+                               (_ '("GET" "PUT" "GET")))))
+              (should (= releases 1)))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (provide 'hermes-inventory-tests)
 ;;; hermes-inventory-tests.el ends here

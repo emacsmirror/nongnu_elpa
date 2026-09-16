@@ -1258,14 +1258,23 @@
            requests buffers shown)
       (unwind-protect
           (cl-letf (((symbol-function 'hermes-browser--existing-client)
-                     (lambda () 'fake-client))
+                     (lambda () (make-hermes-dashboard-transport-client
+                                 :base-url (hermes-instance-url
+                                            (hermes-instance-resolve)))))
                     ((symbol-function 'pop-to-buffer)
                      (lambda (buffer &rest _) (setq shown buffer)
                        (cl-pushnew buffer buffers)))
                     ((symbol-function 'hermes-dashboard-transport-api-request-async)
                      (lambda (method path &rest args)
                        (let ((pending (hermes--promise-make)))
-                         (push (list method hermes-instance path
+                         (push (list method
+                                     (seq-find
+                                      (lambda (instance)
+                                        (equal (hermes-instance-url instance)
+                                               (hermes-dashboard-transport-client-base-url
+                                                (plist-get args :client))))
+                                      (list a b))
+                                     path
                                      (plist-get args :body) pending) requests)
                          pending))))
             (cl-labels ((open-editor ()

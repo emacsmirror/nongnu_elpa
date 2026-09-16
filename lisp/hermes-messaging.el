@@ -94,13 +94,15 @@
        `((profile . ,profile))))
 
 (cl-defun hermes-messaging--api
-    (client method path profile &optional body &key secrets)
+    (client method path profile &optional body &key secrets current-p)
   "Return a messaging METHOD PATH promise through CLIENT for PROFILE.
-BODY is JSON data.  SECRETS are redacted from transport errors."
+BODY is JSON data.  SECRETS are redacted from transport errors.
+CURRENT-P retains dispatch authority across authentication, including reads."
   (hermes-dashboard-transport-api-request-async
    method (concat "/api/messaging" path)
    :body body :query (hermes-messaging--query profile)
-   :secrets secrets :client client))
+   :secrets secrets :client client
+   :current-p (or current-p hermes-dashboard-transport--api-dispatch-guard)))
 
 (defun hermes-messaging--platform-path (id &rest segments)
   "Return a platform path for ID extended by SEGMENTS."
@@ -142,32 +144,35 @@ non-nil, also requires this to be the newest cross-profile display request."
       (when (eq hermes-messaging--mutation-in-flight token)
         (setq hermes-messaging--mutation-in-flight nil)))))
 
+(defun hermes-messaging--guard ()
+  "Return a predicate retaining the current messaging view and profile."
+  (let ((buffer (current-buffer))
+        (view (hermes-browser--dispatch-guard nil))
+        (profile (copy-sequence hermes-messaging-profile)))
+    (lambda ()
+      (and (funcall view)
+           (equal profile (buffer-local-value 'hermes-messaging-profile buffer))))))
+
 (defun hermes-messaging--run-owned
     (buffer generation profile make-promise on-success
-            &optional secrets display-generation)
+            &optional secrets display-generation finish)
   "Run MAKE-PROMISE while BUFFER owns this messaging operation.
 MAKE-PROMISE receives a dashboard client.  ON-SUCCESS and rejection messages
 apply only while BUFFER, GENERATION, PROFILE, and optional DISPLAY-GENERATION
-remain current.  SECRETS are removed from current rejection messages."
-  (hermes-browser--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (condition-case err
-           (hermes--promise-finally (funcall make-promise client) done)
-         ((error quit)
-          (funcall done)
-          (hermes--promise-rejected (error-message-string err))))
-       (lambda (result)
-         (when (hermes-messaging--operation-current-p
-                buffer generation profile display-generation)
-           (funcall on-success result))))
-      (lambda (reason)
-        (when (hermes-messaging--operation-current-p
-               buffer generation profile display-generation)
-          (message
-           "Hermes: %s"
-           (hermes-dashboard-transport--redact-secret reason secrets))))))))
+remain current.  SECRETS are redacted.  FINISH releases the domain lock."
+  (with-current-buffer buffer
+    (let ((view (hermes-messaging--guard)))
+      (hermes-browser--run-owned
+       (lambda (client _active) (funcall make-promise client))
+       (lambda ()
+         (and (funcall view)
+              (hermes-messaging--operation-current-p
+               buffer generation profile display-generation)))
+       on-success
+       (lambda (reason)
+         (message "Hermes: %s"
+                  (hermes-dashboard-transport--redact-secret reason secrets)))
+       finish))))
 
 (defun hermes-messaging--remember-platforms (result)
   "Replace the current platform table from RESULT."
@@ -285,30 +290,21 @@ only while the originating profile buffer still owns the operation."
         (token (list 'messaging-mutation)))
     (setq hermes-messaging--mutation-in-flight token
           hermes-messaging--platforms nil)
-    (condition-case err
-        (hermes-messaging--run-owned
-         target generation profile
-         (lambda (client)
-           (hermes--promise-finally
-            (condition-case request-error
-                (hermes--promise-then
-                 (hermes-messaging--api
-                  client "PUT" path profile body :secrets secrets)
-                 (lambda (_result)
-                   (when (hermes-messaging--operation-current-p
-                          target generation profile)
-                     (hermes-messaging--api client "GET" "/platforms" profile))))
-              ((error quit)
-               (hermes--promise-rejected
-                (error-message-string request-error))))
-            (lambda () (hermes-messaging--clear-mutation target token))))
-         (lambda (result)
-           (hermes-messaging--render result target)
-           (when success-message (message "Hermes: %s" success-message)))
-         secrets)
-      ((error quit)
-       (hermes-messaging--clear-mutation target token)
-       (signal (car err) (cdr err))))))
+    (hermes-messaging--run-owned
+     target generation profile
+     (lambda (client)
+       (let ((active hermes-dashboard-transport--api-dispatch-guard))
+         (hermes--promise-then
+          (hermes-messaging--api client "PUT" path profile body :secrets secrets)
+          (lambda (_result)
+            (when (funcall active)
+              (hermes-messaging--api client "GET" "/platforms" profile nil
+                                     :current-p active))))))
+     (lambda (result)
+       (hermes-messaging--render result target)
+       (when success-message (message "Hermes: %s" success-message)))
+     secrets nil
+     (lambda () (hermes-messaging--clear-mutation target token)))))
 
 (defun hermes-messaging-toggle ()
   "Toggle the platform at point through the profile-scoped dashboard API."
@@ -327,7 +323,9 @@ only while the originating profile buffer still owns the operation."
   "Set one allowed env key for the platform at point."
   (interactive)
   (hermes-messaging--require-mutation-idle)
-  (let* ((platform (hermes-messaging--platform-at-point))
+  (let* ((buffer (current-buffer))
+         (current-p (hermes-messaging--guard))
+         (platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
          (key (hermes-messaging--read-env-key platform "Set"))
          (field (hermes-messaging--env-field platform key))
@@ -335,27 +333,33 @@ only while the originating profile buffer still owns the operation."
          (value (if secret-p
                     (read-passwd (format "%s: " key))
                   (read-string (format "%s: " key)))))
-    (when (string-empty-p (string-trim value))
-      (user-error "Value is empty; use clear instead"))
-    (hermes-messaging--mutate
-     (hermes-messaging--platform-path id)
-     `((env . ((,key . ,value))))
-     (and secret-p (list value))
-     (format "saved %s for %s" key
-             (hermes-messaging--field platform 'name)))))
+    (when (funcall current-p)
+      (when (string-empty-p (string-trim value))
+        (user-error "Value is empty; use clear instead"))
+      (with-current-buffer buffer
+        (hermes-messaging--mutate
+         (hermes-messaging--platform-path id)
+         `((env . ((,(intern key) . ,value))))
+         (and secret-p (list value))
+         (format "saved %s for %s" key
+                 (hermes-messaging--field platform 'name)))))))
 
 (defun hermes-messaging-clear-env ()
   "Clear one allowed env key for the platform at point."
   (interactive)
   (hermes-messaging--require-mutation-idle)
-  (let* ((platform (hermes-messaging--platform-at-point))
+  (let* ((buffer (current-buffer))
+         (current-p (hermes-messaging--guard))
+         (platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
          (key (hermes-messaging--read-env-key platform "Clear")))
-    (hermes-messaging--mutate
-     (hermes-messaging--platform-path id)
-     `((clear_env . (,key))) nil
-     (format "cleared %s for %s" key
-             (hermes-messaging--field platform 'name)))))
+    (when (funcall current-p)
+      (with-current-buffer buffer
+        (hermes-messaging--mutate
+         (hermes-messaging--platform-path id)
+         `((clear_env . [,key])) nil
+         (format "cleared %s for %s" key
+                 (hermes-messaging--field platform 'name)))))))
 
 (defun hermes-messaging--safe-test-message (result platform)
   "Return a fail-closed display message for test RESULT and PLATFORM.
