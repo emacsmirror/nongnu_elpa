@@ -504,9 +504,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
            (status (if stale-p 'stale (plist-get snapshot :status))))
       (append (list :id (format "chat:%s" (buffer-name buffer))
                     :kind 'chat)
-              snapshot
-              (list :status status
-                    :status-label (hermes-dashboard--status-label status)
+              (plist-put snapshot :status status)
+              (list :status-label (hermes-dashboard--status-label status)
                     :stale-p stale-p)))))
 
 (defun hermes-dashboard--instance-group (heading nodes)
@@ -601,41 +600,75 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
   (when hermes-dashboard--ewoc
     (ewoc-filter hermes-dashboard--ewoc #'ignore)))
 
+(defun hermes-dashboard--reader-anchor (position)
+  "Return the card identity, index, line and column at POSITION."
+  (save-excursion
+    (goto-char position)
+    (let* ((located (hermes-dashboard--node-at-point))
+           (node (and located (<= (ewoc-location located) position) located))
+           (id (and node (hermes-dashboard--node-id (ewoc-data node)))))
+      (list id (cl-position id (hermes-dashboard--current-ids) :test #'equal)
+            (if node (count-lines (ewoc-location node) (line-beginning-position)) 0)
+            (current-column) position))))
+
+(defun hermes-dashboard--reader-position (anchor)
+  "Resolve ANCHOR, using its bounded card index if its card disappeared."
+  (let* ((node (or (gethash (car anchor) hermes-dashboard--nodes)
+                   (and (nth 1 anchor)
+                        (ewoc-nth hermes-dashboard--ewoc
+                                  (min (nth 1 anchor)
+                                       (1- (hash-table-count hermes-dashboard--nodes)))))))
+         (next (and node (ewoc-next hermes-dashboard--ewoc node))))
+    (save-excursion
+      (if (not node)
+          (goto-char (min (point-max) (nth 4 anchor)))
+        (save-restriction
+          (narrow-to-region (ewoc-location node)
+                            (if next (1- (ewoc-location next)) (point-max)))
+          (goto-char (point-min))
+          (forward-line (nth 2 anchor))
+          (move-to-column (nth 3 anchor))))
+      (point))))
+
 (defun hermes-dashboard--rebuild-ewoc (nodes)
   "Rebuild the dashboard EWOC from NODES."
-  (let* ((selected (hermes-dashboard--node-at-point))
-         (selected-id (and selected
-                           (hermes-dashboard--node-id (ewoc-data selected)))))
-    (setq hermes-dashboard--nodes (make-hash-table :test #'equal))
-    (let ((inhibit-read-only t))
-      (hermes-dashboard--clear-ewoc)
-      (dolist (node-data nodes)
-        (let ((node (ewoc-enter-last hermes-dashboard--ewoc node-data)))
-          (puthash (hermes-dashboard--node-id node-data)
-                   node hermes-dashboard--nodes))))
-    (cond
-     ((and selected-id (gethash selected-id hermes-dashboard--nodes))
-      (ewoc-goto-node hermes-dashboard--ewoc
-                      (gethash selected-id hermes-dashboard--nodes)))
-     ((ewoc-nth hermes-dashboard--ewoc 0)
-      (ewoc-goto-node hermes-dashboard--ewoc
-                      (ewoc-nth hermes-dashboard--ewoc 0))))))
+  (setq hermes-dashboard--nodes (make-hash-table :test #'equal))
+  (let ((inhibit-read-only t))
+    (hermes-dashboard--clear-ewoc)
+    (dolist (node-data nodes)
+      (let ((node (ewoc-enter-last hermes-dashboard--ewoc node-data)))
+        (puthash (hermes-dashboard--node-id node-data)
+                 node hermes-dashboard--nodes)))))
 
 (defun hermes-dashboard--sync-ewoc (nodes)
-  "Synchronize the current dashboard EWOC with NODES."
+  "Synchronize NODES, preserving each dashboard reader's card and viewport."
   (let ((current-ids (hermes-dashboard--current-ids))
-        (new-ids (mapcar #'hermes-dashboard--node-id nodes)))
-    (if (not (equal current-ids new-ids))
-        (hermes-dashboard--rebuild-ewoc nodes)
-      (dolist (node-data nodes)
-        (let* ((id (hermes-dashboard--node-id node-data))
-               (node (gethash id hermes-dashboard--nodes)))
-          (unless node
-            (hermes-dashboard--rebuild-ewoc nodes))
-          (when (and node (not (equal node-data (ewoc-data node))))
-            (let ((inhibit-read-only t))
-              (ewoc-set-data node node-data)
-              (ewoc-invalidate hermes-dashboard--ewoc node))))))))
+        (new-ids (mapcar #'hermes-dashboard--node-id nodes))
+        (anchor (hermes-dashboard--reader-anchor (point)))
+        (windows (mapcar
+                  (lambda (window)
+                    (list window
+                          (hermes-dashboard--reader-anchor (window-start window))
+                          (hermes-dashboard--reader-anchor (window-point window))))
+                  (get-buffer-window-list (current-buffer) nil t))))
+    (unwind-protect
+        (if (not (equal current-ids new-ids))
+            (hermes-dashboard--rebuild-ewoc nodes)
+          (dolist (node-data nodes)
+            (let* ((id (hermes-dashboard--node-id node-data))
+                   (node (gethash id hermes-dashboard--nodes)))
+              (when (not (equal node-data (ewoc-data node)))
+                (let ((inhibit-read-only t))
+                  (ewoc-set-data node node-data)
+                  (ewoc-invalidate hermes-dashboard--ewoc node))))))
+      (goto-char (hermes-dashboard--reader-position anchor))
+      (dolist (state windows)
+        (when (and (window-live-p (car state))
+                   (eq (window-buffer (car state)) (current-buffer)))
+          (set-window-point (car state)
+                            (hermes-dashboard--reader-position (nth 2 state)))
+          (set-window-start (car state)
+                            (hermes-dashboard--reader-position (nth 1 state)) t))))))
 
 (defun hermes-dashboard--ensure-ewoc ()
   "Ensure the current dashboard buffer has an EWOC."
