@@ -326,8 +326,8 @@
               ((symbol-function 'hermes-browser--existing-client) (lambda () 'client)))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Config*")
-              (hermes-config-mode)
+            (with-current-buffer
+                (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode)
               (hermes-browser--own-instance local)
               (setq hermes-config--refresh-required nil))
             (hermes-config)
@@ -488,11 +488,10 @@
                (lambda (_client)
                  (cl-incf fetch-calls)
                  refresh)))
-      (setq buffer (get-buffer-create "*Hermes Config*"))
+      (setq buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode))
       (unwind-protect
           (progn
             (with-current-buffer buffer
-              (hermes-config-mode)
               (hermes-browser--own-instance
                '("local" . "http://127.0.0.1:9119"))
               (setq hermes-config--schema
@@ -534,11 +533,10 @@
                (lambda (fn) (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) write)))
-      (setq buffer (get-buffer-create "*Hermes Config*"))
+      (setq buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode))
       (unwind-protect
           (progn
             (with-current-buffer buffer
-              (hermes-config-mode)
               (hermes-browser--own-instance local)
               (setq hermes-config--schema
                     '((fields . ((model . ((type . "string"))))))

@@ -186,6 +186,99 @@
               (should-not hermes-files--bytes)
               (should (string-empty-p (buffer-string))))))))))
 
+(ert-deftest hermes-files-native-file-association-retires-pending-reads ()
+  "Native file association and later detachment never revive render authority."
+  (dolist (target '(viewer browser pending-browser))
+    (dolist (detach '(nil t))
+      (dolist (failure '(nil t))
+        (hermes-files-test--with-api
+          (let* ((directory (make-temp-file "hermes-file-owner-" t))
+                 (filename (expand-file-name "draft" directory))
+                 browser)
+            (unwind-protect
+                (progn
+                  (call-interactively #'hermes-files)
+                  (setq browser (current-buffer))
+                  (push browser buffers)
+                  (unless (eq target 'browser)
+                    (hermes--promise-resolve (nth 3 (car calls))
+                                            (hermes-files-test--listing))
+                    (goto-char (point-min))
+                    (call-interactively (key-binding (kbd "RET")))
+                    (push (current-buffer) buffers)
+                    (when (eq target 'pending-browser) (switch-to-buffer browser)))
+                  (let ((request (nth 3 (car calls))))
+                    (set-visited-file-name filename t)
+                    (when detach (set-visited-file-name nil t))
+                    (read-only-mode -1)
+                    (buffer-enable-undo)
+                    (erase-buffer)
+                    (insert "local draft λ")
+                    (setq header-line-format "Local draft header"
+                          hermes-files--status "Local draft status")
+                    (let ((undo (copy-tree buffer-undo-list)) (position (point)))
+                      (if failure (hermes--promise-reject request 'unavailable)
+                        (hermes--promise-resolve
+                         request (if (eq target 'viewer)
+                                     (hermes-files-test--read)
+                                   (hermes-files-test--listing))))
+                      (with-current-buffer browser
+                        (should-not hermes-files--subscription)
+                        (should-not hermes-files--pending-viewer)
+                        (when (eq target 'viewer)
+                          (should (equal hermes-files--status "Cancelled"))))
+                      (when (eq target 'pending-browser)
+                        (with-current-buffer (car buffers)
+                          (should (equal hermes-files--status "Cancelled"))
+                          (should-not hermes-files--bytes)))
+                      (should (zerop (hash-table-count
+                                      (hermes-dashboard-transport-client-subscribers client))))
+                      ;; A transport retirement must not cancel the former viewer.
+                      (hermes-dashboard-transport-stop client)
+                      (should (equal (buffer-string) "local draft λ"))
+                      (should (equal buffer-undo-list undo))
+                      (should (= (point) position))
+                      (should (buffer-modified-p))
+                      (should-not buffer-read-only)
+                      (should (equal buffer-file-name (unless detach filename)))
+                      (should (equal header-line-format "Local draft header"))
+                      (should (equal hermes-files--status "Local draft status"))
+                      (should-not hermes-files--bytes)
+                      (should-not (file-exists-p filename)))))
+              (delete-directory directory t))))))))
+
+(ert-deftest hermes-files-current-public-view-renders-text-and-saves-bytes ()
+  "Current inert viewers retain plain text and explicitly save original bytes."
+  (hermes-files-test--with-api
+    (let* ((directory (make-temp-file "hermes-file-save-" t))
+           (filename (expand-file-name "saved" directory))
+           (text "plain λ\n")
+           (bytes (encode-coding-string text 'utf-8-unix)))
+      (unwind-protect
+          (progn
+            (call-interactively #'hermes-files)
+            (push (current-buffer) buffers)
+            (hermes--promise-resolve (nth 3 (car calls)) (hermes-files-test--listing))
+            (goto-char (point-min))
+            (call-interactively (key-binding (kbd "RET")))
+            (push (current-buffer) buffers)
+            (hermes--promise-resolve
+             (nth 3 (car calls))
+             (list :path "/remote/file0.el" :size (length bytes)
+                   :data_url (concat "data:text/plain;base64,"
+                                     (base64-encode-string bytes t))))
+            (should (equal (buffer-string) text))
+            (should buffer-read-only)
+            (should-not buffer-file-name)
+            (should (string-match-p "UTF-8 text" header-line-format))
+            (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) filename)))
+              (call-interactively (key-binding (kbd "s"))))
+            (with-temp-buffer
+              (set-buffer-multibyte nil)
+              (insert-file-contents-literally filename)
+              (should (equal (buffer-string) bytes))))
+        (delete-directory directory t)))))
+
 (ert-deftest hermes-files-refresh-preserves-real-windows-and-typing ()
   (dolist (visibility '(selected unselected hidden))
     (hermes-files-test--with-api
@@ -904,6 +997,50 @@
             (should (= (+ reserve (hermes-files--name-width)) 36)))
           (should (eq first (selected-window)))
           (should (eq browser (current-buffer))))))))
+
+(ert-deftest hermes-files-retired-viewer-settlement-preserves-successor ()
+  "Old success and failure never settle the next read's subscription or view."
+  (dolist (failure '(nil t))
+    (hermes-files-test--with-api
+      (call-interactively #'hermes-files)
+      (push (current-buffer) buffers)
+      (hermes--promise-resolve (nth 3 (car calls)) (hermes-files-test--listing))
+      (let ((browser (current-buffer)))
+        (goto-char (point-min))
+        (call-interactively #'hermes-files-open)
+        (push (current-buffer) buffers)
+        (let ((old (nth 3 (car calls)))
+              (retired (current-buffer)))
+          (set-visited-file-name (expand-file-name "successor-draft" temporary-file-directory) t)
+          (set-visited-file-name nil t)
+          (read-only-mode -1)
+          (insert "local draft")
+          (with-current-buffer browser
+            (call-interactively #'hermes-files-open))
+          (let ((successor (window-buffer (selected-window)))
+                (token (buffer-local-value 'hermes-files--subscription browser)))
+            (push successor buffers)
+            (if failure (hermes--promise-reject old 'unavailable)
+              (hermes--promise-resolve old (hermes-files-test--read)))
+            (with-current-buffer browser
+              (should (eq token hermes-files--subscription))
+              (should (eq successor (car hermes-files--pending-viewer)))
+              (should (equal hermes-files--status "Loading")))
+            (should (gethash token (hermes-dashboard-transport-client-subscribers client)))
+            (with-current-buffer successor
+              (should (equal hermes-files--status "Loading"))
+              (should (string-empty-p (buffer-string))))
+            (if failure (hermes--promise-reject (nth 3 (car calls)) 'unavailable)
+              (hermes--promise-resolve (nth 3 (car calls)) (hermes-files-test--read)))
+            (with-current-buffer browser
+              (should-not hermes-files--subscription)
+              (should-not hermes-files--pending-viewer)
+              (should (equal hermes-files--status
+                             (if failure "Read failed (invalid or unavailable response)" "Ready"))))
+            (with-current-buffer successor
+              (should (equal hermes-files--status (if failure "Failed" "Ready"))))
+            (with-current-buffer retired
+              (should (equal (buffer-string) "local draft")))))))))
 
 (provide 'hermes-files-tests)
 ;;; hermes-files-tests.el ends here

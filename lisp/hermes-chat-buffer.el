@@ -30,6 +30,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'button)
 (require 'cl-lib)
 (require 'ewoc)
@@ -1448,10 +1449,13 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
   "Refresh this chat's live queue side panel, when present."
   (when (buffer-live-p hermes-chat--queue-panel-buffer)
     (with-current-buffer hermes-chat--queue-panel-buffer
-      (hermes-chat-queue-panel-refresh))))
+      (when (hermes-buffer--owned-p 'hermes-chat-queue-panel-mode)
+        (hermes-chat-queue-panel-refresh)))))
 
 (defun hermes-chat--queue-panel-owner ()
   "Return this panel's live chat owner or signal a user error."
+  (unless (hermes-buffer--owned-p 'hermes-chat-queue-panel-mode)
+    (user-error "Queue panel is retired"))
   (unless (and (buffer-live-p hermes-chat-queue-panel--owner)
                (eq (buffer-local-value 'major-mode
                                        hermes-chat-queue-panel--owner)
@@ -1494,36 +1498,43 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
     (forward-line 2)))
 
 (defun hermes-chat--queue-edit-entry (owner id)
-  "Edit queue entry ID owned by chat buffer OWNER."
-  (with-current-buffer owner
-    (when (equal id hermes-chat--queued-submit-id)
-      (user-error "That queued message is currently being submitted"))
-    (let* ((entry (seq-find (lambda (candidate)
-                              (equal (plist-get candidate :id) id))
-                            hermes-chat--queued-messages))
-           (content (and entry
-                         (string-trim
-                          (read-string-from-buffer
-                           "Queued message: " (plist-get entry :content))))))
+  "Edit queue entry ID owned by chat buffer OWNER from this queue panel."
+  (let ((panel (current-buffer))
+        (claim hermes-buffer--owner))
+    (with-current-buffer owner
       (when (equal id hermes-chat--queued-submit-id)
         (user-error "That queued message is currently being submitted"))
-      (unless (seq-find (lambda (candidate)
-                          (equal (plist-get candidate :id) id))
-                        hermes-chat--queued-messages)
-        (user-error "Queued message is no longer present"))
-      (unless entry (user-error "Queued message is no longer present"))
-      (when (string-empty-p content)
-        (user-error "Queued message cannot be empty"))
-      (setq hermes-chat--queued-messages
-            (mapcar (lambda (candidate)
-                      (if (equal (plist-get candidate :id) id)
-                          (hermes-chat--entry-with
-                           candidate :content content :display nil)
-                        candidate))
-                    hermes-chat--queued-messages))
-      (when-let* ((record (plist-get entry :image-record)))
-        (setf (plist-get record :content) content))
-      (hermes-chat--insert-local-status "Queued message updated" 'done))))
+      (let* ((entry (seq-find (lambda (candidate)
+                                (equal (plist-get candidate :id) id))
+                              hermes-chat--queued-messages))
+             (content (and entry
+                           (string-trim
+                            (read-string-from-buffer
+                             "Queued message: " (plist-get entry :content))))))
+        (unless (and (buffer-live-p panel)
+                     (with-current-buffer panel
+                       (and (eq claim hermes-buffer--owner)
+                            (eq owner (hermes-chat--queue-panel-owner)))))
+          (user-error "Queue panel changed during editing"))
+        (when (equal id hermes-chat--queued-submit-id)
+          (user-error "That queued message is currently being submitted"))
+        (unless (seq-find (lambda (candidate)
+                            (equal (plist-get candidate :id) id))
+                          hermes-chat--queued-messages)
+          (user-error "Queued message is no longer present"))
+        (unless entry (user-error "Queued message is no longer present"))
+        (when (string-empty-p content)
+          (user-error "Queued message cannot be empty"))
+        (setq hermes-chat--queued-messages
+              (mapcar (lambda (candidate)
+                        (if (equal (plist-get candidate :id) id)
+                            (hermes-chat--entry-with
+                             candidate :content content :display nil)
+                          candidate))
+                      hermes-chat--queued-messages))
+        (when-let* ((record (plist-get entry :image-record)))
+          (setf (plist-get record :content) content))
+        (hermes-chat--insert-local-status "Queued message updated" 'done)))))
 
 (defun hermes-chat--queue-remove-entry (owner id)
   "Remove queue entry ID owned by chat buffer OWNER."
@@ -1642,11 +1653,11 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
          (attachment (list hermes-chat--lifecycle-generation
                            hermes-chat--dashboard-client
                            hermes-chat--dashboard-active-session-id))
-         (buffer (get-buffer-create
-                  (format "*Hermes Queue: %s*" (buffer-name owner)))))
+         (buffer (hermes-buffer--get
+                  (format "*Hermes Queue: %s*" (buffer-name owner))
+                  #'hermes-chat-queue-panel-mode t)))
     (setq hermes-chat--queue-panel-buffer buffer)
     (with-current-buffer buffer
-      (hermes-chat-queue-panel-mode)
       (setq hermes-chat-queue-panel--owner owner
             hermes-chat-queue-panel--attachment attachment)
       (hermes-chat-queue-panel-refresh))
@@ -1993,8 +2004,9 @@ Drop optional segments whole."
   (interactive)
   (let ((text (hermes-chat--session-details-text))
         (owner hermes-chat--work-owner)
-        (refresh (plist-get hermes-chat--work-owner :refresh)))
-    (with-help-window "*Hermes Session Details*"
+        (refresh (plist-get hermes-chat--work-owner :refresh))
+        (buffer (hermes-buffer--get "*Hermes Session Details*" #'help-mode)))
+    (with-help-window buffer
       (princ text)
       (when owner
         (with-current-buffer standard-output
@@ -2006,10 +2018,12 @@ Drop optional segments whole."
                      (with-current-buffer (plist-get owner :buffer)
                        (require 'hermes-subagents)
                        (call-interactively 'hermes-chat-work)))))))
-    (with-current-buffer "*Hermes Session Details*"
-      (use-local-map (copy-keymap (current-local-map)))
-      (local-set-key (kbd "g") (lambda () (interactive)
-                                (when refresh (funcall refresh)))))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (hermes-buffer--owned-p 'help-mode)
+          (use-local-map (copy-keymap (current-local-map)))
+          (local-set-key (kbd "g") (lambda () (interactive)
+                                    (when refresh (funcall refresh)))))))))
 
 (defun hermes-chat--header-line (&optional width)
   "Return a priority-budgeted header fitting WIDTH display columns.

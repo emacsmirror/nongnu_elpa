@@ -29,6 +29,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'image)
 (require 'select)
@@ -162,7 +163,9 @@ Errors and local interruption do not prove that staging was consumed."
 (defvar-local hermes-chat--image-recovery-buffer nil
   "Owned image recovery buffer, not killed on chat teardown.")
 (defvar-local hermes-chat--image-records nil
-  "Image records owned by a recovery buffer.")
+  "Retained image records, independent of the recovery view's ownership.")
+;; A mode change must not discard the only copies of recoverable bytes.
+(put 'hermes-chat--image-records 'permanent-local t)
 
 (defun hermes-chat--image-kind (bytes)
   "Return the safe raster type of BYTES, or nil."
@@ -180,9 +183,19 @@ Errors and local interruption do not prove that staging was consumed."
 
 (defun hermes-chat--image-recovery ()
   "Return this chat's owned recovery buffer, creating it if necessary."
-  (unless (buffer-live-p hermes-chat--image-recovery-buffer)
-    (let ((buffer (generate-new-buffer "*Hermes Image Recovery*")))
-      (with-current-buffer buffer (hermes-chat-image-recovery-mode))
+  (unless (and (buffer-live-p hermes-chat--image-recovery-buffer)
+               (with-current-buffer hermes-chat--image-recovery-buffer
+                 (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode)))
+    (let ((previous hermes-chat--image-recovery-buffer)
+          (buffer (generate-new-buffer "*Hermes Image Recovery*")))
+      (with-current-buffer buffer
+        (hermes-chat-image-recovery-mode)
+        (hermes-buffer--claim 'hermes-chat-image-recovery-mode)
+        (when (buffer-live-p previous)
+          (setq hermes-chat--image-records
+                (buffer-local-value 'hermes-chat--image-records previous))
+          (with-current-buffer previous
+            (setq hermes-chat--image-records nil))))
       (setq hermes-chat--image-recovery-buffer buffer)))
   hermes-chat--image-recovery-buffer)
 
@@ -302,6 +315,8 @@ restoring never sends automatically.  Bytes are not saved across Emacs exit."
 (defun hermes-chat-image-recovery-refresh ()
   "Refresh this local image recovery view."
   (interactive)
+  (unless (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode)
+    (user-error "Image recovery view is retired"))
   (let ((inhibit-read-only t))
     (erase-buffer)
     (insert "Local images — r: restore to chat, d: discard, g: refresh, q: quit\n"
@@ -311,14 +326,32 @@ restoring never sends automatically.  Bytes are not saved across Emacs exit."
                              (or (plist-get record :content) "")))
              (mapc #'hermes-chat--image-insert-preview (plist-get record :images)))))
 
+(defun hermes-chat--image-recovery-current-p (source claim &optional record)
+  "Return non-nil if SOURCE retains CLAIM and optional RECORD."
+  (and (buffer-live-p source)
+       (with-current-buffer source
+         (and (eq claim hermes-buffer--owner)
+              (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode)
+              (or (null record) (memq record hermes-chat--image-records))))))
+
 (defun hermes-chat--image-read-record ()
-  "Read a record from this recovery view."
-  (nth (1- (string-to-number
-            (completing-read "Image record: "
-                             (mapcar #'number-to-string
-                                     (number-sequence 1 (length hermes-chat--image-records)))
-                             nil t)))
-       hermes-chat--image-records))
+  "Read a record from this recovery view, retaining its exact source claim."
+  (unless (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode)
+    (user-error "Image recovery view is retired"))
+  (let* ((source (current-buffer))
+         (claim hermes-buffer--owner)
+         (records (copy-sequence hermes-chat--image-records))
+         (index (string-to-number
+                 (completing-read "Image record: "
+                                  (mapcar #'number-to-string
+                                          (number-sequence 1 (length records)))
+                                  nil t))))
+    (unless (hermes-chat--image-recovery-current-p source claim)
+      (user-error "Image recovery view changed during selection"))
+    (let ((record (nth (1- index) records)))
+      (unless (and record (hermes-chat--image-recovery-current-p source claim record))
+        (user-error "Image record is no longer present"))
+      record)))
 
 (defun hermes-chat--image-copy-images (images)
   "Return independent image records and binary strings for IMAGES."
@@ -334,6 +367,7 @@ Refuse to overwrite newer text or images.  Ambiguous sends require a new
 session before retrying; the original backend may already have accepted them."
   (interactive)
   (let* ((source (current-buffer))
+         (claim hermes-buffer--owner)
          (record (hermes-chat--image-read-record))
          (snapshot (let ((copy (copy-tree record)))
                      (setf (plist-get copy :images)
@@ -350,6 +384,8 @@ session before retrying; the original backend may already have accepted them."
                                            (derived-mode-p 'hermes-chat-mode)))
                                        (buffer-list)))
                    nil t))))
+    (unless (hermes-chat--image-recovery-current-p source claim record)
+      (user-error "Image recovery view changed during target selection"))
     (unless (and record (buffer-live-p origin))
       (user-error "Select a live chat buffer; retained bytes have not changed"))
     (with-current-buffer origin
@@ -370,8 +406,7 @@ session before retrying; the original backend may already have accepted them."
 	(unless (yes-or-no-p "Restore images despite possible prior delivery? ")
           (user-error "Restore canceled"))
 	;; Minibuffer input can run timers and other commands.
-	(unless (and (buffer-live-p source)
-                     (memq record (buffer-local-value 'hermes-chat--image-records source))
+	(unless (and (hermes-chat--image-recovery-current-p source claim record)
                      (equal snapshot record)
                      (derived-mode-p 'hermes-chat-mode)
                      (eql lifetime hermes-chat--lifecycle-generation)
@@ -393,6 +428,8 @@ session before retrying; the original backend may already have accepted them."
                            :content nil :session-id nil :session-key nil
                            :assistant-id nil :client nil :lifetime nil :generation nil
                            :owner (current-buffer))))
+          (unless (hermes-chat--image-recovery-current-p source claim record)
+            (user-error "Image recovery view changed while opening target"))
           (when (or (>= (length records) 64)
                     (> (+ used (hermes-chat--image-bytes (plist-get record :images)))
                        hermes-chat--image-total-limit))
@@ -425,9 +462,14 @@ session before retrying; the original backend may already have accepted them."
   (if (seq-some #'hermes-chat--image-record-owned-p hermes-chat--image-records)
       (progn (message "Remove images from their composer or queue first") nil)
     (or (null hermes-chat--image-records)
-        (and (yes-or-no-p "Discard all retained images in this recovery buffer? ")
-             (not (seq-some #'hermes-chat--image-record-owned-p
-                            hermes-chat--image-records))))))
+        (let ((source (current-buffer))
+              (claim hermes-buffer--owner)
+              (records (copy-sequence hermes-chat--image-records)))
+          (and (hermes-chat--image-recovery-current-p source claim)
+               (yes-or-no-p "Discard all retained images in this recovery buffer? ")
+               (hermes-chat--image-recovery-current-p source claim)
+               (equal records hermes-chat--image-records)
+               (not (seq-some #'hermes-chat--image-record-owned-p records)))))))
 
 (defun hermes-chat--image-recovery-killed ()
   "Drop byte references from staging locks when recovery is deliberately killed."
@@ -437,14 +479,14 @@ session before retrying; the original backend may already have accepted them."
   "Discard a completed recovery record after confirmation.
 Draft and pending records must be removed through their owning chat."
   (interactive)
-  (let ((source (current-buffer))
-        (record (hermes-chat--image-read-record)))
+  (let* ((source (current-buffer))
+         (claim hermes-buffer--owner)
+         (record (hermes-chat--image-read-record)))
     (when (hermes-chat--image-record-owned-p record)
       (user-error "This record is still owned by the composer or queue"))
     (when (and record (yes-or-no-p "Discard retained image bytes? "))
       (unless (and (eq source (current-buffer))
-                   (derived-mode-p 'hermes-chat-image-recovery-mode)
-                   (memq record hermes-chat--image-records)
+                   (hermes-chat--image-recovery-current-p source claim record)
                    (not (hermes-chat--image-record-owned-p record)))
         (user-error "Image record changed during confirmation"))
       (hermes-chat--image-forget-bytes record)

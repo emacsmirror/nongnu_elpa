@@ -139,6 +139,53 @@
           (should-not hermes-preview--cleanup)
           (should (string-match-p "Cancelled" header-line-format)))))))
 
+(ert-deftest hermes-preview-native-file-association-retires-pending-read ()
+  "Late replies and chat retirement leave a repurposed native file untouched."
+  (dolist (detach '(nil t))
+    (dolist (failure '(nil t))
+      (hermes-preview-test--with-api
+        (let* ((chat (hermes-preview-test--chat "file-owner"))
+               (viewer (hermes-preview-test--open chat "/file"))
+               (request (car calls))
+               (directory (make-temp-file "hermes-preview-owner-" t))
+               (filename (expand-file-name "draft" directory)))
+          (setq buffers (list viewer chat))
+          (unwind-protect
+              (with-current-buffer viewer
+                (let ((header header-line-format) (status hermes-files--status))
+                  (set-visited-file-name filename t)
+                  (when detach (set-visited-file-name nil t))
+                  (should (equal header-line-format header))
+                  (should (equal hermes-files--status status)))
+                (should-not (funcall (plist-get (nth 2 request) :current-p)))
+                (should-not hermes-preview--cleanup)
+                (should (= 1 (hermes-dashboard-transport-client-refcount
+                              (nth 3 hermes-preview--owner))))
+                (read-only-mode -1)
+                (insert "local preview draft λ")
+                (setq header-line-format "Local header"
+                      hermes-files--status "Local status")
+                (let ((position (point)))
+                  (if failure (hermes--promise-reject (nth 3 request) 'unavailable)
+                    (hermes--promise-resolve
+                     (nth 3 request) (hermes-preview-test--response "/file" "wrong")))
+                  (with-current-buffer chat (hermes-chat--invalidate-transport-state))
+                  (should (equal (buffer-string) "local preview draft λ"))
+                  (should (= (point) position))
+                  (should (buffer-modified-p))
+                  (should-not buffer-read-only)
+                  (should (equal buffer-file-name (unless detach filename)))
+                  (should (equal header-line-format "Local header"))
+                  (should (equal hermes-files--status "Local status"))
+                  (should-not hermes-files--bytes)
+                  (should-not hermes-preview--cleanup)
+                  (should-error (call-interactively (key-binding (kbd "g")))
+                                :type 'user-error)
+                  (should (equal header-line-format "Local header"))
+                  (should (equal hermes-files--status "Local status"))
+                  (should-not (file-exists-p filename))))
+            (delete-directory directory t)))))))
+
 (ert-deftest hermes-preview-exact-byte-save-and-native-image-path ()
   (hermes-preview-test--with-api
     (let* ((chat (hermes-preview-test--chat "bytes"))
@@ -504,6 +551,40 @@
                 (should (equal (buffer-local-value 'hermes-files--bytes viewer) "new"))))
           (when (buffer-live-p viewer) (kill-buffer viewer))
           (when (buffer-live-p chat) (kill-buffer chat)))))))
+
+(ert-deftest hermes-preview-completed-retirement-fences-presentation ()
+  "Completed views retain no presentation authority after association/detach."
+  (dolist (detach '(nil t))
+    (hermes-preview-test--with-api
+      (let* ((chat (hermes-preview-test--chat "completed-retirement"))
+             (viewer (hermes-preview-test--open chat "/page.html"))
+             (bytes "<p>Original bytes</p>"))
+        (setq buffers (list viewer chat))
+        (hermes--promise-resolve (nth 3 (car calls))
+                                (hermes-preview-test--response "/page.html" bytes))
+        (with-current-buffer viewer
+          (call-interactively (key-binding (kbd "v")))
+          (should (equal (buffer-string) bytes))
+          (should hermes-preview--source-p)
+          (call-interactively (key-binding (kbd "v")))
+          (should-not hermes-preview--source-p)
+          (set-visited-file-name (expand-file-name "preview-notes" temporary-file-directory) t)
+          (when detach (set-visited-file-name nil t))
+          (read-only-mode -1) (erase-buffer) (buffer-enable-undo)
+          (insert "Local draft λ") (goto-char 3)
+          (setq header-line-format "Local draft")
+          (let* ((snapshot (lambda ()
+                             (list (buffer-string) (copy-tree buffer-undo-list)
+                                   (buffer-modified-p) buffer-read-only major-mode
+                                   buffer-file-name header-line-format (point)
+                                   hermes-preview--source-p hermes-files--bytes)))
+                 (before (funcall snapshot)))
+            (should-error (call-interactively (key-binding (kbd "v"))) :type 'user-error)
+            (should-error (hermes-preview--view bytes) :type 'user-error)
+            (should-error (hermes-files--view bytes "/page.html") :type 'user-error)
+            (should-error (hermes-preview-zoom-in) :type 'user-error)
+            (should (equal before (funcall snapshot))))
+          (set-buffer-modified-p nil))))))
 
 (provide 'hermes-preview-tests)
 ;;; hermes-preview-tests.el ends here

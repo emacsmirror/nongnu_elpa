@@ -20,6 +20,7 @@
 ;;; Code:
 
 (require 'hermes-browser)
+(require 'hermes-buffer)
 (require 'keymap-popup)
 (require 'image)
 
@@ -111,7 +112,20 @@ Optional TARGET is an already displayed inert viewer, never a local path."
                  (eq rows (buffer-local-value 'hermes-files--rows buffer))
                  (or (null target)
                      (hermes-browser--request-current-mode-p
-                      target target-generation 'hermes-file-view-mode))))))
+                      target target-generation 'hermes-file-view-mode)))))
+         (settle
+          (lambda (status)
+            ;; Resource settlement does not grant permission to paint a viewer.
+            (when (and (buffer-live-p buffer)
+                       (eq generation (buffer-local-value
+                                       'hermes-browser--request-generation buffer))
+                       (eq client (buffer-local-value 'hermes-files--client buffer)))
+              (with-current-buffer buffer
+                (hermes-files--unobserve)
+                (setq hermes-files--pending-viewer nil)
+                (when (hermes-browser--request-current-mode-p
+                       buffer generation 'hermes-files-mode)
+                  (setq hermes-files--status status)))))))
     (unless client (user-error "Reopen the managed file browser"))
     (setq hermes-files--status "Loading"
           hermes-files--pending-viewer (and target (list target target-generation)))
@@ -134,19 +148,16 @@ Optional TARGET is an already displayed inert viewer, never a local path."
            "GET" route :query (and path (list (cons 'path path))) :client client)
         ((error quit) (hermes--promise-rejected (car err))))
       (lambda (result)
-        (when (funcall current-p)
-          (with-current-buffer buffer
-            (funcall success result)
-            (hermes-files--unobserve)
-            (setq hermes-files--status "Ready" hermes-files--pending-viewer nil)))))
+        (if (not (funcall current-p))
+            (funcall settle "Cancelled")
+          (with-current-buffer buffer (funcall success result))
+          (funcall settle "Ready"))))
      (lambda (_reason)
        ;; Do not echo response bodies: file content can contain secrets.
-       (when (funcall current-p)
-         (with-current-buffer buffer
-           (hermes-files--unobserve)
-           (setq hermes-files--pending-viewer nil
-                 hermes-files--status "Read failed (invalid or unavailable response)"))
-         (when target
+       (let ((publish (funcall current-p)))
+         (funcall settle (if publish "Read failed (invalid or unavailable response)"
+                           "Cancelled"))
+         (when (and publish target)
            (with-current-buffer target
              (setq hermes-files--status "Failed"
                    header-line-format " Managed file read failed; retry from browser | ? Help"))))))))
@@ -240,6 +251,7 @@ Optional TARGET is an already displayed inert viewer, never a local path."
 (defun hermes-files--resize ()
   "Refit native file columns to the current window geometry."
   (when (and (get-buffer-window (current-buffer) t)
+             (not (hermes-buffer--retired-p))
              (/= (cadr (aref tabulated-list-format 0)) (hermes-files--name-width)))
     (hermes-files--print)))
 
@@ -328,6 +340,8 @@ Other content is text only when valid UTF-8 without binary controls."
 (defun hermes-files--view (bytes path)
   "Render a safe preview of validated BYTES for remote PATH.
 Retain the original bytes independently for saving, even without image support."
+  (when (hermes-buffer--retired-p)
+    (user-error "File view is retired"))
   (let* ((preview (hermes-files--preview bytes))
          (kind (car preview))
          (image (and (memq kind '(png jpeg gif))
@@ -368,6 +382,7 @@ Retain the original bytes independently for saving, even without image support."
             (viewer (generate-new-buffer "*Hermes File*")))
         (with-current-buffer viewer
           (hermes-file-view-mode)
+          (hermes-buffer--claim 'hermes-file-view-mode)
           (setq-local hermes-instance instance)
           (setq header-line-format
                 (format " %s | ? Help" (hermes-files--label path))))
@@ -447,6 +462,8 @@ line.  Names and server paths retain their full quoted text in help echo."
                 mode-line-process))
   (add-hook 'kill-buffer-hook #'hermes-files--stop nil t)
   (add-hook 'change-major-mode-hook #'hermes-files--stop nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-files--stop nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-buffer--retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-files--resize nil t)
   (hermes-files--print))
 
@@ -472,6 +489,7 @@ line.  Names and server paths retain their full quoted text in help echo."
   "Preview managed content without file modes, local variables or evaluation."
   :interactive nil
   (hermes-browser--next-request-generation)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-buffer--retire nil t)
   (setq-local buffer-undo-list t)
   (setq-local mode-line-process '(:eval (concat " " hermes-files--status))))
 
@@ -487,6 +505,7 @@ are used.  Reads are capped at 4 MiB, listings at the first 2000 entries."
         (buffer (generate-new-buffer "*Hermes Files*")))
     (with-current-buffer buffer
       (hermes-files-mode)
+      (hermes-buffer--claim 'hermes-files-mode)
       (hermes-browser--own-instance instance)
       (condition-case err
           (let* ((hermes-dashboard-transport-url (hermes-instance-url instance))

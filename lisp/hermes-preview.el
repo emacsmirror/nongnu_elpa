@@ -50,9 +50,10 @@
   (let ((cleanup hermes-preview--cleanup))
     (setq hermes-preview--cleanup nil)
     (when cleanup (funcall cleanup)))
-  (setq hermes-files--status status)
-  (unless (equal status "Ready")
-    (setq header-line-format (format " Preview | %s | g Retry | ? Help" status))))
+  (unless (hermes-buffer--retired-p)
+    (setq hermes-files--status status)
+    (unless (equal status "Ready")
+      (setq header-line-format (format " Preview | %s | g Retry | ? Help" status)))))
 
 (defun hermes-preview-cancel ()
   "Cancel this preview's pending read without stopping a shared transport."
@@ -137,6 +138,8 @@ Reject unknown tags and attributes, URI values, CSS and event handlers."
 
 (defun hermes-preview--view (bytes)
   "Display BYTES while retaining them unchanged for explicit saving."
+  (when (hermes-buffer--retired-p)
+    (user-error "Preview view is retired"))
   (unless (<= (length bytes) hermes-files--max-bytes)
     (user-error "Output exceeds the 4 MiB preview limit"))
   (let* ((descriptor hermes-preview--descriptor)
@@ -166,6 +169,8 @@ Reject unknown tags and attributes, URI values, CSS and event handlers."
   "Toggle between inert presentation and retained literal source.
 Wait for a pending read to finish, or cancel it first."
   (interactive)
+  (when (hermes-buffer--retired-p)
+    (user-error "Preview view is retired"))
   (when hermes-preview--cleanup
     (user-error "Read pending; wait or use C-g to cancel before changing view"))
   (unless (and hermes-files--bytes
@@ -177,6 +182,8 @@ Wait for a pending read to finish, or cancel it first."
 (defun hermes-preview--zoom (factor)
   "Scale this preview's rendered image by FACTOR, or reset when nil.
 Limit zoom to 10–400 percent of the initial displayed size."
+  (when (hermes-buffer--retired-p)
+    (user-error "Preview view is retired"))
   (when hermes-preview--cleanup
     (user-error "Read pending; wait or use C-g to cancel before zooming"))
   (let ((image (get-text-property (point-min) 'display)))
@@ -243,7 +250,8 @@ Limit zoom to 10–400 percent of the initial displayed size."
 (defun hermes-preview--start-read ()
   "Start reading this preview with its captured owning client."
   (hermes-preview-cancel)
-  (unless (hermes-preview--current-p hermes-preview--owner)
+  (unless (and (not (hermes-buffer--retired-p))
+               (hermes-preview--current-p hermes-preview--owner))
     (user-error "Preview attachment changed; reopen from its chat"))
   (let* ((viewer (current-buffer))
          (owner hermes-preview--owner)
@@ -292,6 +300,7 @@ Limit zoom to 10–400 percent of the initial displayed size."
                           (and (buffer-live-p viewer)
                                (with-current-buffer viewer
                                  (and (derived-mode-p 'hermes-preview-mode)
+                                      (not (hermes-buffer--retired-p))
                                       (eq request hermes-preview--cleanup)
                                       (equal owner hermes-preview--owner)))
                                (hermes-preview--current-p owner))))
@@ -300,7 +309,8 @@ Limit zoom to 10–400 percent of the initial displayed size."
           (when (buffer-live-p viewer)
             (with-current-buffer viewer
               (when (eq request hermes-preview--cleanup)
-                (if (not (hermes-preview--current-p owner))
+                (if (or (hermes-buffer--retired-p)
+                        (not (hermes-preview--current-p owner)))
                     (hermes-preview--finish "Cancelled")
                   (hermes-preview--view (hermes-files--decode result path))
                   (hermes-preview--finish "Ready")))))))
@@ -346,6 +356,7 @@ Limit zoom to 10–400 percent of the initial displayed size."
   "View generated outputs without executing markup or reading local paths."
   :interactive nil
   (add-hook 'kill-buffer-hook #'hermes-preview-cancel nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-preview-cancel t t)
   (add-hook 'change-major-mode-hook #'hermes-preview-cancel nil t))
 
 ;;;###autoload
@@ -363,6 +374,7 @@ Remote files are current server bytes, not historical artifact revisions."
           (instance (buffer-local-value 'hermes-instance (car owner))))
       (with-current-buffer viewer
 	(hermes-preview-mode)
+	(hermes-buffer--claim 'hermes-preview-mode)
 	(setq-local hermes-instance instance)
 	(setq hermes-preview--owner owner hermes-preview--descriptor descriptor))
       (pop-to-buffer viewer)

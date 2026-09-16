@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'tabulated-list)
 (require 'hermes-transport)
@@ -261,7 +262,7 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
          (owner (hermes-rollback--choose-owner instance)))
     (unless (hermes-rollback--owner-current-p owner)
       (user-error "Checkpoint attachment changed during selection"))
-    (with-current-buffer (get-buffer-create "*Hermes Rollbacks*")
+    (with-current-buffer (hermes-buffer--get "*Hermes Rollbacks*" #'hermes-rollback-mode)
       (unless (derived-mode-p 'hermes-rollback-mode) (hermes-rollback-mode))
       (hermes-browser--own-instance instance)
       (setq hermes-rollback--owner owner

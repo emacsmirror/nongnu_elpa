@@ -9750,28 +9750,29 @@
    (hermes-chat--queue-content "third")
    (let ((owner (current-buffer))
          (third-id (plist-get (nth 2 hermes-chat--queued-messages) :id)))
-     (with-temp-buffer
-       (hermes-chat-queue-panel-mode)
-       (setq hermes-chat-queue-panel--owner owner)
-       (hermes-chat-queue-panel-refresh)
-       (should (string-match-p "1. first" (buffer-string)))
-       (should (string-match-p "2. second" (buffer-string)))
-       (should (string-match-p "3. third" (buffer-string)))
-       (hermes-chat--queue-panel-move-entry owner third-id -1)
-       (should (equal (with-current-buffer owner
-                        (hermes-test--queued-contents))
-                      '("first" "third" "second")))
-       (hermes-chat-queue-panel-refresh)
-       (search-forward "third")
-       (cl-letf (((symbol-function 'read-string-from-buffer)
-                  (lambda (&rest _) "third edited")))
-         (hermes-chat-queue-panel-edit))
-       (goto-char (point-min))
-       (search-forward "second")
-       (hermes-chat-queue-panel-remove)
-       (should (equal (with-current-buffer owner
-                        (hermes-test--queued-contents))
-                      '("first" "third edited")))))))
+     (let ((panel (hermes-chat-queue-panel)))
+       (unwind-protect
+           (with-current-buffer panel
+             (hermes-chat-queue-panel-refresh)
+             (should (string-match-p "1. first" (buffer-string)))
+             (should (string-match-p "2. second" (buffer-string)))
+             (should (string-match-p "3. third" (buffer-string)))
+             (hermes-chat--queue-panel-move-entry owner third-id -1)
+             (should (equal (with-current-buffer owner
+                              (hermes-test--queued-contents))
+                            '("first" "third" "second")))
+             (hermes-chat-queue-panel-refresh)
+             (search-forward "third")
+             (cl-letf (((symbol-function 'read-string-from-buffer)
+                        (lambda (&rest _) "third edited")))
+               (hermes-chat-queue-panel-edit))
+             (goto-char (point-min))
+             (search-forward "second")
+             (hermes-chat-queue-panel-remove)
+             (should (equal (with-current-buffer owner
+                              (hermes-test--queued-contents))
+                            '("first" "third edited"))))
+         (kill-buffer panel))))))
 
 (ert-deftest hermes-chat-queue-panel-blocks-swap-with-inflight-head ()
   "Reorder refuses to displace the currently submitted queue head."

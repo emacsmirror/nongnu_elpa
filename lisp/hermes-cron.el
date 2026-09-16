@@ -27,6 +27,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'subr-x)
 (require 'tabulated-list)
 (require 'url-util)
@@ -296,7 +297,7 @@ RUNS is the run list from the dashboard."
 (defun hermes-cron--display-detail (job runs)
   "Display cron JOB with run history in a detail buffer.
 RUNS is the detail run list."
-  (with-current-buffer (get-buffer-create "*Hermes Cron Job*")
+  (with-current-buffer (hermes-buffer--get "*Hermes Cron Job*" #'special-mode)
     (unless (derived-mode-p 'special-mode)
       (special-mode))
     (let ((inhibit-read-only t))
@@ -367,7 +368,7 @@ RUNS is the detail run list."
 (defun hermes-cron--display-run (session-id messages)
   "Display run SESSION-ID's transcript MESSAGES in a log buffer."
   (let ((entries (if (vectorp messages) (append messages nil) messages)))
-    (with-current-buffer (get-buffer-create "*Hermes Cron Run*")
+    (with-current-buffer (hermes-buffer--get "*Hermes Cron Run*" #'special-mode)
       (unless (derived-mode-p 'special-mode)
         (special-mode))
       (let ((inhibit-read-only t))
@@ -600,11 +601,13 @@ The first render only records a baseline so pre-existing failures do not alert."
 (defvar-local hermes-cron--auto-refresh-timer nil
   "Per-buffer repeat timer refreshing the cron list, or nil.")
 
-(defun hermes-cron--auto-refresh-tick (buffer)
-  "Refresh BUFFER in place when it is still a live cron browser."
-  (when (hermes-browser--buffer-mode-p buffer 'hermes-cron-mode)
+(defun hermes-cron--auto-refresh-tick (buffer &optional timer)
+  "Refresh BUFFER only while it still owns the cron refresh TIMER."
+  (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (hermes-cron--revert))))
+      (when (and (hermes-buffer--owned-p 'hermes-cron-mode)
+                 timer (eq timer hermes-cron--auto-refresh-timer))
+        (hermes-cron--revert)))))
 
 (defun hermes-cron--stop-auto-refresh ()
   "Cancel this buffer's cron auto-refresh timer."
@@ -618,10 +621,14 @@ The first render only records a baseline so pre-existing failures do not alert."
   (when (and (natnump hermes-cron-auto-refresh-interval)
              (> hermes-cron-auto-refresh-interval 0)
              (not hermes-cron--auto-refresh-timer))
-    (setq hermes-cron--auto-refresh-timer
-          (run-at-time hermes-cron-auto-refresh-interval
-                       hermes-cron-auto-refresh-interval
-                       #'hermes-cron--auto-refresh-tick (current-buffer)))
+    (let ((buffer (current-buffer)) timer)
+      (setq timer
+            (run-at-time hermes-cron-auto-refresh-interval
+                         hermes-cron-auto-refresh-interval
+                         (lambda () (hermes-cron--auto-refresh-tick buffer timer))))
+      (setq hermes-cron--auto-refresh-timer timer))
+    (add-hook 'after-set-visited-file-name-hook
+              #'hermes-cron--stop-auto-refresh nil t)
     (add-hook 'kill-buffer-hook #'hermes-cron--stop-auto-refresh nil t)
     (add-hook 'change-major-mode-hook
               #'hermes-cron--stop-auto-refresh nil t)))

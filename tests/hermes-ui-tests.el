@@ -14,9 +14,10 @@
 
 (ert-deftest hermes-close-stops-local-services-and-kills-hermes-buffers ()
   "Closing Hermes tears down local state without killing unrelated buffers."
-  (let ((chat (generate-new-buffer " *hermes-close-chat*"))
-        (dashboard (generate-new-buffer " *hermes-close-dashboard*"))
-        (kanban (generate-new-buffer " *hermes-close-kanban*"))
+  (let ((chat (hermes-buffer--get " *hermes-close-chat*" #'hermes-chat-mode))
+        (dashboard (let ((hermes-dashboard-stale-refresh-interval nil))
+                     (hermes-buffer--get " *hermes-close-dashboard*" #'hermes-dashboard-mode)))
+        (kanban (hermes-buffer--get " *hermes-close-kanban*" #'hermes-kanban-mode))
         (unrelated (generate-new-buffer " *hermes-close-unrelated*"))
         (hermes-dashboard-stale-refresh-interval nil)
         tail
@@ -24,16 +25,12 @@
     (unwind-protect
         (progn
           (with-current-buffer chat
-            (hermes-chat-mode)
             (add-hook 'hermes-chat-cleanup-functions
                       (lambda () (push 'chat-cleanup calls)) nil t))
-          (with-current-buffer dashboard
-            (hermes-dashboard-mode))
           (cl-letf (((symbol-function 'hermes-kanban--events-connect) #'ignore)
                     ((symbol-function 'websocket-close)
                      (lambda (socket) (push socket calls))))
             (with-current-buffer kanban
-              (hermes-kanban-mode)
               (setq hermes-kanban--slug "tests"
                     hermes-kanban--latest-event-id 7)
               (hermes-kanban-toggle-live)
@@ -71,12 +68,10 @@
 
 (ert-deftest hermes-close-cancel-preserves-local-state ()
   "Declining the close confirmation leaves buffers and transports alone."
-  (let ((chat (generate-new-buffer " *hermes-close-cancel*"))
+  (let ((chat (hermes-buffer--get " *hermes-close-cancel*" #'hermes-chat-mode))
         stopped)
     (unwind-protect
         (progn
-          (with-current-buffer chat
-            (hermes-chat-mode))
           (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
                     ((symbol-function 'hermes-dashboard-transport-stop-all)
                      (lambda (&rest _) (setq stopped t))))
@@ -88,7 +83,8 @@
 
 (ert-deftest hermes-close-stops-pending-browser-client ()
   "Closing Hermes stops a browser client whose request has not settled."
-  (let* ((buffer (generate-new-buffer " *hermes-close-browser*"))
+  (let* ((buffer (let ((hermes-dashboard-stale-refresh-interval nil))
+                   (hermes-buffer--get " *hermes-close-browser*" #'hermes-dashboard-mode)))
          (client (make-hermes-dashboard-transport-client
                   :process 'browser-process :websocket 'browser-socket))
          (pending (hermes--promise-make))
@@ -107,7 +103,6 @@
                   ((symbol-function 'hermes-capabilities-stop) #'ignore)
                   ((symbol-function 'hermes-exec-stop) #'ignore))
           (with-current-buffer buffer
-            (hermes-dashboard-mode)
             (hermes-browser--run-on-client (lambda (_client) pending)))
           (should (= (hash-table-count hermes-dashboard-transport--clients) 1))
           (hermes-close)
@@ -396,12 +391,15 @@
             ((symbol-function 'hermes-dashboard-transport-setup-runtime-check)
              (lambda (_client &rest args)
                (funcall (plist-get args :resolve) '((error . "no provider"))))))
-    (with-temp-buffer
-      (hermes-dashboard-mode)
-      (hermes-dashboard--check-auth)
-      (should hermes-dashboard--needs-onboarding)
-      (should (cl-find "action:onboarding" (hermes-dashboard--action-nodes)
-                       :key (lambda (n) (plist-get n :id)) :test #'equal)))))
+    (let ((buffer (hermes-buffer--get hermes-dashboard-buffer-name
+                                      #'hermes-dashboard-mode)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (hermes-dashboard--check-auth)
+            (should hermes-dashboard--needs-onboarding)
+            (should (cl-find "action:onboarding" (hermes-dashboard--action-nodes)
+                             :key (lambda (n) (plist-get n :id)) :test #'equal)))
+        (kill-buffer buffer)))))
 
 (ert-deftest hermes-dashboard-check-auth-skips-card-when-authed ()
   "An `ok' t runtime check clears a stale onboarding card."
@@ -413,11 +411,14 @@
              (lambda (_client &rest args)
                (funcall (plist-get args :resolve)
                         '((ok . t) (provider . "openai"))))))
-    (with-temp-buffer
-      (hermes-dashboard-mode)
-      (setq hermes-dashboard--needs-onboarding t)
-      (hermes-dashboard--check-auth)
-      (should-not hermes-dashboard--needs-onboarding))))
+    (let ((buffer (hermes-buffer--get hermes-dashboard-buffer-name
+                                      #'hermes-dashboard-mode)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (setq hermes-dashboard--needs-onboarding t)
+            (hermes-dashboard--check-auth)
+            (should-not hermes-dashboard--needs-onboarding))
+        (kill-buffer buffer)))))
 
 (ert-deftest hermes-dashboard-check-auth-keeps-newest-result ()
   "An older credential check cannot replace a newer result."
@@ -435,13 +436,16 @@
                  (setq requests (1+ requests))
                  (if (= requests 1) first second)))
               ((symbol-function 'hermes-dashboard-refresh) #'ignore))
-      (with-temp-buffer
-        (hermes-dashboard-mode)
-        (hermes-dashboard--check-auth)
-        (hermes-dashboard--check-auth)
-        (hermes--promise-resolve second '((ok . t)))
-        (hermes--promise-resolve first '((ok . :false)))
-        (should-not hermes-dashboard--needs-onboarding)))))
+      (let ((buffer (hermes-buffer--get hermes-dashboard-buffer-name
+                                        #'hermes-dashboard-mode)))
+        (unwind-protect
+            (with-current-buffer buffer
+              (hermes-dashboard--check-auth)
+              (hermes-dashboard--check-auth)
+              (hermes--promise-resolve second '((ok . t)))
+              (hermes--promise-resolve first '((ok . :false)))
+              (should-not hermes-dashboard--needs-onboarding))
+          (kill-buffer buffer))))))
 
 (ert-deftest hermes-dashboard-warm-profile-cache-skips-ambiguous-instance ()
   "The aggregate dashboard does not choose an instance for passive warming."
@@ -492,10 +496,9 @@
                  (setq requests (1+ requests))
                  (if (= requests 1) first second)))
               ((symbol-function 'hermes-dashboard-refresh) #'ignore))
-      (let ((buffer (get-buffer-create hermes-dashboard-buffer-name)))
+      (let ((buffer (hermes-buffer--get hermes-dashboard-buffer-name #'hermes-dashboard-mode)))
         (unwind-protect
             (with-current-buffer buffer
-              (hermes-dashboard-mode)
               (setq hermes-dashboard--needs-onboarding t)
               (hermes-dashboard--check-auth t)
               (hermes-dashboard--provider-auth-changed)

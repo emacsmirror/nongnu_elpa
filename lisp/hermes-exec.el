@@ -37,6 +37,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
@@ -537,26 +538,41 @@ fallback."
                "Hermes eval request: \\[hermes-exec-decide] decide, \
 \\[hermes-exec-approve] approve, \\[hermes-exec-deny] deny")))
 
+(defvar-local hermes-exec--approval-id nil
+  "Exact request displayed by this approval buffer.")
+
+(defun hermes-exec--approval-current-p (buffer id)
+  "Return non-nil when BUFFER still owns active approval request ID."
+  (and id (buffer-live-p buffer)
+       (eq id (plist-get hermes-exec--active :id))
+       (eq buffer (plist-get hermes-exec--active :buffer))
+       (with-current-buffer buffer
+         (and (hermes-buffer--owned-p 'hermes-exec-approval-mode)
+              (eq id hermes-exec--approval-id)))))
+
 (defun hermes-exec--approval-buffer (request)
   "Return a read-only buffer showing REQUEST's code and metadata for approval.
 REQUEST is a plist with at least :code; optional keys :risk, :peer,
 :origin-buffer, and :queue-total drive the metadata header.  When called
 interactively the buffer is backed by `hermes-exec-approval-mode'."
-  (let ((buffer (get-buffer-create hermes-exec--approval-buffer-name))
+  (let ((buffer (hermes-buffer--get hermes-exec--approval-buffer-name
+                                    #'hermes-exec-approval-mode t))
         (code (plist-get request :code)))
     (with-current-buffer buffer
+      (setq hermes-exec--approval-id (plist-get request :id))
       (let ((inhibit-read-only t))
         (erase-buffer)
         (hermes-exec--insert-metadata request)
         (insert (hermes-exec--fontify-elisp code))
-        (goto-char (point-min)))
-      (hermes-exec-approval-mode))
+        (goto-char (point-min))))
     buffer))
 
-(defun hermes-exec--close-approval-window ()
-  "Remove the approval buffer's window and kill the buffer."
-  (let ((buffer (get-buffer hermes-exec--approval-buffer-name)))
-    (when buffer
+(defun hermes-exec--close-approval-window (&optional buffer)
+  "Close owned approval BUFFER, defaulting to the active request's buffer."
+  (let ((buffer (or buffer (plist-get hermes-exec--active :buffer))))
+    (when (and buffer
+               (eq buffer (hermes-buffer--find hermes-exec--approval-buffer-name
+                                               'hermes-exec-approval-mode)))
       (let ((window (get-buffer-window buffer)))
         (when window
           (quit-restore-window window)))
@@ -589,21 +605,23 @@ already active."
               '((?t "trust for this session"
                    "trust for this session - ordinary forms run, sensitive ones still prompt"))))))
 
-(defun hermes-exec--prompt-choice ()
-  "Prompt the user to decide on the active approval request.
+(defun hermes-exec--prompt-choice (&optional buffer id)
+  "Prompt for approval BUFFER and request ID, defaulting to the active pair.
 Maps `read-multiple-choice' to `hermes-exec--resolve-active'.  The \"view\"
 choice selects the approval buffer for inspection; the user can press
 \<hermes-exec-approval-mode-map>\[hermes-exec-decide] there to decide later.
 Ignore answers when the displayed request was replaced while waiting."
   (when-let* (((not noninteractive))
-              (id (plist-get hermes-exec--active :id)))
+              (buffer (or buffer (plist-get hermes-exec--active :buffer)))
+              (id (or id (plist-get hermes-exec--active :id)))
+              ((hermes-exec--approval-current-p buffer id)))
     (let (done)
       (while (not done)
         (let ((choice (read-multiple-choice
                        "Hermes eval approval" (hermes-exec--approval-choices))))
           ;; Input waits run sentinels and timers.  Display metadata may change,
           ;; but only the exact queued request can own the answer.
-          (pcase (and (eq id (plist-get hermes-exec--active :id))
+          (pcase (and (hermes-exec--approval-current-p buffer id)
                       (car choice))
             (?a
              (hermes-exec--resolve-active t)
@@ -633,7 +651,9 @@ Ignore answers when the displayed request was replaced while waiting."
 The timer fires after the current event loop iteration, so the HTTP filter
 that enqueued the request completes before the modal prompt blocks Emacs."
   (unless noninteractive
-    (run-with-timer 0 nil #'hermes-exec--prompt-choice)))
+    (run-with-timer 0 nil #'hermes-exec--prompt-choice
+                    (plist-get hermes-exec--active :buffer)
+                    (plist-get hermes-exec--active :id))))
 
 (defun hermes-exec--finish-active ()
   "Close the approval window and clear the active slot."
@@ -651,7 +671,10 @@ that enqueued the request completes before the modal prompt blocks Emacs."
     (setq hermes-exec--active
           (plist-put hermes-exec--active :queue-total
                      (hermes-exec--queue-total)))
-    (hermes-exec--approval-buffer hermes-exec--active)))
+    (when (eq (plist-get hermes-exec--active :buffer)
+              (hermes-buffer--find hermes-exec--approval-buffer-name
+                                   'hermes-exec-approval-mode))
+      (hermes-exec--approval-buffer hermes-exec--active))))
 
 (defun hermes-exec--show-next ()
   "Display the next queued request when none is currently shown.
@@ -718,7 +741,7 @@ request afterwards."
            (origin-buffer (plist-get active :origin-buffer))
            (origin-window (plist-get active :origin-window)))
       (setq hermes-exec--active nil)
-      (hermes-exec--close-approval-window)
+      (hermes-exec--close-approval-window (plist-get active :buffer))
       (let ((result (if approve
                         (let ((hermes-exec--connection proc))
                           (hermes-exec--eval-with-origin code origin-buffer
@@ -742,17 +765,20 @@ request afterwards."
 (defun hermes-exec-approve ()
   "Approve the eval request shown in the current approval buffer."
   (interactive)
-  (hermes-exec--resolve-active t))
+  (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
+    (hermes-exec--resolve-active t)))
 
 (defun hermes-exec-deny ()
   "Decline the eval request shown in the current approval buffer."
   (interactive)
-  (hermes-exec--resolve-active nil))
+  (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
+    (hermes-exec--resolve-active nil)))
 
 (defun hermes-exec-decide ()
   "Read an Emacs-native multiple-choice decision for the active eval request."
   (interactive)
-  (hermes-exec--prompt-choice))
+  (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
+    (hermes-exec--prompt-choice (current-buffer) hermes-exec--approval-id)))
 
 (defun hermes-exec--eval-outcome (code)
   "Return the eval result plist for CODE, or the symbol `defer'.

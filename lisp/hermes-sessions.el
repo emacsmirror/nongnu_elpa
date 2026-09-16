@@ -27,6 +27,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'subr-x)
 (require 'tabulated-list)
@@ -731,7 +732,8 @@ COUNT, when non-nil, is the total history count reported by the gateway."
 COUNT, when non-nil, is the total history count reported by the gateway.
 DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that.
 INSTANCE is inherited from the session browser when provided."
-  (let ((buffer (get-buffer-create (hermes-sessions--detail-buffer-name session))))
+  (let ((buffer (hermes-buffer--get (hermes-sessions--detail-buffer-name session)
+                                    #'hermes-session-detail-mode)))
     (with-current-buffer buffer
       (hermes-sessions--render-detail-contents session messages count)
       (when instance (hermes-browser--own-instance instance)))
@@ -861,10 +863,11 @@ a default-profile live session, update its durable record without attaching it."
     (tabulated-list-print t)))
 
 (defun hermes-sessions--detail-buffer-for-id (identity)
-  "Return the detail buffer for session IDENTITY, or nil."
-  (get-buffer
+  "Return the owned detail buffer for session IDENTITY, or nil."
+  (hermes-buffer--find
    (hermes-sessions--detail-buffer-name
-    `((id . ,(cdr identity)) (profile . ,(car identity))))))
+    `((id . ,(cdr identity)) (profile . ,(car identity))))
+   'hermes-session-detail-mode))
 
 (defun hermes-sessions--owned-buffer-p (buffer instance mode)
   "Return non-nil when BUFFER is live in MODE and still owns INSTANCE."
@@ -873,7 +876,7 @@ a default-profile live session, update its durable record without attaching it."
 
 (defun hermes-sessions--after-rename (_buffer instance identity title)
   "Update session buffers owned by INSTANCE after renaming IDENTITY to TITLE."
-  (when-let* ((browser (get-buffer "*Hermes Sessions*")))
+  (when-let* ((browser (hermes-buffer--find "*Hermes Sessions*" 'hermes-sessions-mode)))
     (with-current-buffer browser
       (when (hermes-sessions--owned-buffer-p
              browser instance 'hermes-sessions-mode)
@@ -926,7 +929,7 @@ a default-profile live session, update its durable record without attaching it."
 
 (defun hermes-sessions--after-delete (_buffer instance identity)
   "Update session buffers owned by INSTANCE after deleting IDENTITY."
-  (when-let* ((browser (get-buffer "*Hermes Sessions*")))
+  (when-let* ((browser (hermes-buffer--find "*Hermes Sessions*" 'hermes-sessions-mode)))
     (with-current-buffer browser
       (when (hermes-sessions--owned-buffer-p
              browser instance 'hermes-sessions-mode)

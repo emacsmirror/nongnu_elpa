@@ -14,6 +14,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'ewoc)
 (require 'button)
@@ -133,7 +134,7 @@ An idle restored list is settled even if its tasks remain unfinished."
   "Return non-nil if PANEL is still the task companion belonging to OWNER."
   (and (buffer-live-p panel)
        (with-current-buffer panel
-         (and (derived-mode-p 'hermes-chat-todos-mode)
+         (and (hermes-buffer--owned-p 'hermes-chat-todos-mode)
               (eq owner hermes-chat-todos--owner)))))
 
 (defun hermes-chat-todos--clear ()
@@ -254,6 +255,7 @@ or interpreting old transcript text.  Settled lists retain unfinished tasks."
       (setq hermes-chat--todos-panel panel)
       (with-current-buffer panel
         (hermes-chat-todos-mode)
+        (hermes-buffer--claim 'hermes-chat-todos-mode)
         (setq hermes-chat-todos--owner owner)
         (let ((inhibit-read-only t))
           (insert-text-button "Return to chat" 'action #'hermes-chat-todos-return-to-chat

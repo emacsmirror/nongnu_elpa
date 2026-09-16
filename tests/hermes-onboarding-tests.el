@@ -771,7 +771,7 @@
           (second (hermes--promise-make))
           (requests 0)
           (changed 0)
-          opened messages successor-result successor-text
+          opened messages successor-result successor-text retired successor
           (provider '((id . "nous") (name . "Nous"))))
       (cl-letf (((symbol-function 'hermes-browser--with-client)
                  (lambda (fn) (funcall fn 'client #'ignore)))
@@ -781,7 +781,7 @@
                    (if (= requests 1) first second)))
                 ((symbol-function 'hermes-onboarding--auth-changed)
                  (lambda () (setq changed (1+ changed))))
-                ((symbol-function 'pop-to-buffer) #'ignore)
+                ((symbol-function 'pop-to-buffer) (lambda (buffer) (setq successor buffer)))
                 ((symbol-function 'browse-url) (lambda (url) (setq opened url)))
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
@@ -792,11 +792,14 @@
                 (hermes-provider-accounts-mode)
                 (setq hermes-onboarding--provider-account-profile "profile-b")
                 (hermes-onboarding--oauth-start-provider provider))
-              (with-current-buffer "*Hermes OAuth*"
+              (setq retired successor)
+              (with-current-buffer retired
                 (fundamental-mode)
                 (hermes-onboarding-oauth-mode)
                 (setq hermes-onboarding-oauth--profile "profile-b")
-                (hermes-onboarding--oauth-start-provider provider)
+                (hermes-onboarding--oauth-start-provider provider))
+              (should-not (eq retired successor))
+              (with-current-buffer successor
                 (setq successor-result
                       (copy-tree hermes-onboarding-oauth--result)
                       successor-text (buffer-string)))
@@ -806,21 +809,21 @@
                    first '((status . "approved")
                            (auth_url . "https://example.org/stale")))
                 (hermes--promise-reject first "stale OAuth failure"))
-              (with-current-buffer "*Hermes OAuth*"
+              (with-current-buffer successor
                 (should (equal hermes-onboarding-oauth--result successor-result))
                 (should (equal (buffer-string) successor-text)))
               (should (= changed 0))
               (should-not opened)
               (should-not messages)
               (hermes--promise-resolve second '((status . "approved")))
-              (with-current-buffer "*Hermes OAuth*"
+              (with-current-buffer successor
                 (should (equal
                          (hermes-transport--display-field
                           hermes-onboarding-oauth--result 'status)
                          "approved")))
               (should (= changed 1)))
-          (when (get-buffer "*Hermes OAuth*")
-            (kill-buffer "*Hermes OAuth*")))))))
+          (dolist (buffer (list retired successor))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
 (ert-deftest hermes-onboarding-oauth-status-omits-secret-fields ()
   "OAuth status text renders useful state without arbitrary secret fields."

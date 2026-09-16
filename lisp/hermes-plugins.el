@@ -26,6 +26,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
@@ -395,6 +396,7 @@ backend-declared settings and environment entries are editable here."
         (buffer (generate-new-buffer "*Hermes Agent Plugins*")))
     (with-current-buffer buffer
       (hermes-plugins-mode)
+      (hermes-buffer--claim 'hermes-plugins-mode)
       (hermes-browser--own-instance instance)
       (setq-local header-line-format '(:eval (hermes-plugins--header))))
     (pop-to-buffer buffer)

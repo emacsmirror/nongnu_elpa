@@ -25,6 +25,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'hermes-browser)
 (require 'keymap-popup)
 (require 'url-util)
@@ -376,6 +377,7 @@ PROFILE nil means the dashboard process's default profile."
         (buffer (generate-new-buffer (format "*Hermes Tool Setup: %s*" name))))
     (with-current-buffer buffer
       (hermes-tool-setup-mode)
+      (hermes-buffer--claim 'hermes-tool-setup-mode)
       (hermes-browser--own-instance instance)
       (setq hermes-tool-setup--name name hermes-tool-setup--profile profile)
       (hermes-tool-setup-refresh))

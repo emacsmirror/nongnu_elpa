@@ -27,6 +27,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'hermes-browser)
 (require 'hermes-dashboard-rpc)
 (require 'hermes-sessions)
@@ -319,6 +320,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
         (target (generate-new-buffer "*Hermes Project*")))
     (with-current-buffer target
       (hermes-project-detail-mode)
+      (hermes-buffer--claim 'hermes-project-detail-mode)
       (hermes-browser--own-instance instance)
       (setq hermes-projects--profile profile
             hermes-projects--detail-id (hermes-projects--field project 'id)
@@ -591,6 +593,7 @@ read back projects.list after any write outcome, without retrying the write."
         (target (generate-new-buffer "*Hermes Project Sessions*")))
     (with-current-buffer target
       (hermes-project-sessions-mode)
+      (hermes-buffer--claim 'hermes-project-sessions-mode)
       (hermes-browser--own-instance instance)
       (setq hermes-projects--profile profile
             hermes-project-sessions--project-id (hermes-projects--field project 'id)))

@@ -184,26 +184,28 @@
 (ert-deftest hermes-kanban-window-size-change-recomputes-format ()
   "Kanban tabulated-list modes recompute widths when their window resizes."
   (dolist (mode '(hermes-kanban-boards-mode hermes-kanban-mode))
-    (with-temp-buffer
-      (funcall mode)
-      (let (printed)
-        (cl-letf (((symbol-function 'window-body-width)
-                   (lambda (_window &optional _pixelwise) 120))
-                  ((symbol-function 'tabulated-list-print)
-                   (lambda (&rest _) (setq printed t))))
-          (setq tabulated-list-format
-                (if (derived-mode-p 'hermes-kanban-boards-mode)
-                    (hermes-kanban--boards-tabulated-list-format 50)
-                  (hermes-kanban--tasks-tabulated-list-format 50)))
-          (hermes-kanban--window-size-change 'fake-window)
-          (should printed)
-          (let ((total (hermes-test--tabulated-list-format-total-width
-                        tabulated-list-format)))
-            (if (derived-mode-p 'hermes-kanban-boards-mode)
-                (should (= total 120))
-              (should (<= total 120))
-              (should (<= (cadr (aref tabulated-list-format 3))
-                          hermes-kanban--task-title-column-max-width)))))))))
+    (let ((buffer (hermes-buffer--get " *Hermes resize test*" mode)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (let (printed)
+              (cl-letf (((symbol-function 'window-body-width)
+                         (lambda (_window &optional _pixelwise) 120))
+                        ((symbol-function 'tabulated-list-print)
+                         (lambda (&rest _) (setq printed t))))
+                (setq tabulated-list-format
+                      (if (derived-mode-p 'hermes-kanban-boards-mode)
+                          (hermes-kanban--boards-tabulated-list-format 50)
+                        (hermes-kanban--tasks-tabulated-list-format 50)))
+                (hermes-kanban--window-size-change 'fake-window)
+                (should printed)
+                (let ((total (hermes-test--tabulated-list-format-total-width
+                              tabulated-list-format)))
+                  (if (derived-mode-p 'hermes-kanban-boards-mode)
+                      (should (= total 120))
+                    (should (<= total 120))
+                    (should (<= (cadr (aref tabulated-list-format 3))
+                                hermes-kanban--task-title-column-max-width)))))))
+        (kill-buffer buffer)))))
 
 (ert-deftest hermes-kanban-board-rows-from-boards ()
   "Board rows map name/total/per-status counts and mark the current board."
@@ -717,8 +719,8 @@
                  (setq connected (hermes-kanban--events-tail-slug tail)))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Kanban*")
-              (hermes-kanban-mode)
+            (with-current-buffer
+              (hermes-buffer--get "*Hermes Kanban*" #'hermes-kanban-mode)
               (setq hermes-kanban--slug "a"
                     hermes-kanban--events-tail
                     (hermes-kanban--events-tail-create
@@ -864,8 +866,8 @@
                  (if (string-suffix-p "/a" path) a b))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
-              (hermes-kanban-task-mode)
+            (with-current-buffer
+              (hermes-buffer--get "*Hermes Kanban Task*" #'hermes-kanban-task-mode)
               (setq hermes-kanban-task--task-id "a"
                     hermes-kanban-task--board-slug "board")
               (hermes-kanban--task-revert)
@@ -891,8 +893,8 @@
                (lambda (id _board) (if (equal id "a") a b))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
-              (hermes-kanban-log-mode)
+            (with-current-buffer
+              (hermes-buffer--get "*Hermes Kanban Log*" #'hermes-kanban-log-mode)
               (setq hermes-kanban-log--task-id "a"
                     hermes-kanban-log--board-slug "board")
               (hermes-kanban--log-revert)
@@ -2028,8 +2030,8 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
                       (assignees)))))))
               ((symbol-function 'message) #'ignore))
       (unwind-protect
-          (with-current-buffer (get-buffer-create "*Hermes Kanban*")
-            (hermes-kanban-mode)
+          (with-current-buffer
+            (hermes-buffer--get "*Hermes Kanban*" #'hermes-kanban-mode)
             (setq hermes-kanban--slug "old"
                   hermes-kanban--name "Old")
             (hermes-kanban-create-task)

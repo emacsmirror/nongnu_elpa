@@ -30,6 +30,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-chat-format)
@@ -160,14 +161,14 @@ read-only so `diff-mode' installs its navigation keymap (n/p hunks, q quits)
 instead of `view-mode' shadowing those keys.  Each opening uses the source
 buffer's `default-directory' for native file navigation."
   (let ((directory default-directory)
-        (buffer (get-buffer-create (or buffer-name "*Hermes Diff*"))))
+        (buffer (delay-mode-hooks
+                  (hermes-buffer--get (or buffer-name "*Hermes Diff*") #'diff-mode t))))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert diff)
         (unless (string-suffix-p "\n" diff) (insert "\n")))
       (goto-char (point-min))
-      (delay-mode-hooks (diff-mode))
       (setq default-directory directory)
       (font-lock-mode 1)
       (font-lock-ensure (point-min) (point-max))
@@ -223,9 +224,9 @@ gateway's pre-rendered `a/path -> b/path' header."
 The buffer renders CONTENT as markdown with diffs swapped for View Diff links,
 mirroring `hermes-chat--show-diff'.  `hermes-chat-background-mode' keeps the
 rendered buffer read-only and binds `q' to `quit-window'."
-  (let ((buffer (get-buffer-create (format "*hermes-bg #%d*" number))))
+  (let ((buffer (hermes-buffer--get (format "*hermes-bg #%d*" number)
+                                    #'hermes-chat-background-mode t)))
     (with-current-buffer buffer
-      (hermes-chat-background-mode)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)

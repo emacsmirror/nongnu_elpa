@@ -29,6 +29,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'tabulated-list)
 (require 'keymap-popup)
@@ -466,6 +467,7 @@ an already dispatched mutation may still complete remotely."
 (defun hermes-browser--request-current-p (buffer generation)
   "Return non-nil when BUFFER still owns request GENERATION."
   (and (buffer-live-p buffer)
+       (not (with-current-buffer buffer (hermes-buffer--retired-p)))
        (eql generation
             (buffer-local-value 'hermes-browser--request-generation buffer))))
 
@@ -697,7 +699,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
                   (hermes-browser--dynamic-format width ',dynamic))
                 (defun ,size-change (window)
                   ,(format "Re-fit %s columns when WINDOW changes size." title)
-                  (when (derived-mode-p ',mode)
+                  (when (hermes-buffer--owned-p ',mode)
                     (let ((old-format tabulated-list-format))
                       (setq tabulated-list-format
                             (,format-fn (window-body-width window)))
@@ -754,7 +756,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
          (let ((instance (hermes-instance-resolve))
-               (target (get-buffer-create ,buffer)))
+               (target (hermes-buffer--get ,buffer #',mode)))
            (with-current-buffer target
              (unless (derived-mode-p ',mode)
                (,mode))

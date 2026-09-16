@@ -30,6 +30,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'browse-url)
 (require 'cl-lib)
 (require 'seq)
@@ -449,12 +450,13 @@ with the dashboard's own message."
   "Show PROVIDER and OAuth RESULT for PROFILE on INSTANCE.
 Return the new request context."
   (let* ((instance (or instance (hermes-instance-resolve)))
-         (buffer (get-buffer-create
-                  (hermes-onboarding--oauth-buffer-name instance)))
+         (buffer (hermes-buffer--get
+                  (hermes-onboarding--oauth-buffer-name instance)
+                  #'hermes-onboarding-oauth-mode))
          context)
     (with-current-buffer buffer
-      (unless (derived-mode-p 'hermes-onboarding-oauth-mode)
-        (hermes-onboarding-oauth-mode))
+      (add-hook 'after-set-visited-file-name-hook
+                #'hermes-onboarding--oauth-context nil t)
       (hermes-browser--own-instance instance)
       (setq hermes-onboarding-oauth--provider
             (hermes-transport--display-field provider 'id)
@@ -747,7 +749,8 @@ Return the new request context."
   (interactive)
   (let ((instance (hermes-instance-resolve))
         (profile (hermes-onboarding--current-profile))
-        (buffer (get-buffer-create "*Hermes Provider Accounts*")))
+        (buffer (hermes-buffer--get "*Hermes Provider Accounts*"
+                                    #'hermes-provider-accounts-mode)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-provider-accounts-mode)
         (hermes-provider-accounts-mode))

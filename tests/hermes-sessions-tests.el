@@ -7,9 +7,8 @@
 
 (defun hermes-sessions-test--render (sessions)
   "Render SESSIONS through the browser's `session.list' result shape."
-  (with-current-buffer (get-buffer-create "*Hermes Sessions*")
-    (unless (derived-mode-p 'hermes-sessions-mode)
-      (hermes-sessions-mode))
+  (with-current-buffer
+      (hermes-buffer--get "*Hermes Sessions*" #'hermes-sessions-mode)
     (hermes-sessions--render `((sessions . ,sessions)))))
 
 (ert-deftest hermes-sessions-rows-from-session-list ()
