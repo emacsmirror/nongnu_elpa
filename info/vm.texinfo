@@ -2824,6 +2824,14 @@ for a type VM knows and the right number of fields, neither of which the
 parsers mind: a misspelt @code{imapssl} is accepted where it is written and
 fails much later, saying something about the server.
 
+@vindex vm-mail-header-from
+@vindex mail-default-headers
+It checks @code{vm-mail-header-from} as well, whose value VM writes into a
+composition verbatim after @samp{From: }.  A value that reads as a header
+line, @samp{IMAP-FCC: Sent} for instance, makes every message go out with a
+@code{From} header nobody can reply to; @code{mail-default-headers} is what
+adds a header to every composition.
+
 @vindex vm-suggest-checking-configuration
 It never runs by itself.  What VM does unasked is say once per session, in
 one line, that the command would have something to report, and only where

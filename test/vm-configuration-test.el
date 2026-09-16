@@ -29,7 +29,8 @@ Each test then breaks one thing, so a report can only come from that."
          (vm-folder-directory temporary-file-directory)
          (vm-spool-files (list "/var/mail/becky"))
          (vm-imap-account-alist nil)
-         (vm-pop-folder-alist nil))
+         (vm-pop-folder-alist nil)
+         (vm-mail-header-from nil))
      ,@body))
 
 (ert-deftest vm-configuration-test-a-working-setup-is-quiet ()
@@ -71,6 +72,38 @@ replied to and nothing says so."
   (should (vm-address-looks-machine-made-p "becky@laptop"))
   ;; a real address is left alone
   (should-not (vm-address-looks-machine-made-p "becky@example.com")))
+
+(ert-deftest vm-configuration-test-a-header-line-in-the-from-header-is-reported ()
+  "REGRESSION: `vm-mail-header-from\' holding a header line is reported.
+A reader who wanted a header on every composition set this rather than
+`mail-default-headers\', and every message went out saying
+`From: IMAP-FCC: Sent\' (emacs-vm/vm#832).  VM inserts the value verbatim
+and said nothing about it."
+  (vm-configuration-test--with-a-working-setup
+    (let ((vm-mail-header-from "IMAP-FCC: Sent"))
+      (let ((problems (vm-configuration-problems)))
+        (should (= 1 (length problems)))
+        (should (string-match-p "vm-mail-header-from" (car problems)))
+        (should (string-match-p "IMAP-FCC: Sent" (car problems)))
+        ;; and what to set instead
+        (should (string-match-p "mail-default-headers" (car problems)))))))
+
+(ert-deftest vm-configuration-test-a-from-header-with-no-domain-is-reported ()
+  "A `From\' header naming no domain is reported: a reply has nowhere to go."
+  (vm-configuration-test--with-a-working-setup
+    (let ((vm-mail-header-from "John Stoffel"))
+      (let ((problems (vm-configuration-problems)))
+        (should (= 1 (length problems)))
+        (should (string-match-p "names no domain" (car problems)))))))
+
+(ert-deftest vm-configuration-test-an-address-in-the-from-header-is-quiet ()
+  "An address is what the variable is for, in either of its two forms."
+  (vm-configuration-test--with-a-working-setup
+    (dolist (from '("\"John Stoffel\" <john@example.com>"
+                    "John Stoffel <john@example.com>"
+                    "john@example.com"))
+      (let ((vm-mail-header-from from))
+        (should-not (vm-configuration-problems))))))
 
 (ert-deftest vm-configuration-test-an-unset-sender-is-reported ()
   "`sendmail-query-once' means Emacs has not been told how to send.
