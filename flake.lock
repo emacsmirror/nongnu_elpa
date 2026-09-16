@@ -16,6 +16,23 @@
         "url": "https://git.thanosapollo.org/emacs-keymap-popup"
       }
     },
+    "keymap-popup-minimum": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783912247,
+        "narHash": "sha256-kp3v0FHHVxsAYI+b30uJ8AInenYS1yc6/qKeKY+Az50=",
+        "ref": "refs/tags/0.4.0",
+        "rev": "d0b50926a186d2de72aa12c6d6b06e384731865a",
+        "revCount": 135,
+        "type": "git",
+        "url": "https://git.thanosapollo.org/emacs-keymap-popup"
+      },
+      "original": {
+        "ref": "refs/tags/0.4.0",
+        "type": "git",
+        "url": "https://git.thanosapollo.org/emacs-keymap-popup"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1781074563,
@@ -35,6 +52,7 @@
     "root": {
       "inputs": {
         "keymap-popup": "keymap-popup",
+        "keymap-popup-minimum": "keymap-popup-minimum",
         "nixpkgs": "nixpkgs"
       }
     }

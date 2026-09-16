@@ -232,20 +232,33 @@
         (hermes--promise-resolve put '((ok . t)))))))
 
 (ert-deftest hermes-messaging-client-acquisition-failure-clears-mutation-lock ()
-  "Synchronous client acquisition failures cannot strand the mutation lock."
-  (cl-letf (((symbol-function 'hermes-browser--with-client)
-             (lambda (_fn) (error "start failed"))))
-    (with-temp-buffer
-      (hermes-messaging-mode)
-      (setq hermes-messaging-profile "work")
-      (hermes-messaging--render
-       `((platforms . (,(hermes-messaging-test--platform nil))))
-       (current-buffer))
-      (goto-char (point-min))
-      (should-error (hermes-messaging-toggle) :type 'error)
-      (should-not hermes-messaging--mutation-in-flight)
-      (let ((error (should-error (hermes-messaging--revert) :type 'error)))
-        (should (equal (error-message-string error) "start failed"))))))
+  "Acquisition errors and quits propagate unchanged and permit mutation retry."
+  (dolist (original '((error "start failed") (quit "start cancelled")))
+    (let (messages)
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (_fn) (signal (car original) (cdr original))))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (push (apply #'format format-string args) messages))))
+        (with-temp-buffer
+          (hermes-messaging-mode)
+          (setq hermes-messaging-profile "work")
+          (dotimes (_ 2)
+            ;; Failure clears stale catalogue data; retry with a fresh read.
+            (hermes-messaging--render
+             `((platforms . (,(hermes-messaging-test--platform nil))))
+             (current-buffer))
+            (goto-char (point-min))
+            (should (equal (condition-case err (hermes-messaging-toggle)
+                             ((error quit) err))
+                           original))
+            (should-not hermes-messaging--mutation-in-flight))
+          (should (equal (condition-case err (hermes-messaging--revert)
+                           ((error quit) err))
+                         original))
+          (should (equal messages
+                         (make-list 3 (format "Hermes: %s"
+                                              (error-message-string original))))))))))
 
 (ert-deftest hermes-messaging-stale-mutation-skips-refresh-and-cleans-up ()
   "A superseded mutation issues no GET and releases its client and lock once."
@@ -312,12 +325,12 @@
     (should-not read-string-called)
     (should (member
              '("PUT" "/api/messaging/platforms/telegram"
-               ((env ("TELEGRAM_BOT_TOKEN" . "top-secret-value")))
+               ((env (TELEGRAM_BOT_TOKEN . "top-secret-value")))
                ((profile . "work")) ("top-secret-value"))
              requests))
     (should (member
              '("PUT" "/api/messaging/platforms/telegram"
-               ((clear_env "TELEGRAM_BOT_TOKEN"))
+               ((clear_env . ["TELEGRAM_BOT_TOKEN"]))
                ((profile . "work")) nil)
              requests))))
 
@@ -453,6 +466,74 @@
         (hermes-messaging-set-env)))
     (should (equal messages '("Hermes: failed: <redacted>")))
     (should-not (string-match-p "abc123" (car messages)))))
+
+(ert-deftest hermes-messaging-prompt-owner-keeps-secret-destination ()
+  "Key and password prompts retain the exact view, instance and profile."
+  (dolist (edge '(request wire))
+    (dolist (prompt '(key password clear))
+    (dolist (boundary '(current reopen refresh retarget profile mode kill))
+      (let* ((profile "worker")
+             (buffer (get-buffer-create (hermes-messaging--buffer-name profile)))
+             (instance '("a" . "https://a.invalid"))
+             (secret "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
+             (catalog '((platforms . (((id . "telegram") (name . "Telegram")
+                                      (env_vars . (((key . "TELEGRAM_BOT_TOKEN")
+                                                    (is_password . t)))))))))
+             requests
+             (http-json-request (symbol-function 'hermes-dashboard-transport--http-json-request-async))
+             (hermes-dashboard-transport-http-request-async-function
+              (lambda (url &rest args)
+                (push (list url (plist-get args :method) (plist-get args :data)) requests)
+                (hermes--promise-resolved (list :status 200 :body catalog)))))
+        (cl-labels
+            ((retire ()
+               (pcase boundary
+                 ('reopen
+                  (hermes-list-messaging-platforms profile '("b" . "https://b.invalid")))
+                 ('refresh (hermes-messaging--revert))
+                 ('retarget (hermes-browser--own-instance '("b" . "https://b.invalid")))
+                 ('profile (setq hermes-messaging-profile "other"))
+                 ('mode (fundamental-mode))
+                 ('kill (kill-buffer buffer)))))
+          (cl-letf (((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request)
+                       (if (eq edge 'wire) (funcall http-json-request request)
+                         (push (list (plist-get request :url) (plist-get request :method)
+                                     (json-encode (plist-get request :body))) requests)
+                         (hermes--promise-resolved (list :status 200 :body catalog)))))
+                    ((symbol-function 'pop-to-buffer) #'ignore)
+                    ((symbol-function 'hermes-instance-resolve) (lambda () instance))
+                    ((symbol-function 'hermes-browser--existing-client)
+                     (lambda () (make-hermes-dashboard-transport-client
+                                 :base-url (hermes-instance-url hermes-instance)
+                                 :token "synthetic")))
+                    ((symbol-function 'completing-read)
+                     (lambda (&rest _) (when (memq prompt '(key clear)) (retire)) "TELEGRAM_BOT_TOKEN"))
+                    ((symbol-function 'read-passwd)
+                     (lambda (&rest _) (when (eq prompt 'password) (retire)) secret)))
+            (unwind-protect
+                (progn
+                  (with-current-buffer buffer
+                    (hermes-messaging-mode)
+                    (hermes-browser--own-instance instance)
+                    (setq hermes-messaging-profile profile)
+                    (hermes-messaging--render catalog)
+                    (goto-char (point-min))
+                    (if (eq prompt 'clear) (hermes-messaging-clear-env)
+                      (hermes-messaging-set-env)))
+                  (let ((writes (seq-filter (lambda (r) (equal (cadr r) "PUT")) requests)))
+                    (if (eq boundary 'current)
+                        (progn
+                          (should (= (length writes) 1))
+                          (should (equal (caar writes)
+                                         "https://a.invalid/api/messaging/platforms/telegram?profile=worker"))
+                          (let ((body (json-parse-string (caddar writes))))
+                            (if (eq prompt 'clear)
+                                (should (equal (gethash "clear_env" body) ["TELEGRAM_BOT_TOKEN"]))
+                              (should (equal (gethash "TELEGRAM_BOT_TOKEN" (gethash "env" body))
+                                             secret)))))
+                      (should-not writes))))
+              (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
 
 (provide 'hermes-messaging-tests)
 ;;; hermes-messaging-tests.el ends here

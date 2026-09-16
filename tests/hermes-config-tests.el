@@ -89,8 +89,7 @@
               (hermes-config-edit)))
           (should (equal (hermes-config--path-value wire "config.tools")
                          (vconcat items)))
-          (should (equal (hermes-config--path-value wire "config.model")
-                         "unchanged")))))))
+          (should-not (hermes-config--path-value wire "config.model")))))))
 
 (ert-deftest hermes-config-list-coercion-validates-json-array-shape ()
   "Only complete JSON arrays are accepted, without discarding element types."
@@ -144,7 +143,7 @@
                      (caddr case))))))
 
 (ert-deftest hermes-config-edit-uses-field-schema-and-config-rest-contract ()
-  "Config edit derives type from schema and PUTs the full config envelope."
+  "Config edit derives type from schema and PUTs only the edited leaf."
   (let (request)
     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "12"))
               ((symbol-function 'hermes-browser--with-client)
@@ -169,7 +168,7 @@
     (should
      (equal request
             '("PUT" "/api/config"
-              ((config . ((agent . ((max_turns . 12) (verbose . t)))))))))))
+              ((config . ((agent . ((max_turns . 12)))))))))))
 
 (ert-deftest hermes-config-env-actions-use-exact-redacted-rest-contracts ()
   "Env set, reveal, and delete use exact bodies without displaying a secret."
@@ -337,7 +336,7 @@
           (kill-buffer "*Hermes Config*"))))))
 
 (ert-deftest hermes-config-edits-serialize-through-authoritative-refresh ()
-  "A later full-config edit derives from the first edit's refreshed state."
+  "A later field edit requires readback but never replays unrelated fields."
   (let ((first-put (hermes--promise-make))
         (schema '((fields . ((agent.max_turns . ((type . "number")))
                             (model . ((type . "string")))))))
@@ -390,8 +389,8 @@
            (first (cdr (assq 'config (nth 0 bodies))))
            (second (cdr (assq 'config (nth 1 bodies)))))
       (should (= (hermes-config--path-value first "agent.max_turns") 12))
-      (should (equal (hermes-config--path-value first "model") "gpt"))
-      (should (= (hermes-config--path-value second "agent.max_turns") 12))
+      (should-not (hermes-config--path-value first "model"))
+      (should-not (hermes-config--path-value second "agent.max_turns"))
       (should (equal (hermes-config--path-value second "model") "claude")))))
 
 (ert-deftest hermes-config-failed-authoritative-refresh-blocks-next-mutation ()
@@ -555,7 +554,7 @@
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest hermes-config-mutation-rejection-releases-lock ()
-  "A rejected config edit reports once and permits a later edit."
+  "A rejected config edit releases its lock but requires reconciliation."
   (let ((first-put (hermes--promise-make)) requests messages)
     (cl-letf (((symbol-function 'hermes-browser--existing-client)
                (lambda () 'client))
@@ -581,8 +580,8 @@
         (hermes-config-edit)
         (hermes--promise-reject first-put "write failed")
         (should-not hermes-config--mutation-in-flight)
-        (hermes-config-edit)))
-    (should (= (cl-count "PUT" requests :test #'equal) 2))
+        (should-error (hermes-config-edit) :type 'user-error)))
+    (should (= (cl-count "PUT" requests :test #'equal) 1))
     (should (equal messages '("Hermes: write failed")))))
 
 (defun hermes-config-tests--assert-teardown-releases-client (boundary)
@@ -681,7 +680,7 @@
    (t value)))
 
 (ert-deftest hermes-config-lossless-http-edit-wire ()
-  "Both auth paths preserve every untouched JSON type in serialized PUTs."
+  "Both auth paths retain edited JSON types and omit untouched settings."
   (dolist (token '(nil "test-token"))
     (dolist (edit '(("model" "string" "new" "\"new\"")
                     ("enabled" "boolean" nil "false")
@@ -732,9 +731,10 @@
             (should-not hermes-config--mutation-in-flight)
             (should-error (hermes-config-edit) :type 'user-error)))
         ;; Compare independently parsed JSON structurally, ignoring object order.
-        (let* ((expected (json-parse-string text))
+        (let* ((expected (make-hash-table :test #'equal))
                (parts (split-string (car edit) "\\."))
-               (parent (if (cdr parts) (gethash (car parts) expected) expected)))
+               (parent (if (cdr parts) (make-hash-table :test #'equal) expected)))
+          (when (cdr parts) (puthash (car parts) parent expected))
           (puthash (car (last parts)) (json-parse-string (nth 3 edit)) parent)
           (should (equal (hermes-config-test--json-value
                           (gethash "config" (json-parse-string wire)))
@@ -770,6 +770,222 @@
             (should-not accepted)
             (should-error (hermes-config-edit) :type 'user-error)
             (should-not written)))))))
+
+(defun hermes-config-tests--management-start (kind &optional unowned)
+  "Start a public management mutation of KIND, optionally UNOWNED."
+  (pcase kind
+    ('config
+     (hermes-config-mode)
+     (hermes-config--render
+      (current-buffer) '((fields . ((agent.max_turns . ((type . "number"))))))
+      '((agent . ((max_turns . 9) (verbose . t))) (model . "old")) nil)
+     (search-forward "agent.max_turns"))
+    ('env
+     (hermes-config-mode)
+     (let ((inhibit-read-only t))
+       (insert (propertize "KEY" 'hermes-env-key "KEY")))
+     (goto-char (point-min)))
+    ('messaging
+     (hermes-messaging-mode)
+     (setq hermes-messaging-profile "worker")
+     (hermes-messaging--render
+      '((platforms . (((id . "telegram") (name . "Telegram") (enabled . :false)))))
+      (current-buffer))
+     (goto-char (point-min)))
+    ((or 'memory 'reset) (hermes-memory-status-mode)))
+  (unless unowned
+    (hermes-browser--own-instance '("a" . "https://a.invalid")))
+  (pcase kind
+    ('config (hermes-config-edit))
+    ('env (hermes-config-set-env))
+    ('messaging (hermes-messaging-toggle))
+    ('memory (hermes-memory-select-provider "built-in"))
+    ('reset (hermes-memory-reset "user"))))
+
+(ert-deftest hermes-management-auth-and-readback-retirement ()
+  "Real REST writes and reads retain view and transport authority during auth."
+  (dolist (kind '(config env messaging memory reset))
+    (dolist (stage '(write readback))
+      (dolist (boundary '(current mode kill retarget generation transport))
+        (ert-info ((format "%s %s %s" kind stage boundary))
+          (let* ((client (make-hermes-dashboard-transport-client
+                          :base-url "https://a.invalid"))
+                 (auth (hermes--promise-make))
+                 (write (hermes--promise-make))
+                 (buffer (generate-new-buffer " *management*"))
+                 (releases 0) requests
+                 (hermes-dashboard-transport-http-request-async-function
+                  (lambda (url &rest args)
+                    (push (list url (plist-get args :method) (plist-get args :data))
+                          requests)
+                    (if (not (equal (plist-get args :method) "GET")) write
+                      (hermes-config-test--response "{}")))))
+            (cl-letf (((symbol-function 'hermes-browser--with-client)
+                       (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
+                      ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                       (lambda (&rest _) auth))
+                      ((symbol-function 'read-string) (lambda (&rest _) "12"))
+                      ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                      ((symbol-function 'read-passwd) (lambda (&rest _) "synthetic")))
+              (unwind-protect
+                  (progn
+                    (with-current-buffer buffer (hermes-config-tests--management-start kind))
+                    (should-not requests)
+                    (when (eq stage 'readback)
+                      (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
+                      (should (= (length requests) 1))
+                      (setq auth (hermes--promise-make))
+                      (hermes--promise-resolve write '(:status 200 :body ((ok . t)))))
+                    (with-current-buffer buffer
+                      (pcase boundary
+                        ('mode (fundamental-mode))
+                        ('kill (kill-buffer buffer))
+                        ('retarget (hermes-browser--own-instance '("b" . "https://b.invalid")))
+                        ('generation (hermes-browser--next-request-generation))
+                        ('transport (hermes-dashboard-transport-stop client))))
+                    (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
+                    (when (and (eq stage 'write) (eq boundary 'current))
+                      (hermes--promise-resolve write '(:status 200 :body ((ok . t)))))
+                    (if (eq boundary 'current)
+                        (progn
+                          (should (> (length requests) 1))
+                          (should (= (cl-count-if (lambda (r) (not (equal (cadr r) "GET"))) requests) 1))
+                          (dolist (request requests)
+                            (should (string-prefix-p "https://a.invalid/" (car request)))
+                            (when (eq kind 'messaging)
+                              (should (string-match-p "profile=worker" (car request))))))
+                      (should (= (length requests) (if (eq stage 'write) 0 1))))
+                    (should (= releases 1)))
+                (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
+
+(ert-deftest hermes-config-prompt-reopen-discards-old-answer ()
+  "Public reopen during input cannot redirect an edit to another backend."
+  (let ((buffer (get-buffer-create "*Hermes Config*"))
+        (instance '("a" . "https://a.invalid")) requests)
+    (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () (make-hermes-dashboard-transport-client
+                           :base-url (cdr instance) :token "synthetic")))
+              ((symbol-function 'hermes-config--fetch)
+               (lambda (_) (hermes--promise-make)))
+              ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+               (lambda (request) (push request requests) (hermes--promise-make)))
+              ((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (setq instance '("b" . "https://b.invalid"))
+                 (hermes-config)
+                 "12")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (hermes-config-tests--management-start 'config)
+            (should-not requests))
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-config-lost-write-requires-reconciliation ()
+  "A lost reply blocks another edit until readback, then sends only its leaf."
+  (let ((write (hermes--promise-make)) requests
+        (schema '((fields . ((agent.max_turns . ((type . "number")))
+                            (agent.verbose . ((type . "bool"))))))))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () 'client))
+              ((symbol-function 'read-string) (lambda (&rest _) "12"))
+              ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (_method _path &rest args)
+                 (push (plist-get args :body) requests) write))
+              ((symbol-function 'hermes-config--fetch)
+               (lambda (_) (hermes--promise-resolved
+                            (list schema '((agent . ((max_turns . 12) (verbose . t)))) nil)))))
+      (with-temp-buffer
+        (hermes-config-tests--management-start 'config)
+        (hermes--promise-reject write "lost reply")
+        (should-not hermes-config--mutation-in-flight)
+        (should hermes-config--refresh-required)
+        (should-error (hermes-config-edit) :type 'user-error)
+        (hermes-config-refresh)
+        (search-forward "agent.verbose")
+        (setq write (hermes--promise-make))
+        (hermes-config-edit)
+        (should (equal (car requests) '((config . ((agent . ((verbose . :false))))))))))))
+
+(ert-deftest hermes-config-input-retirement-discards-values-and-secrets ()
+  "Value, key, password and confirmation input cannot inherit a new owner."
+  (dolist (prompt '(value key password confirmation))
+    (dolist (boundary '(current refresh retarget mode kill))
+      (let ((buffer (generate-new-buffer " *config input*")) requests
+            (client (make-hermes-dashboard-transport-client
+                     :base-url "https://a.invalid" :token "synthetic")))
+        (cl-labels ((retire ()
+                      (pcase boundary
+                        ('refresh (hermes-config-refresh))
+                        ('retarget (hermes-browser--own-instance '("b" . "https://b.invalid")))
+                        ('mode (fundamental-mode))
+                        ('kill (kill-buffer buffer)))))
+          (cl-letf (((symbol-function 'hermes-browser--with-client)
+                     (lambda (fn) (funcall fn client #'ignore)))
+                    ((symbol-function 'hermes-config--fetch)
+                     (lambda (_) (hermes--promise-resolved '(nil nil nil))))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request) (push request requests)
+                       (hermes--promise-resolved '(:status 200 :body ((ok . t))))))
+                    ((symbol-function 'read-string)
+                     (lambda (&rest _) (when (memq prompt '(value key)) (retire)) "12"))
+                    ((symbol-function 'read-passwd)
+                     (lambda (&rest _) (when (eq prompt 'password) (retire)) "synthetic"))
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (&rest _) (retire) t)))
+            (unwind-protect
+                (progn
+                  (with-current-buffer buffer
+                    (hermes-config-mode)
+                    (hermes-browser--own-instance '("a" . "https://a.invalid"))
+                    (pcase prompt
+                      ('value
+                       (hermes-config--render
+                        buffer '((fields . ((model . ((type . "string"))))))
+                        '((model . "old")) nil)
+                       (search-forward "model")
+                       (hermes-config-edit))
+                      (_
+                       (unless (eq prompt 'key)
+                         (let ((inhibit-read-only t))
+                           (insert (propertize "KEY" 'hermes-env-key "KEY")))
+                         (goto-char (point-min)))
+                       (if (eq prompt 'confirmation) (hermes-config-delete-env)
+                         (hermes-config-set-env)))))
+                  (if (eq boundary 'current)
+                      (should (= (length requests) 1))
+                    (should-not requests)))
+              (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
+
+(ert-deftest hermes-management-real-acquisition-preserves-origin ()
+  "Real acquisition does not replace nil origins or reject equal legacy instances."
+  (dolist (kind '(config env messaging memory reset))
+    (dolist (unowned '(nil t))
+      (let* ((hermes-instances nil)
+            (hermes-dashboard-transport-url "https://a.invalid")
+            (releases 0) requests
+            (hermes-dashboard-transport-http-request-async-function
+             (lambda (url &rest args)
+               (push (list url (plist-get args :method)) requests)
+               (hermes-config-test--response "{}"))))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (should (equal (hermes-instance-url hermes-instance)
+                                    "https://a.invalid"))
+                     (make-hermes-dashboard-transport-client
+                      :base-url hermes-dashboard-transport-url :token "synthetic")))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (_) (cl-incf releases)))
+                  ((symbol-function 'read-string) (lambda (&rest _) "12"))
+                  ((symbol-function 'read-passwd) (lambda (&rest _) "synthetic"))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (with-temp-buffer
+            (hermes-config-tests--management-start kind unowned)
+            (should (> (length requests) 1))
+            (should (= releases 1))
+            (should (equal hermes-instance
+                           (unless unowned '("a" . "https://a.invalid"))))))))))
 
 (provide 'hermes-config-tests)
 ;;; hermes-config-tests.el ends here

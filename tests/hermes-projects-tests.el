@@ -282,7 +282,7 @@
           (hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
       (unwind-protect
           (progn
-            (hermes-list-projects)
+            (should-error (hermes-list-projects) :type 'user-error)
             (should (string-match-p "Failed" hermes-browser--status))
             (should (eq (key-binding (kbd "c")) #'hermes-projects-create))
             (should (eq (key-binding (kbd "P")) #'hermes-projects-profile))

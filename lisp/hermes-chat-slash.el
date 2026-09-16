@@ -149,7 +149,8 @@
     flags))
 
 (defvar-local hermes-chat--command-owner nil
-  "Identity owning the session while a slash command RPC is in flight.")
+  "Identity-bearing plist owning the session during a slash command RPC.
+Its :input-edited slot records composer changes since command admission.")
 
 (defun hermes-chat--command-owner-current-p (owner)
   "Return non-nil when OWNER owns the current command operation."
@@ -163,18 +164,30 @@
   "Clear the exact command owner in SNAPSHOT and return no effects."
   (let ((owner (plist-get snapshot :owner)))
     (when (hermes-chat--command-owner-current-p owner)
-      (setq hermes-chat--command-owner nil)))
+      (hermes-chat--command-stop owner)))
   nil)
+
+(defun hermes-chat--command-input-changing (beg end)
+  "Record a composer edit between BEG and END for the current command."
+  (when-let* ((owner hermes-chat--command-owner)
+              (input (hermes-chat--input-position)))
+    (when (or (>= beg input) (> end input))
+      (setf (plist-get owner :input-edited) t))))
 
 (defun hermes-chat--command-start ()
   "Acquire and return exclusive ownership for a command operation."
   (when hermes-chat--command-owner
     (user-error "A session command is already in progress"))
-  (setq hermes-chat--command-owner (gensym "hermes-command-")))
+  (add-hook 'before-change-functions #'hermes-chat--command-input-changing nil t)
+  (setq hermes-chat--command-owner
+        (list :input-edited (save-restriction
+                             (widen)
+                             (not (string-empty-p (hermes-chat-input-string)))))))
 
 (defun hermes-chat--command-stop (&optional owner)
   "Release command ownership when optional OWNER remains current."
   (when (or (null owner) (hermes-chat--command-owner-current-p owner))
+    (remove-hook 'before-change-functions #'hermes-chat--command-input-changing t)
     (setq hermes-chat--command-owner nil)))
 
 (defun hermes-chat--command-submit-inhibit-reason ()
@@ -257,7 +270,10 @@
   (hermes-chat--command-finish
    context
    (lambda ()
-     (hermes-chat--handle-command-result result arg)
+     (hermes-chat--handle-command-result
+      result arg (let ((owner (plist-get context :owner)))
+                   ;; Pre-reload commands have no composer edit evidence.
+                   (or (not (listp owner)) (plist-get owner :input-edited))))
      (hermes-chat--refresh-state-after-command
       name (plist-put (copy-sequence context) :owner nil)))))
 
@@ -784,17 +800,31 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
 
 (defun hermes-chat--prefill-input (message)
   "Replace the input tail with MESSAGE."
-  (hermes-chat--delete-input-tail)
-  (insert (or message "")))
+  (if (hermes-chat--point-in-input-p)
+      (hermes-chat--replace-input-tail (or message ""))
+    (save-excursion
+      (hermes-chat--replace-input-tail (or message "")))))
 
-(defun hermes-chat--handle-prefill-result (message notice)
-  "Handle command-dispatch prefill MESSAGE with optional NOTICE."
+(defun hermes-chat--handle-prefill-result (message notice &optional input-edited)
+  "Handle prefill MESSAGE and NOTICE without replacing edited input.
+When INPUT-EDITED is non-nil, retain MESSAGE for explicit manual recovery."
   (when (hermes-transport--non-empty-string notice)
     (hermes-chat--insert-local-status notice 'done))
-  (hermes-chat--prefill-input message))
+  (save-restriction
+    (widen)
+    (if (or input-edited (not (string-empty-p (hermes-chat-input-string))))
+        (let ((buffer (generate-new-buffer "*Hermes prefill*")))
+          (with-current-buffer buffer
+            (insert (or message ""))
+            (goto-char (point-min)))
+          (hermes-chat--insert-local-status
+           (format "Composer preserved; prefill in %s for manual copying"
+                   (buffer-name buffer)) 'done)
+          (display-buffer buffer))
+      (hermes-chat--prefill-input message))))
 
-(defun hermes-chat--handle-command-result (result &optional arg)
-  "Render or act on a dashboard command RESULT using optional ARG."
+(defun hermes-chat--handle-command-result (result &optional arg input-edited)
+  "Render dashboard command RESULT using ARG and INPUT-EDITED prefill guard."
   (pcase (hermes-chat--result-type result)
     ("alias"
      (hermes-chat--handle-alias-result
@@ -810,7 +840,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
     ("prefill"
      (hermes-chat--handle-prefill-result
       (hermes-chat--result-string result 'message)
-      (hermes-chat--result-string result 'notice)))
+      (hermes-chat--result-string result 'notice) input-edited))
     (_
      (when-let* ((output (hermes-chat--result-output result)))
        (hermes-chat--insert-local-status output 'done)))))

@@ -187,6 +187,55 @@ Fence success and failure against buffer, instance and profile changes."
       "GET" "/models"
       (lambda (catalog) (setq hermes-tool-setup--model-catalog catalog))))))
 
+(defun hermes-tool-setup--choose-profile (catalog current-p)
+  "Choose an exact name from CATALOG while CURRENT-P retains ownership."
+  (let* ((buffer (current-buffer))
+         (names (delq nil (mapcar
+                          (lambda (row)
+                            (hermes-transport--non-empty-string
+                             (hermes-transport--get row 'name)))
+                          (hermes-transport--get catalog 'profiles))))
+         (name (and names (completing-read "Tool setup profile: " names nil t))))
+    (when (funcall current-p)
+      (with-current-buffer buffer
+        (if (not (member name names))
+            (message "Hermes: no backend profile selected")
+          ;; Old rows must not authorize actions while the new scope loads.
+          (setq hermes-tool-setup--profile name
+                hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil
+                hermes-tool-setup--post-status nil tabulated-list-entries nil)
+          (setq-local header-line-format
+                      (format " %s | %s | Profile: %s | Prerequisites unknown"
+                              (hermes-instance-name hermes-instance)
+                              hermes-tool-setup--name name))
+          (tabulated-list-print t)
+          (hermes-tool-setup-refresh))))))
+
+(defun hermes-tool-setup-select-profile ()
+  "Select a backend-reported profile for this tool setup buffer.
+Fetch the catalogue from the owning instance without changing its active
+profile.  Opening a new setup buffer still inspects the server default.
+Installation remains unavailable for default/current aliases."
+  (interactive)
+  (hermes-tool-setup--idle)
+  (hermes-browser--next-request-generation)
+  (let* ((owner (hermes-tool-setup--owner))
+         (guard (hermes-browser--dispatch-guard nil))
+         (current-p (lambda () (and (hermes-tool-setup--current-p owner)
+                                   (funcall guard))))
+         input-guard)
+    (hermes-browser--run-owned
+     (lambda (client active)
+       (setq input-guard active)
+       (hermes-dashboard-transport-api-request-async
+        "GET" "/api/profiles" :client client :current-p active))
+     current-p
+     (lambda (catalog)
+       (condition-case nil
+           (hermes-tool-setup--choose-profile catalog input-guard)
+         (quit nil)))
+     (lambda (_reason) (message "Hermes: profile catalogue unavailable; try again")))))
+
 (defun hermes-tool-setup--provider ()
   "Return the provider at point from the rendered snapshot."
   (hermes-tool-setup--idle)
@@ -342,6 +391,8 @@ this toolset or infer readiness from the last process exit code."
   :parent tabulated-list-mode-map
   :description "Tool setup"
   :group "Configure"
+  "P" ("Select profile" hermes-tool-setup-select-profile
+       :inapt-if (lambda () hermes-tool-setup--busy))
   "p" ((lambda () (hermes-tool-setup--setting-description 'provider))
        hermes-tool-setup-select-provider
        :inapt-if (lambda () hermes-tool-setup--busy))

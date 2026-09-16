@@ -2,6 +2,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'hermes-tool-setup)
+(require 'hermes-inventory)
 
 (ert-deftest hermes-tool-setup-dispatch-fence-survives-auth-retry ()
   (with-temp-buffer
@@ -445,6 +446,258 @@
                 (should (string-match-p "Tool model for Active (current model-one)" prompt))
                 (should (equal hermes-tool-setup--config before))
                 (should-not hermes-tool-setup--busy))
+            (keymap-popup-dismiss)))))))
+
+(ert-deftest hermes-tool-setup-profile-selection-is-discoverable ()
+  "Ordinary setup keys and the popup expose backend profile selection."
+  (with-temp-buffer
+    (hermes-tool-setup-mode)
+    (should (eq (key-binding (kbd "P")) #'hermes-tool-setup-select-profile))
+    (should (commandp (key-binding (kbd "P"))))
+    (should (string-match-p "Select profile"
+                            (format "%S" (keymap-popup--meta
+                                          hermes-tool-setup-mode-map 'descriptions))))))
+
+(defun hermes-tool-setup-tests--backend (respond run &optional auth legacy)
+  "Call RUN with a disposable client whose HTTP boundary uses RESPOND.
+Use AUTH as the authentication promise when non-nil, and URL-only
+configuration when LEGACY is non-nil.  Retain real instance resolution,
+client ownership, request construction, and cleanup."
+  (let* ((url "http://setup.example.test")
+         (hermes-instances (unless legacy
+                             `((:id "setup" :name "Setup" :url ,url))))
+         (hermes-dashboard-transport-url url)
+         (client (make-hermes-dashboard-transport-client :base-url url))
+         (acquired 0) (released 0))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _)
+                 (should (equal (hermes-instance-url hermes-instance) url))
+                 (should (equal hermes-dashboard-transport-url url))
+                 (cl-incf acquired)
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-release)
+               (lambda (value)
+                 (should (eq value client))
+                 (cl-incf released)))
+              ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+               (lambda (&rest _)
+                 (or auth (hermes--promise-resolved `(:base-url ,url))))))
+      (let ((hermes-dashboard-transport-http-request-async-function respond))
+        (funcall run client)
+        (should (> acquired 0))
+        (should (= released acquired))))))
+
+(ert-deftest hermes-tool-setup-public-entries-select-exact-install-scope ()
+  "Legacy and named entries retry P through real acquisition and REST."
+  (dolist (case '((command nil) (command t) (inventory nil) (inventory t)))
+    (let ((entry (car case)) (legacy (cadr case))
+          (config (hermes--promise-make)) (catalogs 0) (inputs 0)
+          requests buffer confirm prompted)
+      (unwind-protect
+          (hermes-tool-setup-tests--backend
+           (lambda (url &rest args)
+             (push (cons url args) requests)
+             (cond
+              ((string-suffix-p "/api/profiles" url)
+               (if (= (cl-incf catalogs) 1)
+                   (hermes--promise-rejected "Catalogue temporarily unavailable")
+                 (hermes--promise-resolved '(:body (:profiles ((:name "Research-2") (:name "default")))))))
+              ((string-suffix-p "/config?profile=Research-2" url) config)
+              ((string-match-p "/models" url)
+               (hermes--promise-resolved '(:body (:provider "New" :current "new-model"))))
+              ((string-match-p "/post-setup" url)
+               (hermes--promise-resolved '(:body (:ok t))))
+              (t (hermes--promise-resolved
+                  '(:body (:providers ((:name "Old" :post_setup "old-install"))))))))
+           (lambda (_client)
+             (cl-letf (((symbol-function 'pop-to-buffer) (lambda (value &rest _) (setq buffer value)))
+                       ((symbol-function 'yes-or-no-p)
+                        (lambda (prompt)
+                          (should (string-match-p "backend.*may install software" prompt))
+                          (setq prompted t)
+                          confirm)))
+               (if (eq entry 'command)
+                   (let ((noninteractive nil))
+                     (execute-kbd-macro (kbd "M-x hermes-tool-setup RET future RET")))
+                 (with-temp-buffer
+                   (hermes-inventory-mode)
+                   (setq hermes-inventory--spec (assoc "Toolsets" hermes-inventory--specs)
+                         tabulated-list-entries '(("future" ["future"])))
+                   (setq-local tabulated-list-format [("Name" 20 t)])
+                   (tabulated-list-print)
+                   (goto-char (point-min))
+                   (call-interactively #'hermes-inventory-configure-toolset)))
+               (with-current-buffer buffer
+                 (should-not hermes-tool-setup--profile)
+                 (setq hermes-tool-setup--post-status "running")
+                 (should-error (call-interactively (key-binding (kbd "i"))) :type 'user-error)
+                 (call-interactively (key-binding (kbd "P")))
+                 (should (= catalogs 1))
+                 (should-not hermes-tool-setup--profile)
+                 (should-not hermes-browser--owned-cleanup)
+                 (let ((completing-read-function
+                        (lambda (_prompt collection _predicate require-match &rest _)
+                          (cl-incf inputs)
+                          (should require-match)
+                          (should (equal collection '("Research-2" "default")))
+                          "Research-2")))
+                   (call-interactively (key-binding (kbd "P"))))
+                 (should (= catalogs 2))
+                 (should (= inputs 1))
+                 (should (equal hermes-tool-setup--profile "Research-2"))
+                 (should (equal (hermes-instance-url hermes-instance)
+                                "http://setup.example.test"))
+                 (should (equal (hermes-instance-name hermes-instance)
+                                (if legacy "default" "Setup")))
+                 (should (string-match-p "Profile: Research-2.*unknown" header-line-format))
+                 (should-not hermes-tool-setup--config)
+                 (should-not hermes-tool-setup--model-catalog)
+                 (should-not hermes-tool-setup--post-status)
+                 (should-not tabulated-list-entries)
+                 (should-not (string-match-p "Old" (buffer-string)))
+                 (should-error (call-interactively (key-binding (kbd "i"))) :type 'user-error)
+                 (hermes--promise-resolve
+                  config '(:body (:providers ((:name "New" :is_active t :post_setup "new-install")))))
+                 (should (string-match-p "Profile: Research-2" header-line-format))
+                 (should (equal (hermes-transport--get hermes-tool-setup--model-catalog 'current)
+                                "new-model"))
+                 (goto-char (point-min))
+                 (call-interactively (key-binding (kbd "i")))
+                 (should prompted)
+                 (should-not (seq-find (lambda (r) (equal (plist-get (cdr r) :method) "POST")) requests))
+                 (setq confirm t)
+                 (call-interactively (key-binding (kbd "i")))
+                 (let ((writes (seq-filter (lambda (r) (equal (plist-get (cdr r) :method) "POST")) requests)))
+                   (should (= (length writes) 1))
+                   (should (equal (caar writes)
+                                  "http://setup.example.test/api/tools/toolsets/future/post-setup?profile=Research-2"))
+                   (should (equal (json-parse-string (plist-get (cdar writes) :data) :object-type 'alist)
+                                  '((key . "new-install")))))
+                 (should (assoc "http://setup.example.test/api/tools/toolsets/future/config?profile=Research-2" requests))
+                 (should (assoc "http://setup.example.test/api/tools/toolsets/future/models?profile=Research-2" requests)))))
+           nil legacy)
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-tool-setup-profile-catalog-and-input-retirement ()
+  "Stale catalogue and input cannot select a profile or dispatch a mutation."
+  (dolist (case '((auth nil) (auth t) (catalog nil) (catalog t) (input nil) (input t)))
+    (let ((phase (car case)) (legacy (cadr case)))
+      (dolist (retire '(live kill mode generation instance instance-value client endpoint profile))
+        (with-temp-buffer
+          (hermes-tool-setup-mode)
+          (setq hermes-instance (list :id "setup" :name "Setup" :url "http://setup.example.test")
+                hermes-tool-setup--name "future")
+          (let ((buffer (current-buffer)) (catalog (hermes--promise-make))
+                (auth (and (eq phase 'auth) (hermes--promise-make)))
+                (inputs 0) requests)
+            (hermes-tool-setup-tests--backend
+             (lambda (url &rest args)
+               (push (cons url args) requests)
+               (if (string-suffix-p "/api/profiles" url) catalog
+                 (hermes--promise-resolved '(:body nil))))
+             (lambda (client)
+               (setq hermes-instance (hermes-instance-resolve))
+               (let* ((retirement
+                       (lambda ()
+                         (with-current-buffer buffer
+                           (pcase retire
+                             ('kill (kill-buffer buffer))
+                             ('mode (fundamental-mode))
+                             ('generation (hermes-browser--next-request-generation))
+                             ('instance (setq hermes-instance (copy-tree hermes-instance)))
+                             ('instance-value
+                              (if legacy (setcdr hermes-instance "http://other.example.test")
+                                (setf (plist-get hermes-instance :url)
+                                      "http://other.example.test")))
+                             ('client (cl-incf (hermes-dashboard-transport-client-generation client)))
+                             ('endpoint (setf (hermes-dashboard-transport-client-base-url client)
+                                              "http://other.example.test"))
+                             ('profile (setq hermes-tool-setup--profile "successor"))))))
+                      (completing-read-function
+                       (lambda (&rest _)
+                         (cl-incf inputs)
+                         (when (eq phase 'input) (funcall retirement))
+                         "Research-2")))
+                 (call-interactively #'hermes-tool-setup-select-profile)
+                 (unless (eq phase 'input) (funcall retirement))
+                 (when auth
+                   (hermes--promise-resolve auth '(:base-url "http://setup.example.test")))
+                 (hermes--promise-resolve catalog '(:body (:profiles ((:name "Research-2")))))
+                 (should (= inputs (if (or (eq phase 'input) (eq retire 'live)) 1 0)))
+                 (should (= (length requests)
+                            (cond ((eq retire 'live) 3) ((eq phase 'auth) 0) (t 1))))
+                 (should (seq-every-p (lambda (r) (equal (plist-get (cdr r) :method) "GET")) requests))
+                 (when (buffer-live-p buffer)
+                   (should (equal (buffer-local-value 'hermes-tool-setup--profile buffer)
+                                  (pcase retire ('live "Research-2") ('profile "successor")))))))
+             auth legacy)))))))
+
+(ert-deftest hermes-tool-setup-profile-catalog-failure-empty-and-cancel ()
+  "No selection leaves the prior scope and snapshots untouched."
+  (dolist (outcome '(failure empty cancel blank))
+    (with-temp-buffer
+      (hermes-tool-setup-mode)
+      (setq hermes-instance (list :id "setup" :name "Setup" :url "http://setup.example.test")
+            hermes-tool-setup--name "future"
+            hermes-tool-setup--profile "prior"
+            hermes-tool-setup--config '(:providers ((:name "Prior")))
+            hermes-tool-setup--model-catalog '(:current "prior-model"))
+      (let* ((inputs 0) (reads 0)
+             (completing-read-function
+              (lambda (&rest _)
+                (cl-incf inputs)
+                (if (eq outcome 'cancel) (signal 'quit nil) ""))))
+        (hermes-tool-setup-tests--backend
+         (lambda (&rest _)
+           (cl-incf reads)
+           (pcase outcome
+             ('failure (hermes--promise-rejected "unavailable"))
+             ('empty (hermes--promise-resolved '(:body (:profiles nil))))
+             (_ (hermes--promise-resolved '(:body (:profiles ((:name "Research-2"))))))))
+         (lambda (_client)
+           (condition-case nil
+               (call-interactively #'hermes-tool-setup-select-profile)
+             (quit nil))
+           (should (= reads 1))
+           (should (= inputs (if (memq outcome '(cancel blank)) 1 0)))
+           (should (equal hermes-tool-setup--profile "prior"))
+           (should (equal hermes-tool-setup--config '(:providers ((:name "Prior")))))
+           (should (equal hermes-tool-setup--model-catalog '(:current "prior-model")))
+           (should-not hermes-browser--owned-cleanup)))))))
+
+(ert-deftest hermes-tool-setup-profile-popup-native-input ()
+  "The popup accepts native profile input and C-g preserves the old scope."
+  (save-window-excursion
+    (dolist (cancel '(nil t))
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (hermes-tool-setup-mode)
+        (setq hermes-instance (list :id "setup" :name "Setup" :url "http://setup.example.test")
+              hermes-tool-setup--name "future"
+              hermes-tool-setup--profile "prior")
+        (let ((keymap-popup-backend #'keymap-popup-backend-side-window)
+              (keymap-popup--buffer-name " *setup profile input test*")
+              (reads 0) prompt)
+          (unwind-protect
+              (hermes-tool-setup-tests--backend
+               (lambda (url &rest _)
+                 (cl-incf reads)
+                 (hermes--promise-resolved
+                  (if (string-suffix-p "/api/profiles" url)
+                      '(:body (:profiles ((:name "Research-2"))))
+                    '(:body nil))))
+               (lambda (_client)
+                 (let ((noninteractive nil))
+                   (minibuffer-with-setup-hook
+                       (lambda () (setq prompt (minibuffer-prompt)))
+                     (condition-case nil
+                         (execute-kbd-macro
+                          (kbd (if cancel "? P C-g" "? P Research-2 RET")))
+                       (quit nil))))
+                 (should (equal prompt "Tool setup profile: "))
+                 (should (equal hermes-tool-setup--profile (if cancel "prior" "Research-2")))
+                 (should (= reads (if cancel 1 3)))
+                 (should-not hermes-browser--owned-cleanup)))
             (keymap-popup-dismiss)))))))
 
 (provide 'hermes-tool-setup-tests)

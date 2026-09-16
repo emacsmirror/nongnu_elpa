@@ -659,5 +659,72 @@
                           (should called))
                       (keymap-popup-dismiss))))))))))))
 
+(ert-deftest hermes-dashboard-reader-windows-survive-membership ()
+  "Adding, removing and reordering cards preserves both window anchors."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (delete-other-windows)
+      (let ((hermes-dashboard-stale-refresh-interval nil))
+        (hermes-dashboard-mode))
+      (hermes-dashboard--ensure-ewoc)
+      (let ((nodes (mapcar (lambda (n)
+                            (list :id (format "card-%02d" n) :kind 'empty
+                                  :title (format "Card %02d" n)
+                                  :subtitle "Second line"))
+                          (number-sequence 1 60))))
+        (hermes-dashboard--sync-ewoc nodes)
+        (let* ((first (selected-window)) (second (split-window-right))
+               (one (ewoc-location (gethash "card-20" hermes-dashboard--nodes)))
+               (two (ewoc-location (gethash "card-40" hermes-dashboard--nodes)))
+               (observe (lambda (window)
+                          (mapcar (lambda (pos)
+                                    (save-excursion
+                                      (goto-char pos)
+                                      (list (get-text-property pos 'hermes-dashboard-node-id)
+                                            (buffer-substring (line-beginning-position) pos))))
+                                  (list (window-start window) (window-point window))))))
+          (set-window-start first one t) (set-window-point first (+ one 3))
+          (set-window-start second two t) (set-window-point second (+ two 4))
+          (redisplay t)
+          (let ((before (mapcar observe (list first second))))
+            (dolist (new (list (append nodes (list '(:id "added" :kind empty :title "Added")))
+                              (cdr nodes) (reverse nodes)))
+              (hermes-dashboard--sync-ewoc new)
+              (redisplay t)
+              (should (equal (mapcar observe (list first second)) before))
+              (should (eq first (selected-window))))
+            (hermes-dashboard--sync-ewoc
+             (seq-remove (lambda (node) (equal (plist-get node :id) "card-20"))
+                         (reverse nodes)))
+            (redisplay t)
+            (should (equal (funcall observe second) (nth 1 before)))
+            (should (equal (get-text-property (window-point first)
+                                              'hermes-dashboard-node-id)
+                           "card-19"))))))))
+
+(ert-deftest hermes-dashboard-stale-projection-has-one-semantic-status ()
+  "Stale dot and label agree without changing the chat's running state."
+  (with-temp-buffer
+    (hermes-chat-mode)
+    (setq hermes-chat--status-state
+          (list :status 'running :updated (time-subtract (current-time) 120)))
+    (dolist (stale '(t nil))
+      (unless stale
+        (setf (plist-get hermes-chat--status-state :updated) (current-time)))
+      (let* ((node (hermes-dashboard--chat-node (current-buffer)))
+             (label (if stale "Stale" "Running"))
+             (face (if stale 'hermes-dashboard-status-stale
+                     'hermes-dashboard-status-running)))
+        (should (eq (plist-get hermes-chat--status-state :status) 'running))
+        (should (= 1 (cl-loop for (key _value) on node by #'cddr
+                             count (eq key :status))))
+        (with-temp-buffer
+          (hermes-dashboard--print-chat-node node)
+          (should (eq (get-text-property (point-min) 'face) face))
+          (goto-char (point-min))
+          (search-forward label)
+          (should (eq (get-text-property (1- (point)) 'face) face)))))))
+
 (provide 'hermes-ui-tests)
 ;;; hermes-ui-tests.el ends here

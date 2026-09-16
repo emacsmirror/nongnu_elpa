@@ -7,8 +7,14 @@
     flake = false;
   };
 
+  # Test the supported release independently of the development pin.
+  inputs.keymap-popup-minimum = {
+    url = "git+https://git.thanosapollo.org/emacs-keymap-popup?ref=refs/tags/0.4.0";
+    flake = false;
+  };
+
   outputs =
-    { self, nixpkgs, keymap-popup }:
+    { self, nixpkgs, keymap-popup, keymap-popup-minimum }:
     let
       systems = [
         "x86_64-linux"
@@ -110,6 +116,7 @@
             "hermes-config-tests.el"
             "hermes-cron-tests.el"
             "hermes-dashboard-tests.el"
+            "hermes-dependency-tests.el"
             "hermes-exec-tests.el"
             "hermes-inventory-tests.el"
             "hermes-kanban-tests.el"
@@ -166,6 +173,10 @@
             src = keymapPopupSrc;
             packageRequires = [ ];
           };
+          minimumKeymapPopup = keymapPopup.overrideAttrs (_: {
+            version = "0.4.0";
+            src = keymap-popup-minimum;
+          });
           websocket = emacsPackages.websocket;
           markdownMode = emacsPackages.markdown-mode;
 
@@ -213,16 +224,17 @@
           };
 
           devEmacs = emacsPackages.emacsWithPackages (_: [ keymapPopup websocket markdownMode ]);
+          minimumEmacs = emacsPackages.emacsWithPackages (_: [ minimumKeymapPopup websocket markdownMode ]);
           emacsWithHermes = emacsPackages.emacsWithPackages (_: [ hermesEl ]);
 
           mkCheck =
-            name: target:
+            name: target: checkEmacs:
             pkgs.stdenvNoCC.mkDerivation {
               pname = "hermes-el-${name}";
               inherit version;
               src = source;
               nativeBuildInputs = [
-                devEmacs
+                checkEmacs
                 pkgs.gnumake
               ];
               dontConfigure = true;
@@ -268,7 +280,9 @@
               meta.description = "Run make ${target} for hermes-el";
             };
 
-          check = mkCheck "check" "check";
+          check = mkCheck "check" "check" devEmacs;
+          minimumKeymapPopupSmoke =
+            mkCheck "minimum-keymap-popup" "do-test-minimum-keymap-popup" minimumEmacs;
 
           packageSmoke =
             pkgs.runCommand "hermes-el-package-smoke"
@@ -307,6 +321,7 @@
             hermesEl
             keymapPopup
             keymapPopupSrc
+            minimumKeymapPopupSmoke
             packageSmoke
             pkgs
             ;
@@ -326,6 +341,7 @@
         default = (mkHermes system).check;
         package = (mkHermes system).hermesEl;
         package-smoke = (mkHermes system).packageSmoke;
+        minimum-keymap-popup = (mkHermes system).minimumKeymapPopupSmoke;
       });
 
       devShells = forAllSystems (system: {

@@ -105,17 +105,15 @@
         (should (equal (hermes-transport--get updates 'prompt)
                        "new\nmultiline prompt"))
         (should (equal (hermes-transport--get updates 'deliver) "telegram"))
-        (should (equal (hermes-transport--get updates 'skills) '("emacs" "cron")))
+        (should (equal (hermes-transport--get updates 'skills) ["emacs" "cron"]))
         (should refreshed)
         (should (member "Hermes: updated j1" messages))))))
 
 (ert-deftest hermes-cron-stale-edit-fetch-cannot-prompt-or-update ()
   "An instance A job fetch cannot edit after the list retargets to B."
   (let ((fetch (hermes--promise-make)) prompted updated)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success on-error)
-                 (hermes--promise-then (funcall make-promise 'client-a)
-                                       on-success on-error)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--fetch-job)
                (lambda (&rest _) fetch))
               ((symbol-function 'hermes-cron--read-updates)
@@ -134,10 +132,8 @@
 (ert-deftest hermes-cron-stale-edit-fetch-cannot-report-success ()
   "A superseded edit cannot report success or refresh without updating."
   (let ((fetch (hermes--promise-make)) prompted updated refreshed messages)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success on-error)
-                 (hermes--promise-then (funcall make-promise 'client-a)
-                                       on-success on-error)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--fetch-job)
                (lambda (&rest _) fetch))
               ((symbol-function 'hermes-cron--read-updates)
@@ -159,13 +155,11 @@
     (should-not refreshed)
     (should-not messages)))
 
-(ert-deftest hermes-cron-edit-survives-refresh-during-prompt ()
-  "A same-instance list refresh during the edit prompt still submits the job."
+(ert-deftest hermes-cron-edit-retires-on-refresh-during-prompt ()
+  "A same-instance list refresh during input retires the pending edit."
   (let ((fetch (hermes--promise-make)) prompted updated refreshed messages)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success on-error)
-                 (hermes--promise-then (funcall make-promise 'client-a)
-                                       on-success on-error)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--fetch-job)
                (lambda (&rest _) fetch))
               ((symbol-function 'hermes-cron--read-updates)
@@ -191,17 +185,15 @@
                  (schedule . ((expr . "0 0 * * *"))) (prompt . "old")
                  (deliver . "local") (skills . ("old-skill"))))))
     (should prompted)
-    (should updated)
-    (should refreshed)
-    (should (member "Hermes: updated j1" messages))))
+    (should-not updated)
+    (should-not refreshed)
+    (should-not messages)))
 
 (ert-deftest hermes-cron-edit-instance-switch-during-prompt-aborts ()
   "Retargeting the cron list during the edit prompt discards the form."
   (let ((fetch (hermes--promise-make)) prompted updated)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success on-error)
-                 (hermes--promise-then (funcall make-promise 'client-a)
-                                       on-success on-error)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--fetch-job)
                (lambda (&rest _) fetch))
               ((symbol-function 'hermes-cron--read-updates)
@@ -244,8 +236,8 @@
       (should (equal (cdr (assq 'profile (nth 3 call))) "work"))
       (should refreshed))))
 
-(ert-deftest hermes-cron-trigger-refreshes-after-transient-client-cleanup ()
-  "Trigger-now cleans up a transient client before refreshing the list."
+(ert-deftest hermes-cron-trigger-refreshes-and-releases-transient-client ()
+  "Trigger-now refreshes the owner and releases its transient client once."
   (let (events)
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
@@ -262,32 +254,32 @@
               ((symbol-function 'message) #'ignore))
       (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
         (hermes-cron-trigger))
-      (should (equal events '(trigger done refresh))))))
+      (should (equal events '(trigger refresh done))))))
 
-(ert-deftest hermes-cron-mutation-refreshes-after-newer-read ()
-  "A completed cron mutation starts a fresh read after an intervening refresh."
+(ert-deftest hermes-cron-mutation-ignores-completion-after-newer-read ()
+  "A retired cron mutation cannot refresh a newer browser generation."
   (let ((promise (hermes--promise-make)) refreshed)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--api)
                (lambda (&rest _) promise))
               ((symbol-function 'hermes-cron--revert)
                (lambda (&rest _) (setq refreshed (current-buffer))))
               ((symbol-function 'message) #'ignore))
       (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
-        (let ((origin (current-buffer)))
+        (progn
           (hermes-cron-trigger)
           (hermes-browser--next-request-generation)
           (hermes--promise-resolve promise '((ok . t)))
-          (should (eq refreshed origin)))))))
+          (should-not refreshed))))))
 
 (ert-deftest hermes-cron-create-refreshes-the-list-on-success ()
   "Creating a cron job refreshes the list so the new row appears."
   (let (refreshed)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (_make-promise &optional on-success)
-                 (when on-success (funcall on-success '((id . "j9"))))))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'hermes-cron--api)
+               (lambda (&rest _) (hermes--promise-resolved '((id . "j9")))))
               ((symbol-function 'hermes-cron--revert)
                (lambda () (setq refreshed t)))
               ((symbol-function 'message) #'ignore))
@@ -494,9 +486,10 @@
                  (should (equal prompt "Prompt: "))
                  (should (equal initial ""))
                  "first line\nsecond line"))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional _on-success)
-                 (funcall make-promise 'fake-client)))
+              ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
               ((symbol-function 'hermes-cron--api)
                (lambda (_client _method _path &optional payload _query)
                  (setq body payload)
@@ -556,9 +549,10 @@
 (ert-deftest hermes-cron-create-trims-required-fields-before-post ()
   "Create trims required fields before posting them."
   (let (body)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional _on-success)
-                 (funcall make-promise 'fake-client)))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
               ((symbol-function 'hermes-cron--api)
                (lambda (_client _method _path &optional payload _query)
                  (setq body payload)
@@ -572,7 +566,7 @@
 (ert-deftest hermes-cron-create-rejects-blank-fields-before-request ()
   "Create rejects whitespace-only required fields before any REST request."
   (let (requested)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
                (lambda (&rest _) (setq requested t))))
       (should-error (hermes-cron-create "   " "daily" "prompt")
                     :type 'user-error)
@@ -596,10 +590,11 @@
 
 (ert-deftest hermes-cron-edit-blank-name-does-not-update ()
   "A blank name stops edit before the update request."
-  (let (updated)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional _on-success)
-                 (funcall make-promise 'fake-client)))
+  (let (updated read-name)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
               ((symbol-function 'hermes-cron--fetch-job)
                (lambda (&rest _)
                  (hermes--promise-resolved
@@ -608,11 +603,14 @@
                (lambda (&rest _) (setq updated t)))
               ((symbol-function 'read-string)
                (lambda (prompt &rest _)
-                 (if (string-prefix-p "Name" prompt) "   " "value")))
+                 (if (string-prefix-p "Name" prompt)
+                     (progn (setq read-name t) "   ")
+                   "value")))
               ((symbol-function 'read-string-from-buffer)
                (lambda (&rest _) "prompt")))
       (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
         (hermes-cron-edit)))
+    (should read-name)
     (should-not updated)))
 
 ;;; Group: failure surfacing and run logs
@@ -699,7 +697,7 @@
                  (setq requests (1+ requests))
                  (if (= requests 1) first second)))
               ((symbol-function 'hermes-cron--display-run)
-               (lambda (_id messages)
+               (lambda (_id messages &optional _profile)
                  (push (hermes-cron--message-text (car messages)) displayed))))
       (with-temp-buffer
         (insert (propertize "run" 'hermes-cron-run-id "r1"))
@@ -862,6 +860,113 @@
                  (lambda (&rest _) (error "should not start a timer"))))
         (hermes-cron--maybe-start-auto-refresh)
         (should-not hermes-cron--auto-refresh-timer)))))
+
+
+(ert-deftest hermes-cron-edit-skills-cross-real-json-boundary ()
+  "Public edits send arrays, including an explicit empty skill selection."
+  (dolist (skills '("one" "one, two" ""))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           (releases 0) updates
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (should (string-match-p "profile=work" url))
+              (when (equal (plist-get args :method) "PUT")
+                (setq updates (alist-get 'updates
+                                         (json-parse-string (plist-get args :data)
+                                                            :object-type 'alist)))
+                (should (vectorp (alist-get 'skills updates))))
+              (hermes--promise-resolved
+               '(:status 200 :body ((id . "j1") (profile . "work")
+                                    (name . "nightly") (schedule . "0 0 * * *")
+                                    (prompt . "prompt")))))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
+                ((symbol-function 'read-string)
+                 (lambda (prompt &optional initial &rest _)
+                   (if (string-prefix-p "Skills" prompt) skills initial)))
+                ((symbol-function 'read-string-from-buffer)
+                 (lambda (_prompt initial) initial))
+                ((symbol-function 'hermes-cron--revert) #'ignore))
+        (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+          (hermes-cron-edit))
+        (should (equal (alist-get 'skills updates)
+                       (vconcat (hermes-cron--split-skills skills))))
+        (should (= releases 1))))))
+
+(ert-deftest hermes-cron-run-pages-retain-rendered-profile ()
+  "Public run lines fetch the selected profile's entire transcript."
+  (dolist (profile '("default" "work"))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           offsets
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest _)
+              (should (string-match-p (concat "profile=" profile) url))
+              (should (string-match "offset=\\([0-9]+\\)" url))
+              (let* ((offset (string-to-number (match-string 1 url)))
+                     (messages (cl-loop for n from offset below (min 501 (+ offset 500))
+                                        collect `((content . ,(format "ROW-%d" n))))))
+                (push offset offsets)
+                (hermes--promise-resolved
+                 (list :status 200
+                       :body `((session_id . "same") (messages . ,messages)
+                               (pagination . ((limit . 500) (offset . ,offset)
+                                              (order . "oldest")
+                                              (returned . ,(length messages)))))))))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn client #'ignore)))
+                ((symbol-function 'pop-to-buffer) #'ignore))
+        (with-temp-buffer
+          (insert (hermes-cron--format-run `((id . "same") (profile . ,profile))))
+          (special-mode)
+          (goto-char (point-min))
+          (hermes-cron-show-run-log))
+        (should (equal (nreverse offsets) '(0 500)))
+        (unwind-protect
+            (with-current-buffer "*Hermes Cron Run*"
+              (should (string-match-p (concat "Profile: " profile) (buffer-string)))
+              (goto-char (point-min))
+              (let (rows)
+                (while (re-search-forward "ROW-[0-9]+" nil t)
+                  (push (match-string 0) rows))
+                (should (equal (nreverse rows)
+                               (cl-loop for n below 501 collect (format "ROW-%d" n))))))
+          (when (get-buffer "*Hermes Cron Run*")
+            (kill-buffer "*Hermes Cron Run*")))))))
+
+
+(ert-deftest hermes-cron-replaced-job-detail-retires-run-reader ()
+  "A replacement job detail cannot receive the old run's transcript."
+  (let* ((pending (hermes--promise-make))
+         (client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 9119 :token "fixture"))
+         (calls 0) displayed
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (_url &rest _) (cl-incf calls) pending)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn client #'ignore)))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'hermes-cron--display-run)
+               (lambda (&rest _) (setq displayed t))))
+      (unwind-protect
+          (progn
+            (hermes-cron--display-detail
+             '((id . "first")) '(((id . "same") (profile . "work"))))
+            (with-current-buffer "*Hermes Cron Job*"
+              (goto-char (point-min))
+              (search-forward "same")
+              (hermes-cron-show-run-log))
+            (hermes-cron--display-detail
+             '((id . "second")) '(((id . "same") (profile . "default"))))
+            (hermes--promise-resolve
+             pending '(:status 200 :body ((session_id . "same")
+                                         (messages . (((content . "old"))))
+                                         (pagination . ((limit . 500) (offset . 0)
+                                                        (order . "oldest") (returned . 1))))))
+            (should (= calls 1))
+            (should-not displayed))
+        (when (get-buffer "*Hermes Cron Job*") (kill-buffer "*Hermes Cron Job*"))))))
 
 (provide 'hermes-cron-tests)
 ;;; hermes-cron-tests.el ends here

@@ -1538,17 +1538,23 @@ When TRIAGE is non-nil, create it in the triage column."
 (defun hermes-kanban-delete ()
   "Delete the task at point after confirmation."
   (interactive)
-  (let ((instance (hermes-instance-resolve))
-        (id (hermes-kanban--id-at-point))
-        (slug hermes-kanban--slug)
-        (name hermes-kanban--name))
-    (when (yes-or-no-p (format "Delete task %s? " id))
-      (hermes-kanban--then
-       (hermes-kanban--api "DELETE" (hermes-kanban--task-path id)
-                           nil (hermes-kanban--board-query))
-       (lambda (_)
-         (let ((hermes-instance instance))
-           (hermes-kanban--render-board slug name)))))))
+  (let* ((id (copy-sequence (hermes-kanban--id-at-point)))
+         (origin (current-buffer))
+         (query (hermes-browser--copy-identity (hermes-kanban--board-query)))
+         (current (hermes-browser--mutation-context
+                   (lambda () (list hermes-kanban--slug
+                                    (hermes-kanban--id-at-point))))))
+    (when (and (yes-or-no-p (format "Delete task %s? " id))
+               (funcall current))
+      (with-current-buffer origin
+        (hermes-browser--run-owned
+         (lambda (client guard)
+           (hermes-dashboard-transport-api-request-async
+            "DELETE" (concat "/api/plugins/kanban" (hermes-kanban--task-path id))
+            :query query :client client :current-p guard))
+         current
+         (lambda (_) (hermes-kanban--revert))
+         #'hermes-browser--read-error)))))
 
 ;;; Diagnostics overview
 

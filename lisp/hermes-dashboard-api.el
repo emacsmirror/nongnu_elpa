@@ -323,9 +323,13 @@ malformed slot never aborts the teardown-path redaction this guards."
 
 (defun hermes-dashboard-transport--redact-secret (text &optional secrets)
   "Return TEXT with dashboard URL credentials and SECRETS redacted.
+For a structured HTTP condition, return only its display message.
 Each secret is also matched in its JSON-escaped spelling, since request
 bodies travel JSON-serialized and an error may echo the escaped form."
-  (let ((message (if (stringp text) text (format "%s" text))))
+  (let ((message (pcase text
+                   (`(hermes-dashboard-http-error ,message ,_status) message)
+                   ((pred stringp) text)
+                   (_ (format "%s" text)))))
     (setq message
           (replace-regexp-in-string
            "\\([?&]\\(?:token\\|ticket\\|internal\\)=\\)[^&[:space:])\"']+"
@@ -343,6 +347,8 @@ bodies travel JSON-serialized and an error may echo the escaped form."
 
 
 ;;; HTTP requests
+
+(define-error 'hermes-dashboard-http-error "Dashboard HTTP error" 'user-error)
 
 (defun hermes-dashboard-transport--json-body (text)
   "Return JSON object parsed from TEXT, or nil for an empty body."
@@ -399,7 +405,8 @@ bodies travel JSON-serialized and an error may echo the escaped form."
 (defun hermes-dashboard-transport--http-result (response safe-url secrets)
   "Interpret parsed RESPONSE from SAFE-URL, redacting SECRETS in errors.
 Return (ok . RESPONSE) with the JSON `:body' filled in on a 2xx status, or
-\(error . MESSAGE) otherwise."
+\(error . CONDITION) otherwise.  HTTP conditions retain the sanitized
+message and numeric status as (hermes-dashboard-http-error MESSAGE STATUS)."
   (let ((status (plist-get response :status)))
     (if (and status (<= 200 status 299))
         (condition-case err
@@ -408,20 +415,24 @@ Return (ok . RESPONSE) with the JSON `:body' filled in on a 2xx status, or
                                   (plist-get response :body-text))))
           (error
            (cons 'error
-                 (format "Hermes dashboard returned a non-JSON body at %s (HTTP %s): %s"
-                         safe-url status
-                         (hermes-dashboard-transport--redact-secret
-                          (error-message-string err) secrets)))))
+                 (list 'hermes-dashboard-http-error
+                       (format "Hermes dashboard returned a non-JSON body at %s (HTTP %s): %s"
+                               safe-url status
+                               (hermes-dashboard-transport--redact-secret
+                                (error-message-string err) secrets))
+                       status))))
       (let ((detail (hermes-dashboard-transport--http-error-detail
                      (plist-get response :body-text))))
         (cons 'error
-              (if detail
-                  (format "Hermes dashboard request failed at %s (HTTP %s): %s"
-                          safe-url (or status "unknown")
-                          (hermes-dashboard-transport--redact-secret
-                           detail secrets))
-                (format "Hermes dashboard request failed at %s (HTTP %s)"
-                        safe-url (or status "unknown"))))))))
+              (list 'hermes-dashboard-http-error
+                    (if detail
+                        (format "Hermes dashboard request failed at %s (HTTP %s): %s"
+                                safe-url (or status "unknown")
+                                (hermes-dashboard-transport--redact-secret
+                                 detail secrets))
+                      (format "Hermes dashboard request failed at %s (HTTP %s)"
+                              safe-url (or status "unknown")))
+                    status))))))
 
 (defun hermes-dashboard-transport--settle-http-response
     (promise status buffer safe-url secrets)
@@ -430,7 +441,7 @@ SECRETS are redacted from any error message.  An `http' STATUS error is
 NOT taken at face value: url.el reports every 4xx/5xx that way (its
 `error-message-string' is the useless \"peculiar error: N\"), while the
 response buffer still holds the backend's JSON error detail -- so those
-fall through to the body parser and reject with the real message."
+fall through to the body parser and reject with the HTTP condition."
   (if-let* ((error-data (plist-get status :error))
             ((not (eq (nth 1 error-data) 'http))))
       (hermes--promise-reject
@@ -442,7 +453,18 @@ fall through to the body parser and reject with the real message."
             (hermes-dashboard-transport--parse-http-response-buffer buffer)
             safe-url secrets)
       (`(ok . ,response) (hermes--promise-resolve promise response))
-      (`(error . ,message) (hermes--promise-reject promise message)))))
+      (`(error . ,condition) (hermes--promise-reject promise condition)))))
+
+(defun hermes-dashboard-transport--http-explicit-auth-headers (headers)
+  "Return HEADERS with explicit authorization policy for url.el.
+An empty Authorization header disables url.el's ambient origin credentials and
+401 challenge replay.  Dashboard authentication is owned by this client,
+not by url.el's implicit credential readers.  Canonicalize the field name
+because url.el checks it case-sensitively, unlike HTTP."
+  (if-let* ((authorization (assoc-string "Authorization" headers t)))
+      (cons (cons "Authorization" (or (cdr authorization) ""))
+            (remq authorization headers))
+    (cons '("Authorization" . "") headers)))
 
 (cl-defun hermes-dashboard-transport--default-http-request
     (url &key (method "GET") headers data secrets)
@@ -453,7 +475,8 @@ Legacy: new callers must use
 network on the main thread is banned by AGENTS.md."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
-        (url-request-extra-headers headers)
+        (url-request-extra-headers
+         (hermes-dashboard-transport--http-explicit-auth-headers headers))
         (url-request-data data))
     (let ((buffer (url-retrieve-synchronously
                    url t t hermes-dashboard-transport-http-timeout)))
@@ -464,7 +487,7 @@ network on the main thread is banned by AGENTS.md."
                   (hermes-dashboard-transport--parse-http-response-buffer buffer)
                   safe-url secrets)
             (`(ok . ,response) response)
-            (`(error . ,message) (user-error "%s" message)))
+            (`(error . ,condition) (signal (car condition) (cdr condition))))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
@@ -481,11 +504,14 @@ network on the main thread is banned by AGENTS.md."
          cancel-setter cancel-expected)
   "Fetch URL with METHOD, HEADERS, and DATA asynchronously using url.el.
 Return a promise of the response plist; SECRETS are redacted from any error.
+HTTP failures reject with (hermes-dashboard-http-error MESSAGE STATUS);
+other failures reject with a display string.
 TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil.
 CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
-        (url-request-extra-headers headers)
+        (url-request-extra-headers
+         (hermes-dashboard-transport--http-explicit-auth-headers headers))
         (url-request-data data)
         (request-timeout (or timeout hermes-dashboard-transport-http-timeout))
         (promise (hermes--promise-make))
@@ -564,7 +590,9 @@ It is called with URL and keyword arguments :method, :headers, :data, and
 Called with URL and keyword arguments :method, :headers, :data, and :secrets.
 Caller-specific overrides add :timeout or the paired :cancel-setter and
 :cancel-expected keywords.  The function returns a promise of the response
-plist.  Editable config GET responses must retain the raw JSON in `:body-text';
+plist.  HTTP failures reject with (hermes-dashboard-http-error MESSAGE STATUS);
+plain string rejections never authorize authentication recovery.
+Editable config GET responses must retain the raw JSON in `:body-text';
 a parsed `:body' alone cannot preserve the types needed for a full-config PUT.")
 
 (cl-defun hermes-dashboard-transport--http-json
@@ -1414,39 +1442,150 @@ PROVIDER selects OAuth; CANCEL-SETTER owns startup work."
      (hermes-dashboard-transport--native-store-owned-tokens
       base-url tokens owner-current-p))))
 
+(defvar hermes-dashboard-transport--native-refreshes
+  (make-hash-table :test #'equal)
+  "Pending native refresh operations keyed by endpoint.")
+
+(defun hermes-dashboard-transport--native-refresh-current-p (operation)
+  "Return non-nil when OPERATION has a current consumer."
+  (seq-some #'funcall (plist-get operation :waiters)))
+
+(defun hermes-dashboard-transport--native-refresh-wait
+    (base-url operation cancel-setter owner-current-p)
+  "Join OPERATION for BASE-URL under CANCEL-SETTER and OWNER-CURRENT-P.
+Cancelling one waiter leaves the exchange available to other consumers."
+  (let ((promise (hermes--promise-make)) (active t) cancel)
+    (let ((current-p
+           (lambda ()
+             (and active
+                  (hermes-dashboard-transport--native-owner-current-p
+                   owner-current-p)))))
+      (push current-p (plist-get operation :waiters))
+      (setq cancel
+            (lambda ()
+              (setq active nil)
+              (hermes--promise-reject
+               promise "Native dashboard sign-in was superseded")
+              (unless (hermes-dashboard-transport--native-refresh-current-p
+                       operation)
+                (when-let* ((abort (plist-get operation :cancel)))
+                  (funcall abort)))))
+      (condition-case err
+          (when (and cancel-setter
+                     (not (funcall cancel-setter nil cancel)))
+            (funcall cancel))
+        ((error quit)
+         (funcall cancel)
+         (hermes--promise-reject promise (error-message-string err))))
+      (hermes--promise-then
+       (plist-get operation :promise)
+       (lambda (tokens)
+         (if (and (funcall current-p)
+                  (eq tokens (hermes-dashboard-transport--native-token-load
+                              base-url)))
+             (hermes--promise-resolve promise tokens)
+           (funcall cancel)))
+       (lambda (reason) (hermes--promise-reject promise reason)))
+      (hermes--promise-finally
+       promise
+       (lambda ()
+         (setq active nil)
+         (when cancel-setter
+           (funcall cancel-setter cancel nil)))))))
+
+(defun hermes-dashboard-transport--native-refresh-start
+    (base-url tokens operation)
+  "Start the shared refresh OPERATION for BASE-URL and TOKENS."
+  (let* ((key (hermes-dashboard-transport--native-token-memory-key base-url))
+         (current-p
+          (lambda ()
+            (and (eq operation
+                     (gethash key hermes-dashboard-transport--native-refreshes))
+                 (hermes-dashboard-transport--native-refresh-current-p
+                  operation))))
+         (request
+          (hermes--promise-then
+           (hermes-dashboard-transport--http-json-async
+            (hermes-dashboard-transport--api-url base-url "/auth/native/refresh")
+            :method "POST" :headers '(("Content-Type" . "application/json"))
+            :body (append
+                   `((refresh_token . ,(plist-get tokens :refresh-token)))
+                   (when-let* ((provider (hermes-transport--non-empty-string
+                                         (plist-get tokens :provider))))
+                     `((provider . ,provider))))
+            :secrets (list (plist-get tokens :refresh-token))
+            :cancel-setter
+            (lambda (expected next)
+              (when (eq expected (plist-get operation :cancel))
+                (setf (plist-get operation :cancel) next)
+                t)))
+           (lambda (response)
+             ;; Token identity fences a newer login or rotation.  During the
+             ;; store's own memory replacement its existing owner guard applies.
+             (unless (and (funcall current-p)
+                          (eq tokens
+                              (hermes-dashboard-transport--native-token-load
+                               base-url)))
+               (error "Native dashboard sign-in was superseded"))
+             (if-let* ((next (hermes-dashboard-transport--native-token-plist
+                             (plist-get response :body) tokens)))
+                 (hermes-dashboard-transport--native-store-owned-tokens
+                  base-url next current-p)
+               (error "Gateway refresh response missing access_token"))))))
+    (hermes--promise-then
+     (hermes--promise-finally
+      request
+      (lambda ()
+        (when (eq operation
+                  (gethash key hermes-dashboard-transport--native-refreshes))
+          (remhash key hermes-dashboard-transport--native-refreshes))))
+     (lambda (next)
+       (hermes--promise-resolve (plist-get operation :promise) next))
+     (lambda (reason)
+       (hermes--promise-reject (plist-get operation :promise) reason)))))
+
 (defun hermes-dashboard-transport--native-refresh-async
     (base-url tokens &optional cancel-setter owner-current-p)
-  "Return a promise of refreshed native tokens for BASE-URL.
-TOKENS must include a refresh token; successful rotation is stored.
-CANCEL-SETTER owns the request.  OWNER-CURRENT-P guards token persistence."
-  (let ((refresh (plist-get tokens :refresh-token))
-        (provider (plist-get tokens :provider)))
-    (if (not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
-        (hermes--promise-rejected "Native dashboard sign-in was superseded")
-      (if (or (not (stringp refresh)) (string-empty-p refresh))
-          (hermes--promise-rejected
-           "Native dashboard tokens expired and no refresh token is stored")
-        (hermes--promise-then
-         (hermes-dashboard-transport--http-json-async
-          (hermes-dashboard-transport--api-url base-url "/auth/native/refresh")
-          :method "POST"
-          :headers '(("Content-Type" . "application/json"))
-          :body (append `((refresh_token . ,refresh))
-                        (and (stringp provider)
-                             (not (string-empty-p provider))
-                             `((provider . ,provider))))
-          :secrets (list refresh)
-          :cancel-setter cancel-setter)
-         (lambda (response)
-           (if-let* ((next (hermes-dashboard-transport--native-token-plist
-                            (plist-get response :body)
-                            tokens)))
-               (hermes-dashboard-transport--native-store-owned-tokens
-                base-url next owner-current-p)
-             (hermes--promise-rejected
-              "Gateway refresh response missing access_token")))
-         (lambda (reason)
-           (hermes--promise-rejected reason)))))))
+  "Return refreshed native TOKENS for BASE-URL as a promise.
+Coalesce consumers of the same credential generation.  CANCEL-SETTER owns
+only this waiter; OWNER-CURRENT-P guards its persistence and delivery."
+  (cond
+   ((not (hermes-dashboard-transport--native-owner-current-p owner-current-p))
+    (hermes--promise-rejected "Native dashboard sign-in was superseded"))
+   ((not (hermes-transport--non-empty-string (plist-get tokens :refresh-token)))
+    (hermes--promise-rejected
+     "Native dashboard tokens expired and no refresh token is stored"))
+   (t
+    (let* ((key (hermes-dashboard-transport--native-token-memory-key base-url))
+           (pending (gethash key hermes-dashboard-transport--native-refreshes))
+           (shared (and pending (eq tokens (plist-get pending :tokens))))
+           (operation (if shared pending
+                        (list :tokens tokens :promise (hermes--promise-make)
+                              :waiters nil :cancel nil))))
+      (unless shared
+        (puthash key operation hermes-dashboard-transport--native-refreshes))
+      (let ((waiter (hermes-dashboard-transport--native-refresh-wait
+                     base-url operation cancel-setter owner-current-p)))
+        (unless shared
+          (if (and (eq operation
+                       (gethash key hermes-dashboard-transport--native-refreshes))
+                   (hermes-dashboard-transport--native-refresh-current-p operation))
+              (condition-case err
+                  (hermes-dashboard-transport--native-refresh-start
+                   base-url tokens operation)
+                ((error quit)
+                 (when (eq operation
+                           (gethash key hermes-dashboard-transport--native-refreshes))
+                   (remhash key hermes-dashboard-transport--native-refreshes))
+                 (hermes--promise-reject
+                  (plist-get operation :promise) (error-message-string err))))
+            (when (eq operation
+                      (gethash key hermes-dashboard-transport--native-refreshes))
+              (remhash key hermes-dashboard-transport--native-refreshes))
+            (hermes--promise-reject
+             (plist-get operation :promise)
+             "Native dashboard sign-in was superseded")))
+        waiter)))))
 
 (defun hermes-dashboard-transport--native-ensure-owned-tokens-async
     (base-url provider force-login interactive cancel-setter owner-current-p)
@@ -1467,8 +1606,10 @@ login; CANCEL-SETTER owns startup work."
         base-url stored cancel-setter owner-current-p)
        (lambda (reason)
          ;; Preserve the old store until an explicitly interactive login wins.
-         (if (and interactive (stringp reason)
-                  (string-match-p "(HTTP 401)" reason))
+         (if (and interactive
+                  (hermes-dashboard-transport--auth-error-p reason)
+                  (eq stored (hermes-dashboard-transport--native-token-load
+                              base-url)))
              (hermes-dashboard-transport--native-login-and-store-async
               base-url provider cancel-setter owner-current-p)
            (hermes--promise-rejected reason)))))
@@ -1511,20 +1652,27 @@ OWNER-CURRENT-P guards native effects when non-nil."
          (hermes--promise-rejected
           "Native dashboard sign-in was superseded"))))))
 
+(defvar hermes-dashboard-transport--api-auth-current-p nil
+  "Optional REST consumer predicate captured by asynchronous authentication.")
+
+(defvar hermes-dashboard-transport--api-auth-base-url nil
+  "Endpoint pinned during REST auth without shadowing live browser ownership.")
+
 (defun hermes-dashboard-transport--api-native-auth-async
-    (base-url &optional status)
+    (base-url &optional status owner-current-p)
   "Return a promise of REST bearer auth for BASE-URL using native tokens.
-Optional STATUS supplies the OAuth provider name."
+Optional STATUS supplies the OAuth provider name.
+OWNER-CURRENT-P guards credential persistence and delivery."
   (let ((provider (and status
                        (hermes-dashboard-transport--status-oauth-provider
                         status))))
     (hermes--promise-map
      (hermes-dashboard-transport--native-ensure-tokens-async
-      base-url provider)
+      base-url provider nil nil nil owner-current-p)
      (lambda (tokens)
        (let ((access (plist-get tokens :access-token))
              (refresh (plist-get tokens :refresh-token)))
-         (list :headers
+         (list :native-tokens tokens :headers
                (list (cons "Authorization" (concat "Bearer " access)))
                :secrets (delq nil (list access refresh))))))))
 
@@ -1567,7 +1715,8 @@ Optional STATUS supplies the OAuth provider name."
 
 (defvar hermes-dashboard-transport--api-auth nil
   "Cached dashboard REST auth plist.
-The value is `(:base-url URL :headers HEADERS :secrets SECRETS)'.")
+The value carries :base-url, :headers and :secrets.  Native authentication
+also retains :native-tokens for expiry and credential-generation checks.")
 
 (defun hermes-dashboard-transport--api-base-url ()
   "Return the configured dashboard REST base URL."
@@ -1658,20 +1807,32 @@ credentials, but rejects when native PKCE remains the selected method."
                   base-url)))))))))
 
 (defun hermes-dashboard-transport--auth-error-p (reason)
-  "Return non-nil when REASON is an HTTP 401/403 authentication failure.
+  "Return non-nil when REASON is an HTTP 401 authentication failure.
+Use only the structured HTTP status, never the diagnostic text.
 Only an expired or rejected credential justifies dropping cached auth and
-retrying; other failures (404, 5xx, network) must not loop through
+retrying; other failures (403, 404, 5xx, network) must not loop through
 re-authentication."
-  (and (stringp reason)
-       (string-match-p "(HTTP 40[13])" reason)))
+  (pcase reason
+    (`(hermes-dashboard-http-error ,_message 401) t)))
 
 (defun hermes-dashboard-transport--api-auth-stale-p ()
-  "Return non-nil when cached REST auth no longer matches the configured URL.
+  "Return non-nil when cached REST auth is expired, replaced or misrouted.
 Keeps `hermes-dashboard-transport--api-auth' from serving credentials for a
 previous `hermes-dashboard-transport-url' after the user switches dashboards."
-  (and hermes-dashboard-transport--api-auth
-       (not (equal (plist-get hermes-dashboard-transport--api-auth :base-url)
-                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+  (let* ((auth hermes-dashboard-transport--api-auth)
+         (base-url (plist-get auth :base-url))
+         (tokens (plist-get auth :native-tokens)))
+    (and auth
+         (or (not (equal base-url
+                         (or hermes-dashboard-transport--api-auth-base-url
+                             (ignore-errors
+                               (hermes-dashboard-transport--api-base-url)))))
+             (and tokens
+                  (or (hermes-dashboard-transport--native-token-needs-refresh-p
+                       tokens)
+                      (not (eq tokens
+                               (hermes-dashboard-transport--native-token-load
+                                base-url)))))))))
 
 (defun hermes-dashboard-transport-api-auth (&optional refresh)
   "Return dashboard REST auth, resolving it when REFRESH is non-nil.
@@ -1744,35 +1905,37 @@ Legacy synchronous path; see `hermes-dashboard-transport-api-request'."
 	(plist-get (hermes-dashboard-transport--http-json-request request)
                    :body)
       (error
-       (signal (car err)
+       (signal (if (eq (car err) 'hermes-dashboard-http-error)
+                   'user-error (car err))
                (list (hermes-dashboard-transport--redact-secret
-		      (error-message-string err)
-		      (plist-get request :secrets))))))))
+                      (if (eq (car err) 'hermes-dashboard-http-error)
+                          err (error-message-string err))
+                      (plist-get request :secrets))))))))
 
 (cl-defun hermes-dashboard-transport--api-request-1
     (method path &key body query headers secrets retry)
   "Call dashboard REST METHOD PATH with BODY and QUERY.
 HEADERS and SECRETS extend the resolved dashboard auth.  RETRY refreshes auth
-once when the request fails."
-  (let ((request (hermes-dashboard-transport--api-request-plist
-		  (hermes-dashboard-transport-api-auth)
-		  method path :body body :query query :headers headers
-		  :secrets secrets)))
+once on HTTP 401."
+  (let* ((auth (hermes-dashboard-transport-api-auth))
+         (request (hermes-dashboard-transport--api-request-plist
+                   auth method path :body body :query query :headers headers
+                   :secrets secrets)))
     (condition-case err
-	(plist-get (hermes-dashboard-transport--http-json-request request)
-                   :body)
+        (plist-get (hermes-dashboard-transport--http-json-request request) :body)
       (error
-       (if (and retry (hermes-dashboard-transport--auth-error-p
-                       (error-message-string err)))
-           (progn
-             (hermes-dashboard-transport-api-auth t)
-             (hermes-dashboard-transport--api-request-1
-              method path :body body :query query :headers headers
-              :secrets secrets :retry nil))
-         (signal (car err)
+       (when (hermes-dashboard-transport--auth-error-p err)
+         (hermes-dashboard-transport--api-reject-auth auth))
+       (if (and retry (hermes-dashboard-transport--auth-error-p err))
+           (hermes-dashboard-transport--api-request-1
+            method path :body body :query query :headers headers
+            :secrets secrets :retry nil)
+         (signal (if (eq (car err) 'hermes-dashboard-http-error)
+                     'user-error (car err))
                  (list (hermes-dashboard-transport--redact-secret
-			(error-message-string err)
-			(plist-get request :secrets)))))))))
+                        (if (eq (car err) 'hermes-dashboard-http-error)
+                            err (error-message-string err))
+                        (plist-get request :secrets)))))))))
 
 (cl-defun hermes-dashboard-transport-api-request
     (method path &key body query headers secrets client)
@@ -1834,7 +1997,9 @@ network; a missing token rejects the promise."
 (defun hermes-dashboard-transport--api-authenticate-async ()
   "Return a promise of dashboard REST auth for `hermes-dashboard-transport-url'."
   (condition-case err
-      (let ((base-url (hermes-dashboard-transport--api-base-url)))
+      (let ((base-url (or hermes-dashboard-transport--api-auth-base-url
+                          (hermes-dashboard-transport--api-base-url)))
+            (owner-current-p hermes-dashboard-transport--api-auth-current-p))
         (hermes--promise-map
          (pcase hermes-dashboard-transport-remote-auth-method
            ('token (hermes-dashboard-transport--api-token-auth-async base-url))
@@ -1847,7 +2012,7 @@ network; a missing token rejects the promise."
                      (hermes-dashboard-transport--remote-status-async base-url)
                      (lambda (status)
                        (hermes-dashboard-transport--api-native-auth-async
-                        base-url status))))
+                        base-url status owner-current-p))))
            (_ (hermes--promise-then
                (hermes-dashboard-transport--remote-status-async base-url)
                (lambda (status)
@@ -1863,7 +2028,7 @@ network; a missing token rejects the promise."
                      base-url status))
                    ('native
                     (hermes-dashboard-transport--api-native-auth-async
-                     base-url status))
+                     base-url status owner-current-p))
                    (_ (hermes-dashboard-transport--unsupported-remote-auth
                        base-url)))))))
          (lambda (auth) (append (list :base-url base-url) auth))))
@@ -1872,7 +2037,8 @@ network; a missing token rejects the promise."
 (defun hermes-dashboard-transport-api-auth-async (&optional refresh)
   "Return a promise of dashboard REST auth, re-resolving when REFRESH is non-nil.
 The resolved auth is cached in `hermes-dashboard-transport--api-auth', shared
-with the synchronous path, and re-resolved when the configured URL changes."
+with the synchronous path.  Native expiry, replacement, or endpoint changes
+require fresh resolution."
   (when (or refresh (hermes-dashboard-transport--api-auth-stale-p))
     (setq hermes-dashboard-transport--api-auth nil))
   (if hermes-dashboard-transport--api-auth
@@ -1900,18 +2066,32 @@ with the synchronous path, and re-resolved when the configured URL changes."
   "Optional predicate authorizing browser mutations at HTTP transport entry.
 The asynchronous REST helper captures this dynamic binding across auth waits.")
 
+(defun hermes-dashboard-transport--api-reject-auth (auth)
+  "Invalidate only rejected AUTH, leaving newer credentials untouched."
+  (when (eq auth hermes-dashboard-transport--api-auth)
+    (setq hermes-dashboard-transport--api-auth nil))
+  (when-let* ((tokens (plist-get auth :native-tokens))
+              ((eq tokens (hermes-dashboard-transport--native-token-load
+                           (plist-get auth :base-url)))))
+    ;; Mark this in-memory generation unusable without changing disk or
+    ;; automatically replaying a mutation whose outcome may be unknown.
+    (setf (plist-get tokens :expires-at) 0)))
+
 (cl-defun hermes-dashboard-transport--api-request-1-async
     (method path &key body query headers secrets timeout retry base-url current-p)
   "Return a promise of dashboard REST METHOD PATH using resolved auth.
 BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; RETRY refreshes
-auth and retries once when the request fails.  BASE-URL, when non-nil, pins
+auth and retries once on HTTP 401.  BASE-URL, when non-nil, pins
 authentication and retries to that dashboard endpoint.
 CURRENT-P, when non-nil, must authorize each HTTP dispatch after auth."
-  (let* ((base-url (or base-url
-                       (hermes-dashboard-transport--api-base-url)))
-         (hermes-dashboard-transport-url base-url))
+  (let ((base-url (or base-url
+                      (hermes-dashboard-transport--api-base-url))))
     (hermes--promise-then
-     (hermes-dashboard-transport-api-auth-async)
+     ;; Native auth can check its owner synchronously.  Pin auth separately
+     ;; from the live URL, and unwind before immediate dispatch continuations.
+     (let ((hermes-dashboard-transport--api-auth-base-url base-url)
+           (hermes-dashboard-transport--api-auth-current-p current-p))
+       (hermes-dashboard-transport-api-auth-async))
      (lambda (auth)
        (when (and current-p (not (funcall current-p)))
          (error "Retired browser operation"))
@@ -1924,13 +2104,13 @@ CURRENT-P, when non-nil, must authorize each HTTP dispatch after auth."
            (lambda (response)
              (hermes-dashboard-transport--api-response-body method path response)))
           (lambda (reason)
+            (when (hermes-dashboard-transport--auth-error-p reason)
+              (hermes-dashboard-transport--api-reject-auth auth))
             (if (and retry (hermes-dashboard-transport--auth-error-p reason))
-                (progn
-                  (setq hermes-dashboard-transport--api-auth nil)
-                  (hermes-dashboard-transport--api-request-1-async
-                   method path :body body :query query :headers headers
-                   :secrets secrets :timeout timeout :retry nil
-                   :base-url base-url :current-p current-p))
+                (hermes-dashboard-transport--api-request-1-async
+                 method path :body body :query query :headers headers
+                 :secrets secrets :timeout timeout :retry nil
+                 :base-url base-url :current-p current-p)
               (hermes--promise-rejected
 	       (hermes-dashboard-transport--redact-secret
 	        reason (plist-get request :secrets)))))))))))
@@ -1956,26 +2136,87 @@ callers never block Emacs.  BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend
 the request.  CLIENT pins the dashboard base URL.  Its live session token is
 used when present; otherwise REST auth is resolved for that endpoint.
 CURRENT-P optionally fences reads as well as writes across authentication."
-  (let ((current-p (or current-p
-                       (and (not (equal method "GET"))
-                            hermes-dashboard-transport--api-dispatch-guard))))
-    (when (and current-p (not (funcall current-p)))
-      (error "Retired browser operation"))
-    (cond
-     ((hermes-dashboard-transport--api-client-token client)
-      (hermes-dashboard-transport--api-request-with-client-async
-       client method path :body body :query query :headers headers
-       :secrets secrets :timeout timeout))
-     ((hermes-dashboard-transport-client-p client)
-      (hermes-dashboard-transport--api-request-1-async
-       method path :body body :query query :headers headers :secrets secrets
-       :timeout timeout :retry (equal method "GET")
-       :base-url (hermes-dashboard-transport--api-client-base-url client)
-       :current-p current-p))
-     (t
-      (hermes-dashboard-transport--api-request-1-async
-       method path :body body :query query :headers headers :secrets secrets
-       :timeout timeout :retry (equal method "GET") :current-p current-p)))))
+  (hermes--promise-catch
+   (let ((current-p (or current-p
+                        (and (not (equal method "GET"))
+                             hermes-dashboard-transport--api-dispatch-guard))))
+     (when (and current-p (not (funcall current-p)))
+       (error "Retired browser operation"))
+     (cond
+      ((hermes-dashboard-transport--api-client-token client)
+       (hermes-dashboard-transport--api-request-with-client-async
+        client method path :body body :query query :headers headers
+        :secrets secrets :timeout timeout))
+      ((hermes-dashboard-transport-client-p client)
+       (hermes-dashboard-transport--api-request-1-async
+        method path :body body :query query :headers headers :secrets secrets
+        :timeout timeout :retry (equal method "GET")
+        :base-url (hermes-dashboard-transport--api-client-base-url client)
+        :current-p current-p))
+      (t
+       (hermes-dashboard-transport--api-request-1-async
+        method path :body body :query query :headers headers :secrets secrets
+        :timeout timeout :retry (equal method "GET") :current-p current-p))))
+   (lambda (reason)
+     (hermes--promise-rejected
+      (hermes-dashboard-transport--redact-secret reason secrets)))))
+
+;;; Stored message history
+
+(defun hermes-dashboard-transport--history-page-size (result offset)
+  "Validate RESULT at OFFSET and return its bounded page size."
+  (let* ((page (hermes-transport--get result 'pagination))
+         (messages (hermes-transport--get result 'messages))
+         (limit (hermes-transport--get page 'limit)))
+    (unless (and (or (listp messages) (vectorp messages))
+                 (integerp limit) (< 0 limit) (<= limit 500)
+                 (<= (length messages) limit)
+                 (equal (hermes-transport--get page 'offset) offset)
+                 (equal (hermes-transport--get page 'order) "oldest")
+                 (equal (hermes-transport--get page 'returned) (length messages)))
+      (error "Inconsistent stored history page"))
+    limit))
+
+(defun hermes-dashboard-transport--history-page
+    (client path query current-p offset pages session-id done)
+  "Read a history page on CLIENT at PATH with QUERY and CURRENT-P.
+OFFSET advances chronological PAGES; SESSION-ID fences the resolved lineage.
+Settle DONE once the last page arrives, or reject it on any failed read."
+  (hermes--promise-catch
+   (hermes--promise-then
+    (hermes-dashboard-transport-api-request-async
+     "GET" path :client client :current-p current-p
+     :query (append query `((limit . 500) (offset . ,offset) (order . "oldest"))))
+    (lambda (result)
+      (when (and current-p (not (funcall current-p)))
+        (error "Retired stored history request"))
+      (let* ((limit (hermes-dashboard-transport--history-page-size result offset))
+             (id (hermes-transport--get result 'session_id))
+             (messages (append (hermes-transport--get result 'messages) nil))
+             (pages (cons messages pages)))
+        (when (and session-id (not (equal session-id id)))
+          (error "Stored history session changed during paging"))
+        (if (= (length messages) limit)
+            (progn
+              (hermes-dashboard-transport--history-page
+               client path query current-p (+ offset limit) pages id done)
+              nil)
+          (hermes--promise-resolve
+           done `((messages . ,(apply #'append (nreverse pages)))
+                  (count . ,(+ offset (length messages)))))))))
+   (lambda (reason) (hermes--promise-reject done reason))))
+
+(defun hermes-dashboard-transport-session-messages-async
+    (client session-id &optional profile current-p)
+  "Return complete chronological stored SESSION-ID messages through CLIENT.
+PROFILE, when non-nil, pins the database on every bounded REST page.
+CURRENT-P fences dispatch after authentication and every page's completion.
+Reject partial failures; offset pages are not an atomic backend snapshot."
+  (let ((done (hermes--promise-make)))
+    (hermes-dashboard-transport--history-page
+     client (concat "/api/sessions/" (url-hexify-string session-id) "/messages")
+     (and profile `((profile . ,(copy-sequence profile)))) current-p 0 nil nil done)
+    done))
 
 ;;; Profile and model caches
 

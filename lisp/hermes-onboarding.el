@@ -113,24 +113,37 @@ List the dashboard's unauthenticated API-key providers, read a key for the
 chosen one, and save it through `model.save_key'.  A failed save is reported
 with the dashboard's own message."
   (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes--promise-then
-      (hermes-dashboard-transport-call-fn
-       #'hermes-dashboard-transport-model-options-cached client)
-      (lambda (result)
-        (let ((provider (hermes-onboarding--choose-provider result)))
+  (hermes-browser--next-request-generation)
+  (let ((current-p (hermes-browser--dispatch-guard nil))
+        (buffer (current-buffer)))
+    (hermes-browser--run-owned
+     (lambda (client active)
+       (let ((token hermes-dashboard-transport-request-owner))
+         (hermes--promise-then
           (hermes-dashboard-transport-call-fn
-           #'hermes-dashboard-transport-model-save-key
-           client
-           (hermes-transport--scalar-string
-            (hermes-transport--get provider 'slug))
-           (hermes-onboarding--read-key provider))))))
-   (lambda (result)
-     (hermes-onboarding--auth-changed)
-     (message "Connected Hermes provider %s"
-              (hermes-onboarding--provider-name
-               (hermes-transport--get result 'provider))))))
+           #'hermes-dashboard-transport-model-options-cached client)
+          (lambda (result)
+            (when (funcall active)
+              (with-current-buffer buffer
+                (when-let* ((provider (hermes-onboarding--choose-provider result))
+                            ((funcall active))
+                            (key (hermes-onboarding--read-key provider))
+                            ((funcall active)))
+                  (let ((hermes-dashboard-transport-dispatch-guard active)
+                        (hermes-dashboard-transport-request-owner token))
+                    (hermes-dashboard-transport-call-fn
+                     #'hermes-dashboard-transport-model-save-key client
+                     (hermes-transport--scalar-string
+                      (hermes-transport--get provider 'slug))
+                     key)))))))))
+     current-p
+     (lambda (result)
+       (hermes-onboarding--auth-changed)
+       (when (funcall current-p)
+         (message "Connected Hermes provider %s"
+                  (hermes-onboarding--provider-name
+                   (hermes-transport--get result 'provider)))))
+     (lambda (reason) (message "Hermes: %s" reason)))))
 
 ;;; OAuth providers
 
@@ -323,6 +336,11 @@ with the dashboard's own message."
     (or (cdr (assoc choice candidates))
         (user-error "No OAuth provider selected"))))
 
+(defun hermes-onboarding--oauth-instructions-p (result)
+  "Return non-nil when RESULT may still invite provider authorization."
+  (not (member (hermes-transport--get result 'status)
+               '("approved" "cancelled" "disconnected" "denied" "expired" "error"))))
+
 (defun hermes-onboarding--oauth-status-text (result)
   "Return readable, secret-free status text from OAuth RESULT."
   (string-join
@@ -334,11 +352,13 @@ with the dashboard's own message."
           (when-let* ((status (hermes-transport--non-empty-string
                                (hermes-transport--display-field result 'status))))
             (format "Status: %s" status))
-          (when-let* ((url (hermes-transport--non-empty-string
+          (when-let* (((hermes-onboarding--oauth-instructions-p result))
+                      (url (hermes-transport--non-empty-string
                             (or (hermes-transport--get result 'verification_url)
                                 (hermes-transport--get result 'auth_url)))))
             (format "Sign in: %s" url))
-          (when-let* ((code (hermes-transport--non-empty-string
+          (when-let* (((hermes-onboarding--oauth-instructions-p result))
+                      (code (hermes-transport--non-empty-string
                              (hermes-transport--get result 'user_code))))
             (format "User code: %s" code))
           (when-let* ((error (or
@@ -370,7 +390,22 @@ with the dashboard's own message."
     (let ((status (hermes-onboarding--oauth-status-text
                    hermes-onboarding-oauth--result)))
       (insert (if (string-empty-p status) "No status yet" status)))
-    (insert "\n\nKeys: g poll, s submit code, c cancel, d disconnect\n")
+    (insert "\n\nKeys: "
+            (cond
+             ((hermes-onboarding--oauth-approved-p hermes-onboarding-oauth--result)
+              "d disconnect, ")
+             ((hermes-transport--non-empty-string hermes-onboarding-oauth--session-id)
+              (concat "g poll, "
+                      (when (equal (hermes-transport--get
+                                    hermes-onboarding-oauth--result 'flow) "pkce")
+                        "s submit code, ")
+                      "c cancel, "))
+             ((not (member (hermes-transport--get
+                            hermes-onboarding-oauth--result 'status)
+                           '("starting" "disconnecting")))
+              "r retry start, ")
+             (t ""))
+            "a accounts, q quit\n")
     (goto-char (point-min))))
 
 (defun hermes-onboarding--oauth-context ()
@@ -381,12 +416,18 @@ with the dashboard's own message."
         :generation hermes-onboarding-oauth--generation
         :provider hermes-onboarding-oauth--provider
         :session-id hermes-onboarding-oauth--session-id
-        :profile hermes-onboarding-oauth--profile))
+        :profile hermes-onboarding-oauth--profile
+        :instance hermes-instance
+        :instance-value (copy-tree hermes-instance)
+        :file buffer-file-name))
 
 (defun hermes-onboarding--oauth-context-current-p (context)
   "Return non-nil when CONTEXT still owns its OAuth status buffer."
   (and (eq (current-buffer) (plist-get context :buffer))
        (derived-mode-p 'hermes-onboarding-oauth-mode)
+       (equal buffer-file-name (plist-get context :file))
+       (eq hermes-instance (plist-get context :instance))
+       (equal hermes-instance (plist-get context :instance-value))
        (= hermes-onboarding-oauth--generation
           (plist-get context :generation))
        (equal hermes-onboarding-oauth--provider
@@ -404,6 +445,11 @@ with the dashboard's own message."
                 ((buffer-live-p buffer)))
       (with-current-buffer buffer
         (when (hermes-onboarding--oauth-context-current-p context)
+          (setq hermes-onboarding-oauth--result
+                (hermes-onboarding--oauth-merge-result
+                 hermes-onboarding-oauth--result
+                 `((status . "error") (error_message . ,(format "%s" reason)))))
+          (hermes-onboarding-oauth--render)
           (message "Hermes: %s" reason))))))
 
 (defun hermes-onboarding--oauth-apply-result (context result &optional clear-session)
@@ -413,7 +459,8 @@ with the dashboard's own message."
     (with-current-buffer buffer
       (when (hermes-onboarding--oauth-context-current-p context)
         (let* ((prior hermes-onboarding-oauth--result)
-               (merged (hermes-onboarding--oauth-merge-result prior result)))
+               (merged (if clear-session result
+                         (hermes-onboarding--oauth-merge-result prior result))))
           (setq hermes-onboarding-oauth--session-id
                 (unless clear-session
                   (or (hermes-transport--non-empty-string
@@ -469,26 +516,78 @@ Return the new request context."
     (pop-to-buffer buffer)
     context))
 
+(defun hermes-onboarding--oauth-run (context make-promise success)
+  "Run MAKE-PROMISE for CONTEXT, applying SUCCESS only for its live owner."
+  (with-current-buffer (plist-get context :buffer)
+    (let ((current-p
+           (lambda ()
+             (when (buffer-live-p (plist-get context :buffer))
+               (with-current-buffer (plist-get context :buffer)
+                 (hermes-onboarding--oauth-context-current-p context)))))
+          cleanup)
+      (condition-case err
+          (hermes-browser--with-client
+           (lambda (client done)
+             (setq cleanup done)
+             (let* ((guard (hermes-browser--dispatch-guard client current-p))
+                    (hermes-dashboard-transport--api-dispatch-guard guard))
+               ;; Settlement still owns the lease: releasing the last reference
+               ;; stops the client and would invalidate our generation guard.
+               (hermes--promise-finally
+                (hermes--promise-catch
+                 (hermes--promise-then
+                  (condition-case err
+                      (if (funcall guard)
+                          (funcall make-promise client)
+                        (hermes--promise-rejected "Retired OAuth request"))
+                    ((error quit)
+                     (hermes--promise-rejected (error-message-string err))))
+                  (lambda (result)
+                    (when (funcall guard) (funcall success result))))
+                 (lambda (reason)
+                   (when (funcall guard)
+                     (hermes-onboarding--oauth-report-error context reason))))
+                done))))
+        ((error quit)
+         (when cleanup (funcall cleanup))
+         (when (and (not cleanup) (funcall current-p))
+           (hermes-onboarding--oauth-report-error context (error-message-string err)))
+         (signal (car err) (cdr err)))))))
+
 (defun hermes-onboarding--oauth-start-provider (provider)
   "Start native OAuth for API-supplied PROVIDER."
-  (let ((profile (hermes-onboarding--current-profile)) context)
-    (hermes-browser--run-on-client
+  (let* ((profile (hermes-onboarding--current-profile))
+         (context (hermes-onboarding--show-oauth
+                   provider '((status . "starting")) profile)))
+    (hermes-onboarding--oauth-run
+     context
      (lambda (client)
-       (setq context
-             (hermes-onboarding--show-oauth
-              provider '((status . "starting")) profile))
        (hermes-onboarding--oauth-start
         client (hermes-transport--display-field provider 'id) profile))
      (lambda (result)
        (when (hermes-onboarding--oauth-apply-result context result)
-         (when (hermes-onboarding--oauth-approved-p result)
-           (hermes-onboarding--auth-changed))
-         (when-let* ((url (or (hermes-transport--get result 'verification_url)
-                              (hermes-transport--get result 'auth_url)))
-                     ((hermes-transport--non-empty-string url)))
-           (browse-url url))))
-     (lambda (reason)
-       (hermes-onboarding--oauth-report-error context reason)))))
+         (if (hermes-onboarding--oauth-approved-p result)
+             (hermes-onboarding--auth-changed)
+           (when-let* (((hermes-onboarding--oauth-instructions-p result))
+                       (url (or (hermes-transport--get result 'verification_url)
+                               (hermes-transport--get result 'auth_url)))
+                       ((hermes-transport--non-empty-string url)))
+             (browse-url url))))))))
+
+(defun hermes-onboarding-oauth-retry ()
+  "Retry starting the provider shown in this settled OAuth buffer."
+  (interactive)
+  (unless (and (derived-mode-p 'hermes-onboarding-oauth-mode)
+               hermes-onboarding-oauth--provider
+               (not (hermes-transport--non-empty-string
+                     hermes-onboarding-oauth--session-id))
+               (not (member (hermes-transport--get
+                             hermes-onboarding-oauth--result 'status)
+                            '("starting" "disconnecting"))))
+    (user-error "No settled OAuth start to retry"))
+  (hermes-onboarding--oauth-start-provider
+   `((id . ,hermes-onboarding-oauth--provider)
+     (name . ,hermes-onboarding-oauth--provider-name))))
 
 (defun hermes-onboarding--provider-account-copy-field (provider field label)
   "Copy PROVIDER FIELD and report it as LABEL."
@@ -550,7 +649,8 @@ Return the new request context."
                 hermes-onboarding-oauth--session-id))
     (user-error "No OAuth session to poll"))
   (let ((context (hermes-onboarding--oauth-context)))
-    (hermes-browser--run-on-client
+    (hermes-onboarding--oauth-run
+     context
      (lambda (client)
        (hermes-onboarding--oauth-poll
         client (plist-get context :provider) (plist-get context :session-id)
@@ -558,9 +658,7 @@ Return the new request context."
      (lambda (result)
        (when (hermes-onboarding--oauth-apply-result context result)
          (when (hermes-onboarding--oauth-approved-p result)
-           (hermes-onboarding--auth-changed))))
-     (lambda (reason)
-       (hermes-onboarding--oauth-report-error context reason)))))
+           (hermes-onboarding--auth-changed)))))))
 
 (defun hermes-onboarding-oauth-submit ()
   "Submit a secret code for the OAuth session in the current buffer."
@@ -574,7 +672,8 @@ Return the new request context."
     (when (hermes-onboarding--oauth-context-current-p context)
       (when (string-empty-p code)
         (user-error "OAuth code required"))
-      (hermes-browser--run-on-client
+      (hermes-onboarding--oauth-run
+       context
        (lambda (client)
          (hermes-onboarding--oauth-submit
           client (plist-get context :provider)
@@ -583,9 +682,7 @@ Return the new request context."
        (lambda (result)
          (when (hermes-onboarding--oauth-apply-result context result)
            (when (hermes-onboarding--oauth-approved-p result)
-             (hermes-onboarding--auth-changed))))
-       (lambda (reason)
-         (hermes-onboarding--oauth-report-error context reason))))))
+             (hermes-onboarding--auth-changed))))))))
 
 (defun hermes-onboarding-oauth-cancel ()
   "Cancel the OAuth session shown in the current buffer."
@@ -594,14 +691,14 @@ Return the new request context."
            hermes-onboarding-oauth--session-id)
     (user-error "No OAuth session to cancel"))
   (let ((context (hermes-onboarding--oauth-context)))
-    (hermes-browser--run-on-client
+    (hermes-onboarding--oauth-run
+     context
      (lambda (client)
        (hermes-onboarding--oauth-cancel
         client (plist-get context :session-id) (plist-get context :profile)))
-     (lambda (result)
-       (hermes-onboarding--oauth-apply-result context result t))
-     (lambda (reason)
-       (hermes-onboarding--oauth-report-error context reason)))))
+     (lambda (_result)
+       (hermes-onboarding--oauth-apply-result
+        context '((status . "cancelled")) t)))))
 
 (defun hermes-onboarding-oauth-disconnect ()
   "Disconnect the OAuth provider shown in the current buffer."
@@ -615,15 +712,15 @@ Return the new request context."
     (when (hermes-onboarding--oauth-context-current-p context)
       (unless confirmed
         (user-error "OAuth disconnect cancelled"))
-      (hermes-browser--run-on-client
+      (hermes-onboarding--oauth-run
+       context
        (lambda (client)
          (hermes-onboarding--oauth-disconnect
           client (plist-get context :provider) (plist-get context :profile)))
-       (lambda (result)
-         (when (hermes-onboarding--oauth-apply-result context result t)
-           (hermes-onboarding--auth-changed)))
-       (lambda (reason)
-         (hermes-onboarding--oauth-report-error context reason))))))
+       (lambda (_result)
+         (when (hermes-onboarding--oauth-apply-result
+                context '((status . "disconnected")) t)
+           (hermes-onboarding--auth-changed)))))))
 
 ;;;###autoload
 (defun hermes-onboarding-oauth-disconnect-provider ()
@@ -659,9 +756,10 @@ Return the new request context."
                  provider '((status . "disconnecting")) profile instance))
           (hermes-onboarding--oauth-disconnect
            client (hermes-transport--display-field provider 'id) profile))))
-     (lambda (result)
+     (lambda (_result)
        (when (and (apply #'hermes-browser--request-current-mode-p owner)
-                  (hermes-onboarding--oauth-apply-result context result t))
+                  (hermes-onboarding--oauth-apply-result
+                   context '((status . "disconnected")) t))
          (when (apply #'hermes-browser--request-current-mode-p owner)
            (hermes-onboarding--auth-changed))
          (when (apply #'hermes-browser--request-current-mode-p owner)
@@ -761,7 +859,9 @@ Return the new request context."
   "g" #'hermes-onboarding-oauth-poll
   "s" #'hermes-onboarding-oauth-submit
   "c" #'hermes-onboarding-oauth-cancel
-  "d" #'hermes-onboarding-oauth-disconnect)
+  "d" #'hermes-onboarding-oauth-disconnect
+  "r" #'hermes-onboarding-oauth-retry
+  "a" #'hermes-onboarding-oauth-connect)
 
 (define-derived-mode hermes-onboarding-oauth-mode special-mode "Hermes OAuth"
   "Major mode for one Hermes OAuth provider flow."

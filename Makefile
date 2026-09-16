@@ -20,7 +20,7 @@ export EMACSCLIENT
 
 SRCS = lisp/hermes-promise.el lisp/hermes-notifications.el lisp/hermes-session-title.el lisp/hermes-transport.el lisp/hermes-transport-cli.el lisp/hermes-dashboard-api.el lisp/hermes-dashboard-transport.el lisp/hermes-dashboard-rpc.el lisp/hermes-request.el lisp/hermes-chat-format.el lisp/hermes-preview-format.el lisp/hermes-chat-render.el lisp/hermes-chat-buffer.el lisp/hermes-chat-draft.el lisp/hermes-chat-prompts.el lisp/hermes-chat-images.el lisp/hermes-chat-todos.el lisp/hermes-chat-dashboard.el lisp/hermes-chat-models.el lisp/hermes-chat-handoff.el lisp/hermes-chat-slash.el lisp/hermes-chat.el lisp/hermes-browser.el lisp/hermes-files.el lisp/hermes-preview.el lisp/hermes-admin.el lisp/hermes-sessions.el lisp/hermes-projects.el lisp/hermes-inventory.el lisp/hermes-tool-setup.el lisp/hermes-rollback.el lisp/hermes-subagents.el lisp/hermes-cron.el lisp/hermes-profiles.el lisp/hermes-messaging.el lisp/hermes-kanban-log.el lisp/hermes-kanban-events.el lisp/hermes-kanban.el lisp/hermes-mcp.el lisp/hermes-config.el lisp/hermes-plugins.el lisp/hermes-system.el lisp/hermes-command-palette.el lisp/hermes-exec.el lisp/hermes-onboarding.el lisp/hermes-capabilities.el lisp/hermes.el
 TEST_SUPPORT = tests/hermes-test-helpers.el
-TESTS = tests/hermes-request-tests.el tests/hermes-chat-draft-tests.el tests/hermes-chat-todos-tests.el tests/hermes-preview-tests.el tests/hermes-files-tests.el tests/hermes-chat-images-tests.el tests/hermes-notifications-tests.el tests/hermes-transport-tests.el tests/hermes-chat-tests.el tests/hermes-chat-handoff-tests.el tests/hermes-chat-models-tests.el tests/hermes-chat-prompts-tests.el tests/hermes-chat-dashboard-tests.el tests/hermes-chat-reducer-tests.el \
+TESTS = tests/hermes-dependency-tests.el tests/hermes-request-tests.el tests/hermes-chat-draft-tests.el tests/hermes-chat-todos-tests.el tests/hermes-preview-tests.el tests/hermes-files-tests.el tests/hermes-chat-images-tests.el tests/hermes-notifications-tests.el tests/hermes-transport-tests.el tests/hermes-chat-tests.el tests/hermes-chat-handoff-tests.el tests/hermes-chat-models-tests.el tests/hermes-chat-prompts-tests.el tests/hermes-chat-dashboard-tests.el tests/hermes-chat-reducer-tests.el \
 	tests/hermes-dashboard-tests.el tests/hermes-ui-tests.el tests/hermes-kanban-tests.el \
 	tests/hermes-cron-tests.el tests/hermes-mcp-tests.el tests/hermes-config-tests.el \
 	tests/hermes-system-tests.el tests/hermes-admin-tests.el tests/hermes-plugins-tests.el \
@@ -38,7 +38,7 @@ LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 HERMES_CLIENT_LIVE_ABI = (and (fboundp 'hermes-dashboard-transport-client-p) (mapcar (function car) (cl-struct-slot-info 'hermes-dashboard-transport-client)))
 
-.PHONY: all verify-sources compile do-compile test do-test test-load lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load do-load clean
+.PHONY: all verify-sources compile do-compile test do-test test-minimum-keymap-popup do-test-minimum-keymap-popup test-load lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load do-load clean
 
 all: compile
 
@@ -96,6 +96,18 @@ do-test:
 	    run_isolated $(BATCH) -l ert $(ERT_OPTS) -l $$f \
 	      --eval '(ert-run-tests-batch-and-exit (quote $(SELECTOR)))' || exit 1; \
 	  done
+
+test-minimum-keymap-popup:
+	@system=$$(nix --extra-experimental-features 'nix-command flakes' \
+	    eval --impure --raw --expr builtins.currentSystem) || exit 1; \
+	  nix --extra-experimental-features 'nix-command flakes' \
+	    build --no-link --no-write-lock-file \
+	    ".#checks.$$system.minimum-keymap-popup"
+
+do-test-minimum-keymap-popup:
+	@$(MAKE) --no-print-directory do-test \
+	  TESTS='tests/hermes-dependency-tests.el tests/hermes-ui-tests.el' \
+	  ERT_OPTS="--eval '(setq hermes-test-keymap-popup-minimum t)'"
 
 test-load:
 	@test_root=$$(mktemp -d "$(CURDIR)/.test-load.XXXXXX") || exit 1; \
@@ -208,7 +220,8 @@ pre-handoff-check:
 	  nix --extra-experimental-features 'nix-command flakes' \
 	    build --no-link --no-write-lock-file \
 	    ".#checks.$$system.package" \
-	    ".#checks.$$system.package-smoke"
+	    ".#checks.$$system.package-smoke" \
+	    ".#checks.$$system.minimum-keymap-popup"
 
 load: clean
 	@$(ENV_MAKE) do-load

@@ -819,10 +819,8 @@
   "An interrupt result with `found' false does not report success."
   (let ((promise (hermes--promise-make)) messages refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'fake-client)
-                                       on-success)))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
                (lambda (&rest _) promise))
               ((symbol-function 'hermes-subagents--revert)
@@ -1120,12 +1118,13 @@
                (lambda (_prompt collection &rest _) (car collection)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (method path &rest args)
-                 (setq seen-method method
-                       seen-path path
-                       seen-body (plist-get args :body))
+                 (when (equal method "PUT")
+                   (setq seen-method method
+                         seen-path path
+                         seen-body (plist-get args :body)))
                  (hermes--promise-resolved
                   '((ok . t) (model . "gpt-5.5") (provider . "openai")))))
-              ((symbol-function 'hermes-profiles--revert)
+              ((symbol-function 'hermes-profiles--render)
                (lambda (&rest _) (setq reverted t))))
       (with-temp-buffer
         (hermes-profiles-mode)
@@ -1140,8 +1139,8 @@
       (should (equal (cdr (assq 'model seen-body)) "gpt-5.5"))
       (should reverted))))
 
-(ert-deftest hermes-profiles-set-model-refreshes-origin-after-newer-read ()
-  "A completed model update starts a fresh read in its originating profile buffer."
+(ert-deftest hermes-profiles-set-model-ignores-completion-after-newer-read ()
+  "A retired model update cannot refresh a newer browser generation."
   (let ((put (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'hermes-browser--existing-client)
                (lambda () 'fake-client))
@@ -1164,13 +1163,13 @@
               '(("planner" ["planner" "" "" "" "—" ""])))
         (tabulated-list-print)
         (goto-char (point-min))
-        (let ((origin (current-buffer)))
+        (progn
           (hermes-profiles-set-model)
           (hermes-browser--next-request-generation)
           (with-temp-buffer
             (hermes--promise-resolve
              put '((ok . t) (model . "gpt-5.5") (provider . "openai"))))
-          (should (eq refreshed origin)))))))
+          (should-not refreshed))))))
 
 (ert-deftest hermes-profiles-stale-model-catalog-cannot-prompt-or-put ()
   "A model catalog from instance A cannot act after retargeting to B."
@@ -1284,14 +1283,23 @@
            requests buffers shown)
       (unwind-protect
           (cl-letf (((symbol-function 'hermes-browser--existing-client)
-                     (lambda () 'fake-client))
+                     (lambda () (make-hermes-dashboard-transport-client
+                                 :base-url (hermes-instance-url
+                                            (hermes-instance-resolve)))))
                     ((symbol-function 'pop-to-buffer)
                      (lambda (buffer &rest _) (setq shown buffer)
                        (cl-pushnew buffer buffers)))
                     ((symbol-function 'hermes-dashboard-transport-api-request-async)
                      (lambda (method path &rest args)
                        (let ((pending (hermes--promise-make)))
-                         (push (list method hermes-instance path
+                         (push (list method
+                                     (seq-find
+                                      (lambda (instance)
+                                        (equal (hermes-instance-url instance)
+                                               (hermes-dashboard-transport-client-base-url
+                                                (plist-get args :client))))
+                                      (list a b))
+                                     path
                                      (plist-get args :body) pending) requests)
                          pending))))
             (cl-labels ((open-editor ()
@@ -1787,13 +1795,12 @@
           (should-not refreshed)
           (should-not messages))))))
 
-(ert-deftest hermes-subagents-interrupt-refreshes-after-newer-read ()
-  "A completed interrupt starts a fresh read despite an intervening refresh."
+(ert-deftest hermes-subagents-interrupt-retired-by-newer-read ()
+  "A newer read retires an interrupt's local projection, not its remote effect."
   (let ((promise (hermes--promise-make)) refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
                (lambda (&rest _) promise))
               ((symbol-function 'hermes-subagents--revert)
@@ -1804,19 +1811,17 @@
         (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
         (tabulated-list-print)
         (goto-char (point-min))
-        (let ((origin (current-buffer)))
-          (hermes-subagents-interrupt)
-          (hermes-browser--next-request-generation)
-          (hermes--promise-resolve promise '((found . t)))
-          (should (eq refreshed origin)))))))
+        (hermes-subagents-interrupt)
+        (hermes-browser--next-request-generation)
+        (hermes--promise-resolve promise '((found . t)))
+        (should-not refreshed)))))
 
 (ert-deftest hermes-subagents-late-interrupt-does-not-report-or-refresh ()
   "An instance A interrupt cannot report or refresh after retargeting to B."
   (let ((promise (hermes--promise-make)) messages refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
                (lambda (&rest _) promise))
               ((symbol-function 'hermes-subagents--revert)
@@ -2212,6 +2217,752 @@
                                         (buffer-string)))))
           (dolist (name hermes-browser-test--kanban-buffers)
             (when (get-buffer name) (kill-buffer name))))))))
+
+(defun hermes-browser-test--mutation-row (mode)
+  "Render a qualified mutation row in MODE on a synthetic backend."
+  (funcall mode)
+  (hermes-browser--own-instance (cons "a" (copy-sequence "http://a.invalid")))
+  (pcase mode
+    ('hermes-profiles-mode
+     (setq tabulated-list-entries '(("row/a" ["row/a" "" "" "" "" ""])))
+     (tabulated-list-print))
+    ('hermes-sessions-mode
+     (hermes-sessions--render
+      '((sessions . (((id . "row/a") (profile . "worker") (title . "Original")))))))
+    ('hermes-cron-mode
+     (hermes-cron--render
+      '((jobs . (((id . "row/a") (profile . "worker") (name . "Original")
+                   (schedule . "daily") (prompt . "Original prompt"))))))))
+  (goto-char (point-min)))
+
+(ert-deftest hermes-browser-delete-consent-retains-owner-to-wire ()
+  "Confirmation cannot move deletion across buffer, instance, row or lifetime."
+  (dolist (case '((hermes-profiles-mode hermes-profiles-delete
+                                      "/api/profiles/row%2Fa")
+                  (hermes-sessions-mode hermes-sessions-delete
+                                       "/api/sessions/row%2Fa?profile=worker")
+                  (hermes-cron-mode hermes-cron-remove
+                                   "/api/cron/jobs/row%2Fa?profile=worker")))
+    (dolist (event '(valid foreign retarget instance-value mode kill newer row cancel))
+      (ert-info ((format "%S / %S" (cadr case) event))
+        (let ((hermes-instances '(("a" . "http://a.invalid")
+                                  ("b" . "http://b.invalid")))
+              (foreign (generate-new-buffer " *foreign mutation*"))
+              requests)
+          (with-current-buffer foreign
+            (hermes-browser--own-instance '("b" . "http://b.invalid")))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                         (lambda () (make-hermes-dashboard-transport-client
+                                     :base-url (hermes-instance-url hermes-instance)
+                                     :token "synthetic" :ready-p t)))
+                        ((symbol-function 'yes-or-no-p)
+                         (lambda (&rest _)
+                           (pcase event
+                             ('foreign (set-buffer foreign))
+                             ('retarget (hermes-browser--own-instance
+                                         '("b" . "http://b.invalid")))
+                             ('instance-value (aset (cdr hermes-instance) 7 ?b))
+                             ('mode (fundamental-mode))
+                             ('kill (kill-buffer (current-buffer)))
+                             ('newer (hermes-browser--next-request-generation))
+                             ('row (goto-char (point-max))))
+                           (not (eq event 'cancel))))
+                        ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                         (lambda (request &rest _)
+                           (push request requests)
+                           (hermes--promise-resolved '(:body ((ok . t))))))
+                        ((symbol-function 'hermes-profiles--revert) #'ignore)
+                        ((symbol-function 'hermes-cron--revert) #'ignore)
+                        ((symbol-function 'hermes-sessions--after-delete) #'ignore))
+                (with-temp-buffer
+                  (hermes-browser-test--mutation-row (car case))
+                  (funcall (cadr case)))
+                (if (memq event '(valid foreign))
+                    (progn
+                      (should (= (length requests) 1))
+                      (should (equal (plist-get (car requests) :method) "DELETE"))
+                      (should (equal (plist-get (car requests) :url)
+                                     (concat "http://a.invalid" (nth 2 case)))))
+                  (should-not requests)))
+            (kill-buffer foreign)))))))
+
+(ert-deftest hermes-browser-delete-auth-and-completion-retain-owner ()
+  "Deferred authentication and late outcomes cannot revive an old deletion."
+  (dolist (mode '(hermes-profiles-mode hermes-sessions-mode hermes-cron-mode))
+    (dolist (stage '(auth success error))
+      (let* ((hermes-instances '(("a" . "http://a.invalid")))
+             (auth (hermes--promise-make)) (reply (hermes--promise-make))
+             (client (make-hermes-dashboard-transport-client
+                      :base-url "http://a.invalid" :ready-p t))
+             requests feedback)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _) auth))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (request &rest _) (push request requests) reply))
+                  ((symbol-function 'hermes-profiles--revert)
+                   (lambda () (push 'profiles feedback)))
+                  ((symbol-function 'hermes-cron--revert)
+                   (lambda () (push 'cron feedback)))
+                  ((symbol-function 'hermes-sessions--after-delete)
+                   (lambda (&rest _) (push 'sessions feedback)))
+                  ((symbol-function 'message)
+                   (lambda (&rest _) (push 'message feedback))))
+          (with-temp-buffer
+            (hermes-browser-test--mutation-row mode)
+            (funcall (pcase mode ('hermes-profiles-mode #'hermes-profiles-delete)
+                            ('hermes-sessions-mode #'hermes-sessions-delete)
+                            (_ #'hermes-cron-remove)))
+            (when (eq stage 'auth) (hermes-browser--next-request-generation))
+            (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                            :session-token "synthetic"))
+            (if (eq stage 'auth) (should-not requests)
+              (should (= (length requests) 1))
+              (hermes-browser--next-request-generation))
+            (if (eq stage 'error) (hermes--promise-reject reply "late failure")
+              (hermes--promise-resolve reply '(:body ((ok . t)))))
+            (should-not feedback)))))))
+
+(ert-deftest hermes-profiles-model-continuations-retain-exact-owner ()
+  "Fence the asynchronous catalogue, picker, write authentication and readback."
+  (dolist (stage '(valid foreign catalog prompt auth client-auth put readback-auth readback))
+    (ert-info ((format "Retirement stage: %S" stage))
+      (let* ((hermes-instances '(("a" . "http://a.invalid")))
+             (hermes-dashboard-transport--profile-cache nil)
+             (client (make-hermes-dashboard-transport-client
+                      :base-url "http://a.invalid" :ready-p t))
+             (origin (generate-new-buffer " *model owner*"))
+             (foreign (generate-new-buffer " *model callback*"))
+             (catalog (hermes--promise-make)) (auth (hermes--promise-make))
+             (put (hermes--promise-make)) (readback (hermes--promise-make))
+             (auth-count 0) requests prompts rendered feedback)
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client))
+                      ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+                       (lambda (_client &rest args)
+                         (hermes--promise-then catalog (plist-get args :resolve))))
+                      ((symbol-function 'completing-read)
+                       (lambda (_prompt choices &rest _)
+                         (push (current-buffer) prompts)
+                         (pcase stage
+                           ('prompt (hermes-browser--next-request-generation))
+                           ('foreign (set-buffer foreign)))
+                         (car choices)))
+                      ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                       (lambda (&rest _)
+                         (cl-incf auth-count)
+                         (if (or (and (memq stage '(auth client-auth)) (= auth-count 1))
+                                 (and (eq stage 'readback-auth) (= auth-count 2)))
+                             auth
+                           (hermes--promise-resolved
+                            '(:base-url "http://a.invalid" :session-token "synthetic")))))
+                      ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                       (lambda (request &rest _)
+                         (push request requests)
+                         (if (equal (plist-get request :method) "PUT") put readback)))
+                      ((symbol-function 'hermes-profiles--render)
+                       (lambda (result) (setq rendered (list (current-buffer) result))))
+                      ((symbol-function 'message)
+                       (lambda (&rest _) (push 'message feedback))))
+              (with-current-buffer origin
+                (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+                (hermes-profiles-set-model)
+                (when (eq stage 'catalog) (hermes-browser--next-request-generation)))
+              ;; The catalogue callback must enter the owner before prompting.
+              (with-current-buffer foreign
+                (hermes--promise-resolve
+                 catalog '((providers . (((slug . "vendor") (name . "vendor")
+                                           (authenticated . t) (models . ("model/α"))))))))
+              (if (eq stage 'catalog) (should-not prompts)
+                (should (equal prompts (list origin))))
+              (when (memq stage '(auth client-auth))
+                (if (eq stage 'client-auth)
+                    (cl-incf (hermes-dashboard-transport-client-generation client))
+                  (with-current-buffer origin (hermes-browser--next-request-generation)))
+                (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                               :session-token "synthetic")))
+              (if (memq stage '(catalog prompt auth client-auth)) (should-not requests)
+                (should (= (length requests) 1))
+                (should (equal (plist-get (car requests) :url)
+                               "http://a.invalid/api/profiles/row%2Fa/model"))
+                (should (equal (plist-get (car requests) :body)
+                               '((provider . "vendor") (model . "model/α")))))
+              (when (eq stage 'put)
+                (with-current-buffer origin (hermes-browser--next-request-generation)))
+              (hermes--promise-resolve put '(:body ((ok . t))))
+              (when (memq stage '(readback-auth readback))
+                (with-current-buffer origin (hermes-browser--next-request-generation))
+                (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                               :session-token "synthetic")))
+              (hermes--promise-resolve
+               readback '(:body ((profiles . (((name . "row/a") (model . "model/α")
+                                               (provider . "vendor")))))))
+              (if (memq stage '(valid foreign))
+                  (progn
+                    (should (= (length requests) 2))
+                    (should (equal (plist-get (car requests) :method) "GET"))
+                    (should (equal (plist-get (car requests) :url)
+                                   "http://a.invalid/api/profiles"))
+                    (should (eq (car rendered) origin))
+                    (should (equal (hermes-dashboard-transport-cached-profile-list client)
+                                   (cadr rendered)))
+                    (should (equal (hermes-transport--get
+                                    (car (hermes-transport--get (cadr rendered) 'profiles))
+                                    'model) "model/α")))
+                (should-not rendered)
+                (should-not hermes-dashboard-transport--profile-cache)
+                (should-not feedback))
+              (when (eq stage 'readback-auth) (should (= (length requests) 1))))
+          (kill-buffer origin)
+          (kill-buffer foreign))))))
+
+(ert-deftest hermes-browser-input-mutation-siblings-retain-owner ()
+  "Create and rename input cannot transfer actions to another owner."
+  (dolist (case '((hermes-profiles-mode hermes-profiles-create "POST" "/api/profiles")
+                  (hermes-profiles-mode hermes-profiles-rename "PATCH" "/api/profiles/row%2Fa")
+                  (hermes-sessions-mode hermes-sessions-rename "PATCH" "/api/sessions/row%2Fa")
+                  (hermes-cron-mode hermes-cron-create "POST" "/api/cron/jobs?profile=worker")))
+    (dolist (event '(valid foreign retarget newer auth))
+      (ert-info ((format "%S / %S" (cadr case) event))
+        (let* ((hermes-instances '(("a" . "http://a.invalid")
+                                   ("b" . "http://b.invalid")))
+               (foreign (generate-new-buffer " *input foreign*"))
+               (auth (hermes--promise-make))
+               requests prompted)
+          (with-current-buffer foreign
+            (hermes-browser--own-instance '("b" . "http://b.invalid")))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                         (lambda () (make-hermes-dashboard-transport-client
+                                     :base-url (hermes-instance-url hermes-instance)
+                                     :ready-p t)))
+                        ((symbol-function 'read-string)
+                         (lambda (prompt &rest _)
+                           (unless prompted
+                             (setq prompted t)
+                             (pcase event
+                               ('foreign (set-buffer foreign))
+                               ('retarget (hermes-browser--own-instance
+                                           '("b" . "http://b.invalid")))
+                               ('newer (hermes-browser--next-request-generation))))
+                           (cond ((string-prefix-p "Profile:" prompt) "worker")
+                                 ((string-prefix-p "Skills" prompt) "")
+                                 (t "literal"))))
+                        ((symbol-function 'read-string-from-buffer)
+                         (lambda (&rest _) "literal\nbody"))
+                        ((symbol-function 'completing-read) (lambda (&rest _) ""))
+                        ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                         (lambda (&rest _)
+                           (if (eq event 'auth) auth
+                             (hermes--promise-resolved
+                              (list :base-url hermes-dashboard-transport--api-auth-base-url
+                                    :session-token "synthetic")))))
+                        ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                         (lambda (request &rest _)
+                           (push request requests)
+                           (hermes--promise-resolved '(:body ((ok . t))))))
+                        ((symbol-function 'hermes-profiles--revert) #'ignore)
+                        ((symbol-function 'hermes-cron--revert) #'ignore)
+                        ((symbol-function 'hermes-sessions--after-rename) #'ignore))
+                (with-temp-buffer
+                  (hermes-browser-test--mutation-row (car case))
+                  (if (and (memq event '(retarget newer))
+                           (not (eq (cadr case) 'hermes-sessions-rename)))
+                      (should-error (call-interactively (cadr case)) :type 'user-error)
+                    (call-interactively (cadr case)))
+                  (when (eq event 'auth)
+                    (hermes-browser--next-request-generation)
+                    (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                                   :session-token "synthetic"))))
+                (if (memq event '(valid foreign))
+                    (progn
+                      (should (= (length requests) 1))
+                      (should (equal (plist-get (car requests) :method) (nth 2 case)))
+                      (should (equal (plist-get (car requests) :url)
+                                     (concat "http://a.invalid" (nth 3 case)))))
+                  (should-not requests)))
+            (kill-buffer foreign)))))))
+
+(ert-deftest hermes-cron-edit-continuations-retain-owner-to-wire ()
+  "Deferred job input and PUT authentication retain the original job owner."
+  (dolist (stage '(valid foreign prompt auth))
+    (let* ((hermes-instances '(("a" . "http://a.invalid")))
+           (origin (generate-new-buffer " *cron owner*"))
+           (foreign (generate-new-buffer " *cron callback*"))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "http://a.invalid" :ready-p t))
+           (job (hermes--promise-make)) (auth (hermes--promise-make))
+           (auth-count 0) requests prompted)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client))
+                    ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                     (lambda (&rest _)
+                       (cl-incf auth-count)
+                       (if (and (eq stage 'auth) (= auth-count 2)) auth
+                         (hermes--promise-resolved
+                          '(:base-url "http://a.invalid" :session-token "synthetic")))))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request &rest _)
+                       (push request requests)
+                       (if (equal (plist-get request :method) "GET") job
+                         (hermes--promise-resolved '(:body ((ok . t)))))))
+                    ((symbol-function 'hermes-cron--read-updates)
+                     (lambda (_job)
+                       (setq prompted (current-buffer))
+                       (pcase stage
+                         ('prompt (hermes-browser--next-request-generation))
+                         ('foreign (set-buffer foreign)))
+                       '((name . "Exact name") (prompt . "Exact\nbody"))))
+                    ((symbol-function 'hermes-cron--revert) #'ignore))
+            (with-current-buffer origin
+              (hermes-browser-test--mutation-row 'hermes-cron-mode)
+              (hermes-cron-edit))
+            (with-current-buffer foreign
+              (hermes--promise-resolve job '(:body ((id . "row/a") (profile . "worker")))))
+            (should (eq prompted origin))
+            (when (eq stage 'auth)
+              (with-current-buffer origin (hermes-browser--next-request-generation))
+              (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                             :session-token "synthetic")))
+            (if (memq stage '(prompt auth)) (should (= (length requests) 1))
+              (should (= (length requests) 2))
+              (should (equal (plist-get (car requests) :method) "PUT"))
+              (should (equal (plist-get (car requests) :url)
+                             "http://a.invalid/api/cron/jobs/row%2Fa?profile=worker"))
+              (should (equal (hermes-transport--get (plist-get (car requests) :body) 'updates)
+                             '((name . "Exact name") (prompt . "Exact\nbody"))))))
+        (kill-buffer origin)
+        (kill-buffer foreign)))))
+
+(ert-deftest hermes-sessions-rename-fallback-retains-auth-guard ()
+  "The legacy missing-session fallback cannot write after owner retirement."
+  (dolist (retired '(nil t))
+    (let* ((hermes-instances '(("a" . "http://a.invalid")))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "http://a.invalid" :ready-p t))
+           (rpc (hermes--promise-make)) (auth (hermes--promise-make)) requests)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client))
+                ((symbol-function 'read-string) (lambda (&rest _) "Exact title"))
+                ((symbol-function 'hermes-dashboard-transport-session-title)
+                 (lambda (_client &rest args)
+                   (hermes--promise-catch rpc (plist-get args :reject))))
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _) auth))
+                ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                 (lambda (request &rest _)
+                   (push request requests)
+                   (hermes--promise-resolved '(:body ((ok . t))))))
+                ((symbol-function 'hermes-sessions--after-rename) #'ignore))
+        (with-temp-buffer
+          (hermes-browser-test--mutation-row 'hermes-sessions-mode)
+          (hermes-sessions--render '((sessions . (((id . "row/a") (title . "Original"))))))
+          (goto-char (point-min))
+          (hermes-sessions-rename)
+          (hermes--promise-reject rpc "Session not found")
+          (when retired (hermes-browser--next-request-generation))
+          (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                         :session-token "synthetic"))
+          (if retired (should-not requests)
+            (should (= (length requests) 1))
+            (should (equal (plist-get (car requests) :url)
+                           "http://a.invalid/api/sessions/row%2Fa"))
+            (should (equal (plist-get (car requests) :body)
+                           '((title . "Exact title"))))))))))
+
+(ert-deftest hermes-browser-sibling-mutations-retain-consent-to-wire ()
+  "Kanban delete and subagent interrupt retain consent through acquisition."
+  (dolist (kind '(kanban subagent))
+    (dolist (stage '(valid foreign cancel instance board row mode kill newer
+                          acquire wait client-wait success error))
+      (ert-info ((format "%s / %s" kind stage))
+        (let* ((hermes-instances '(("a" . "http://a.invalid")))
+               (hermes-dashboard-transport-request-timeout nil)
+               (origin (generate-new-buffer " *sibling owner*"))
+               (foreign (generate-new-buffer " *sibling foreign*"))
+               (ready (hermes--promise-make))
+               (auth (hermes--promise-make))
+               (reply (hermes--promise-make))
+               (client (make-hermes-dashboard-transport-client
+                        :base-url "http://a.invalid" :websocket 'synthetic
+                        :ready-p (not (memq stage '(wait client-wait)))
+                        :ready-promise ready))
+               (released 0) requests feedback
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (_socket text)
+                  (push (json-parse-string text :object-type 'alist) requests))))
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                         (lambda () nil))
+                        ((symbol-function 'hermes-dashboard-transport-acquire)
+                         (lambda (&rest _)
+                           (should (equal (hermes-instance-url hermes-instance)
+                                          "http://a.invalid"))
+                           (when (eq stage 'acquire)
+                             (with-current-buffer origin (fundamental-mode)))
+                           client))
+                        ((symbol-function 'hermes-dashboard-transport-release)
+                         (lambda (actual) (should (eq actual client))
+                           (cl-incf released)))
+                        ((symbol-function 'yes-or-no-p)
+                         (lambda (&rest _)
+                           (pcase stage
+                             ('foreign (set-buffer foreign))
+                             ('instance (setq hermes-instance
+                                              '("b" . "http://b.invalid")))
+                             ('board (if (eq kind 'kanban)
+                                         (setq hermes-kanban--slug "board-b")
+                                       (goto-char (point-max))))
+                             ('row (goto-char (point-max)))
+                             ('mode (fundamental-mode))
+                             ('kill (kill-buffer origin))
+                             ('newer (hermes-browser--next-request-generation)))
+                           (not (eq stage 'cancel))))
+                        ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                         (lambda (&rest _)
+                           (if (memq stage '(wait client-wait)) auth
+                             (hermes--promise-resolved
+                              '(:base-url "http://a.invalid"
+                                :session-token "synthetic")))))
+                        ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                         (lambda (request &rest _) (push request requests) reply))
+                        ((symbol-function 'hermes-kanban--render-board)
+                         (lambda (&rest _) (push (current-buffer) feedback)))
+                        ((symbol-function 'hermes-subagents--revert)
+                         (lambda () (push (current-buffer) feedback)))
+                        ((symbol-function 'message) (lambda (&rest _) nil)))
+                (with-current-buffer origin
+                  (funcall (if (eq kind 'kanban) #'hermes-kanban-mode
+                             #'hermes-subagents-mode))
+                  (hermes-browser--own-instance '("a" . "http://a.invalid"))
+                  (setq-local hermes-kanban--slug "board-a")
+                  (setq tabulated-list-format [("ID" 20 t)]
+                        tabulated-list-entries '(("row/a" ["row/a"])))
+                  (tabulated-list-print)
+                  (goto-char (point-min))
+                  (call-interactively (if (eq kind 'kanban) #'hermes-kanban-delete
+                                        #'hermes-subagents-interrupt)))
+                (when (memq stage '(wait client-wait success error))
+                  (if (eq stage 'client-wait)
+                      (cl-incf (hermes-dashboard-transport-client-generation client))
+                    (with-current-buffer origin
+                      (hermes-browser--next-request-generation))))
+                (hermes--promise-resolve ready t)
+                (hermes--promise-resolve auth '(:base-url "http://a.invalid"
+                                                :session-token "synthetic"))
+                (if (memq stage '(valid foreign success error))
+                    (progn
+                      (should (= (length requests) 1))
+                      (if (eq kind 'kanban)
+                          (progn
+                            (should (equal (plist-get (car requests) :method) "DELETE"))
+                            (should (equal (plist-get (car requests) :url)
+                                           "http://a.invalid/api/plugins/kanban/tasks/row%2Fa?board=board-a")))
+                        (should (equal (alist-get 'method (car requests)) "subagent.interrupt"))
+                        (should (equal (alist-get 'subagent_id
+                                                 (alist-get 'params (car requests)))
+                                       "row/a"))))
+                  (should-not requests))
+                (if (eq kind 'kanban)
+                    (if (eq stage 'error) (hermes--promise-reject reply "Late error")
+                      (hermes--promise-resolve reply '(:body ((ok . t)))))
+                  (when requests
+                    (hermes-dashboard-transport--handle-frame
+                     client (json-serialize
+                             `((jsonrpc . "2.0")
+                               (id . ,(alist-get 'id (car requests)))
+                               ,(if (eq stage 'error)
+                                    '(error . ((message . "Late error")))
+                                  '(result . ((found . t)))))))))
+                (if (memq stage '(valid foreign))
+                    (should (equal feedback (list origin)))
+                  (should-not feedback))
+                (when (buffer-live-p origin) (kill-buffer origin))
+                (should (= released (if (memq stage '(valid foreign acquire wait client-wait success error))
+                                       1 0)))
+                (when (hermes-dashboard-transport-client-pending client)
+                  (should (= (hash-table-count
+                              (hermes-dashboard-transport-client-pending client)) 0))))
+            (when (buffer-live-p origin) (kill-buffer origin))
+            (kill-buffer foreign)))))))
+
+(ert-deftest hermes-rollback-confirmation-separates-file-and-history-boundaries ()
+  "Old and new checkpoints disclose independent history rewind; cancel is inert."
+  (dolist (hash '("older-checkpoint" "newer-checkpoint"))
+    (hermes-test--with-rollback
+      (setq tabulated-list-entries (hermes-rollback--rows
+                                   `((checkpoints . (((hash . ,hash)))))))
+      (tabulated-list-print)
+      (goto-char (point-min))
+      (let ((snapshot hermes-rollback--snapshot)
+            (before (copy-sequence calls)) prompt)
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (text) (setq prompt text) nil)))
+          (call-interactively #'hermes-rollback-restore))
+        (should (equal calls before))
+        (should (eq snapshot hermes-rollback--snapshot))
+        (should (string-match-p (regexp-quote (hermes-rollback--short hash)) prompt))
+        (should (string-match-p "latest canonical user turn and its tail" prompt))
+        (should (string-match-p "independently" prompt))
+        (should (string-match-p "no user turn.*history unchanged" prompt))
+        (should-not (string-match-p "conversation history.*to checkpoint" prompt))))))
+
+
+(ert-deftest hermes-browser-consent-retains-legacy-endpoint ()
+  "Legacy retargeting cannot redirect a confirmed deletion or input."
+  (dolist (owned '(nil t))
+    (dolist (action '(delete rename))
+      (let ((hermes-instances nil)
+            (hermes-dashboard-transport-url "http://a.invalid")
+            requests acquired)
+        (with-temp-buffer
+          (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+          (setq hermes-instance (and owned (hermes-instance-resolve)))
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                    ((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _)
+                       (setq acquired t)
+                       (make-hermes-dashboard-transport-client
+                        :base-url (hermes-instance-url hermes-instance)
+                        :token "synthetic" :ready-p t)))
+                    ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (&rest _)
+                       (setq hermes-dashboard-transport-url "http://b.invalid") t))
+                    ((symbol-function 'read-string)
+                     (lambda (&rest _)
+                       (setq hermes-dashboard-transport-url "http://b.invalid") "renamed"))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request &rest _)
+                       (push request requests)
+                       (hermes--promise-resolved '(:body ((ok . t))))))
+                    ((symbol-function 'hermes-profiles--revert) #'ignore))
+            (if (eq action 'delete) (call-interactively #'hermes-profiles-delete)
+              (should-error (call-interactively #'hermes-profiles-rename) :type 'user-error))
+            (should-not acquired)
+            (should-not requests)))))))
+
+(ert-deftest hermes-browser-real-acquisition-keeps-valid-owner-kinds ()
+  "Unowned, legacy and named owners retain real acquisition and dispatch."
+  (dolist (kind '(unowned legacy named))
+    (let ((hermes-instances (unless (eq kind 'legacy)
+                              '(("alpha" . "http://a.invalid")
+                                ("beta" . "http://b.invalid"))))
+          (hermes-dashboard-transport-url "http://a.invalid")
+          requests acquired released selected)
+      (with-temp-buffer
+        (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+        (setq hermes-instance (pcase kind
+                                ('legacy (hermes-instance-resolve))
+                                ('named (car hermes-instances))))
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (setq acquired (make-hermes-dashboard-transport-client
+                                     :base-url (hermes-instance-url hermes-instance)
+                                     :token "synthetic" :ready-p t))))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (client) (push client released)))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) (setq selected t) "alpha"))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (request &rest _)
+                     (push request requests)
+                     (hermes--promise-resolved '(:body ((ok . t))))))
+                  ((symbol-function 'hermes-profiles--revert) #'ignore))
+          (call-interactively #'hermes-profiles-delete)
+          (should (eq selected (eq kind 'unowned)))
+          (should (= (length requests) 1))
+          (should (equal (plist-get (car requests) :url)
+                         "http://a.invalid/api/profiles/row%2Fa"))
+          (should (equal released (list acquired)))
+          (should-not hermes-browser--owned-cleanup))))))
+
+(ert-deftest hermes-browser-acquisition-conditions-propagate-and-retry ()
+  "Public acquisition errors and quits preserve their data and allow retry."
+  (dolist (condition '((error "original acquisition failure") (quit original-data)))
+    (let ((hermes-instances '(("alpha" . "http://a.invalid")))
+          (fail t) requests released)
+      (with-temp-buffer
+        (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (if fail (signal (car condition) (cdr condition))
+                       (make-hermes-dashboard-transport-client
+                        :base-url (hermes-instance-url hermes-instance)
+                        :token "synthetic" :ready-p t))))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (client) (push client released)))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (request &rest _)
+                     (push request requests)
+                     (hermes--promise-resolved '(:body ((ok . t))))))
+                  ((symbol-function 'hermes-profiles--revert) #'ignore))
+          (should (equal (condition-case err
+                            (call-interactively #'hermes-profiles-delete)
+                          ((error quit) err))
+                         condition))
+          (should-not hermes-browser--owned-cleanup)
+          (should-not requests)
+          (should-not released)
+          (setq fail nil)
+          (call-interactively #'hermes-profiles-delete)
+          (should (= (length requests) 1))
+          (should (= (length released) 1))
+          (should-not hermes-browser--owned-cleanup))))))
+
+(ert-deftest hermes-browser-acquisition-failure-preserves-successor ()
+  "An old acquisition failure cannot report into or retire its successor."
+  (dolist (condition '((error "original failure") (quit original-data)))
+    (let ((hermes-instances '(("alpha" . "http://a.invalid")))
+          (pending (hermes--promise-make))
+          (outer t) successor-cleanup requests released)
+      (with-temp-buffer
+        (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (if outer
+                         (progn
+                           (setq outer nil)
+                           (call-interactively #'hermes-profiles-delete)
+                           (setq successor-cleanup hermes-browser--owned-cleanup
+                                 hermes-browser--status "Successor pending")
+                           (signal (car condition) (cdr condition)))
+                       (make-hermes-dashboard-transport-client
+                        :base-url (hermes-instance-url hermes-instance)
+                        :token "synthetic" :ready-p t))))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (client) (push client released)))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (request &rest _) (push request requests) pending))
+                  ((symbol-function 'hermes-profiles--revert) #'ignore))
+          (should (equal (condition-case err (hermes-profiles-delete)
+                          ((error quit) err)) condition))
+          (should successor-cleanup)
+          (should (eq hermes-browser--owned-cleanup successor-cleanup))
+          (should (equal hermes-browser--status "Successor pending"))
+          (should-not released)
+          (should (= (length requests) 1))
+          (hermes--promise-resolve pending '(:body ((ok . t))))
+          (should (= (length released) 1))
+          (should-not hermes-browser--owned-cleanup))))))
+
+(ert-deftest hermes-browser-owned-finish-separates-sync-and-async-failures ()
+  "FINISH runs once after failure reporting without swallowing acquisition."
+  (dolist (stage '(error quit rejected retired))
+    (with-temp-buffer
+      (let ((pending (hermes--promise-make))
+            (condition (if (eq stage 'quit) '(quit original-data) '(error "original")))
+            (releases 0) (finishes 0) events)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (if (memq stage '(error quit))
+                         (signal (car condition) (cdr condition))
+                       'client)))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (_) (cl-incf releases))))
+          (let ((caught
+                 (condition-case err
+                     (progn
+                       (hermes-browser--run-owned
+                        (lambda (_client _guard) pending)
+                        (hermes-browser--mutation-context)
+                        #'ignore
+                        (lambda (_) (push 'failure events))
+                        (lambda () (cl-incf finishes) (push 'finish events)))
+                       nil)
+                   ((error quit) err))))
+            (if (memq stage '(error quit))
+                (progn
+                  (should (equal caught condition))
+                  (should (= releases 0)))
+              (should-not caught)
+              (should (= finishes 0))
+              (when (eq stage 'retired) (hermes-browser--next-request-generation))
+              (hermes--promise-reject pending "async rejection")
+              (should (= releases 1)))
+            (should (= finishes 1))
+            (should (equal events (if (eq stage 'retired) '(finish) '(finish failure))))
+            (should-not hermes-browser--owned-cleanup)
+            (hermes-browser--retire-owned)
+            (should (= finishes 1))))))))
+
+(ert-deftest hermes-browser-legacy-retarget-during-auth-prevents-delete ()
+  "Acquisition does not shadow the legacy endpoint while auth is pending."
+  (let ((hermes-instances nil)
+        (hermes-dashboard-transport-url "http://a.invalid")
+        (auth (hermes--promise-make)) requests released)
+    (with-temp-buffer
+      (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+      (setq hermes-instance (hermes-instance-resolve))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _)
+                   (make-hermes-dashboard-transport-client
+                    :base-url (hermes-instance-url hermes-instance) :ready-p t)))
+                ((symbol-function 'hermes-dashboard-transport-release)
+                 (lambda (client) (push client released)))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _) auth))
+                ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                 (lambda (request &rest _)
+                   (push request requests)
+                   (hermes--promise-resolved '(:body ((ok . t)))))))
+        (hermes-profiles-delete)
+        (should-not requests)
+        (setq hermes-dashboard-transport-url "http://b.invalid")
+        (hermes--promise-resolve auth '(:base-url "http://a.invalid"))
+        (should-not requests)
+        (should (= (length released) 1))
+        (should-not hermes-browser--owned-cleanup)))))
+
+(ert-deftest hermes-browser-cached-auth-keeps-normalized-legacy-owner ()
+  "Cached authentication must not shadow the unchanged resolver authority."
+  (dolist (url '("http://a.invalid" "http://a.invalid/"))
+    (dolist (kind '(legacy unowned named))
+      (let ((hermes-instances (and (eq kind 'named) `(("alpha" . ,url))))
+            (hermes-dashboard-transport-url url)
+            (hermes-dashboard-transport--api-auth
+             '(:base-url "http://a.invalid"
+               :headers (("Authorization" . "Bearer synthetic"))))
+            requests acquired released confirmed)
+        (with-temp-buffer
+          (hermes-browser-test--mutation-row 'hermes-profiles-mode)
+          (setq hermes-instance (unless (eq kind 'unowned) (hermes-instance-resolve)))
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                    ((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _)
+                       (setq acquired
+                             (make-hermes-dashboard-transport-client
+                              :base-url (hermes-dashboard-transport--normalize-base-url
+                                         (hermes-instance-url hermes-instance))
+                              :ready-p t))))
+                    ((symbol-function 'hermes-dashboard-transport-release)
+                     (lambda (client) (push client released)))
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (&rest _) (setq confirmed t) t))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request &rest _)
+                       (push request requests)
+                       (hermes--promise-resolved '(:body ((ok . t))))))
+                    ((symbol-function 'hermes-profiles--revert) #'ignore))
+            (call-interactively #'hermes-profiles-delete)
+            (should confirmed)
+            (should (= (length requests) 1))
+            (should (equal (plist-get (car requests) :method) "DELETE"))
+            (should (equal (plist-get (car requests) :url)
+                           "http://a.invalid/api/profiles/row%2Fa"))
+            (should (equal released (list acquired)))
+            (should (equal hermes-dashboard-transport-url url))
+            (should-not hermes-browser--owned-cleanup)))))))
 
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

@@ -27,7 +27,8 @@
 (require 'seq)
 
 (defconst hermes-command-palette-commands
-  '(("Project chat" . hermes-project-chat)
+  '(("Dashboard" . hermes)
+    ("Project chat" . hermes-project-chat)
     ("New chat" . hermes-chat)
     ("Switch chat" . hermes-switch-to-chat)
     ("Sessions" . hermes-list-sessions)
@@ -40,7 +41,8 @@
     ("Configuration" . hermes-config)
     ("Gateway status" . hermes-system-status)
     ("Gateway logs" . hermes-system-logs)
-    ("Connect provider" . hermes-onboarding-connect-provider))
+    ("Connect provider (API key)" . hermes-onboarding-connect-provider)
+    ("Provider accounts" . hermes-onboarding-oauth-connect))
   "Primary Hermes commands exposed by `hermes-command-palette'.")
 
 (defun hermes-command-palette--dispatch (command)

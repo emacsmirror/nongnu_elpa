@@ -314,28 +314,33 @@
 (ert-deftest hermes-onboarding-oauth-native-flow-carries-profile-context ()
   "Native start and status actions retain the provider browser's profile."
   (let (calls)
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional _on-success _on-error)
-                 (funcall make-promise 'client)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-onboarding--show-oauth)
                (lambda (_provider _result &optional profile)
                  (push (list 'show profile) calls)
-                 'context))
+                 (hermes-onboarding-oauth-mode)
+                 (hermes-onboarding--oauth-context)))
               ((symbol-function 'hermes-onboarding--oauth-start)
                (lambda (client provider &optional profile)
-                 (push (list 'start client provider profile) calls)))
+                 (push (list 'start client provider profile) calls)
+                 (hermes--promise-make)))
               ((symbol-function 'hermes-onboarding--oauth-poll)
                (lambda (client provider session &optional profile)
-                 (push (list 'poll client provider session profile) calls)))
+                 (push (list 'poll client provider session profile) calls)
+                 (hermes--promise-make)))
               ((symbol-function 'hermes-onboarding--oauth-submit)
                (lambda (client provider session code &optional profile)
-                 (push (list 'submit client provider session code profile) calls)))
+                 (push (list 'submit client provider session code profile) calls)
+                 (hermes--promise-make)))
               ((symbol-function 'hermes-onboarding--oauth-cancel)
                (lambda (client session &optional profile)
-                 (push (list 'cancel client session profile) calls)))
+                 (push (list 'cancel client session profile) calls)
+                 (hermes--promise-make)))
               ((symbol-function 'hermes-onboarding--oauth-disconnect)
                (lambda (client provider &optional profile)
-                 (push (list 'disconnect client provider profile) calls)))
+                 (push (list 'disconnect client provider profile) calls)
+                 (hermes--promise-make)))
               ((symbol-function 'read-passwd) (lambda (&rest _) "code"))
               ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
       (with-temp-buffer
@@ -702,67 +707,101 @@
     (should (eq (keymap-lookup hermes-onboarding-oauth-mode-map (car binding))
                 (cdr binding)))))
 
+(defun hermes-onboarding-test--without-startup (fn)
+  "Call FN with process and socket startup denied, even if errors are caught."
+  (let* (attempted
+         (deny (lambda (&rest _)
+                 (setq attempted t)
+                 (error "Unexpected process or socket startup"))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start) deny)
+              ((symbol-function 'make-process) deny)
+              ((symbol-function 'start-process) deny)
+              ((symbol-function 'make-network-process) deny))
+      (unwind-protect (funcall fn)
+        (should-not attempted)))))
+
 (ert-deftest hermes-onboarding-oauth-prompts-respect-captured-owner ()
-  "Submit and disconnect do nothing when their prompt loses OAuth ownership."
-  (dolist (command '(hermes-onboarding-oauth-submit
-                     hermes-onboarding-oauth-disconnect))
-    (let ((buffer (generate-new-buffer " *Hermes OAuth prompt owner*"))
-          successor
-          (requests 0)
-          (changed 0)
-          (rendered 0)
-          opened messages)
-      (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-                 (lambda (&rest _) (setq requests (1+ requests))))
-                ((symbol-function 'read-passwd)
-                 (lambda (&rest _)
-                   (with-current-buffer buffer
-                     (setq hermes-onboarding-oauth--provider "successor"
-                           hermes-onboarding-oauth--provider-name "Successor"
-                           hermes-onboarding-oauth--session-id "new-session"
-                           hermes-onboarding-oauth--profile "profile-c"
-                           hermes-onboarding-oauth--result
-                           '((status . "successor")))
-                     (setq successor (hermes-onboarding--oauth-context)))
-                   "secret-code"))
-                ((symbol-function 'yes-or-no-p)
-                 (lambda (&rest _)
-                   (with-current-buffer buffer
-                     (setq hermes-onboarding-oauth--provider "successor"
-                           hermes-onboarding-oauth--provider-name "Successor"
-                           hermes-onboarding-oauth--session-id "new-session"
-                           hermes-onboarding-oauth--profile "profile-c"
-                           hermes-onboarding-oauth--result
-                           '((status . "successor")))
-                     (setq successor (hermes-onboarding--oauth-context)))
-                   t))
-                ((symbol-function 'hermes-onboarding--auth-changed)
-                 (lambda () (setq changed (1+ changed))))
-                ((symbol-function 'hermes-onboarding-oauth--render)
-                 (lambda () (setq rendered (1+ rendered))))
-                ((symbol-function 'browse-url) (lambda (url) (setq opened url)))
-                ((symbol-function 'message)
-                 (lambda (format-string &rest args)
-                   (push (apply #'format format-string args) messages))))
-        (unwind-protect
-            (with-current-buffer buffer
-              (hermes-onboarding-oauth-mode)
-              (setq hermes-onboarding-oauth--provider "old"
-                    hermes-onboarding-oauth--provider-name "Old"
-                    hermes-onboarding-oauth--session-id "old-session"
-                    hermes-onboarding-oauth--profile "profile-b"
-                    hermes-onboarding-oauth--result '((status . "old")))
-              (funcall command)
-              (should (hermes-onboarding--oauth-context-current-p successor))
-              (should (equal hermes-onboarding-oauth--provider "successor"))
-              (should (equal hermes-onboarding-oauth--session-id "new-session"))
-              (should (equal hermes-onboarding-oauth--profile "profile-c"))
-              (should (= requests 0))
-              (should (= changed 0))
-              (should (= rendered 0))
-              (should-not opened)
-              (should-not messages))
-          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+  "Only a current prompt owner reaches acquisition and the real REST builder."
+  (hermes-onboarding-test--without-startup
+   (lambda ()
+     (dolist (command '(hermes-onboarding-oauth-submit
+                        hermes-onboarding-oauth-disconnect))
+       (dolist (retire '(nil t))
+         (with-temp-buffer
+           (hermes-onboarding-oauth-mode)
+           (setq hermes-onboarding-oauth--provider "old"
+                 hermes-onboarding-oauth--provider-name "Old"
+                 hermes-onboarding-oauth--session-id "old-session"
+                 hermes-onboarding-oauth--profile "profile-b"
+                 hermes-onboarding-oauth--result '((status . "old")))
+           (let* ((hermes-instances nil)
+                  (hermes-dashboard-transport-url "https://prompt.example")
+                  (hermes-dashboard-transport-idle-close-delay nil)
+                  (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+                  (prompts 0) (acquisitions 0) (changed 0) (rendered 0)
+                  requests clients successor opened messages
+                  (prompt
+                   (lambda (&rest _)
+                     (cl-incf prompts)
+                     (when retire
+                       (setq hermes-onboarding-oauth--provider "successor"
+                             hermes-onboarding-oauth--provider-name "Successor"
+                             hermes-onboarding-oauth--session-id "new-session"
+                             hermes-onboarding-oauth--profile "profile-c"
+                             hermes-onboarding-oauth--result '((status . "successor")))
+                       (setq successor (hermes-onboarding--oauth-context)))
+                     "secret-code")))
+             (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                       ((symbol-function 'hermes-dashboard-transport-acquire)
+                        (lambda (&rest _)
+                          (cl-incf acquisitions)
+                          (car (push (make-hermes-dashboard-transport-client
+                                      :base-url "https://prompt.example"
+                                      :token "test-token" :generation 1 :refcount 1)
+                                     clients))))
+                       ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                        (lambda (request)
+                          (push request requests)
+                          (hermes--promise-resolved
+                           '(:status 200 :body ((status . "approved"))))))
+                       ((symbol-function 'read-passwd) prompt)
+                       ((symbol-function 'yes-or-no-p) prompt)
+                       ((symbol-function 'hermes-onboarding--auth-changed)
+                        (lambda () (cl-incf changed)))
+                       ((symbol-function 'hermes-onboarding-oauth--render)
+                        (lambda () (cl-incf rendered)))
+                       ((symbol-function 'browse-url) (lambda (url) (setq opened url)))
+                       ((symbol-function 'message)
+                        (lambda (format-string &rest args)
+                          (push (apply #'format format-string args) messages))))
+               (call-interactively command)
+               (should (= prompts 1))
+               (should (= acquisitions (if retire 0 1)))
+               (should (= (length requests) (if retire 0 1)))
+               (should (= changed (if retire 0 1)))
+               (should (= rendered (if retire 0 1)))
+               (if retire
+                   (progn
+                     (should (hermes-onboarding--oauth-context-current-p successor))
+                     (should (equal hermes-onboarding-oauth--provider "successor"))
+                     (should (equal hermes-onboarding-oauth--session-id "new-session"))
+                     (should (equal hermes-onboarding-oauth--profile "profile-c"))
+                     (should (equal hermes-onboarding-oauth--result
+                                    '((status . "successor")))))
+                 (let ((submit (eq command 'hermes-onboarding-oauth-submit))
+                       (request (car requests)))
+                   (should (equal (plist-get request :method)
+                                  (if submit "POST" "DELETE")))
+                   (should (equal (plist-get request :url)
+                                  (concat "https://prompt.example/api/providers/oauth/old"
+                                          (if submit "/submit" "") "?profile=profile-b")))
+                   (when submit
+                     (should (equal (plist-get request :body)
+                                    '((session_id . "old-session") (code . "secret-code"))))))
+                 (should (= (hermes-dashboard-transport-client-refcount (car clients)) 0))
+                 (should (hermes-dashboard-transport-client-stopping-p (car clients))))
+               (should-not opened)
+               (should-not messages)))))))))
 
 (ert-deftest hermes-onboarding-oauth-mode-reset-does-not-reuse-owner ()
   "A mode reset cannot let an old OAuth resolution or rejection win an ABA race."
@@ -896,28 +935,47 @@
         (kill-buffer "*Hermes OAuth*")))))
 
 (ert-deftest hermes-onboarding-oauth-auth-changes-refresh-provider-state ()
-  "OAuth approval and disconnect report both authentication changes."
-  (let ((changed 0))
-    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success _on-error)
-                 (hermes--promise-then (funcall make-promise 'client) on-success)))
-              ((symbol-function 'hermes-onboarding--oauth-poll)
-               (lambda (&rest _)
-                 (hermes--promise-resolved '((status . "approved")))))
-              ((symbol-function 'hermes-onboarding--oauth-disconnect)
-               (lambda (&rest _)
-                 (hermes--promise-resolved '((ok . t)))))
-              ((symbol-function 'hermes-onboarding--auth-changed)
-               (lambda () (setq changed (1+ changed))))
-              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
-      (with-temp-buffer
-        (hermes-onboarding-oauth-mode)
-        (setq hermes-onboarding-oauth--provider "nous"
-              hermes-onboarding-oauth--provider-name "Nous"
-              hermes-onboarding-oauth--session-id "sid")
-        (hermes-onboarding-oauth-poll)
-        (hermes-onboarding-oauth-disconnect)
-        (should (= changed 2))))))
+  "OAuth approval and disconnect report both changes without real startup."
+  (hermes-onboarding-test--without-startup
+   (lambda ()
+     (let ((hermes-instances nil)
+           (hermes-dashboard-transport-url "https://refresh.example")
+           (hermes-dashboard-transport-idle-close-delay nil)
+           (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+           (changed 0) clients requests)
+       (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                 ((symbol-function 'hermes-dashboard-transport-acquire)
+                  (lambda (&rest _)
+                    (car (push (make-hermes-dashboard-transport-client
+                                :base-url "https://refresh.example"
+                                :token "test-token" :generation 1 :refcount 1)
+                               clients))))
+                 ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                  (lambda (request)
+                    (push request requests)
+                    (hermes--promise-resolved
+                     '(:status 200 :body ((status . "approved") (ok . t))))))
+                 ((symbol-function 'hermes-onboarding--auth-changed)
+                  (lambda () (cl-incf changed)))
+                 ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+         (with-temp-buffer
+           (hermes-onboarding-oauth-mode)
+           (setq hermes-onboarding-oauth--provider "nous"
+                 hermes-onboarding-oauth--provider-name "Nous"
+                 hermes-onboarding-oauth--session-id "sid")
+           (hermes-onboarding-oauth-poll)
+           (hermes-onboarding-oauth-disconnect)
+           (should (= changed 2))
+           (should (= (length clients) 2))
+           (should (equal (mapcar (lambda (request)
+                                   (list (plist-get request :method)
+                                         (plist-get request :url)))
+                                 (reverse requests))
+                          '(("GET" "https://refresh.example/api/providers/oauth/nous/poll/sid")
+                            ("DELETE" "https://refresh.example/api/providers/oauth/nous"))))
+           (dolist (client clients)
+             (should (= (hermes-dashboard-transport-client-refcount client) 0))
+             (should (hermes-dashboard-transport-client-stopping-p client)))))))))
 
 (defun hermes-onboarding-test--api-key-provider-result ()
   "Return a `model.options' result carrying one connectable provider."
@@ -938,6 +996,587 @@
     (should (equal (hermes-transport--display-field merged 'verification_url)
                    "https://example.org/device"))
     (should (equal (hermes-transport--display-field merged 'status) "pending"))))
+
+;;; Owned command and recovery regressions
+
+(ert-deftest hermes-onboarding-key-delayed-lookup-retires-owner ()
+  "Late catalogue replies cannot prompt or save for a retired origin."
+  (dolist (retirement '(current kill mode replace instance client rejection))
+    (let* ((origin (generate-new-buffer " *key owner*"))
+           (request (hermes--promise-make))
+           (client (make-hermes-dashboard-transport-client :generation 1))
+           (prompts 0) (changed 0) saved messages)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-browser--with-client)
+                     (lambda (fn) (funcall fn client #'ignore)))
+                    ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+                     (lambda (_client &rest args)
+                       (hermes--promise-subscribe
+                        request (plist-get args :resolve) (plist-get args :reject))))
+                    ((symbol-function 'completing-read)
+                     (lambda (_prompt collection &rest _)
+                       (cl-incf prompts) (caar collection)))
+                    ((symbol-function 'read-passwd)
+                     (lambda (&rest _) (cl-incf prompts) " literal-key "))
+                    ((symbol-function 'hermes-dashboard-transport-model-save-key)
+                     (lambda (owner slug key &rest args)
+                       (setq saved (list owner slug key))
+                       (funcall (plist-get args :resolve)
+                                '((provider . ((name . "DeepSeek")))))))
+                    ((symbol-function 'hermes-onboarding--auth-changed)
+                     (lambda () (cl-incf changed)))
+                    ((symbol-function 'message)
+                     (lambda (&rest args) (push args messages))))
+            (with-current-buffer origin
+              (hermes-onboarding-connect-provider)
+              (pcase retirement
+                ((or 'kill 'rejection) (kill-buffer origin))
+                ('mode (text-mode))
+                ('replace (hermes-browser--next-request-generation))
+                ('instance (setq-local hermes-instance '("other" . "https://other.test")))
+                ('client (cl-incf (hermes-dashboard-transport-client-generation client)))))
+            (with-temp-buffer
+              (if (eq retirement 'rejection)
+                  (hermes--promise-reject request "Late catalogue failure")
+                (hermes--promise-resolve
+                 request (hermes-onboarding-test--api-key-provider-result))))
+            (if (eq retirement 'current)
+                (progn
+                  (should (= prompts 2))
+                  (should (equal saved (list client "deepseek" " literal-key ")))
+                  (should (= changed 1)))
+              (should (= prompts 0))
+              (should-not saved)
+              (should (= changed 0))
+              (should-not messages)))
+        (when (buffer-live-p origin) (kill-buffer origin))))))
+
+(ert-deftest hermes-onboarding-key-recursive-prompts-retire-owner ()
+  "Provider and secret prompts must not lend consent to a replaced view."
+  (dolist (stage '(provider secret))
+    (with-temp-buffer
+      (let ((origin (current-buffer)) (prompts 0)
+            (lookup (hermes--promise-make)) saved)
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn 'client #'ignore)))
+                  ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+                   (lambda (_client &rest args)
+                     (hermes--promise-subscribe
+                      lookup (plist-get args :resolve) (plist-get args :reject))))
+                  ((symbol-function 'completing-read)
+                   (lambda (_prompt collection &rest _)
+                     (when (eq stage 'provider)
+                       (with-current-buffer origin
+                         (hermes-browser--next-request-generation)))
+                     (caar collection)))
+                  ((symbol-function 'read-passwd)
+                   (lambda (&rest _)
+                     (cl-incf prompts)
+                     (with-current-buffer origin
+                       (hermes-browser--next-request-generation))
+                     "synthetic-key"))
+                  ((symbol-function 'hermes-dashboard-transport-model-save-key)
+                   (lambda (&rest _) (setq saved t))))
+          (hermes-onboarding-connect-provider)
+          (with-temp-buffer
+            (hermes--promise-resolve
+             lookup (hermes-onboarding-test--api-key-provider-result)))
+          (should (= prompts (if (eq stage 'secret) 1 0)))
+          (should-not saved))))))
+
+(ert-deftest hermes-onboarding-key-save-fences-readiness ()
+  "The real save RPC cannot send after its delayed readiness owner retires."
+  (dolist (retire '(nil t))
+    (with-temp-buffer
+      (let* ((ready (hermes--promise-make))
+             (lookup (hermes--promise-make))
+             (client (make-hermes-dashboard-transport-client
+                      :generation 1 :ready-promise ready))
+             (hermes-dashboard-transport-request-timeout nil)
+             frames
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket frame) (push frame frames))))
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn client #'ignore)))
+                  ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+                   (lambda (_client &rest args)
+                     (hermes--promise-subscribe
+                      lookup (plist-get args :resolve) (plist-get args :reject))))
+                  ((symbol-function 'completing-read)
+                   (lambda (_prompt collection &rest _) (caar collection)))
+                  ((symbol-function 'read-passwd) (lambda (&rest _) "literal-key")))
+          (hermes-onboarding-connect-provider)
+          (hermes--promise-resolve lookup
+                                   (hermes-onboarding-test--api-key-provider-result))
+          (should-not frames)
+          (when retire (hermes-browser--next-request-generation))
+          (hermes--promise-resolve ready t)
+          (if retire (should-not frames)
+            (should (= (length frames) 1))
+            (let* ((frame (json-parse-string (car frames) :object-type 'alist))
+                   (params (alist-get 'params frame)))
+              (should (equal (alist-get 'method frame) "model.save_key"))
+              (should (equal (alist-get 'slug params) "deepseek"))
+              (should (equal (alist-get 'api_key params) "literal-key")))))))))
+
+(ert-deftest hermes-onboarding-oauth-start-failure-has-working-retry ()
+  "A public account action visibly fails, then its retry key starts anew."
+  (let ((provider '((id . "nous") (name . "Nous") (flow . "device_code")))
+        (requests 0) opened)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn 'client #'ignore)))
+                  ((symbol-function 'hermes-onboarding--provider-account-at-point)
+                   (lambda () provider))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (_method path &rest _)
+                     (should (equal path "/api/providers/oauth/nous/start"))
+                     (if (= (cl-incf requests) 1)
+                         (hermes--promise-rejected "Start unavailable")
+                       (hermes--promise-resolved
+                        '((status . "pending") (session_id . "new-flow")
+                          (user_code . "ABCD")
+                          (verification_url . "https://example.test/device"))))))
+                  ((symbol-function 'pop-to-buffer) #'ignore)
+                  ((symbol-function 'browse-url) (lambda (url) (push url opened)))
+                  ((symbol-function 'message) #'ignore))
+          (with-temp-buffer
+            (hermes-provider-accounts-mode)
+            (call-interactively #'hermes-onboarding-provider-account-act))
+          (with-current-buffer "*Hermes OAuth*"
+            (should (string-match-p "Status: error" (buffer-string)))
+            (should (string-match-p "Start unavailable" (buffer-string)))
+            (should-not (string-match-p "g poll" (buffer-string)))
+            (should (string-match-p "r retry start" (buffer-string)))
+            (call-interactively (key-binding (kbd "r")))
+            (should (equal hermes-onboarding-oauth--session-id "new-flow"))
+            (should (string-match-p "Status: pending" (buffer-string)))
+            (should (string-match-p "User code: ABCD" (buffer-string))))
+          (should (= requests 2))
+          (should (equal opened '("https://example.test/device"))))
+      (when (get-buffer "*Hermes OAuth*") (kill-buffer "*Hermes OAuth*")))))
+
+(ert-deftest hermes-onboarding-oauth-cancel-failure-and-retry-settle-visibly ()
+  "Cancel failure retains the handle; retry clears obsolete instructions."
+  (let ((calls 0))
+    (with-temp-buffer
+      (hermes-onboarding-oauth-mode)
+      (setq hermes-onboarding-oauth--provider "nous"
+            hermes-onboarding-oauth--session-id "flow"
+            hermes-onboarding-oauth--result
+            '((status . "pending") (user_code . "ABCD")
+              (verification_url . "https://example.test/device")))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn 'client #'ignore)))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (method path &rest _)
+                   (should (equal method "DELETE"))
+                   (should (equal path "/api/providers/oauth/sessions/flow"))
+                   (if (= (cl-incf calls) 1)
+                       (hermes--promise-rejected "Cancel unavailable")
+                     (hermes--promise-resolved '((ok . t) (session_id . "flow"))))))
+                ((symbol-function 'message) #'ignore))
+        (call-interactively (key-binding (kbd "c")))
+        (should (string-match-p "Status: error" (buffer-string)))
+        (should (string-match-p "c cancel" (buffer-string)))
+        (should (equal hermes-onboarding-oauth--session-id "flow"))
+        (call-interactively (key-binding (kbd "c")))
+        (should-not hermes-onboarding-oauth--session-id)
+        (should (string-match-p "Status: cancelled" (buffer-string)))
+        (should-not (string-match-p "Sign in:\\|User code:\\|g poll\\|c cancel" (buffer-string)))
+        (should (string-match-p "r retry start" (buffer-string)))
+        (should (= calls 2))))))
+
+(ert-deftest hermes-onboarding-oauth-cancel-fences-authentication ()
+  "Deferred REST authentication cannot cancel a replaced OAuth flow."
+  (dolist (replace '(t nil))
+    (with-temp-buffer
+      (hermes-onboarding-oauth-mode)
+      (setq hermes-onboarding-oauth--provider "nous"
+            hermes-onboarding-oauth--session-id "old-flow"
+            hermes-onboarding-oauth--profile "test-profile")
+      (let ((auth (hermes--promise-make)) requests)
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn 'client #'ignore)))
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _) auth))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (request)
+                     (push request requests)
+                     (hermes--promise-resolved
+                      '(:status 200 :body ((ok . t) (session_id . "old-flow")))))))
+          (call-interactively #'hermes-onboarding-oauth-cancel)
+          (should-not requests)
+          (when replace
+            (setq hermes-onboarding-oauth--session-id "new-flow")
+            (hermes-onboarding--oauth-context))
+          (hermes--promise-resolve auth '(:base-url "https://example.test"))
+          (if replace
+              (progn
+                (should-not requests)
+                (should (equal hermes-onboarding-oauth--session-id "new-flow")))
+            (progn
+            (should (= (length requests) 1))
+            (should (equal (plist-get (car requests) :url)
+                           "https://example.test/api/providers/oauth/sessions/old-flow?profile=test-profile"))
+            (should (string-match-p "Status: cancelled" (buffer-string))))))))))
+
+(ert-deftest hermes-onboarding-oauth-approval-and-disconnect-show-terminal-state ()
+  "Public poll and disconnect remove stale invitations and expose recovery."
+  (with-temp-buffer
+    (hermes-onboarding-oauth-mode)
+    (setq hermes-onboarding-oauth--provider "nous"
+          hermes-onboarding-oauth--session-id "flow"
+          hermes-onboarding-oauth--result
+          '((status . "pending") (user_code . "ABCD")
+            (verification_url . "https://example.test/device")))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'client #'ignore)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method _path &rest _)
+                 (hermes--promise-resolved
+                  (if (equal method "GET") '((status . "approved"))
+                    '((ok . t))))))
+              ((symbol-function 'hermes-onboarding--auth-changed) #'ignore)
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (call-interactively (key-binding (kbd "g")))
+      (should (string-match-p "Status: approved" (buffer-string)))
+      (should (string-match-p "d disconnect" (buffer-string)))
+      (should-not (string-match-p "Sign in:\\|User code:\\|g poll" (buffer-string)))
+      (call-interactively (key-binding (kbd "d")))
+      (should (string-match-p "Status: disconnected" (buffer-string)))
+      (should (string-match-p "a accounts" (buffer-string)))
+      (should-not hermes-onboarding-oauth--session-id))))
+
+;;; Real acquisition and wire boundaries
+
+(ert-deftest hermes-onboarding-key-public-acquisition-keeps-source-owner ()
+  "Resolve endpoints without shadowing owners across prompts and RPCs."
+  (dolist (setup '(legacy default owned named))
+    (dolist (retire (if (eq setup 'named)
+                        '(nil instance provider secret)
+                      '(nil provider secret)))
+      (with-temp-buffer
+        (let* ((origin (current-buffer))
+               (endpoint '("chosen" . "https://chosen.example"))
+               (hermes-instances
+                (pcase setup
+                  ('legacy nil)
+                  ('named (list '("other" . "https://other.example") endpoint))
+                  (_ (list endpoint))))
+               (hermes-dashboard-transport-url "https://chosen.example")
+               (client (make-hermes-dashboard-transport-client
+                        :generation 1 :base-url "https://chosen.example"
+                        :ready-promise (hermes--promise-resolved t)))
+               (hermes-dashboard-transport--model-options-cache nil)
+               (hermes-dashboard-transport-request-timeout nil)
+               frames
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (_socket text)
+                  (push (json-parse-string text :object-type 'alist) frames)))
+               (completing-read-function
+                (lambda (prompt _collection &rest _)
+                  (let ((selection (equal prompt "Hermes instance: ")))
+                    (when (eq retire (if selection 'instance 'provider))
+                      (with-current-buffer origin
+                        (setq-local hermes-instance
+                                    '("replacement" . "https://other.example"))))
+                    (if selection "chosen" "DeepSeek"))))
+               (releases 0) (secrets 0) acquired)
+          (when (eq setup 'owned) (setq-local hermes-instance endpoint))
+          (let ((source hermes-instance))
+            (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                      ((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _)
+                         (setq acquired hermes-dashboard-transport-url)
+                         client))
+                      ((symbol-function 'hermes-dashboard-transport-release)
+                       (lambda (owner)
+                         (should (eq owner client))
+                         (cl-incf releases)))
+                      ((symbol-function 'read-passwd)
+                       (lambda (&rest _)
+                         (cl-incf secrets)
+                         (when (eq retire 'secret)
+                           (with-current-buffer origin
+                             (setq-local hermes-instance
+                                         '("replacement" . "https://other.example"))))
+                         " literal-key ")))
+              (call-interactively #'hermes-onboarding-connect-provider)
+              (should (equal acquired "https://chosen.example"))
+              (if (and (eq setup 'named) (eq retire 'instance))
+                  (should-not frames)
+                (should (equal (alist-get 'method (car frames)) "model.options"))
+                (hermes-dashboard-transport--handle-frame
+                 client `((jsonrpc . "2.0") (id . ,(alist-get 'id (car frames)))
+                          (result . ,(hermes-onboarding-test--api-key-provider-result))))
+                (if (memq retire '(provider secret))
+                    (progn
+                      (should (= (length frames) 1))
+                      (should (= secrets (if (eq retire 'secret) 1 0))))
+                  (should (= (length frames) 2))
+                  (should (= secrets 1))
+                  (should (eq hermes-instance source))
+                  (should (equal (alist-get 'method (car frames)) "model.save_key"))
+                  (should (equal (alist-get 'params (car frames))
+                                 '((slug . "deepseek") (api_key . " literal-key "))))
+                  (hermes-dashboard-transport--handle-frame
+                   client `((jsonrpc . "2.0") (id . ,(alist-get 'id (car frames)))
+                            (result . ((provider . ((name . "DeepSeek")))))))))
+              (should (= releases 1)))))))))
+
+(ert-deftest hermes-onboarding-oauth-public-acquisition-retries-legacy-and-named ()
+  "Public RET and retry retain source identity and use the acquired REST URL."
+  (dolist (setup '(legacy default owned named))
+    (let* ((endpoint '("chosen" . "https://chosen.example"))
+           (hermes-instances
+            (pcase setup
+              ('legacy nil)
+              ('named (list '("other" . "https://other.example") endpoint))
+              (_ (list endpoint))))
+           (hermes-dashboard-transport-url "https://chosen.example")
+           (completing-read-function (lambda (&rest _) "chosen"))
+           (hermes-dashboard-transport-idle-close-delay nil)
+           (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+           (release (symbol-function 'hermes-dashboard-transport-release))
+           (provider '((id . "nous") (name . "Nous") (flow . "device_code")))
+           (releases 0) requests opened buffer)
+      (unwind-protect
+          (save-window-excursion
+            (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                      ((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _)
+                         (should (equal hermes-dashboard-transport-url
+                                        "https://chosen.example"))
+                         (make-hermes-dashboard-transport-client
+                          :generation 1 :refcount 1
+                          :base-url "https://chosen.example"
+                          :token "synthetic-session-token")))
+                      ((symbol-function 'hermes-dashboard-transport-release)
+                       (lambda (client)
+                         (cl-incf releases)
+                         (funcall release client)
+                         (should (hermes-dashboard-transport-client-stopping-p client))))
+                      ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                       (lambda (request)
+                         (push request requests)
+                         (if (= (length requests) 1)
+                             (hermes--promise-rejected "Start unavailable")
+                           (hermes--promise-resolved
+                            '(:status 200 :body
+                              ((status . "pending") (session_id . "new-flow")
+                               (verification_url . "https://chosen.example/verify")))))))
+                      ((symbol-function 'browse-url) (lambda (url) (push url opened))))
+              (with-temp-buffer
+                (hermes-provider-accounts-mode)
+                (when (eq setup 'owned) (setq-local hermes-instance endpoint))
+                (setq hermes-onboarding--provider-account-profile "profile-a"
+                      hermes-onboarding--provider-account-result
+                      (list (cons 'providers (list provider)))
+                      tabulated-list-entries
+                      (hermes-onboarding--provider-account-rows
+                       hermes-onboarding--provider-account-result))
+                (tabulated-list-print)
+                (goto-char (point-min))
+                (call-interactively (key-binding (kbd "RET"))))
+              (setq buffer (get-buffer (hermes-onboarding--oauth-buffer-name endpoint)))
+              (with-current-buffer buffer
+                (should (string-match-p "Status: error" (buffer-string)))
+                (should (string-match-p "Start unavailable" (buffer-string)))
+                (should (string-match-p "r retry start" (buffer-string)))
+                (call-interactively (key-binding (kbd "r")))
+                (should (equal hermes-onboarding-oauth--session-id "new-flow"))
+                (should (equal hermes-onboarding-oauth--profile "profile-a"))
+                (should (string-match-p "Status: pending" (buffer-string))))
+              (should (= releases 2))
+              (should (= (length requests) 2))
+              (dolist (request requests)
+                (should (equal (plist-get request :method) "POST"))
+                (should (equal (plist-get request :url)
+                               "https://chosen.example/api/providers/oauth/nous/start?profile=profile-a")))
+              (should (equal opened '("https://chosen.example/verify")))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+
+(defun hermes-onboarding-test--lease (key references rejection &optional retire fault)
+  "Exercise KEY with REFERENCES and REJECTION, optionally RETIRE or FAULT.
+Keep acquisition wrapping, REST construction, release and stop real.  Only
+external acquisition, HTTP delivery, input and browser launch are controlled."
+  (let* ((hermes-instances nil)
+         (hermes-dashboard-transport-url "https://lease.example")
+         (hermes-dashboard-transport-idle-close-delay nil)
+         (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "https://lease.example" :token "test-token"
+                  :refcount references :generation 1))
+         (response (hermes--promise-make))
+         (release (symbol-function 'hermes-dashboard-transport-release))
+         (report (symbol-function 'hermes-onboarding--oauth-report-error))
+         (releases 0) (changed 0) requests opened buffer before)
+    (unwind-protect
+        (save-window-excursion
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                    ((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _) client))
+                    ((symbol-function 'hermes-dashboard-transport-release)
+                     (lambda (owner)
+                       (should (eq owner client))
+                       (cl-incf releases)
+                       (funcall release owner)))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request)
+                       (push request requests)
+                       (if (eq retire 'dispatch-fault) (signal fault nil)
+                         response)))
+                    ((symbol-function 'browse-url)
+                     (lambda (url)
+                       (should (= releases 0))
+                       (should (= (hermes-dashboard-transport-client-generation client) 1))
+                       (when fault (signal fault nil))
+                       (push url opened)))
+                    ((symbol-function 'hermes-onboarding--auth-changed)
+                     (lambda () (cl-incf changed)))
+                    ((symbol-function 'hermes-onboarding--oauth-report-error)
+                     (lambda (context reason)
+                       (should (= releases 0))
+                       (when (eq retire 'report-fault) (signal fault nil))
+                       (funcall report context reason)))
+                    ((symbol-function 'read-passwd) (lambda (&rest _) " literal-code "))
+                    ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+            (setq buffer (generate-new-buffer " *OAuth lease*"))
+            (with-current-buffer buffer
+              (hermes-onboarding-oauth-mode)
+              (setq hermes-onboarding-oauth--provider "nous"
+                    hermes-onboarding-oauth--provider-name "Nous"
+                    hermes-onboarding-oauth--profile "profile-a"
+                    hermes-onboarding-oauth--session-id "exact-flow"
+                    hermes-onboarding-oauth--result '((status . "pending")))
+              ;; Retry exercises the public start path without a named-buffer collision.
+              (cl-letf (((symbol-function 'hermes-onboarding--oauth-buffer-name)
+                         (lambda (_) (buffer-name buffer))))
+                (when (equal key "r")
+                  (setq hermes-onboarding-oauth--session-id nil
+                        hermes-onboarding-oauth--result '((status . "error"))))
+                (call-interactively (key-binding (kbd key))))
+              (should (= (length requests) 1))
+              (let* ((request (car requests))
+                     (route (pcase key
+                              ("r" '("POST" . "nous/start"))
+                              ("g" '("GET" . "nous/poll/exact-flow"))
+                              ("s" '("POST" . "nous/submit"))
+                              ("c" '("DELETE" . "sessions/exact-flow"))
+                              ("d" '("DELETE" . "nous")))))
+                (should (equal (plist-get request :method) (car route)))
+                (should (equal (plist-get request :url)
+                               (concat "https://lease.example/api/providers/oauth/"
+                                       (cdr route) "?profile=profile-a")))
+                (when (equal key "s")
+                  (should (equal (plist-get request :body)
+                                 '((session_id . "exact-flow")
+                                   (code . " literal-code "))))))
+              (pcase retire
+                ('stop (hermes-dashboard-transport-stop client))
+                ('mode (fundamental-mode) (setq buffer-read-only nil)
+                       (insert "successor draft"))
+                ('kill (kill-buffer buffer)))
+              (when (buffer-live-p buffer) (setq before (buffer-string)))
+              (if rejection
+                  (hermes--promise-reject response "Lease request failed")
+                (hermes--promise-resolve
+                 response '(:status 200 :body
+                            ((status . "pending") (session_id . "exact-flow")
+                             (verification_url . "https://lease.example/verify")))))
+              (should (= releases 1))
+              ;; A duplicate response must not release somebody else's lease.
+              (hermes--promise-reject response "Duplicate")
+              (should (= releases 1))
+              (if (memq retire '(stop mode kill))
+                  (progn
+                    (when (buffer-live-p buffer) (should (equal before (buffer-string))))
+                    (should-not opened)
+                    (should (= changed 0)))
+                (unless (eq retire 'report-fault)
+                  (should (equal (hermes-transport--get hermes-onboarding-oauth--result 'status)
+                                 (cond ((or rejection (eq retire 'dispatch-fault)) "error")
+                                       ((equal key "c") "cancelled")
+                                       ((equal key "d") "disconnected")
+                                       (t "pending"))))
+                  (when (equal key "r")
+                    (if (or rejection (eq retire 'dispatch-fault))
+                        (should (string-match-p "r retry start" (buffer-string)))
+                      (should (equal opened (unless fault '("https://lease.example/verify"))))
+                      (should (equal hermes-onboarding-oauth--session-id "exact-flow")))))
+                (when (and (not rejection) (not fault) (member key '("c" "d")))
+                  (should-not hermes-onboarding-oauth--session-id))
+                (should (= changed (if (and (equal key "d") (not rejection)) 1 0))))
+            (unless (eq retire 'stop)
+              (should (= (hermes-dashboard-transport-client-refcount client)
+                         (1- references)))
+              (should (eq (not (null (hermes-dashboard-transport-client-stopping-p client)))
+                          (= references 1)))))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (hermes-dashboard-transport-stop client))))
+
+(ert-deftest hermes-onboarding-oauth-lease-start ()
+  "Standalone and shared start success/failure settle before exact release."
+  (dolist (references '(1 2))
+    (dolist (rejection '(nil t))
+      (hermes-onboarding-test--lease "r" references rejection))))
+
+(ert-deftest hermes-onboarding-oauth-lease-session-actions ()
+  "All public session keys settle on standalone and shared clients."
+  (dolist (key '("g" "s" "c" "d"))
+    (dolist (references '(1 2))
+      (dolist (rejection '(nil t))
+        (hermes-onboarding-test--lease key references rejection)))))
+
+(ert-deftest hermes-onboarding-oauth-lease-retired-owner ()
+  "Real external stop, mode change and kill still suppress late effects."
+  (dolist (retire '(stop mode kill))
+    (dolist (rejection '(nil t))
+      (hermes-onboarding-test--lease "r" 1 rejection retire))))
+
+(ert-deftest hermes-onboarding-oauth-lease-exception-cleanup ()
+  "Dispatch and settlement errors and quits release the exact lease once."
+  (dolist (fault '(error quit))
+    (dolist (retire '(nil dispatch-fault report-fault))
+      (hermes-onboarding-test--lease "r" 1 (eq retire 'report-fault) retire fault))))
+
+(ert-deftest hermes-onboarding-oauth-lease-synchronous-faults ()
+  "Acquisition and promise-construction errors and quits cannot leak a lease."
+  (dolist (acquisition '(nil t))
+    (dolist (fault '(error quit))
+      (with-temp-buffer
+        (hermes-onboarding-oauth-mode)
+        (setq hermes-onboarding-oauth--provider "nous"
+              hermes-onboarding-oauth--result '((status . "starting")))
+        (let* ((hermes-instances nil)
+               (hermes-dashboard-transport-url "https://lease.example")
+               (hermes-dashboard-transport-idle-close-delay nil)
+               (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+               (client (make-hermes-dashboard-transport-client
+                        :base-url "https://lease.example" :generation 1 :refcount 1))
+               (context (hermes-onboarding--oauth-context))
+               caught)
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                        ((symbol-function 'hermes-dashboard-transport-acquire)
+                         (lambda (&rest _)
+                           (if acquisition (signal fault nil) client))))
+                (condition-case err
+                    (hermes-onboarding--oauth-run
+                     context (lambda (_) (signal fault nil))
+                     (lambda (_) (ert-fail "Unexpected success")))
+                  ((error quit) (setq caught (car err))))
+                (should (eq caught (and acquisition fault)))
+                (should (equal (hermes-transport--get
+                                hermes-onboarding-oauth--result 'status) "error"))
+                (should (string-match-p "r retry start" (buffer-string)))
+                (should (= (hermes-dashboard-transport-client-refcount client)
+                           (if acquisition 1 0)))
+                (unless acquisition
+                  (should (hermes-dashboard-transport-client-stopping-p client))))
+            (hermes-dashboard-transport-stop client)))))))
 
 (provide 'hermes-onboarding-tests)
 ;;; hermes-onboarding-tests.el ends here

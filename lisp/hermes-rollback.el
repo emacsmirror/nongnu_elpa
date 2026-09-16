@@ -24,7 +24,8 @@
 ;; A `tabulated-list' browser over the dashboard checkpoint methods
 ;; (`rollback.list'/`rollback.diff'/`rollback.restore').  RET shows a
 ;; checkpoint diff rendered through `diff-mode'; `x' restores the working tree
-;; and rewinds the owning session's conversation history.
+;; to that file checkpoint and independently removes the owning session's
+;; latest canonical user turn and its tail, if present, from history.
 
 ;;; Code:
 
@@ -196,7 +197,10 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
     result))
 
 (defun hermes-rollback-restore ()
-  "Restore the working tree and rewind conversation history to the checkpoint."
+  "Restore the selected file checkpoint and independently rewind history.
+Remove the owning session's latest canonical user turn and its tail, if
+present; leave history unchanged if there is no user turn.  The selected
+checkpoint does not determine the conversation boundary."
   (interactive)
   (let ((hash (tabulated-list-get-id))
         (snapshot (hermes-rollback--require-snapshot))
@@ -205,8 +209,10 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
         (operation (list 'restore)))
     (unless hash (user-error "No checkpoint on this line"))
     (when (yes-or-no-p
-           (format "Restore working tree and rewind conversation history for %s to checkpoint %s? "
-                   (nth 3 owner) (hermes-rollback--short hash)))
+           (format (concat "Restore working tree to file checkpoint %s and independently "
+                           "rewind conversation history for %s by removing its latest "
+                           "canonical user turn and its tail (no user turn: history unchanged)? ")
+                   (hermes-rollback--short hash) (nth 3 owner)))
       (unless (hermes-rollback--current-p origin owner snapshot)
         (user-error "Checkpoint attachment changed during confirmation"))
       (hermes-rollback--run
@@ -248,7 +254,7 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
   :rows #'hermes-rollback--rows
   :help (:group "Checkpoint"
          hermes-rollback-show-diff "View diff"
-         hermes-rollback-restore "Restore")
+         hermes-rollback-restore "Restore files + rewind latest turn")
   :keys ("RET" #'hermes-rollback-show-diff
          "d" #'hermes-rollback-show-diff
          "x" #'hermes-rollback-restore))

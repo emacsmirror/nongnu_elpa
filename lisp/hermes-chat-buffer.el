@@ -35,6 +35,7 @@
 (require 'ewoc)
 (require 'seq)
 (require 'subr-x)
+(require 'text-property-search)
 (require 'hermes-chat-format)
 (require 'hermes-chat-render)
 (require 'hermes-preview-format)
@@ -147,7 +148,7 @@ runtime.")
   "Identity owning application of pending create-time runtime overrides.")
 (defvar-local hermes-chat--create-overrides-retry-session-id nil
   "Session id owning unapplied create-time runtime overrides, or nil.")
-(defvar-local hermes-chat--session-bootstrap nil "Fresh-session setup owner.")
+(defvar-local hermes-chat--session-bootstrap nil "Session setup or history owner.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn and transcript reset so stale async callbacks become obsolete.
@@ -535,6 +536,59 @@ these same tails.  Markers already follow the transcript edits themselves."
             (setcar tail (hermes-chat--adjust-undo-element (car tail) deltas))
             (setq tail (cdr tail))))))))
 
+(defun hermes-chat--reader-anchor (position)
+  "Return a logical transcript or draft anchor for POSITION."
+  (save-excursion
+    (goto-char position)
+    (let ((input (hermes-chat--input-position)))
+      (if (>= position input)
+          (list 'input (- position input))
+        (let* ((located (ewoc-locate hermes-chat--ewoc position))
+               (node (and located (<= (ewoc-location located) position) located))
+               (start (and node (ewoc-location node))))
+          (list (and node (plist-get (ewoc-data node) :id))
+                (if start (count-lines start (line-beginning-position)) 0)
+                (current-column) position))))))
+
+(defun hermes-chat--reader-position (anchor)
+  "Resolve ANCHOR, bounding shortened or removed transcript content."
+  (if (eq (car anchor) 'input)
+      (min (point-max) (+ (hermes-chat--input-position) (cadr anchor)))
+    (let* ((node (gethash (car anchor) hermes-chat--nodes))
+           (next (and node (ewoc-next hermes-chat--ewoc node)))
+           (end (if next (ewoc-location next) (hermes-chat--input-position))))
+      (save-excursion
+        (if (not node)
+            (goto-char (min end (nth 3 anchor)))
+          (save-restriction
+            (narrow-to-region (ewoc-location node) (max (ewoc-location node) (1- end)))
+            (goto-char (point-min))
+            (forward-line (cadr anchor))
+            (move-to-column (nth 2 anchor))))
+        (point)))))
+
+(defmacro hermes-chat--preserve-readers (&rest body)
+  "Run replacement BODY preserving each window's logical reader anchors."
+  (declare (indent 0) (debug t))
+  `(let ((anchor (hermes-chat--reader-anchor (point)))
+         (windows (mapcar
+                   (lambda (window)
+                     (list window
+                           (hermes-chat--reader-anchor (window-start window))
+                           (hermes-chat--reader-anchor (window-point window))))
+                   (get-buffer-window-list (current-buffer) nil t))))
+     (unwind-protect
+         (progn ,@body)
+       (goto-char (hermes-chat--reader-position anchor))
+       (dolist (state windows)
+         (when (and (window-live-p (car state))
+                    (eq (window-buffer (car state)) (current-buffer)))
+           (set-window-point (car state)
+                             (hermes-chat--reader-position (nth 2 state)))
+           ;; NOFORCE lets native redisplay follow an offscreen draft point.
+           (set-window-start (car state)
+                             (hermes-chat--reader-position (nth 1 state)) t))))))
+
 (defmacro hermes-chat--preserve-input-point (&rest body)
   "Run transcript BODY preserving restriction, draft undo and input offset."
   (declare (indent 0) (debug t))
@@ -627,6 +681,9 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
     (hermes-chat--protect-transcript)
     (goto-char hermes-chat--input-marker)))
 
+(defvar-local hermes-chat--pending-steers nil
+  "Oldest-first occurrences of direct steer text awaiting acknowledgement.")
+
 (defvar-local hermes-chat--retained-clarify-owners nil
   "Oldest-first immutable owners of accepted clarification responses.")
 
@@ -664,7 +721,8 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
                             (plist-get context :display)))
      (mapcar (lambda (owner)
                (list owner uncertain (plist-get owner :text) nil))
-             hermes-chat--retained-clarify-owners)
+             (append hermes-chat--retained-clarify-owners
+                     hermes-chat--pending-steers))
      (unless (string-empty-p draft)
        (list (list 'draft "Draft — also remains in original chat" draft nil))))))
 
@@ -736,6 +794,7 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
     (clrhash hermes-chat--auto-prompt-keys))
   (when recover-input (hermes-chat--capture-recovery))
   (setq hermes-chat--pending-assistant-id nil
+        hermes-chat--pending-steers nil
         hermes-chat--queued-messages nil
         hermes-chat--queued-submit-id nil
         hermes-chat--process nil
@@ -804,8 +863,9 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
                   (let ((inhibit-read-only t)
                         (buffer-undo-list t)
                         (entry (funcall function (ewoc-data node))))
-                    (ewoc-set-data node entry)
-                    (ewoc-invalidate hermes-chat--ewoc node)
+                    (hermes-chat--preserve-readers
+                      (ewoc-set-data node entry)
+                      (ewoc-invalidate hermes-chat--ewoc node))
                     entry))))
       (unless quiet (hermes-chat--notify-state-change))
       entry)))
@@ -821,8 +881,9 @@ With QUIET, leave state-change notification to the caller."
       (hermes-chat--preserve-input-point
        (let ((inhibit-read-only t)
              (buffer-undo-list t))
-         (ewoc-delete hermes-chat--ewoc node))))
-    (remhash id hermes-chat--nodes)
+         (hermes-chat--preserve-readers
+           (remhash id hermes-chat--nodes)
+           (ewoc-delete hermes-chat--ewoc node)))))
     (unless quiet (hermes-chat--notify-state-change))))
 
 (defun hermes-chat--toggle-entry-expanded (id)
@@ -1080,7 +1141,9 @@ With QUIET, remove the row without publishing during teardown."
              (remhash id hermes-chat--nodes)
              (puthash next node hermes-chat--nodes)
              (ewoc-set-data node (hermes-chat--entry-with entry :id next :metadata metadata))
-             (ewoc-invalidate hermes-chat--ewoc node))))))))
+             ;; Capture after the rename so anchors resolve the new ID.
+             (hermes-chat--preserve-readers
+               (ewoc-invalidate hermes-chat--ewoc node)))))))))
 
 (defun hermes-chat--settle-transport-entries (assistant-id status)
   "Set active transport entries for ASSISTANT-ID to STATUS."
@@ -1097,7 +1160,8 @@ With QUIET, remove the row without publishing during teardown."
                      (hermes-chat--active-status-p
                       (plist-get entry :status)))
             (ewoc-set-data node (hermes-chat--entry-with entry :status status))
-            (ewoc-invalidate hermes-chat--ewoc node))))
+            (hermes-chat--preserve-readers
+              (ewoc-invalidate hermes-chat--ewoc node)))))
       hermes-chat--nodes))))
 
 (defun hermes-chat-input-string ()
@@ -1325,7 +1389,8 @@ calls it so this file never references the submit pipeline defined above it.")
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
   (hermes-chat--ensure-submit-allowed)
-  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
+  (if (or (eq (plist-get hermes-chat--session-bootstrap :kind) 'history)
+          (hermes-chat--active-turn-p) hermes-chat--queued-messages)
       (progn
         (hermes-chat--queue-content content nil display)
         (hermes-chat--drain-queued-message))
@@ -1467,11 +1532,40 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
       (get-text-property (line-beginning-position) 'hermes-chat-queue-id)
       (user-error "No queued message on this line")))
 
+(defun hermes-chat--queue-panel-anchor (position)
+  "Return the queued identity, line and column at POSITION."
+  (save-excursion
+    (goto-char position)
+    (list (get-text-property position 'hermes-chat-queue-id)
+          (if (zerop (buffer-size)) 3 (line-number-at-pos))
+          (current-column))))
+
+(defun hermes-chat--queue-panel-position (anchor)
+  "Resolve ANCHOR, falling back to the nearest remaining queue row."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((position (and (car anchor)
+                         (let ((match (text-property-search-forward
+                                       'hermes-chat-queue-id (car anchor) #'equal)))
+                           (and match (prop-match-beginning match))))))
+      (if position (goto-char position)
+        (forward-line (min (1- (nth 1 anchor))
+                           (max 2 (- (line-number-at-pos (point-max)) 2)))))
+      (move-to-column (nth 2 anchor))
+      (point))))
+
 (defun hermes-chat-queue-panel-refresh (&rest _)
   "Render the owning chat's FIFO entries in the current side panel."
   (interactive)
   (let* ((owner (hermes-chat--queue-panel-owner))
          (entries (buffer-local-value 'hermes-chat--queued-messages owner))
+         (anchor (hermes-chat--queue-panel-anchor (point)))
+         (windows (mapcar
+                   (lambda (window)
+                     (list window
+                           (hermes-chat--queue-panel-anchor (window-start window))
+                           (hermes-chat--queue-panel-anchor (window-point window))))
+                   (get-buffer-window-list (current-buffer) nil t)))
          (inhibit-read-only t))
     (erase-buffer)
     (insert (propertize "Hermes queued messages" 'face 'bold) "\n\n")
@@ -1490,8 +1584,12 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
                        start (point)
                        (list 'hermes-chat-queue-id (plist-get entry :id)))))
       (insert "No queued messages\n"))
-    (goto-char (point-min))
-    (forward-line 2)))
+    (goto-char (hermes-chat--queue-panel-position anchor))
+    (dolist (state windows)
+      (set-window-point (car state)
+                        (hermes-chat--queue-panel-position (nth 2 state)))
+      (set-window-start (car state)
+                        (hermes-chat--queue-panel-position (nth 1 state)) t))))
 
 (defun hermes-chat--queue-edit-entry (owner id)
   "Edit queue entry ID owned by chat buffer OWNER."

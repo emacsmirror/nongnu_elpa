@@ -175,9 +175,9 @@
         auth-url request)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
                (lambda (&optional _refresh)
-                 (setq auth-url hermes-dashboard-transport-url)
+                 (setq auth-url hermes-dashboard-transport--api-auth-base-url)
                  (hermes--promise-resolved
-                  `(:base-url ,hermes-dashboard-transport-url
+                  `(:base-url ,hermes-dashboard-transport--api-auth-base-url
                     :headers (("Authorization" . "Bearer bearer"))))))
               ((symbol-function
                 'hermes-dashboard-transport--http-json-request-async)
@@ -201,9 +201,9 @@
         auth-urls request-urls)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
                (lambda (&optional _refresh)
-                 (push hermes-dashboard-transport-url auth-urls)
+                 (push hermes-dashboard-transport--api-auth-base-url auth-urls)
                  (hermes--promise-resolved
-                  `(:base-url ,hermes-dashboard-transport-url))))
+                  `(:base-url ,hermes-dashboard-transport--api-auth-base-url))))
               ((symbol-function
                 'hermes-dashboard-transport--http-json-request-async)
                (lambda (request)
@@ -211,7 +211,7 @@
                  (if (cdr request-urls)
                      (hermes--promise-resolved
                       '(:status 200 :body ((ok . t))))
-                   (hermes--promise-rejected "Request failed (HTTP 401)")))))
+                   (hermes--promise-rejected '(hermes-dashboard-http-error "Request failed (HTTP 401)" 401))))))
       (hermes-dashboard-transport-api-request-async
        "GET" "/api/status" :client client)
       (should (equal (reverse auth-urls)
@@ -228,9 +228,9 @@
         auth-urls request-urls)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-auth-async)
                (lambda (&optional _refresh)
-                 (push hermes-dashboard-transport-url auth-urls)
+                 (push hermes-dashboard-transport--api-auth-base-url auth-urls)
                  (hermes--promise-resolved
-                  `(:base-url ,hermes-dashboard-transport-url))))
+                  `(:base-url ,hermes-dashboard-transport--api-auth-base-url))))
               ((symbol-function
                 'hermes-dashboard-transport--http-json-request-async)
                (lambda (request)
@@ -243,7 +243,7 @@
              "https://selected.example.test"))
         (hermes-dashboard-transport-api-request-async
          "GET" "/api/status"))
-      (hermes--promise-reject first-request "Request failed (HTTP 401)")
+      (hermes--promise-reject first-request '(hermes-dashboard-http-error "Request failed (HTTP 401)" 401))
       (should (equal (reverse auth-urls)
                      '("https://selected.example.test"
                        "https://selected.example.test")))

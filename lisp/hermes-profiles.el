@@ -89,13 +89,13 @@ route requires both fields."
     (or (cdr (assoc choice candidates))
         (user-error "No model selected"))))
 
-(defun hermes-profiles--put-model (client name candidate)
-  "Return a promise setting profile NAME's model to CANDIDATE via CLIENT."
+(defun hermes-profiles--put-model (client name candidate &optional current-p)
+  "Set profile NAME's model to CANDIDATE via CLIENT under CURRENT-P."
   (hermes-dashboard-transport-api-request-async
    "PUT" (format "/api/profiles/%s/model" (url-hexify-string name))
    :body `((provider . ,(plist-get candidate :provider))
            (model . ,(plist-get candidate :model)))
-   :client client))
+   :client client :current-p current-p))
 
 (defun hermes-profiles--api (client method path &optional body)
   "Return a profile REST METHOD PATH promise through CLIENT with BODY."
@@ -115,30 +115,33 @@ route requires both fields."
 
 (defun hermes-profiles--read-create-arguments ()
   "Read a new profile name and optional clone source."
-  (let* ((name (read-string "New profile name: "))
-         (profiles (mapcar #'car tabulated-list-entries))
+  (let* ((profiles (mapcar #'car tabulated-list-entries))
+         (name (read-string "New profile name: "))
          (clone-from (completing-read "Clone profile (empty for none): "
                                       profiles nil nil)))
     (list name (unless (string-empty-p clone-from) clone-from))))
 
 (defun hermes-profiles-create (name &optional clone-from)
   "Create profile NAME, optionally cloning identity from CLONE-FROM."
-  (interactive (hermes-profiles--read-create-arguments))
+  (interactive
+   (hermes-browser--read-owned-arguments #'hermes-profiles--read-create-arguments))
   (let ((name (string-trim name))
         (clone-from (and clone-from (string-trim clone-from)))
         (origin (current-buffer)))
     (when (string-empty-p name) (user-error "Profile name is required"))
     (hermes-profiles--ensure-non-default name "create")
-    (hermes-browser--run-on-client
-     (lambda (client)
+    (hermes-browser--run-owned
+     (lambda (client _guard)
        (hermes-profiles--api
         client "POST" ""
         (append `((name . ,name))
                 (and (hermes-transport--non-empty-string clone-from)
                      `((clone_from . ,clone-from))))))
+     (hermes-browser--mutation-context)
      (lambda (_result)
        (hermes-profiles--refresh-after-mutation origin
-                                                (format "created profile %s" name))))))
+                                                (format "created profile %s" name)))
+     #'hermes-browser--read-error)))
 
 (defvar-local hermes-profiles-soul-profile nil
   "Profile owned by the current SOUL editor buffer.")
@@ -286,7 +289,10 @@ Keep edits made during a save modified."
 
 (defun hermes-profiles-rename (new-name)
   "Rename the profile at point to NEW-NAME."
-  (interactive (list (read-string "Rename profile to: ")))
+  (interactive
+   (hermes-browser--read-owned-arguments
+    (lambda () (list (read-string "Rename profile to: ")))
+    #'tabulated-list-get-id))
   (let ((name (tabulated-list-get-id))
         (new-name (string-trim new-name))
         (origin (current-buffer)))
@@ -294,62 +300,71 @@ Keep edits made during a save modified."
     (when (string-empty-p new-name) (user-error "Profile name is required"))
     (hermes-profiles--ensure-non-default name "rename")
     (hermes-profiles--ensure-non-default new-name "rename to")
-    (hermes-browser--run-on-client
-     (lambda (client)
+    (hermes-browser--run-owned
+     (lambda (client _guard)
        (hermes-profiles--api
         client "PATCH" (concat "/" (url-hexify-string name))
         `((new_name . ,new-name))))
+     (hermes-browser--mutation-context #'tabulated-list-get-id)
      (lambda (_result)
        (hermes-profiles--refresh-after-mutation
-        origin (format "renamed profile %s to %s" name new-name))))))
+        origin (format "renamed profile %s to %s" name new-name)))
+     #'hermes-browser--read-error)))
 
 (defun hermes-profiles-delete ()
   "Delete the profile at point after confirmation."
   (interactive)
-  (let ((name (tabulated-list-get-id))
-        (origin (current-buffer)))
+  (let* ((name (tabulated-list-get-id))
+         (origin (current-buffer)))
     (unless name (user-error "No profile on this line"))
     (hermes-profiles--ensure-non-default name "delete")
-    (when (yes-or-no-p (format "Delete profile %s? " name))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (hermes-profiles--api
-          client "DELETE" (concat "/" (url-hexify-string name))))
-       (lambda (_result)
-         (hermes-profiles--refresh-after-mutation
-          origin (format "deleted profile %s" name)))))))
+    (let ((current (hermes-browser--mutation-context #'tabulated-list-get-id)))
+      (when (and (yes-or-no-p (format "Delete profile %s? " name))
+                 (funcall current))
+        (with-current-buffer origin
+          (hermes-browser--run-owned
+           (lambda (client _guard)
+             (hermes-profiles--api
+              client "DELETE" (concat "/" (url-hexify-string name))))
+           current
+           (lambda (_result)
+             (hermes-profiles--refresh-after-mutation
+              origin (format "deleted profile %s" name)))
+           #'hermes-browser--read-error))))))
 
 (defun hermes-profiles-set-model ()
   "Set the model of the profile at point, persisted in its configuration."
   (interactive)
   (let ((name (tabulated-list-get-id))
-        (origin (current-buffer))
-        (instance (hermes-instance-resolve))
-        (generation (hermes-browser--next-request-generation)))
+        (origin (current-buffer)))
     (unless name (user-error "No profile on this line"))
-    (hermes-browser--run-on-client
-     (lambda (client)
+    (hermes-browser--run-owned
+     (lambda (client guard)
        (hermes--promise-then
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-model-options-cached client)
-        (lambda (catalog)
-          (when (and (hermes-browser--request-current-mode-p
-                      origin generation 'hermes-profiles-mode)
-                     (with-current-buffer origin
-                       (equal instance (hermes-instance-resolve))))
-            (hermes-profiles--put-model
-             client name (hermes-profiles--read-model-candidate catalog))))))
+        (hermes--promise-then
+         (hermes-dashboard-transport-call-fn
+          #'hermes-dashboard-transport-model-options-cached client)
+         (lambda (catalog)
+           (when (funcall guard)
+             (with-current-buffer origin
+               (let ((candidate (hermes-profiles--read-model-candidate catalog)))
+                 (when (funcall guard)
+                   (hermes-profiles--put-model client name candidate guard)))))))
+        (lambda (_receipt)
+          (hermes--promise-map
+           (hermes-dashboard-transport-api-request-async
+            "GET" "/api/profiles" :client client :current-p guard)
+           (lambda (result)
+             (when (funcall guard)
+               (hermes-dashboard-transport--store-profile-cache
+                result (hermes-dashboard-transport--cache-base-url client)))
+             result)))))
+     (hermes-browser--mutation-context #'tabulated-list-get-id)
      (lambda (result)
-       (when (and (hermes-browser--buffer-mode-p origin 'hermes-profiles-mode)
-                  (with-current-buffer origin
-                    (equal instance (hermes-instance-resolve))))
-         (message "Hermes: profile %s set to %s via %s" name
-                  (hermes-transport--scalar-string
-                   (hermes-transport--get result 'model))
-                  (hermes-transport--scalar-string
-                   (hermes-transport--get result 'provider)))
-         (with-current-buffer origin
-           (hermes-profiles--revert)))))))
+       (hermes-profiles--render result)
+       (setq hermes-browser--status "Ready")
+       (message "Hermes: read back model for profile %s" name))
+     #'hermes-browser--read-error)))
 
 ;;;###autoload (autoload 'hermes-list-profiles "hermes-profiles" nil t)
 (hermes-define-list-browser profiles
