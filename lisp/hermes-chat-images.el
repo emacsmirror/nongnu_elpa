@@ -220,6 +220,7 @@ Errors and local interruption do not prove that staging was consumed."
                     (list (list :bytes (copy-sequence bytes) :type kind
                                 :mime (concat "image/" (symbol-name kind))))))
       (setf (plist-get hermes-chat--image-draft-record :images) hermes-chat--draft-images)
+      (force-mode-line-update)
       (message "%d image(s) staged locally; preview or remove before sending"
                (length hermes-chat--draft-images)))))
 
@@ -271,6 +272,7 @@ Signal a user error when this graphical backend has no PNG selection."
         (with-current-buffer hermes-chat--image-recovery-buffer
           (setq hermes-chat--image-records (delq record hermes-chat--image-records))))
       (setq hermes-chat--image-draft-record nil)))
+  (force-mode-line-update)
   (message "%d draft image(s) remain" (length hermes-chat--draft-images)))
 
 (defun hermes-chat--image-insert-preview (image)
@@ -399,6 +401,7 @@ session before retrying; the original backend may already have accepted them."
             (user-error "Target image recovery is full"))
           (setq hermes-chat--draft-images (plist-get copy :images)
 		hermes-chat--image-draft-record copy)
+          (force-mode-line-update)
           (with-current-buffer recovery
             (setq hermes-chat--image-records (append records (list copy)))))
 	(goto-char (point-max))

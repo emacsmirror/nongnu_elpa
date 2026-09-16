@@ -15,6 +15,97 @@
           (hermes-chat--image-prior-submits (make-hash-table :test #'equal)))
      (hermes-test-with-chat-buffer ,@body)))
 
+(ert-deftest hermes-images-mode-line-survives-clear ()
+  "Public staging and Clear retain a visible count until explicit removal."
+  (hermes-images-test-with-chat-buffer
+   (let ((file (make-temp-file "hermes-image-" nil ".png"))
+         (header (hermes-chat--header-line))
+         recovery)
+     (unwind-protect
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                    (lambda (&rest _) (ert-fail "Unexpected upload")))
+                   ((symbol-function 'hermes-dashboard-transport-request)
+                    (lambda (&rest _) (ert-fail "Unexpected RPC"))))
+           (should-not (eval (cadr mode-line-process) t))
+           (let ((coding-system-for-write 'binary))
+             (write-region hermes-images-test-png nil file nil 'silent))
+           (hermes-chat-attach-image-file file)
+           (setq recovery hermes-chat--image-recovery-buffer)
+           (message "Unrelated echo message")
+           (should (equal (eval (cadr mode-line-process) t) " [1 image]"))
+           (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
+             (call-interactively #'hermes-chat-clear))
+           (should (equal (eval (cadr mode-line-process) t) " [1 image]"))
+           (should (equal (hermes-chat--header-line) header))
+           (should (equal (plist-get (car hermes-chat--draft-images) :bytes)
+                          hermes-images-test-png))
+           (buffer-enable-undo)
+           (insert "  literal draft\n")
+           (let ((draft (hermes-chat-input-string))
+                 (point (point))
+                 (undo (copy-tree buffer-undo-list)))
+             (hermes-chat-attach-image-file file)
+             (should (equal (eval (cadr mode-line-process) t) " [2 images]"))
+             (hermes-chat-remove-image 1)
+             (should (equal (eval (cadr mode-line-process) t) " [1 image]"))
+             (hermes-chat-remove-image 1)
+             (should-not (eval (cadr mode-line-process) t))
+             (should (equal (hermes-chat-input-string) draft))
+             (should (= (point) point))
+             (should (equal buffer-undo-list undo))))
+       (delete-file file)
+       (when (buffer-live-p recovery)
+         (with-current-buffer recovery
+           (setq hermes-chat--image-records nil)
+           (kill-buffer recovery)))))))
+
+(ert-deftest hermes-images-mode-line-opens-owning-composer-actions ()
+  "Clicking an unselected chat's count opens its existing image actions."
+  (save-window-excursion
+    (hermes-images-test-with-chat-buffer
+     (hermes-chat--image-stage hermes-images-test-png)
+     (buffer-enable-undo)
+     (insert "literal unsent draft")
+     (undo-boundary)
+     (let* ((owner (current-buffer))
+            (window (selected-window))
+            (other (split-window-right))
+            (point (point))
+            (undo (copy-tree buffer-undo-list))
+            (recovery hermes-chat--image-recovery-buffer)
+            (label (eval (cadr mode-line-process) t))
+            (map (get-text-property 0 'local-map label))
+            (keymap-popup--buffer-name " *image actions test*")
+            (keymap-popup-backend #'keymap-popup-backend-side-window))
+       (unwind-protect
+           (progn
+             (set-window-buffer other (get-buffer-create " *image actions other*"))
+             (select-window other)
+             (funcall (keymap-lookup map "<mode-line> <mouse-1>")
+                      (list 'mouse-1 (list window 'mode-line '(0 . 0) 0)))
+             (should (eq (current-buffer) owner))
+             (with-current-buffer keymap-popup--buffer-name
+               (should (string-match-p "Preview / recover" (buffer-string)))
+               (should (string-match-p "Remove draft image" (buffer-string))))
+             (execute-kbd-macro (kbd "V"))
+             (should (eq (window-buffer (selected-window)) recovery))
+             (with-current-buffer recovery
+               (should (string-match-p "image/png" (buffer-string)))
+               (should (string-match-p "literal unsent draft" (buffer-string))))
+             (switch-to-buffer owner)
+             (execute-kbd-macro (kbd "C-c C-o I"))
+             (condition-case nil
+                 (execute-kbd-macro (kbd "C-g C-g"))
+               (quit nil))
+             (should (equal (hermes-chat-input-string) "literal unsent draft"))
+             (should (= (point) point))
+             (should (equal buffer-undo-list undo)))
+         (keymap-popup-dismiss)
+         (kill-buffer " *image actions other*")
+         (with-current-buffer recovery
+           (setq hermes-chat--image-records nil)
+           (kill-buffer recovery)))))))
+
 (ert-deftest hermes-images-stage-validates-bytes-not-filename ()
   (hermes-images-test-with-chat-buffer
    (hermes-chat--image-stage hermes-images-test-png)
@@ -448,6 +539,7 @@
 
 (ert-deftest hermes-images-manual-recovery-copies-to-new-chat ()
   (hermes-images-test-with-send
+   (should-not (eval (cadr mode-line-process) t))
    (let ((record (plist-get (car hermes-chat--queued-messages) :image-record))
          (recovery hermes-chat--image-recovery-buffer))
      (hermes-chat--invalidate-transport-state)
@@ -459,6 +551,7 @@
                   ((symbol-function 'pop-to-buffer) #'ignore))
           (with-current-buffer recovery (hermes-chat-image-recovery-restore)))
 	(should (equal (hermes-chat-input-string) "  exact draft\n"))
+	(should (equal (eval (cadr mode-line-process) t) " [1 image]"))
 	(should (equal (plist-get (car hermes-chat--draft-images) :bytes)
                        hermes-images-test-png))
 	(should-not (eq hermes-chat--image-draft-record record))

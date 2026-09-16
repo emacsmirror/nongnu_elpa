@@ -2281,6 +2281,23 @@ Do not wrap into the composer or modify its draft."
   "V" ("Preview / recover" hermes-chat-preview-images)
   "D" ("Remove draft image" hermes-chat-remove-image))
 
+(defvar-keymap hermes-chat-images-mode-line-map
+  :doc "Mouse access to the owning composer's image actions."
+  "<mode-line> <mouse-1>"
+  (lambda (event)
+    (interactive "e")
+    (select-window (posn-window (event-start event)))
+    (hermes-chat-images-map-popup)))
+
+(defun hermes-chat--images-mode-line ()
+  "Return a compact action label for this composer's retained draft images."
+  (when hermes-chat--draft-images
+    (let ((count (length hermes-chat--draft-images)))
+      (propertize (format " [%d image%s]" count (if (= count 1) "" "s"))
+                  'mouse-face 'mode-line-highlight
+                  'local-map hermes-chat-images-mode-line-map
+                  'help-echo "mouse-1 or C-c C-o I: Preview, remove or recover images"))))
+
 (keymap-popup-define hermes-chat-sess-map
   "Manage the current chat session."
   :description "Chat Session"
@@ -2454,6 +2471,7 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (setq-local word-wrap t)
   (setq-local scroll-conservatively 5)
   (setq-local display-line-numbers nil)
+  (setq-local mode-line-process '(:eval (hermes-chat--images-mode-line)))
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'change-major-mode-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
