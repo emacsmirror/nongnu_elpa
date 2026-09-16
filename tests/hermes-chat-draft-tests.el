@@ -238,7 +238,7 @@
   (with-temp-buffer
     (insert (propertize "x" 'font-lock-face 'bold 'display "hidden" 'invisible t)
             (propertize "y" 'face 'italic 'font-lock-face 'bold 'keymap '(keymap)))
-    (should (equal (hermes-chat-draft--faces (point-min) (point-max))
+    (should (equal (hermes-chat--face-spans (point-min) (point-max))
                    '((0 1 bold) (1 2 (italic bold)))))))
 
 (ert-deftest hermes-chat-draft-revalidates-after-language-fontifier ()
@@ -274,7 +274,7 @@
       ;; Keep mode hooks delayed throughout work in the owned helper buffer.
       (cl-letf (((symbol-function 'font-lock-ensure)
                  (lambda (&rest _) (python-mode))))
-        (hermes-chat-draft--code-faces 'emacs-lisp-mode (point-min) (point-max))))
+        (hermes-chat--code-faces 'emacs-lisp-mode (point-min) (point-max))))
     (should (zerop calls))))
 
 (defun hermes-test-draft-face-vector (spans size)
@@ -302,7 +302,7 @@
                       (markdown-mode)
                       (setq-local markdown-fontify-code-blocks-natively t)
                       (font-lock-ensure))
-                    (hermes-chat-draft--faces (point-min) (point-max)))))
+                    (hermes-chat--face-spans (point-min) (point-max)))))
             (should (equal (hermes-test-draft-face-vector
                             (hermes-chat-draft--fontify text) (length text))
                            (hermes-test-draft-face-vector expected (length text))))))

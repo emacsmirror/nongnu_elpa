@@ -348,25 +348,30 @@ detail is kept rather than replaced by a bare \"completed\" line."
 
 ;;; Diff detection
 
-(defun hermes-chat--fenced-diff-blocks ()
-  "Return fenced ```diff/```patch blocks as (START END TEXT) zero-based.
-START and END span the whole fenced block to replace; TEXT is its inner diff."
-  (let ((case-fold-search t)
-        blocks)
-    (goto-char (point-min))
-    (while (re-search-forward "^```[ \t]*\\(?:diff\\|patch\\)\\(?:[ \t].*\\)?\n" nil t)
-      (let ((block-start (match-beginning 0))
-            (inner-start (point)))
-        (if (re-search-forward "^```[ \t]*$" nil t)
-            (push (list (1- block-start)
-                        (1- (min (point-max) (1+ (line-end-position))))
-                        (buffer-substring-no-properties inner-start
-                                                        (match-beginning 0)))
-                  blocks)
-          (push (list (1- block-start) (1- (point-max))
-                      (buffer-substring-no-properties inner-start (point-max)))
-                blocks))))
-    blocks))
+(defun hermes-chat--fenced-block-at-point ()
+  "Consume a Markdown fence at point and return (START END TEXT LANGUAGE).
+START and END are zero-based offsets spanning the whole block; TEXT is its
+body.  Skip nested delimiters, and extend unfinished blocks to buffer end.
+Return nil without moving point when no opening fence is present."
+  (when (or (looking-at markdown-regex-gfm-code-block-open)
+            (looking-at markdown-regex-tilde-fence-begin))
+    (let* ((start (point))
+           (fence (match-string-no-properties 1))
+           (language (match-string-no-properties 3))
+           (body (line-beginning-position 2))
+           (closing (funcall (if (eq (aref fence 0) ?`)
+                                 #'markdown-make-gfm-fence-regex
+                               #'markdown-make-tilde-fence-regex)
+                             (length fence) "[[:blank:]]*$"))
+           (end (progn
+                  (goto-char body)
+                  (if (re-search-forward closing nil t)
+                      (match-beginning 0)
+                    (point-max)))))
+      (goto-char end)
+      (forward-line 1)
+      (list (1- start) (1- (point))
+            (buffer-substring-no-properties body end) language))))
 
 (defun hermes-chat--unified-diff-hunk-counts ()
   "Return old/new line counts for a unified diff hunk at point."
@@ -453,43 +458,117 @@ Return non-nil when the consumed hunk contains an added or removed line."
       (when (and saw-hunk saw-change (< start (point)))
         (hermes-chat--offset-range start (point))))))
 
-(defun hermes-chat--inline-diff-blocks ()
-  "Return inline unified diff blocks as (START END TEXT) zero-based."
-  (let (blocks)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (if-let* ((range (hermes-chat--unified-diff-range-at-point)))
-          (progn
-            (push (list (car range) (cdr range)
-                        (buffer-substring-no-properties
-                         (1+ (car range)) (1+ (cdr range))))
-                  blocks)
-            (goto-char (1+ (cdr range))))
-        (forward-line 1)))
-    blocks))
-
-(defun hermes-chat--merge-diff-blocks (blocks)
-  "Return BLOCKS sorted by start, dropping empty and overlapping ranges."
-  (let ((sorted (sort (copy-sequence blocks)
-                      (lambda (left right) (< (nth 0 left) (nth 0 right)))))
-        result last-end)
-    (dolist (block sorted (nreverse result))
-      (when (and (< (nth 0 block) (nth 1 block))
-                 (or (null last-end) (>= (nth 0 block) last-end)))
-        (push block result)
-        (setq last-end (nth 1 block))))))
-
 (defun hermes-chat--diff-blocks (content)
-  "Return diff blocks in CONTENT as (START END TEXT), sorted and non-overlapping.
-A fenced block subsumes the inline diff it contains, so each diff yields one
-block spanning the whole region to replace with a link."
+  "Return top-level diff blocks in CONTENT as (START END TEXT), zero-based.
+Scan in source order, skipping all Markdown fences as opaque blocks.  Only
+fences labelled diff or patch disclose their body; nested examples stay
+literal.  Outside fences, recognize valid unified diff hunks."
   (with-temp-buffer
     (insert content)
-    (hermes-chat--merge-diff-blocks
-     (append (hermes-chat--fenced-diff-blocks)
-             (hermes-chat--inline-diff-blocks)))))
+    (goto-char (point-min))
+    (let (blocks)
+      (while (not (eobp))
+        (if-let* ((fence (hermes-chat--fenced-block-at-point)))
+            (when (member (downcase (or (nth 3 fence) "")) '("diff" "patch"))
+              (push (butlast fence) blocks))
+          (if-let* ((range (save-excursion
+                             (hermes-chat--unified-diff-range-at-point))))
+              (progn
+                (push (list (car range) (cdr range)
+                            (buffer-substring-no-properties
+                             (1+ (car range)) (1+ (cdr range))))
+                      blocks)
+                (goto-char (1+ (cdr range))))
+            (forward-line 1))))
+      (nreverse blocks))))
 
 ;;; Markdown fontification
+
+(defun hermes-chat--face-spans (start end)
+  "Return face spans between START and END, relative to START.
+Copy no syntax, invisibility, display, editing, or keymap properties."
+  (cl-loop for pos = start then next
+           while (< pos end)
+           for next = (min (next-single-property-change pos 'face nil end)
+                           (next-single-property-change pos 'font-lock-face nil end))
+           for face = (get-text-property pos 'face)
+           for font-face = (get-text-property pos 'font-lock-face)
+           when (or face font-face)
+           collect (list (- pos start) (- next start)
+                         (cond ((and face font-face) (list face font-face))
+                               (face face) (t font-face)))))
+
+(defun hermes-chat--language-mode (language)
+  "Return LANGUAGE's programming major mode, or nil for plain code.
+When LANGUAGE is nil, use `markdown-fontify-code-block-default-mode'.
+Load autoload definitions to inspect their declared ancestry, never invoke a
+mode to discover its type.  Minor modes and arbitrary commands are not modes
+suitable for fontifying source, even when their names end in `-mode'."
+  (condition-case nil
+      (when-let* ((mode (if language (markdown-get-lang-mode language)
+                         markdown-fontify-code-block-default-mode))
+                  ((symbolp mode))
+                  ((fboundp mode)))
+        (when (autoloadp (symbol-function mode))
+          (autoload-do-load (symbol-function mode) mode))
+        (and (provided-mode-derived-p mode 'prog-mode) mode))
+    (error nil)))
+
+(defun hermes-chat--code-faces (mode start end)
+  "Return MODE face spans for START through END in a disposable buffer."
+  (let ((text (buffer-substring-no-properties start end)))
+    (condition-case nil
+        (with-temp-buffer
+          (insert text)
+          (delay-mode-hooks
+            (funcall mode)
+            (font-lock-ensure))
+          (hermes-chat--face-spans (point-min) (point-max)))
+      (error nil))))
+
+(defun hermes-chat--fontify-fences ()
+  "Apply native language faces using Markdown's fence syntax properties.
+Unlike Markdown's native fontifier, never reuse globally named mode buffers.
+An opening fence without its closing delimiter extends to the buffer end."
+  (dolist (pair markdown-fenced-block-pairs)
+    (when (memq (cadar pair) '(markdown-gfm-block-begin markdown-tilde-fence-begin))
+      (goto-char (point-min))
+      (while (and (< (point) (point-max))
+                  (markdown-match-propertized-text (cadar pair) (point-max)))
+        (let* ((opening (match-beginning 0))
+               (width (- (match-end 1) (match-beginning 1)))
+               (start (progn (goto-char opening) (line-beginning-position 2)))
+               (lang (markdown-code-block-lang (cons opening (cadar pair))))
+               (end (progn
+                      (goto-char start)
+                      (if (re-search-forward
+                           (markdown-maybe-funcall-regexp (caadr pair) width) nil t)
+                          (match-beginning 0)
+                        (point-max))))
+               (mode (hermes-chat--language-mode lang)))
+          (when (< start end)
+            (if mode
+                (progn
+                  (remove-text-properties start end '(face nil))
+                  (dolist (span (hermes-chat--code-faces mode start end))
+                    (put-text-property (+ start (nth 0 span)) (+ start (nth 1 span))
+                                       'face (nth 2 span))))
+              (put-text-property start end 'face 'markdown-pre-face))
+            ;; Match `markdown-fontify-code-blocks-generic': native faces
+            ;; take precedence, with the block face underneath every span.
+            (font-lock-append-text-property start end 'face 'markdown-code-face))
+          (goto-char (min (point-max) (1+ end))))))))
+
+(defun hermes-chat--fontify-markdown-buffer (&optional native)
+  "Fontify the owned temporary Markdown buffer, using NATIVE language faces.
+Fence labels select only programming major modes.  This is not a sandbox
+for installed mode code; suppress hooks throughout work in each owned buffer
+and bypass Markdown's shared-buffer native fontifier."
+  (let ((markdown-fontify-code-blocks-natively nil))
+    (delay-mode-hooks
+      (markdown-mode)
+      (font-lock-ensure)
+      (when native (hermes-chat--fontify-fences)))))
 
 (defun hermes-chat--mark-markdown-tables ()
   "Mark native Markdown tables with their exact original source.
@@ -513,14 +592,15 @@ unfinished fenced code blocks stay unchanged."
   "Return TEXT fontified with `markdown-mode', or TEXT on failure.
 Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
 markdown stays visible and easy to copy.  Pipe tables retain their source
-in a text property for width-aware inline rendering."
+in a text property for width-aware inline rendering.  When
+`markdown-fontify-code-blocks-natively' is non-nil, fontify programming
+languages in owned buffers with mode hooks suppressed."
   (condition-case nil
       (with-temp-buffer
         (insert text)
-        (delay-mode-hooks (markdown-mode))
+        (hermes-chat--fontify-markdown-buffer
+         markdown-fontify-code-blocks-natively)
         (hermes-chat--mark-markdown-tables)
-        ;; `font-lock-mode' refuses temp buffers; `font-lock-ensure' suffices.
-        (font-lock-ensure (point-min) (point-max))
         (remove-text-properties (point-min) (point-max) '(invisible nil))
         (buffer-string))
     (error text)))

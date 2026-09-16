@@ -27,7 +27,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'markdown-mode)
+(require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 
 (defconst hermes-chat-draft--limit 16384
@@ -41,89 +41,12 @@ Larger drafts remain unhighlighted rather than blocking input on large pastes.")
 (defvar-local hermes-chat-draft--overlays nil
   "Face overlays owned by draft highlighting.")
 
-(defun hermes-chat-draft--faces (start end)
-  "Return face spans between START and END, relative to START.
-Copy no syntax, invisibility, display, editing, or keymap properties."
-  (cl-loop for pos = start then next
-           while (< pos end)
-           for next = (min (next-single-property-change pos 'face nil end)
-                           (next-single-property-change pos 'font-lock-face nil end))
-           for face = (get-text-property pos 'face)
-           for font-face = (get-text-property pos 'font-lock-face)
-           when (or face font-face)
-           collect (list (- pos start) (- next start)
-                         (cond ((and face font-face) (list face font-face))
-                               (face face) (t font-face)))))
-
-(defun hermes-chat-draft--language-mode (language)
-  "Return LANGUAGE's programming major mode, or nil for plain code.
-Load autoload definitions to inspect their declared ancestry, never invoke a
-mode to discover its type.  Minor modes and arbitrary commands are not modes
-suitable for fontifying source, even when their names end in `-mode'."
-  (condition-case nil
-      (when-let* ((mode (markdown-get-lang-mode language))
-                  ((symbolp mode))
-                  ((fboundp mode)))
-        (when (autoloadp (symbol-function mode))
-          (autoload-do-load (symbol-function mode) mode))
-        (and (provided-mode-derived-p mode 'prog-mode) mode))
-    (error nil)))
-
-(defun hermes-chat-draft--code-faces (mode start end)
-  "Return MODE face spans for START through END in a disposable buffer."
-  (let ((text (buffer-substring-no-properties start end)))
-    (condition-case nil
-        (with-temp-buffer
-          (insert text)
-          (delay-mode-hooks
-            (funcall mode)
-            (font-lock-ensure))
-          (hermes-chat-draft--faces (point-min) (point-max)))
-      (error nil))))
-
-(defun hermes-chat-draft--fontify-fences ()
-  "Apply native language faces using Markdown's fence syntax properties.
-Unlike Markdown's native fontifier, never reuse globally named mode buffers.
-An opening fence without its closing delimiter extends to the draft end."
-  (dolist (pair markdown-fenced-block-pairs)
-    (when (memq (cadar pair) '(markdown-gfm-block-begin markdown-tilde-fence-begin))
-      (goto-char (point-min))
-      (while (and (< (point) (point-max))
-                  (markdown-match-propertized-text (cadar pair) (point-max)))
-        (let* ((opening (match-beginning 0))
-               (width (- (match-end 1) (match-beginning 1)))
-               (start (progn (goto-char opening) (line-beginning-position 2)))
-               (lang (markdown-code-block-lang (cons opening (cadar pair))))
-               (end (progn
-                      (goto-char start)
-                      (if (re-search-forward
-                           (markdown-maybe-funcall-regexp (caadr pair) width) nil t)
-                          (match-beginning 0)
-                        (point-max))))
-               (mode (and lang (hermes-chat-draft--language-mode lang))))
-          (when (< start end)
-            (if mode
-                (progn
-                  (remove-text-properties start end '(face nil))
-                  (dolist (span (hermes-chat-draft--code-faces mode start end))
-                    (put-text-property (+ start (nth 0 span)) (+ start (nth 1 span))
-                                       'face (nth 2 span))))
-              (put-text-property start end 'face 'markdown-pre-face))
-            ;; Match `markdown-fontify-code-blocks-generic': native faces
-            ;; take precedence, with the block face underneath every span.
-            (font-lock-append-text-property start end 'face 'markdown-code-face))
-          (goto-char (min (point-max) (1+ end))))))))
-
 (defun hermes-chat-draft--fontify (text)
   "Return Markdown and native code face spans for literal TEXT."
   (with-temp-buffer
     (insert text)
-    (delay-mode-hooks (markdown-mode))
-    ;; The dependency's native path owns shared buffers and runs mode hooks.
-    (setq-local markdown-fontify-code-blocks-natively nil)
-    (font-lock-ensure)
-    (hermes-chat-draft--fontify-fences)
-    (hermes-chat-draft--faces (point-min) (point-max))))
+    (hermes-chat--fontify-markdown-buffer t)
+    (hermes-chat--face-spans (point-min) (point-max))))
 
 (defun hermes-chat-draft--cancel ()
   "Retire pending draft work and remove only its owned face overlays."
