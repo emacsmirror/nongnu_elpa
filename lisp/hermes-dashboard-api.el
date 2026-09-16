@@ -455,6 +455,17 @@ fall through to the body parser and reject with the HTTP condition."
       (`(ok . ,response) (hermes--promise-resolve promise response))
       (`(error . ,condition) (hermes--promise-reject promise condition)))))
 
+(defun hermes-dashboard-transport--http-explicit-auth-headers (headers)
+  "Return HEADERS with explicit authorization policy for url.el.
+An empty Authorization header disables url.el's ambient origin credentials and
+401 challenge replay.  Dashboard authentication is owned by this client,
+not by url.el's implicit credential readers.  Canonicalize the field name
+because url.el checks it case-sensitively, unlike HTTP."
+  (if-let* ((authorization (assoc-string "Authorization" headers t)))
+      (cons (cons "Authorization" (or (cdr authorization) ""))
+            (remq authorization headers))
+    (cons '("Authorization" . "") headers)))
+
 (cl-defun hermes-dashboard-transport--default-http-request
     (url &key (method "GET") headers data secrets)
   "Fetch URL with METHOD, HEADERS, and DATA using url.el synchronously.
@@ -464,7 +475,8 @@ Legacy: new callers must use
 network on the main thread is banned by AGENTS.md."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
-        (url-request-extra-headers headers)
+        (url-request-extra-headers
+         (hermes-dashboard-transport--http-explicit-auth-headers headers))
         (url-request-data data))
     (let ((buffer (url-retrieve-synchronously
                    url t t hermes-dashboard-transport-http-timeout)))
@@ -498,7 +510,8 @@ TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil.
 CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
-        (url-request-extra-headers headers)
+        (url-request-extra-headers
+         (hermes-dashboard-transport--http-explicit-auth-headers headers))
         (url-request-data data)
         (request-timeout (or timeout hermes-dashboard-transport-http-timeout))
         (promise (hermes--promise-make))

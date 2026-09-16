@@ -4,6 +4,275 @@
 
 (require 'ert)
 (require 'hermes-test-helpers)
+(require 'url-http)
+
+(defun hermes-test--http-wait (predicate)
+  "Wait a bounded time for PREDICATE while processing real socket traffic."
+  (let ((deadline (+ (float-time) 3)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (should (funcall predicate))))
+
+(defun hermes-test--with-http-server (handler test)
+  "Run TEST with a loopback URL whose requests are passed to HANDLER.
+HANDLER receives the accepted process and complete request text."
+  (let (peers)
+    (let ((server
+           (make-network-process
+            :name "hermes-test-http" :server t :host "127.0.0.1" :service t
+            :family 'ipv4 :noquery t :coding 'binary
+            :log (lambda (_server peer _message) (push peer peers))
+            :filter
+            (lambda (peer text)
+              (let ((request (concat (process-get peer 'request) text)))
+                (process-put peer 'request request)
+                (when (and (not (process-get peer 'handled))
+                           (string-match "\r\n\r\n" request))
+                  (let* ((end (match-end 0))
+                         (case-fold-search t)
+                         (length (if (string-match
+                                      "Content-Length: *\\([0-9]+\\)" request)
+                                     (string-to-number (match-string 1 request))
+                                   0)))
+                    (when (>= (- (length request) end) length)
+                      (process-put peer 'handled t)
+                      (funcall handler peer request)))))))))
+      (unwind-protect
+          (funcall test (format "http://127.0.0.1:%d"
+                                (process-contact server :service)))
+        (mapc #'delete-process peers)
+        (delete-process server)))))
+
+(defun hermes-test--http-reply (peer status body &optional headers)
+  "Send PEER an HTTP response with STATUS, JSON BODY and optional HEADERS."
+  (process-send-string
+   peer (format "HTTP/1.1 %d Test\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n%s\r\n%s"
+                status (string-bytes body) (or headers "") body)))
+
+(defun hermes-test--http-explicit-auth (executor)
+  "Exercise EXECUTOR's explicit-only authentication using real HTTP."
+  (dolist (challenge '(nil "WWW-Authenticate: Basic realm=\"fixture\"\r\n"))
+    (dolist (authorization '(nil "Basic Zml4dHVyZTpwYXNz" "Bearer fixture-token"))
+      (dolist (cached '(nil t))
+        (let ((url-proxy-services nil)
+              (url-http-real-basic-auth-storage nil)
+              (url-http-proxy-basic-auth-storage nil)
+              prompts ambient requests)
+          (hermes-test--with-http-server
+           (lambda (peer request)
+             (push request requests)
+             (hermes-test--http-reply
+              peer (if authorization 200 401)
+              (if authorization "{\"ok\":true}" "{\"detail\":\"denied fixture-secret\"}")
+              challenge))
+           (lambda (base)
+             (when cached
+               (setq url-http-real-basic-auth-storage
+                     (list (list (substring base 7)
+                                 '("/" . "YW1iaWVudDpwYXNz")))))
+             (cl-letf (((symbol-function 'read-string)
+                        (lambda (&rest _) (push 'username prompts) "fixture"))
+                       ((symbol-function 'read-passwd)
+                        (lambda (&rest _) (push 'password prompts) "pass"))
+                       ((symbol-function 'url-do-auth-source-search)
+                        (lambda (&rest _) (push 'lookup ambient) nil)))
+               (let* ((args (list (concat base "/mutation") :method "POST"
+                                  :data "{}" :secrets '("fixture-secret")
+                                  ;; HTTP names are case-insensitive even though
+                                  ;; url.el's explicit-auth checks are not.
+                                  :headers (and authorization
+                                                (list (cons "authorization" authorization)))))
+                      (result
+                       (if (eq executor 'sync)
+                           (condition-case err
+                               (apply #'hermes-dashboard-transport--default-http-request args)
+                             (hermes-dashboard-http-error err))
+                         (let* ((owner (make-hermes-dashboard-transport-client))
+                                (settlements 0)
+                                (promise
+                                 (apply #'hermes-dashboard-transport--default-http-request-async
+                                        (append args
+                                                (list :cancel-setter
+                                                      (lambda (expected next)
+                                                        (hermes-dashboard-transport--startup-cancel-setter
+                                                         owner expected next)))))))
+                           (hermes--promise-then
+                            promise (lambda (_) (cl-incf settlements))
+                            (lambda (_) (cl-incf settlements)))
+                           (hermes-test--http-wait
+                            (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+                           (should (= settlements 1))
+                           (should-not (hermes-dashboard-transport-client-startup-cancel owner))
+                           (hermes--promise-value promise)))))
+                 (should-not prompts)
+                 (should-not ambient)
+                 (should (= (length requests) 1))
+                 (should-not (string-match-p "YW1iaWVudDpwYXNz" (car requests)))
+                 (if authorization
+                     (progn
+                       (should (= (plist-get result :status) 200))
+                       (should (equal (plist-get result :body) '((ok . t))))
+                       (should (string-match-p
+                                (regexp-quote (concat "Authorization: " authorization "\r\n"))
+                                (car requests))))
+                   (should (eq (car result) 'hermes-dashboard-http-error))
+                   (should (= (nth 2 result) 401))
+                   (should-not (string-match-p "fixture-secret" (cadr result)))))))))))))
+
+(ert-deftest hermes-transport-http-explicit-auth-sync ()
+  "Bare/challenged 401 settles once without implicit credentials or replay."
+  (hermes-test--http-explicit-auth 'sync))
+
+(ert-deftest hermes-transport-http-explicit-auth-async ()
+  "Async HTTP preserves explicit Basic/bearer and sanitized numeric status."
+  (hermes-test--http-explicit-auth 'async))
+
+(ert-deftest hermes-transport-http-native-acquire-explicit-sign-in ()
+  "Public native acquisition settles rejected refresh under its exact owner."
+  (dolist (challenge '(nil "WWW-Authenticate: Basic realm=\"fixture\"\r\n"))
+    (dolist (mode '(rejected stopped successor success))
+      (let ((url-proxy-services nil)
+            (url-http-real-basic-auth-storage nil)
+            (url-http-proxy-basic-auth-storage nil)
+            (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+            (hermes-dashboard-transport--native-token-memory (make-hash-table :test #'equal))
+            (hermes-dashboard-transport--native-refreshes (make-hash-table :test #'equal))
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-heartbeat-interval nil)
+            (stored (list :access-token "old" :refresh-token "old-refresh" :expires-at 0))
+            client refresh-peer requests events opened prompts ambient
+            (logins 0) (stores 0) (rejections 0))
+        (hermes-test--with-http-server
+         (lambda (peer request)
+           (push request requests)
+           (cond
+            ((string-prefix-p "GET /api/status " request)
+             (hermes-test--http-reply peer 200
+                                      "{\"auth_required\":true,\"auth_flows\":[\"native_pkce\"]}"))
+            ((string-prefix-p "POST /auth/native/refresh " request)
+             (setq refresh-peer peer))
+            (t
+             (should (string-prefix-p "POST /api/auth/ws-ticket " request))
+             (should (string-match-p "Authorization: Bearer rotated\r\n" request))
+             (hermes-test--http-reply peer 200 "{\"ticket\":\"fixture-ticket\"}"))))
+         (lambda (base)
+           (puthash base stored hermes-dashboard-transport--native-token-memory)
+           (cl-letf (((symbol-function 'hermes-dashboard-transport--native-token-load-disk)
+                      (lambda (_) stored))
+                     ((symbol-function 'hermes-dashboard-transport--native-token-write-disk)
+                      (lambda (_ tokens) (cl-incf stores) (setq stored tokens) t))
+                     ((symbol-function 'hermes-dashboard-transport--native-login-async)
+                      (lambda (&rest _) (cl-incf logins)
+                        (hermes--promise-rejected "Explicit sign-in cancelled")))
+                     ((symbol-function 'hermes-dashboard-transport--open-owned-websocket)
+                      (lambda (_ url _) (push url opened)))
+                     ((symbol-function 'read-string)
+                      (lambda (&rest _) (push 'username prompts) "fixture"))
+                     ((symbol-function 'read-passwd)
+                      (lambda (&rest _) (push 'password prompts) "pass"))
+                     ((symbol-function 'url-do-auth-source-search)
+                      (lambda (&rest _) (push 'lookup ambient) nil)))
+             (unwind-protect
+                 (progn
+                   (setq client
+                         (hermes-dashboard-transport-acquire
+                          :start-mode 'remote :remote-url base :remote-auth-method 'native
+                          :callback (lambda (event) (push event events))))
+                   (hermes--promise-catch
+                    (hermes-dashboard-transport-client-ready-promise client)
+                    (lambda (_) (cl-incf rejections)))
+                   (hermes-test--http-wait (lambda () refresh-peer))
+                   (pcase mode
+                     ('stopped (hermes-dashboard-transport-stop client "Retired fixture"))
+                     ('successor
+                      (setq stored (list :access-token "newer" :refresh-token "newer-refresh"
+                                         :expires-at 4102444800))
+                      (puthash base stored hermes-dashboard-transport--native-token-memory)))
+                   (hermes-test--http-reply
+                    refresh-peer (if (eq mode 'success) 200 401)
+                    (if (eq mode 'success)
+                        "{\"access_token\":\"rotated\",\"refresh_token\":\"rotated-refresh\",\"expires_at\":4102444800}"
+                      "{\"detail\":\"rejected old-refresh\"}") challenge)
+                   (hermes-test--http-wait
+                    (lambda ()
+                      (or prompts
+                          (if (eq mode 'success) opened
+                            (eq 'rejected
+                                (hermes--promise-state
+                                 (hermes-dashboard-transport-client-ready-promise client)))))))
+                   (should-not prompts)
+                   (should-not ambient)
+                   (should (= logins (if (eq mode 'rejected) 1 0)))
+                   (should (= stores (if (eq mode 'success) 1 0)))
+                   (should (= rejections (if (eq mode 'success) 0 1)))
+                   (should (= (length requests) (if (eq mode 'success) 3 2)))
+                   (should-not (hermes-dashboard-transport-client-startup-cancel client))
+                   (should (zerop (hash-table-count hermes-dashboard-transport--native-refreshes)))
+                   (when (eq mode 'successor)
+                     (should (equal (plist-get stored :access-token) "newer")))
+                   (unless (eq mode 'success) (should-not opened))
+                   (should-not (string-match-p "old-refresh" (prin1-to-string events))))
+               (when client (hermes-dashboard-transport-stop client "Fixture cleanup"))))))))))
+
+(ert-deftest hermes-transport-http-policy-leaves-other-url-clients-alone ()
+  "Ordinary url.el users retain their ambient authentication behavior."
+  (let ((url-proxy-services nil)
+        (url-http-real-basic-auth-storage nil)
+        (url-request-extra-headers nil)
+        request)
+    (hermes-test--with-http-server
+     (lambda (peer text)
+       (setq request text)
+       (hermes-test--http-reply peer 200 "{}"))
+     (lambda (base)
+       (setq url-http-real-basic-auth-storage
+             (list (list (substring base 7) '("/" . "YW1iaWVudDpwYXNz"))))
+       (let ((buffer (url-retrieve-synchronously base t t 3)))
+         (unwind-protect
+             (progn
+               (should (buffer-live-p buffer))
+               (should (string-match-p "Authorization: Basic YW1iaWVudDpwYXNz\r\n" request)))
+           (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest hermes-transport-http-basic-acquire-success ()
+  "Explicit dashboard password login still reaches the ticket endpoint."
+  (let ((url-proxy-services nil)
+        (url-http-real-basic-auth-storage nil)
+        (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (hermes-dashboard-transport-ready-timeout nil)
+        (hermes-dashboard-transport-heartbeat-interval nil)
+        (credential-reads 0) requests opened client)
+    (hermes-test--with-http-server
+     (lambda (peer request)
+       (push request requests)
+       (cond
+        ((string-prefix-p "GET /api/status " request)
+         (hermes-test--http-reply peer 200
+                                  "{\"auth_required\":true,\"auth_providers\":[\"basic\"]}"))
+        ((string-prefix-p "POST /auth/password-login " request)
+         (should (string-match-p "\"username\":\"fixture\"" request))
+         (should (string-match-p "\"password\":\"fixture-password\"" request))
+         (hermes-test--http-reply peer 200 "{}" "Set-Cookie: session=fixture-cookie\r\n"))
+        (t
+         (should (string-prefix-p "POST /api/auth/ws-ticket " request))
+         (should (string-match-p "Cookie: session=fixture-cookie\r\n" request))
+         (hermes-test--http-reply peer 200 "{\"ticket\":\"fixture-ticket\"}"))))
+     (lambda (base)
+       (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-basic-credentials)
+                  (lambda (_) (cl-incf credential-reads)
+                    '(:username "fixture" :password "fixture-password")))
+                 ((symbol-function 'hermes-dashboard-transport--open-owned-websocket)
+                  (lambda (_ url _) (push url opened))))
+         (unwind-protect
+             (progn
+               (setq client (hermes-dashboard-transport-acquire
+                             :start-mode 'remote :remote-url base :remote-auth-method 'basic))
+               (hermes-test--http-wait (lambda () opened))
+               (should (= credential-reads 1))
+               (should (= (length requests) 3))
+               (should (string-suffix-p "ticket=fixture-ticket" (car opened)))
+               (should-not (hermes-dashboard-transport-client-startup-cancel client)))
+           (when client (hermes-dashboard-transport-stop client "Fixture cleanup"))))))))
 
 (ert-deftest hermes-transport-work-process-exit-types ()
   "Only integer exit evidence makes an exited process done or failed."
