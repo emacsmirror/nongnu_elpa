@@ -524,19 +524,35 @@ Return the new request context."
              (when (buffer-live-p (plist-get context :buffer))
                (with-current-buffer (plist-get context :buffer)
                  (hermes-onboarding--oauth-context-current-p context)))))
-          guard)
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (setq guard (hermes-browser--dispatch-guard client current-p))
-         (let ((hermes-dashboard-transport--api-dispatch-guard guard))
-           (if (funcall guard)
-               (funcall make-promise client)
-             (hermes--promise-rejected "Retired OAuth request"))))
-       (lambda (result)
-         (when (and guard (funcall guard)) (funcall success result)))
-       (lambda (reason)
-         (when (if guard (funcall guard) (funcall current-p))
-           (hermes-onboarding--oauth-report-error context reason)))))))
+          cleanup)
+      (condition-case err
+          (hermes-browser--with-client
+           (lambda (client done)
+             (setq cleanup done)
+             (let* ((guard (hermes-browser--dispatch-guard client current-p))
+                    (hermes-dashboard-transport--api-dispatch-guard guard))
+               ;; Settlement still owns the lease: releasing the last reference
+               ;; stops the client and would invalidate our generation guard.
+               (hermes--promise-finally
+                (hermes--promise-catch
+                 (hermes--promise-then
+                  (condition-case err
+                      (if (funcall guard)
+                          (funcall make-promise client)
+                        (hermes--promise-rejected "Retired OAuth request"))
+                    ((error quit)
+                     (hermes--promise-rejected (error-message-string err))))
+                  (lambda (result)
+                    (when (funcall guard) (funcall success result))))
+                 (lambda (reason)
+                   (when (funcall guard)
+                     (hermes-onboarding--oauth-report-error context reason))))
+                done))))
+        ((error quit)
+         (when cleanup (funcall cleanup))
+         (when (and (not cleanup) (funcall current-p))
+           (hermes-onboarding--oauth-report-error context (error-message-string err)))
+         (signal (car err) (cdr err)))))))
 
 (defun hermes-onboarding--oauth-start-provider (provider)
   "Start native OAuth for API-supplied PROVIDER."
