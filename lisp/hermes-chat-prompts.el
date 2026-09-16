@@ -174,6 +174,14 @@ Invisible buffers and batch sessions record every prompt and show a message."
               (prompt (and (hash-table-p hermes-chat--pending-prompts)
                            (gethash key hermes-chat--pending-prompts)))
               ((hermes-chat--prompt-expiry-matches-p prompt event)))
+    (when-let* (((hermes-chat--clarify-prompt-p prompt))
+                (token (plist-get prompt :response-token))
+                (owner (seq-find
+                        (lambda (owner)
+                          (eq (plist-get owner :response-token) token))
+                        hermes-chat--retained-clarify-owners)))
+      ;; Keep both authorities until the answer has a recoverable projection.
+      (hermes-chat--restore-retained-clarify (list :retained-owner owner)))
     (remhash key hermes-chat--pending-prompts)
     (when (hash-table-p hermes-chat--auto-prompt-keys)
       (remhash key hermes-chat--auto-prompt-keys))
@@ -911,13 +919,17 @@ Return the next pending prompt."
                                      "no pending approval request"))))))
 
 (defun hermes-chat--restore-prompt-response (response)
-  "Restore failed chat-tail prompt RESPONSE without queueing a new turn."
+  "Restore failed prompt RESPONSE without queueing a turn or moving the reader."
   (when-let* ((text (hermes-transport--non-empty-string response)))
-    (if (string-empty-p (string-trim (hermes-chat-input-string)))
-        (hermes-chat--replace-input-tail text)
-      (hermes-chat--append-input-tail text)
-      (hermes-chat--insert-local-status
-       "Restored failed prompt response after current draft" 'error))))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (atomic-change-group
+          (if (string-empty-p (hermes-chat-input-string))
+              (hermes-chat--replace-input-tail text)
+            (hermes-chat--append-input-tail text)
+            (hermes-chat--insert-local-status
+             "Restored failed prompt response after current draft" 'error)))))))
 
 (defun hermes-chat--prompt-response-rejected
     (context prompt response message &optional preserve-response)
@@ -1020,15 +1032,26 @@ When PRESERVE-RESPONSE is non-nil, keep clarification RESPONSE recoverable."
             :response-token)
            (plist-get context :token))))
 
+(defun hermes-chat--restore-retained-clarify (context)
+  "Restore CONTEXT's retained clarification input once, then settle its owner."
+  (when-let* ((owner (plist-get context :retained-owner))
+              ((not (plist-get context :retained-owner-sink)))
+              ((memq owner hermes-chat--retained-clarify-owners)))
+    (hermes-chat--restore-prompt-response (plist-get owner :text))
+    (hermes-chat--settle-retained-clarify context)))
+
 (defun hermes-chat--prompt-success-callback (context prompt canceled)
   "Return a success callback for PROMPT response owned by CONTEXT."
   (lambda (result)
     (hermes-chat--in-buffer (plist-get context :buffer)
       (when (hermes-chat--prompt-response-current-p context)
-        (hermes-chat--settle-retained-clarify context)
         (if (or (hermes-chat--approval-response-unresolved-p prompt result)
                 (hermes-chat--prompt-response-expired-p result))
-            (hermes-chat--prompt-response-stale context prompt)
+            (progn
+              (when (hermes-chat--clarify-prompt-p prompt)
+                (hermes-chat--restore-retained-clarify context))
+              (hermes-chat--prompt-response-stale context prompt))
+          (hermes-chat--settle-retained-clarify context)
           (hermes-chat--prompt-response-complete
            context prompt canceled result))))))
 
@@ -1098,15 +1121,17 @@ PRESERVE-RESPONSE keeps submitted clarification text recoverable."
     (hermes-chat--in-buffer (plist-get context :buffer)
       (when (hermes-chat--prompt-response-current-p context)
         (if (hermes-chat--prompt-response-expired-p result)
-            (let ((input (plist-get (plist-get context :retained-owner) :text)))
-              (hermes-chat--settle-retained-clarify context t)
-              (unless (plist-get context :retained-owner-sink)
-                (hermes-chat--restore-prompt-response input))
+            (progn
+              (hermes-chat--restore-retained-clarify context)
               (hermes-chat--prompt-response-stale context prompt))
           (hermes-chat--record-batch-clarify-answer context qid answer)
+          (hermes-chat--settle-retained-clarify context)
           (if remaining
-              (hermes-chat--send-next-batch-clarify context prompt remaining)
-            (hermes-chat--settle-retained-clarify context)
+              (let ((pending (hermes-chat--release-prompt-response context)))
+                ;; Each question gets a fresh claim: a duplicate receipt for
+                ;; an accepted answer must not settle or resend its successor.
+                (hermes-chat--send-batch-clarify-response
+                 (plist-get context :key) pending remaining context))
             (let ((current (gethash (plist-get context :key)
                                     hermes-chat--pending-prompts)))
               (if (hermes-chat--unanswered-batch-questions current)
@@ -1135,14 +1160,22 @@ PRESERVE-RESPONSE keeps submitted clarification text recoverable."
 (defun hermes-chat--send-batch-clarify-response
     (key prompt responses owner &optional input)
   "Send RESPONSES for batch PROMPT under KEY and OWNER.
-When INPUT is non-nil, retain that composer text until acceptance."
+Retain unaccepted answers for manual recovery, separated by newlines.
+When INPUT is non-nil, retain that literal composer text instead."
   (unless responses
     (user-error "No unanswered Hermes clarification questions"))
   (let* ((client (plist-get owner :client))
+         (text (or input
+                   (mapconcat
+                    (lambda (response)
+                      (let ((answer (cdr response)))
+                        (if (stringp answer) answer
+                          (mapconcat #'identity answer "\n"))))
+                    responses "\n")))
          (context (hermes-chat--prompt-response-context
                    client key prompt nil))
-         (context (if input
-                      (hermes-chat--retain-clarify-response context input)
+         (context (if (hermes-transport--non-empty-string text)
+                      (hermes-chat--retain-clarify-response context text)
                     context)))
     (hermes-chat--send-next-batch-clarify context prompt responses)))
 
@@ -1182,8 +1215,9 @@ For a batch, answer only the next unanswered question."
          (context (hermes-chat--prompt-response-context
                    client key prompt all))
          (type (hermes-chat--prompt-event-type prompt))
-         (context (if (and preserve-response
-                           (hermes-chat--clarify-prompt-p prompt))
+         (context (if (and (not canceled)
+                           (hermes-chat--clarify-prompt-p prompt)
+                           (hermes-transport--non-empty-string response))
                       (hermes-chat--retain-clarify-response context response)
                     context)))
     (hermes-chat--call-prompt-response
@@ -1221,7 +1255,8 @@ For a batch, answer only the next unanswered question."
   "Respond to pending prompt KEY with RESPONSE.
 When called interactively, select the prompt and read RESPONSE in the
 minibuffer.  With prefix argument ALL, approval responses apply to all pending
-approvals in the dashboard session.  PRESERVE-RESPONSE keeps programmatic
+approvals in the dashboard session.  Unaccepted clarification answers remain
+recoverable if the request expires.  PRESERVE-RESPONSE also keeps programmatic
 clarification input recoverable when the request fails."
   (interactive (list nil nil current-prefix-arg))
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))

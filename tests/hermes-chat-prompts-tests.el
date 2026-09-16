@@ -601,6 +601,438 @@ stays available."
               (should (equal (hermes-chat--batch-clarify-answer-alist prompt)
                              '(("done" . "Earlier answer")))))))))))
 
+(ert-deftest hermes-chat-expiry-wire-retires-only-matching-prompts ()
+  "JSON expiry retires clarification and terminal reads, never another owner."
+  (dolist (type '("clarify" "terminal.read"))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((request (concat type ".request")) (expiry (concat type ".expire")))
+        (hermes-test--emit-dashboard-prompt
+         client request '((request_id . "expiring") (question . "Explain")
+                          (prompt . "Input")))
+        (hermes-test--emit-dashboard-prompt
+         client request '((request_id . "other") (question . "Other")
+                          (prompt . "Other")))
+        (let ((prompt (gethash "expiring" hermes-chat--pending-prompts)))
+          (should prompt)
+          ;; Same ID but another prompt type has no retirement authority.
+          (hermes-test--emit-dashboard-prompt
+           client "secret.expire" '((request_id . "expiring")))
+          (should (eq prompt (gethash "expiring" hermes-chat--pending-prompts)))
+          ;; Exercise a foreign session at the real JSON boundary too.
+          (hermes-dashboard-transport--handle-frame
+           client (hermes-dashboard-transport--encode-frame
+                   `((jsonrpc . "2.0") (method . "event")
+                     (params . ((type . ,expiry) (session_id . "foreign")
+                                (payload . ((request_id . "expiring"))))))))
+          (should (eq prompt (gethash "expiring" hermes-chat--pending-prompts))))
+        (hermes-test--emit-dashboard-prompt
+         client expiry '((request_id . "expiring")))
+        (should-not (gethash "expiring" hermes-chat--pending-prompts))
+        (should (gethash "other" hermes-chat--pending-prompts))
+        (hermes-test--emit-dashboard-prompt client expiry '((request_id . "other")))
+        (should-not (hermes-chat--pending-prompt-keys))
+        (let (answered)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                     (lambda (&rest _) (setq answered t))))
+            (insert "Ordinary next message")
+            (call-interactively (key-binding (kbd "RET")))
+            (should-not answered)))))))
+
+(ert-deftest hermes-chat-expiry-wire-restores-inflight-answer-once ()
+  "Expiry before or after a receipt restores only that clarification answer."
+  (dolist (order '(event-first receipt-first))
+    (let (resolve reject)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                 (lambda (_client _id _answer &optional success failure)
+                   (setq resolve success reject failure))))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request" '((request_id . "expiring")
+                                       (question . "Explain")))
+          (insert "Literal answer\n  second line")
+          (hermes-chat-send)
+          (insert "Newer draft")
+          (when (eq order 'receipt-first)
+            (funcall resolve '((status . "expired"))))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.expire" '((request_id . "expiring")))
+          (should-not (gethash "expiring" hermes-chat--pending-prompts))
+          (should-not hermes-chat--retained-clarify-owners)
+          (should (equal (hermes-chat-input-string)
+                         "Newer draft\nLiteral answer\n  second line"))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request" '((request_id . "successor")
+                                       (question . "Next")))
+          (let ((before (buffer-string))
+                (successor (gethash "successor" hermes-chat--pending-prompts)))
+            (funcall resolve '((status . "ok")))
+            (funcall reject "late failure")
+            (should (equal (buffer-string) before))
+            (should (eq successor (gethash "successor" hermes-chat--pending-prompts))))
+          (should-not (hermes-test--queued-contents)))))))
+
+(ert-deftest hermes-chat-clarify-expiry-preserves-narrowed-reader ()
+  "Both public answer paths recover once without disturbing a narrowed reader."
+  (dolist (entry '(composer reader))
+    (dolist (order '(event-first receipt-first))
+      (dolist (boundary '(outside at-input unrestricted))
+        (ert-info ((format "%s %s %s" entry order boundary))
+          (let (resolve reject sent)
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                       (lambda (_client _id answer &optional success failure)
+                         (push answer sent)
+                         (setq resolve success reject failure))))
+              (hermes-test-with-dashboard-prompt-session (client)
+                (hermes-test--emit-dashboard-prompt
+                 client "clarify.request"
+                 '((request_id . "single") (question . "Explain")
+                   (choices . ["A" "B"])))
+                (let ((answer (if (eq entry 'reader)
+                                  "  Literal; όχι\n  accepted answer  "
+                                "Literal; όχι\n  accepted answer")))
+                  (if (eq entry 'composer)
+                      (progn
+                        (insert answer)
+                        (call-interactively (key-binding (kbd "RET"))))
+                    (let ((completing-read-function
+                           (lambda (_prompt _choices _predicate require-match
+                                    &rest _args)
+                             (should-not require-match)
+                             answer)))
+                      (call-interactively (key-binding (kbd "C-c C-a")))))
+                  (should (equal sent (list answer)))
+                  (insert "  Newer draft\n ")
+                  (hermes-test--emit-dashboard-prompt
+                   client "clarify.request"
+                   '((request_id . "other") (question . "Other")))
+                  (unless (eq boundary 'unrestricted)
+                    (narrow-to-region
+                     (point-min) (- (hermes-chat--input-position)
+                                    (if (eq boundary 'outside) 1 0))))
+                  (goto-char (1+ (point-min)))
+                  (let ((reader (copy-marker (point)))
+                        (start (copy-marker (point-min)))
+                        (end (copy-marker (point-max)))
+                        (other (gethash "other" hermes-chat--pending-prompts)))
+                    (if (eq order 'event-first)
+                        (hermes-test--emit-dashboard-prompt
+                         client "clarify.expire" '((request_id . "single")))
+                      (funcall resolve '((status . "expired"))))
+                    (should (= (point) reader))
+                    (unless (eq boundary 'unrestricted)
+                      (should (= (point-min) start))
+                      (should (= (point-max) end)))
+                    (should-not (gethash "single" hermes-chat--pending-prompts))
+                    (should (eq other (gethash "other" hermes-chat--pending-prompts)))
+                    (should-not hermes-chat--retained-clarify-owners)
+                    (save-restriction
+                      (widen)
+                      (should (equal (hermes-chat-input-string)
+                                     (concat "  Newer draft\n \n" answer))))
+                    (funcall resolve '((status . "expired")))
+                    (hermes-test--emit-dashboard-prompt
+                     client "clarify.expire" '((request_id . "single")))
+                    (should (= (point) reader))
+                    (unless (eq boundary 'unrestricted)
+                      (should (= (point-min) start))
+                      (should (= (point-max) end)))
+                    (should (eq other (gethash "other" hermes-chat--pending-prompts)))
+                    (save-restriction
+                      (widen)
+                      (should (equal (hermes-chat-input-string)
+                                     (concat "  Newer draft\n \n" answer))))
+                    (let ((before (buffer-string)))
+                      (funcall resolve '((status . "expired")))
+                      (funcall resolve '((status . "ok")))
+                      (funcall reject "late rejection")
+                      (should (equal (buffer-string) before)))
+                    (should (equal sent (list answer)))
+                    (should-not (hermes-test--queued-contents))
+                    (should (= (length (cl-remove-if-not
+                                       (lambda (item) (eq (plist-get item :role) 'user))
+                                       (hermes-chat--entries)))
+                               1))))))))))))
+
+(ert-deftest hermes-chat-clarify-expiry-projection-failure-keeps-owner ()
+  "A failed recovery projection cannot consume the only copy of an answer."
+  (dolist (order '(event-first receipt-first))
+    (let (resolve)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                 (lambda (_client _id _answer &optional success _failure)
+                   (setq resolve success))))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request" '((request_id . "single") (question . "Explain")))
+          (insert "Accepted answer")
+          (hermes-chat-send)
+          (insert "Newer draft")
+          (let ((owner (car hermes-chat--retained-clarify-owners))
+                (append-tail (symbol-function 'hermes-chat--append-input-tail))
+                (expire (lambda ()
+                          (if (eq order 'event-first)
+                              (hermes-chat--expire-pending-prompt
+                               '(:request-id "single" :session-id "sid-prompt"
+                                 :prompt-type "clarify"))
+                            (funcall resolve '((status . "expired")))))))
+            (cl-letf (((symbol-function 'hermes-chat--append-input-tail)
+                       (lambda (text)
+                         (funcall append-tail text)
+                         (error "Injected projection failure"))))
+              (should-error (funcall expire)))
+            (should (memq owner hermes-chat--retained-clarify-owners))
+            (should (gethash "single" hermes-chat--pending-prompts))
+            (should (equal (hermes-chat-input-string) "Newer draft"))
+            (funcall expire)
+            (should (equal (hermes-chat-input-string) "Newer draft\nAccepted answer"))
+            (should-not hermes-chat--retained-clarify-owners)))))))
+
+(ert-deftest hermes-chat-clarify-reader-success-and-cancel-do-not-recover ()
+  "The real public reader dispatches normally; success and cancel leave no draft."
+  (dolist (action '(answer cancel))
+    (let (resolve sent)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+                 (lambda (_client _id answer &optional success _failure)
+                   (setq sent answer resolve success))))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "single") (question . "Explain") (choices . ["A" "B"])))
+          (if (eq action 'cancel)
+              (hermes-chat-cancel-prompt "single")
+            (let ((completing-read-function (lambda (&rest _) "Custom answer")))
+              (call-interactively (key-binding (kbd "C-c C-a")))))
+          (should (equal sent (if (eq action 'cancel) "" "Custom answer")))
+          (when (eq action 'cancel)
+            (should-not hermes-chat--retained-clarify-owners))
+          (funcall resolve '((status . "ok")))
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.expire" '((request_id . "single")))
+          (should-not hermes-chat--retained-clarify-owners)
+          (should (equal (hermes-chat-input-string) ""))
+          (should-not (hermes-test--queued-contents)))))))
+
+(ert-deftest hermes-chat-private-prompt-responses-never-enter-recovery ()
+  "The public wrapper never retains secret, sudo, terminal or approval values."
+  (dolist (type '("secret" "sudo" "terminal.read" "approval"))
+    (let ((rpc (intern (concat "hermes-dashboard-transport-"
+                               (if (equal type "terminal.read") "terminal-read" type)
+                               "-respond")))
+          resolve reject sent)
+      (cl-letf (((symbol-function rpc)
+                 (lambda (_client &rest args)
+                   (if (equal type "approval")
+                       (setq sent (plist-get args :choice)
+                             resolve (plist-get args :resolve)
+                             reject (plist-get args :reject))
+                     (setq sent (nth 1 args) resolve (nth 2 args) reject (nth 3 args))))))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client (concat type ".request")
+           '((request_id . "private") (prompt . "Input") (command . "example")))
+          (let ((answer (if (equal type "approval") "once" "private-answer")))
+            (hermes-chat-respond-to-prompt nil answer nil t)
+            (should (equal sent answer))
+            (should-not hermes-chat--retained-clarify-owners)
+            (funcall resolve '((status . "expired")))
+            (funcall reject "late failure")
+            (should-not hermes-chat--retained-clarify-owners)
+            (should (equal (hermes-chat-input-string) ""))
+            (unless (equal type "approval")
+              (should-not (string-match-p answer (buffer-string))))
+            (should-not (hermes-test--queued-contents))))))))
+
+(ert-deftest hermes-chat-single-clarify-expiry-preserves-whitespace-draft ()
+  "Whitespace authored while a response is pending is still a newer draft."
+  (let (resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _id _answer &optional success _failure)
+                 (setq resolve success))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request" '((request_id . "single") (question . "Explain")))
+        (insert "Answer")
+        (hermes-chat-send)
+        (insert "  \n ")
+        (funcall resolve '((status . "expired")))
+        (should (equal (hermes-chat-input-string) "  \n \nAnswer"))))))
+
+(ert-deftest hermes-chat-single-clarify-composer-expired-restores-once ()
+  "Single expiry restores literal input beside newer text without normal Send."
+  (let (resolve request)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client id answer &optional success _reject)
+                 (setq resolve success request (list id answer)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request" '((request_id . "single") (question . "Explain")))
+        (insert "Literal; όχι\n  answer")
+        (call-interactively (key-binding (kbd "RET")))
+        (should (equal request '("single" "Literal; όχι\n  answer")))
+        (should (string-empty-p (hermes-chat-input-string)))
+        (insert "Newer draft")
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request" '((request_id . "other") (question . "Other")))
+        (funcall resolve '((status . "expired")))
+        (should-not (gethash "single" hermes-chat--pending-prompts))
+        (should (gethash "other" hermes-chat--pending-prompts))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should (equal (hermes-chat-input-string)
+                       "Newer draft\nLiteral; όχι\n  answer"))
+        (let ((before (buffer-string)))
+          (funcall resolve '((status . "expired")))
+          (should (equal (buffer-string) before)))
+        (should-not (hermes-test--queued-contents))
+        (should (= (length (cl-remove-if-not
+                           (lambda (entry) (eq (plist-get entry :role) 'user))
+                           (hermes-chat--entries)))
+                   1))))))
+
+(defun hermes-test--batch-recovery-receipt (client frame status)
+  "Deliver STATUS for the actual serialized FRAME sent by CLIENT."
+  (hermes-dashboard-transport--handle-frame
+   client (hermes-dashboard-transport--encode-frame
+           `((jsonrpc . "2.0") (id . ,(hermes-transport--get frame 'id))
+             (result . ((status . ,status)))))))
+
+(ert-deftest hermes-chat-batch-reader-expiry-recovers-only-unaccepted ()
+  "Questionnaire expiry retains every unaccepted literal, not accepted answers."
+  (dolist (order '(event-first receipt-first))
+    (dolist (accepted '(nil t))
+      (let (frames callbacks)
+        (let ((send (symbol-function 'hermes-dashboard-transport-clarify-question-respond))
+              (hermes-dashboard-transport-websocket-send-function
+               (lambda (_socket text)
+                 (push (hermes-transport-json-parse text) frames))))
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-question-respond)
+                     (lambda (client request qid answer &optional resolve reject)
+                       (push (cons resolve reject) callbacks)
+                       (funcall send client request qid answer resolve reject))))
+            (hermes-test-with-dashboard-prompt-session (client)
+              (hermes-test--emit-dashboard-prompt
+               client "clarify.request"
+               '((request_id . "batch-reader")
+                 (questions . [((qid . "q1") (question . "First"))
+                               ((qid . "q2") (question . "Second"))
+                               ((qid . "q3") (question . "Multiple")
+                                (choices . ["A" "B"]) (multi_select . t))])))
+              (let ((answers '("Accepted first" "  Literal; όχι\n second  ")))
+                (cl-letf (((symbol-function 'read-string)
+                           (lambda (&rest _) (pop answers)))
+                          ((symbol-function 'completing-read-multiple)
+                           (lambda (&rest _) '("X,Y" "  Z  "))))
+                  (call-interactively (key-binding (kbd "C-c C-a")))))
+              (should (equal (hermes-transport--get
+                              (hermes-transport--get (car frames) 'params) 'question_id)
+                             "q1"))
+              (let ((first-callback (car callbacks)))
+                (when accepted
+                  (hermes-test--batch-recovery-receipt client (car frames) "ok")
+                  (should (equal (hermes-chat--batch-clarify-answer-alist
+                                  (gethash "batch-reader" hermes-chat--pending-prompts))
+                                 '(("q1" . "Accepted first"))))
+                  ;; Even a duplicate delivered directly must not resend q2 or
+                  ;; consume q2's retained occurrence under q1's old callback.
+                  (funcall (car first-callback) '((status . "ok")))
+                  (funcall (cdr first-callback) "late failure")
+                  (should (= (length frames) 2)))
+                (insert " \n  ")
+                (narrow-to-region (point-min) (1- (hermes-chat--input-position)))
+                (goto-char (point-min))
+                (let ((reader (copy-marker (point)))
+                      (lo (copy-marker (point-min)))
+                      (hi (copy-marker (point-max)))
+                      (expected (concat " \n  \n"
+                                        (unless accepted "Accepted first\n")
+                                        "  Literal; όχι\n second  \nX,Y\n  Z  ")))
+                  (if (eq order 'event-first)
+                      (hermes-test--emit-dashboard-prompt
+                       client "clarify.expire" '((request_id . "batch-reader")))
+                    (hermes-test--batch-recovery-receipt client (car frames) "expired"))
+                  (dotimes (_ 2)
+                    (hermes-test--emit-dashboard-prompt
+                     client "clarify.expire" '((request_id . "batch-reader")))
+                    (dolist (callback callbacks)
+                      (funcall (car callback) '((status . "expired")))
+                      (funcall (car callback) '((status . "ok")))
+                      (funcall (cdr callback) "late failure")))
+                  (should (= (point) reader))
+                  (should (= (point-min) lo))
+                  (should (= (point-max) hi))
+                  (save-restriction
+                    (widen)
+                    (should (equal (hermes-chat-input-string) expected)))
+                  (should-not hermes-chat--retained-clarify-owners)
+                  (should-not (gethash "batch-reader" hermes-chat--pending-prompts))
+                  (should-not (hermes-test--queued-contents))
+                  (should (= (length frames) (if accepted 2 1))))))))))))
+
+(ert-deftest hermes-chat-batch-reader-recovery-projection-retry ()
+  "A failed batch projection retains every unaccepted answer until recovery."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "clarify.request"
+     '((request_id . "batch-reader")
+       (questions . [((qid . "q1") (question . "First"))
+                     ((qid . "q2") (question . "Second"))])))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-question-respond)
+               #'ignore))
+      (hermes-chat-respond-to-prompt "batch-reader"
+                                     '(("q1" . "First") ("q2" . "Second"))))
+    (insert "Newer")
+    (let ((owner (car hermes-chat--retained-clarify-owners))
+          (append-tail (symbol-function 'hermes-chat--append-input-tail))
+          (event '(:request-id "batch-reader" :session-id "sid-prompt"
+                   :prompt-type "clarify")))
+      (cl-letf (((symbol-function 'hermes-chat--append-input-tail)
+                 (lambda (text)
+                   (funcall append-tail text)
+                   (error "Injected projection failure"))))
+        (should-error (hermes-chat--expire-pending-prompt event)))
+      (should owner)
+      (should (memq owner hermes-chat--retained-clarify-owners))
+      (should (equal (hermes-chat-input-string) "Newer"))
+      (should (gethash "batch-reader" hermes-chat--pending-prompts))
+      (hermes-chat--expire-pending-prompt event)
+      (should (equal (hermes-chat-input-string) "Newer\nFirst\nSecond"))
+      (should-not hermes-chat--retained-clarify-owners))))
+
+(ert-deftest hermes-chat-batch-reader-success-cancel-and-retirement ()
+  "Native batch ownership retires on success, cancellation or replacement."
+  (dolist (action '(success cancel replacement session lifetime))
+    (let (frames)
+      (let ((hermes-dashboard-transport-websocket-send-function
+             (lambda (_socket text) (push (hermes-transport-json-parse text) frames))))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "batch-reader")
+             (questions . [((qid . "q1") (question . "First"))])))
+          (if (eq action 'cancel)
+              (hermes-chat-cancel-prompt "batch-reader")
+            (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "Literal")))
+              (call-interactively (key-binding (kbd "C-c C-a")))))
+          (when (eq action 'cancel)
+            (should-not hermes-chat--retained-clarify-owners))
+          (insert "Newer")
+          (pcase action
+            ('replacement
+             (hermes-test--emit-dashboard-prompt
+              client "clarify.request"
+              '((request_id . "batch-reader") (question . "Replacement"))))
+            ('session (setq hermes-chat--dashboard-active-session-id "successor"))
+            ('lifetime
+             (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))))
+          (hermes-test--batch-recovery-receipt client (car frames) "ok")
+          (hermes-test--batch-recovery-receipt client (car frames) "expired")
+          (when (memq action '(success cancel))
+            (hermes-test--emit-dashboard-prompt
+             client "clarify.expire" '((request_id . "batch-reader")))
+            (should-not hermes-chat--retained-clarify-owners)
+            (should-not (gethash "batch-reader" hermes-chat--pending-prompts)))
+          (should (equal (hermes-chat-input-string) "Newer"))
+          (should (= (length frames) 1))
+          (should-not (hermes-test--queued-contents)))))))
+
 (ert-deftest hermes-chat-batch-clarify-composer-expired-restores-input ()
   "An expired receipt retires the batch but preserves text after a newer draft."
   (let (resolve)

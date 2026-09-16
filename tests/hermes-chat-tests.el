@@ -5793,6 +5793,111 @@
        (hermes-test--emit-dashboard-idle client)
        (should (equal submits '("use demo while busy" "first")))))))
 
+(ert-deftest hermes-chat-command-prefill-preserves-edited-composer ()
+  "Delayed prefill retains literal text separately, even after typing is undone."
+  (dolist (edit '(draft erased whitespace unchanged reading))
+    (let (resolve recovery)
+      (unwind-protect
+          (hermes-test-with-chat-buffer
+            (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+                  hermes-chat--dashboard-active-session-id "prefill-session"
+                  hermes-chat--dashboard-session-ready-p t)
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+                       (lambda (_client _command &rest args)
+                         (setq resolve (plist-get args :resolve))))
+                      ((symbol-function 'display-buffer)
+                       (lambda (buffer &rest _) (setq recovery buffer))))
+              (insert "/undo")
+              (call-interactively (key-binding (kbd "RET")))
+              (pcase edit
+                ('draft (insert "newer draft"))
+                ('erased (insert "x") (delete-char -1))
+                ('whitespace (insert "  ")))
+              ;; Transcript output is not an edit to the composer.
+              (hermes-chat--insert-local-status "Background notice" 'done)
+              (when (eq edit 'reading) (goto-char (point-min)))
+              (let ((draft (hermes-chat-input-string))
+                    (offset (- (point) (hermes-chat--input-position)))
+                    (text "  Earlier answer; όχι\nsecond line  "))
+                (funcall resolve `((type . "prefill") (message . ,text)
+                                   (notice . "Undid one turn")))
+                (should-not hermes-chat--command-owner)
+                (if (memq edit '(unchanged reading))
+                    (progn
+                      (should (equal (hermes-chat-input-string) text))
+                      (when (eq edit 'reading) (should (= (point) (point-min))))
+                      (should-not recovery))
+                  (should (equal (hermes-chat-input-string) draft))
+                  (should (= (- (point) (hermes-chat--input-position)) offset))
+                  (should (buffer-live-p recovery))
+                  (should (eq (current-buffer) buffer))
+                  (should (string-match-p (regexp-quote (buffer-name recovery))
+                                          (buffer-string)))
+                  (should (equal (with-current-buffer recovery (buffer-string))
+                                 text)))
+                (should-not (hermes-test--queued-contents))
+                ;; A duplicate completion must not insert or create another copy.
+                (let ((before (buffer-string)) (copy recovery))
+                  (funcall resolve `((type . "prefill") (message . ,text)))
+                  (should (equal (buffer-string) before))
+                  (should (eq recovery copy))))))
+        (when (buffer-live-p recovery) (kill-buffer recovery))))))
+
+(ert-deftest hermes-chat-command-prefill-fallback-retains-edit-evidence ()
+  "Legacy dispatch fallback cannot forget typing erased during slash execution."
+  (let (reject resolve recovery)
+    (unwind-protect
+        (hermes-test-with-chat-buffer
+          (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+                hermes-chat--dashboard-active-session-id "prefill-session"
+                hermes-chat--dashboard-session-ready-p t)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+                     (lambda (_client _command &rest args)
+                       (setq reject (plist-get args :reject))))
+                    ((symbol-function 'hermes-dashboard-transport-command-dispatch)
+                     (lambda (_client _name _arg &rest args)
+                       (setq resolve (plist-get args :resolve))))
+                    ((symbol-function 'display-buffer)
+                     (lambda (buffer &rest _) (setq recovery buffer))))
+            (insert "/undo")
+            (hermes-chat-send)
+            (insert "x")
+            (delete-char -1)
+            (funcall reject "Use command.dispatch")
+            (funcall resolve '((type . "prefill") (message . "Old answer")))
+            (should (string-empty-p (hermes-chat-input-string)))
+            (should (equal (with-current-buffer recovery (buffer-string))
+                           "Old answer"))))
+      (when (buffer-live-p recovery) (kill-buffer recovery)))))
+
+(ert-deftest hermes-chat-command-prefill-stale-owners-stay-quiet ()
+  "Prefill cannot affect a replacement command, session, lifetime or mode."
+  (dolist (change '(command session lifetime mode))
+    (let (resolve displayed)
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "prefill-session"
+              hermes-chat--dashboard-session-ready-p t)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+                   (lambda (_client _command &rest args)
+                     (setq resolve (plist-get args :resolve))))
+                  ((symbol-function 'display-buffer)
+                   (lambda (&rest _) (setq displayed t))))
+          (insert "/undo")
+          (hermes-chat-send)
+          (pcase change
+            ('command (hermes-chat--command-stop) (hermes-chat--command-start))
+            ('session (setq hermes-chat--dashboard-active-session-id "successor"))
+            ('lifetime (setq hermes-chat--lifecycle-generation
+                             (hermes-chat--next-lifetime-token)))
+            ('mode (fundamental-mode)))
+          (let ((before (buffer-string)) (owner hermes-chat--command-owner))
+            (funcall resolve '((type . "prefill") (message . "obsolete")))
+            (should (equal (buffer-string) before))
+            (should-not displayed)
+            (when (eq change 'command)
+              (should (eq hermes-chat--command-owner owner)))))))))
+
 (ert-deftest hermes-chat-command-prefill-renders-notice ()
   (hermes-test-with-chat-buffer
    (hermes-chat--handle-command-result

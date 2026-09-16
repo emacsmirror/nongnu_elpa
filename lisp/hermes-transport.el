@@ -1099,7 +1099,7 @@ an Unknown error."
            "secret.request" "terminal.read.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))
-      ((or "sudo.expire" "secret.expire")
+      ((or "sudo.expire" "secret.expire" "clarify.expire" "terminal.read.expire")
        (list (hermes-dashboard-transport--prompt-expire-event
               type params payload)))
       ;; Voice mode and skin changes are client-UI concerns, not chat transcript
