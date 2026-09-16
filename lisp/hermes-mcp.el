@@ -197,14 +197,15 @@ TEST-RESULTS maps server names to `test' endpoint responses."
            (string-match-p "HTTP 405" message)
            (string-match-p "HTTP 501" message))))
 
-(cl-defun hermes-mcp--api (method path &optional body query &key secrets client)
+(cl-defun hermes-mcp--api (method path &optional body query &key secrets client current-p)
   "Return a promise of the dashboard MCP REST API METHOD PATH.
 BODY and QUERY extend the request.  SECRETS are redacted from any surfaced
-error.  CLIENT supplies a live dashboard session token when available."
+error.  CLIENT supplies a live dashboard session token when available.
+CURRENT-P, when non-nil, authorizes dispatch after authentication."
   (hermes--promise-catch
    (hermes-dashboard-transport-api-request-async
     method (concat "/api/mcp" path) :body body :query query :secrets secrets
-    :client client)
+    :client client :current-p current-p)
    (lambda (reason)
      (let ((message (hermes-mcp--redact-display
                      (hermes-dashboard-transport--redact-secret reason secrets))))
@@ -526,27 +527,36 @@ Git-bootstrap installs are unavailable: their profile cannot be guaranteed."
 ;;; Owned remote operations
 
 (defun hermes-mcp--operation-current-p (operation)
-  "Return non-nil when OPERATION still owns its buffer and instance."
+  "Return non-nil when OPERATION still owns its buffer, instance and transport."
   (and (hermes-mcp--current-p (plist-get operation :context))
        (eq operation (buffer-local-value
                       'hermes-mcp--operation (car (plist-get operation :context))))
-       (not (plist-get operation :closed))))
+       (not (plist-get operation :closed))
+       (funcall (plist-get operation :current-p))))
 
 (defun hermes-mcp--cancel-flow (operation)
-  "Best-effort cancel only OPERATION's exact remote OAuth flow."
+  "Best-effort cancel OPERATION's exact flow on its original transport only."
   (when-let* ((id (plist-get operation :flow)))
     (setf (plist-get operation :flow) nil)
-    (condition-case nil
-        (hermes--promise-catch
-         (hermes-mcp--api "DELETE" (concat "/oauth/flows/" (url-hexify-string id))
-                          nil nil :client (plist-get operation :client))
-         #'ignore)
-      ((error quit) nil))))
+    ;; Local cancellation can outlive its buffer, but cannot borrow successor
+    ;; transport authority or authenticate after that authority has retired.
+    (let ((current-p (plist-get operation :transport-current-p)))
+      (when (funcall current-p)
+        (condition-case nil
+            (hermes--promise-catch
+             (hermes-mcp--api "DELETE" (concat "/oauth/flows/" (url-hexify-string id))
+                              nil nil :client (plist-get operation :client)
+                              :current-p current-p)
+             #'ignore)
+          ((error quit) nil))))))
 
 (defun hermes-mcp--close-operation (operation &optional cancel)
   "Release OPERATION locally, and request remote OAuth cancellation if CANCEL."
   (unless (plist-get operation :closed)
     (setf (plist-get operation :closed) t)
+    (when-let* ((subscription (plist-get operation :subscription)))
+      (hermes-dashboard-transport-unsubscribe
+       (plist-get operation :client) subscription))
     (when-let* ((timer (plist-get operation :timer))) (cancel-timer timer))
     (when-let* ((timeout (plist-get operation :timeout))) (cancel-timer timeout))
     (when cancel (hermes-mcp--cancel-flow operation))
@@ -600,37 +610,46 @@ The browser returns to the backend callback URL, which must be reachable."
 (defun hermes-mcp--start-operation (kind name env)
   "Start an owned KIND operation for NAME with catalog ENV credentials."
   (hermes-mcp--idle)
-  (let ((context (hermes-mcp--context)))
-    (hermes-browser--with-client
-     (lambda (client done)
-       (if (not (hermes-mcp--current-p context))
-           (funcall done)
-         (with-current-buffer (car context)
-           (hermes-mcp--begin-operation context kind name env client done)))))))
+  (let* ((context (hermes-mcp--context))
+         (current-p (hermes-browser--dispatch-guard nil))
+         ;; Acquisition binds a resolved instance temporarily.  Start only
+         ;; after it unwinds, so monitoring retains the persistent owner.
+         (lease (hermes-browser--with-client #'list))
+         (client (car lease))
+         (done (cadr lease)))
+    (if (not (funcall current-p))
+        (funcall done)
+      (with-current-buffer (car context)
+        (hermes-mcp--begin-operation context kind name env client done)))))
 
 (defun hermes-mcp--begin-operation (context kind name env client done)
   "Own CONTEXT's KIND request for NAME with ENV using CLIENT and DONE cleanup."
   (let* ((operation (list :context context :kind kind :name name :client client
                           :done done :deadline (+ (float-time) 600)
                           :timer nil :timeout nil :flow nil :action nil
-                          :opened nil :closed nil))
-         (guard (hermes-browser--dispatch-guard client)))
+                          :opened nil :closed nil :subscription nil
+                          :current-p (hermes-browser--dispatch-guard client)
+                          :transport-current-p
+                          (hermes-browser--dispatch-guard client #'always))))
     (setq hermes-mcp--operation operation)
+    (when (hermes-dashboard-transport-client-p client)
+      (setf (plist-get operation :subscription)
+            (hermes-dashboard-transport-subscribe
+             client nil (lambda () (hermes-mcp--close-operation operation t)))))
     (setf (plist-get operation :timeout)
           (run-at-time 600 nil #'hermes-mcp--operation-failed operation))
     (hermes-mcp--operation-request
      operation
      (lambda ()
-       (let ((hermes-dashboard-transport--api-dispatch-guard
-              (lambda () (and (funcall guard)
-                              (hermes-mcp--operation-current-p operation)))))
+       (let ((current-p (lambda () (hermes-mcp--operation-current-p operation))))
          (if (eq kind 'oauth)
              (hermes-mcp--api "POST" (hermes-mcp--server-path name "/auth")
-                              nil nil :client client)
+                              nil nil :client client :current-p current-p)
            (hermes-mcp--api "POST" "/catalog/install"
                             `((name . ,name) (enable . t)
                               (env . ,(or env (make-hash-table :test #'equal))))
-                            nil :secrets (mapcar #'cdr env) :client client))))
+                            nil :secrets (mapcar #'cdr env) :client client
+                            :current-p current-p))))
      (lambda (result) (hermes-mcp--operation-started operation result)))))
 
 (defun hermes-mcp--operation-request (operation request success)
@@ -706,13 +725,14 @@ The browser returns to the backend callback URL, which must be reachable."
     (hermes-mcp--operation-request
      operation
      (lambda ()
-       (let ((client (plist-get operation :client)))
+       (let ((client (plist-get operation :client))
+             (current-p (lambda () (hermes-mcp--operation-current-p operation))))
          (if (eq (plist-get operation :kind) 'oauth)
              (hermes-mcp--api "GET" (concat "/oauth/flows/" (plist-get operation :flow))
-                              nil nil :client client)
+                              nil nil :client client :current-p current-p)
            (hermes-dashboard-transport-api-request-async
             "GET" (concat "/api/actions/" (plist-get operation :action) "/status")
-            :query '((lines . "1")) :client client))))
+            :query '((lines . "1")) :client client :current-p current-p))))
      (lambda (result)
        (when (hermes-mcp--operation-current-p operation)
          (if (eq (plist-get operation :kind) 'oauth)
