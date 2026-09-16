@@ -69,7 +69,8 @@
   ;; list of "owner/repo"
   ;; TODO: (owner . repo)
   )
-(make-obsolete-variable 'fj-extra-repos 'fj-favourite-repos "0.43")
+
+(define-obsolete-variable-alias 'fj-extra-repos 'fj-favourite-repos "0.43")
 
 (defvar-local fj-current-repo nil)
 
