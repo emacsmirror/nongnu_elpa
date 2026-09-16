@@ -442,12 +442,8 @@ No-op when the socket is gone or the provider is inactive."
 
 (defun hermes-capabilities--method-not-found-p (frame)
   "Return non-nil when FRAME rejects with a JSON-RPC `method not found' error."
-  (let ((message (hermes-capabilities--response-error-message frame)))
-    (string-match-p (rx (or "method not found"
-                            "method_not_found"
-                            "Method not found"
-                            "-32601"))
-                    (or message ""))))
+  (eql (hermes-transport--get (hermes-transport--get frame 'error) 'code)
+       -32601))
 
 (defun hermes-capabilities--handle-registration-response (provider frame)
   "Handle an inbound registration response FRAME for PROVIDER.
@@ -704,7 +700,9 @@ the line cap.  Honors `hermes-capabilities-buffer-read-max-lines'.  When
 START-LINE exceeds the buffer's line count, returns empty content."
   (let* ((max hermes-capabilities-buffer-read-max-lines)
          (total (with-current-buffer buffer
-                  (line-number-at-pos (point-max))))
+                  (save-restriction
+                    (widen)
+                    (line-number-at-pos (point-max)))))
          (start (max 1 (or start-line 1))))
     (if (> start total)
         (list :content ""
@@ -761,6 +759,10 @@ Safe when no project is active: returns null root and name."
 PARAMS keys: `buffer' (required), `start' and `end' (roadmap §2.2 wire names);
 `start_line'/`end_line' are accepted as backward-compatible aliases.  Rejects
 buffers visiting remote files and unknown buffers.  Enforces line and char caps.
+
+Line coordinates are 1-based and inclusive in the whole buffer, regardless
+of narrowing.  An empty buffer has one line; a final newline starts another
+empty line.  Preserve the buffer's point and restriction.
 
 Returns the roadmap §2.3 envelope shape
 \((ok . t) (content . STRING) (metadata . ALIST)), where metadata carries

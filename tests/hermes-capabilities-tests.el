@@ -1,10 +1,9 @@
 ;;; hermes-capabilities-tests.el --- ERT tests for hermes-capabilities  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Tests for the native capability provider skeleton.  The pure registry,
-;; dispatch, and response-writer tests run with no buffers, sockets, or
-;; processes.  The transport tests mock the URL resolver, socket opener, and
-;; send function so no real network or websocket.el is involved.
+;; Tests for the native capability provider.  Pure registry, dispatch, and
+;; response-writer tests avoid external state.  Most transport tests use mock
+;; sockets; registration rejection also runs over disposable loopback sockets.
 
 ;;; Code:
 
@@ -559,6 +558,68 @@ touched."
                                 (message . "method not found"))))))
           (should (null (hermes-capabilities--provider-active provider))))))))
 
+(defun hermes-capabilities-test--await (predicate)
+  "Pump disposable socket events until PREDICATE succeeds, at most two seconds."
+  (let ((deadline (+ (float-time) 2)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (should (funcall predicate))))
+
+(ert-deftest hermes-capabilities-numeric-rejection-closes-real-socket ()
+  "Released and localized -32601 replies close the provider without retrying."
+  (require 'websocket)
+  (dolist (text '("unknown method: emacs.register" "Μη διαθέσιμη μέθοδος"))
+    (with-temp-buffer
+      (let ((provider (hermes-capabilities--provider-create
+                       :buffer (current-buffer) :target "test"
+                       :instance-id "test" :display-name "Test" :role 'pair))
+            server peer socket registration)
+        (unwind-protect
+            (progn
+              (setq server
+                    (websocket-server
+                     0 :host "127.0.0.1"
+                     :on-open (lambda (ws)
+                                (setq peer ws)
+                                (websocket-send-text
+                                 ws "{\"method\":\"event\",\"params\":{\"type\":\"gateway.ready\"}}"))
+                     :on-message
+                     (lambda (ws frame)
+                       (setq registration (json-parse-string
+                                           (websocket-frame-payload frame)
+                                           :object-type 'alist))
+                       (websocket-send-text
+                        ws (json-serialize
+                            `((jsonrpc . "2.0")
+                              (id . ,(alist-get 'id registration))
+                              (error . ((code . -32601) (message . ,text)))))))))
+              (let* ((url (format "ws://127.0.0.1:%d"
+                                  (process-contact server :service)))
+                     (hermes-capabilities--url-function
+                      (lambda (&rest _)
+                        (hermes--promise-resolved
+                         (list :url url :redacted-url url :secrets nil)))))
+                (hermes-capabilities--connect provider))
+              (setq socket (hermes-capabilities--provider-socket provider))
+              (hermes-capabilities-test--await
+               (lambda () (not (hermes-capabilities--provider-active provider))))
+              (should (equal (alist-get 'method registration) "emacs.register"))
+              (should-not (hermes-capabilities--provider-socket provider))
+              (should-not (websocket-openp socket))
+              (hermes-capabilities-test--await
+               (lambda () (and peer (not (websocket-openp peer)))))
+              (should-not (hermes-capabilities--provider-reconnect-timer provider)))
+          (hermes-capabilities--teardown provider)
+          (when server (websocket-server-close server)))))))
+
+(ert-deftest hermes-capabilities-other-error-not-unsupported ()
+  "Error codes, not incidental diagnostic words, determine unsupported methods."
+  (let ((provider (hermes-capabilities--provider-create)))
+    (dolist (text '("permission denied" "method not found" "error mentioning -32601"))
+      (hermes-capabilities--handle-registration-response
+       provider `((error . ((code . -32000) (message . ,text)))))
+      (should (hermes-capabilities--provider-active provider)))))
+
 (ert-deftest hermes-capabilities-no-session-on-shared-client ()
   "The provider struct carries no session identity slots.
 This pins the architectural decision that the dedicated capability connection
@@ -705,6 +766,55 @@ checked to exclude session-id-bearing slots."
       (should (equal (alist-get 'content res) "alpha\nbeta\n"))
       (let ((metadata (alist-get 'metadata res)))
         (should (eq (alist-get 'truncated metadata) :false))))))
+
+(ert-deftest hermes-capabilities-buffer-read-narrowed-whole-buffer ()
+  "Default and explicit reads use absolute lines, preserving editor state."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\nfour")
+    (goto-char (point-min))
+    (forward-line 2)
+    (narrow-to-region (point) (point-max))
+    (forward-char 2)
+    (let ((before (list (point) (point-min) (point-max))))
+      (dolist (case '((nil "one\ntwo\nthree\nfour" 1 4 4 :false)
+                      (((start_line . 3) (end_line . 4)) "three\nfour" 3 4 2 :false)
+                      (((start . 9)) "" 9 8 0 :false)))
+        (let* ((res (hermes-capabilities--handle-buffer-read
+                     (cons (cons 'buffer (buffer-name)) (car case))))
+               (meta (alist-get 'metadata res)))
+          (should (equal (alist-get 'content res) (nth 1 case)))
+          (should (= (alist-get 'total_lines meta) 4))
+          (should (= (alist-get 'start_line meta) (nth 2 case)))
+          (should (= (alist-get 'end_line meta) (nth 3 case)))
+          (should (= (alist-get 'line_count meta) (nth 4 case)))
+          (should (eq (alist-get 'truncated meta) (nth 5 case)))
+          (should (equal before (list (point) (point-min) (point-max))))))
+      (let* ((hermes-capabilities-buffer-read-max-lines 2)
+             (res (hermes-capabilities--handle-buffer-read
+                   `((buffer . ,(buffer-name)))))
+             (meta (alist-get 'metadata res)))
+        (should (equal (alist-get 'content res) "one\ntwo"))
+        (should (= (alist-get 'total_lines meta) 4))
+        (should (eq (alist-get 'truncated meta) t))
+        (should (equal before (list (point) (point-min) (point-max))))))))
+
+(ert-deftest hermes-capabilities-buffer-read-empty-and-final-newline ()
+  "Empty buffers and final empty lines keep Emacs absolute-line semantics."
+  (dolist (case '(("" 1) ("one\ntwo" 2) ("one\ntwo\n" 3)))
+    (with-temp-buffer
+      (insert (car case))
+      ;; Even a zero-width restriction does not change the read coordinates.
+      (narrow-to-region (point-max) (point-max))
+      (let* ((before (list (point) (point-min) (point-max)))
+             (res (hermes-capabilities--handle-buffer-read
+                   `((buffer . ,(buffer-name)))))
+             (meta (alist-get 'metadata res)))
+        (should (equal (alist-get 'content res) (car case)))
+        (should (= (alist-get 'total_lines meta) (cadr case)))
+        (should (= (alist-get 'line_count meta) (cadr case)))
+        (should (= (alist-get 'end_line meta) (cadr case)))
+        (should (eq (alist-get 'truncated meta) :false))
+        (should (equal before (list (point) (point-min) (point-max))))))))
 
 (ert-deftest hermes-capabilities-buffer-read-line-range ()
   "`buffer.read' honors start_line/end_line aliases."

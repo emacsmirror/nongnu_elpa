@@ -993,6 +993,147 @@ When RESTART is non-nil, replace the dead listener before stopping."
 (ert-deftest hermes-exec-test-real-ipv6-lifecycle ()
   (hermes-exec-test--socket-lifecycle "::1"))
 
+;;; Quit settlement over disposable HTTP connections
+
+(defvar hermes-exec-test--during-eval nil)
+
+(defmacro hermes-exec-test--with-http-queue (&rest body)
+  "Run BODY with an isolated real listener and tracked clients and displays."
+  (declare (indent 0) (debug t))
+  `(hermes-exec-tests--without-env-token
+    (let ((hermes-exec-host "127.0.0.1")
+          (hermes-exec-port 0)
+          (hermes-exec-enabled t)
+          (hermes-exec-token nil)
+          (hermes-exec-require-approval t)
+          (hermes-exec--process nil)
+          (hermes-exec--pending nil)
+          (hermes-exec--active nil)
+          (display (symbol-function 'hermes-exec--display-approval))
+          clients shown)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-exec--display-approval)
+                     (lambda (buffer)
+                       (push (plist-get hermes-exec--active :code) shown)
+                       (funcall display buffer))))
+            (hermes-exec-start)
+            (cl-labels
+                ((request (code)
+                   (let ((client
+                          (make-network-process
+                           :name "hermes-exec-quit-client" :host "127.0.0.1"
+                           :service (process-contact hermes-exec--process :service)
+                           :family 'ipv4 :noquery t :coding 'utf-8-unix
+                           :filter (lambda (proc chunk)
+                                     (process-put proc 'response
+                                                  (concat (process-get proc 'response)
+                                                          chunk))))))
+                     (push client clients)
+                     (process-send-string
+                      client (hermes-exec-test--raw-request
+                              (json-serialize `((code . ,code)))))
+                     client)))
+              ,@body))
+        (hermes-exec-stop)
+        (dolist (client clients) (delete-process client))))))
+
+(ert-deftest hermes-exec-test-http-approved-quit-settles-and-advances ()
+  "C-g propagates after closing its HTTP client and showing the next only once."
+  (hermes-exec-test--with-http-queue
+    (let ((first (request "(signal 'quit nil)")))
+      (hermes-exec-test--await (lambda () hermes-exec--active))
+      (let ((second (request "(+ 40 2)")))
+        (hermes-exec-test--await (lambda () hermes-exec--pending))
+        (should (condition-case nil (progn (hermes-exec-approve) nil)
+                  (quit t)))
+        (hermes-exec-test--await (lambda () (not (process-live-p first))))
+        (should (equal (plist-get hermes-exec--active :code) "(+ 40 2)"))
+        (should (equal (reverse shown) '("(signal 'quit nil)" "(+ 40 2)")))
+        (should-not hermes-exec--pending)
+        (hermes-exec-approve)
+        (hermes-exec-test--await (lambda () (not (process-live-p second))))
+        (should (string-match-p "\"result\":\"42\""
+                                (process-get second 'response)))
+        (should-not hermes-exec--active)))))
+
+(ert-deftest hermes-exec-test-http-no-approval-quit-settles ()
+  "A real filter propagates quit after settling the immediate request."
+  (hermes-exec-test--with-http-queue
+    (let ((hermes-exec-require-approval nil)
+          quit-seen)
+      ;; Catch only at the event-loop boundary, outside the actual filter.
+      (set-process-filter
+       hermes-exec--process
+       (lambda (proc chunk)
+         (condition-case nil (hermes-exec--filter proc chunk)
+           (quit (setq quit-seen t)))))
+      (let ((client (request "(signal 'quit nil)")))
+        (hermes-exec-test--await (lambda () quit-seen))
+        (hermes-exec-test--await (lambda () (not (process-live-p client))))
+        (should-not shown)
+        (should-not hermes-exec--active)))))
+
+(ert-deftest hermes-exec-test-http-disconnect-during-eval-advances-once ()
+  "A real disconnect sentinel during evaluation cannot consume the next request."
+  (hermes-exec-test--with-http-queue
+    (request "(delete-process hermes-exec--connection) (signal 'quit nil)")
+    (hermes-exec-test--await (lambda () hermes-exec--active))
+    (let ((second (request "(+ 1 1)")))
+      (hermes-exec-test--await (lambda () hermes-exec--pending))
+      (should (condition-case nil (progn (hermes-exec-approve) nil) (quit t)))
+      (should (= (length shown) 2))
+      (should (equal (plist-get hermes-exec--active :code) "(+ 1 1)"))
+      (hermes-exec-approve)
+      (hermes-exec-test--await (lambda () (not (process-live-p second))))
+      (should (string-match-p "\"result\":\"2\"" (process-get second 'response)))
+      (should (= (length shown) 2)))))
+
+(ert-deftest hermes-exec-test-http-stop-does-not-display-retired-queue ()
+  "Stopping closes all clients without briefly promoting a retired approval."
+  (hermes-exec-test--with-http-queue
+    (request "(+ 1 1)")
+    (hermes-exec-test--await (lambda () hermes-exec--active))
+    (request "(+ 2 2)")
+    (hermes-exec-test--await (lambda () hermes-exec--pending))
+    ;; Make the active client close first, independent of process-list order.
+    (let ((active (plist-get hermes-exec--active :proc))
+          (connections (hermes-exec--live-connections hermes-exec--process)))
+      (cl-letf (((symbol-function 'hermes-exec--live-connections)
+                 (lambda (_) (cons active (remq active connections)))))
+        (hermes-exec-stop)))
+    (hermes-exec-test--await (lambda () (not (seq-some #'process-live-p clients))))
+    (should (= (length shown) 1))
+    (should-not hermes-exec--active)
+    (should-not hermes-exec--pending)))
+
+(ert-deftest hermes-exec-test-http-restart-during-eval-keeps-successor ()
+  "Old evaluation cleanup and late sentinels leave successor approval intact."
+  (hermes-exec-test--with-http-queue
+    (let ((old-server hermes-exec--process)
+          old-proc successor)
+      (let ((hermes-exec-test--during-eval
+             (lambda ()
+               (hermes-exec-stop)
+               (hermes-exec-start)
+               (setq successor (request "(+ 20 22)"))
+               (hermes-exec-test--await (lambda () hermes-exec--active))
+               (signal 'quit nil))))
+        (request "(funcall hermes-exec-test--during-eval)")
+        (hermes-exec-test--await (lambda () hermes-exec--active))
+        (setq old-proc (plist-get hermes-exec--active :proc))
+        (request "(+ 0 0)")
+        (hermes-exec-test--await (lambda () hermes-exec--pending))
+        (should (condition-case nil (progn (hermes-exec-approve) nil) (quit t))))
+      (should-not (process-live-p old-server))
+      (should-not (process-live-p old-proc))
+      (hermes-exec--sentinel old-proc "late close")
+      (should (equal (plist-get hermes-exec--active :code) "(+ 20 22)"))
+      (should (= (length shown) 2))
+      (hermes-exec-approve)
+      (hermes-exec-test--await (lambda () (not (process-live-p successor))))
+      (should (string-match-p "\"result\":\"42\"" (process-get successor 'response)))
+      (should-not hermes-exec--active))))
+
 ;;; Group 8: bridge registration
 
 (ert-deftest hermes-exec-test-show-bridge-command-uses-packaged-entry-point ()

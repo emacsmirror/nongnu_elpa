@@ -710,24 +710,31 @@ eval -- for instance when the approved code closes its own connection -- cannot
 re-enter and advance the queue twice.  Evaluation runs in the origin buffer
 captured at enqueue time when it is still live, so current-buffer/region
 operations do not accidentally run in the approval buffer.  Advance to the next
-request afterwards."
+request afterwards, even on quit, but never advance a replacement listener."
   (when hermes-exec--active
     (let* ((active hermes-exec--active)
            (proc (plist-get active :proc))
+           (server hermes-exec--process)
            (code (plist-get active :code))
            (origin-buffer (plist-get active :origin-buffer))
            (origin-window (plist-get active :origin-window)))
       (setq hermes-exec--active nil)
-      (hermes-exec--close-approval-window)
-      (let ((result (if approve
-                        (let ((hermes-exec--connection proc))
-                          (hermes-exec--eval-with-origin code origin-buffer
-                                                          origin-window))
-                      (list :ok nil :error "Evaluation declined by user"))))
-        (hermes-exec--send-response
-         proc (hermes-exec--http-response
-               200 "OK" (hermes-exec--result-json result)))
-        (hermes-exec--show-next)))))
+      (unwind-protect
+          (progn
+            (hermes-exec--close-approval-window)
+            (let ((result (if approve
+                              (let ((hermes-exec--connection proc))
+                                (hermes-exec--eval-with-origin
+                                 code origin-buffer origin-window))
+                            (list :ok nil :error "Evaluation declined by user"))))
+              (hermes-exec--send-response
+               proc (hermes-exec--http-response
+                     200 "OK" (hermes-exec--result-json result)))))
+        ;; Preserve nonlocal exits, but settle only the captured connection.
+        (when (process-live-p proc)
+          (ignore-errors (delete-process proc)))
+        (when (eq server hermes-exec--process)
+          (hermes-exec--show-next))))))
 
 (defun hermes-exec--drop-pending (proc)
   "Drop PROC from the approval queue, advancing the display if it was active."
@@ -863,17 +870,22 @@ dispatched and an incomplete one yields nil."
          (buffer (concat (process-get proc 'hermes-buffer) chunk))
          (hermes-exec--connection proc))
     (process-put proc 'hermes-buffer buffer)
-    (when-let* ((outcome (hermes-exec--request-response buffer)))
-      (process-put proc 'hermes-buffer nil)
-      (if (eq (car-safe outcome) :defer)
-          (let ((code (cadr outcome)))
-            (hermes-exec--enqueue-approval
-             proc code
-             :origin-buffer origin-buffer
-             :origin-window origin-window
-             :peer (hermes-exec--peer-info proc)
-             :risk (hermes-exec--classify-code code)))
-        (hermes-exec--send-response proc outcome)))))
+    (condition-case err
+        (when-let* ((outcome (hermes-exec--request-response buffer)))
+          (process-put proc 'hermes-buffer nil)
+          (if (eq (car-safe outcome) :defer)
+              (let ((code (cadr outcome)))
+                (hermes-exec--enqueue-approval
+                 proc code
+                 :origin-buffer origin-buffer
+                 :origin-window origin-window
+                 :peer (hermes-exec--peer-info proc)
+                 :risk (hermes-exec--classify-code code)))
+            (hermes-exec--send-response proc outcome)))
+      (quit
+       (when (process-live-p proc)
+         (ignore-errors (delete-process proc)))
+       (signal (car err) (cdr err))))))
 
 (defun hermes-exec--sentinel (proc _event)
   "Drop PROC's buffered input and queued approval when its connection ends."
@@ -946,13 +958,15 @@ process property rather than the inherited filter, excluding SERVER itself."
 (defun hermes-exec-stop ()
   "Stop the Hermes eval endpoint and release any open connections."
   (interactive)
-  (dolist (conn (hermes-exec--live-connections hermes-exec--process))
-    (ignore-errors (delete-process conn)))
-  (when (process-live-p hermes-exec--process)
-    (ignore-errors (delete-process hermes-exec--process)))
-  (setq hermes-exec--process nil
-        hermes-exec--pending nil)
-  (hermes-exec--finish-active)
+  (let ((server hermes-exec--process))
+    ;; Retire the queue before delete-process can run connection sentinels.
+    (setq hermes-exec--process nil
+          hermes-exec--pending nil)
+    (hermes-exec--finish-active)
+    (dolist (conn (hermes-exec--live-connections server))
+      (ignore-errors (delete-process conn)))
+    (when (process-live-p server)
+      (ignore-errors (delete-process server))))
   (message "Hermes eval endpoint stopped"))
 
 (defun hermes-exec--bound-host ()
