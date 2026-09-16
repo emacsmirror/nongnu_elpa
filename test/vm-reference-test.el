@@ -749,6 +749,79 @@ was doing the damage."
       (should (equal "@code{vm-quit} and @code{vm-save-folder}."
                      (vm-reference-prose "`vm-quit' and `vm-save-folder'."))))))
 
+;;; The writing rules the manual is held to
+
+(defconst vm-reference-test--verbatim-environments
+  '("example" "smallexample" "lisp" "smalllisp" "verbatim" "display" "format")
+  "The environments whose contents are quoted rather than written.
+A rule of hyphens in an example of what VM prints, a literal MIME boundary,
+the text of a message: none of them is prose, and none can be reworded to
+suit a writing rule.")
+
+(defun vm-reference-test--manual-prose ()
+  "The prose lines of the manual, as a list of (NUMBER . TEXT).
+Left out: the verbatim environments, the GPL, which is the last node and is
+quoted word for word, and the contents of `@code' and `@samp', which name
+things rather than saying them."
+  (let ((lines nil)
+        (depth 0)
+        (number 0)
+        (licence nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((text (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (setq number (1+ number))
+          (cond
+           ((string-match-p "^@node License\\b" text) (setq licence t))
+           (licence nil)
+           ((string-match-p
+             (concat "^@" (regexp-opt vm-reference-test--verbatim-environments)
+                     "\\b")
+             text)
+            (setq depth (1+ depth)))
+           ((string-match-p
+             (concat "^@end "
+                     (regexp-opt vm-reference-test--verbatim-environments)
+                     "\\b")
+             text)
+            (setq depth (max 0 (1- depth))))
+           ((> depth 0) nil)
+           (t
+            (push (cons number
+                        (replace-regexp-in-string
+                         "@\\(?:code\\|samp\\|file\\|kbd\\){[^}]*}" "" text))
+                  lines))))
+        (forward-line 1)))
+    (nreverse lines)))
+
+(defun vm-reference-test--prose-matching (regexp)
+  "The prose lines of the manual that match REGEXP, as printable strings."
+  (mapcar (lambda (line) (format "%d: %s" (car line) (cdr line)))
+          (seq-filter (lambda (line) (string-match-p regexp (cdr line)))
+                      (vm-reference-test--manual-prose))))
+
+(ert-deftest vm-reference-test-the-manual-uses-no-dash-as-punctuation ()
+  "REGRESSION: no em dash in the prose, and no `---' or ` -- ' standing for one.
+Thirty-nine em dashes and twenty double hyphens were taken out of the manual
+by hand (emacs-vm/vm#776), and nothing stopped them coming back.  Texinfo
+renders `---' as an em dash, so it is the same fault written differently.
+
+What is quoted rather than written is exempt and is not searched: the
+verbatim environments, the GPL, and the contents of `@code' and `@samp',
+where a MIME boundary of hyphens is the thing being named."
+  (should (equal nil (vm-reference-test--prose-matching "—")))
+  (should (equal nil (vm-reference-test--prose-matching "---")))
+  (should (equal nil (vm-reference-test--prose-matching " -- "))))
+
+(ert-deftest vm-reference-test-the-manual-does-not-say-shape ()
+  "REGRESSION: the manual says structure, or names the thing.
+\"Shape\" is vague where \"structure\", \"form\" or \"layout\" is exact, and
+the word was taken out of the manual once already (emacs-vm/vm#776)."
+  (should (equal nil (vm-reference-test--prose-matching "\\bshapes?\\b"))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
