@@ -808,7 +808,7 @@ so a new session can be started afterwards."
        hermes-chat--interrupt-request-pending-p
        (not (hermes-chat--session-info-event-p event))
        (memq (plist-get event :type)
-             '(delta done error thinking commentary progress tool diff
+             '(delta interim done error thinking commentary progress tool diff
                      status unknown))))
 
 (defun hermes-chat--interrupted-trailing-event-p (assistant-id event)
@@ -1802,17 +1802,18 @@ local FIFO submission."
 
 (defun hermes-chat--dashboard-queue-drain-ready-p ()
   "Return non-nil when the current chat queue may submit."
-  (or (not (hermes-chat--dashboard-default-transport-p))
-      ;; A fresh FIFO head must enter the ordinary lazy session bootstrap.
-      ;; Detached durable sessions still wait for explicit reattachment.
-      (and (null hermes-chat--session-id)
-           (null hermes-chat--dashboard-active-session-id)
-           (null hermes-chat--session-bootstrap)
-           (or (null hermes-chat--dashboard-client)
-               (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)))
-      (and (hermes-chat--dashboard-session-attached-p)
-           (hermes-chat--dashboard-client-live-p
-            hermes-chat--dashboard-client))))
+  (and (not (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
+       (or (not (hermes-chat--dashboard-default-transport-p))
+           ;; A fresh FIFO head must enter the ordinary lazy session bootstrap.
+           ;; Detached durable sessions still wait for explicit reattachment.
+           (and (null hermes-chat--session-id)
+                (null hermes-chat--dashboard-active-session-id)
+                (null hermes-chat--session-bootstrap)
+                (or (null hermes-chat--dashboard-client)
+                    (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)))
+           (and (hermes-chat--dashboard-session-attached-p)
+                (hermes-chat--dashboard-client-live-p
+                 hermes-chat--dashboard-client)))))
 
 (defun hermes-chat--dashboard-create-config-cells ()
   "Return pending (KEY . VALUE) `config.set' cells for this buffer.
@@ -2343,6 +2344,7 @@ instead of nesting `hermes-chat--call-with-dashboard-bootstrap-error',
   (and (hermes-chat--dashboard-default-transport-p)
        hermes-chat--session-id
        (not (hermes-chat--dashboard-session-attached-p))
+       (not (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
        (not (hermes-chat--active-turn-p))))
 
 (defun hermes-chat--dashboard-queue-or-submit (content buffer &optional display)
@@ -2520,22 +2522,40 @@ entry."
     (hermes-chat--background-submit content buffer)))
 
 (defun hermes-chat--background-started (result prompt buffer)
-  "Record the background task in RESULT for PROMPT and show a started notice.
+  "Record RESULT for PROMPT, or enrich an already completed background entry.
 BUFFER's client gains a result listener when no turn is streaming, so the
 `background.complete' event is delivered even on an otherwise idle chat."
   (let ((task-id (hermes-transport--scalar-string
                   (hermes-transport--get result 'task_id)))
         (number (cl-incf hermes-chat--background-counter))
         (preview (hermes-chat--preview prompt)))
-    (when task-id
-      (push (cons task-id (list :number number :preview preview))
-            hermes-chat--background-tasks))
     (hermes-chat--ensure-idle-listener hermes-chat--dashboard-client buffer)
-    ;; Insert above any pending reply so the active turn's answer stays last.
-    (hermes-chat--insert-entry
-     (hermes-chat--make-entry
-      'status (format "Background #%d started: %s" number preview) 'running)
-     (hermes-chat--pending-assistant-node))))
+    (if-let* ((completed
+               (and task-id
+                    (seq-find
+                     (lambda (entry)
+                       (let ((metadata (plist-get entry :metadata)))
+                         (and (eq (plist-get entry :role) 'background)
+                              (equal task-id (plist-get metadata :task-id))
+                              (eql hermes-chat--lifecycle-generation
+                                   (plist-get metadata :lifetime)))))
+                     (hermes-chat--entries)))))
+        ;; Completion can beat the launch receipt.  Enrich its exact entry;
+        ;; never reopen the task or guess a pending launch by arrival order.
+        (hermes-chat--update-entry
+         (plist-get completed :id)
+         (lambda (entry)
+           (hermes-chat--entry-with
+            entry :metadata
+            (plist-put (plist-put (copy-sequence (plist-get entry :metadata))
+                                  :number number) :preview preview))))
+      (when task-id
+        (push (cons task-id (list :number number :preview preview))
+              hermes-chat--background-tasks))
+      (hermes-chat--insert-entry
+       (hermes-chat--make-entry
+        'status (format "Background #%d started: %s" number preview) 'running)
+       (hermes-chat--pending-assistant-node)))))
 
 (defun hermes-chat--background-submit (content buffer)
   "Launch CONTENT as a background task for BUFFER's dashboard session."
@@ -2560,7 +2580,8 @@ EVENT's `:task-id' is paired with the launching task's number and preview.  The
 entry is inserted before any pending assistant reply -- nil before-node when the
 chat is idle, so it simply lands last -- so a result arriving mid-turn keeps the
 active turn's answer at the bottom.  The counter is owned by the launch path and
-is not advanced here; an unrecorded result falls back to its current value."
+is not advanced here; an unrecorded result falls back to its current value.
+Retain task and lifetime identity so a late launch receipt can enrich the entry."
   (let* ((task-id (plist-get event :task-id))
          (info (and task-id (cdr (assoc task-id hermes-chat--background-tasks))))
          (number (or (plist-get info :number) hermes-chat--background-counter))
@@ -2572,7 +2593,8 @@ is not advanced here; an unrecorded result falls back to its current value."
     (hermes-chat--insert-entry
      (hermes-chat--make-entry
       'background content 'done nil
-      (list :number number :preview preview))
+      (list :number number :preview preview :task-id task-id
+            :lifetime hermes-chat--lifecycle-generation))
      (hermes-chat--pending-assistant-node))
     (hermes-notifications-notify
      'background "Hermes background task finished"

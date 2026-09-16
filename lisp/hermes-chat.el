@@ -1092,14 +1092,20 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
     (let ((client hermes-chat--dashboard-client)
           (session-id hermes-chat--dashboard-active-session-id)
           (generation hermes-chat--lifecycle-generation)
-          (id (hermes-chat--steer-pending-status content)))
+          (id (hermes-chat--steer-pending-status content))
+          (owner (list :text content)))
+      (setq hermes-chat--pending-steers
+            (append hermes-chat--pending-steers (list owner)))
       (hermes-dashboard-transport-session-steer
        client content
        :session-id session-id
        :resolve (lambda (result)
                   (hermes-chat--in-buffer buffer
-                    (when (hermes-chat--dashboard-context-current-p
-                           client generation session-id)
+                    (when (and (memq owner hermes-chat--pending-steers)
+                               (hermes-chat--dashboard-context-current-p
+                                client generation session-id))
+                      (setq hermes-chat--pending-steers
+                            (delq owner hermes-chat--pending-steers))
                       (if (equal (hermes-chat--status-name
                                   (hermes-chat--result-string result 'status))
                                  "rejected")
@@ -1107,8 +1113,11 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
                         (hermes-chat--steer-acknowledged id content)))))
        :reject (lambda (err)
                  (hermes-chat--in-buffer buffer
-                   (when (hermes-chat--dashboard-context-current-p
-                          client generation session-id)
+                   (when (and (memq owner hermes-chat--pending-steers)
+                              (hermes-chat--dashboard-context-current-p
+                               client generation session-id))
+                     (setq hermes-chat--pending-steers
+                           (delq owner hermes-chat--pending-steers))
                      (hermes-chat--steer-failed id content err))))))))
 
 (defun hermes-chat--steer-or-submit (content buffer)
@@ -1152,7 +1161,11 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
       (when (equal hermes-chat--pending-assistant-id assistant-id)
         (hermes-chat--mark-assistant assistant-id 'streaming))
       (mapc (lambda (event)
-              (hermes-chat--handle-transport-event assistant-id event))
+              ;; Interim replay can rotate presentation, but a terminal can
+              ;; drain the FIFO and replace the turn's generation entirely.
+              (when (hermes-chat--current-transport-generation-p generation)
+                (hermes-chat--handle-transport-event
+                 (or hermes-chat--pending-assistant-id assistant-id) event)))
             events))
     (hermes-chat--insert-local-status
      (format "Interrupt failed: %s" message) 'error)
@@ -1869,37 +1882,88 @@ visible while reading."
       (hermes-chat--insert-entry entry))))
 
 (defun hermes-chat--load-session-history (buffer)
-  "Resume BUFFER's session over the dashboard and render its prior messages."
+  "Resume BUFFER's session and hydrate history before draining queued input."
   (with-current-buffer buffer
-    (let* ((lifetime hermes-chat--lifecycle-generation)
+    (let* ((session hermes-chat--session-id)
+           (lifetime hermes-chat--lifecycle-generation)
+           (retry hermes-chat--session-bootstrap)
+           (previous-client hermes-chat--dashboard-client)
            (generation (hermes-chat--next-transport-generation))
-           (client (hermes-chat--dashboard-start
-                    (hermes-chat--transport-callback buffer nil t generation)))
-           (current-p
-            (lambda ()
-              (and (hermes-chat--dashboard-context-current-p client lifetime)
-                   (hermes-chat--current-transport-generation-p generation)))))
-      (hermes-dashboard-transport-session-resume
-       client hermes-chat--session-id
-       :cols (hermes-chat--dashboard-cols)
-       :profile hermes-chat--profile
-       :resolve (lambda (result)
-                  (hermes-chat--in-buffer buffer
-                    (when (funcall current-p)
-                      (hermes-chat--dashboard-record-session client result)
-                      (hermes-chat--render-history
-                       (hermes-transport--get result 'messages))
-                      (when (hermes-chat--dashboard-result-live-turn-p result)
-                        (hermes-chat--dashboard-restore-inflight-turn client)
-                        (hermes-chat--dashboard-bind-stream-callback
-                         client hermes-chat--pending-assistant-id))
-                      (hermes-chat--dashboard-restore-pending-clarify result))))
-       :reject (lambda (message)
-                 (hermes-chat--in-buffer buffer
-                   (when (funcall current-p)
-                     (hermes-chat--insert-local-status
-                      (format "Could not load Hermes session history: %s" message)
-                      'error))))))))
+           (client
+            (condition-case err
+                (hermes-chat--dashboard-start
+                 (hermes-chat--transport-callback buffer nil t generation))
+              ((error quit)
+               (hermes-chat--in-lifetime buffer lifetime
+                 ;; Replacement releases the old client and bootstrap before
+                 ;; acquisition.  Retain only this exact failed history demand.
+                 (when (and (eq (plist-get retry :kind) 'history)
+                            (eq (plist-get retry :phase) 'failed)
+                            (equal session hermes-chat--session-id)
+                            (hermes-chat--current-transport-generation-p generation)
+                            (or (null hermes-chat--session-bootstrap)
+                                (eq retry hermes-chat--session-bootstrap))
+                            (or (null hermes-chat--dashboard-client)
+                                (eq previous-client hermes-chat--dashboard-client)))
+                   (setq hermes-chat--session-bootstrap retry)))
+               (signal (car err) (cdr err)))))
+           (owner (hermes-chat--dashboard-begin-bootstrap client 'history nil)))
+      (cl-labels
+          ((owned-p ()
+             (and (hermes-chat--dashboard-bootstrap-current-p owner)
+                  (eq (plist-get owner :phase) 'preflight)
+                  (equal session hermes-chat--session-id)
+                  (hermes-chat--current-transport-generation-p generation)))
+           (current-p ()
+             (and (owned-p)
+                  (= (plist-get owner :queue-connection)
+                     (hermes-dashboard-transport-client-generation client))))
+           (failed (message)
+             (hermes-chat--in-buffer buffer
+               ;; Stop/reconnect retires the connection before rejecting reads.
+               ;; Only this exact owner may settle; success still needs its socket.
+               (when (owned-p)
+                 (setf (plist-get owner :phase) 'failed)
+                 (hermes-chat--insert-local-status
+                  (format "Could not load Hermes session history: %s; input retained; Send retries"
+                          message)
+                  'error)))))
+        (condition-case err
+            (hermes-dashboard-transport-session-resume
+             client session :cols (hermes-chat--dashboard-cols)
+             :profile hermes-chat--profile
+             :resolve
+             (lambda (result)
+               (hermes-chat--in-buffer buffer
+                 (when (current-p)
+                   (hermes-chat--dashboard-record-session client result)
+                   (hermes-chat--render-history (hermes-transport--get result 'messages))
+                   (when (hermes-chat--dashboard-result-live-turn-p result)
+                     (hermes-chat--dashboard-restore-inflight-turn client)
+                     (hermes-chat--dashboard-bind-stream-callback
+                      client hermes-chat--pending-assistant-id))
+                   (hermes-chat--dashboard-restore-pending-clarify result)
+                   (when (eq owner hermes-chat--session-bootstrap)
+                     (setq hermes-chat--session-bootstrap nil)
+                     (hermes-chat--drain-queued-message)))))
+             :reject #'failed)
+          (error (failed (error-message-string err))))))))
+
+(defun hermes-chat--send-during-history ()
+  "Queue composer input behind history, retrying a failed read on Send."
+  (let ((content (hermes-chat--trimmed-input))
+        (retry-p (eq (plist-get hermes-chat--session-bootstrap :phase) 'failed)))
+    (when (hermes-chat--parse-slash content)
+      (user-error "Wait for session history before sending a command"))
+    (cond
+     (hermes-chat--draft-images (hermes-chat--queue-image-draft))
+     ((not (string-empty-p content))
+      (hermes-chat--queue-content content)
+      (hermes-chat--delete-input-tail)
+      (hermes-chat--record-input-history content))
+     ((not (and retry-p hermes-chat--queued-messages))
+      (user-error "No Hermes input to send")))
+    (when retry-p (hermes-chat--load-session-history (current-buffer)))))
 
 (defun hermes-chat-resume-session (session-id &optional title profile instance)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
@@ -1941,15 +2005,20 @@ durable session continues on send."
 Answer a pending clarification instead of starting a new turn.  For a batch,
 answer only the next unanswered question; use `hermes-chat-respond-to-prompt'
 to answer all remaining questions in the minibuffer.  During an explicit
-interrupt, queue ordinary input until the interrupted turn settles."
+interrupt, queue ordinary input until the interrupted turn settles.
+During initial resume, queue input until history loads; Send retries a failed
+history read, including with empty input when a queued message is retained."
   (interactive)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is not in the Hermes chat input area"))
   (hermes-chat--ensure-submit-allowed)
-  (if hermes-chat--draft-images
-      (hermes-chat--queue-image-draft)
+  (cond
+   ((eq (plist-get hermes-chat--session-bootstrap :kind) 'history)
+    (hermes-chat--send-during-history))
+   (hermes-chat--draft-images (hermes-chat--queue-image-draft))
+   (t
     (let ((content (hermes-chat--trimmed-input))
           (clarify-key (hermes-chat--pending-clarify-key))
           sent-p)
@@ -1980,7 +2049,7 @@ interrupt, queue ordinary input until the interrupted turn settles."
               (hermes-chat--delete-input-tail)
               (hermes-chat--submit-content content))))
       (when sent-p
-	(hermes-chat--record-input-history content)))))
+	(hermes-chat--record-input-history content))))))
 
 ;;; Attachments view
 

@@ -471,7 +471,11 @@ Draft and pending records must be removed through their owning chat."
          (hermes-chat--image-admission-finish record t))))
    hermes-chat--image-prior-submits)
   (when hermes-chat--image-draft-record
-    (setf (plist-get hermes-chat--image-draft-record :content) (hermes-chat-input-string)))
+    (setf (plist-get hermes-chat--image-draft-record :content)
+          (save-excursion
+            (save-restriction
+              (widen)
+              (hermes-chat-input-string)))))
   (when (buffer-live-p hermes-chat--image-recovery-buffer)
     (with-current-buffer hermes-chat--image-recovery-buffer
       (dolist (record hermes-chat--image-records)

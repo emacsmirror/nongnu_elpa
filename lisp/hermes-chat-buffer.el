@@ -147,7 +147,7 @@ runtime.")
   "Identity owning application of pending create-time runtime overrides.")
 (defvar-local hermes-chat--create-overrides-retry-session-id nil
   "Session id owning unapplied create-time runtime overrides, or nil.")
-(defvar-local hermes-chat--session-bootstrap nil "Fresh-session setup owner.")
+(defvar-local hermes-chat--session-bootstrap nil "Session setup or history owner.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn and transcript reset so stale async callbacks become obsolete.
@@ -627,6 +627,9 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
     (hermes-chat--protect-transcript)
     (goto-char hermes-chat--input-marker)))
 
+(defvar-local hermes-chat--pending-steers nil
+  "Oldest-first occurrences of direct steer text awaiting acknowledgement.")
+
 (defvar-local hermes-chat--retained-clarify-owners nil
   "Oldest-first immutable owners of accepted clarification responses.")
 
@@ -664,7 +667,8 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
                             (plist-get context :display)))
      (mapcar (lambda (owner)
                (list owner uncertain (plist-get owner :text) nil))
-             hermes-chat--retained-clarify-owners)
+             (append hermes-chat--retained-clarify-owners
+                     hermes-chat--pending-steers))
      (unless (string-empty-p draft)
        (list (list 'draft "Draft — also remains in original chat" draft nil))))))
 
@@ -736,6 +740,7 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
     (clrhash hermes-chat--auto-prompt-keys))
   (when recover-input (hermes-chat--capture-recovery))
   (setq hermes-chat--pending-assistant-id nil
+        hermes-chat--pending-steers nil
         hermes-chat--queued-messages nil
         hermes-chat--queued-submit-id nil
         hermes-chat--process nil
@@ -1325,7 +1330,8 @@ calls it so this file never references the submit pipeline defined above it.")
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
   (hermes-chat--ensure-submit-allowed)
-  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
+  (if (or (eq (plist-get hermes-chat--session-bootstrap :kind) 'history)
+          (hermes-chat--active-turn-p) hermes-chat--queued-messages)
       (progn
         (hermes-chat--queue-content content nil display)
         (hermes-chat--drain-queued-message))
