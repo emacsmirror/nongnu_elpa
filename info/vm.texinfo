@@ -3046,6 +3046,20 @@ This is the part an external program such as @command{msmtp} does for you,
 by reading the @code{From} header and choosing an account from its own
 configuration.
 
+@subheading Interrupting a send
+
+@kindex C-g
+@cindex send, interrupting one that has stopped
+@cindex hung send
+A send that has stopped, where the server has taken the connection and then
+said nothing, is interrupted with @kbd{C-g}.  A sender that runs a program is
+run so that Emacs can see the keystroke while it waits; one that talks to the
+server itself, @code{smtpmail-send-it} being the common one, always could be
+interrupted.
+
+Interrupting kills the program and unsends nothing.  The message may have
+reached the server already, so look at what arrived before sending it again.
+
 @node Address book, Keys of your own, Sending setup, Setting Up
 @section The address book
 

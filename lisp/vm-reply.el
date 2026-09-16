@@ -834,6 +834,129 @@ This function is a variant of `vm-get-header-contents'."
 (defvar coding-system-for-write)
 (defvar mail-send-nonascii)
 
+(defvar vm-call-process-region-original nil
+  "`call-process-region' as it was before the send stood in for it.
+`vm-mail-send' binds this to the definition it is replacing, so the stand-in
+can hand back the calls it does not implement.  Calling
+`call-process-region' by name from inside the stand-in would reach the
+stand-in again.")
+
+(defun vm-call-process-region-interruptibly (start end program
+						   &optional delete buffer
+						   display &rest args)
+  "Run PROGRAM on the region as `call-process-region' does, and let C-g out.
+`call-process-region' stops the whole of Emacs while it waits: no timer
+runs, nothing reads the keyboard, and so a C-g is not ignored but never
+seen.  A mailer waiting on a server that has stopped answering can then only
+be got out of with a signal sent from outside Emacs (emacs-vm/vm#842).  This
+runs PROGRAM under `make-process' and waits with `accept-process-output',
+which leaves Emacs able to see the C-g; it kills PROGRAM when it does and
+says that the message may have gone out anyway.
+
+The arguments are `call-process-region's and so is the value: the exit
+status of PROGRAM, or the signal that killed it.  DISPLAY is ignored, output
+being inserted as it arrives whatever it says.  A BUFFER of 0 and the
+two-element BUFFER that sends standard error to a file both go to
+`vm-call-process-region-original', the first having no wait to interrupt and
+the second no counterpart here."
+  (if (or (eq buffer 0) (consp buffer))
+      (apply (or vm-call-process-region-original #'call-process-region)
+	     start end program delete buffer display args)
+    (let ((input (buffer-substring-no-properties start end))
+	  (process (vm-start-process-on-input
+		    program args (if (eq buffer t) (current-buffer) buffer))))
+      (when delete
+	(delete-region start end))
+      (unwind-protect
+	  (condition-case nil
+	      (progn
+		(vm-send-input-to-process process input)
+		(vm-wait-for-process process)
+		(vm-process-exit-value process))
+	    (quit (vm-abandon-send process program)))
+	(when (process-live-p process)
+	  (delete-process process))))))
+
+(defun vm-start-process-on-input (program args buffer)
+  "Start PROGRAM with ARGS, ready to be sent its standard input.
+Its output is inserted before point in BUFFER, which is where
+`call-process-region' puts it rather than at the end where a process filter
+would; BUFFER nil discards it.  The sentinel is set because the default one
+writes a line of its own into the process buffer, which
+`call-process-region' does not do; what it is told is kept for
+`vm-process-exit-value' to read."
+  (let ((out (and buffer (get-buffer-create buffer)))
+	(process nil))
+    (setq process (make-process
+		   :name (file-name-nondirectory program)
+		   :command (cons program args)
+		   :connection-type 'pipe
+		   :noquery t
+		   :filter (and out (lambda (_process text)
+				      (with-current-buffer out
+					(insert text))))))
+    (set-process-sentinel process
+			  (lambda (p event) (process-put p 'vm-death event)))
+    process))
+
+(defun vm-send-input-to-process (process input)
+  "Give PROCESS its standard input, INPUT, a piece at a time.
+A mailer that refuses the message and exits before it has read all of it
+leaves nothing to write to.  `call-process-region' never meets that, having
+handed the program a file to read; writing to a pipe that has gone is an
+error, and in a batch Emacs a SIGPIPE that kills it outright.  So this stops
+as soon as the program has, and the exit status of the program is what
+answers the send, which is what answered it before."
+  (let ((start 0)
+	(end (length input))
+	(sending t))
+    (while (and sending (< start end))
+      (let ((stop (min end (+ start 8192))))
+	(if (vm-write-to-process process (substring input start stop))
+	    (setq start stop)
+	  (setq sending nil)))
+      ;; reaps a program that has exited, so the next turn stops
+      (accept-process-output process 0))
+    (vm-write-to-process process nil)))
+
+(defun vm-write-to-process (process text)
+  "Write TEXT to PROCESS, or close its standard input where TEXT is nil.
+Answers nil where the program has stopped reading, which is not an error
+here: see `vm-send-input-to-process'."
+  (condition-case nil
+      (progn (if text
+		 (process-send-string process text)
+	       (process-send-eof process))
+	     t)
+    (error nil)))
+
+(defun vm-wait-for-process (process)
+  "Wait for PROCESS to finish, leaving Emacs able to see a C-g.
+Other processes are left where they are while it waits, as
+`call-process-region' leaves them: their output is read once the wait is
+over."
+  (while (or (accept-process-output process 0.2 nil t)
+	     (process-live-p process))))
+
+(defun vm-process-exit-value (process)
+  "What `call-process-region' would have answered for the finished PROCESS.
+A number is an exit status.  A string names the signal that killed the
+program, which is what `call-process-region' answers for one; the sentinel
+is told it in lower case and that function capitalises it, so this does
+too."
+  (if (eq (process-status process) 'signal)
+      (upcase-initials
+       (string-trim (or (process-get process 'vm-death) "killed")))
+    (process-exit-status process)))
+
+(defun vm-abandon-send (process program)
+  "Kill PROCESS after a C-g, and say what stopping it did not undo."
+  (delete-process process)
+  (error (concat "%s was interrupted.  It may have handed the message to the"
+		 " server already: check where the message went before"
+		 " sending it again")
+	 (file-name-nondirectory program)))
+
 ;;;###autoload
 (defun vm-mail-send ()
   "Just like mail-send except that VM flags the appropriate message(s)
@@ -936,9 +1059,19 @@ as replied to, forwarded, etc, if appropriate."
 	;; doing: taking the Fcc headers out of the copy that goes out, which
 	;; is the only thing that does that, and which is why it cannot simply
 	;; be turned off.  The composition itself is left alone.
+	;;
+	;; `call-process-region' is stood in for so that a mailer which stops
+	;; answering can be got out of with a C-g: the real one blocks the
+	;; whole of Emacs, keyboard included (emacs-vm/vm#842).  It is the
+	;; call `sendmail-send-it' makes, and any other sender that runs a
+	;; program.
 	(save-excursion
-	  (cl-letf (((symbol-function 'mail-do-fcc) #'vm-fcc-strip-headers))
-	    (mail-send)))))
+	  (let ((vm-call-process-region-original
+		 (symbol-function 'call-process-region)))
+	    (cl-letf (((symbol-function 'mail-do-fcc) #'vm-fcc-strip-headers)
+		      ((symbol-function 'call-process-region)
+		       #'vm-call-process-region-interruptibly))
+	      (mail-send))))))
     ;; be careful, something could have killed the composition
     ;; buffer inside mail-send.
     ;; The copies of this send are filed, so the next one is to file its own.

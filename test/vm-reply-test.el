@@ -2996,6 +2996,214 @@ that reached the wire, and fails against the old code for the right reason."
       (insert "To: someone@example.com\n" mail-header-separator "\nThe body.\n")
       (should-not (vm-imap-fcc-mailbox)))))
 
+;;; A send that has stopped can be interrupted (emacs-vm/vm#842)
+
+(ert-deftest vm-reply-test-the-interruptible-call-answers-as-the-real-one ()
+  "`vm-call-process-region-interruptibly' stands in for `call-process-region'.
+It is installed by rebinding the symbol for the length of the send, so
+anything the senders or the hooks do with it has to come back the same: the
+exit status, the signal, where the output lands and where point is left."
+  (dolist (call '(call-process-region vm-call-process-region-interruptibly))
+    (with-temp-buffer
+      (insert "hello\n")
+      (let ((status (funcall call (point-min) (point-max) "cat" nil t nil)))
+        (should (equal 0 status))
+        (should (equal "hello\nhello\n" (buffer-string)))
+        ;; inserted before point, which is where the real one leaves it
+        (should (= (point) (point-max)))))
+    (with-temp-buffer
+      (insert "x")
+      (should (equal 3 (funcall call (point-min) (point-max) "sh" nil nil nil
+                                "-c" "exit 3"))))
+    (with-temp-buffer
+      (insert "x")
+      (should (equal "Terminated: 15"
+                     (funcall call (point-min) (point-max) "sh" nil nil nil
+                              "-c" "kill -TERM $$"))))
+    (with-temp-buffer
+      (insert "gone\n")
+      (funcall call (point-min) (point-max) "true" t nil nil)
+      (should (equal "" (buffer-string))))))
+
+(ert-deftest vm-reply-test-the-interruptible-call-writes-the-same-bytes ()
+  "The stand-in encodes the region the way `call-process-region' does.
+`sendmail-send-it' binds `coding-system-for-write' to the coding system the
+message was chosen for, so a stand-in that ignored it would put a different
+message on the wire, which is the one failure here that nobody would notice."
+  (let ((bytes nil))
+    (dolist (call '(call-process-region vm-call-process-region-interruptibly))
+      (let ((file (make-temp-file "vm-send-bytes")))
+        (unwind-protect
+            (progn
+              (with-temp-buffer
+                (insert "Grüße und ☃\n")
+                (let ((coding-system-for-write 'utf-8-unix))
+                  (funcall call (point-min) (point-max) "sh" nil nil nil "-c"
+                           (format "cat > %s" (shell-quote-argument file)))))
+              (push (with-temp-buffer
+                      (set-buffer-multibyte nil)
+                      (insert-file-contents-literally file)
+                      (buffer-string))
+                    bytes))
+          (delete-file file))))
+    (should (equal (car bytes) (cadr bytes)))
+    (should (equal "Gr\303\274\303\237e und \342\230\203\n" (car bytes)))))
+
+(ert-deftest vm-reply-test-a-send-can-be-interrupted ()
+  "REGRESSION: a C-g gets out of a mailer that has stopped answering.
+`call-process-region' stops the whole of Emacs, keyboard included, so the
+C-g is never seen and the only way out is a signal from outside
+(emacs-vm/vm#842).  `quit-flag' is what a C-g sets, and a timer sets it here
+because nothing else in Emacs runs during the wait this is replacing."
+  (let* ((start (float-time))
+         (message nil)
+         ;; Cancelled however this ends: a timer left to fire after the test
+         ;; is one that sets `quit-flag' in whatever runs next, and a stray
+         ;; quit lands on a test that has nothing to do with this.
+         (timer (run-at-time 0.3 nil (lambda () (setq quit-flag t)))))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "x")
+          (condition-case err
+              (progn
+                (vm-call-process-region-interruptibly (point-min) (point-max)
+                                                      "sleep" nil nil nil "10")
+                (setq message "the wait was not interrupted"))
+            (quit (setq message "quit"))
+            (error (setq message (error-message-string err)))))
+      (cancel-timer timer)
+      (setq quit-flag nil))
+    ;; out long before the program would have finished
+    (should (< (- (float-time) start) 5))
+    ;; and told what interrupting it did not undo
+    (should (string-match-p "sleep was interrupted" message))
+    (should (string-match-p "may have handed the message to the server"
+                            message))
+    ;; the program is gone, not left running with the message in hand
+    (should-not (cl-find-if (lambda (p)
+                              (equal "sleep" (process-name p)))
+                            (process-list)))))
+
+(ert-deftest vm-reply-test-a-mailer-that-quits-early-is-not-fatal ()
+  "The exit status answers a program that stopped reading the message.
+The input goes down a pipe where `call-process-region' hands the program a
+file, so a mailer that refuses the message and exits leaves VM writing to
+something that is not there.  Writing anyway is an error, and in a batch
+Emacs a SIGPIPE that kills it outright, which is worse than the send
+failing.  More than a pipeful, or the program would have read it all before
+exiting and there would be nothing to meet."
+  (with-temp-buffer
+    (insert (make-string 400000 ?x))
+    (should (equal 7 (vm-call-process-region-interruptibly
+                      (point-min) (point-max) "sh" nil nil nil
+                      "-c" "exit 7")))))
+
+(ert-deftest vm-reply-test-a-long-message-is-handed-over-whole ()
+  "A message bigger than a pipeful reaches the program entire.
+It is written a piece at a time, so this is the check that the pieces are
+all of it and in order."
+  (let ((file (make-temp-file "vm-send-long"))
+        (body (concat (make-string 500000 ?a) "END\n")))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert body)
+            (should (equal 0 (vm-call-process-region-interruptibly
+                              (point-min) (point-max) "sh" nil nil nil "-c"
+                              (format "cat > %s" (shell-quote-argument file))))))
+          (with-temp-buffer
+            (insert-file-contents file)
+            (should (equal body (buffer-string)))))
+      (delete-file file))))
+
+(ert-deftest vm-reply-test-a-hung-send-can-be-interrupted ()
+  "REGRESSION: a C-g gets out of a send whose mailer has stopped answering.
+Goes through `vm-mail-send' rather than around it, because what makes the
+wait interruptible is the stand-in the send installs and the sender is what
+calls it.  `mail-send' is stubbed with the one thing `sendmail-send-it' does
+that matters here: running a program on the composition and waiting for it.
+`quit-flag' is what a C-g sets, and a timer sets it because nothing in Emacs
+runs during the wait this replaces, timers included."
+  (let ((elapsed nil)
+        (reported nil)
+        (mail-header-separator "--text follows this line--"))
+    (with-temp-buffer
+      (insert "To: someone@example.com\nSubject: hung\n"
+              mail-header-separator "\nbody\n")
+      (let ((vm-confirm-mail-send nil)
+            (vm-mail-check-recipient-format nil)
+            (vm-send-using-mime nil)
+            (vm-mail-reorder-message-headers nil)
+            (vm-mail-send-hook nil)
+            (vm-system-state nil)
+            (start (float-time)))
+        (cl-letf (((symbol-function 'mail-send)
+                   (lambda ()
+                     (call-process-region (point-min) (point-max)
+                                          "sleep" nil nil nil "4")))
+                  ((symbol-function 'vm-rename-current-mail-buffer) #'ignore)
+                  ((symbol-function 'vm-keep-mail-buffer) #'ignore)
+                  ((symbol-function 'vm-display) #'ignore))
+          ;; Cancelled however this ends, or a quit meant for the send
+          ;; lands on whatever test runs next.
+          (let ((timer (run-at-time 0.3 nil (lambda () (setq quit-flag t)))))
+            (unwind-protect
+                (condition-case err
+                    (progn (vm-mail-send)
+                           (setq reported "the send was not interrupted"))
+                  (quit (setq reported "quit"))
+                  (error (setq reported (error-message-string err))))
+              (cancel-timer timer)
+              (setq quit-flag nil)))
+          (setq elapsed (- (float-time) start)))))
+    ;; out while the program is still running, not after it finished
+    (should (< elapsed 2))
+    (should (string-match-p "sleep was interrupted" reported))))
+
+(ert-deftest vm-reply-test-the-send-installs-the-interruptible-call ()
+  "REGRESSION: the send is the place the stand-in is installed.
+`vm-mail-send' is what binds it, for the length of `mail-send' and no
+longer, so a program run for any other reason is left alone."
+  (let ((during nil)
+        (mail-header-separator "--text follows this line--"))
+    (with-temp-buffer
+      (insert "To: someone@example.com\nSubject: sent\n"
+              mail-header-separator "\nbody\n")
+      (let ((vm-confirm-mail-send nil)
+            (vm-mail-check-recipient-format nil)
+            (vm-send-using-mime nil)
+            (vm-mail-reorder-message-headers nil)
+            (vm-mail-send-hook nil)
+            (vm-system-state nil))
+        (cl-letf (((symbol-function 'mail-send)
+                   (lambda ()
+                     (setq during (symbol-function 'call-process-region))))
+                  ((symbol-function 'vm-rename-current-mail-buffer) #'ignore)
+                  ((symbol-function 'vm-keep-mail-buffer) #'ignore)
+                  ((symbol-function 'vm-display) #'ignore))
+          (vm-mail-send))))
+    ;; `indirect-function' because what a `cl-letf' of a symbol leaves in
+    ;; place is the symbol itself, not the definition behind it.
+    (should (eq (indirect-function during)
+                (indirect-function 'vm-call-process-region-interruptibly)))
+    ;; and it was put back when the send was over
+    (should-not (eq (indirect-function 'call-process-region)
+                    (indirect-function during)))))
+
+(ert-deftest vm-reply-test-the-unimplemented-forms-reach-the-real-call ()
+  "A BUFFER the stand-in does not implement goes to the definition it replaced.
+Calling `call-process-region' by name there would reach the stand-in again,
+which is an unbounded recursion rather than a send.  BUFFER 0 asks for no
+wait, so there is nothing to interrupt and the real one is what answers."
+  (let ((vm-call-process-region-original
+         (symbol-function 'call-process-region)))
+    (cl-letf (((symbol-function 'call-process-region)
+               #'vm-call-process-region-interruptibly))
+      (with-temp-buffer
+        (insert "x")
+        (should-not (call-process-region (point-min) (point-max) "true"
+                                         nil 0 nil))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

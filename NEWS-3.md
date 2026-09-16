@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **A send that has stopped can be interrupted with `C-g`**
+    (emacs-vm/vm#842).  A sender that runs a program, which is what
+    `sendmail-send-it` does with `msmtp` or `sendmail` behind it, waited in
+    `call-process-region`.  That stops the whole of Emacs: no timer runs and
+    nothing reads the keyboard, so the `C-g` was not ignored but never seen,
+    and a mailer waiting on a server that had stopped answering could only be
+    got out of with a signal sent from outside Emacs.  VM now runs the
+    program so that Emacs can see the keystroke.
+
+    Interrupting kills the program, which unsends nothing: the message may
+    have reached the server already, so look at what arrived before sending
+    it again.
+
   * **`vm-pgg` is removed, and `vm-epg` replaces it** (emacs-vm/vm#568).
     Both halves of that happen in this release: 8.3.2 had vm-pgg and no
     vm-epg, so if you are upgrading from it, the package you were using is
