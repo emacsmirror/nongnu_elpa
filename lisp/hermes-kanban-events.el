@@ -128,16 +128,41 @@
                 (aref columns (1- (length columns))) 96))))
       task-id))
 
-(defun hermes-kanban--open-notification-task (buffer task-id)
-  "Display BUFFER and move to TASK-ID's row when it still exists."
-  (when (buffer-live-p buffer)
+(defun hermes-kanban--open-notification-task (buffer task-id &optional current-p)
+  "Display BUFFER and move to TASK-ID's row when it still exists.
+When supplied, CURRENT-P must confirm ownership before and after display."
+  (when (and (buffer-live-p buffer)
+             (or (null current-p) (funcall current-p)))
     (pop-to-buffer buffer)
-    (with-current-buffer buffer
-      (goto-char (point-min))
-      (when-let* ((match (text-property-search-forward
-                          'tabulated-list-id task-id #'equal)))
-        (goto-char (prop-match-beginning match))
-        (beginning-of-line)))))
+    (when (and (buffer-live-p buffer)
+               (or (null current-p) (funcall current-p)))
+      (with-current-buffer buffer
+        (goto-char (point-min))
+        (when-let* ((match (text-property-search-forward
+                            'tabulated-list-id task-id #'equal)))
+          (goto-char (prop-match-beginning match))
+          (beginning-of-line))))))
+
+(defun hermes-kanban--notification-action (tail task-id)
+  "Return an action selecting TASK-ID only while TAIL still owns its board."
+  (let* ((buffer (hermes-kanban--events-tail-buffer tail))
+         (task (copy-sequence task-id))
+         (slug (copy-sequence (hermes-kanban--events-tail-slug tail)))
+         (instance (hermes-kanban--events-tail-instance tail))
+         (id (copy-sequence (hermes-instance-id instance)))
+         (url (copy-sequence (hermes-instance-url instance)))
+         (current-p
+          (lambda ()
+            (and (hermes-kanban--events-tail-active tail)
+                 (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (and (derived-mode-p 'hermes-kanban-mode)
+                        (eq tail hermes-kanban--events-tail)
+                        (equal slug hermes-kanban--slug)
+                        (equal id (hermes-instance-id hermes-instance))
+                        (equal url (hermes-instance-url hermes-instance))))))))
+    (lambda ()
+      (hermes-kanban--open-notification-task buffer task current-p))))
 
 (defun hermes-kanban--notify-event (tail notice)
   "Notify for TAIL's classified Kanban NOTICE."
@@ -152,8 +177,7 @@
        "Hermes Kanban needs attention")
      (format "%s is %s" title (plist-get notice :label))
      :buffer buffer
-     :open (lambda ()
-             (hermes-kanban--open-notification-task buffer task-id))
+     :open (hermes-kanban--notification-action tail task-id)
      :category "hermes.kanban"
      :urgency (plist-get notice :urgency))))
 
@@ -229,12 +253,14 @@ connection that delivered TEXT so stale callbacks are ignored."
     (hermes-kanban--events-connect tail)))
 
 (defun hermes-kanban--events-on-down (tail socket &optional message)
-  "Drop TAIL's SOCKET when it is current, then reconnect with backoff.
+  "Retire TAIL's current SOCKET, then reconnect with backoff.
 Report optional MESSAGE only for the current connection."
-  (when (or (null socket)
-            (eq socket (hermes-kanban--events-tail-socket tail)))
-    (when message (message "Hermes kanban live: %s" message))
+  (when (eq socket (hermes-kanban--events-tail-socket tail))
+    ;; Unpublish before closing: websocket-close invokes on-close synchronously.
     (setf (hermes-kanban--events-tail-socket tail) nil)
+    (when (and socket (fboundp 'websocket-close))
+      (ignore-errors (websocket-close socket)))
+    (when message (message "Hermes kanban live: %s" message))
     (hermes-kanban--events-reconnect tail)))
 
 (defun hermes-kanban--events-connect (tail)
@@ -285,8 +311,8 @@ dropped connection, instead of permanently killing the tail."
   (setf (hermes-kanban--events-tail-refresh-timer tail) nil
         (hermes-kanban--events-tail-reconnect-timer tail) nil)
   (when-let* ((socket (hermes-kanban--events-tail-socket tail)))
-    (when (fboundp 'websocket-close) (ignore-errors (websocket-close socket))))
-  (setf (hermes-kanban--events-tail-socket tail) nil))
+    (setf (hermes-kanban--events-tail-socket tail) nil)
+    (when (fboundp 'websocket-close) (ignore-errors (websocket-close socket)))))
 
 (defun hermes-kanban--events-teardown ()
   "Disconnect the board buffer's events tail on mode exit or buffer kill."
