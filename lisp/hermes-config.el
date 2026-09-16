@@ -205,6 +205,7 @@ CURRENT-P, when non-nil, retains authority captured before input."
 
 (defun hermes-config-refresh (&rest _)
   "Refresh the current Hermes config buffer."
+  (interactive)
   (hermes-config--require-mutation-idle)
   (let ((buffer (current-buffer))
         (generation (hermes-browser--next-request-generation)))
