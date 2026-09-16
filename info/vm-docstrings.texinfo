@@ -582,10 +582,13 @@ folder name when messages are saved.  The alist should be of the form
 where HEADER-NAME-REGEXP and REGEXP are strings, and FOLDER
 is a string or an s-expression that evaluates to a string.
 
-If any part of the contents of the first message header whose
-name is matched by HEADER-NAME-REGEXP is matched by the regular
-expression REGEXP, VM will evaluate the corresponding FOLDER
-and use the result as the default folder for saving the message.
+HEADER-NAME-REGEXP matches header names rather than being one, so
+"To\\|Cc" is a way of looking at both: the contents of every header
+whose name it matches are joined with a comma and a space.  If any part
+of that is matched by the regular expression REGEXP, VM will evaluate
+the corresponding FOLDER and use the result as the default folder for
+saving the message.
+
 If the resulting folder name is a relative pathname, then it will
 be rooted in the directory named by @code{vm-folder-directory}, or the
 default-directory of the currently visited folder if

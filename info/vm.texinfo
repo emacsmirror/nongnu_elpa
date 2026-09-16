@@ -6263,14 +6263,18 @@ The value of @code{vm-auto-folder-alist} should be a
 list of the form:
 
 @display
-((@var{header-name}
+((@var{header-name-regexp}
    (@var{regexp} . @var{folder-name}) ...)
   ...)
 @end display
 
-@noindent where @var{header-name} and @var{regexp} are strings, and
+@noindent where @var{header-name-regexp} and @var{regexp} are strings, and
 @var{folder-name} is a string or an s-expression that evaluates to a
-string.  The value of @var{folder-name} can be 
+string.  @var{header-name-regexp} matches header names rather than being
+one, so @samp{To\|Cc} is a way of looking at both: where several headers
+match it, their contents are joined with a comma and a space and
+@var{regexp} is matched against the whole.  The value of @var{folder-name}
+can be 
 
 @itemize
 @item 
@@ -6283,14 +6287,13 @@ non-nil, or
 the maildrop specification of an @acronym{IMAP} folder.
 @end itemize
 
-If any part of the contents of the message header named by
-@var{header-name} is matched by the regular expression
-@var{regexp}, VM will evaluate the corresponding
-@var{folder-name} and use the result as the default when
-prompting for a folder to save the message in.  
+If any part of those contents is matched by the regular expression
+@var{regexp}, VM will evaluate the corresponding @var{folder-name} and use
+the result as the default when prompting for a folder to save the message
+in.
 
 When @var{folder-name} is evaluated, the current buffer will contain only
-the contents of the header named by @var{header-name}.  It is safe to
+those contents.  It is safe to
 modify this buffer.  You can use the match data from any @samp{\( @dots{}
 \)} grouping constructs in @var{regexp} along with the function
 @code{buffer-substring} to build a folder name based on the header information.
@@ -7746,30 +7749,24 @@ headers.
 @item written
 matches message if it has been saved without its headers.
 @item new
-matches message if it is new.
-@item recent
-matches message if it is new.  Same as the @code{new} selector.
+@itemx recent
+matches message if it is new.  Two names for one selector.
 @item read
 matches message if it is neither new nor unread.
 @item unread
-matches message if it is not new and hasn't been read.
-@item unseen
-matches message if it is not new and hasn't been read.
-Same as the @code{unread} selector.
+@itemx unseen
+matches message if it is not new and hasn't been read.  Two names for one
+selector.
 @item flagged
 matches message if it is flagged (@pxref{Message Attributes}).
 @item unflagged
 matches message if it is not flagged.
 @item replied
-matches message if it has been replied to.
-@item answered
-matches message if it has been replied to.  Same as the @code{replied}
-selector. 
+@itemx answered
+matches message if it has been replied to.  Two names for one selector.
 @item unreplied
-matches message if it has not been replied to.
-@item unanswered
-matches message if it has not been replied to.
-Same as the @code{unreplied} selector.
+@itemx unanswered
+matches message if it has not been replied to.  Two names for one selector.
 @item forwarded
 matches message if it has been forwarded using
 a variant of @code{vm-forward-message}, @code{vm-send-digest} or one
@@ -9950,10 +9947,6 @@ The reason for their separation is historical.
 
 @node Message Internals, Summary Internals, Folder Internals, Internals
 @section Message Internals
-
-The format of the mail messages is as described in RFC 822. The message
-bodies can be in the MIME format, as described in RFC 2045, 2046 and
-2047. See @xref{Message Internals, RFC compliance}.
 
 The message data structure is a vector containing various pieces of
 data about the message, some of which is permanent and some that is

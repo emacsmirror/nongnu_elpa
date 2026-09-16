@@ -79,6 +79,34 @@ Bug report
       (should (equal "bugs"
                      (vm-auto-select-folder vm-message-pointer))))))
 
+(ert-deftest vm-save-test-auto-select-folder-matches-header-names-as-a-regexp ()
+  "The first element of an entry matches header names rather than being one.
+The manual called it HEADER-NAME and said the contents of the header it named
+were searched, which is two things understated (emacs-vm/vm#776): it is a
+regexp, and where more than one header name matches, their contents are
+joined with a comma and a space before the search."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+To: alice@example.com
+Cc: bob@example.com
+From: anyone@example.com
+Subject: hello
+Message-ID: <test@example.com>
+
+Body
+"
+    (let ((vm-save-using-auto-folders t))
+      ;; a regexp over the names, not a name
+      (let ((vm-auto-folder-alist '(("T." ("alice@" . "alices")))))
+        (should (equal "alices" (vm-auto-select-folder vm-message-pointer))))
+      ;; past the first header that matches the name
+      (let ((vm-auto-folder-alist '(("To\\|Cc" ("bob@" . "bobs")))))
+        (should (equal "bobs" (vm-auto-select-folder vm-message-pointer))))
+      ;; and the contents of both, joined with a comma and a space
+      (let ((vm-auto-folder-alist
+             '(("To\\|Cc" ("alice@example.com, bob@example.com" . "both")))))
+        (should (equal "both" (vm-auto-select-folder vm-message-pointer)))))))
+
 (ert-deftest vm-save-test-auto-select-folder-no-match ()
   "Test vm-auto-select-folder returns nil when no match."
   (vm-test-with-folder
