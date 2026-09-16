@@ -2580,18 +2580,15 @@ mail is present, VM will retrieve it.
 
 @vindex vm-mail-check-interval
 @vindex vm-mail-check-always
-If the value of the variable @code{vm-mail-check-interval} is a
-positive integer @var{n}, VM will check for new mail every @var{n}
-seconds, but instead of retrieving mail, the word ``Mail'' will appear
-on the Emacs mode line of folders that have mail waiting.  Normally,
-once VM finds new mail, it will turn on the ``Mail'' indicator and
-refrain from checking again until you retrieve the new mail.  However,
-if multiple mail clients are trying to retrieve mail from the same
-spool, it is possible that the new mail might get retrieved into
-another mail client and your ``Mail'' indicator won't reflect the
-situation.  If you need to be particular about new mail in such a
-situation, then you should set the variable
-@code{vm-mail-check-always}. 
+If the value of the variable @code{vm-mail-check-interval} is a positive
+integer @var{n}, VM checks for new mail every @var{n} seconds and, rather
+than retrieving it, puts the word ``Mail'' on the Emacs mode line of folders
+that have mail waiting.  Having found mail it leaves the indicator on and
+checks no further until you retrieve it.
+
+Where several mail clients read the same spool, another of them can take
+that mail, and the indicator then says what is no longer true.  Set
+@code{vm-mail-check-always} to have VM go on checking.
 
 @cindex checking for mail, cost of
 For a @acronym{POP} or @acronym{IMAP} folder a check is a conversation with the
@@ -2630,18 +2627,25 @@ compromised.
 
 @unnumberedsubsec Recovering Folders
 
-When you visit a folder, VM checks for the existence of an
-auto-save file that has been modified more recently than the
-folder file.  If such an auto-save file exists, there is a good
-chance that Emacs or your operating system crashed while VM
-was visiting a folder.  VM will then write a message to the echo
-area informing you of the existence of the auto-save file and
-visit the folder in @emph{read-only} mode.  Visiting the folder in
-read-only mode prevents you from modifying the folder, which
-in turn prevents Emacs from wanting to write new changes to
-the auto-save file.  VM will not retrieve new mail for a folder
-that is in read-only mode.  VM also skips summary
-generation and @acronym{MIME} decoding to help catch your attention.
+When you visit a folder, VM looks for an auto-save file modified more
+recently than the folder file.  One that exists is a good sign that Emacs or
+your operating system crashed while VM was visiting the folder, so VM says
+so in the echo area and visits the folder in @emph{read-only} mode.
+Read-only mode is what protects the auto-save file: nothing can modify the
+folder, so Emacs has no new changes to write over it.  While the
+folder is read-only:
+
+@itemize
+@item
+VM retrieves no new mail for it.
+@item
+No summary is generated.
+@item
+@acronym{MIME} is not decoded.
+@end itemize
+
+@noindent
+The last two are to catch your attention.
 
 @findex vm-recover-folder
 @findex recover-file
@@ -2652,39 +2656,33 @@ the @samp{Recover File:} prompt press @key{RET}.  Emacs's built-in
 VM is unable to obtain reliable data regarding mail folders from
 Emacs.
 
-In response to @code{vm-recover-folder}, Emacs will display a detailed
-directory listing showing the folder file and the auto-save file and ask you
-whether you want to recover from the auto-save file.  A good rule of thumb is
-to answer ``yes'' if the auto-save file is larger than the folder file.  If
-the auto-save file is significantly smaller, Emacs might not have completed
-writing the auto-save file during the previous crash.  Or it could be that
-the smaller auto-save file reflects the results of an expunge that you had
-not yet committed to disk before the crash.  If so, answering ``no'' means
-you might have to do that expunge again, but this is better than not knowing
-whether the auto-save file was truncated.
+In response to @code{vm-recover-folder}, Emacs displays a detailed directory
+listing showing the folder file and the auto-save file, and asks whether you
+want to recover from the auto-save file.  Their sizes are the rule of thumb:
 
 @table @asis
-@item If you answered yes
+@item Yes, the auto-save file being larger
 The folder buffer takes the contents of the auto-save file and VM re-parses
 it.  Buffer and disk copy now differ, so VM fetches no new mail for the
 folder until they agree: when you are satisfied that the recovered folder is
 whole and intact, type @kbd{S} to save it, after which @kbd{g} retrieves new
 mail as usual.
-@item If you answered no
-Type @kbd{C-x C-q}, which is @code{vm-toggle-read-only} in a folder buffer,
-to take the folder out of read-only mode.  Read and retrieve mail normally;
-the auto-save file stays on disk and is ignored.
+@item No, it being significantly smaller
+Either Emacs did not finish writing it during the crash, or it holds an
+expunge you had not yet committed to disk, and answering ``no'' may mean
+doing that expunge again.  That is better than not knowing whether the file
+was truncated.  Type @kbd{C-x C-q}, which is @code{vm-toggle-read-only} in a
+folder buffer, to take the folder out of read-only mode; read and retrieve
+mail normally, the auto-save file staying on disk and ignored.
 @end table
 
-If you are visiting a @acronym{POP} or @acronym{IMAP} folder (rather than a
-local folder) that was modified during a previous crash, the process of
-recovery is similar.  However, there will be less useful information in the
-auto-save file in this case.  When you synchronize an @acronym{IMAP} folder
-with the server, only the changes made during the current VM session are
-saved to the server.  Changes stored in the auto-save file were made in a
-previous session of VM and, so, cannot be saved to the server.  So, saying
-``no'' to the recovery question and toggling the read-only status (@kbd{C-x
-C-q}) is a better option in the case of server folders.
+Recovering a @acronym{POP} or @acronym{IMAP} folder modified during a
+previous crash works the same way, but its auto-save file holds less that is
+of any use.  Synchronizing an @acronym{IMAP} folder saves only the changes
+made during the current VM session, and the changes in the auto-save file
+were made in an earlier one, so they cannot reach the server at all.
+Answering ``no'' and taking the folder out of read-only mode with @kbd{C-x
+C-q} is the better course for a server folder.
 
 @unnumberedsubsec Recovering Message Compositions
 
@@ -2712,16 +2710,19 @@ when Emacs @code{recover-session} command asks you whether to recover a VM
 folder, the best option is to answer ``no''.  Then you should recover the
 folders separately, using the @code{vm-recover-folder} command.
 
-If you do answer ``yes'', then Emacs loads the auto-save file into a buffer.
-The auto-save file still exists on the disk, but it will get deleted when
-you save the buffer.  So, you should examine the folder before you save it.
-Run @kbd{M-x vm-mode} in the buffer corresponding to the VM folder, make
-sure that it is not damaged, and then save the folder.  If you do not
-believe that the auto-saved version is good, you can kill the buffer.  At
-this point, VM asks you for confirmation whether you really want to kill the
-buffer and, secondly, whether you want to delete the auto-save file.  If you
-answer ``yes'' to the last question, then the auto-saved folder will be
-gone for ever.
+If you do answer ``yes'', Emacs loads the auto-save file into a buffer.  The
+auto-save file is still on the disk and is deleted when you save the buffer,
+so examine the folder before you save it:
+
+@enumerate
+@item
+Run @kbd{M-x vm-mode} in the buffer holding the folder.
+@item
+Save it once you are satisfied that it is not damaged.  Or kill the buffer,
+where the auto-saved version is not one you trust: VM asks whether you mean
+to kill it and then whether to delete the auto-save file, and answering
+``yes'' to the second is what loses the auto-saved folder for ever.
+@end enumerate
 
 
 
@@ -4517,18 +4518,17 @@ typing @kbd{M-x vm-mail}.  However, only
 (@code{vm-yank-message-other-folder}) will work; all the other commands
 require a parent folder.
 
-If you send a message and it is returned by the mail system
-because it was undeliverable, you can resend the message by
-typing @kbd{M-r} (@code{vm-resend-bounced-message}).  VM will
-extract the old message and its pertinent headers from the
-returned message, and place you in a VM Mail mode buffer.  A
-Resent-To header will be added, which you can fill in with
-the corrected addresses of the recipients that bounced.  You
-can also added a Resent-Cc header, which has the same meaning
-as a Cc header in a normal message.  Mail will only be sent to
-the addresses in the Resent-To and Resent-Cc headers unless
-you delete both of those headers.  In that case the To and Cc
-headers will be used.
+If you send a message and the mail system returns it as undeliverable, type
+@kbd{M-r} (@code{vm-resend-bounced-message}) to send it again.  VM extracts
+the old message and its pertinent headers from the returned message and puts
+you in a VM Mail mode buffer, with a @samp{Resent-To} header to fill in with
+the corrected addresses of the recipients that bounced.  A @samp{Resent-Cc}
+header can be added as well, and means there what a @samp{Cc} header means
+in an ordinary message.
+
+@noindent
+Mail goes only to the addresses in those two headers.  Delete both and the
+@samp{To} and @samp{Cc} headers are used instead.
 
 @menu
 * Sending Options::        Variables that control mail sending.
@@ -4698,18 +4698,22 @@ the tag and use @kbd{M-x vm-mime-rename-attachment}, or choose
 touched.
 
 @cindex Content-Disposition
-If you click the right mouse button on the attachment tag, a menu
-will appear that allows you to change the content disposition of
-the attachment.  The @dfn{Content-Disposition} of a @acronym{MIME} object
-gives a mail reader a hint as to whether the object should be
-displayed inline or as an inert tag or button that you must
-activate in some fashion.  @dfn{Inline} display usually means
-that the object will be displayed within or alongside the message
-text, if that is possible.  @dfn{Attachment}, when used as a
-content disposition, means that the object will likely be
-displayed as a tag.  By default, VM specifies an inline
-disposition for all @acronym{MIME} types except @samp{application} and
-@samp{model} types.
+Clicking the right mouse button on the attachment tag brings up a menu that
+changes the content disposition of the attachment.  The
+@dfn{Content-Disposition} of a @acronym{MIME} object is a hint to the
+reader's mail program, and no more than a hint:
+
+@table @asis
+@item @dfn{Inline}
+The object is displayed within or alongside the message text, where that is
+possible.
+@item @dfn{Attachment}
+It is displayed as an inert tag or button, which the reader activates.
+@end table
+
+@noindent
+VM specifies inline for every @acronym{MIME} type but @samp{application} and
+@samp{model}.
 
 @kindex C-c C-b
 @findex vm-attach-buffer
@@ -6832,17 +6836,23 @@ individual messages.  These messages can then be handled like any other
 messages under VM.
 
 @findex vm-burst-digest
-The command (@code{vm-burst-digest}) bursts a digest into its
-individual messages and appends them to the current folder.  These
-messages are then assimilated into the current folder as new messages.
-The original digest message is not altered, and the messages extracted
-from it are not part of the on-disk copy of the folder until a save is
-done.  You will be prompted for the type of digest to burst.  VM
-understands three formats, ``rfc934'', ``rfc1153'' and ``mime''.  If you
-don't know what kind of digest you've received, type ``guess'' and VM
-will try to figure out the digest type on its own.  VM is pretty smart
-about digests and will usually make the correct choice if the digest is
-properly formatted.
+@vindex vm-digest-burst-type
+The command (@code{vm-burst-digest}) bursts a digest into its individual
+messages and appends them to the current folder, where they are assimilated
+as new messages.  The original digest message is not altered, and the
+messages extracted from it are not part of the on-disk copy of the folder
+until a save is done.  You are prompted for the type of digest to burst,
+@code{vm-digest-burst-type} giving the default:
+
+@table @samp
+@item rfc934
+@itemx rfc1153
+@itemx mime
+The three formats VM understands.
+@item guess
+Let VM work out which of them it is, for a digest you know nothing about.
+It is usually right where the digest is properly formatted.
+@end table
 
 One line of a message body is not returned as it was sent when it travels
 in an RFC 1153 digest.  RFC 1153 defines no way to quote a separator that
@@ -8311,17 +8321,20 @@ classes are:
     searching-message
 @end display
 
-When a VM command is executed, window configurations are searched 
-for as follows.  First, a command specific configuration is
-searched for.  If one is found, it is used.  Next a class
-configuration is searched for.  Not all commands are in command
-classes.  Message composition commands are in the
-``composing-message'' class.  All the @code{vm-quit*} commands are in the
-``quitting'' class.  All the VM commands that set and clear
-message marks are in the ``marking-message'' class, and so on.
-If such a class configuration is found it is used.  If no
-matching class configuration is found, the ``default'' class
-configuration is used, if it is defined.
+When a VM command is executed, the configuration to use is looked for in
+this order, and the first one found is the one used:
+
+@enumerate
+@item
+The configuration for that command.
+@item
+The configuration for the command's class, where the command is in one.  Not
+all are.  Message composition commands are in the ``composing-message''
+class, every @code{vm-quit*} command is in ``quitting'', the commands that
+set and clear message marks are in ``marking-message'', and so on.
+@item
+The ``default'' class configuration, where one is defined.
+@end enumerate
 
 Note that when a window configuration is saved the selected
 window at that time will be the selected window when that window
@@ -8846,20 +8859,17 @@ for receiving and sending email, or they shared their file systems with
 other servers which provided such services.  The local system administrators
 took care of all the configuration.
 
-Today, the majority of users receive their email and reply to them on remote
-servers across th Internet.  A variety of protocols are used to download,
-share and transmit email, which the users need to know about.  In addition,
-the email messages sent across the network are open to probes that violate
-our privacy and security.  To address the problem, additional security
-protocols are used to protect privacy.  Finally, VM runs inside the Emacs
-environment and depends on it for the implementation of various protocols,
-and Emacs in turn depends on other Gnu tools for other implementations of
-protocols.  This section is an attempt to bring together all the information
-you would be potentially required to master in order to configure VM through
-all these protocols and services.  It is only expected to be introductory.
-You may need to consult additional documentation of other protocols and
-programs in order to fully understand how to configure your email
-environment.
+Today most users receive their email and reply to it on remote servers
+across the Internet, through a variety of protocols for downloading, sharing
+and transmitting mail that they have to know something about.  Messages
+crossing the network are open to probes that violate privacy and security,
+which further protocols exist to protect against.  VM runs inside Emacs and
+depends on it to implement these protocols, and Emacs in turn depends on
+other GNU tools for some of them.
+
+This section brings together what configuring VM through all of them
+requires of you.  It is introductory: the documentation of the protocols and
+the programs themselves goes further.
 
 @unnumberedsubsec Configuration for email reception
 
