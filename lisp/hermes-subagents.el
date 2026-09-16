@@ -351,17 +351,8 @@ Only structured parent tool results supply paths, never text or filenames."
 (defun hermes-work-log--decode (result)
   "Return log text from managed-file RESULT, or signal invalid data.
 The endpoint returns whole files, not a tail or a paginated transcript."
-  (let ((size (hermes-transport--get result 'size))
-        (data (hermes-transport--get result 'data_url)))
-    (unless (and (natnump size) (<= size hermes-work-log--max-bytes)
-                 (stringp data)
-                 (<= (length data) (+ 256 (* 4 (/ (+ hermes-work-log--max-bytes 2) 3))))
-                 (string-match "\\`data:[^,;]+;base64," data))
-      (error "Worker log unavailable: invalid response or exceeds 2 MiB display limit"))
-    (let ((bytes (base64-decode-string (substring data (match-end 0)))))
-      (unless (= (string-bytes bytes) size)
-        (error "Worker log changed during read or has an invalid size; refresh"))
-      (decode-coding-string bytes 'utf-8))))
+  (decode-coding-string
+   (hermes-transport-file-bytes result hermes-work-log--max-bytes) 'utf-8))
 
 (defun hermes-work-log--current-p (buffer binding token)
   "Return non-nil if BUFFER still owns BINDING and request TOKEN."

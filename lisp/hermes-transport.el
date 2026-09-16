@@ -97,6 +97,25 @@ OBJECT may be a hash table, plist, or alist.  Return
         (unless (eq value hermes-transport--missing)
           (throw 'found value))))))
 
+(defun hermes-transport-file-bytes (result max-bytes)
+  "Return literal bytes from managed-file RESULT, bounded by MAX-BYTES.
+Validate the size/data_url envelope and require canonical base64, as
+emitted by the backend.  Bound the data URL before decoding.
+Path identity, text decoding, and presentation remain caller-owned."
+  (let ((size (hermes-transport--get result 'size))
+        (url (hermes-transport--get result 'data_url)))
+    (unless (and (natnump size) (<= size max-bytes)
+                 (stringp url)
+                 (<= (length url) (+ 1024 (* 4 (/ (+ size 2) 3))))
+                 (string-match "\\`data:[^;,\n]*;base64,\\([A-Za-z0-9+/]*=*\\)\\'" url))
+      (error "Invalid managed file response or exceeds %d-byte limit" max-bytes))
+    (let* ((encoded (match-string 1 url))
+           (bytes (base64-decode-string encoded)))
+      (unless (and (= (length bytes) size)
+                   (equal encoded (base64-encode-string bytes t)))
+        (error "Managed file size or encoding mismatch"))
+      bytes)))
+
 (defun hermes-transport--get-any (object keys)
   "Return the first present value in OBJECT for KEYS."
   (catch 'found

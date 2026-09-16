@@ -46,6 +46,32 @@
                  (:size 1 :data_url "data:text/plain;base64,!!!")))
     (should-error (hermes-work-log--decode bad))))
 
+(ert-deftest hermes-work-log-rejects-noncanonical-base64 ()
+  "Both viewers require the canonical encoding emitted by the backend."
+  (require 'hermes-files)
+  (should (equal (hermes-work-log--decode
+                  '(:size 1 :data_url "data:text/plain;base64,eA==")) "x"))
+  (dolist (encoded '("eB==" "eA" "eA==\n" "e A=="))
+    (let ((result (list :path "/remote/file" :size 1
+                        :data_url (concat "data:text/plain;base64," encoded))))
+      (should-error (hermes-work-log--decode result))
+      (should-error (hermes-files--decode result "/remote/file")))))
+
+(ert-deftest hermes-managed-file-viewer-limits-remain-distinct ()
+  "Files allow four MiB, logs two MiB, including each exact boundary."
+  (require 'hermes-files)
+  (dolist (size '(2097152 2097153 4194304 4194305))
+    (let* ((bytes (make-string size ?x))
+           (result (list :path "/remote/file" :size size
+                         :data_url (concat "data:application/octet-stream;base64,"
+                                           (base64-encode-string bytes t)))))
+      (if (<= size 4194304)
+          (should (equal (hermes-files--decode result "/remote/file") bytes))
+        (should-error (hermes-files--decode result "/remote/file")))
+      (if (<= size 2097152)
+          (should (equal (hermes-work-log--decode result) bytes))
+        (should-error (hermes-work-log--decode result))))))
+
 (ert-deftest hermes-work-log-refresh-owner-and-point ()
   "Fetch through the captured client once, preserve point, and retain failures."
   (let* ((client (list 'exact-client))
