@@ -112,6 +112,8 @@
      (vm-menu-can-recover-p)]
     ["Save" vm-save-folder (vm-menu-can-save-p)]
     ["Save As..." vm-write-file t]
+    ["Back Up Folder (copy of the file on disk)" vm-backup-folder
+     (vm-menu-can-backup-p)]
     ["Quit" vm-quit-no-change t]
     ["Save & Quit" vm-quit t]
     "---"
@@ -661,6 +663,15 @@ set to the command name so that window configuration will be done."
       (save-excursion
 	(vm-select-folder-buffer)
 	(and (buffer-modified-p) buffer-file-name))
+    (error nil)))
+
+(defun vm-menu-can-backup-p ()
+  (condition-case nil
+      (save-excursion
+	(vm-select-folder-buffer)
+	(and (not (eq major-mode 'vm-virtual-mode))
+	     buffer-file-name
+	     (file-exists-p buffer-file-name)))
     (error nil)))
 
 (defun vm-menu-can-recover-p ()

@@ -6225,6 +6225,34 @@ none."
       (vm-inform 5 "Kept the folder as it was in %s"
 		 (abbreviate-file-name backup)))))
 
+;;;###autoload
+(defun vm-backup-folder ()
+  "Keep a copy of this folder as it is on disk.
+Emacs backs a file up on the first save of its buffer and not again, so a
+folder saved earlier in this session has no copy of what is on disk now.
+This makes one whatever `make-backup-files' says.
+
+The copy is named as Emacs would name a backup: `backup-directory-alist'
+decides where it goes and the numbered-backup settings how many are kept, so
+it lands where your other backups are.
+
+It copies the file and not the buffer, so changes you have not saved are not
+in it.  Save the folder first to keep those.
+
+Run it from anywhere in a folder, the summary included.  `backup-buffer'
+does nothing in a summary or presentation buffer, those visiting no file,
+which is what makes a command of VM's own worth having."
+  (interactive)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-virtual-folder)
+  (unless buffer-file-name
+    (error (concat "This folder has no file to copy; write it to one with"
+		   " vm-write-file first")))
+  (unless (file-exists-p buffer-file-name)
+    (error "%s does not exist yet; save the folder with vm-save-folder first"
+	   (abbreviate-file-name buffer-file-name)))
+  (vm-backup-folder-file))
+
 (defun vm-folder-attendant-files (file)
   "The files VM keeps beside the folder FILE.
 Its index file and the message summary Thunderbird writes.  Not the backup,

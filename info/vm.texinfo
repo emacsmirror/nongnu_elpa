@@ -2725,6 +2725,39 @@ gone for ever.
 
 
 
+@unnumberedsubsec Backing Up a Folder
+
+@findex vm-backup-folder
+@cindex backups, of a folder
+@cindex folder, backing up
+Emacs backs a file up on the first save of its buffer and not again, so a
+folder saved earlier in the session has no copy of what is on disk now.  To
+make one:
+
+@vmdocvmbackupfolder
+
+@noindent
+@kbd{C-u C-u S} does it as part of a save, @code{vm-save-folder} handing its
+prefix argument to @code{save-buffer}, which documents that one.  It saves as
+well, and does nothing at all where the folder is unmodified.
+
+To keep a copy at every save instead of the first, clear the flag Emacs sets
+when it has backed a buffer up:
+
+@lisp
+(add-hook 'vm-mode-hook
+          (lambda ()
+            (add-hook 'before-save-hook
+                      (lambda () (setq buffer-backed-up nil))
+                      nil t)))
+@end lisp
+
+@vindex vm-postponed-folder
+@noindent
+A drafts folder you are not visiting is a file VM appends to rather than a
+buffer it saves, so nothing backs it up.  Visit it to have the copies, or
+keep them another way.
+
 @unnumberedsubsec Reverting a Folder
 
 @findex revert-buffer
@@ -7892,6 +7925,7 @@ These commands will signal an error when invoked in a virtual folder:
 @display
     vm-save-buffer
     vm-write-file
+    vm-backup-folder
     vm-change-folder-type
     vm-expunge-imap-messages
     vm-expunge-pop-messages
