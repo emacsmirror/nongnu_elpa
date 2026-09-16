@@ -8,6 +8,18 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`M-x vm-backup-folder` keeps a copy of a folder as it is on disk**
+    (emacs-vm/vm#843).  Emacs backs a file up on the first save of its
+    buffer and not again, so a folder saved earlier in the session has no
+    copy of what is on disk now.  This makes one, named as Emacs would name
+    a backup, so it lands wherever `backup-directory-alist` and the
+    numbered-backup settings put your others.
+
+    It runs from anywhere in a folder, the summary included.  `backup-buffer`
+    does nothing there: a summary or presentation buffer visits no file, so a
+    command that clears `buffer-backed-up` and calls it appears to do nothing
+    at all.
+
   * **A send that has stopped can be interrupted with `C-g`**
     (emacs-vm/vm#842).  A sender that runs a program, which is what
     `sendmail-send-it` does with `msmtp` or `sendmail` behind it, waited in

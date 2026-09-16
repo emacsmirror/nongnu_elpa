@@ -6645,6 +6645,89 @@ crash box nor visibly in the folder."
     (should-error (vm-move-spooled-mail
 		   (lambda (&rest _) (error "server said no")) "drop" "crash" nil))))
 
+;;; Backing a folder up by hand (emacs-vm/vm#843)
+
+(ert-deftest vm-folder-test-backing-up-works-from-the-summary ()
+  "REGRESSION: the backup command works where a reader actually is.
+`backup-buffer' does nothing in a summary buffer, which visits no file, so a
+command that clears `buffer-backed-up' and calls it appears to do nothing at
+all.  `vm-backup-folder' selects the folder buffer first, so it works from
+anywhere in the folder."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-backup" t)))
+         (folder (expand-file-name "inbox" dir))
+         (backup (expand-file-name "inbox~" dir)))
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder folder)
+          (vm-folder-test--with-visited-folder folder
+            (vm-summarize)
+            (should vm-summary-buffer)
+            ;; the summary buffer has no file of its own, which is the whole
+            ;; of why the reporter saw nothing happen
+            (should-not (buffer-local-value 'buffer-file-name vm-summary-buffer))
+            (should-not (file-exists-p backup))
+            (with-current-buffer vm-summary-buffer
+              (vm-backup-folder))
+            (should (file-exists-p backup))
+            (should (equal (vm-folder-test--file-bytes folder)
+                           (vm-folder-test--file-bytes backup)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-backing-up-copies-the-file-not-the-buffer ()
+  "The copy is of the folder on disk, which is what an Emacs backup is.
+A change not yet saved is in the buffer and not in the file, so it is not in
+the copy either, and the docstring says so."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-backup" t)))
+         (folder (expand-file-name "inbox" dir))
+         (backup (expand-file-name "inbox~" dir)))
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder folder)
+          (vm-folder-test--with-visited-folder folder
+            (let ((buffer-read-only nil))
+              (save-excursion
+                (goto-char (point-max))
+                (insert "not saved yet\n")))
+            (vm-backup-folder)
+            (should (file-exists-p backup))
+            (should-not (string-match-p
+                         "not saved yet" (vm-folder-test--file-bytes backup)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-backup-goes-where-the-others-do ()
+  "`backup-directory-alist' decides where the copy lands, as for any file.
+The name comes from `make-backup-file-name', so a reader who keeps backups
+somewhere else gets this one there and not beside the folder."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-backup" t)))
+         (elsewhere (file-name-as-directory (expand-file-name "kept" dir)))
+         (folder (expand-file-name "inbox" dir)))
+    (make-directory elsewhere)
+    (unwind-protect
+        (let ((backup-directory-alist (list (cons "." elsewhere))))
+          (vm-folder-test--write-plain-folder folder)
+          (vm-folder-test--with-visited-folder folder
+            (vm-backup-folder)
+            (should-not (file-exists-p (expand-file-name "inbox~" dir)))
+            (should (= 1 (length (directory-files elsewhere nil "inbox"))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-folder-with-no-file-cannot-be-backed-up ()
+  "A folder with nothing on disk says so rather than copying nothing.
+`vm-backup-folder-file' is silent about it, being called in the middle of
+other work; the command is what a reader typed, so it answers."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-backup" t)))
+         (folder (expand-file-name "inbox" dir)))
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder folder)
+          (vm-folder-test--with-visited-folder folder
+            (delete-file folder)
+            (let* ((text-quoting-style 'grave)
+                   (err (should-error (vm-backup-folder) :type 'error)))
+              (should (string-match-p "does not exist yet"
+                                      (error-message-string err))))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

@@ -1188,6 +1188,25 @@ Default value: @code{vm-summary-highlight}
 
 @appendixsubsec Commands
 
+@deffn Command vm-backup-folder
+@findex vm-backup-folder
+Keep a copy of this folder as it is on disk.
+Emacs backs a file up on the first save of its buffer and not again, so a
+folder saved earlier in this session has no copy of what is on disk now.
+This makes one whatever @code{make-backup-files} says.
+
+The copy is named as Emacs would name a backup: @code{backup-directory-alist}
+decides where it goes and the numbered-backup settings how many are kept, so
+it lands where your other backups are.
+
+It copies the file and not the buffer, so changes you have not saved are not
+in it.  Save the folder first to keep those.
+
+Run it from anywhere in a folder, the summary included.  @code{backup-buffer}
+does nothing in a summary or presentation buffer, those visiting no file,
+which is what makes a command of VM’s own worth having.
+@end deffn
+
 @deffn Command vm-change-folder-type type &optional file output
 @findex vm-change-folder-type
 Change folder type to TYPE.
