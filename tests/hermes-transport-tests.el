@@ -5,6 +5,43 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-transport-file-bytes-canonical-envelope ()
+  "Decode canonical envelopes without interpreting their bytes as text."
+  (dolist (wire '("{\"size\":0,\"data_url\":\"data:application/octet-stream;base64,\"}"
+                  "{\"size\":3,\"data_url\":\"data:application/octet-stream;base64,AP9B\"}"))
+    (let ((expected (if (string-match-p "AP9B" wire) (unibyte-string 0 255 65) "")))
+      (dolist (object-type '(alist plist hash-table))
+        (let* ((result (json-parse-string wire :object-type object-type))
+               (bytes (hermes-transport-file-bytes result 3)))
+          (should (equal bytes expected))
+          (should-not (multibyte-string-p bytes)))))))
+
+(ert-deftest hermes-transport-file-bytes-rejects-invalid-envelope ()
+  "Reject bad sizes, URL shapes, payloads, padding and nonzero pad bits."
+  (dolist (size '(nil t :false -1 1.0 "1" 4))
+    (should-error (hermes-transport-file-bytes
+                   (list :size size :data_url "data:x;base64,eA==") 3)))
+  (dolist (url '(nil 42 "file:/remote/log" "data:x,eA=="
+                 "data:x;utf-8;base64,eA==" "data:x\n;base64,eA=="
+                 "data:x;base64,eA" "data:x;base64,eA==="
+                 "data:x;base64,e@==" "data:x;base64,eA==\n"
+                 "data:x;base64,e A==" "data:x;base64,eB=="
+                 "data:x;base64,eA==trailing" "data:x;base64,eHg="))
+    (should-error (hermes-transport-file-bytes (list :size 1 :data_url url) 3))))
+
+(ert-deftest hermes-transport-file-bytes-bounds-before-decoding ()
+  "Reject declared oversize and oversized URL allocations before decoding."
+  (let ((calls 0))
+    (cl-letf (((symbol-function 'base64-decode-string)
+               (lambda (&rest _) (cl-incf calls) "")))
+      (dolist (result (list '(:size 4 :data_url "data:x;base64,")
+                           (list :size 0 :data_url
+                                 (concat "data:" (make-string 1024 ?x) ";base64,"))
+                           (list :size 0 :data_url
+                                 (concat "data:x;base64," (make-string 1024 ?A)))))
+        (should-error (hermes-transport-file-bytes result 3)))
+      (should (zerop calls)))))
+
 (ert-deftest hermes-transport-work-process-exit-types ()
   "Only integer exit evidence makes an exited process done or failed."
   (dolist (exit '("null" "false" "true" "0.0" "\"0\"" "[]" "{}"))

@@ -1556,6 +1556,138 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
 
 ;;; Group N: live events tail
 
+(defun hermes-kanban-test--await (predicate)
+  "Wait briefly for PREDICATE while servicing disposable socket traffic."
+  (let ((deadline (+ (float-time) 3)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (should (funcall predicate))))
+
+(ert-deftest hermes-kanban-events-callback-fault-retires-real-socket ()
+  "Callback faults close both peers before reconnect; stale callbacks are inert."
+  (require 'websocket)
+  (dolist (frame '("{\"events\":[{\"task_id\":\"task\",\"kind\":\"blocked\"}],\"cursor\":1}"
+                   "{\"events\":42,\"cursor\":1}"))
+    (let (server peers client successor tail old-close old-error)
+      (with-temp-buffer
+        (hermes-kanban-mode)
+        (setq hermes-instance '("test" . "http://example.invalid")
+              hermes-kanban--slug "board")
+        (unwind-protect
+            (progn
+              (setq server (websocket-server
+                            0 :host "127.0.0.1"
+                            :on-open (lambda (ws) (push ws peers))))
+              (let* ((url (format "ws://127.0.0.1:%d/events"
+                                  (process-contact server :service)))
+                     (hermes-kanban--events-debounce 60))
+                (cl-letf (((symbol-function
+                            'hermes-dashboard-transport-kanban-events-url-async)
+                           (lambda (&rest _)
+                             (hermes--promise-resolved
+                              (list :url url :redacted-url url :secrets nil))))
+                          ((symbol-function 'hermes-notifications-notify)
+                           (lambda (&rest _) (error "Injected notification failure"))))
+                  (hermes-kanban-toggle-live)
+                  (setq tail hermes-kanban--events-tail
+                        client (hermes-kanban--events-tail-socket tail)
+                        old-close (websocket-on-close client)
+                        old-error (websocket-on-error client))
+                  (hermes-kanban-test--await
+                   (lambda () (and peers (eq 'open (websocket-ready-state client)))))
+                  (websocket-send-text (car peers) frame)
+                  (hermes-kanban-test--await
+                   (lambda () (hermes-kanban--events-tail-reconnect-timer tail)))
+                  ;; Physical closure, not just dropping the owner's reference.
+                  (should-not (process-live-p (websocket-conn client)))
+                  (hermes-kanban-test--await
+                   (lambda () (not (process-live-p (websocket-conn (car peers))))))
+                  (cancel-timer (hermes-kanban--events-tail-reconnect-timer tail))
+                  (hermes-kanban--events-do-reconnect tail)
+                  (setq successor (hermes-kanban--events-tail-socket tail))
+                  (hermes-kanban-test--await
+                   (lambda () (and (= 2 (length peers))
+                                   (eq 'open (websocket-ready-state successor)))))
+                  (funcall old-close client)
+                  (funcall old-error client 'on-message '(error "Late fault"))
+                  (should (eq successor (hermes-kanban--events-tail-socket tail)))
+                  (should (websocket-openp successor))
+                  (should-not (hermes-kanban--events-tail-reconnect-timer tail))
+                  (should (= 1 (seq-count #'websocket-openp peers)))
+                  (hermes-kanban-toggle-live)
+                  (should-not hermes-kanban--events-tail)
+                  (should-not (process-live-p (websocket-conn successor)))
+                  (hermes-kanban-test--await
+                   (lambda () (not (seq-some #'websocket-openp peers)))))))
+          (when tail (hermes-kanban--events-disconnect tail))
+          (when client (websocket-close client))
+          (when successor (websocket-close successor))
+          (when server (websocket-server-close server)))))))
+
+(ert-deftest hermes-kanban-notification-action-keeps-original-owner ()
+  "A retained action cannot select colliding tasks after board or instance reuse."
+  (dolist (replacement '(board instance disabled mode killed display))
+    (let ((buffer (generate-new-buffer " *kanban notification owner*"))
+          callback opened)
+      (unwind-protect
+          (with-current-buffer buffer
+            (hermes-kanban-mode)
+            (hermes-browser--own-instance '("first" . "http://first.invalid"))
+            (setq hermes-kanban--slug "first-board"
+                  tabulated-list-entries
+                  '(("other" ["todo" "0" "worker" "Other"])
+                    ("task" ["todo" "0" "worker" "Original"])))
+            (tabulated-list-print t)
+            (let ((tail (hermes-kanban--events-tail-create
+                         :buffer buffer :slug hermes-kanban--slug
+                         :instance hermes-instance)))
+              (setq hermes-kanban--events-tail tail)
+              (cl-letf (((symbol-function 'hermes-notifications-notify)
+                         (lambda (_event _title _body &rest opts)
+                           (setq callback (plist-get opts :open))))
+                        ((symbol-function 'pop-to-buffer)
+                         (lambda (target &rest _) (push target opened)))
+                        ((symbol-function 'hermes-kanban--events-connect) #'ignore)
+                        ((symbol-function 'hermes-kanban--api)
+                         (lambda (&rest _) (ert-fail "Notification dispatched HTTP"))))
+                (hermes-kanban--notify-event
+                 tail '(:task-id "task" :event kanban-attention :label "blocked"))
+                ;; Ordinary refreshes do not retire the board's notification.
+                (hermes-browser--next-request-generation)
+                (with-temp-buffer (funcall callback))
+                (should (equal opened (list buffer)))
+                (should (equal (tabulated-list-get-id) "task"))
+                (setq opened nil)
+                (pcase replacement
+                  ('board (setq hermes-kanban--slug "second-board"))
+                  ('instance
+                   (hermes-browser--own-instance '("second" . "http://second.invalid")))
+                  ('disabled (hermes-kanban-toggle-live))
+                  ('mode (fundamental-mode))
+                  ('killed (kill-buffer buffer))
+                  ('display
+                   ;; Display hooks may retarget the buffer before row selection.
+                   (cl-letf (((symbol-function 'pop-to-buffer)
+                              (lambda (&rest _)
+                                (setq hermes-kanban--slug "second-board")
+                                (goto-char (point-min)))))
+                     (funcall callback))
+                   (should (equal (tabulated-list-get-id) "other"))))
+                (when (memq replacement '(board instance))
+                  ;; Matching IDs in the successor must not lend authority.
+                  (setq tabulated-list-entries
+                        '(("other" ["todo" "0" "worker" "Other"])
+                          ("task" ["todo" "0" "worker" "Unrelated successor"])))
+                  (tabulated-list-print t)
+                  (goto-char (point-min))
+                  (funcall callback)
+                  (should-not opened)
+                  (should (equal (tabulated-list-get-id) "other"))
+                  (hermes-kanban--events-retarget hermes-kanban--slug 0))
+                (funcall callback)
+                (should-not opened))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest hermes-kanban-notification-classifies-attention-and-done-events ()
   "Kanban notification policy ignores routine activity and classifies outcomes."
   (should (equal (hermes-kanban--event-notice
