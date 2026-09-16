@@ -280,6 +280,7 @@ token when present, otherwise the configured dashboard URL."
     (if (hermes-transport--non-blank-string id)
         (propertize line
                     'hermes-cron-run-id id
+                    'hermes-cron-run-profile (hermes-cron--profile run)
                     'keymap hermes-cron--run-line-map
                     'mouse-face 'highlight
                     'help-echo "RET: show this run's transcript")
@@ -299,6 +300,7 @@ RUNS is the detail run list."
   (with-current-buffer (get-buffer-create "*Hermes Cron Job*")
     (unless (derived-mode-p 'special-mode)
       (special-mode))
+    (hermes-browser--next-request-generation)
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert (hermes-cron--format-job job))
@@ -335,11 +337,10 @@ RUNS is the detail run list."
 
 ;;; Run transcript (log)
 
-(defun hermes-cron--fetch-run-messages (client session-id)
-  "Return a promise of run SESSION-ID's transcript messages via CLIENT."
-  (hermes-dashboard-transport-api-request-async
-   "GET" (concat "/api/sessions/" (url-hexify-string session-id) "/messages")
-   :client client))
+(defun hermes-cron--fetch-run-messages (client session-id &optional profile)
+  "Return complete run SESSION-ID messages via CLIENT for PROFILE."
+  (hermes-dashboard-transport-session-messages-async
+   client session-id profile hermes-dashboard-transport--api-dispatch-guard))
 
 (defun hermes-cron--message-text (message)
   "Return MESSAGE's textual content as a string."
@@ -364,15 +365,18 @@ RUNS is the detail run list."
         (text (hermes-cron--message-text message)))
     (concat "## " role "\n\n" (if (string-empty-p text) "(no content)" text) "\n")))
 
-(defun hermes-cron--display-run (session-id messages)
-  "Display run SESSION-ID's transcript MESSAGES in a log buffer."
+(defun hermes-cron--display-run (session-id messages &optional profile)
+  "Display run SESSION-ID's transcript MESSAGES for PROFILE in a log buffer."
   (let ((entries (if (vectorp messages) (append messages nil) messages)))
     (with-current-buffer (get-buffer-create "*Hermes Cron Run*")
       (unless (derived-mode-p 'special-mode)
         (special-mode))
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert (format "Run: %s\n\n" session-id))
+        (insert (format "Run: %s\n" session-id))
+        (when (hermes-transport--non-blank-string profile)
+          (insert (format "Profile: %s\n" profile)))
+        (insert "\n")
         (insert (if entries
                     (string-join (mapcar #'hermes-cron--format-message entries) "\n")
                   "No transcript recorded.")))
@@ -380,19 +384,20 @@ RUNS is the detail run list."
       (pop-to-buffer (current-buffer)))))
 
 (defun hermes-cron-show-run-log ()
-  "Show the transcript of the cron run on the current detail line."
+  "Fetch the complete transcript of the cron run on the current detail line."
   (interactive)
   (let ((instance (hermes-instance-resolve))
         (id (get-text-property (point) 'hermes-cron-run-id))
+        (profile (get-text-property (point) 'hermes-cron-run-profile))
         (origin (current-buffer))
         (generation (hermes-browser--next-request-generation)))
     (unless id (user-error "No cron run on this line"))
     (hermes-browser--run-on-client
-     (lambda (client) (hermes-cron--fetch-run-messages client id))
+     (lambda (client) (hermes-cron--fetch-run-messages client id profile))
      (lambda (result)
        (when (hermes-browser--request-current-p origin generation)
          (hermes-cron--display-run
-          id (hermes-transport--get result 'messages))
+          id (hermes-transport--get result 'messages) profile)
          (with-current-buffer "*Hermes Cron Run*"
            (hermes-browser--own-instance instance)))))))
 
@@ -484,7 +489,7 @@ RUNS is the detail run list."
       (schedule . ,(string-trim schedule))
       (prompt . ,(string-trim prompt))
       (deliver . ,(or (hermes-transport--non-blank-string deliver) "local"))
-      (skills . ,skills))))
+      (skills . ,(vconcat skills)))))
 
 (defun hermes-cron-edit ()
   "Edit the cron job at point."

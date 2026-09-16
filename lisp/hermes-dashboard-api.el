@@ -1977,6 +1977,63 @@ CURRENT-P optionally fences reads as well as writes across authentication."
        method path :body body :query query :headers headers :secrets secrets
        :timeout timeout :retry (equal method "GET") :current-p current-p)))))
 
+;;; Stored message history
+
+(defun hermes-dashboard-transport--history-page-size (result offset)
+  "Validate RESULT at OFFSET and return its bounded page size."
+  (let* ((page (hermes-transport--get result 'pagination))
+         (messages (hermes-transport--get result 'messages))
+         (limit (hermes-transport--get page 'limit)))
+    (unless (and (or (listp messages) (vectorp messages))
+                 (integerp limit) (< 0 limit) (<= limit 500)
+                 (<= (length messages) limit)
+                 (equal (hermes-transport--get page 'offset) offset)
+                 (equal (hermes-transport--get page 'order) "oldest")
+                 (equal (hermes-transport--get page 'returned) (length messages)))
+      (error "Inconsistent stored history page"))
+    limit))
+
+(defun hermes-dashboard-transport--history-page
+    (client path query current-p offset pages session-id done)
+  "Read a history page on CLIENT at PATH with QUERY and CURRENT-P.
+OFFSET advances chronological PAGES; SESSION-ID fences the resolved lineage.
+Settle DONE once the last page arrives, or reject it on any failed read."
+  (hermes--promise-catch
+   (hermes--promise-then
+    (hermes-dashboard-transport-api-request-async
+     "GET" path :client client :current-p current-p
+     :query (append query `((limit . 500) (offset . ,offset) (order . "oldest"))))
+    (lambda (result)
+      (when (and current-p (not (funcall current-p)))
+        (error "Retired stored history request"))
+      (let* ((limit (hermes-dashboard-transport--history-page-size result offset))
+             (id (hermes-transport--get result 'session_id))
+             (messages (append (hermes-transport--get result 'messages) nil))
+             (pages (cons messages pages)))
+        (when (and session-id (not (equal session-id id)))
+          (error "Stored history session changed during paging"))
+        (if (= (length messages) limit)
+            (progn
+              (hermes-dashboard-transport--history-page
+               client path query current-p (+ offset limit) pages id done)
+              nil)
+          (hermes--promise-resolve
+           done `((messages . ,(apply #'append (nreverse pages)))
+                  (count . ,(+ offset (length messages)))))))))
+   (lambda (reason) (hermes--promise-reject done reason))))
+
+(defun hermes-dashboard-transport-session-messages-async
+    (client session-id &optional profile current-p)
+  "Return complete chronological stored SESSION-ID messages through CLIENT.
+PROFILE, when non-nil, pins the database on every bounded REST page.
+CURRENT-P fences dispatch after authentication and every page's completion.
+Reject partial failures; offset pages are not an atomic backend snapshot."
+  (let ((done (hermes--promise-make)))
+    (hermes-dashboard-transport--history-page
+     client (concat "/api/sessions/" (url-hexify-string session-id) "/messages")
+     (and profile `((profile . ,(copy-sequence profile)))) current-p 0 nil nil done)
+    done))
+
 ;;; Profile and model caches
 
 (defvar hermes-dashboard-transport--profile-cache nil

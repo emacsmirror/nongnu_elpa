@@ -41,6 +41,9 @@
 
 (defvar-local hermes-sessions--catalogue-profile nil
   "Explicit backend profile for stored catalogue paging, or nil for RPC.")
+(defvar hermes-sessions--append-catalogue nil
+  "Non-nil only while dispatching an explicit next catalogue window.")
+
 (defvar-local hermes-sessions--catalogue-offset 0
   "Requested stored catalogue window offset, independent of pinned extras.")
 (defvar-local hermes-sessions--catalogue-next-offset 0
@@ -153,7 +156,8 @@
   "Cache RESULT's sessions by durable id for the row commands."
   (setq hermes-sessions--catalogue-total (hermes-transport--get result 'total))
   (when-let* ((offset (hermes-transport--get result 'offset)))
-    (setq hermes-sessions--catalogue-next-offset (+ offset 100)))
+    (setq hermes-sessions--catalogue-offset offset
+          hermes-sessions--catalogue-next-offset (+ offset 100)))
   (setq hermes-sessions--session-map
         (hermes-sessions--sessions-by-id
          (hermes-sessions--result-sessions result))))
@@ -187,19 +191,20 @@ BODY and QUERY extend the request."
     (user-error "Open Stored catalogue first"))
   (when (or (not (numberp hermes-sessions--catalogue-total))
             (< hermes-sessions--catalogue-next-offset hermes-sessions--catalogue-total))
-    (setq hermes-sessions--catalogue-offset hermes-sessions--catalogue-next-offset)
-    (hermes-sessions--revert)))
+    (let ((hermes-sessions--append-catalogue t))
+      (hermes-sessions--revert))))
 
 (defun hermes-sessions--catalogue (client)
   "Read one requested stored catalogue window from CLIENT."
-  (let ((offset hermes-sessions--catalogue-offset)
-        (previous (and (> hermes-sessions--catalogue-offset 0)
+  (let ((offset (if hermes-sessions--append-catalogue
+                    hermes-sessions--catalogue-next-offset 0))
+        (previous (and hermes-sessions--append-catalogue
                        (hash-table-values hermes-sessions--session-map))))
     (hermes--promise-then
      (hermes-sessions--rest
       client "GET" "/api/sessions" nil
       `((profile . ,hermes-sessions--catalogue-profile)
-        (limit . 100) (offset . ,hermes-sessions--catalogue-offset)
+        (limit . 100) (offset . ,offset)
         (archived . ,hermes-sessions--archived-filter)))
      (lambda (result)
        ;; New authoritative rows replace older copies; limit counts windows,
@@ -617,28 +622,27 @@ Never retry a mutation after an uncertain outcome."
   (message "Hermes: exported session %s" (hermes-sessions--id session)))
 
 (defun hermes-sessions-export (file)
-  "Export selected session history as Markdown to FILE."
+  "Fetch selected session history and export it as Markdown to FILE."
   (interactive
    (let* ((session (hermes-sessions--selected-session))
           (id (hermes-sessions--id session)))
      (list (read-file-name "Export session to: " nil
                            (format "hermes-session-%s.md" id)))))
-  (let ((session (hermes-sessions--selected-session)))
-    (if (derived-mode-p 'hermes-session-detail-mode)
-        (hermes-sessions--write-export session hermes-sessions--detail-messages file)
-      (let ((history-id (hermes-sessions--history-id session))
-            (origin (current-buffer))
-            (generation (hermes-browser--next-request-generation)))
-        (hermes-browser--run-on-client
-         (lambda (client)
-           (hermes-sessions--history-promise
-            client history-id (hermes-sessions--id session)
-            (hermes-sessions--profile session)))
-         (lambda (result)
-           (when (hermes-browser--request-current-mode-p
-                  origin generation 'hermes-sessions-mode)
-             (hermes-sessions--write-export
-              session (hermes-transport--get result 'messages) file))))))))
+  (let* ((session (hermes-sessions--selected-session))
+         (history-id (hermes-sessions--history-id session))
+         (origin (current-buffer))
+         (mode major-mode)
+         (generation (hermes-browser--next-request-generation)))
+    ;; A detail cache may predate pagination or contain only a partial view.
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-sessions--history-promise
+        client history-id (hermes-sessions--id session)
+        (hermes-sessions--profile session)))
+     (lambda (result)
+       (when (hermes-browser--request-current-mode-p origin generation mode)
+         (hermes-sessions--write-export
+          session (hermes-transport--get result 'messages) file))))))
 
 (defun hermes-sessions--tool-name (message)
   "Return MESSAGE's tool name, or nil."
@@ -758,23 +762,22 @@ INSTANCE is inherited from the session browser when provided."
 
 (defun hermes-sessions--history-promise (client history-id resume-id profile)
   "Return a promise of HISTORY-ID history on CLIENT.
-PROFILE selects another profile's stored session.  When older gateways cannot
-find a default-profile live session, read RESUME-ID through non-attaching REST."
-  (if profile
-      (hermes-sessions--rest
-       client "GET"
-       (concat "/api/sessions/" (url-hexify-string resume-id) "/messages")
-       nil `((profile . ,profile)))
-    (hermes--promise-catch
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-session-history client history-id)
-     (lambda (message)
-       (if (and (hermes-sessions--session-not-found-message-p message)
-                (not (string-empty-p resume-id)))
-           (hermes-sessions--rest
-            client "GET"
-            (concat "/api/sessions/" (url-hexify-string resume-id) "/messages"))
-         (hermes--promise-rejected message))))))
+PROFILE selects a stored session database.  If the gateway cannot find an
+unqualified live session, read RESUME-ID through the same client's REST scope
+without attaching or changing its live session."
+  (let ((current-p hermes-dashboard-transport--api-dispatch-guard))
+    (if profile
+        (hermes-dashboard-transport-session-messages-async
+         client resume-id profile current-p)
+      (hermes--promise-catch
+       (hermes-dashboard-transport-call-fn
+        #'hermes-dashboard-transport-session-history client history-id)
+       (lambda (message)
+         (if (and (hermes-sessions--session-not-found-message-p message)
+                  (not (string-empty-p resume-id)))
+             (hermes-dashboard-transport-session-messages-async
+              client resume-id nil current-p)
+           (hermes--promise-rejected message)))))))
 
 (defun hermes-sessions-view ()
   "Show a native detail/history buffer for the selected Hermes session."

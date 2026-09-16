@@ -271,14 +271,15 @@
 (ert-deftest hermes-sessions-profile-history-and-rename-use-rest ()
   "Profile-owned view and rename requests target the owning REST database."
   (let (requests)
-    (cl-letf (((symbol-function 'hermes-sessions--rest)
-               (lambda (_client method path &optional body query)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (let ((body (plist-get args :body)) (query (plist-get args :query)))
                  (push (list method path body query) requests)
-                 (hermes--promise-resolved '((messages . nil))))))
+                 (hermes--promise-resolved (hermes-sessions-test--page 0 0))))))
       (hermes-sessions--history-promise 'client "s1" "s1" "work")
       (hermes-sessions--set-title-promise 'client "s1" "Renamed" "work"))
     (should (member '("GET" "/api/sessions/s1/messages" nil
-                      ((profile . "work")))
+                      ((profile . "work") (limit . 500) (offset . 0) (order . "oldest")))
                     requests))
     (should (member '("PATCH" "/api/sessions/s1"
                       ((title . "Renamed") (profile . "work")) nil)
@@ -398,7 +399,7 @@
           (kill-buffer "*Hermes Sessions*"))))))
 
 (ert-deftest hermes-sessions-export-writes-detail-markdown ()
-  "Export writes the already-loaded detail history as Markdown."
+  "Export refreshes detail history and writes it as Markdown."
   (let ((file (make-temp-file "hermes-session-" nil ".md")))
     (unwind-protect
         (let ((buffer (hermes-sessions--render-detail
@@ -406,7 +407,13 @@
                        '(((role . "user") (text . "hello"))) 1)))
           (unwind-protect
               (with-current-buffer buffer
-                (hermes-sessions-export file)
+                (cl-letf (((symbol-function 'hermes-browser--with-client)
+                           (lambda (fn) (funcall fn 'fixture #'ignore)))
+                          ((symbol-function 'hermes-sessions--history-promise)
+                           (lambda (&rest _)
+                             (hermes--promise-resolved
+                              '((messages . (((role . "user") (text . "hello")))))))))
+                  (hermes-sessions-export file))
                 (with-temp-buffer
                   (insert-file-contents file)
                   (should (string-match-p "# First" (buffer-string)))
@@ -430,11 +437,13 @@
                  (funcall (plist-get args :reject) "session not found")))
               ((symbol-function 'hermes-dashboard-transport-session-resume)
                (lambda (&rest _) (setq resumed t)))
-              ((symbol-function 'hermes-sessions--rest)
-               (lambda (client method path &optional body query)
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (let ((client (plist-get args :client))
+                       (body (plist-get args :body)) (query (plist-get args :query)))
                  (should (eq client chat-owner))
                  (setq request (list method path body query))
-                 (hermes--promise-resolved '((messages . nil)))))
+                 (hermes--promise-resolved (hermes-sessions-test--page 0 0)))))
               ((symbol-function 'hermes-sessions--write-export)
                (lambda (&rest _) (setq exported t))))
       (unwind-protect
@@ -444,10 +453,12 @@
               (goto-char (point-min))
               (search-forward "stored")
               (beginning-of-line)
+              (hermes-browser--own-instance (hermes-instance-resolve))
               (hermes-sessions-export "unused.md"))
             (should exported)
             (should (equal request
-                           '("GET" "/api/sessions/stored/messages" nil nil)))
+                           '("GET" "/api/sessions/stored/messages" nil
+                             ((limit . 500) (offset . 0) (order . "oldest")))))
             (should (eq chat-owner 'shared-chat-client))
             (should-not resumed)
             (should-not started)
@@ -565,11 +576,16 @@
                  (funcall (plist-get args :reject) "session not found")))
               ((symbol-function 'hermes-dashboard-transport-session-resume)
                (lambda (&rest _) (setq resume-called t)))
-              ((symbol-function 'hermes-sessions--rest)
-               (lambda (client method path &optional body query)
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (let ((client (plist-get args :client))
+                       (body (plist-get args :body)) (query (plist-get args :query)))
                  (should (eq client 'fake-client))
                  (setq rest-request (list method path body query))
-                 (hermes--promise-resolved history-result))))
+                 (hermes--promise-resolved
+                  (append history-result
+                          '((pagination . ((limit . 500) (offset . 0)
+                                           (order . "oldest") (returned . 1))))))))))
       (unwind-protect
           (progn
             (hermes-sessions--render-detail
@@ -577,10 +593,12 @@
                (title . "Stored"))
              nil 0)
             (with-current-buffer "*Hermes Session: durable-1*"
+              (hermes-browser--own-instance (hermes-instance-resolve))
               (hermes-sessions-view))
             (should (equal history-session "dead-live"))
             (should (equal rest-request
-                           '("GET" "/api/sessions/durable-1/messages" nil nil)))
+                           '("GET" "/api/sessions/durable-1/messages" nil
+                             ((limit . 500) (offset . 0) (order . "oldest")))))
             (should-not resume-called)
             (should (eq stopped 'fake-client))
             (with-current-buffer "*Hermes Session: durable-1*"
@@ -603,11 +621,13 @@
                  (funcall (plist-get args :reject) "session not found")))
               ((symbol-function 'hermes-dashboard-transport-session-resume)
                (lambda (&rest _) (setq resumed t)))
-              ((symbol-function 'hermes-sessions--rest)
-               (lambda (client method path &optional body query)
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (let ((client (plist-get args :client))
+                       (body (plist-get args :body)) (query (plist-get args :query)))
                  (should (eq client chat-owner))
                  (setq request (list method path body query))
-                 (hermes--promise-resolved '((messages . nil))))))
+                 (hermes--promise-resolved (hermes-sessions-test--page 0 0))))))
       (unwind-protect
           (progn
             (hermes-sessions-test--render '(((id . "stored"))))
@@ -615,9 +635,11 @@
               (goto-char (point-min))
               (search-forward "stored")
               (beginning-of-line)
+              (hermes-browser--own-instance (hermes-instance-resolve))
               (hermes-sessions-view))
             (should (equal request
-                           '("GET" "/api/sessions/stored/messages" nil nil)))
+                           '("GET" "/api/sessions/stored/messages" nil
+                             ((limit . 500) (offset . 0) (order . "oldest")))))
             (should (eq chat-owner 'shared-chat-client))
             (should-not resumed)
             (should-not started)
@@ -803,6 +825,9 @@
            '((id . "s1") (title . "First") (message_count . 2))
            '(((role . "user") (text . "question")))
            1)
+          (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+            (with-current-buffer name
+              (hermes-browser--own-instance (hermes-instance-resolve))))
           (with-current-buffer "*Hermes Session: s1*"
             (hermes-sessions-rename))
           (with-current-buffer "*Hermes Sessions*"
@@ -885,6 +910,9 @@
              '((id . "s1") (title . "First") (message_count . 2))
              '(((role . "user") (text . "question")))
              1)
+          (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+            (with-current-buffer name
+              (hermes-browser--own-instance (hermes-instance-resolve))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
               (search-forward "s1")
@@ -971,6 +999,197 @@
                              '(("" . "s1") ("" . "s2"))))))
         (when (get-buffer "*Hermes Sessions*")
           (kill-buffer "*Hermes Sessions*"))))))
+
+
+(defun hermes-sessions-test--page (size offset)
+  "Return a released-shape chronological history page of SIZE at OFFSET."
+  (let ((messages (cl-loop for n from offset below (min size (+ offset 500))
+                           collect `((role . "user")
+                                     (content . ,(format "ROW-%04d" n))))))
+    `((session_id . "stored") (messages . ,messages)
+      (pagination . ((limit . 500) (offset . ,offset) (order . "oldest")
+                     (returned . ,(length messages)))))))
+
+(ert-deftest hermes-sessions-export-pages-public-list-and-cached-detail ()
+  "Export every ordered row, even when a detail cache holds only the tail."
+  (dolist (detail '(nil t))
+    (dolist (size '(0 500 600))
+      (let* ((file (make-temp-file "hermes-export-"))
+             (client (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1" :port 9119 :token "fixture"))
+             (session '((id . "stored") (profile . "work")))
+             (offsets nil)
+             (releases 0)
+             (hermes-dashboard-transport-http-request-async-function
+              (lambda (url &rest _)
+                (should (string-match-p "profile=work" url))
+                (let* ((explicit (string-match "offset=\\([0-9]+\\)" url))
+                       (offset (if explicit
+                                   (string-to-number (match-string 1 url)) 100)))
+                  (push offset offsets)
+                  (hermes--promise-resolved
+                   (list :status 200 :body (hermes-sessions-test--page size offset)))))))
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-browser--with-client)
+                       (lambda (fn)
+                         (funcall fn client (lambda () (cl-incf releases))))))
+              (with-temp-buffer
+                (if detail
+                    (hermes-sessions--render-detail-contents
+                     session '(((role . "user") (content . "CACHED-TAIL"))) size)
+                  (hermes-sessions-mode)
+                  (hermes-sessions--render `((sessions . (,session)))))
+                (goto-char (point-min))
+                (hermes-sessions-export file))
+              (with-temp-buffer
+                (insert-file-contents file)
+                (goto-char (point-min))
+                (let (rows)
+                  (while (re-search-forward "ROW-[0-9]+" nil t)
+                    (push (match-string 0) rows))
+                  (should (equal (nreverse rows)
+                                 (cl-loop for n below size collect (format "ROW-%04d" n))))))
+              (should (= releases 1))
+              (should (equal (nreverse offsets) (if (< size 500) '(0) '(0 500)))))
+          (delete-file file))))))
+
+(ert-deftest hermes-sessions-export-stops-on-retirement-or-page-error ()
+  "A failed or retired multi-page export never writes a partial artifact."
+  (dolist (retirement '(error generation mode instance client))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           (pending (hermes--promise-make))
+           (calls 0) (releases 0) exported
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (_url &rest _)
+              (cl-incf calls)
+              (if (= calls 1) pending (hermes--promise-rejected "page failed")))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
+                ((symbol-function 'hermes-sessions--write-export)
+                 (lambda (&rest _) (setq exported t))))
+        (with-temp-buffer
+          (hermes-sessions-mode)
+          (hermes-browser--own-instance '("test" . "http://127.0.0.1:9119"))
+          (hermes-sessions--render
+           '((sessions . (((id . "stored") (profile . "work"))))))
+          (goto-char (point-min))
+          (hermes-sessions-export "unused.md")
+          (pcase retirement
+            ('generation (hermes-browser--next-request-generation))
+            ('mode (fundamental-mode))
+            ('instance (setq hermes-instance '("other" . "http://other")))
+            ('client (cl-incf (hermes-dashboard-transport-client-generation client))))
+          (hermes--promise-resolve
+           pending (list :status 200 :body (hermes-sessions-test--page 600 0)))
+          (should-not exported)
+          (should (= calls (if (eq retirement 'error) 2 1)))
+          (should (= releases 1)))))))
+
+(ert-deftest hermes-sessions-catalogue-refresh-rebuilds-public-windows ()
+  "Native g starts at zero and removes stale rows after Next window."
+  (let ((responses
+         '(((total . 200) (sessions . (((id . "old") (profile . "work"))
+                                      ((id . "pin") (profile . "work")))))
+           ((total . 200) (sessions . (((id . "later") (profile . "work"))
+                                      ((id . "pin") (profile . "work")))))
+           ((total . 2) (sessions . (((id . "old") (profile . "work") (title . "Renamed"))
+                                    ((id . "new") (profile . "work")))))
+           ((total . 0) (sessions . nil))))
+        offsets)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fixture #'ignore)))
+              ((symbol-function 'read-string) (lambda (&rest _) "work"))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (_client _method _path &optional _body query)
+                 (push (alist-get 'offset query) offsets)
+                 (hermes--promise-resolved (pop responses)))))
+      (with-temp-buffer
+        (hermes-sessions-mode)
+        (call-interactively (key-binding (kbd "l")))
+        (goto-char (point-min))
+        (search-forward "old")
+        (beginning-of-line)
+        (call-interactively (key-binding (kbd ">")))
+        (should (= (length tabulated-list-entries) 3))
+        (call-interactively (key-binding (kbd "g")))
+        (should (equal (sort (mapcar #'car tabulated-list-entries)
+                             (lambda (a b) (string< (cdr a) (cdr b))))
+                       '(("work" . "new") ("work" . "old"))))
+        (should (equal (tabulated-list-get-id) '("work" . "old")))
+        (should (equal (hermes-transport--get
+                        (gethash '("work" . "old") hermes-sessions--session-map) 'title)
+                       "Renamed"))
+        (call-interactively (key-binding (kbd "g")))
+        (should-not tabulated-list-entries)
+        (should (equal (nreverse offsets) '(0 100 0 0)))))))
+
+
+(ert-deftest hermes-sessions-export-rejects-inconsistent-page-evidence ()
+  "Do not export repeated windows or changed resolved session identities."
+  (dolist (fault '(offset order returned session missing))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           (calls 0) exported
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (_url &rest _)
+              (cl-incf calls)
+              (let ((page (copy-tree
+                           (hermes-sessions-test--page 600 (if (= calls 1) 0 500)))))
+                (when (= calls 2)
+                  (pcase fault
+                    ('session (setf (alist-get 'session_id page) "successor"))
+                    ('missing (setf (alist-get 'pagination page) nil))
+                    (_ (setf (alist-get fault (alist-get 'pagination page)) -1))))
+                (hermes--promise-resolved (list :status 200 :body page))))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (fn) (funcall fn client #'ignore)))
+                ((symbol-function 'hermes-sessions--write-export)
+                 (lambda (&rest _) (setq exported t))))
+        (with-temp-buffer
+          (hermes-sessions-mode)
+          (hermes-sessions--render
+           '((sessions . (((id . "stored") (profile . "work"))))))
+          (goto-char (point-min))
+          (hermes-sessions-export "unused.md")
+          (should (= calls 2))
+          (should-not exported))))))
+
+
+(ert-deftest hermes-sessions-view-pages-through-default-client-acquisition ()
+  "A cold default-instance view loads all pages without phantom ownership."
+  (let* ((hermes-instances nil)
+         (client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 9119 :token "fixture"))
+         (releases 0)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest _)
+            (let ((offset (if (string-match "offset=\\([0-9]+\\)" url)
+                              (string-to-number (match-string 1 url)) 100)))
+              (hermes--promise-resolved
+               (list :status 200 :body (hermes-sessions-test--page 600 offset)))))))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-release)
+               (lambda (owner) (should (eq owner client)) (cl-incf releases)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (with-temp-buffer
+              (hermes-sessions-mode)
+              (hermes-sessions--render
+               '((sessions . (((id . "stored") (profile . "work"))))))
+              (goto-char (point-min))
+              (hermes-sessions-view))
+            (with-current-buffer "*Hermes Session: work/stored*"
+              (should (= (length hermes-sessions--detail-messages) 600))
+              (should (equal hermes-sessions--detail-count 600))
+              (should (string-match-p "ROW-0000" (buffer-string)))
+              (should (string-match-p "ROW-0599" (buffer-string))))
+            (should (= releases 1)))
+        (when (get-buffer "*Hermes Session: work/stored*")
+          (kill-buffer "*Hermes Session: work/stored*"))))))
 
 (provide 'hermes-sessions-tests)
 ;;; hermes-sessions-tests.el ends here
