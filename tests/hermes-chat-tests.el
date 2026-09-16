@@ -9950,28 +9950,29 @@
    (hermes-chat--queue-content "third")
    (let ((owner (current-buffer))
          (third-id (plist-get (nth 2 hermes-chat--queued-messages) :id)))
-     (with-temp-buffer
-       (hermes-chat-queue-panel-mode)
-       (setq hermes-chat-queue-panel--owner owner)
-       (hermes-chat-queue-panel-refresh)
-       (should (string-match-p "1. first" (buffer-string)))
-       (should (string-match-p "2. second" (buffer-string)))
-       (should (string-match-p "3. third" (buffer-string)))
-       (hermes-chat--queue-panel-move-entry owner third-id -1)
-       (should (equal (with-current-buffer owner
-                        (hermes-test--queued-contents))
-                      '("first" "third" "second")))
-       (hermes-chat-queue-panel-refresh)
-       (search-forward "third")
-       (cl-letf (((symbol-function 'read-string-from-buffer)
-                  (lambda (&rest _) "third edited")))
-         (hermes-chat-queue-panel-edit))
-       (goto-char (point-min))
-       (search-forward "second")
-       (hermes-chat-queue-panel-remove)
-       (should (equal (with-current-buffer owner
-                        (hermes-test--queued-contents))
-                      '("first" "third edited")))))))
+     (let ((panel (hermes-chat-queue-panel)))
+       (unwind-protect
+           (with-current-buffer panel
+             (hermes-chat-queue-panel-refresh)
+             (should (string-match-p "1. first" (buffer-string)))
+             (should (string-match-p "2. second" (buffer-string)))
+             (should (string-match-p "3. third" (buffer-string)))
+             (hermes-chat--queue-panel-move-entry owner third-id -1)
+             (should (equal (with-current-buffer owner
+                              (hermes-test--queued-contents))
+                            '("first" "third" "second")))
+             (hermes-chat-queue-panel-refresh)
+             (search-forward "third")
+             (cl-letf (((symbol-function 'read-string-from-buffer)
+                        (lambda (&rest _) "third edited")))
+               (hermes-chat-queue-panel-edit))
+             (goto-char (point-min))
+             (search-forward "second")
+             (hermes-chat-queue-panel-remove)
+             (should (equal (with-current-buffer owner
+                              (hermes-test--queued-contents))
+                            '("first" "third edited"))))
+         (kill-buffer panel))))))
 
 (ert-deftest hermes-chat-queue-panel-blocks-swap-with-inflight-head ()
   "Reorder refuses to displace the currently submitted queue head."
@@ -11291,7 +11292,7 @@
   "Append, repeated moves and deletion keep stable IDs in both panel windows."
   (save-window-excursion
     (let ((owner (generate-new-buffer " *queue reader owner*"))
-          (panel (generate-new-buffer " *queue readers*")))
+          panel)
       (unwind-protect
           (let (ids)
             (with-current-buffer owner
@@ -11300,11 +11301,9 @@
                 (hermes-chat--queue-content text))
               (setq ids (mapcar (lambda (e) (plist-get e :id))
                                hermes-chat--queued-messages)
-                    hermes-chat--queue-panel-buffer panel))
+                    panel (hermes-chat-queue-panel)))
             (switch-to-buffer panel)
             (delete-other-windows)
-            (hermes-chat-queue-panel-mode)
-            (setq hermes-chat-queue-panel--owner owner)
             (hermes-chat-queue-panel-refresh)
             (goto-char (point-min)) (forward-line 3)
             (let ((first (selected-window)) (second (split-window-right)))
@@ -11376,7 +11375,7 @@
   "Both queue windows retain identities and a removed last row falls back."
   (save-window-excursion
     (let ((owner (generate-new-buffer " *queue viewport owner*"))
-          (panel (generate-new-buffer " *queue viewports*")))
+          panel)
       (unwind-protect
           (let (ids)
             (with-current-buffer owner
@@ -11384,10 +11383,8 @@
               (dotimes (n 80) (hermes-chat--queue-content (format "Item %02d" n)))
               (setq ids (mapcar (lambda (e) (plist-get e :id))
                                hermes-chat--queued-messages)
-                    hermes-chat--queue-panel-buffer panel))
+                    panel (hermes-chat-queue-panel)))
             (switch-to-buffer panel) (delete-other-windows)
-            (hermes-chat-queue-panel-mode)
-            (setq hermes-chat-queue-panel--owner owner)
             (hermes-chat-queue-panel-refresh)
             (let* ((first (selected-window)) (second (split-window-right))
                    (row (lambda (n) (text-property-any

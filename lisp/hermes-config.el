@@ -24,6 +24,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
@@ -205,6 +206,7 @@ CURRENT-P, when non-nil, retains authority captured before input."
 
 (defun hermes-config-refresh (&rest _)
   "Refresh the current Hermes config buffer."
+  (interactive)
   (hermes-config--require-mutation-idle)
   (let ((buffer (current-buffer))
         (generation (hermes-browser--next-request-generation)))
@@ -395,7 +397,7 @@ List fields use JSON arrays, including [] for an empty list."
   "Open the schema-driven Hermes configuration browser."
   (interactive)
   (let ((instance (hermes-instance-resolve))
-        (buffer (get-buffer-create "*Hermes Config*")))
+        (buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-config-mode)
         (hermes-config-mode))

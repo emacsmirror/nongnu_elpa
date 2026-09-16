@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'keymap-popup)
 (require 'seq)
@@ -200,7 +201,8 @@ DISPLAY pops TARGET after a current result.  GENERATION identifies ownership.
 INSTANCE selects the owning Hermes dashboard."
   (let ((instance (or instance (hermes-instance-resolve)))
         (target (or target
-                    (get-buffer-create (hermes-messaging--buffer-name profile)))))
+                    (hermes-buffer--get (hermes-messaging--buffer-name profile)
+                                        #'hermes-messaging-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-messaging-mode)
         (hermes-messaging-mode))
@@ -441,15 +443,15 @@ accepted.  Arbitrary runtime error text is never displayed."
          (platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
          (profile hermes-messaging-profile)
-         (buffer (get-buffer-create
+         (buffer (hermes-buffer--get
                   (format "*Hermes Messaging Detail: %s/%s*"
-                          (hermes-messaging--profile-label profile) id))))
+                          (hermes-messaging--profile-label profile) id)
+                  #'special-mode t)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (hermes-messaging--detail-text platform profile))
         (goto-char (point-min))
-        (special-mode)
         (hermes-browser--own-instance instance)))
     (pop-to-buffer buffer)))
 

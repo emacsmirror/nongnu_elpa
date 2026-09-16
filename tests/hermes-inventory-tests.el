@@ -425,8 +425,8 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) promise)))
-      (with-current-buffer (get-buffer-create "*Hermes Memory*")
-        (hermes-memory-status-mode)
+      (with-current-buffer
+        (hermes-buffer--get "*Hermes Memory*" #'hermes-memory-status-mode)
         (hermes-memory-status))
       (kill-buffer "*Hermes Memory*")
       (hermes--promise-resolve promise '((active . "late")))
@@ -446,8 +446,8 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (if (= requests 1) first second))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Memory*")
-              (hermes-memory-status-mode)
+            (with-current-buffer
+              (hermes-buffer--get "*Hermes Memory*" #'hermes-memory-status-mode)
               (hermes-memory-status)
               (hermes-memory-status))
             (hermes--promise-resolve second
@@ -763,7 +763,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
 (ert-deftest hermes-inventory-open-displays-pending-without-late-focus ()
   "The public listing selects at invocation, never at delayed settlement."
   (save-window-excursion
-    (let ((buffer (get-buffer-create "*Hermes Toolsets*"))
+    (let ((buffer (hermes-buffer--get "*Hermes Toolsets*" #'hermes-inventory-mode))
           (draft (generate-new-buffer " *inventory draft*")) success failure)
       (unwind-protect
           (cl-letf (((symbol-function 'hermes-browser--run-on-client)
@@ -793,7 +793,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
 (ert-deftest hermes-memory-status-pending-entry-does-not-steal-later-focus ()
   "Memory help's view also displays pending and settles without selection."
   (save-window-excursion
-    (let ((target (get-buffer-create "*Hermes Memory*"))
+    (let ((target (hermes-buffer--get "*Hermes Memory*" #'hermes-memory-status-mode))
           (draft (generate-new-buffer " *memory focus draft*")) success failure)
       (unwind-protect
           (cl-letf (((symbol-function 'hermes-browser--run-on-client)
@@ -998,7 +998,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "Public Reset captures ownership before its target and confirmation readers."
   (dolist (stage '(target confirmation))
     (dolist (boundary '(current refresh retarget mode kill))
-      (let ((buffer (generate-new-buffer " *memory reset input*")) requests)
+      (let ((buffer (hermes-buffer--get "*Hermes Memory*" #'hermes-memory-status-mode)) requests)
         (cl-labels ((retire ()
                       (pcase boundary
                         ('refresh (hermes-memory-status))
@@ -1021,7 +1021,6 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               (unwind-protect
                   (progn
                     (with-current-buffer buffer
-                      (hermes-memory-status-mode)
                       (hermes-browser--own-instance '("a" . "https://a.invalid"))
                       (call-interactively #'hermes-memory-reset))
                     (should (= (cl-count "POST" requests :key #'cadr :test #'equal)

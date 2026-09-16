@@ -31,6 +31,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'button)
 (require 'diff-mode)
@@ -1700,6 +1701,7 @@ entry point funnels through."
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
+      (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
             hermes-chat--resolved-start-mode start-mode
@@ -1984,6 +1986,7 @@ durable session continues on send."
     (with-current-buffer buffer
       (setq default-directory directory)
       (hermes-chat-mode)
+      (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root nil
             hermes-chat--resolved-start-mode start-mode
@@ -2091,8 +2094,8 @@ history read, including with empty input when a queued message is retained."
 
 (defun hermes-chat--render-attachments (urls source)
   "Render URLS gathered from the SOURCE chat buffer, returning the buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Attachments*")
-    (hermes-chat-attachments-mode)
+  (with-current-buffer (hermes-buffer--get "*Hermes Attachments*"
+                                           #'hermes-chat-attachments-mode t)
     (setq hermes-chat-attachments--source source)
     (let ((inhibit-read-only t))
       (erase-buffer)

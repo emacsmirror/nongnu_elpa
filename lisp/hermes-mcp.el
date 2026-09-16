@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'keymap-popup)
 (require 'subr-x)
@@ -232,7 +233,8 @@ CURRENT-P, when non-nil, authorizes dispatch after authentication."
 
 (defun hermes-mcp--render (result &optional buffer)
   "Render MCP servers from RESULT in BUFFER or the standard MCP buffer."
-  (with-current-buffer (or buffer (get-buffer-create hermes-mcp-buffer-name))
+  (with-current-buffer (or buffer (hermes-buffer--get hermes-mcp-buffer-name
+                                                      #'hermes-mcp-mode))
     (unless (derived-mode-p 'hermes-mcp-mode)
       (hermes-mcp-mode))
     (hermes-mcp--remember-servers result)
@@ -246,7 +248,7 @@ DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
 TARGET and GENERATION identify an existing buffer-owned refresh."
   (let ((instance (hermes-instance-resolve))
         (target (or target
-                    (and display (get-buffer-create hermes-mcp-buffer-name))
+                    (and display (hermes-buffer--get hermes-mcp-buffer-name #'hermes-mcp-mode))
                     (current-buffer))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-mcp-mode)

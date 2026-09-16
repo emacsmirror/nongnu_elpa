@@ -473,7 +473,7 @@
     (dolist (prompt '(key password clear))
     (dolist (boundary '(current reopen refresh retarget profile mode kill))
       (let* ((profile "worker")
-             (buffer (get-buffer-create (hermes-messaging--buffer-name profile)))
+             (buffer (hermes-buffer--get (hermes-messaging--buffer-name profile) #'hermes-messaging-mode))
              (instance '("a" . "https://a.invalid"))
              (secret "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
              (catalog '((platforms . (((id . "telegram") (name . "Telegram")
@@ -514,7 +514,6 @@
             (unwind-protect
                 (progn
                   (with-current-buffer buffer
-                    (hermes-messaging-mode)
                     (hermes-browser--own-instance instance)
                     (setq hermes-messaging-profile profile)
                     (hermes-messaging--render catalog)

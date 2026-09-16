@@ -325,8 +325,8 @@
               ((symbol-function 'hermes-browser--existing-client) (lambda () 'client)))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Config*")
-              (hermes-config-mode)
+            (with-current-buffer
+                (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode)
               (hermes-browser--own-instance local)
               (setq hermes-config--refresh-required nil))
             (hermes-config)
@@ -487,11 +487,10 @@
                (lambda (_client)
                  (cl-incf fetch-calls)
                  refresh)))
-      (setq buffer (get-buffer-create "*Hermes Config*"))
+      (setq buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode))
       (unwind-protect
           (progn
             (with-current-buffer buffer
-              (hermes-config-mode)
               (hermes-browser--own-instance
                '("local" . "http://127.0.0.1:9119"))
               (setq hermes-config--schema
@@ -533,11 +532,10 @@
                (lambda (fn) (funcall fn 'client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (&rest _) write)))
-      (setq buffer (get-buffer-create "*Hermes Config*"))
+      (setq buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode))
       (unwind-protect
           (progn
             (with-current-buffer buffer
-              (hermes-config-mode)
               (hermes-browser--own-instance local)
               (setq hermes-config--schema
                     '((fields . ((model . ((type . "string"))))))
@@ -860,7 +858,7 @@
 
 (ert-deftest hermes-config-prompt-reopen-discards-old-answer ()
   "Public reopen during input cannot redirect an edit to another backend."
-  (let ((buffer (get-buffer-create "*Hermes Config*"))
+  (let ((buffer (hermes-buffer--get "*Hermes Config*" #'hermes-config-mode))
         (instance '("a" . "https://a.invalid")) requests)
     (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
               ((symbol-function 'pop-to-buffer) #'ignore)
@@ -878,7 +876,12 @@
                  "12")))
       (unwind-protect
           (with-current-buffer buffer
-            (hermes-config-tests--management-start 'config)
+            (hermes-config--render
+             buffer '((fields . ((agent.max_turns . ((type . "number"))))))
+             '((agent . ((max_turns . 9) (verbose . t))) (model . "old")) nil)
+            (search-forward "agent.max_turns")
+            (hermes-browser--own-instance '("a" . "https://a.invalid"))
+            (hermes-config-edit)
             (should-not requests))
         (kill-buffer buffer)))))
 
@@ -986,6 +989,110 @@
             (should (= releases 1))
             (should (equal hermes-instance
                            (unless unowned '("a" . "https://a.invalid"))))))))))
+
+(ert-deftest hermes-config-native-refresh-retries-cold-acquisition ()
+  "Native g refreshes a public Config view, including after cold failure."
+  (dolist (cold '(nil t))
+    (let* ((hermes-instances '(("test" . "https://config.invalid")))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "https://config.invalid" :token "synthetic"))
+           (fail cold) (acquisitions 0) (releases 0) requests
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (should (equal (plist-get args :method) "GET"))
+              (push url requests)
+              (hermes-config-test--response
+               (cond
+                ((string-suffix-p "/api/config/schema" url)
+                 "{\"fields\":{\"model\":{\"type\":\"string\"}}}")
+                ((string-suffix-p "/api/config" url)
+                 "{\"model\":\"refreshed\"}")
+                ((string-suffix-p "/api/env" url) "{}")
+                (t (ert-fail url)))))))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _)
+                   (cl-incf acquisitions)
+                   (when fail (error "Config test acquisition failed"))
+                   client))
+                ((symbol-function 'hermes-dashboard-transport-release)
+                 (lambda (actual)
+                   (should (eq actual client))
+                   (cl-incf releases))))
+        (save-window-excursion
+          (unwind-protect
+              (progn
+                (if cold
+                    (should (equal (should-error (hermes-config))
+                                   '(error "Config test acquisition failed")))
+                  (hermes-config))
+                (should (eq (current-buffer) (get-buffer "*Hermes Config*")))
+                (should (eq (key-binding (kbd "g")) #'hermes-config-refresh))
+                (when cold
+                  (should-not requests)
+                  (should (= releases 0))
+                  (should (equal (should-error (execute-kbd-macro (kbd "g")))
+                                 '(error "Config test acquisition failed")))
+                  (should (= acquisitions 2))
+                  (setq fail nil))
+                (setq requests nil)
+                (execute-kbd-macro (kbd "g"))
+                (should (equal (nreverse requests)
+                               '("https://config.invalid/api/config/schema"
+                                 "https://config.invalid/api/config"
+                                 "https://config.invalid/api/env")))
+                (should (equal (hermes-config--path-value
+                                hermes-config--config "model") "refreshed"))
+                (should (string-match-p "model.*refreshed" (buffer-string)))
+                (should-not hermes-config--refresh-required)
+                (should (= acquisitions (if cold 3 2)))
+                (should (= releases (if cold 1 2))))
+            (when-let* ((buffer (get-buffer "*Hermes Config*")))
+              (kill-buffer buffer))))))))
+
+(ert-deftest hermes-config-native-refresh-preserves-busy-and-stale-guards ()
+  "Native g refuses a busy view and cannot render a retired read."
+  (let* ((hermes-instances '(("test" . "https://config.invalid")))
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "https://config.invalid" :token "synthetic"))
+         (pending (hermes--promise-make))
+         (defer nil) (acquisitions 0) (releases 0) requests
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest _)
+            (push url requests)
+            (if defer pending (hermes-config-test--response "{}")))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) (cl-incf acquisitions) client))
+              ((symbol-function 'hermes-dashboard-transport-release)
+               (lambda (_) (cl-incf releases))))
+      (save-window-excursion
+        (unwind-protect
+            (progn
+              (hermes-config)
+              (let ((generation hermes-browser--request-generation)
+                    (token (list 'config-mutation))
+                    (before (buffer-string)))
+                (setq hermes-config--mutation-in-flight token)
+                (should-error (execute-kbd-macro (kbd "g")) :type 'user-error)
+                (should (eq hermes-config--mutation-in-flight token))
+                (should (eql generation hermes-browser--request-generation))
+                (should (equal before (buffer-string)))
+                (should (= acquisitions 1))
+                (should (= (length requests) 3))
+                (setq hermes-config--mutation-in-flight nil))
+              (setq defer t requests nil)
+              (execute-kbd-macro (kbd "g"))
+              (should (= (length requests) 1))
+              (should (= releases 1))
+              ;; Retarget through the real ownership boundary before delivery.
+              (hermes-browser--own-instance '("other" . "https://other.invalid"))
+              (let ((before (buffer-string)))
+                (hermes--promise-resolve
+                 pending '(:status 200 :body ((fields . nil)) :body-text "{}"))
+                (should (equal before (buffer-string)))
+                (should (= (length requests) 1))
+                (should (= releases 2))))
+          (when-let* ((buffer (get-buffer "*Hermes Config*")))
+            (kill-buffer buffer)))))))
 
 (provide 'hermes-config-tests)
 ;;; hermes-config-tests.el ends here

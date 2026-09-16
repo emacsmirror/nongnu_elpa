@@ -223,7 +223,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (hermes-exec-test--with-pending proc sent
           (hermes-exec--enqueue-approval proc "(buffer-name)"
                                          :origin-buffer origin)
-          (hermes-exec-approve)
+          (with-current-buffer (plist-get hermes-exec--active :buffer)
+            (hermes-exec-approve))
           (should (string-match-p (regexp-quote (buffer-name origin)) sent)))
       (when (buffer-live-p origin)
         (kill-buffer origin)))))
@@ -241,7 +242,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
             (hermes-exec--enqueue-approval proc "(buffer-name)"
                                            :origin-buffer fallback
                                            :origin-window window)
-            (hermes-exec-approve)
+            (with-current-buffer (plist-get hermes-exec--active :buffer)
+              (hermes-exec-approve))
             (should (string-match-p (regexp-quote (buffer-name origin)) sent))
             (should-not (string-match-p (regexp-quote (buffer-name fallback)) sent))))
       (set-window-buffer window previous)
@@ -261,7 +263,9 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
             (hermes-exec-test--with-pending proc sent
               (hermes-exec--enqueue-approval proc "(buffer-name)"
                                              :origin-buffer origin)
-              (hermes-exec-approve)
+              ;; Test the evaluator's ambient fallback separately from the
+              ;; public approval command, which must run in its owned view.
+              (hermes-exec--resolve-active t)
               (should (string-match-p (regexp-quote (buffer-name fallback)) sent)))))
       (when (buffer-live-p origin)
         (kill-buffer origin))
@@ -293,63 +297,46 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (kill-buffer buffer)))))
 
 (ert-deftest hermes-exec-test-prompt-choice-maps-decisions ()
-  "`read-multiple-choice' results map to approve/deny resolution."
-  (let ((hermes-exec--active (list :id (make-symbol "request") :buffer nil))
-        (noninteractive nil)
-        decisions)
-    (cl-letf (((symbol-function 'hermes-exec--resolve-active)
-               (lambda (approve) (push approve decisions)))
-              ((symbol-function 'read-multiple-choice)
-               (lambda (&rest _) (list ?a "approve once"))))
-      (hermes-exec--prompt-choice))
-    (cl-letf (((symbol-function 'hermes-exec--resolve-active)
-               (lambda (approve) (push approve decisions)))
-              ((symbol-function 'read-multiple-choice)
-               (lambda (&rest _) (list ?d "deny"))))
-      (hermes-exec--prompt-choice))
-    (should (equal '(nil t) decisions))))
+  "Native choices apply only to the actual owned approval view."
+  (hermes-exec-test--with-pending proc sent
+    (hermes-exec--enqueue-approval proc "fixture")
+    (let ((noninteractive nil) decisions)
+      (dolist (choice '(?a ?d))
+        (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+                   (lambda (approve) (push approve decisions)))
+                  ((symbol-function 'read-multiple-choice)
+                   (lambda (&rest _) (list choice))))
+          (hermes-exec--prompt-choice)))
+      (should (equal '(nil t) decisions)))))
 
 (ert-deftest hermes-exec-test-prompt-choice-trusts-ordinary-only ()
-  "Trusting the session approves ordinary, but not sensitive, active requests."
-  (let ((noninteractive nil)
-        decisions)
-    (let ((hermes-exec--active (list :id (make-symbol "request")
-                                    :buffer nil :risk 'ordinary))
-          (hermes-exec-require-approval t))
-      (cl-letf (((symbol-function 'hermes-exec--resolve-active)
-                 (lambda (approve) (push approve decisions)))
-                ((symbol-function 'read-multiple-choice)
-                 (lambda (&rest _) (list ?t "trust for this session"))))
-        (hermes-exec--prompt-choice))
-      (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)))
-    (let ((hermes-exec--active (list :id (make-symbol "request")
-                                    :buffer nil :risk 'sensitive))
-          (hermes-exec-require-approval t)
-          (answers '((?t "trust for this session") (?d "deny"))))
-      (cl-letf (((symbol-function 'hermes-exec--resolve-active)
-                 (lambda (approve) (push approve decisions)))
-                ((symbol-function 'read-multiple-choice)
-                 (lambda (&rest _) (pop answers))))
-        (hermes-exec--prompt-choice))
-      (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)))
-    (should (equal '(nil t) decisions))))
+  "Trust approves ordinary, but not sensitive, owned requests."
+  (dolist (risk '(ordinary sensitive))
+    (hermes-exec-test--with-pending proc sent
+      (hermes-exec--enqueue-approval proc "fixture" :risk risk)
+      (let ((noninteractive nil)
+            (hermes-exec-require-approval t)
+            (answers '(?t ?d)) decisions)
+        (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+                   (lambda (approve) (push approve decisions)))
+                  ((symbol-function 'read-multiple-choice)
+                   (lambda (&rest _) (list (pop answers)))))
+          (hermes-exec--prompt-choice))
+        (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk))
+        (should (equal decisions (list (eq risk 'ordinary))))))))
 
 (ert-deftest hermes-exec-test-prompt-choice-view-selects-buffer ()
-  "The view choice shows the active approval buffer without resolving."
-  (let ((buffer (get-buffer-create " *hermes-exec-view-choice*"))
-        (noninteractive nil)
-        resolved)
-    (unwind-protect
-        (let ((hermes-exec--active (list :id (make-symbol "request") :buffer buffer)))
-          (cl-letf (((symbol-function 'hermes-exec--resolve-active)
-                     (lambda (&rest _) (setq resolved t)))
-                    ((symbol-function 'read-multiple-choice)
-                     (lambda (&rest _) (list ?v "view"))))
-            (hermes-exec--prompt-choice))
-          (should (eq (current-buffer) buffer))
-          (should-not resolved))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
+  "The view choice selects the exact owned buffer without resolving."
+  (hermes-exec-test--with-pending proc sent
+    (hermes-exec--enqueue-approval proc "fixture")
+    (let ((noninteractive nil)
+          (buffer (plist-get hermes-exec--active :buffer)))
+      (cl-letf (((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _) (list ?v))))
+        (hermes-exec--prompt-choice))
+      (should (eq (current-buffer) buffer))
+      (should hermes-exec--active)
+      (should-not sent))))
 
 (defun hermes-exec-test--stale-choice (choice)
   "Check that CHOICE cannot affect a replacement request during the reader."
@@ -439,7 +426,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   (setq hermes-exec-test--canary nil)
   (hermes-exec-test--with-pending proc sent
                                   (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'ran)")
-                                  (hermes-exec-approve)
+                                  (with-current-buffer (plist-get hermes-exec--active :buffer)
+                                    (hermes-exec-approve))
                                   (should (eq hermes-exec-test--canary 'ran))
                                   (should (string-prefix-p "HTTP/1.1 200 OK" sent))
                                   (should (string-match-p "\"ok\":true" sent))
@@ -451,7 +439,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   (setq hermes-exec-test--canary nil)
   (hermes-exec-test--with-pending proc sent
                                   (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'ran)")
-                                  (hermes-exec-deny)
+                                  (with-current-buffer (plist-get hermes-exec--active :buffer)
+                                    (hermes-exec-deny))
                                   (should (null hermes-exec-test--canary))
                                   (should (string-match-p "declined by user" sent))
                                   (should-not (get-buffer hermes-exec--approval-buffer-name))
@@ -491,7 +480,8 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
                    "Queue[[:space:]]*: 1 of 2"
                    (with-current-buffer hermes-exec--approval-buffer-name
                      (buffer-substring-no-properties (point-min) (point-max)))))
-          (hermes-exec-approve)
+          (with-current-buffer (plist-get hermes-exec--active :buffer)
+            (hermes-exec-approve))
           (should (eq proc2 (plist-get hermes-exec--active :proc)))
           (should (null hermes-exec--pending))
           (should (string-match-p
@@ -829,8 +819,9 @@ wins."
     (let ((hermes-exec-test--canary nil))
       (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary t)")
       (cl-letf (((symbol-function 'hermes-exec--close-approval-window)
-                 (lambda () (setq hermes-exec-enabled nil))))
-        (hermes-exec-approve))
+                 (lambda (&optional _buffer) (setq hermes-exec-enabled nil))))
+        (with-current-buffer (plist-get hermes-exec--active :buffer)
+        (hermes-exec-approve)))
       (should-not hermes-exec-test--canary)
       (should (string-match-p "disabled" sent))
       (should-not hermes-exec--active))))
@@ -873,7 +864,8 @@ wins."
          (should (string-prefix-p "HTTP/1.1 401"
                                   (hermes-exec--dispatch
                                    (hermes-exec-tests--request))))
-         (hermes-exec-approve)
+         (with-current-buffer (plist-get hermes-exec--active :buffer)
+           (hermes-exec-approve))
          (should-not hermes-exec-test--canary)
          (should (string-match-p "requires a token" sent)))))))
 
@@ -1044,13 +1036,18 @@ When RESTART is non-nil, replace the dead listener before stopping."
       (hermes-exec-test--await (lambda () hermes-exec--active))
       (let ((second (request "(+ 40 2)")))
         (hermes-exec-test--await (lambda () hermes-exec--pending))
-        (should (condition-case nil (progn (hermes-exec-approve) nil)
+        (should (condition-case nil
+                    (progn
+                      (with-current-buffer (plist-get hermes-exec--active :buffer)
+                        (hermes-exec-approve))
+                      nil)
                   (quit t)))
         (hermes-exec-test--await (lambda () (not (process-live-p first))))
         (should (equal (plist-get hermes-exec--active :code) "(+ 40 2)"))
         (should (equal (reverse shown) '("(signal 'quit nil)" "(+ 40 2)")))
         (should-not hermes-exec--pending)
-        (hermes-exec-approve)
+        (with-current-buffer (plist-get hermes-exec--active :buffer)
+        (hermes-exec-approve))
         (hermes-exec-test--await (lambda () (not (process-live-p second))))
         (should (string-match-p "\"result\":\"42\""
                                 (process-get second 'response)))
@@ -1080,10 +1077,16 @@ When RESTART is non-nil, replace the dead listener before stopping."
     (hermes-exec-test--await (lambda () hermes-exec--active))
     (let ((second (request "(+ 1 1)")))
       (hermes-exec-test--await (lambda () hermes-exec--pending))
-      (should (condition-case nil (progn (hermes-exec-approve) nil) (quit t)))
+      (should (condition-case nil
+                  (progn
+                    (with-current-buffer (plist-get hermes-exec--active :buffer)
+                      (hermes-exec-approve))
+                    nil)
+                (quit t)))
       (should (= (length shown) 2))
       (should (equal (plist-get hermes-exec--active :code) "(+ 1 1)"))
-      (hermes-exec-approve)
+      (with-current-buffer (plist-get hermes-exec--active :buffer)
+        (hermes-exec-approve))
       (hermes-exec-test--await (lambda () (not (process-live-p second))))
       (should (string-match-p "\"result\":\"2\"" (process-get second 'response)))
       (should (= (length shown) 2)))))
@@ -1123,13 +1126,19 @@ When RESTART is non-nil, replace the dead listener before stopping."
         (setq old-proc (plist-get hermes-exec--active :proc))
         (request "(+ 0 0)")
         (hermes-exec-test--await (lambda () hermes-exec--pending))
-        (should (condition-case nil (progn (hermes-exec-approve) nil) (quit t))))
+        (should (condition-case nil
+                  (progn
+                    (with-current-buffer (plist-get hermes-exec--active :buffer)
+                      (hermes-exec-approve))
+                    nil)
+                (quit t))))
       (should-not (process-live-p old-server))
       (should-not (process-live-p old-proc))
       (hermes-exec--sentinel old-proc "late close")
       (should (equal (plist-get hermes-exec--active :code) "(+ 20 22)"))
       (should (= (length shown) 2))
-      (hermes-exec-approve)
+      (with-current-buffer (plist-get hermes-exec--active :buffer)
+        (hermes-exec-approve))
       (hermes-exec-test--await (lambda () (not (process-live-p successor))))
       (should (string-match-p "\"result\":\"42\"" (process-get successor 'response)))
       (should-not hermes-exec--active))))
@@ -1147,6 +1156,83 @@ When RESTART is non-nil, replace the dead listener before stopping."
        (equal
         (hermes-exec-show-bridge-command)
         "hermes mcp add emacs --command hermes-emacs-mcp --env EMACS_EXEC_HOST=127.0.0.1 EMACS_EXEC_PORT=8237")))))
+
+(defun hermes-exec-test--editing-snapshot ()
+  "Return the approval buffer's complete draft presentation state."
+  (list (buffer-string) (copy-tree buffer-undo-list) (buffer-modified-p)
+        buffer-read-only major-mode buffer-file-name header-line-format (point)))
+
+(ert-deftest hermes-exec-test-retired-actions-cannot-consume-successor ()
+  "Native actions on retired A never resolve the pending request B."
+  (dolist (detach '(nil t))
+    (hermes-exec-test--with-pending proc sent
+      (let ((hermes-exec-test--canary nil) old next)
+        (unwind-protect
+            (progn
+              (hermes-exec--enqueue-approval proc "(+ 1 2)")
+              (setq old (plist-get hermes-exec--active :buffer))
+              (with-current-buffer old
+                (set-visited-file-name (expand-file-name "approval-notes" temporary-file-directory) t)
+                (when detach (set-visited-file-name nil t))
+                (read-only-mode -1)
+                (erase-buffer) (buffer-enable-undo)
+                (insert "Local approval notes")
+                (setq header-line-format "My notes")
+                (goto-char 3))
+              (hermes-exec--drop-pending proc)
+              (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'approved-B)")
+              (setq next hermes-exec--active)
+              (should-not (eq old (plist-get next :buffer)))
+              (with-current-buffer old
+                (let ((snapshot (hermes-exec-test--editing-snapshot))
+                      (noninteractive nil))
+                  (cl-letf (((symbol-function 'read-multiple-choice)
+                             (lambda (&rest _) (ert-fail "Retired view entered decision reader"))))
+                    (dolist (key '("a" "d" "RET" "c"))
+                      (call-interactively (key-binding (kbd key))))
+                    (call-interactively #'hermes-exec-decide))
+                  (should (equal snapshot (hermes-exec-test--editing-snapshot)))))
+              (should-not sent)
+              (should-not hermes-exec-test--canary)
+              (should (eq next hermes-exec--active))
+              (with-current-buffer (plist-get next :buffer)
+                (call-interactively (key-binding (kbd "a"))))
+              (should (eq hermes-exec-test--canary 'approved-B))
+              (should sent)
+              (should-not hermes-exec--active))
+          (when (buffer-live-p old)
+            (with-current-buffer old (set-buffer-modified-p nil))
+            (kill-buffer old)))))))
+
+(ert-deftest hermes-exec-test-decision-continuation-rechecks-view ()
+  "Retirement during native decision input revokes all four choices."
+  (dolist (choice '(?a ?d ?t ?v))
+    (hermes-exec-test--with-pending proc sent
+      (let ((noninteractive nil) (hermes-exec-require-approval t)
+            (hermes-exec-test--canary nil) old snapshot)
+        (unwind-protect
+            (progn
+              (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary t)" :risk 'ordinary)
+              (setq old (plist-get hermes-exec--active :buffer))
+              (cl-letf (((symbol-function 'read-multiple-choice)
+                         (lambda (&rest _)
+                           (with-current-buffer old
+                             (set-visited-file-name (expand-file-name "approval-continuation" temporary-file-directory) t)
+                             (set-visited-file-name nil t)
+                             (read-only-mode -1) (erase-buffer) (insert "Notes")
+                             (setq snapshot (hermes-exec-test--editing-snapshot)))
+                           (list choice))))
+                (with-current-buffer old
+                  (call-interactively (key-binding (kbd "RET")))))
+              (should-not sent)
+              (should-not hermes-exec-test--canary)
+              (should (eq hermes-exec-require-approval t))
+              (should (eq old (plist-get hermes-exec--active :buffer)))
+              (with-current-buffer old
+                (should (equal snapshot (hermes-exec-test--editing-snapshot)))))
+          (when (buffer-live-p old)
+            (with-current-buffer old (set-buffer-modified-p nil))
+            (kill-buffer old)))))))
 
 (provide 'hermes-exec-tests)
 ;;; hermes-exec-tests.el ends here

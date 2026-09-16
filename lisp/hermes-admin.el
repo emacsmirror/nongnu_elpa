@@ -23,6 +23,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'keymap-popup)
 (require 'hermes-browser)
 (require 'url-util)
@@ -238,13 +239,14 @@ Never display remote error bodies: they may contain credentials."
   (let* ((instance (hermes-instance-resolve))
          (buffer (cl-find-if
                   (lambda (buffer)
-                    (and (eq mode (buffer-local-value 'major-mode buffer))
+                    (and (with-current-buffer buffer (hermes-buffer--owned-p mode))
                          (equal instance (buffer-local-value 'hermes-instance buffer))))
                   (buffer-list))))
     (unless buffer
       (setq buffer (generate-new-buffer title))
       (with-current-buffer buffer
         (funcall mode)
+        (hermes-buffer--claim mode)
         (hermes-browser--own-instance instance)
         (setq-local header-line-format '(:eval (hermes-admin--header)))))
     (pop-to-buffer buffer)

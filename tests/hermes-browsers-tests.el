@@ -128,6 +128,50 @@
               (with-current-buffer buffer (should (equal (buffer-string) "retained")))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest hermes-work-log-native-file-association-retires-pending-read ()
+  "Pending log success and errors preserve native local-file drafts."
+  (dolist (detach '(nil t))
+    (dolist (failure '(nil t))
+      (let* ((promise (hermes--promise-make))
+             (directory (make-temp-file "hermes-log-owner-" t))
+             (filename (expand-file-name "draft" directory))
+             (owner (list :current-p (lambda (_) t)))
+             viewer)
+        (save-window-excursion
+          (unwind-protect
+              (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                         (lambda (&rest _) promise)))
+                (with-temp-buffer
+                  (hermes-work-mode)
+                  (setq hermes-work--owner owner
+                        tabulated-list-format [("Worker" 20 t)]
+                        tabulated-list-entries '(((delegate . "one") ["one"])))
+                  (tabulated-list-print)
+                  (goto-char (point-min))
+                  (cl-letf (((symbol-function 'hermes-work--observations)
+                             (lambda (_) '((:key (delegate . "one") :kind delegate :id "one"))))
+                            ((symbol-function 'hermes-work--log-path)
+                             (lambda (&rest _) "/remote/log")))
+                    (call-interactively (key-binding (kbd "RET")))
+                    (setq viewer (window-buffer (selected-window)))))
+                (with-current-buffer viewer
+                  (set-visited-file-name filename t)
+                  (when detach (set-visited-file-name nil t))
+                  (read-only-mode -1)
+                  (insert "local log draft λ")
+                  (setq header-line-format "Local header")
+                  (if failure (hermes--promise-reject promise 'unavailable)
+                    (hermes--promise-resolve promise (hermes-test--log-response "wrong")))
+                  (should (equal (buffer-string) "local log draft λ"))
+                  (should (equal header-line-format "Local header"))
+                  (should (equal buffer-file-name (unless detach filename)))
+                  (should (buffer-modified-p))
+                  (should-not buffer-read-only)
+                  (should-not (file-exists-p filename))
+                  (should-error (call-interactively (key-binding (kbd "g"))) :type 'user-error)))
+            (when (buffer-live-p viewer) (kill-buffer viewer))
+            (delete-directory directory t)))))))
+
 (ert-deftest hermes-work-log-keys-and-absence ()
   "RET opens logs, metadata remains separate, and absence never fetches."
   (should (eq (lookup-key hermes-work-mode-map (kbd "RET")) 'hermes-work-log))
@@ -393,8 +437,8 @@
                  pending)))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Kanban*")
-              (hermes-kanban-mode)
+            (with-current-buffer
+                (hermes-buffer--get "*Hermes Kanban*" #'hermes-kanban-mode)
               (hermes-browser--own-instance '("A" . "https://a.example.test"))
               (setq hermes-kanban--slug "old-board"
                     hermes-kanban--name "Old board"
@@ -993,8 +1037,8 @@
                (lambda (&rest _) (setq displayed t))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create "*Hermes Browser Revert*")
-              (hermes-browserrevert-mode)
+            (with-current-buffer
+                (hermes-buffer--get "*Hermes Browser Revert*" #'hermes-browserrevert-mode)
               (hermes-browserrevert--revert))
             (should-not displayed)
             (with-current-buffer "*Hermes Browser Revert*"

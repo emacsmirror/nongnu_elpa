@@ -33,6 +33,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'tabulated-list)
 (require 'json)
 (require 'outline)
@@ -398,7 +399,8 @@ status values."
 
 (defun hermes-kanban--window-size-change (window)
   "Refresh Kanban tabulated-list columns for resized WINDOW."
-  (when (derived-mode-p 'hermes-kanban-boards-mode 'hermes-kanban-mode)
+  (when (and (hermes-buffer--owned-p)
+             (derived-mode-p 'hermes-kanban-boards-mode 'hermes-kanban-mode))
     (let ((old-format tabulated-list-format)
           (width (window-body-width window)))
       (if (derived-mode-p 'hermes-kanban-boards-mode)
@@ -420,8 +422,11 @@ status values."
   "Fetch and render the dashboard boards overview asynchronously.
 With IN-PLACE non-nil, refresh the current overview without selecting it."
   (let ((instance (hermes-instance-resolve))
-        (target (if (and in-place (derived-mode-p 'hermes-kanban-boards-mode))
-                    (current-buffer) (get-buffer-create "*Hermes Kanban Boards*"))))
+        (target (if (and in-place (not (hermes-buffer--retired-p))
+                         (derived-mode-p 'hermes-kanban-boards-mode))
+                    (current-buffer)
+                  (hermes-buffer--get "*Hermes Kanban Boards*"
+                                      #'hermes-kanban-boards-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-boards-mode) (hermes-kanban-boards-mode))
       (hermes-browser--own-instance instance))
@@ -657,8 +662,10 @@ INSTANCE is the Hermes instance inherited from the boards overview."
   (let ((assignees
          (delq nil (mapcar #'hermes-transport--scalar-string
                            (hermes-transport--get payload 'assignees)))))
-    (with-current-buffer (if (and in-place (derived-mode-p 'hermes-kanban-mode))
-                             (current-buffer) (get-buffer-create "*Hermes Kanban*"))
+    (with-current-buffer (if (and in-place (not (hermes-buffer--retired-p))
+                                  (derived-mode-p 'hermes-kanban-mode))
+                             (current-buffer)
+                           (hermes-buffer--get "*Hermes Kanban*" #'hermes-kanban-mode))
       (unless (derived-mode-p 'hermes-kanban-mode)
         (hermes-kanban-mode))
       (when instance (hermes-browser--own-instance instance))
@@ -713,8 +720,10 @@ INSTANCE is the Hermes instance inherited from the boards overview."
   "Fetch board SLUG (display NAME), optionally selecting TASK-ID on arrival.
 With IN-PLACE non-nil, refresh without selecting the board buffer."
   (let* ((instance (hermes-instance-resolve))
-         (target (if (and in-place (derived-mode-p 'hermes-kanban-mode))
-                     (current-buffer) (get-buffer-create "*Hermes Kanban*")))
+         (target (if (and in-place (not (hermes-buffer--retired-p))
+                          (derived-mode-p 'hermes-kanban-mode))
+                     (current-buffer)
+                   (hermes-buffer--get "*Hermes Kanban*" #'hermes-kanban-mode)))
          (request-id (hermes-kanban--begin-request 'hermes-kanban--board-request-id)))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-mode) (hermes-kanban-mode))
@@ -1076,8 +1085,11 @@ INSTANCE is inherited from the owning board buffer."
   (let* ((task (hermes-transport--get payload 'task))
          (task-id (hermes-transport--display-field task 'id))
          (task-status (hermes-transport--display-field task 'status)))
-    (with-current-buffer (if (and in-place (derived-mode-p 'hermes-kanban-task-mode))
-                             (current-buffer) (get-buffer-create "*Hermes Kanban Task*"))
+    (with-current-buffer (if (and in-place (not (hermes-buffer--retired-p))
+                                  (derived-mode-p 'hermes-kanban-task-mode))
+                             (current-buffer)
+                           (hermes-buffer--get "*Hermes Kanban Task*"
+                                               #'hermes-kanban-task-mode))
       (unless (derived-mode-p 'hermes-kanban-task-mode)
         (hermes-kanban-task-mode))
       (when instance (hermes-browser--own-instance instance))
@@ -1101,8 +1113,10 @@ INSTANCE is inherited from the owning board buffer."
   "Display TASK-ID from BOARD-SLUG with ASSIGNEES and return its promise.
 With IN-PLACE non-nil, refresh the current detail without selecting it."
   (let ((instance (hermes-instance-resolve))
-        (target (if (and in-place (derived-mode-p 'hermes-kanban-task-mode))
-                    (current-buffer) (get-buffer-create "*Hermes Kanban Task*"))))
+        (target (if (and in-place (not (hermes-buffer--retired-p))
+                         (derived-mode-p 'hermes-kanban-task-mode))
+                    (current-buffer)
+                  (hermes-buffer--get "*Hermes Kanban Task*" #'hermes-kanban-task-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-task-mode) (hermes-kanban-task-mode))
       (unless (and (equal hermes-instance instance)
@@ -1230,8 +1244,11 @@ With IN-PLACE non-nil, refresh without re-displaying (used by revert).
 INSTANCE is inherited from the owning board or task buffer."
   (let ((task-id (hermes-transport--non-empty-string
                   (hermes-transport--display-field payload 'task_id))))
-    (with-current-buffer (if (and in-place (derived-mode-p 'hermes-kanban-log-mode))
-                             (current-buffer) (get-buffer-create "*Hermes Kanban Log*"))
+    (with-current-buffer (if (and in-place (not (hermes-buffer--retired-p))
+                                  (derived-mode-p 'hermes-kanban-log-mode))
+                             (current-buffer)
+                           (hermes-buffer--get "*Hermes Kanban Log*"
+                                               #'hermes-kanban-log-mode))
       (unless (derived-mode-p 'hermes-kanban-log-mode)
         (hermes-kanban-log-mode))
       (when instance (hermes-browser--own-instance instance))
@@ -1260,8 +1277,10 @@ INSTANCE is inherited from the owning board or task buffer."
 (defun hermes-kanban--open-log (id board-slug &optional in-place)
   "Open task ID's log on BOARD-SLUG, or refresh IN-PLACE without selecting it."
   (let ((instance (hermes-instance-resolve))
-        (target (if (and in-place (derived-mode-p 'hermes-kanban-log-mode))
-                    (current-buffer) (get-buffer-create "*Hermes Kanban Log*"))))
+        (target (if (and in-place (not (hermes-buffer--retired-p))
+                         (derived-mode-p 'hermes-kanban-log-mode))
+                    (current-buffer)
+                  (hermes-buffer--get "*Hermes Kanban Log*" #'hermes-kanban-log-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-log-mode) (hermes-kanban-log-mode))
       (unless (and (equal hermes-instance instance)
@@ -1627,8 +1646,11 @@ summary of the top diagnostic; absent fields fall back to placeholders."
   "Fetch board SLUG's diagnostics, remembering NAME for refreshes.
 With IN-PLACE non-nil, refresh without selecting the buffer."
   (let ((instance (hermes-instance-resolve))
-        (target (if (and in-place (derived-mode-p 'hermes-kanban-diagnostics-mode))
-                    (current-buffer) (get-buffer-create "*Hermes Kanban Diagnostics*"))))
+        (target (if (and in-place (not (hermes-buffer--retired-p))
+                         (derived-mode-p 'hermes-kanban-diagnostics-mode))
+                    (current-buffer)
+                  (hermes-buffer--get "*Hermes Kanban Diagnostics*"
+                                      #'hermes-kanban-diagnostics-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-diagnostics-mode) (hermes-kanban-diagnostics-mode))
       (unless (and (equal hermes-instance instance) (equal hermes-kanban--slug slug))

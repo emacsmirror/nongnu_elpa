@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
@@ -255,7 +256,8 @@ for provider setup.  Skill reload is available with
 (defun hermes-inventory--render (spec rows &optional buffer)
   "Display ROWS for inventory SPEC in BUFFER when given."
   (with-current-buffer (or buffer
-                           (get-buffer-create (format "*Hermes %s*" (car spec))))
+                           (hermes-buffer--get (format "*Hermes %s*" (car spec))
+                                             #'hermes-inventory-mode))
     (unless (derived-mode-p 'hermes-inventory-mode)
       (hermes-inventory-mode))
     (setq hermes-inventory--spec spec)
@@ -330,7 +332,8 @@ client for the listing."
   (let ((instance (hermes-instance-resolve))
         (target (or target
                     (and display
-                         (get-buffer-create (format "*Hermes %s*" (car spec))))
+                         (hermes-buffer--get (format "*Hermes %s*" (car spec))
+                                             #'hermes-inventory-mode))
                     (current-buffer))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-inventory-mode)
@@ -876,9 +879,11 @@ secret is read."
 The buffer never displays memory contents or secret material."
   (interactive)
   (let* ((instance (hermes-instance-resolve))
-         (display (not (derived-mode-p 'hermes-memory-status-mode)))
+         (display (not (eq (current-buffer)
+                           (hermes-buffer--find "*Hermes Memory*"
+                                                'hermes-memory-status-mode))))
          (target (if display
-                     (get-buffer-create "*Hermes Memory*")
+                     (hermes-buffer--get "*Hermes Memory*" #'hermes-memory-status-mode)
                    (current-buffer)))
          (generation
           (with-current-buffer target

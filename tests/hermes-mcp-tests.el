@@ -505,8 +505,8 @@
                (lambda (&rest _) (setq displayed t))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
-              (hermes-mcp-mode)
+            (with-current-buffer
+                (hermes-buffer--get hermes-mcp-buffer-name #'hermes-mcp-mode)
               (hermes-mcp--revert))
             (should-not displayed)
             (with-current-buffer hermes-mcp-buffer-name
@@ -566,8 +566,8 @@
                  (if (= requests 1) first second))))
       (unwind-protect
           (progn
-            (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
-              (hermes-mcp-mode)
+            (with-current-buffer
+                (hermes-buffer--get hermes-mcp-buffer-name #'hermes-mcp-mode)
               (hermes-mcp--revert)
               (hermes-mcp--revert))
             (hermes--promise-resolve

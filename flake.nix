@@ -36,6 +36,7 @@
           emacsPackages = pkgs.emacsPackagesFor emacs;
           # Keep in sync with SRCS in the Makefile.
           elispFiles = [
+            "lisp/hermes-buffer.el"
             "lisp/hermes-promise.el"
             "lisp/hermes-notifications.el"
             "lisp/hermes-session-title.el"
@@ -99,6 +100,7 @@
           # No directory trees — nested/generated/private files stay out of src.
           # Dot-prefixed basenames stay out of scans and release membership.
           testElFiles = [
+            "hermes-buffer-tests.el"
             "hermes-request-tests.el"
             "hermes-admin-tests.el"
             "hermes-browsers-tests.el"

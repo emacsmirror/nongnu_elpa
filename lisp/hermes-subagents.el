@@ -114,7 +114,8 @@ Each active subagent's goal is indented by its spawn depth."
 (defun hermes-work--view-p (owner)
   "Return non-nil when OWNER still owns its exact list buffer."
   (let ((view (plist-get owner :view)))
-    (and (hermes-browser--buffer-mode-p view 'hermes-work-mode)
+    (and (buffer-live-p view)
+         (with-current-buffer view (hermes-buffer--owned-p 'hermes-work-mode))
          (eq owner (buffer-local-value 'hermes-work--owner view)))))
 
 (defun hermes-work--current-p (owner)
@@ -213,8 +214,9 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 (defun hermes-work-scope-details ()
   "Display scope, freshness and limitations for this exact work view."
   (interactive)
-  (let ((text (hermes-work--scope-text hermes-work--owner)))
-    (with-help-window "*Hermes Work Scope*" (princ text))))
+  (let ((text (hermes-work--scope-text hermes-work--owner))
+        (buffer (hermes-buffer--get "*Hermes Work Scope*" #'help-mode)))
+    (with-help-window buffer (princ text))))
 
 (defun hermes-work--render (owner)
   "Repaint OWNER's exact list from snapshots only, without selecting it."
@@ -359,6 +361,7 @@ The endpoint returns whole files, not a tail or a paginated transcript."
 (defun hermes-work-log--current-p (buffer binding token)
   "Return non-nil if BUFFER still owns BINDING and request TOKEN."
   (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+       (not (with-current-buffer buffer (hermes-buffer--retired-p)))
        (eq binding (buffer-local-value 'hermes-work-log--binding buffer))
        (eq token (buffer-local-value 'hermes-work-log--request buffer))
        (hermes-work--current-p (plist-get binding :owner))))
@@ -380,6 +383,7 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
          (binding hermes-work-log--binding)
          (owner (plist-get binding :owner)))
     (unless (and (derived-mode-p 'hermes-work-log-mode)
+                 (not (hermes-buffer--retired-p))
                  (hermes-work--current-p owner))
       (user-error "Worker log owner detached; reopen from the attached chat"))
     (when hermes-work-log--request (user-error "Worker log refresh already pending"))
@@ -425,6 +429,7 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
          (seq-find
           (lambda (buffer)
             (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                 (not (with-current-buffer buffer (hermes-buffer--retired-p)))
                  (let ((binding (buffer-local-value 'hermes-work-log--binding buffer)))
                    (and (eq owner (plist-get binding :owner))
                         (equal id (plist-get binding :id))
@@ -436,11 +441,14 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
           (hermes-work-log-mode)
           (when (and (eq (current-buffer) buffer)
                      (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                     (not (hermes-buffer--retired-p))
                      (hermes-work--current-p owner))
+            (hermes-buffer--claim 'hermes-work-log-mode)
             (setq hermes-work-log--binding (list :owner owner :id id :path path)
                   header-line-format "Worker log · Not fetched")
             (hermes-work-log-refresh)))
         (when (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
+                   (not (with-current-buffer buffer (hermes-buffer--retired-p)))
                    (eq owner (plist-get (buffer-local-value 'hermes-work-log--binding buffer)
                                        :owner))
                    (hermes-work--current-p owner))
@@ -485,6 +493,7 @@ The backend may truncate individual entries or expire logs.  No full-session
 history guarantee is implied.  Requests time out after 30 seconds; files over
 2 MiB are not rendered, although the API transfers the whole file."
   (setq-local truncate-lines nil)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-buffer--retire nil t)
   (visual-line-mode 1)
   (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-log-refresh))))
 
@@ -529,6 +538,7 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
       (let ((buffer (generate-new-buffer "*Hermes Observed Work*")))
         (with-current-buffer buffer
           (hermes-work-mode)
+          (hermes-buffer--claim 'hermes-work-mode)
           (setq hermes-work--owner owner)
           (setq-local hermes-instance (plist-get owner :instance)))
         (setf (plist-get owner :view) buffer

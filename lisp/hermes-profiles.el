@@ -33,6 +33,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'seq)
 (require 'tabulated-list)
 (require 'url-util)
@@ -183,7 +184,7 @@ Reject another save until settlement rather than race remote writes.")
   (or (seq-find
        (lambda (buffer)
          (with-current-buffer buffer
-           (and (derived-mode-p 'hermes-profiles-soul-mode)
+           (and (hermes-buffer--owned-p 'hermes-profiles-soul-mode)
                 (equal hermes-profiles-soul-profile profile)
                 (equal hermes-instance instance))))
        (buffer-list))
@@ -191,6 +192,7 @@ Reject another save until settlement rather than race remote writes.")
                      (hermes-profiles--soul-buffer-name profile instance))))
         (with-current-buffer buffer
           (hermes-profiles-soul-mode)
+          (hermes-buffer--claim 'hermes-profiles-soul-mode)
           (setq hermes-instance (copy-tree instance t)
                 hermes-profiles-soul-profile (copy-sequence profile)))
         buffer)))

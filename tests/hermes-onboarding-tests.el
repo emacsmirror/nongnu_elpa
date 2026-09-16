@@ -147,6 +147,7 @@
                                hermes-onboarding-oauth-submit))
               (with-temp-buffer
                 (hermes-onboarding-oauth-mode)
+                (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
                 (setq hermes-onboarding-oauth--provider "nous"
                       hermes-onboarding-oauth--provider-name "Nous"
                       hermes-onboarding-oauth--session-id "sid")
@@ -320,6 +321,7 @@
                (lambda (_provider _result &optional profile)
                  (push (list 'show profile) calls)
                  (hermes-onboarding-oauth-mode)
+                 (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
                  (hermes-onboarding--oauth-context)))
               ((symbol-function 'hermes-onboarding--oauth-start)
                (lambda (client provider &optional profile)
@@ -350,6 +352,7 @@
          '((id . "anthropic") (name . "Anthropic"))))
       (with-temp-buffer
         (hermes-onboarding-oauth-mode)
+        (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
         (setq hermes-onboarding-oauth--provider "anthropic"
               hermes-onboarding-oauth--provider-name "Anthropic"
               hermes-onboarding-oauth--session-id "sid"
@@ -548,7 +551,9 @@
           (applied 0)
           (disconnects 0)
           (changed 0)
-          messages)
+          (show (symbol-function 'hermes-onboarding--show-oauth))
+          (apply-result (symbol-function 'hermes-onboarding--oauth-apply-result))
+          view messages)
       (cl-letf (((symbol-function 'hermes-browser--with-client)
                  (lambda (fn) (funcall fn 'client #'ignore)))
                 ((symbol-function 'hermes-dashboard-transport-api-request-async)
@@ -564,9 +569,16 @@
                 ((symbol-function 'yes-or-no-p)
                  (lambda (&rest _) (setq prompts (1+ prompts)) t))
                 ((symbol-function 'hermes-onboarding--show-oauth)
-                 (lambda (&rest _) (setq shown (1+ shown)) 'context))
+                 (lambda (&rest args)
+                   (setq shown (1+ shown))
+                   (let ((context (apply show args)))
+                     (setq view (plist-get context :buffer))
+                     context)))
                 ((symbol-function 'hermes-onboarding--oauth-apply-result)
-                 (lambda (&rest _) (setq applied (1+ applied)) t))
+                 (lambda (&rest args)
+                   (setq applied (1+ applied))
+                   (apply apply-result args)))
+                ((symbol-function 'pop-to-buffer) #'ignore)
                 ((symbol-function 'hermes-onboarding--auth-changed)
                  (lambda () (setq changed (1+ changed))))
                 ((symbol-function 'message)
@@ -608,6 +620,7 @@
                 (should (= disconnects 0))
                 (should (= changed 0))
                 (should-not messages)))
+          (when (buffer-live-p view) (kill-buffer view))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-onboarding-row-disconnect-respects-owner ()
@@ -729,6 +742,7 @@
        (dolist (retire '(nil t))
          (with-temp-buffer
            (hermes-onboarding-oauth-mode)
+           (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
            (setq hermes-onboarding-oauth--provider "old"
                  hermes-onboarding-oauth--provider-name "Old"
                  hermes-onboarding-oauth--session-id "old-session"
@@ -810,7 +824,7 @@
           (second (hermes--promise-make))
           (requests 0)
           (changed 0)
-          opened messages successor-result successor-text
+          opened messages successor-result successor-text retired successor
           (provider '((id . "nous") (name . "Nous"))))
       (cl-letf (((symbol-function 'hermes-browser--with-client)
                  (lambda (fn) (funcall fn 'client #'ignore)))
@@ -820,7 +834,7 @@
                    (if (= requests 1) first second)))
                 ((symbol-function 'hermes-onboarding--auth-changed)
                  (lambda () (setq changed (1+ changed))))
-                ((symbol-function 'pop-to-buffer) #'ignore)
+                ((symbol-function 'pop-to-buffer) (lambda (buffer) (setq successor buffer)))
                 ((symbol-function 'browse-url) (lambda (url) (setq opened url)))
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
@@ -831,11 +845,14 @@
                 (hermes-provider-accounts-mode)
                 (setq hermes-onboarding--provider-account-profile "profile-b")
                 (hermes-onboarding--oauth-start-provider provider))
-              (with-current-buffer "*Hermes OAuth*"
+              (setq retired successor)
+              (with-current-buffer retired
                 (fundamental-mode)
                 (hermes-onboarding-oauth-mode)
                 (setq hermes-onboarding-oauth--profile "profile-b")
-                (hermes-onboarding--oauth-start-provider provider)
+                (hermes-onboarding--oauth-start-provider provider))
+              (should-not (eq retired successor))
+              (with-current-buffer successor
                 (setq successor-result
                       (copy-tree hermes-onboarding-oauth--result)
                       successor-text (buffer-string)))
@@ -845,21 +862,21 @@
                    first '((status . "approved")
                            (auth_url . "https://example.org/stale")))
                 (hermes--promise-reject first "stale OAuth failure"))
-              (with-current-buffer "*Hermes OAuth*"
+              (with-current-buffer successor
                 (should (equal hermes-onboarding-oauth--result successor-result))
                 (should (equal (buffer-string) successor-text)))
               (should (= changed 0))
               (should-not opened)
               (should-not messages)
               (hermes--promise-resolve second '((status . "approved")))
-              (with-current-buffer "*Hermes OAuth*"
+              (with-current-buffer successor
                 (should (equal
                          (hermes-transport--display-field
                           hermes-onboarding-oauth--result 'status)
                          "approved")))
               (should (= changed 1)))
-          (when (get-buffer "*Hermes OAuth*")
-            (kill-buffer "*Hermes OAuth*")))))))
+          (dolist (buffer (list retired successor))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
 (ert-deftest hermes-onboarding-oauth-status-omits-secret-fields ()
   "OAuth status text renders useful state without arbitrary secret fields."
@@ -897,6 +914,7 @@
           (progn
             (with-current-buffer buffer
               (hermes-onboarding-oauth-mode)
+              (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
               (setq hermes-onboarding-oauth--provider "nous"
                     hermes-onboarding-oauth--provider-name "Nous"
                     hermes-onboarding-oauth--session-id "sid"
@@ -960,6 +978,7 @@
                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
          (with-temp-buffer
            (hermes-onboarding-oauth-mode)
+           (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
            (setq hermes-onboarding-oauth--provider "nous"
                  hermes-onboarding-oauth--provider-name "Nous"
                  hermes-onboarding-oauth--session-id "sid")
@@ -1161,6 +1180,7 @@
   (let ((calls 0))
     (with-temp-buffer
       (hermes-onboarding-oauth-mode)
+      (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
       (setq hermes-onboarding-oauth--provider "nous"
             hermes-onboarding-oauth--session-id "flow"
             hermes-onboarding-oauth--result
@@ -1192,6 +1212,7 @@
   (dolist (replace '(t nil))
     (with-temp-buffer
       (hermes-onboarding-oauth-mode)
+      (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
       (setq hermes-onboarding-oauth--provider "nous"
             hermes-onboarding-oauth--session-id "old-flow"
             hermes-onboarding-oauth--profile "test-profile")
@@ -1225,6 +1246,7 @@
   "Public poll and disconnect remove stale invitations and expose recovery."
   (with-temp-buffer
     (hermes-onboarding-oauth-mode)
+    (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
     (setq hermes-onboarding-oauth--provider "nous"
           hermes-onboarding-oauth--session-id "flow"
           hermes-onboarding-oauth--result
@@ -1443,9 +1465,8 @@ external acquisition, HTTP delivery, input and browser launch are controlled."
                        (funcall report context reason)))
                     ((symbol-function 'read-passwd) (lambda (&rest _) " literal-code "))
                     ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
-            (setq buffer (generate-new-buffer " *OAuth lease*"))
+            (setq buffer (hermes-buffer--get " *OAuth lease*" #'hermes-onboarding-oauth-mode))
             (with-current-buffer buffer
-              (hermes-onboarding-oauth-mode)
               (setq hermes-onboarding-oauth--provider "nous"
                     hermes-onboarding-oauth--provider-name "Nous"
                     hermes-onboarding-oauth--profile "profile-a"
@@ -1548,6 +1569,7 @@ external acquisition, HTTP delivery, input and browser launch are controlled."
     (dolist (fault '(error quit))
       (with-temp-buffer
         (hermes-onboarding-oauth-mode)
+        (hermes-buffer--claim 'hermes-onboarding-oauth-mode)
         (setq hermes-onboarding-oauth--provider "nous"
               hermes-onboarding-oauth--result '((status . "starting")))
         (let* ((hermes-instances nil)
@@ -1577,6 +1599,403 @@ external acquisition, HTTP delivery, input and browser launch are controlled."
                 (unless acquisition
                   (should (hermes-dashboard-transport-client-stopping-p client))))
             (hermes-dashboard-transport-stop client)))))))
+
+(defun hermes-onboarding-test--retire-oauth (retirement)
+  "Retire this OAuth view using RETIREMENT, retaining its other state."
+  (pcase retirement
+    ((or 'associated 'detached)
+     (set-visited-file-name
+      (expand-file-name "oauth-notes" temporary-file-directory) t)
+     (auto-save-mode -1)
+     (when (eq retirement 'detached) (set-visited-file-name nil t)))
+    ('claim (hermes-buffer--claim 'hermes-onboarding-oauth-mode))
+    ('unclaimed (setq hermes-buffer--owner nil)))
+  (when retirement
+    (read-only-mode -1)
+    (erase-buffer)
+    (insert "Literal OAuth notes λ\n")
+    (setq header-line-format "Local notes")))
+
+(defun hermes-onboarding-test--oauth-editing-state ()
+  "Return the current OAuth view's editing and operation state."
+  (list (buffer-string) (point) buffer-file-name buffer-read-only
+        (buffer-modified-p) header-line-format hermes-buffer--owner
+        hermes-onboarding-oauth--generation hermes-onboarding-oauth--result
+        hermes-onboarding-oauth--session-id))
+
+(defun hermes-onboarding-test--oauth-retirement (key boundary retirement rejection)
+  "Exercise KEY at BOUNDARY with RETIREMENT and response REJECTION.
+Keep the public constructor, acquisition wrapper, REST builder and release."
+  (hermes-onboarding-test--without-startup
+   (lambda ()
+     (let* ((instance '("Owned" . "https://owned.example"))
+            (hermes-instances (list instance))
+            (hermes-dashboard-transport-idle-close-delay nil)
+            (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+            (client (make-hermes-dashboard-transport-client
+                     :base-url "https://owned.example"
+                     :refcount 1 :generation 1))
+            (auth (hermes--promise-make))
+            (response (hermes--promise-make))
+            (release (symbol-function 'hermes-dashboard-transport-release))
+            (acquisitions 0) (releases 0) (prompts 0) (changed 0)
+            requests opened view before
+            (prompt (lambda (&rest _)
+                      (cl-incf prompts)
+                      (when (eq boundary 'input)
+                        (hermes-onboarding-test--retire-oauth retirement)
+                        (setq before (hermes-onboarding-test--oauth-editing-state)))
+                      "literal-code")))
+       (unwind-protect
+           (save-window-excursion
+             (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                       ((symbol-function 'hermes-dashboard-transport-acquire)
+                        (lambda (&rest _) (cl-incf acquisitions) client))
+                       ((symbol-function 'hermes-dashboard-transport-release)
+                        (lambda (owner)
+                          (should (eq owner client))
+                          (cl-incf releases)
+                          (funcall release owner)))
+                       ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                        (lambda (&rest _) auth))
+                       ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                        (lambda (request) (push request requests) response))
+                       ((symbol-function 'read-passwd) prompt)
+                       ((symbol-function 'yes-or-no-p) prompt)
+                       ((symbol-function 'browse-url) (lambda (url) (push url opened)))
+                       ((symbol-function 'hermes-onboarding--auth-changed)
+                        (lambda () (cl-incf changed))))
+               (hermes-onboarding--show-oauth
+                '((id . "nous") (name . "Nous"))
+                (if (equal key "r") '((status . "error"))
+                  '((status . "pending") (session_id . "exact-flow")))
+                nil instance)
+               (setq view (current-buffer))
+               (when (eq boundary 'admission)
+                 (hermes-onboarding-test--retire-oauth retirement)
+                 (setq before (hermes-onboarding-test--oauth-editing-state)))
+               (call-interactively (key-binding (kbd key)))
+               (when (eq boundary 'auth)
+                 (hermes-onboarding-test--retire-oauth retirement)
+                 (setq before (hermes-onboarding-test--oauth-editing-state)))
+               (should-not requests)
+               (hermes--promise-resolve auth '(:base-url "https://owned.example"))
+               (when (eq boundary 'response)
+                 (hermes-onboarding-test--retire-oauth retirement)
+                 (setq before (hermes-onboarding-test--oauth-editing-state)))
+               (if rejection
+                   (hermes--promise-reject response "Synthetic OAuth failure")
+                 (hermes--promise-resolve
+                  response '(:status 200 :body
+                             ((status . "approved") (ok . t)))))
+               (let ((admitted (not (and retirement
+                                        (memq boundary '(admission input)))))
+                     (sent (or (not retirement) (eq boundary 'response))))
+                 (should (= acquisitions (if admitted 1 0)))
+                 (should (= releases (if admitted 1 0)))
+                 (should (= (length requests) (if sent 1 0)))
+                 (should (= prompts (if (and (member key '("s" "d"))
+                                            (not (and retirement
+                                                      (eq boundary 'admission))))
+                                       1 0)))
+                 (when sent
+                   (should (equal (plist-get (car requests) :method)
+                                  (pcase key ("g" "GET")
+                                         ((or "r" "s") "POST") (_ "DELETE"))))
+                   (should (equal (plist-get (car requests) :url)
+                                  (concat "https://owned.example/api/providers/oauth/"
+                                          (pcase key
+                                            ("r" "nous/start")
+                                            ("g" "nous/poll/exact-flow")
+                                            ("s" "nous/submit")
+                                            ("c" "sessions/exact-flow")
+                                            ("d" "nous"))))))
+                 (if retirement
+                     (progn
+                       (should (equal before (hermes-onboarding-test--oauth-editing-state)))
+                       (should (= changed 0)))
+                   (should (equal (hermes-transport--get hermes-onboarding-oauth--result 'status)
+                                  (cond (rejection "error")
+                                        ((equal key "c") "cancelled")
+                                        ((equal key "d") "disconnected")
+                                        (t "approved")))))
+                 (should-not opened)
+                 (hermes--promise-reject response "Duplicate")
+                 (should (= releases (if admitted 1 0)))
+                 (when admitted
+                   (should (= (hermes-dashboard-transport-client-refcount client) 0))
+                   (should (hermes-dashboard-transport-client-stopping-p client))))))
+         (when (buffer-live-p view)
+           (with-current-buffer view (set-buffer-modified-p nil))
+           (kill-buffer view))
+         (hermes-dashboard-transport-stop client))))))
+
+(ert-deftest hermes-onboarding-oauth-retirement-public-admission ()
+  "Fresh public commands never acquire, prompt or repaint retired notes."
+  (dolist (key '("g" "s" "c" "d" "r"))
+    (dolist (retirement '(nil associated detached unclaimed))
+      (hermes-onboarding-test--oauth-retirement key 'admission retirement nil))))
+
+(ert-deftest hermes-onboarding-oauth-retirement-input-continuations ()
+  "Code and consent cannot transfer to a replacement constructor claim."
+  (dolist (key '("s" "d"))
+    (dolist (retirement '(nil associated detached claim))
+      (hermes-onboarding-test--oauth-retirement key 'input retirement nil))))
+
+(ert-deftest hermes-onboarding-oauth-retirement-authentication ()
+  "Even polling GET retains exact view authority until actual HTTP dispatch."
+  (dolist (key '("g" "s" "c" "d" "r"))
+    (dolist (retirement '(nil associated detached claim))
+      (hermes-onboarding-test--oauth-retirement key 'auth retirement nil))))
+
+(ert-deftest hermes-onboarding-oauth-retirement-pending-publication ()
+  "Late success and error settle once without publishing over retired views."
+  (dolist (key '("g" "s" "c" "d" "r"))
+    (dolist (retirement '(nil associated detached claim))
+      (dolist (rejection '(nil t))
+        (hermes-onboarding-test--oauth-retirement key 'response retirement rejection)))))
+
+(ert-deftest hermes-onboarding-oauth-retirement-reopen ()
+  "Reopening creates a current OAuth view without reclaiming detached notes."
+  (dolist (retirement '(associated detached))
+    (let* ((instance '("Owned" . "https://owned.example"))
+           (hermes-instances (list instance))
+           (provider '((id . "nous") (name . "Nous")))
+           (result '((status . "pending") (session_id . "exact-flow")))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "https://owned.example" :token "synthetic" :generation 1))
+           first second requests before)
+      (unwind-protect
+          (save-window-excursion
+            (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client))
+                      ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                       (lambda (request)
+                         (push request requests)
+                         (hermes--promise-resolved '(:status 200 :body ((ok . t)))))))
+              (setq first (plist-get (hermes-onboarding--show-oauth provider result nil instance)
+                                     :buffer))
+              (hermes-onboarding-test--retire-oauth retirement)
+              (setq before (hermes-onboarding-test--oauth-editing-state))
+              (setq second (plist-get (hermes-onboarding--show-oauth provider result nil instance)
+                                      :buffer))
+              (should-not (eq first second))
+              (call-interactively (key-binding (kbd "c")))
+              (should (= (length requests) 1))
+              (should (string-match-p "Status: cancelled" (buffer-string)))
+              (with-current-buffer first
+                (should (equal before (hermes-onboarding-test--oauth-editing-state))))))
+        (dolist (buffer (list first second))
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer)))))))
+
+
+(ert-deftest hermes-onboarding-oauth-retirement-before-acquisition ()
+  "A constructor retired during display cannot reach client acquisition."
+  (dolist (retirement '(associated detached claim kill))
+    (let ((instance '("Owned" . "https://owned.example")) buffer context)
+      (unwind-protect
+          (save-window-excursion
+            (setq context
+                  (hermes-onboarding--show-oauth
+                   '((id . "nous")) '((status . "starting")) nil instance)
+                  buffer (plist-get context :buffer))
+            (if (eq retirement 'kill) (kill-buffer buffer)
+              (hermes-onboarding-test--retire-oauth retirement))
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _) (ert-fail "Retired acquisition")))
+                      ((symbol-function 'hermes-browser--existing-client)
+                       (lambda () (ert-fail "Retired lookup"))))
+              (hermes-onboarding--oauth-run
+               context (lambda (_) (ert-fail "Retired dispatch"))
+               (lambda (_) (ert-fail "Retired result")))))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(defun hermes-onboarding-test--global-disconnect
+    (delayed entry boundary effect &optional shared)
+  "Exercise DELAYED catalogue from ENTRY, with EFFECT at BOUNDARY.
+Keep real acquisition, REST building, constructor and release.  SHARED
+retains another transport lease; otherwise settlement stops the client."
+  (hermes-onboarding-test--without-startup
+   (lambda ()
+     (let* ((instance '("Owned" . "https://owned.example"))
+            (hermes-instances (unless (eq entry 'legacy) (list instance)))
+            (hermes-dashboard-transport-url (cdr instance))
+            (hermes-dashboard-transport-idle-close-delay nil)
+            (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+            (client (make-hermes-dashboard-transport-client
+                     :base-url (cdr instance) :generation 1
+                     :refcount (if shared 2 1)))
+            (catalogue (hermes--promise-make))
+            (auth (hermes--promise-make))
+            (response (hermes--promise-make))
+            (catalogue-result
+             '(:status 200 :body
+               ((providers . (((id . "nous") (name . "Nous")
+                               (disconnectable . t)
+                               (status . ((logged_in . t)))))))))
+            (release (symbol-function 'hermes-dashboard-transport-release))
+            (acquisitions 0) (releases 0) (authentications 0)
+            (prompts 0) (changed 0)
+            source view retired before requests statuses caught auth-guards)
+       (cl-labels
+           ((status ()
+              (when (buffer-live-p view)
+                (with-current-buffer view
+                  (hermes-transport--get hermes-onboarding-oauth--result 'status))))
+            (interleave (phase)
+              (when (eq boundary phase)
+                (pcase effect
+                  ((or 'error 'quit) (signal effect '("Synthetic disconnect failure")))
+                  ('transport (hermes-dashboard-transport-stop client))
+                  ((or 'source 'view 'constructor)
+                   (setq retired (if (eq effect 'source) source view))
+                   (with-current-buffer retired
+                     (if (eq effect 'constructor)
+                         (should (eq retired (hermes-buffer--get
+                                              (buffer-name) #'hermes-onboarding-oauth-mode t)))
+                       (if (eq major-mode 'hermes-onboarding-oauth-mode)
+                           (hermes-onboarding-test--retire-oauth 'detached)
+                         (fundamental-mode)
+                         (insert "Literal source notes λ\n")))
+                     (setq before (hermes-onboarding-test--oauth-editing-state))))))))
+         (unwind-protect
+             (save-window-excursion
+               (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                         ((symbol-function 'hermes-dashboard-transport-acquire)
+                          (lambda (&rest _)
+                            (cl-incf acquisitions)
+                            (interleave 'acquire)
+                            client))
+                         ((symbol-function 'hermes-dashboard-transport-release)
+                          (lambda (owner)
+                            (should (eq owner client))
+                            (push (status) statuses)
+                            (cl-incf releases)
+                            (funcall release owner)))
+                         ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                          (lambda (&rest _)
+                            (if (= (cl-incf authentications) 1)
+                                (hermes--promise-resolved (list :base-url (cdr instance)))
+                              ;; Observe outside the promise's error handler.
+                              (push hermes-dashboard-transport--api-auth-current-p auth-guards)
+                              (interleave 'auth-start)
+                              auth)))
+                         ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                          (lambda (request)
+                            (push request requests)
+                            (if (equal (plist-get request :method) "GET")
+                                (progn
+                                  (interleave 'catalogue-request)
+                                  (if delayed catalogue
+                                    (hermes--promise-resolved catalogue-result)))
+                              response)))
+                         ((symbol-function 'completing-read)
+                          (lambda (&rest _)
+                            (cl-incf prompts) (interleave 'choice) "Nous"))
+                         ((symbol-function 'yes-or-no-p)
+                          (lambda (&rest _)
+                            (cl-incf prompts) (interleave 'consent)
+                            (not (eq effect 'cancel))))
+                         ((symbol-function 'hermes-onboarding--auth-changed)
+                          (lambda () (cl-incf changed))))
+                 (setq source
+                       (if (eq entry 'oauth)
+                           (plist-get (hermes-onboarding--show-oauth
+                                       '((id . "nous") (name . "Nous"))
+                                       '((status . "approved")) nil instance) :buffer)
+                         (generate-new-buffer " *OAuth global origin*")))
+                 (with-current-buffer source
+                   (unless (eq entry 'oauth) (text-mode))
+                   (condition-case err
+                       (call-interactively #'hermes-onboarding-oauth-disconnect-provider)
+                     ((error quit) (setq caught (car err)))))
+                 (setq view (hermes-buffer--find "*Hermes OAuth*" 'hermes-onboarding-oauth-mode))
+                 (interleave 'catalogue)
+                 ;; Deliver outside the origin and acquisition dynamic extent.
+                 (with-temp-buffer
+                   (hermes--promise-resolve catalogue catalogue-result))
+                 (setq view (hermes-buffer--find "*Hermes OAuth*" 'hermes-onboarding-oauth-mode))
+                 (interleave 'auth)
+                 (hermes--promise-resolve auth (list :base-url (cdr instance)))
+                 (interleave 'response)
+                 (if (eq effect 'reject)
+                     (hermes--promise-reject response "Synthetic DELETE failure")
+                   (hermes--promise-resolve response '(:status 200 :body ((ok . t)))))
+                 (let ((sent (or (null effect) (eq boundary 'response)))
+                       (acquired (not (eq boundary 'acquire))))
+                   (should (= acquisitions 1))
+                   (should (seq-every-p #'functionp auth-guards))
+                   (should (= prompts
+                              (pcase boundary
+                                ((or 'acquire 'catalogue-request 'catalogue) 0)
+                                ('choice 1)
+                                (_ 2))))
+                   (should (= releases (if acquired 1 0)))
+                   (should (eq caught (and (not acquired) effect)))
+                   (should (= (cl-count "DELETE" requests :key (lambda (r) (plist-get r :method))
+                                        :test #'equal)
+                              (if sent 1 0)))
+                   (when sent
+                     (should (equal (plist-get (car requests) :url)
+                                    "https://owned.example/api/providers/oauth/nous")))
+                   (when retired
+                     (with-current-buffer retired
+                       (should (equal before (hermes-onboarding-test--oauth-editing-state)))))
+                   (should (= changed (if effect 0 1)))
+                   (unless effect
+                     (should (= prompts 2))
+                     (should (equal (status) "disconnected"))
+                     (should (equal statuses '("disconnected"))))
+                   (when (eq effect 'reject)
+                     (should (equal (status) "error"))
+                     (should (equal statuses '("error"))))
+                   (when acquired
+                     (should (= (hermes-dashboard-transport-client-refcount client)
+                                (if shared 1 0))))
+                   ;; Duplicate late deliveries cannot release or publish again.
+                   (hermes--promise-reject catalogue "Duplicate")
+                   (hermes--promise-reject auth "Duplicate")
+                   (hermes--promise-reject response "Duplicate")
+                   (should (= releases (if acquired 1 0))))))
+           (dolist (buffer (delete-dups (list source view retired)))
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (set-buffer-modified-p nil))
+               (kill-buffer buffer)))
+           (hermes-dashboard-transport-stop client)))))))
+
+(ert-deftest hermes-onboarding-global-disconnect-current-owners ()
+  "Immediate and delayed catalogues work from owned and global origins."
+  (dolist (delayed '(nil t))
+    (dolist (entry '(oauth global legacy))
+      (dolist (shared '(nil t))
+        (hermes-onboarding-test--global-disconnect delayed entry nil nil shared)))))
+
+(ert-deftest hermes-onboarding-global-disconnect-retired-origins ()
+  "Catalogue, choice, consent and authentication retain origin authority."
+  (dolist (boundary '(catalogue choice consent auth response))
+    (hermes-onboarding-test--global-disconnect t 'oauth boundary 'source))
+  (hermes-onboarding-test--global-disconnect nil 'oauth 'auth 'source)
+  (hermes-onboarding-test--global-disconnect t 'global 'auth 'source))
+
+(ert-deftest hermes-onboarding-global-disconnect-retired-destinations ()
+  "A global entry also retains the newly shown view and transport."
+  (dolist (effect '(view constructor transport))
+    (dolist (boundary '(auth response))
+      (hermes-onboarding-test--global-disconnect t 'global boundary effect)))
+  (hermes-onboarding-test--global-disconnect t 'oauth 'catalogue 'constructor))
+
+(ert-deftest hermes-onboarding-global-disconnect-errors-and-quits ()
+  "Errors, quits, cancellation and rejection release only the acquired lease."
+  (dolist (effect '(error quit))
+    (dolist (boundary '(acquire catalogue-request choice consent auth-start))
+      (hermes-onboarding-test--global-disconnect t 'global boundary effect)))
+  (hermes-onboarding-test--global-disconnect t 'global 'consent 'cancel)
+  (dolist (shared '(nil t))
+    (hermes-onboarding-test--global-disconnect t 'global 'response 'reject shared)))
+
 
 (provide 'hermes-onboarding-tests)
 ;;; hermes-onboarding-tests.el ends here

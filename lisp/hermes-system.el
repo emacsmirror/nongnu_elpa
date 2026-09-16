@@ -24,6 +24,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'pp)
 (require 'subr-x)
 (require 'keymap-popup)
@@ -212,9 +213,8 @@ profile selection; the API has no profile parameter."
 (defun hermes-system--open (buffer-name heading path &optional query)
   "Open BUFFER-NAME for HEADING fetched from PATH with QUERY."
   (let ((instance (hermes-instance-resolve))
-        (buffer (get-buffer-create buffer-name)))
+        (buffer (hermes-buffer--get buffer-name #'hermes-system-mode t)))
     (with-current-buffer buffer
-      (hermes-system-mode)
       (hermes-browser--own-instance instance)
       (setq-local header-line-format '(:eval (hermes-system--header-line)))
       (setq hermes-system--heading heading

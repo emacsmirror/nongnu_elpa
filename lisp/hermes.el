@@ -29,6 +29,7 @@
 
 ;;; Code:
 
+(require 'hermes-buffer)
 (require 'cl-lib)
 (require 'ewoc)
 (require 'keymap-popup)
@@ -468,8 +469,9 @@ result `ok' flag because `setup.runtime_check' reports a credential failure as
          (hermes-dashboard-transport-call-fn
           #'hermes-dashboard-transport-setup-runtime-check client))
        (lambda (result)
-         (when (and (hermes-browser--buffer-mode-p
-                     buffer 'hermes-dashboard-mode)
+         (when (and (eq buffer (hermes-buffer--find
+                                hermes-dashboard-buffer-name
+                                'hermes-dashboard-mode))
                     (eq token
                         (buffer-local-value
                          'hermes-dashboard--auth-request-token buffer)))
@@ -776,7 +778,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-refresh-visible ()
   "Refresh the visible Hermes dashboard buffer, when it exists."
-  (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
+  (when-let* ((buffer (hermes-buffer--find hermes-dashboard-buffer-name
+                                           'hermes-dashboard-mode)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (when (derived-mode-p 'hermes-dashboard-mode)
@@ -784,7 +787,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard--provider-auth-changed ()
   "Refresh dashboard state after changing provider authentication."
-  (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
+  (when-let* ((buffer (hermes-buffer--find hermes-dashboard-buffer-name
+                                           'hermes-dashboard-mode)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (when (derived-mode-p 'hermes-dashboard-mode)
@@ -819,6 +823,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (and (derived-mode-p 'hermes-dashboard-mode)
+                 (not (hermes-buffer--retired-p))
                  (hermes-dashboard--active-chat-buffers-p))
         (hermes-dashboard-refresh)))))
 
@@ -849,6 +854,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
             nil t)
   (add-hook 'change-major-mode-hook
             #'hermes-dashboard--cancel-stale-refresh-timer nil t)
+  (add-hook 'after-set-visited-file-name-hook
+            #'hermes-dashboard--cancel-stale-refresh-timer nil t)
   (setq hermes-dashboard--nodes (make-hash-table :test #'equal)
         hermes-dashboard--ewoc nil)
   (setq-local display-line-numbers nil)
@@ -867,22 +874,24 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
  #'hermes-dashboard--provider-auth-changed)
 
 (defun hermes--managed-buffer-p (buffer)
-  "Return whether BUFFER has a Hermes major mode."
+  "Return non-nil if BUFFER is still explicitly owned by Hermes."
   (and (buffer-live-p buffer)
-       (with-current-buffer buffer
-         (string-prefix-p "hermes-" (symbol-name major-mode)))))
+       (with-current-buffer buffer (hermes-buffer--owned-p))))
 
 (defun hermes--managed-buffers ()
-  "Return every live buffer using a Hermes major mode."
+  "Return every live buffer still explicitly owned by Hermes."
   (seq-filter #'hermes--managed-buffer-p (buffer-list)))
 
-(defun hermes--kill-managed-buffers (buffers)
-  "Kill live Hermes BUFFERS and return the number killed."
+(defun hermes--kill-managed-buffers (claims)
+  "Kill buffers retaining the exact captured CLAIMS and return their count.
+CLAIMS is an alist of buffer objects to their ownership occurrences."
   (let ((killed 0))
-    (dolist (buffer buffers killed)
-      (when (and (buffer-live-p buffer)
-                 (kill-buffer buffer))
-        (cl-incf killed)))))
+    (dolist (claim claims killed)
+      (let ((buffer (car claim)))
+        (when (and (hermes--managed-buffer-p buffer)
+                   (eq (cdr claim) (buffer-local-value 'hermes-buffer--owner buffer))
+                   (kill-buffer buffer))
+          (cl-incf killed))))))
 
 (defun hermes--call-if-defined (function)
   "Call FUNCTION when it is defined."
@@ -892,18 +901,21 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 ;;;###autoload
 (defun hermes-close ()
   "Close local Hermes state so the frontend can restart cleanly.
-Stop optional capability and eval services, kill every buffer using a Hermes
-major mode, and force-stop remaining shared dashboard clients.  Durable Hermes
+Stop optional capability and eval services, kill still-owned views and chats,
+and force-stop remaining shared dashboard clients.  Durable Hermes
 sessions and backend data are preserved."
   (interactive)
-  (let ((buffers (hermes--managed-buffers)))
+  (let* ((buffers (hermes--managed-buffers))
+         (claims (mapcar (lambda (buffer)
+                           (cons buffer (buffer-local-value 'hermes-buffer--owner buffer)))
+                         buffers)))
     (when (yes-or-no-p
            (format "Close Hermes connections and kill %d buffer%s? "
                    (length buffers)
                    (if (= (length buffers) 1) "" "s")))
       (mapc #'hermes--call-if-defined
             '(hermes-capabilities-stop hermes-exec-stop))
-      (let* ((killed (hermes--kill-managed-buffers buffers))
+      (let* ((killed (hermes--kill-managed-buffers claims))
              (connections
               (hermes-dashboard-transport-stop-all
                "Hermes closed for restart")))
@@ -915,7 +927,7 @@ sessions and backend data are preserved."
 (defun hermes ()
   "Open the Hermes dashboard."
   (interactive)
-  (let ((buffer (get-buffer-create hermes-dashboard-buffer-name)))
+  (let ((buffer (hermes-buffer--get hermes-dashboard-buffer-name #'hermes-dashboard-mode)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-dashboard-mode)
         (hermes-dashboard-mode))
