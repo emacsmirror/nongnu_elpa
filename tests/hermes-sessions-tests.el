@@ -288,9 +288,10 @@
   "Delete targets the selected row's owning profile."
   (let (query)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional _on-success)
-                 (funcall make-promise 'client)))
+              ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
               ((symbol-function 'hermes-sessions--rest)
                (lambda (_client _method _path &optional _body sent-query)
                  (setq query sent-query)
@@ -803,6 +804,9 @@
            '((id . "s1") (title . "First") (message_count . 2))
            '(((role . "user") (text . "question")))
            1)
+          (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+            (with-current-buffer name
+              (hermes-browser--own-instance (hermes-instance-resolve))))
           (with-current-buffer "*Hermes Session: s1*"
             (hermes-sessions-rename))
           (with-current-buffer "*Hermes Sessions*"
@@ -885,6 +889,9 @@
              '((id . "s1") (title . "First") (message_count . 2))
              '(((role . "user") (text . "question")))
              1)
+            (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+              (with-current-buffer name
+                (hermes-browser--own-instance (hermes-instance-resolve))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
               (search-forward "s1")

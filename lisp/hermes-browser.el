@@ -314,11 +314,13 @@ Invalidate the previous instance's rows and registered caches first."
 Reuses a live chat connection when one exists; otherwise acquires a shared
 client that DONE releases.  Shared by the dashboard browser commands."
   (let* ((instance (hermes-instance-resolve))
-         (hermes-instance instance)
-         (hermes-dashboard-transport-url (hermes-instance-url instance))
-         (existing (hermes-browser--existing-client))
+         (existing (let ((hermes-instance instance))
+                     (hermes-browser--existing-client)))
          (client (or existing
-                     (hermes-dashboard-transport-acquire :callback #'ignore)))
+                     (let ((hermes-instance instance)
+                           (hermes-dashboard-transport-url
+                            (hermes-instance-url instance)))
+                       (hermes-dashboard-transport-acquire :callback #'ignore))))
          released
          (done (lambda ()
                  (when (and (not existing) (not released))
@@ -329,6 +331,13 @@ client that DONE releases.  Shared by the dashboard browser commands."
 (defvar-local hermes-browser--request-generation nil
   "Token of the newest asynchronous request for this buffer.")
 
+(defun hermes-browser--copy-identity (value)
+  "Copy the conses and strings in browser identity VALUE."
+  (cond ((consp value) (cons (hermes-browser--copy-identity (car value))
+                             (hermes-browser--copy-identity (cdr value))))
+        ((stringp value) (copy-sequence value))
+        (t value)))
+
 (defun hermes-browser--dispatch-guard (client &optional current-p)
   "Return a transport-entry predicate for this browser and CLIENT.
 CURRENT-P, when non-nil, supplies ownership captured before acquisition."
@@ -336,7 +345,7 @@ CURRENT-P, when non-nil, supplies ownership captured before acquisition."
         (mode major-mode)
         (generation hermes-browser--request-generation)
         (instance hermes-instance)
-        (value (copy-tree hermes-instance))
+        (value (hermes-browser--copy-identity hermes-instance))
         (scope (and (hermes-dashboard-transport-client-p client)
                     (list (hermes-dashboard-transport-client-generation client)
                           (hermes-dashboard-transport--api-client-base-url client)))))
@@ -383,6 +392,39 @@ Browser REST mutations retain their owner through authentication."
        (unless entered (funcall failure (error-message-string err)))
        (signal (car err) (cdr err))))))
 
+(defun hermes-browser--mutation-context (&optional selection)
+  "Start an operation and capture its owner and optional SELECTION thunk.
+SELECTION returns the exact selected entity identity in the owner buffer.
+Retain resolution authority separately from the raw buffer-local owner."
+  (hermes-browser--next-request-generation)
+  (let ((buffer (current-buffer))
+        (owner (hermes-browser--dispatch-guard nil))
+        ;; Keep resolution authority separate from the raw buffer owner.  The
+        ;; legacy resolver ignores that owner; an unowned multi-instance entry
+        ;; instead retains its catalogue until acquisition asks for a choice.
+        (endpoint (hermes-browser--copy-identity
+                   (or (hermes-instance-context) (hermes-instance-configured))))
+        (identity (and selection (hermes-browser--copy-identity (funcall selection)))))
+    (lambda ()
+      (and (funcall owner)
+           (with-current-buffer buffer
+             (equal endpoint
+                    (or (hermes-instance-context) (hermes-instance-configured))))
+           (or (null selection)
+               (with-current-buffer buffer
+                 (equal identity (condition-case nil (funcall selection)
+                                   (user-error nil)))))))))
+
+(defun hermes-browser--read-owned-arguments (reader &optional selection)
+  "Read interactive arguments with READER, retaining optional SELECTION.
+Restore the originating buffer and reject input if its operation retired."
+  (let ((current (hermes-browser--mutation-context selection)))
+    (save-current-buffer
+      (let ((arguments (funcall reader)))
+        (unless (funcall current)
+          (user-error "Browser changed during input; try again"))
+        arguments))))
+
 (defvar-local hermes-browser--status nil
   "Visible status of the current browser read.")
 
@@ -394,19 +436,28 @@ Browser REST mutations retain their owner through authentication."
   (when hermes-browser--owned-cleanup
     (funcall hermes-browser--owned-cleanup)))
 
-(defun hermes-browser--run-owned (make-promise current-p success failure)
+(defun hermes-browser--run-owned (make-promise current-p success failure &optional finish)
   "Run MAKE-PROMISE under CURRENT-P and settle via SUCCESS or FAILURE.
 MAKE-PROMISE receives a client and a dispatch predicate.  Capture CURRENT-P
 before prompting.  All callbacks run in the owner buffer.  Killing the owner,
 changing mode, or issuing a new generation releases its client and RPC timers;
-an already dispatched mutation may still complete remotely."
+an already dispatched mutation may still complete remotely.
+Optional FINISH runs once on settlement or retirement, including acquisition
+failure.  Synchronous acquisition errors and quits re-signal their original
+condition after cleanup; asynchronous rejections call FAILURE normally."
   (let ((buffer (current-buffer))
         (token (list 'browser-operation))
+        (finish-once (lambda ()
+                       (when finish
+                         (let ((fn finish))
+                           (setq finish nil)
+                           (funcall fn)))))
         cleanup)
     (condition-case err
         (hermes-browser--with-client
          (lambda (client done)
-           (if (not (buffer-live-p buffer)) (funcall done)
+           (if (not (buffer-live-p buffer))
+               (unwind-protect (funcall done) (funcall finish-once))
              (with-current-buffer buffer
                (let* ((guard (hermes-browser--dispatch-guard client current-p))
                       (closed nil)
@@ -425,7 +476,7 @@ an already dispatched mutation may still complete remotely."
 				 (setq hermes-browser--owned-cleanup nil)
 				 (when (member hermes-browser--status '("Loading" "Saving"))
 				   (setq hermes-browser--status "Interrupted; g reconcile")))))
-			   (funcall done))))
+			   (unwind-protect (funcall done) (funcall finish-once)))))
 		 (if (not (funcall active)) (funcall cleanup)
 		   (setq hermes-browser--owned-cleanup cleanup)
 		   (when (hermes-dashboard-transport-client-p client)
@@ -450,9 +501,13 @@ an already dispatched mutation may still complete remotely."
 			   (with-current-buffer buffer (funcall failure reason)))))
                       cleanup))))))))
       ((error quit)
-       (when cleanup (funcall cleanup))
-       (when (funcall current-p)
-         (with-current-buffer buffer (funcall failure (error-message-string err))))))))
+       (unwind-protect
+           (unwind-protect
+               (when (funcall current-p)
+                 (with-current-buffer buffer
+                   (funcall failure (error-message-string err))))
+             (if cleanup (funcall cleanup) (funcall finish-once)))
+         (signal (car err) (cdr err)))))))
 
 (defvar hermes-browser--request-sequence 0
   "Sequence used to issue request tokens that are unique across mode resets.")

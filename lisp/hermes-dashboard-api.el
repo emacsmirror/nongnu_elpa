@@ -1907,11 +1907,13 @@ BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; RETRY refreshes
 auth and retries once when the request fails.  BASE-URL, when non-nil, pins
 authentication and retries to that dashboard endpoint.
 CURRENT-P, when non-nil, must authorize each HTTP dispatch after auth."
-  (let* ((base-url (or base-url
-                       (hermes-dashboard-transport--api-base-url)))
-         (hermes-dashboard-transport-url base-url))
+  (let ((base-url (or base-url
+                      (hermes-dashboard-transport--api-base-url))))
     (hermes--promise-then
-     (hermes-dashboard-transport-api-auth-async)
+     ;; Cached auth can settle immediately.  Unwind the authentication-only
+     ;; endpoint binding before guards or callbacks inspect live ownership.
+     (let ((hermes-dashboard-transport-url base-url))
+       (hermes-dashboard-transport-api-auth-async))
      (lambda (auth)
        (when (and current-p (not (funcall current-p)))
          (error "Retired browser operation"))

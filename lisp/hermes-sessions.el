@@ -828,21 +828,23 @@ find a default-profile live session, read RESUME-ID through non-attaching REST."
   "Return a promise setting SESSION-ID's TITLE on CLIENT.
 PROFILE targets another profile through REST.  When older gateways cannot find
 a default-profile live session, update its durable record without attaching it."
-  (if profile
-      (hermes-sessions--rest
-       client "PATCH" (concat "/api/sessions/" (url-hexify-string session-id))
-       `((title . ,title) (profile . ,profile)))
-    (hermes--promise-catch
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-session-title
-      client :session-id session-id :title title)
-     (lambda (message)
-       (if (hermes-sessions--session-not-found-message-p message)
-           (hermes-sessions--rest
-            client "PATCH"
-            (concat "/api/sessions/" (url-hexify-string session-id))
-            `((title . ,title)))
-         (hermes--promise-rejected message))))))
+  (let ((guard hermes-dashboard-transport--api-dispatch-guard))
+    (if profile
+        (hermes-sessions--rest
+         client "PATCH" (concat "/api/sessions/" (url-hexify-string session-id))
+         `((title . ,title) (profile . ,profile)))
+      (hermes--promise-catch
+       (hermes-dashboard-transport-call-fn
+        #'hermes-dashboard-transport-session-title
+        client :session-id session-id :title title)
+       (lambda (message)
+         (if (hermes-sessions--session-not-found-message-p message)
+             (let ((hermes-dashboard-transport--api-dispatch-guard guard))
+               (hermes-sessions--rest
+                client "PATCH"
+                (concat "/api/sessions/" (url-hexify-string session-id))
+                `((title . ,title))))
+           (hermes--promise-rejected message)))))))
 
 (defun hermes-sessions--session-with-title (session title)
   "Return SESSION with TITLE shadowing its previous title field."
@@ -894,27 +896,31 @@ a default-profile live session, update its durable record without attaching it."
   "Rename the selected Hermes session after prompting for a title."
   (interactive)
   (let* ((session (hermes-sessions--selected-session))
-         (id (hermes-sessions--id session)))
+         (id (hermes-sessions--id session))
+         (origin (current-buffer))
+         (instance (hermes-instance-resolve)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to rename"))
-    (let* ((current-title (hermes-transport--display-field session 'title))
+    (let* ((current (hermes-browser--mutation-context
+                     (lambda () (hermes-sessions--identity
+                                 (hermes-sessions--selected-session)))))
            (title (read-string (format "Rename Hermes session %s to: " id)
-                               current-title))
-           (origin (current-buffer))
-           (origin-mode major-mode)
-           (instance (hermes-instance-resolve)))
-      (when (hermes-sessions--title-empty-p title)
-        (user-error "Session title required"))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (hermes-sessions--set-title-promise
-          client id (string-trim title) (hermes-sessions--profile session)))
-       (lambda (_result)
-         (when (hermes-sessions--owned-buffer-p origin instance origin-mode)
-           (message "Hermes: renamed session %s" id)
-           (hermes-sessions--after-rename
-            origin instance (hermes-sessions--identity session)
-            (string-trim title))))))))
+                               (hermes-transport--display-field session 'title))))
+      (when (funcall current)
+        (when (hermes-sessions--title-empty-p title)
+          (user-error "Session title required"))
+        (with-current-buffer origin
+          (hermes-browser--run-owned
+           (lambda (client _guard)
+             (hermes-sessions--set-title-promise
+              client id (string-trim title) (hermes-sessions--profile session)))
+           current
+           (lambda (_result)
+             (message "Hermes: renamed session %s" id)
+             (hermes-sessions--after-rename
+              origin instance (hermes-sessions--identity session)
+              (string-trim title)))
+           #'hermes-browser--read-error))))))
 
 (defun hermes-sessions--remove-browser-row (identity)
   "Remove browser row IDENTITY from the current buffer."
@@ -943,26 +949,31 @@ a default-profile live session, update its durable record without attaching it."
          (id (hermes-sessions--id session))
          (title (hermes-transport--display-field session 'title))
          (origin (current-buffer))
-         (origin-mode major-mode)
          (instance (hermes-instance-resolve)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to delete"))
-    (if (yes-or-no-p
-         (format "Delete Hermes session %s%s? "
-                 id
-                 (if (string-empty-p title) "" (format " (%s)" title))))
-        (hermes-browser--run-on-client
-         (lambda (client)
-           (hermes-sessions--rest
-            client "DELETE" (concat "/api/sessions/" (url-hexify-string id))
-            nil (and (hermes-sessions--profile session)
-                     `((profile . ,(hermes-sessions--profile session))))))
-         (lambda (_result)
-           (when (hermes-sessions--owned-buffer-p origin instance origin-mode)
-             (message "Hermes: deleted session %s" id)
-             (hermes-sessions--after-delete
-              origin instance (hermes-sessions--identity session)))))
-      (message "Hermes: delete cancelled"))))
+    (let* ((current (hermes-browser--mutation-context
+                     (lambda () (hermes-sessions--identity
+                                 (hermes-sessions--selected-session)))))
+           (confirmed (yes-or-no-p
+                       (format "Delete Hermes session %s%s? " id
+                               (if (string-empty-p title) ""
+                                 (format " (%s)" title))))))
+      (when (funcall current)
+        (if (not confirmed) (message "Hermes: delete cancelled")
+          (with-current-buffer origin
+            (hermes-browser--run-owned
+             (lambda (client _guard)
+               (hermes-sessions--rest
+                client "DELETE" (concat "/api/sessions/" (url-hexify-string id))
+                nil (and (hermes-sessions--profile session)
+                         `((profile . ,(hermes-sessions--profile session))))))
+             current
+             (lambda (_result)
+               (message "Hermes: deleted session %s" id)
+               (hermes-sessions--after-delete
+                origin instance (hermes-sessions--identity session)))
+             #'hermes-browser--read-error)))))))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here

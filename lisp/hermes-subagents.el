@@ -64,22 +64,24 @@ Each active subagent's goal is indented by its spawn depth."
   "Interrupt the subagent at point."
   (interactive)
   (let ((id (tabulated-list-get-id))
-        (origin (current-buffer))
-        (owner hermes-instance))
+        (origin (current-buffer)))
     (unless id (user-error "No subagent on this line"))
-    (when (yes-or-no-p (format "Interrupt subagent %s? " id))
-      (hermes-browser--run-on-client
-       (lambda (client)
-         (hermes-dashboard-transport-call-fn
-          #'hermes-dashboard-transport-subagent-interrupt client id))
-       (lambda (result)
-         (when (and (hermes-browser--buffer-mode-p origin 'hermes-subagents-mode)
-                    (equal owner (buffer-local-value 'hermes-instance origin)))
-           (if (eq (hermes-transport--get result 'found) t)
-               (message "Hermes: interrupted %s" id)
-             (message "Hermes: subagent %s already finished or was not found" id))
-           (with-current-buffer origin
-             (hermes-subagents--revert))))))))
+    (let ((id (copy-sequence id))
+          (current (hermes-browser--mutation-context #'tabulated-list-get-id)))
+      (when (and (yes-or-no-p (format "Interrupt subagent %s? " id))
+                 (funcall current))
+        (with-current-buffer origin
+          (hermes-browser--run-owned
+           (lambda (client _guard)
+             (hermes-dashboard-transport-call-fn
+              #'hermes-dashboard-transport-subagent-interrupt client id))
+           current
+           (lambda (result)
+             (if (eq (hermes-transport--get result 'found) t)
+                 (message "Hermes: interrupted %s" id)
+               (message "Hermes: subagent %s already finished or was not found" id))
+             (hermes-subagents--revert))
+           #'hermes-browser--read-error))))))
 
 ;;;###autoload (autoload 'hermes-list-subagents "hermes-subagents" nil t)
 (hermes-define-list-browser subagents
