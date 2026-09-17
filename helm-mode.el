@@ -1051,7 +1051,13 @@ that use `helm-comp-read'.  See `helm-M-x' for example."
 
 ;;; Extra metadata for completions-detailed
 ;;
-;;
+;; Affixations and annotations for completions-detailed are provided in Emacs
+;; only in few categories, many completions have no category provided at all, we
+;; use in helm a special mechanism with two variables
+;; `helm-completing-read-extra-metadata' and
+;; `helm-completing-read-command-categories' to provide detailed completions in
+;; many places.
+
 (defvar helm-completing-read-extra-metadata
   '((buffer . (metadata
                (affixation-function . helm-completing-read-buffer-affixation)
@@ -1185,6 +1191,12 @@ Some commands provide a completion-table with no category
 specified in metadata, we allow here specifying the category of
 the completion provided by a specific command.  The command
 should be specified as a string and the category as a symbol.")
+
+;;; Affixation functions
+;; These functions should return a list like (comp prefix suffix).
+;; See `helm-symbol-completion-table-affixation' for details and exceptions we
+;; do specially in Helm.  In addition to affixations and annotations helm
+;; propose as well popups, see man completion function below.
 
 ;; We can't reuse the function from helm-man.el because the candidates are here
 ;; differents e.g. apt vs apt(8).
