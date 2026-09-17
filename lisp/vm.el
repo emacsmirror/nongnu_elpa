@@ -1607,8 +1607,8 @@ reach it without vm.el having been loaded by something else first."
 	;; Issue #565.
 	(run-hooks 'vm-startup-hook)
 	;; After the hook, so that a configuration finished there is seen as
-	;; finished.
-	(vm-suggest-checking-configuration-maybe)))
+	;; finished, and on a timer so that it is read rather than overwritten.
+	(vm-suggest-checking-configuration-later)))
   ;; check for postponed messages
   (vm-update-draft-count))
 
@@ -1904,9 +1904,22 @@ silent for everyone it has nothing to tell."
     (setq vm-suggested-checking-configuration t)
     (let ((problems (length (vm-configuration-problems))))
       (when (> problems 0)
-        (vm-warn 1 2 (concat "%d thing%s not set up: M-x vm-check-configuration"
-                             " says what (vm-suggest-checking-configuration"
-                             " to stop this)")
-                 problems (if (= problems 1) " is" "s are"))))))
+        ;; No pause: said when Emacs is idle, it stays until the reader does
+        ;; something, and a `sit-for' inside a timer runs the command loop
+        ;; again where it stands.
+        (vm-warn 1 0 (concat "VM has %d setting%s missing.  M-x"
+                             " vm-check-configuration says which, and what to"
+                             " set (vm-suggest-checking-configuration to stop"
+                             " this)")
+                 problems (if (= problems 1) "" "s"))))))
+
+(defun vm-suggest-checking-configuration-later ()
+  "Make the suggestion once Emacs is idle, rather than now.
+The startup says more after this point: the folder totals, what a fetch is
+doing, what arrived.  Each of those overwrites the echo area, so a line said
+here is gone before it can be read, and the reader is left digging it out of
+the log buffer (emacs-vm/vm#844).  Idle means after all of them, and after
+whatever the reader's own startup hook says."
+  (run-with-idle-timer 0.5 nil #'vm-suggest-checking-configuration-maybe))
 
 ;;; vm.el ends here

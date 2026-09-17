@@ -260,7 +260,7 @@ use."
             (vm-suggest-checking-configuration t)
             (vm-suggested-checking-configuration nil))
         (vm-suggest-checking-configuration-maybe)
-        (should (string-match-p "1 thing is not set up" (car said))))))
+        (should (string-match-p "VM has 1 setting missing" (car said))))))
   (vm-configuration-test--recording-warnings said
     (vm-configuration-test--with-a-working-setup
       (let ((mail-user-agent 'message-user-agent)
@@ -268,7 +268,41 @@ use."
             (vm-suggest-checking-configuration t)
             (vm-suggested-checking-configuration nil))
         (vm-suggest-checking-configuration-maybe)
-        (should (string-match-p "2 things are not set up" (car said)))))))
+        (should (string-match-p "VM has 2 settings missing" (car said)))))))
+
+(ert-deftest vm-configuration-test-the-suggestion-waits-for-an-idle-emacs ()
+  "REGRESSION: the line is said when nothing else is talking.
+The startup says the folder totals, what a fetch is doing and what arrived,
+each of which overwrites the echo area, so a line said during it was gone
+before it could be read (emacs-vm/vm#844).  The startup therefore schedules
+it rather than saying it."
+  (let ((before (copy-sequence timer-idle-list))
+        (timer nil))
+    (unwind-protect
+        (progn
+          (vm-suggest-checking-configuration-later)
+          (setq timer (seq-find (lambda (candidate)
+                                  (eq (timer--function candidate)
+                                      'vm-suggest-checking-configuration-maybe))
+                                timer-idle-list))
+          (should timer)
+          (should-not (memq timer before)))
+      (when timer (cancel-timer timer)))))
+
+(ert-deftest vm-configuration-test-the-suggestion-does-not-pause ()
+  "REGRESSION: nothing waits for the line to be read.
+It is said from a timer, where `sit-for' runs the command loop again where
+it stands; and said when Emacs is idle it stays anyway, until the reader
+does something (emacs-vm/vm#844)."
+  (let ((seconds nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level secs &rest _) (push secs seconds))))
+      (vm-configuration-test--with-a-working-setup
+        (let ((mail-user-agent 'message-user-agent)
+              (vm-suggest-checking-configuration t)
+              (vm-suggested-checking-configuration nil))
+          (vm-suggest-checking-configuration-maybe)
+          (should (equal '(0) seconds)))))))
 
 (ert-deftest vm-configuration-test-nothing-is-said-on-a-working-setup ()
   "REGRESSION: silence where the settings VM checks are in place.
