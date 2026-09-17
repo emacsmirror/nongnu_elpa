@@ -2666,8 +2666,8 @@ repairing a folder whose list has already drifted."
 (defun vm-gobble-imap-to-expunge ()
   "Read back the server deletions a previous session could not send.
 The companion of `vm-stuff-imap-to-expunge'; see issue #556.  Entries for a
-different UID validity are left for `vm-imap-expunge-remote-messages' to
-notice and refuse, as it does for any other stale UID."
+different UID validity are left for `vm-imap-net-expunge-remote-messages'
+to notice and refuse, as it does for any other stale UID."
   (let ((case-fold-search t)
 	ob oldpoint lim)
     (save-excursion
@@ -7646,9 +7646,9 @@ MODIFIED is what `buffer-modified-p' said before the retrieval.  The other
 half of `vm-make-room-for-message-body'.
 
 Point is put back at the start of the body first.  The one-message path got
-that for nothing -- `vm-fetch-imap-message' works inside a `save-excursion'
--- but a fetch of several bodies inserts into the folder from the process
-buffer, and leaves point after the text it inserted.  The `\n\n' search
+that for nothing, working inside a `save-excursion', but a fetch of several
+bodies inserts into the folder from the process buffer and leaves point
+after the text it inserted.  The `\n\n' search
 below starts from point, so without this it found nothing and the delete
 took the whole message out again."
   (goto-char (vm-text-of mm))

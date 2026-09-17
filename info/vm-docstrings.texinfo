@@ -6268,7 +6268,7 @@ Default value: @code{t}
 @defopt vm-mime-forward-saved-attachments
 @vindex vm-mime-forward-saved-attachments
 Non-nil value means that any attachments saved to local files
-using, for example @code{vm-mime-save-all-attachments}, will be
+using, for example @code{vm-save-all-attachments}, will be
 retrieved and re-attached to forwarded messages.  
 
 Nil value means that the messages will be forwarded with external

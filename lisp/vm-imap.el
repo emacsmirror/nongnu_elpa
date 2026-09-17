@@ -95,11 +95,10 @@
 
 (defun vm-folder-imap-cached (uid table)
   "The value UID has in TABLE, one of the folder's obarrays.
-Answers nil when the folder has no table: the server data is dropped at the
-end of a session (`vm-imap-dump-uid-seq-num-data'), and `intern' with a nil
-obarray reads the global one, so a folder with no data of its own would be
-answered out of Emacs's own symbols and out of whatever another folder had
-interned there."
+Answers nil when the folder has no table: a folder that has had no session
+this time has none, and `intern' with a nil obarray reads the global one, so
+a folder with no data of its own would be answered out of Emacs's own
+symbols and out of whatever another folder had interned there."
   (and table
        (let ((key (intern-soft uid table)))
 	 (and key (boundp key) (symbol-value key)))))

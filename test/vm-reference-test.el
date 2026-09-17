@@ -822,6 +822,87 @@ where a MIME boundary of hyphens is the thing being named."
 the word was taken out of the manual once already (emacs-vm/vm#776)."
   (should (equal nil (vm-reference-test--prose-matching "\\bshapes?\\b"))))
 
+;;; The names VM's own docstrings use (emacs-vm/vm#840)
+
+(defconst vm-reference-test--names-that-are-not-symbols
+  '(;; text and symbol properties, which are names and not bindings
+    vm-called-by-vm vm-charset vm-highlight vm-message-garbage
+    vm-mime-disposition vm-mime-function vm-mime-object vm-mime-parameters
+    vm-string
+    ;; patterns standing for a family of names
+    vm-epg-ACTION vm-fetch-HANDLER-message vm-mouse-send-url-to-xxx
+    vm-summary-function-B vm-vs-SELECTOR
+    ;; named as history: a variable and a group that VM used to have, in
+    ;; sentences that are about no longer having them
+    vm-mime-forward-local-external-bodies vm-pine
+    ;; a BBDB record field, which lives in the address book and not in Emacs
+    vmpc-profile)
+  "The names in VM's docstrings that resolve to nothing and are right not to.
+Everything else has to be a function, a variable, a face or an error VM
+defines, or the reader who looks it up finds nothing and cannot tell whether
+the docstring or their Emacs is wrong.")
+
+(defun vm-reference-test--docstring-names (symbol doc)
+  "Every VM name quoted in DOC that is not defined, SYMBOL being where it is.
+Answers a list of (NAME . SYMBOL).  Only VM's own names: what another
+package defines is that package's to keep, and may not be loaded here."
+  (let ((found nil)
+        (start 0))
+    (while (and (stringp doc)
+                (string-match "`\\(vmp?c?[a-z0-9]*\\(?:-[a-zA-Z0-9]+\\)+\\)'"
+                              doc start))
+      (setq start (match-end 0))
+      (let* ((name (match-string 1 doc))
+             (named (intern-soft name)))
+        (unless (and named
+                     (or (fboundp named) (boundp named) (facep named)
+                         (get named 'variable-documentation)
+                         (get named 'error-conditions)))
+          (push (cons name symbol) found))))
+    found))
+
+(ert-deftest vm-reference-test-docstrings-name-things-that-exist ()
+  "REGRESSION: a name quoted in a VM docstring is something a reader can find.
+Sixteen docstrings named functions of the blocking IMAP implementation,
+deleted in emacs-vm/vm#822, and two named things that had never existed at
+all: `vm-mime-save-all-attachments' and `vm-imap-note-dropped-flags'
+(emacs-vm/vm#840).  A docstring is where a reader goes to look something up,
+so a name in one is a promise that there is something to find.
+
+What is quoted and is not a symbol is listed in
+`vm-reference-test--names-that-are-not-symbols', each with what it is."
+  (vm-reference-load-everything)
+  (let ((lisp (file-name-directory (locate-library "vm-vars")))
+        (missing nil))
+    (mapatoms
+     (lambda (symbol)
+       ;; What VM ships, not what the suite defines: a test helper naming a
+       ;; variable of another test file is not a docstring anyone reads.
+       (when (and (string-prefix-p "vm" (symbol-name symbol))
+                  (let ((file (or (symbol-file symbol 'defun)
+                                  (symbol-file symbol 'defvar))))
+                    (and file (string-prefix-p lisp (expand-file-name file)))))
+         (when (fboundp symbol)
+           (setq missing (append (vm-reference-test--docstring-names
+                                  symbol (ignore-errors
+                                           (documentation symbol t)))
+                                 missing)))
+         (when (boundp symbol)
+           (setq missing (append (vm-reference-test--docstring-names
+                                  symbol (get symbol 'variable-documentation))
+                                 missing))))))
+    (setq missing
+          (seq-remove (lambda (pair)
+                        (memq (intern (car pair))
+                              vm-reference-test--names-that-are-not-symbols))
+                      missing))
+    (should (equal nil
+                   (sort (mapcar (lambda (pair)
+                                   (format "%s named by %s" (car pair)
+                                           (cdr pair)))
+                                 missing)
+                         #'string<)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
