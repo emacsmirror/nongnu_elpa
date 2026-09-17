@@ -3968,31 +3968,28 @@ meant to.  This puts the images in the temporary directory along with the
 @subsection Displaying inline images in messages
 
 @cindex images
-Most versions of Emacs can display images when used on graphical
-screens.  You can verify if the Emacs version is able to do so by
-calling the function @code{display-images-p}.  However, Emacs relies
-on external libraries to create graphical images, which are specified
-through the variable @code{image-library-alist}.  Even if Emacs has
-the ability to display some image type, it cannot display such images
-unless appropriate libraries are installed and specified to Emacs.  You
-can verify which image types are really available by calling the
-function @code{image-type-available-p} with an image type such as
-@samp{tiff} or @samp{gif} as the argument.
+@findex display-images-p
+@findex image-type-available-p
+Emacs shows an image where the display is graphical, which
+@code{display-images-p} answers, and in the formats the build has the
+libraries for, which @code{image-type-available-p} answers one format at a
+time, @samp{tiff} or @samp{gif} for instance.
 
 @vindex vm-mime-internal-content-types
 @vindex vm-mime-auto-displayed-content-types
-Assuming that a particular image type, say @samp{tiff} is available,
-you can include its @acronym{MIME} type in
-@code{vm-mime-internal-content-types}, e.g., 
+Nothing has to be set for an image to be shown: VM displays every type it
+can, @code{vm-mime-internal-content-types} defaulting to @code{t}, and
+@code{vm-mime-auto-displayed-content-types} names @samp{image} among the
+types it shows as the message is displayed rather than on being asked.
+Narrow either of them to a list of types to change that:
+
 @example
-(add-to-list 'vm-mime-internal-content-types "image/tiff")
+(setq vm-mime-auto-displayed-content-types '("text" "message/rfc822"))
 @end example
-You can also add the @acronym{MIME} type to the variable
-@code{vm-mime-auto-displayed-content-types} so that VM will
-automatically display all images of the type.  
-If the type is not included among the auto-displayed types, then the
-image is initially shown as a button with a thumbnail image.  Clicking on the
-button with the middle mouse button expands the image to its full size.
+
+@noindent
+An image that is not auto-displayed is shown as a button with a thumbnail,
+and @kbd{RET} or a middle mouse click on the button shows it full size.
 
 @cindex ImageMagick
 @vindex vm-imagemagick-program
@@ -4006,11 +4003,11 @@ ImageMagick 7, or @command{convert} in version 6 and earlier.  VM works
 out for itself which subcommand to call.
 
 @vindex vm-mime-use-image-strips
-By default, VM displays images by slicing them into contiguous
-horizontal strips and displaying the strips in order.  This
-facilitates vertical scrolling within an image.  The variable
-@code{vm-mime-use-image-strips} controls whether VM uses strips for
-image display.  It is @samp{t} by default.
+VM displays an image as a run of horizontal strips rather than as one
+object, so that scrolling down moves through it a line at a time instead of
+jumping past the whole of it.  @code{vm-mime-use-image-strips} defaults to
+@code{t}; @code{nil}, or a machine with no ImageMagick, displays the image
+whole.
 
 VM also uses ImageMagick to convert between image formats, so that an
 image that is not displayable in Emacs is converted to another format
