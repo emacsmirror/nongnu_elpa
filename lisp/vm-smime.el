@@ -113,21 +113,18 @@
 ;;;###autoload
 (defun vm-mime-display-internal-application/pkcs7-mime 
   (layout &optional key-email)
-  "Decrypt a S/MIME encoded message using `smime-decode-region'
-to do the work. The resulting structure will often be another
-MIME-encoded message, so run the decoding again to present the
-message as it is designed to be viewed. This funtion relies on
-the user properly setting smime related variables, specifically
-`smime-keys'
+  "Decrypt an S/MIME encoded message, `smime-decrypt-region' doing the work.
+What comes out is often another MIME-encoded message, so the decoding is run
+again to present the message as it is meant to be seen.  It relies on the
+smime variables being set, `smime-keys' in particular.
 
-To have the decryption done automatically upon viewing, add 
+To have the decryption done on viewing, add
 
 application/pkcs7-mime, and
 application/x-pkcs7-mime
 
-to `vm-mime-auto-displayed-content-types', but at present the
-smime code always asks for a password so this might mess up your
-normal flow"
+to `vm-mime-auto-displayed-content-types'.  The smime code always asks for a
+password, though, so that may interrupt more than it saves."
   (let ((start (point)) end
 	(buffer-read-only nil)
 	msg sub-layout ;; retval
