@@ -401,19 +401,16 @@ This command is meant to be used in VM created Mail mode buffers; the
 yanked message comes from the mail buffer containing the message you
 are replying to, forwarding, or invoked VM's mail command from.
 
-All message headers are yanked along with the text.  Point is
-left before the inserted text, the mark after.  Any hook
-functions bound to `mail-citation-hook' are run, after inserting
-the text and setting point and mark.
+The whole message is inserted, headers and all, with point left
+before it and the mark after it, which is where a function on
+`mail-citation-hook' looks for what it is to cite.  Anything on
+that hook is then run.
 
-If mail-citation-hook and mail-yank-hooks are both nil, this
-default action is taken: the yanked headers are trimmed as
-specified by `vm-included-text-headers' and
-`vm-included-text-discard-header-regexp', and the value of
-`vm-included-text-prefix' is prepended to every yanked line."
-;; The original doc string also said:
-;;  For backward compatibility, if mail-citation-hook is set to nil,
-;; `mail-yank-hooks' is run instead.
+With nothing on the hook VM cites the message itself: the yanked
+headers are trimmed as specified by `vm-included-text-headers' and
+`vm-included-text-discard-header-regexp', which between them keep
+none by default, and the value of `vm-included-text-prefix' is
+prepended to every line that is left."
   (interactive
    (list
     ;; What we really want for the first argument is a message struct,
