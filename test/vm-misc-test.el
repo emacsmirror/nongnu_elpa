@@ -750,7 +750,7 @@ of its job."
 The XEmacs branch of that alias could therefore never be taken.  That branch
 is gone with XEmacs support, but the point stands: a misspelt feature name
 is silent, so this checks every one VM asks about."
-  (let ((known '(berkeley-db gtk window-system vm-pgg vm-epg))
+  (let ((known '(berkeley-db gtk window-system vm-pgg vm-epg vm-pcrisis))
         (unknown nil))
     (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
       (unless (string-match-p "vm-autoloads\\|vm-cus-load" file)

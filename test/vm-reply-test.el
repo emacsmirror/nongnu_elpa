@@ -3203,6 +3203,93 @@ wait, so there is nothing to interrupt and the real one is what answers."
         (insert "x")
         (should-not (call-process-region (point-min) (point-max) "true"
                                          nil 0 nil))))))
+;;; Saying that Personality Crisis is switched off (emacs-vm/vm#841)
+
+;; Loaded so the rule variables are special: `let' on a symbol with no
+;; `defvar' makes a lexical binding under lexical-binding, and
+;; `vm-pcrisis-configured-but-off-p' reads `symbol-value', which cannot
+;; see one.  A reader setting these in an init file sets the global value,
+;; which is what the check is written against.
+(require 'vm-pcrisis)
+
+(ert-deftest vm-reply-test-a-composition-says-pcrisis-is-off ()
+  "REGRESSION: rules that will not run are not silently ignored.
+
+Personality Crisis switched off installs no advice, so a composition is set
+up with none of the reader's rules and nothing says so.  It used to be
+switched on by loading the file, which is how a configuration that worked in
+8.3.2 comes to do nothing at all (emacs-vm/vm#841, emacs-vm/vm#561)."
+  (let ((said nil)
+        (vm-said-pcrisis-is-off nil)
+        (vm-pcrisis-mode nil)
+        (vm-pcrisis-actions '(("an action" (ignore)))))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _time format &rest args)
+                 (push (apply #'format format args) said))))
+      ;; as for a reader who never loaded the file: `vm-pcrisis-warn-if-off'
+      ;; reaches `vm-mail-mode-hook' only as vm-pcrisis.el loads, so with the
+      ;; file absent nothing else would say anything
+      (cl-letf (((symbol-function 'featurep)
+                 (lambda (feature &rest _) (not (eq feature 'vm-pcrisis)))))
+        (vm-say-if-pcrisis-is-off)
+        (should (= (length said) 1))
+        (should (string-match-p "vm-pcrisis-mode 1" (car said)))
+        ;; and only once, however many compositions follow
+        (vm-say-if-pcrisis-is-off)
+        (should (= (length said) 1))))))
+
+(ert-deftest vm-reply-test-nothing-is-said-twice-about-pcrisis ()
+  "With vm-pcrisis loaded, `vm-pcrisis-warn-if-off' is the one that speaks.
+It says the same thing at every composition, so a second line from VM proper
+would be two warnings for one mistake."
+  (let ((said nil)
+        (vm-said-pcrisis-is-off nil)
+        (vm-pcrisis-mode nil)
+        (vm-pcrisis-actions '(("an action" (ignore)))))
+    (should (featurep 'vm-pcrisis))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _time format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-say-if-pcrisis-is-off)
+      (should-not said))))
+
+(ert-deftest vm-reply-test-a-composition-is-silent-without-pcrisis-rules ()
+  "Nothing is said to a reader who does not use Personality Crisis.
+That is most readers, and a line about a feature they have never configured
+is noise they cannot act on."
+  (let ((said nil)
+        (vm-said-pcrisis-is-off nil)
+        (vm-pcrisis-mode nil)
+        (vm-pcrisis-actions nil)
+        (vm-pcrisis-conditions nil)
+        (vm-pcrisis-default-rules nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _time format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-say-if-pcrisis-is-off)
+      (should-not said))))
+
+(ert-deftest vm-reply-test-nothing-is-said-when-pcrisis-is-on ()
+  "With the mode on the rules run, so there is nothing to report."
+  (let ((said nil)
+        (vm-said-pcrisis-is-off nil)
+        (vm-pcrisis-mode t)
+        (vm-pcrisis-actions '(("an action" (ignore)))))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _time format &rest args)
+                 (push (apply #'format format args) said))))
+      (vm-say-if-pcrisis-is-off)
+      (should-not said))))
+
+(ert-deftest vm-reply-test-the-configuration-check-reports-pcrisis-off ()
+  "`vm-check-configuration' says it too, for a reader who asks it directly."
+  (let ((vm-pcrisis-mode nil)
+        (vm-pcrisis-actions '(("an action" (ignore)))))
+    (should (string-match-p "vm-pcrisis-mode 1"
+                            (or (vm-configuration-problem-pcrisis) ""))))
+  (let ((vm-pcrisis-mode t)
+        (vm-pcrisis-actions '(("an action" (ignore)))))
+    (should-not (vm-configuration-problem-pcrisis))))
 
 (provide 'vm-reply-test)
 
