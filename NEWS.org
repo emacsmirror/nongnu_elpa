@@ -1,6 +1,32 @@
 #+title: emacs-hermes Changelog
 
-* Version 0.7.0 (unreleased)
+* Version 0.7.1 (unreleased)
+
+- Made buffer-specific commands context-aware in native =M-x= completion,
+  while keeping launchers available globally.  Filtering follows the user's
+  =read-extended-command-predicate= setting; Hermes does not change it.
+- Reorganized dashboard and chat action popups into smaller task groups,
+  preserved direct shortcuts, and exposed running Workers at the chat root.
+  Pending settings remain visible in narrow menus, and Plugins now uses =q=
+  to quit the view and =C-g= to dismiss the popup.
+- Preserved drafts, queued input, clarification answers and reader positions
+  across transcript updates, interrupted turns and session lifecycle races.
+- Read complete profile-scoped session histories and refreshed session
+  catalogues after changes.  Chat buffer names now follow the working
+  directory while project chats retain their launch-root identity.
+- Kept browser actions, edits and confirmations tied to their original
+  instance and view across reuse, authentication and asynchronous replies.
+  Configuration refresh is available through its native key, and edits send
+  only changed settings.
+- Hardened provider setup, OAuth recovery and authentication refresh against
+  stale callbacks; tool setup selects backend profiles through owned views.
+- Retired MCP monitoring and failed Kanban sockets with their connections,
+  preserved notification ownership, and settled eval approvals after quits.
+- Safely fontified code fences, preserved nested diff examples, showed staged
+  image drafts, and shared bounded validation of backend-managed file bytes.
+- Verified popup compatibility with the supported keymap-popup 0.4.0 release.
+
+* Version 0.7.0
 
 - Excluded tests and development files from ELPA packages, preventing test
   helper load errors during installation.
