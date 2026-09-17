@@ -271,8 +271,8 @@ RESOLVE and REJECT receive the result or error.  Upload local bytes first."
     hermes-dashboard-transport-prompt-submit "prompt.submit"
   "Send TEXT through `prompt.submit' on CLIENT.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
-result or error."
-  :args (text) :session t)
+result or error.  QUEUED forces non-interrupting admission when busy."
+  :args (text) :keys (queued) :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-prompt-background "prompt.background"

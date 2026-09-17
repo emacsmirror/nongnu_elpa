@@ -59,6 +59,7 @@
             "lisp/hermes-chat-handoff.el"
             "lisp/hermes-chat-slash.el"
             "lisp/hermes-chat.el"
+            "lisp/hermes-gnosis.el"
             "lisp/hermes-browser.el"
             "lisp/hermes-admin.el"
             "lisp/hermes-sessions.el"
@@ -101,6 +102,7 @@
           # Dot-prefixed basenames stay out of scans and release membership.
           testElFiles = [
             "hermes-buffer-tests.el"
+            "hermes-gnosis-tests.el"
             "hermes-request-tests.el"
             "hermes-admin-tests.el"
             "hermes-browsers-tests.el"

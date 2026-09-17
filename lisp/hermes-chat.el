@@ -842,6 +842,8 @@ extends the input instead of prepending a blank line to it."
   "Return non-nil when CONTEXT still owns the current dashboard submission."
   (let ((queue-id (plist-get context :queue-id)))
     (and (eq context hermes-chat--unsettled-submit-context)
+         (or (not (plist-get context :application-guard))
+             (eq hermes-buffer--owner (plist-get context :application-claim)))
          (hermes-chat--current-lifetime-p (plist-get context :lifetime))
          (hermes-chat--current-transport-generation-p
           (plist-get context :generation))
@@ -928,16 +930,25 @@ extends the input instead of prepending a blank line to it."
 
 (defun hermes-chat--submit-through-transport (content context resolve reject)
   "Submit CONTENT using CONTEXT with RESOLVE and REJECT callbacks."
+  (when-let* ((guard (plist-get context :application-guard)))
+    (unless (funcall guard) (user-error "Application prompt owner retired")))
   (let* ((buffer (plist-get context :buffer))
          (assistant-id (plist-get context :assistant-id))
          (dashboard-p (plist-get context :dashboard-p))
          (generation (plist-get context :generation))
          (queue-id (plist-get context :queue-id))
+         (claim (plist-get context :application-claim))
+         (callback (hermes-chat--transport-callback
+                    buffer assistant-id dashboard-p generation))
          (transport
           (hermes-chat--send-prompt
            content
-           (hermes-chat--transport-callback
-            buffer assistant-id dashboard-p generation)
+           (if claim
+               (lambda (event)
+                 (when (and (buffer-live-p buffer)
+                            (eq claim (buffer-local-value 'hermes-buffer--owner buffer)))
+                   (funcall callback event)))
+             callback)
            resolve reject (and queue-id t))))
     (when (equal hermes-chat--pending-assistant-id assistant-id)
       (setq hermes-chat--process transport))
@@ -968,6 +979,8 @@ extends the input instead of prepending a blank line to it."
           :lifetime hermes-chat--lifecycle-generation
           :client nil
           :admission nil
+          :application-guard nil
+          :application-claim nil
           :session-id nil
           :user-id (plist-get user :id)
           :assistant-id (plist-get assistant :id)
@@ -988,20 +1001,27 @@ extends the input instead of prepending a blank line to it."
               (hermes-chat--queue-reject-callback buffer context)
             (hermes-chat--submit-reject-callback buffer context)))))
 
-(defun hermes-chat--submit-content (content &optional display queue-entry)
+(defun hermes-chat--submit-content (content &optional display queue-entry application-guard)
   "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
 DISPLAY lets a slash skill send its full payload while showing a compact line.
 QUEUE-ENTRY identifies a queued message retained until transport acceptance.
+APPLICATION-GUARD, when non-nil, must still authorize this application prompt
+at dispatch; it also forces non-interrupting backend admission.
 Return non-nil when the transport request starts."
   (hermes-chat--ensure-submit-allowed)
   (when (and (hermes-chat--active-turn-p) (null queue-entry))
     (user-error "%s" (hermes-chat--busy-message)))
-  (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
+  (let* ((user-entry (hermes-chat--make-entry
+                      (if application-guard 'application 'user)
+                      (or display content) 'done))
          (assistant-entry (hermes-chat--make-entry 'assistant "" 'pending))
          (context (hermes-chat--make-submit-context
                    content display queue-entry user-entry assistant-entry))
          (callbacks (and (plist-get context :dashboard-p)
                          (hermes-chat--submit-callbacks context))))
+    (when application-guard
+      (setf (plist-get context :application-guard) application-guard
+            (plist-get context :application-claim) hermes-buffer--owner))
     (hermes-chat--begin-pending-turn user-entry assistant-entry context)
     (condition-case err
         (progn
@@ -1009,7 +1029,12 @@ Return non-nil when the transport request starts."
            content context (car callbacks) (cdr callbacks))
           t)
       (error
-       (hermes-chat--submit-signal-error context err)
+       (when (or (not application-guard)
+                 (and (eq hermes-buffer--owner (plist-get context :application-claim))
+                      (hermes-chat--current-lifetime-p (plist-get context :lifetime))
+                      (hermes-chat--current-transport-generation-p
+                       (plist-get context :generation))))
+         (hermes-chat--submit-signal-error context err))
        nil))))
 
 ;; The registry installation near the end of this file wires this submit

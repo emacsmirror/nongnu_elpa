@@ -1717,9 +1717,13 @@ RESOLVE and REJECT receive the asynchronous request result."
   (let* ((context hermes-chat--unsettled-submit-context)
          (record (plist-get (plist-get context :queue-entry) :image-record))
          (session hermes-chat--dashboard-active-session-id)
+         (hermes-dashboard-transport-dispatch-guard
+          (or (plist-get context :application-guard)
+              hermes-dashboard-transport-dispatch-guard))
          (send (lambda ()
                  (hermes-dashboard-transport-prompt-submit
                   client prompt :session-id session
+                  :queued (and (plist-get context :application-guard) t)
                   :resolve resolve
                   :reject (if record
                               (lambda (_)
