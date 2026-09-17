@@ -10989,6 +10989,158 @@
                                             (hermes-chat--entries)))
                          '("frozen" ""))))))))
 
+(ert-deftest hermes-chat-history-callback-failure-retains-input-real-rpc ()
+  "Delayed restoration errors and quits need explicit retry, not endless queueing."
+  (dolist (fault '((render error) (render quit) (printer error) (record error)
+                   (clarify quit) (render error t) (clarify quit t)))
+    (let* ((stage (car fault))
+           (condition (cadr fault))
+           (client (hermes-test--dashboard-client))
+           (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+           (hermes-dashboard-transport-request-timeout nil)
+           (hermes-dashboard-transport-idle-close-delay nil)
+           (hermes-transport-send-function #'hermes-transport-send)
+           (render-history (symbol-function 'hermes-chat--render-history))
+           (print-entry (symbol-function 'hermes-chat--print-entry))
+           (fail-p t) frames buffer
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames))))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-chat--dashboard-refresh-goal)
+                 (lambda ()
+                   (when (and fail-p (eq stage 'record))
+                     (signal condition '("private callback details")))))
+                ((symbol-function 'hermes-chat--dashboard-restore-pending-clarify)
+                 (lambda (_result)
+                   (when (and fail-p (eq stage 'clarify))
+                     (signal condition '("private callback details")))))
+                ((symbol-function 'hermes-chat--print-entry)
+                 (lambda (entry)
+                   (if (and fail-p (eq stage 'printer)
+                            (equal (plist-get entry :content) "prior"))
+                       (progn
+                         (insert "prior")
+                         (signal condition '("private callback details")))
+                     (funcall print-entry entry))))
+                ((symbol-function 'hermes-chat--render-history)
+                 (lambda (messages)
+                   (if (and fail-p (eq stage 'render))
+                       (progn
+                         (funcall render-history (list (car messages)))
+                         (signal condition '("private callback details")))
+                     (funcall render-history messages)))))
+        (unwind-protect
+            (progn
+              (setq buffer (hermes-chat-resume-session "stored"))
+              (with-current-buffer buffer
+                (insert "queued followup") (hermes-chat-send)
+                (insert "newer draft")
+                (let* ((id (hermes-transport--get (car frames) 'id))
+                       (request (gethash id (hermes-dashboard-transport-client-pending client)))
+                       (result `((session_id . "sid-prompt") (stored_session_id . "canonical")
+                                 (running . ,(nth 2 fault))
+                                 (messages . [((role . "user") (text . "prior"))
+                                              ((role . "assistant") (text . "answer"))]))))
+                  (hermes-dashboard-transport--handle-frame
+                   client (hermes-dashboard-transport--encode-frame
+                           `((jsonrpc . "2.0") (id . ,id) (result . ,result))))
+                  (should (= 0 (hash-table-count (hermes-dashboard-transport-client-pending client))))
+                  (should (eq (plist-get hermes-chat--session-bootstrap :phase) 'failed))
+                  (should (equal (hermes-chat-input-string) "newer draft"))
+                  (unless (memq stage '(record printer))
+                    (should (string-match-p "prior" (buffer-string))))
+                  (should-not (string-match-p "private callback details" (buffer-string)))
+                  (should (equal (hermes-test--queued-contents) '("queued followup")))
+                  (should (= 1 (length frames)))
+                  ;; A late success or terminal cannot clear the failed read.
+                  (funcall (plist-get request :resolve) result)
+                  (hermes-test--emit-dashboard-prompt client "message.complete"
+                    '((text . "late output") (status . "complete")))
+                  (should (= 1 (length frames)))
+                  (should (eq (plist-get hermes-chat--session-bootstrap :phase) 'failed))
+                  ;; Explicit Send retries only the read, retaining FIFO order.
+                  (setq fail-p nil)
+                  (hermes-chat-send)
+                  (should (= 2 (length frames)))
+                  (should (equal (hermes-transport--get (car frames) 'method) "session.resume"))
+                  (should (equal (hermes-test--queued-contents) '("queued followup" "newer draft")))
+                  (insert "latest draft")
+                  (hermes-dashboard-transport--handle-frame
+                   client (hermes-dashboard-transport--encode-frame
+                           `((jsonrpc . "2.0") (id . ,(hermes-transport--get (car frames) 'id))
+                             (result . ,result))))
+                  (should-not hermes-chat--session-bootstrap)
+                  (when (nth 2 fault)
+                    (should (= 2 (length frames)))
+                    (should (equal (hermes-test--queued-contents)
+                                   '("queued followup" "newer draft")))
+                    (hermes-test--emit-dashboard-prompt client "message.complete"
+                      '((text . "resumed completion") (status . "complete"))))
+                  (should (equal
+                           (mapcar (lambda (entry) (plist-get entry :content))
+                                   (seq-filter
+                                    (lambda (entry)
+                                      (memq (plist-get entry :role) '(user assistant)))
+                                    (hermes-chat--entries)))
+                           (append
+                            (when (and (nth 2 fault) (eq stage 'clarify))
+                              '("late output"))
+                            '("prior" "answer")
+                            (when (nth 2 fault) '("resumed completion"))
+                            '("queued followup" ""))))
+                  (should (equal (hermes-transport--get (car frames) 'method) "prompt.submit"))
+                  (hermes-dashboard-transport--handle-frame
+                   client (hermes-dashboard-transport--encode-frame
+                           `((jsonrpc . "2.0") (id . ,(hermes-transport--get (car frames) 'id))
+                             (result . ((status . "streaming"))))))
+                  (should (equal (hermes-test--queued-contents) '("newer draft")))
+                  (should (equal (hermes-chat-input-string) "latest draft"))
+                  (should (hermes-chat--point-in-input-p))
+                  (dolist (text '("prior" "answer"))
+                    (save-excursion
+                      (goto-char (point-min))
+                      (should (search-forward text (hermes-chat--input-position) t))
+                      (should-not (search-forward text (hermes-chat--input-position) t))))
+                  (should (equal (hermes-transport--get (hermes-transport--get (car frames) 'params) 'text)
+                                 "queued followup")))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest hermes-chat-history-callback-failure-cannot-settle-successor ()
+  "An exception after owner replacement must not publish into the successor."
+  (dolist (replacement '(session client lifetime request turn))
+    (let ((client (hermes-test--dashboard-client))
+          (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+          resolve buffer)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client _sid &rest args)
+                   (setq resolve (plist-get args :resolve))))
+                ((symbol-function 'hermes-chat--render-history)
+                 (lambda (_messages)
+                   (pcase replacement
+                     ('session (setq hermes-chat--session-id "successor"))
+                     ('client (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)))
+                     ('lifetime (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token)))
+                     ('request (setq hermes-chat--session-bootstrap (copy-sequence hermes-chat--session-bootstrap)))
+                     ('turn (hermes-chat--next-transport-generation)))
+                   (error "retired restoration"))))
+        (unwind-protect
+            (let ((hermes-transport-send-function #'hermes-transport-send))
+              (setq buffer (hermes-chat-resume-session "stored"))
+              (with-current-buffer buffer
+                (insert "retained draft")
+                (let ((before (buffer-string)))
+                  (should-error
+                   (funcall resolve '((session_id . "live") (stored_session_id . "stored"))))
+                  (should (eq (plist-get hermes-chat--session-bootstrap :phase) 'preflight))
+                  (should (equal before (buffer-string))))))
+          (when (buffer-live-p buffer) (kill-buffer buffer))
+          (hermes-dashboard-transport-stop client))))))
+
 (ert-deftest hermes-chat-history-rejection-retains-input-for-explicit-retry ()
   (let ((client (hermes-test--dashboard-client)) requests submits buffer)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-start) (lambda (&rest _) client))

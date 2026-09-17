@@ -1879,14 +1879,40 @@ visible while reading."
 
 (defun hermes-chat--render-history (messages)
   "Insert prior MESSAGES (from `session.resume') into the transcript."
-  (dolist (message messages)
-    (when-let* ((entry (hermes-chat--history-entry message)))
-      (hermes-chat--insert-entry entry))))
+  (let ((owner hermes-chat--session-bootstrap))
+    (dolist (message messages)
+      (when-let* ((entry (hermes-chat--history-entry message)))
+        ;; Retain exact entries before insertion, which can run rendering hooks.
+        (when owner (push entry (plist-get owner :history-entries)))
+        ;; Start the change group inside the undo-disabled transcript boundary.
+        ;; EWOC links before printing; retry retires a failed, now empty node.
+        (hermes-chat--preserve-input-point
+         (let ((inhibit-read-only t)
+               (buffer-undo-list t))
+           (hermes-chat--register-node
+            entry (atomic-change-group (ewoc-enter-last hermes-chat--ewoc entry)))))
+        (hermes-chat--notify-state-change)))))
+
+(defun hermes-chat--clear-partial-history (owner)
+  "Remove only history entries retained by the current bootstrap OWNER."
+  (when (hermes-chat--dashboard-bootstrap-current-p owner)
+    (let ((entries (plist-get owner :history-entries)))
+      ;; A printer can fail after EWOC links a node but before ID registration.
+      ;; Filter by entry identity rather than relying on the node table.
+      (hermes-chat--preserve-input-point
+       (let ((inhibit-read-only t)
+             (buffer-undo-list t))
+         (hermes-chat--preserve-readers
+           (ewoc-filter hermes-chat--ewoc
+                        (lambda (entry) (not (memq entry entries)))))))
+      (dolist (entry entries) (remhash (plist-get entry :id) hermes-chat--nodes))
+      (setf (plist-get owner :history-entries) nil))))
 
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session and hydrate history before draining queued input."
   (with-current-buffer buffer
     (let* ((session hermes-chat--session-id)
+           recorded-session
            (lifetime hermes-chat--lifecycle-generation)
            (retry hermes-chat--session-bootstrap)
            (previous-client hermes-chat--dashboard-client)
@@ -1909,12 +1935,17 @@ visible while reading."
                                 (eq previous-client hermes-chat--dashboard-client)))
                    (setq hermes-chat--session-bootstrap retry)))
                (signal (car err) (cdr err)))))
-           (owner (hermes-chat--dashboard-begin-bootstrap client 'history nil)))
+           (owner
+            (setq hermes-chat--session-bootstrap
+                  (append (list :history-entries (plist-get retry :history-entries))
+                          (hermes-chat--dashboard-begin-bootstrap client 'history nil)))))
       (cl-labels
           ((owned-p ()
              (and (hermes-chat--dashboard-bootstrap-current-p owner)
                   (eq (plist-get owner :phase) 'preflight)
-                  (equal session hermes-chat--session-id)
+                  (or (equal session hermes-chat--session-id)
+                      (and recorded-session
+                           (equal recorded-session hermes-chat--session-id)))
                   (hermes-chat--current-transport-generation-p generation)))
            (current-p ()
              (and (owned-p)
@@ -1938,16 +1969,31 @@ visible while reading."
              (lambda (result)
                (hermes-chat--in-buffer buffer
                  (when (current-p)
-                   (hermes-chat--dashboard-record-session client result)
-                   (hermes-chat--render-history (hermes-transport--get result 'messages))
-                   (when (hermes-chat--dashboard-result-live-turn-p result)
-                     (hermes-chat--dashboard-restore-inflight-turn client)
-                     (hermes-chat--dashboard-bind-stream-callback
-                      client hermes-chat--pending-assistant-id))
-                   (hermes-chat--dashboard-restore-pending-clarify result)
-                   (when (eq owner hermes-chat--session-bootstrap)
-                     (setq hermes-chat--session-bootstrap nil)
-                     (hermes-chat--drain-queued-message)))))
+                   (let (restored)
+                     (unwind-protect
+                         (progn
+                           ;; Recording can commit the canonical durable ID
+                           ;; before a later projection or rendering error.
+                           (setq recorded-session
+                                 (hermes-chat--dashboard-stored-id-from-result
+                                  client result
+                                  (hermes-chat--dashboard-active-id-from-result client result)))
+                           (hermes-chat--dashboard-record-session client result)
+                           (hermes-chat--clear-partial-history owner)
+                           (hermes-chat--render-history (hermes-transport--get result 'messages))
+                           (when (hermes-chat--dashboard-result-live-turn-p result)
+                             (hermes-chat--dashboard-restore-inflight-turn client))
+                           (hermes-chat--dashboard-restore-pending-clarify result)
+                           (when (hermes-chat--dashboard-result-live-turn-p result)
+                             (hermes-chat--dashboard-bind-stream-callback
+                              client hermes-chat--pending-assistant-id))
+                           (setq restored t))
+                       ;; The transport contains callback errors and quits after
+                       ;; taking the RPC; only this callback can settle its read.
+                       (unless restored (failed "Restoration interrupted")))
+                     (when (eq owner hermes-chat--session-bootstrap)
+                       (setq hermes-chat--session-bootstrap nil)
+                       (hermes-chat--drain-queued-message))))))
              :reject #'failed)
           (error (failed (error-message-string err))))))))
 
