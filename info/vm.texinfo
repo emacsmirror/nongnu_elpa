@@ -3086,15 +3086,26 @@ reached the server already, so look at what arrived before sending it again.
 @section The address book
 
 @acronym{BBDB} completes addresses as you type them and can make a record of
-everyone you reply to.  It is a separate package, so ask for it in a way that
-does not break the rest of your configuration when it is not installed:
+everyone you correspond with.  It is a separate package, so ask for it in a
+way that does not break the rest of your configuration when it is not
+installed:
 
 @lisp
 (when (require 'bbdb nil t)
   (bbdb-initialize 'vm 'sendmail)
-  (bbdb-insinuate-vm)
-  (add-hook 'vm-reply-hook 'bbdb-force-record-create))
+  (bbdb-mua-auto-update-init 'vm 'mail)
+  (setq bbdb-mua-auto-action 'query))
 @end lisp
+
+@noindent
+@code{bbdb-initialize} does all the hooking: @code{vm} for the folder
+commands it binds, @code{sendmail} for completion in a composition.  Leave
+@code{bbdb-insinuate-vm} to it, which its own docstring asks you to.  The
+second line is what looks each address up as you go: @code{vm} for the
+messages you read, @code{mail} for the ones you send.  What happens to an
+address with no record is @code{bbdb-mua-auto-action}: @code{query} asks,
+@code{create} makes one without asking, @code{update} touches only records
+that exist already, and @code{nil} does nothing.
 
 @noindent
 That form is worth copying for any package you are not certain of:

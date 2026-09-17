@@ -122,7 +122,63 @@ landed in the record\\='s `aka' field."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-avirtual)
   (require 'vm-pcrisis)
+  ;; and vm-serial, which names `bbdb-sc-get-attrib' and is what loads
+  ;; bbdb-sc.el where it is defined.  Without this the test passed only
+  ;; because some other file in the run had loaded vm-serial first, and
+  ;; `./test-runner --one vm-optional-test.el' failed on its own.
+  (require 'vm-serial)
   (should (equal nil (vm-optional-test--unresolved "bbdb-"))))
+
+(defconst vm-optional-test--manual
+  (expand-file-name "../info/vm.texinfo" vm-test-dir)
+  "The manual, whose examples name the companion packages too.")
+
+(defun vm-optional-test--names-the-manual-uses (prefix)
+  "Every symbol starting with PREFIX that a Lisp example in the manual names.
+Each @lisp and @example block is read as Lisp and walked; a block that is
+not Lisp, a shell command or a maildrop specification, is skipped."
+  (let ((names (make-hash-table :test 'eq)))
+    (with-temp-buffer
+      (insert-file-contents vm-optional-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward "^@\\(lisp\\|example\\)\n" nil t)
+        (let ((start (point))
+              (end (save-excursion
+                     (and (re-search-forward "^@end \\(lisp\\|example\\)" nil t)
+                          (match-beginning 0)))))
+          (when end
+            (let ((block (buffer-substring-no-properties start end)))
+              (goto-char end)
+              (with-temp-buffer
+                (insert block)
+                (goto-char (point-min))
+                (ignore-errors
+                  (while t
+                    (vm-optional-test--walk (read (current-buffer))
+                                            prefix names)))))))))
+    (sort (hash-table-keys names) #'string<)))
+
+(ert-deftest vm-optional-test-bbdb-names-in-the-manual-resolve ()
+  "Every BBDB name the manual tells a reader to call exists in BBDB.
+
+The Address book section put `bbdb-force-record-create\=' on `vm-reply-hook\='.
+BBDB 2 had that function and BBDB 3 does not, so a reader who copied the
+example got a void function the first time they replied, in a hook they had
+no reason to suspect.  The companion of
+`vm-optional-test-bbdb-names-resolve\=': that one holds the names VM calls,
+this one the names the manual tells the reader to."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'bbdb)
+  (require 'bbdb-com)
+  (require 'bbdb-mua)
+  (require 'bbdb-vm)
+  (let ((missing (seq-remove
+                  (lambda (symbol)
+                    (or (fboundp symbol) (boundp symbol) (macrop symbol)
+                        (featurep symbol)
+                        (locate-library (symbol-name symbol))))
+                  (vm-optional-test--names-the-manual-uses "bbdb-"))))
+    (should (equal nil missing))))
 
 ;;; What works: the in-bbdb selector
 
