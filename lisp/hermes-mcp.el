@@ -758,23 +758,38 @@ The browser returns to the backend callback URL, which must be reachable."
 
 (defvar hermes-mcp-mode-map)
 
+(defun hermes-mcp--popup-title ()
+  "Identify the selected MCP server from the cached listing."
+  (concat "MCP: " (if-let* ((name (tabulated-list-get-id)))
+                     (propertize (hermes-mcp--redact-display name)
+                                 'face 'font-lock-type-face)
+                   "no server selected")))
+
+(defun hermes-mcp--selection-unavailable-p ()
+  "Return non-nil without a selected server or while an operation is active."
+  (or hermes-mcp--operation (not (tabulated-list-get-id))))
+
 (keymap-popup-define hermes-mcp-mode-map
   "Keymap for `hermes-mcp-mode'."
   :parent tabulated-list-mode-map
-  :description "Hermes MCP Servers"
-  :group "Server"
+  :description #'hermes-mcp--popup-title
+  :group ("Server" :inapt-if #'hermes-mcp--selection-unavailable-p)
   "RET" ("Test server" hermes-mcp-test)
   "t" ("Test server" hermes-mcp-test)
-  "e" ("Enable/disable" hermes-mcp-toggle)
-  :group "Configure"
+  "e" ("Enable/disable" hermes-mcp-toggle :stay-open t)
+  :group ("Configure" :inapt-if (lambda () hermes-mcp--operation))
   "a" ("Add server" hermes-mcp-add)
-  "d" ("Remove server" hermes-mcp-remove)
+  "d" ("Remove server" hermes-mcp-remove
+       :inapt-if #'hermes-mcp--selection-unavailable-p)
   "c" ("Install from catalog" hermes-mcp-catalog)
+  :row
   :group "Authorization"
-  "o" ("Authorize OAuth" hermes-mcp-authenticate)
-  "k" ("Cancel / stop monitoring" hermes-mcp-cancel)
+  "o" ("Authorize OAuth" hermes-mcp-authenticate
+       :inapt-if #'hermes-mcp--selection-unavailable-p)
+  "k" ("Cancel / stop monitoring" hermes-mcp-cancel
+       :inapt-if (lambda () (not hermes-mcp--operation)))
   :group "View"
-  "g" ("Refresh" revert-buffer)
+  "g" ("Refresh" revert-buffer :stay-open t)
   "?" ("Help" hermes-mcp-mode-map-popup))
 
 (define-derived-mode hermes-mcp-mode tabulated-list-mode "Hermes MCP"

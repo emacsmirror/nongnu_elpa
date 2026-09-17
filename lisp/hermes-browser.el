@@ -745,7 +745,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          :description ,description
          ,@help
          :group "View"
-         revert-buffer "Refresh"
+         revert-buffer ("Refresh" :stay-open t)
          describe-mode "Describe mode"
          quit-window "Quit view")
        ,@(and dynamic

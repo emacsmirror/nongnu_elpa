@@ -395,13 +395,13 @@ accepted explicit spelling of the default session scope."
             (hermes-chat--in-buffer buffer
               (hermes-chat--command-rejection context message)))))))))
 
-(defun hermes-chat--reasoning-setting-value ()
-  "Return the current chat's reasoning value for a setting label."
+(defun hermes-chat--reasoning-setting-value (&optional label)
+  "Return the current chat's reasoning value, optionally prefixed with LABEL."
   (let ((pending (and (hermes-chat--pending-setting-p)
                       hermes-chat--dashboard-create-reasoning-effort)))
     (hermes-chat--setting-value
      (or pending (plist-get hermes-chat--runtime-flags :reasoning-effort))
-     pending)))
+     pending label)))
 
 (defun hermes-chat--read-reasoning-effort ()
   "Read reasoning with a known default, refusing a changed prompt owner."

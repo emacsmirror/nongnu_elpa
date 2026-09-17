@@ -131,13 +131,13 @@
          hermes-chat--working-directory "/remote/project/")
    (let ((text (keymap-popup--render
                 (keymap-popup--meta hermes-chat-model-map 'descriptions))))
-     (should (string-match-p "Switch model: model-a" text))
+     (should (string-match-p "Model: model-a" text))
      (should (eq (get-text-property (string-match "model-a" text) 'face text)
-                 'font-lock-constant-face))
-     (should (string-match-p "Set reasoning: high" text))
+                 'keymap-popup-value))
+     (should (string-match-p "Reasoning: high" text))
      (should (string-match-p "Connect provider" text)))
    (should (string-match-p
-            "Set directory: /remote/project/"
+            "Directory: /remote/project/"
             (keymap-popup--render
              (keymap-popup--meta hermes-chat-work-map 'descriptions))))
    (should (eq (lookup-key hermes-chat-model-map (kbd "m"))
@@ -146,6 +146,21 @@
                #'hermes-chat-set-reasoning))
    (setq hermes-chat--model (make-string 100 ?x))
    (should (<= (string-width (hermes-chat--model-setting-value)) 40))))
+
+(ert-deftest hermes-chat-setting-values-long-pending-label-stays-visible ()
+  "Rendering budgets the full label and retains exact full model help text."
+  (hermes-test-with-chat-buffer
+   (let ((model (concat "provider/" (make-string 90 ?界))))
+     (setq hermes-chat--dashboard-create-model model)
+     (let* ((label (hermes-chat--model-setting-value "Model"))
+            (text (keymap-popup--render
+                   (keymap-popup--meta hermes-chat-model-map 'descriptions)))
+            (start (string-match "provider/" label)))
+       (should (<= (string-width label) 40))
+       (should (string-match-p "Model (pending): provider/" text))
+       (should (equal (get-text-property start 'help-echo label) model))
+       (should (eq (get-text-property start 'face label) 'warning))
+       (should-not (get-text-property 0 'face label))))))
 
 (ert-deftest hermes-chat-setting-values-reasoning-prompt-and-default ()
   "Unknown reasoning has no made-up default; known values are offered."

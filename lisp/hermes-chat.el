@@ -2344,12 +2344,50 @@ Do not wrap into the composer or modify its draft."
 (autoload 'hermes-chat-work "hermes-subagents" nil t)
 (autoload 'hermes-chat-workers-label "hermes-subagents")
 
+(defun hermes-chat--popup-title ()
+  "Identify the current chat using cached owner-local state."
+  (concat "Chat: " (propertize (buffer-name) 'face 'font-lock-type-face)))
+
+(defun hermes-chat--interrupt-unavailable-p ()
+  "Return non-nil unless a run or local image preparation can be interrupted."
+  (let ((phase (plist-get
+                (plist-get (plist-get hermes-chat--unsettled-submit-context
+                                      :queue-entry) :image-record) :state)))
+    (not (or (memq phase '(uploading attaching))
+             (and (eq phase 'local) hermes-chat--session-bootstrap)
+             (and (not hermes-chat--busy-submit-context)
+                  hermes-chat--pending-assistant-id
+                  (hermes-chat--dashboard-session-attached-p))))))
+
+(defun hermes-chat--interrupt-send-unavailable-p ()
+  "Return non-nil when interrupt-and-send cannot target an attached run."
+  (or (hermes-chat--interrupt-unavailable-p)
+      (not hermes-chat--pending-assistant-id)
+      (not (hermes-chat--dashboard-session-attached-p))))
+
+(defun hermes-chat--queue-label ()
+  "Describe whether the queue command sends now or waits for a turn."
+  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages
+          (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
+      "Queue message"
+    "Queue / send now"))
+
+(defun hermes-chat--steer-label ()
+  "Describe the cached steering target, including the idle send fallback."
+  (cond (hermes-chat--pending-assistant-id "Steer / queue fallback")
+        ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages
+             (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
+         "Steer / queue")
+        (t "Steer / send now")))
+
 (keymap-popup-define hermes-chat-images-map
   "Manage images in the current draft."
-  :description "Draft Images"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
   :group "Images"
+  "f" ("Attach image" hermes-chat-attach-image-file)
+  "v" ("Paste image" hermes-chat-paste-image)
   "V" ("Preview / recover" hermes-chat-preview-images)
   "D" ("Remove draft image" hermes-chat-remove-image))
 
@@ -2372,7 +2410,7 @@ Do not wrap into the composer or modify its draft."
 
 (keymap-popup-define hermes-chat-sess-map
   "Manage the current chat session."
-  :description "Chat Session"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
   :group "Session"
@@ -2383,44 +2421,53 @@ Do not wrap into the composer or modify its draft."
 
 (keymap-popup-define hermes-chat-model-map
   "Configure the chat model and provider."
-  :description "Chat Model"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
   :group "Model"
-  "m" ((lambda () (format "Switch model: %s"
-                           (hermes-chat--model-setting-value)))
+  "m" ((lambda () (hermes-chat--model-setting-value "Model"))
        hermes-chat-switch-model
        :inapt-if #'hermes-chat--active-turn-p)
-  "e" ((lambda () (format "Set reasoning: %s"
-                           (hermes-chat--reasoning-setting-value)))
+  "e" ((lambda () (hermes-chat--reasoning-setting-value "Reasoning"))
        hermes-chat-set-reasoning
        :inapt-if #'hermes-chat--active-turn-p)
   "K" ("Connect provider" hermes-chat-connect-provider))
 
 (keymap-popup-define hermes-chat-work-map
   "Choose the chat workspace and related buffers."
-  :description "Chat Workspace"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
   :group "Workspace"
-  "w" ((lambda () (format "Set directory: %s"
-                           (hermes-chat--setting-value
-                            (hermes-chat--current-working-directory))))
+  "w" ((lambda () (hermes-chat--setting-value
+                   (hermes-chat--current-working-directory) nil "Directory"))
        hermes-chat-set-directory
        :inapt-if #'hermes-chat--active-turn-p)
-  "b" ("Switch chat buffer" hermes-switch-to-chat)
-  :group "Panels"
+  "b" ("Switch chat buffer" hermes-switch-to-chat))
+
+(keymap-popup-define hermes-chat-jobs-map
+  "Inspect queued messages, workers and their output."
+  :description #'hermes-chat--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Work"
   "P" ("Queue side panel" hermes-chat-queue-panel)
-  "o" ("Preview output" hermes-chat-preview-output)
-  "T" ("Live tasks" hermes-chat-show-todos))
+  "W" (#'hermes-chat-workers-label hermes-chat-work)
+  "T" ("Live tasks" hermes-chat-show-todos)
+  "o" ("Preview output" hermes-chat-preview-output))
+
+;; Retain the original child shortcuts without advertising them twice.
+(dolist (key '("P" "o" "T"))
+  (unless (keymap-lookup hermes-chat-work-map key)
+    (keymap-set hermes-chat-work-map key
+                (keymap-lookup hermes-chat-jobs-map key))))
 
 (keymap-popup-define hermes-chat-info-map
   "Inspect chat activity and connection state."
-  :description "Inspect Chat"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
   :group "Inspect"
-  "W" (#'hermes-chat-workers-label hermes-chat-work)
   "h" ("Session details" hermes-chat-session-details)
   "u" ("Token usage" hermes-chat-show-usage)
   "t" ("Session status" hermes-chat-show-status)
@@ -2428,45 +2475,53 @@ Do not wrap into the composer or modify its draft."
   :group "Connection"
   "x" ("Reconnect socket" hermes-dashboard-reconnect))
 
+(unless (keymap-lookup hermes-chat-info-map "W")
+  (keymap-set hermes-chat-info-map "W" #'hermes-chat-work))
+
 (keymap-popup-define hermes-chat-actions-map
   "In-chat action menu for `hermes-chat-mode'."
-  :description "Hermes Chat Actions"
+  :description #'hermes-chat--popup-title
   :popup-key "?"
   ;; Keep q available for queueing; children use the native q/C-g back key.
   :exit-key "C-g"
   :group "Turn"
-  "s" ("Steer" hermes-chat-steer-message)
-  "i" ("Interrupt" hermes-chat-interrupt)
-  "k" ("Interrupt + send" hermes-chat-interrupt-and-send)
-  "q" ("Queue message" hermes-chat-queue-message)
+  "s" (#'hermes-chat--steer-label hermes-chat-steer-message
+       :inapt-if (lambda () hermes-chat--draft-images))
+  "i" ("Interrupt" hermes-chat-interrupt
+       :inapt-if #'hermes-chat--interrupt-unavailable-p)
+  "k" ("Interrupt + send" hermes-chat-interrupt-and-send
+       :inapt-if #'hermes-chat--interrupt-send-unavailable-p)
+  "q" (#'hermes-chat--queue-label hermes-chat-queue-message)
   :group "Compose"
-  "a" ("Answer prompt" hermes-chat-respond-to-prompt)
-  "d" ("Cancel prompt" hermes-chat-cancel-prompt)
+  "RET" ("Send" hermes-chat-send)
   "j" ("Go to composer" hermes-chat-go-to-composer)
   "Q" ("Quote region" hermes-chat-quote-region)
-  "f" ("Attach image" hermes-chat-attach-image-file)
-  "v" ("Paste image" hermes-chat-paste-image)
+  "I" ("Images" :keymap hermes-chat-images-map)
   :row
   :group "Configure"
   "S" ("Session" :keymap hermes-chat-sess-map)
   "M" ("Model" :keymap hermes-chat-model-map)
   "w" ("Workspace" :keymap hermes-chat-work-map)
   :group "Browse"
-  "I" ("Images" :keymap hermes-chat-images-map)
+  "B" ("Work" :keymap hermes-chat-jobs-map)
   "X" ("Inspect" :keymap hermes-chat-info-map)
   "c" ("Show commands" hermes-chat-show-commands)
-  "r" ("Refresh commands" hermes-chat-refresh-commands))
+  "r" ("Refresh commands" hermes-chat-refresh-commands :stay-open t)
+  :row
+  :group ("Prompt" :if #'hermes-chat--pending-prompt-p)
+  "a" ("Answer prompt" hermes-chat-respond-to-prompt)
+  "d" ("Cancel prompt" hermes-chat-cancel-prompt))
 
 (defun hermes-chat--submenu-root-key ()
   "Refuse ancestor menu keys that cannot safely dispatch from a child."
   (interactive)
-  (user-error "Reopen chat actions to choose another menu"))
+  (user-error "Go back before choosing another menu"))
 
 ;; Retain unclaimed suffix shortcuts without advertising a second menu or
 ;; maintaining another command table.  The submenu maps own these bindings.
 (dolist (map (list hermes-chat-images-map hermes-chat-sess-map
                    hermes-chat-model-map hermes-chat-work-map
-                   hermes-chat-info-map))
+                   hermes-chat-info-map hermes-chat-jobs-map))
   (map-keymap
    (lambda (event binding)
      (let ((key (vector event)))

@@ -607,33 +607,54 @@ the board detail buffer shows the most recently created tasks at the top."
 
 (defvar hermes-kanban-mode-map)
 
+(defun hermes-kanban--popup-title ()
+  "Identify the cached board and selected task."
+  (concat "Kanban: "
+          (propertize (or hermes-kanban--name hermes-kanban--slug "no board")
+                      'face 'font-lock-type-face)
+          " / "
+          (if-let* ((task (tabulated-list-get-id)))
+              (propertize task 'face 'font-lock-constant-face)
+            "no task selected")))
+
+(defun hermes-kanban--no-task-p ()
+  "Return non-nil when the board has no selected task."
+  (not (tabulated-list-get-id)))
+
 (keymap-popup-define hermes-kanban-mode-map
   "Keymap for `hermes-kanban-mode'."
   :parent tabulated-list-mode-map
-  :description "Hermes Kanban Board"
+  :description #'hermes-kanban--popup-title
   :group "Navigate"
-  "RET" ("Show task" hermes-kanban-show)
+  "RET" ("Show task" hermes-kanban-show
+       :inapt-if #'hermes-kanban--no-task-p)
   "b" ("Back to boards" hermes-kanban-boards)
-  :group "Edit task"
+  :group ("Edit task" :inapt-if #'hermes-kanban--no-task-p)
   "e" ("Edit title/priority" hermes-kanban-edit)
   "a" ("Assign / reassign" hermes-kanban-change-assignee)
   "s" ("Set status" hermes-kanban-set-status)
   "c" ("Comment" hermes-kanban-comment)
+  :row
   :group "Triage"
   "i" ("New rough idea" hermes-kanban-create-triage-task)
-  "S" ("Specify as one task" hermes-kanban-specify-triage-task)
-  "x" ("Decompose now" hermes-kanban-decompose-triage-task)
+  "S" ("Specify as one task" hermes-kanban-specify-triage-task
+       :inapt-if #'hermes-kanban--no-task-p)
+  "x" ("Decompose now" hermes-kanban-decompose-triage-task
+       :inapt-if #'hermes-kanban--no-task-p)
   :group "Board"
   "+" ("New task" hermes-kanban-create-task)
-  "D" ("Delete task" hermes-kanban-delete)
+  "D" ("Delete task" hermes-kanban-delete
+       :inapt-if #'hermes-kanban--no-task-p)
   "N" ("Nudge dispatcher" hermes-kanban-nudge-dispatch)
-  :group "Recovery"
+  :row
+  :group ("Recovery" :inapt-if #'hermes-kanban--no-task-p)
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
   :group "View"
-  "g" ("Refresh" revert-buffer)
-  "t" ("Toggle live updates" hermes-kanban-toggle-live)
-  "l" ("View selected task log" hermes-kanban-show-log)
+  "g" ("Refresh" revert-buffer :stay-open t)
+  "t" ("Toggle live updates" hermes-kanban-toggle-live :stay-open t)
+  "l" ("View selected task log" hermes-kanban-show-log
+       :inapt-if #'hermes-kanban--no-task-p)
   "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-mode-map-popup))
 
@@ -1026,22 +1047,32 @@ and an absent branch or run id is omitted."
 
 (defvar hermes-kanban-task-mode-map)
 
+(defun hermes-kanban-task--popup-title ()
+  "Identify the cached task and its owning board."
+  (concat "Kanban: "
+          (propertize (or hermes-kanban-task--board-slug "no board")
+                      'face 'font-lock-type-face)
+          " / "
+          (propertize (or hermes-kanban-task--task-id "no task")
+                      'face 'font-lock-constant-face)))
+
 (keymap-popup-define hermes-kanban-task-mode-map
   "Keymap for `hermes-kanban-task-mode'."
   :parent special-mode-map
-  :description "Hermes Kanban Task"
+  :description #'hermes-kanban-task--popup-title
   :group "Task"
   "c" ("Comment" hermes-kanban-comment)
   "a" ("Change assignee" hermes-kanban-change-assignee)
   :group "Triage"
   "S" ("Specify as one task" hermes-kanban-specify-triage-task)
   "x" ("Decompose now" hermes-kanban-decompose-triage-task)
+  :row
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
   "N" ("Nudge dispatcher" hermes-kanban-nudge-dispatch)
   :group "View"
-  "g" ("Refresh" revert-buffer)
+  "g" ("Refresh" revert-buffer :stay-open t)
   "l" ("View worker log" hermes-kanban-show-log)
   "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-task-mode-map-popup))

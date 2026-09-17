@@ -361,19 +361,27 @@ backend-declared settings and environment entries are editable here."
   (interactive)
   (keymap-popup hermes-plugins-mode-map))
 
+(defun hermes-plugins--selection-unavailable-p ()
+  "Return non-nil when no plugin is selected or a change is pending."
+  (or hermes-plugins--busy (not (tabulated-list-get-id))))
+
 (keymap-popup-define hermes-plugins-mode-map
   :parent tabulated-list-mode-map
+  :exit-key "C-g"
   :group "Inventory"
-  "g" ("Refresh" hermes-plugins-refresh)
-  "i" ("Install" hermes-plugins-install)
+  "g" ("Refresh" hermes-plugins-refresh :stay-open t
+       :inapt-if (lambda () hermes-plugins--busy))
+  "i" ("Install" hermes-plugins-install
+       :inapt-if (lambda () hermes-plugins--busy))
   "?" ("Help" hermes-plugins-popup)
-  "q" ("Quit" quit-window)
-  :group "Selected plugin"
+  "q" ("Quit view" quit-window)
+  :group ("Selected plugin" :inapt-if #'hermes-plugins--selection-unavailable-p)
   "e" ("Enable" hermes-plugins-enable)
   "d" ("Disable" hermes-plugins-disable)
   "u" ("Update" hermes-plugins-update)
   "D" ("Remove" hermes-plugins-remove)
-  :group "Configuration"
+  :row
+  :group ("Configuration" :inapt-if (lambda () hermes-plugins--busy))
   "c" ("Schema and environment" hermes-plugins-configure)
   "x" ("Context engine" hermes-plugins-select-context-engine))
 

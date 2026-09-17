@@ -2293,13 +2293,20 @@
     (should (equal (mapcar (lambda (row)
                             (mapcar (lambda (group) (plist-get group :name)) row))
                           rows)
-                   '(("Turn" "Compose") ("Configure" "Browse"))))))
+                   '(("Turn" "Compose") ("Configure" "Browse") ("Prompt"))))))
 
 (ert-deftest hermes-chat-actions-popup-paths ()
   "Actual popup wrappers dispatch every advertised path in the owner buffer."
   (hermes-test-with-chat-buffer
     (let ((owner (current-buffer)))
-      (dolist (path '(("s" hermes-chat-steer-message)
+      (dolist (path '(("RET" hermes-chat-send)
+                      ("I f" hermes-chat-attach-image-file)
+                      ("I v" hermes-chat-paste-image)
+                      ("B P" hermes-chat-queue-panel)
+                      ("B W" hermes-chat-work)
+                      ("B T" hermes-chat-show-todos)
+                      ("B o" hermes-chat-preview-output)
+                      ("s" hermes-chat-steer-message)
                       ("i" hermes-chat-interrupt)
                       ("k" hermes-chat-interrupt-and-send)
                       ("q" hermes-chat-queue-message)
@@ -2329,7 +2336,10 @@
                       ("X t" hermes-chat-show-status)))
         (let (called)
           (cl-letf (((symbol-function (cadr path))
-                     (lambda () (interactive) (setq called (current-buffer)))))
+                     (lambda () (interactive) (setq called (current-buffer))))
+                    ((symbol-function 'hermes-chat--interrupt-unavailable-p) #'ignore)
+                    ((symbol-function 'hermes-chat--interrupt-send-unavailable-p) #'ignore)
+                    ((symbol-function 'hermes-chat--pending-prompt-p) (lambda () t)))
             (unwind-protect
                 (save-window-excursion
                   (switch-to-buffer owner)
@@ -2341,12 +2351,12 @@
   "Unclaimed old suffix keys remain hidden aliases, not a second menu."
   (dolist (map (list hermes-chat-images-map hermes-chat-sess-map
                      hermes-chat-model-map hermes-chat-work-map
-                     hermes-chat-info-map))
+                     hermes-chat-info-map hermes-chat-jobs-map))
     (map-keymap
      (lambda (event binding)
        (when (and (commandp binding)
                   (not (eq binding #'hermes-chat--submenu-root-key))
-                  (not (memq event '(?? ?S ?w))))
+                  (not (memq event '(?? ?S ?w ?B))))
          (should (eq (lookup-key hermes-chat-actions-map (vector event))
                      binding))))
      map)))
@@ -2364,8 +2374,8 @@
               (execute-kbd-macro (kbd "S q"))
               (let ((popup (get-buffer keymap-popup--buffer-name)))
                 (should popup)
-                (should (eq (keymap-popup--active-get popup :keymap)
-                            hermes-chat-actions-map)))
+                (with-current-buffer popup
+                   (should (string-match-p "Compose" (buffer-string)))))
               (execute-kbd-macro (kbd "M C-g"))
               (should (get-buffer keymap-popup--buffer-name))
               (execute-kbd-macro (kbd "C-g"))
@@ -2387,9 +2397,8 @@
               (call-interactively (key-binding (kbd "w")))
               (call-interactively (key-binding (kbd "w")))
               (should-not called)
-              (should (eq (keymap-popup--active-get
-                           (get-buffer keymap-popup--buffer-name) :keymap)
-                          hermes-chat-work-map)))
+              (with-current-buffer keymap-popup--buffer-name
+                (should (string-match-p "Directory:" (buffer-string)))))
           (keymap-popup-dismiss))))))
 
 (ert-deftest hermes-chat-actions-popup-minibuffer-owner ()
@@ -2413,6 +2422,83 @@
                 (should-not (get-buffer keymap-popup--buffer-name)))
             (keymap-popup-dismiss)))))))
 
+(ert-deftest hermes-chat-actions-popup-real-setting-cancel-two-owners ()
+  "Cancel native completion without changing either chat's settings or draft."
+  (hermes-test-with-chat-buffer
+   (let ((first (current-buffer)))
+     (setq hermes-chat--model "first-model"
+           hermes-chat--runtime-flags '(:reasoning-effort "low"))
+     (hermes-test-with-chat-buffer
+      (setq hermes-chat--model "second-model"
+            hermes-chat--runtime-flags '(:reasoning-effort "high"))
+      (let ((second (current-buffer)))
+        (dolist (owner (list first second))
+          (save-window-excursion
+            (switch-to-buffer owner)
+            (buffer-enable-undo)
+            (insert "Keep this draft")
+            (undo-boundary)
+            (let ((before (buffer-string)) (position (point))
+                  (undo (copy-tree buffer-undo-list))
+                  (flags (copy-tree hermes-chat--runtime-flags)) entered
+                  (noninteractive nil))
+              (unwind-protect
+                  (progn
+                    (minibuffer-with-setup-hook
+                        (lambda () (setq entered (minibufferp)))
+                      (condition-case nil
+                          (execute-kbd-macro (kbd "C-c C-o M e C-g"))
+                        (quit nil)))
+                    (should entered)
+                    (should-not (active-minibuffer-window))
+                    (should (equal flags hermes-chat--runtime-flags))
+                    (should-not hermes-chat--dashboard-create-reasoning-effort)
+                    (should (equal before (buffer-string)))
+                    (should (= position (point)))
+                    (should (equal undo buffer-undo-list))
+                    (should (eq owner (current-buffer)))
+                    (should-not (get-buffer keymap-popup--buffer-name))
+                    (execute-kbd-macro "x")
+                    (should (equal (buffer-string) (concat before "x"))))
+                (keymap-popup-dismiss)))))
+        (should (equal (buffer-local-value 'hermes-chat--model first) "first-model"))
+        (should (equal (buffer-local-value 'hermes-chat--model second) "second-model")))))))
+
+(ert-deftest hermes-chat-actions-popup-availability-follows-local-state ()
+  "Idle, running, prompt and image preparation expose honest action state."
+  (hermes-test-with-chat-buffer
+   (let ((render (lambda ()
+                   (keymap-popup--render
+                    (keymap-popup--meta hermes-chat-actions-map 'descriptions)))))
+     (should (hermes-chat--interrupt-unavailable-p))
+     (should (string-match-p "Queue / send now" (funcall render)))
+     (should (string-match-p "Steer / send now" (funcall render)))
+     (should (string-match-p "Send" (funcall render)))
+     (should-not (string-match-p "Answer prompt" (funcall render)))
+     (setq hermes-chat--pending-assistant-id "assistant"
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "session")
+     (should-not (hermes-chat--interrupt-unavailable-p))
+     (should-not (hermes-chat--interrupt-send-unavailable-p))
+     (should (string-match-p "Steer / queue fallback" (funcall render)))
+     (should (string-match-p "Queue message" (funcall render)))
+     (puthash "prompt" '(:type "clarify") (hermes-chat--ensure-pending-prompts))
+     (should (string-match-p "Answer prompt" (funcall render)))
+     (setq hermes-chat--busy-submit-context '(:pending t))
+     (should (hermes-chat--interrupt-unavailable-p))
+     (setq hermes-chat--pending-assistant-id nil
+           hermes-chat--dashboard-session-ready-p nil)
+     (dolist (phase '(uploading attaching local))
+       (setq hermes-chat--session-bootstrap (and (eq phase 'local) '(:kind create))
+             hermes-chat--unsettled-submit-context
+             (list :queue-entry (list :image-record (list :state phase))))
+       (should-not (hermes-chat--interrupt-unavailable-p))
+       (should (hermes-chat--interrupt-send-unavailable-p)))
+     ;; Do not leave synthetic submit ownership for real cleanup to settle.
+     (setq hermes-chat--busy-submit-context nil
+           hermes-chat--unsettled-submit-context nil
+           hermes-chat--session-bootstrap nil))))
+
 (ert-deftest hermes-chat-actions-popup-inherited-launchers-safe ()
   "Root launchers inside children refuse safely through the command loop."
   (hermes-test-with-chat-buffer
@@ -2423,7 +2509,7 @@
       (undo-boundary)
       (let ((before (buffer-string)) (position (point))
             (undo (copy-tree buffer-undo-list)) (owner (current-buffer))
-            (children '("S" "M" "w" "I" "X")) paths)
+            (children '("S" "M" "w" "I" "X" "B")) paths)
         (dolist (child children)
           (dolist (target children)
             ;; S S and w w are child actions, not ancestor launchers.
@@ -2435,7 +2521,7 @@
                                (should-error (execute-kbd-macro (kbd path))
                                              :type 'user-error)
                                '(user-error
-                                 "Reopen chat actions to choose another menu")))
+                                 "Go back before choosing another menu")))
                       (push path paths)
                       (should-not (get-buffer keymap-popup--buffer-name))
                       ;; The supported child -> root -> child route still works.
@@ -2448,7 +2534,7 @@
                       (should (= position (point)))
                       (should (equal undo buffer-undo-list)))
                   (keymap-popup-dismiss))))))
-        (should (= (length paths) 23))))))
+        (should (= (length paths) 34))))))
 
 (ert-deftest hermes-chat-actions-popup-model-busy-availability ()
   "Busy model and reasoning actions remain visible but cannot prompt."
@@ -2465,8 +2551,8 @@
               (progn
                 (execute-kbd-macro (kbd "C-c C-o M"))
                 (with-current-buffer (get-buffer keymap-popup--buffer-name)
-                  (dolist (text '("Switch model: Current model"
-                                  "Set reasoning: low"))
+                  (dolist (text '("Model: Current model"
+                                  "Reasoning: low"))
                     (goto-char (point-min))
                     (search-forward text)
                     (should (eq (get-text-property (line-beginning-position) 'face)
@@ -2474,9 +2560,8 @@
                 (execute-kbd-macro (kbd "m e"))
                 (should-not prompted)
                 (should-not hermes-chat--dashboard-create-reasoning-effort)
-                (should (eq (keymap-popup--active-get
-                             (get-buffer keymap-popup--buffer-name) :keymap)
-                            hermes-chat-model-map)))
+                (with-current-buffer keymap-popup--buffer-name
+                  (should (string-match-p "Reasoning: low" (buffer-string)))))
             (keymap-popup-dismiss)))))))
 
 (ert-deftest hermes-chat-set-reasoning-busy-before-prompt ()
@@ -2492,13 +2577,16 @@
         (should-not hermes-chat--dashboard-create-reasoning-effort)))))
 
 (ert-deftest hermes-chat-actions-popup-attach-image-label ()
-  "The actual root advertises the image-only attachment command accurately."
+  "The Images submenu advertises every image action together."
   (hermes-test-with-chat-buffer
     (unwind-protect
         (progn
           (hermes-chat-actions-map-popup)
+          (call-interactively (key-binding (kbd "I")))
           (with-current-buffer (get-buffer keymap-popup--buffer-name)
-            (should (string-match-p "Attach image" (buffer-string)))
+            (dolist (label '("Attach image" "Paste image" "Preview / recover"
+                             "Remove draft image"))
+              (should (string-match-p label (buffer-string))))
             (should-not (string-match-p "Attach file" (buffer-string)))))
       (keymap-popup-dismiss))))
 

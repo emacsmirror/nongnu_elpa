@@ -1902,18 +1902,23 @@ self-explanatory."
                  (if detail (format "%s: %s" label detail) label))
          'face (hermes-chat--header-status-face status))))))
 
-(defun hermes-chat--setting-value (value &optional pending)
-  "Return bounded, faced setting VALUE, marking PENDING choices explicitly."
+(defun hermes-chat--setting-value (value &optional pending label)
+  "Return bounded, faced setting VALUE, marking PENDING choices explicitly.
+With LABEL, budget the complete action label, not only its value."
   (let* ((value (hermes-transport--non-empty-string value))
-         (suffix (and value pending " (pending)")))
-    (propertize
-     (concat (truncate-string-to-width
-              (replace-regexp-in-string "[\n\r\t]" " " (or value "unknown"))
-              (- 40 (length suffix)) nil nil "…")
-             suffix)
-     'face (cond ((null value) 'shadow) (pending 'warning)
-                 (t 'font-lock-constant-face))
-     'help-echo value)))
+         (pending (and value pending))
+         (prefix (and label (concat label (and pending " (pending)") ": ")))
+         (suffix (and (not label) pending " (pending)")))
+    (concat
+     prefix
+     (propertize
+      (concat (truncate-string-to-width
+               (replace-regexp-in-string "[\n\r\t]" " " (or value "unknown"))
+               (- 40 (string-width (or prefix "")) (length suffix)) nil nil "…")
+              suffix)
+      'face (cond ((null value) 'shadow) (pending 'warning)
+                  (t 'keymap-popup-value))
+      'help-echo value))))
 
 (defun hermes-chat--pending-setting-p ()
   "Return non-nil when create-time settings belong to this chat session."

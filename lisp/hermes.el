@@ -134,54 +134,128 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 
 (defvar hermes-dashboard-mode-map)
 
+(defun hermes-dashboard--chat-unavailable-p (&optional predicate)
+  "Return non-nil without a selected chat or when PREDICATE rejects it."
+  (let* ((node (hermes-dashboard--node-at-point))
+         (data (and node (ewoc-data node)))
+         (buffer (plist-get data :buffer)))
+    (or (not (eq (plist-get data :kind) 'chat))
+        (not (buffer-live-p buffer))
+        (and predicate (with-current-buffer buffer (funcall predicate))))))
+
+(defun hermes-dashboard--popup-title ()
+  "Identify the selected dashboard chat without fetching remote state."
+  (let* ((node (hermes-dashboard--node-at-point))
+         (data (and node (ewoc-data node))))
+    (concat "Dashboard: "
+            (if (hermes-dashboard--chat-unavailable-p)
+                "no chat selected"
+              (propertize (or (plist-get data :title)
+                              (buffer-name (plist-get data :buffer)))
+                          'face 'font-lock-type-face)))))
+
+(keymap-popup-define hermes-dash-chat-map
+  "Commands for the selected dashboard chat."
+  :description #'hermes-dashboard--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Selected chat"
+  "i" ("Interrupt" hermes-dashboard-interrupt
+       :inapt-if (lambda () (hermes-dashboard--chat-unavailable-p
+                            #'hermes-chat--interrupt-unavailable-p)))
+  "s" ("Steer / send" hermes-dashboard-steer
+       :inapt-if #'hermes-dashboard--chat-unavailable-p)
+  "a" ("Answer prompt" hermes-dashboard-respond
+       :inapt-if (lambda () (hermes-dashboard--chat-unavailable-p
+                            (lambda () (not (hermes-chat--pending-prompt-p))))))
+  "m" ("Switch model" hermes-dashboard-switch-model
+       :inapt-if (lambda () (hermes-dashboard--chat-unavailable-p
+                            #'hermes-chat--active-turn-p)))
+  "d" ("Disconnect" hermes-dashboard-disconnect
+       :inapt-if #'hermes-dashboard--chat-unavailable-p))
+
+(keymap-popup-define hermes-dash-res-map
+  "Browse Hermes resources and work."
+  :description #'hermes-dashboard--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Resources"
+  "I" ("Inventory" hermes-list-inventory)
+  "T" ("Projects" hermes-list-projects)
+  "O" ("Managed files" hermes-files)
+  "X" ("MCP servers" hermes-list-mcp)
+  :group "Work"
+  "K" ("Kanban" hermes-list-kanban)
+  "A" ("Subagents" hermes-list-subagents)
+  "C" ("Cron jobs" hermes-list-crons)
+  "R" ("Rollbacks" hermes-list-rollbacks))
+
+(keymap-popup-define hermes-dash-mgr-map
+  "Configure Hermes and its access routes."
+  :description #'hermes-dashboard--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Manage"
+  "F" ("Profiles" hermes-list-profiles)
+  "Z" ("Configuration" hermes-config)
+  "J" ("Agent plugins" hermes-list-plugins)
+  "M" ("Messaging" hermes-list-messaging-platforms)
+  :group "Access"
+  "e" ("Connect provider" hermes-onboarding-connect-provider)
+  "o" ("Provider accounts" hermes-onboarding-oauth-connect)
+  "B" ("Pairing" hermes-list-pairing)
+  "W" ("Webhooks" hermes-list-webhooks))
+
+(keymap-popup-define hermes-dash-sys-map
+  "Inspect the Hermes gateway."
+  :description #'hermes-dashboard--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "System"
+  "G" ("Gateway status" hermes-system-status)
+  "L" ("Gateway logs" hermes-system-logs))
+
 (keymap-popup-define hermes-dashboard-mode-map
   "Hermes Dashboard"
   :parent special-mode-map
   :popup-key "h"
-  :description "Hermes Dashboard"
+  :description #'hermes-dashboard--popup-title
   :group "Navigate"
-  "n" ("Next" hermes-dashboard-next)
-  "p" ("Previous" hermes-dashboard-previous)
+  "n" ("Next" hermes-dashboard-next :stay-open t)
+  "p" ("Previous" hermes-dashboard-previous :stay-open t)
   "RET" ("Open" hermes-dashboard-open)
-  "<mouse-1>" ("Open" hermes-dashboard-mouse-open)
-  :group "Session"
-  "c" ("Chat" hermes-chat)
-  "e" ("Connect provider" hermes-onboarding-connect-provider)
-  "o" ("Provider accounts" hermes-onboarding-oauth-connect)
+  :group "Chats"
+  "c" ("New chat" hermes-chat)
   "S" ("Sessions" hermes-list-sessions)
+  "v" ("Selected chat" :keymap hermes-dash-chat-map
+       :inapt-if #'hermes-dashboard--chat-unavailable-p)
   :row
-  :group "Selected chat"
-  "i" ("Interrupt" hermes-dashboard-interrupt)
-  "s" ("Steer" hermes-dashboard-steer)
-  "a" ("Answer prompt" hermes-dashboard-respond)
-  "m" ("Switch model" hermes-dashboard-switch-model)
-  "d" ("Disconnect" hermes-dashboard-disconnect)
-  :group "Browse"
-  "I" ("Inventory" hermes-list-inventory)
-  "R" ("Rollbacks" hermes-list-rollbacks)
-  "A" ("Subagents" hermes-list-subagents)
-  "C" ("Cron jobs" hermes-list-crons)
-  "O" ("Managed files" hermes-files)
-  :row
-  :group "Resources"
-  "K" ("Kanban" hermes-list-kanban)
-  "X" ("MCP servers" hermes-list-mcp)
-  "T" ("Projects" hermes-list-projects)
-  :group "Manage"
-  "F" ("Profiles" hermes-list-profiles)
-  "M" ("Messaging" hermes-list-messaging-platforms)
-  "Z" ("Configuration" hermes-config)
-  "J" ("Agent plugins" hermes-list-plugins)
-  :row
-  :group "Access and routes"
-  "B" ("Pairing" hermes-list-pairing)
-  "W" ("Webhooks" hermes-list-webhooks)
-  :group "System"
-  "g" ("Refresh" hermes-dashboard-refresh)
-  "G" ("Gateway status" hermes-system-status)
-  "L" ("Gateway logs" hermes-system-logs)
+  :group "Tools"
+  "b" ("Browse" :keymap hermes-dash-res-map)
+  "z" ("Manage" :keymap hermes-dash-mgr-map)
+  "!" ("System" :keymap hermes-dash-sys-map)
   "P" ("Command palette" hermes-command-palette)
+  :group "View"
+  "g" ("Refresh" hermes-dashboard-refresh :stay-open t)
   "?" ("Help" hermes-dashboard-popup))
+
+;; Preserve direct shortcuts and user bindings; children own the action list.
+(dolist (map (list hermes-dash-chat-map hermes-dash-res-map
+                   hermes-dash-mgr-map hermes-dash-sys-map))
+  (map-keymap
+   (lambda (event binding)
+     (when (and (symbolp binding)
+                (not (lookup-key hermes-dashboard-mode-map (vector event))))
+       (define-key hermes-dashboard-mode-map (vector event) binding)))
+   map)
+  ;; The minimum supported popup release cannot dispatch ancestor launchers
+  ;; after leaving a child.  Keep back navigation native, as in chat menus.
+  (dolist (key '("v" "b" "z" "!"))
+    (unless (keymap-lookup map key)
+      (keymap-set map key #'hermes-chat--submenu-root-key))))
+
+(unless (keymap-lookup hermes-dashboard-mode-map "<mouse-1>")
+  (keymap-set hermes-dashboard-mode-map "<mouse-1>" #'hermes-dashboard-mouse-open))
 
 ;; Standard palette alias; `P' remains the sole popup entry.
 (keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette)

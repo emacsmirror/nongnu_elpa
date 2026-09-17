@@ -168,11 +168,11 @@ identity is part of the selection."
       (hermes-chat--warm-model-completions client)
       nil)))
 
-(defun hermes-chat--model-setting-value ()
-  "Return the current chat's model value for a setting label."
+(defun hermes-chat--model-setting-value (&optional label)
+  "Return the current chat's model value, optionally prefixed with LABEL."
   (let ((pending (and (hermes-chat--pending-setting-p)
                       hermes-chat--dashboard-create-model)))
-    (hermes-chat--setting-value (or pending hermes-chat--model) pending)))
+    (hermes-chat--setting-value (or pending hermes-chat--model) pending label)))
 
 (defun hermes-chat--model-display-name (candidate)
   "Return a compact display name for CANDIDATE."

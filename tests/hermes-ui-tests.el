@@ -162,11 +162,10 @@
                                    (plist-get group :entries))
                                  groups))))
     (should (equal group-names
-                   '("Navigate" "Session" "Selected chat" "Browse" "Resources" "Manage"
-                     "Access and routes" "System")))
+                   '("Navigate" "Chats" "Tools" "View")))
     (dolist (group groups)
       (should (<= (length (plist-get group :entries)) 6)))
-    (dolist (key '("c" "m" "I" "g"))
+    (dolist (key '("c" "v" "b" "z" "!" "g"))
       (should (cl-find key entries :key (lambda (entry)
                                          (plist-get entry :key))
                        :test #'equal)))))
@@ -533,10 +532,8 @@
                           (should (<= (apply #'max (mapcar #'string-width
                                                           (split-string text "\n")))
                                       (1- (window-body-width (get-buffer-window (current-buffer))))))
-                          (dolist (pair '("Navigate.*Session"
-                                          "Selected chat.*Browse"
-                                          "Resources.*Manage"
-                                          "Access and routes.*System"))
+                          (dolist (pair '("Navigate.*Chats"
+                                          "Tools.*View"))
                             (should (string-match-p pair text)))
                           (should-not (string-match-p "Navigate.*Selected chat" text))
                           (dolist (row (keymap-popup--meta
@@ -583,7 +580,8 @@
 (ert-deftest hermes-management-plain-maps-have-contextual-help ()
   "Annotations render original bindings and keep dismissal non-destructive."
   (save-window-excursion
-    (dolist (mode '(hermes-config-mode hermes-inventory-mode hermes-memory-status-mode))
+    (dolist (mode '(hermes-config-mode hermes-inventory-mode
+                    hermes-memory-status-mode hermes-plugins-mode))
       (with-temp-buffer
         (switch-to-buffer (current-buffer))
         (funcall mode)
@@ -602,7 +600,10 @@
                 (let (quit-called)
                   (cl-letf (((symbol-function 'quit-window)
                              (lambda () (interactive) (setq quit-called t))))
-                    (execute-kbd-macro (kbd "? q")))
+                    (execute-kbd-macro (kbd "? q"))
+                    (should quit-called)
+                    (setq quit-called nil)
+                    (execute-kbd-macro (kbd "q")))
                   (should quit-called)
                   (should-not (get-buffer keymap-popup--buffer-name))))
             (keymap-popup-dismiss)))))))
@@ -638,29 +639,168 @@
             (keymap-popup-dismiss)))))))
 
 
-(ert-deftest hermes-dashboard-popup-dispatches-every-advertised-key ()
-  "Each keyboard suffix still dispatches its original command through the loop."
+(ert-deftest hermes-dashboard-popup-preserves-direct-and-child-actions ()
+  "Existing direct shortcuts and the new goal menus reach the same commands."
   (save-window-excursion
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
       (let ((hermes-dashboard-stale-refresh-interval nil)
-            (keymap-popup-backend #'keymap-popup-backend-side-window)
-            (keymap-popup--buffer-name " *dashboard dispatch test*"))
+            (keymap-popup-backend #'keymap-popup-backend-side-window))
         (hermes-dashboard-mode)
-        (dolist (row (keymap-popup--meta hermes-dashboard-mode-map 'descriptions))
-          (dolist (group row)
-            (dolist (entry (plist-get group :entries))
-              (let ((key (plist-get entry :key))
-                    (command (plist-get entry :command)) called)
-                (unless (member key '("?" "<mouse-1>"))
-                  (cl-letf (((symbol-function command)
-                             (lambda () (interactive) (setq called t))))
-                    (unwind-protect
-                        (progn
-                          (execute-kbd-macro (kbd "?"))
-                          (execute-kbd-macro (kbd key))
-                          (should called))
-                      (keymap-popup-dismiss))))))))))))
+        (dolist (case '(("v" "i" hermes-dashboard-interrupt)
+                        ("v" "s" hermes-dashboard-steer)
+                        ("v" "a" hermes-dashboard-respond)
+                        ("v" "m" hermes-dashboard-switch-model)
+                        ("v" "d" hermes-dashboard-disconnect)
+                        ("b" "I" hermes-list-inventory)
+                        ("b" "R" hermes-list-rollbacks)
+                        ("b" "A" hermes-list-subagents)
+                        ("b" "C" hermes-list-crons)
+                        ("b" "O" hermes-files)
+                        ("b" "K" hermes-list-kanban)
+                        ("b" "X" hermes-list-mcp)
+                        ("b" "T" hermes-list-projects)
+                        ("z" "F" hermes-list-profiles)
+                        ("z" "M" hermes-list-messaging-platforms)
+                        ("z" "Z" hermes-config)
+                        ("z" "J" hermes-list-plugins)
+                        ("z" "e" hermes-onboarding-connect-provider)
+                        ("z" "o" hermes-onboarding-oauth-connect)
+                        ("z" "B" hermes-list-pairing)
+                        ("z" "W" hermes-list-webhooks)
+                        ("!" "G" hermes-system-status)
+                        ("!" "L" hermes-system-logs)))
+          (let ((command (nth 2 case)) called)
+            (should (eq (key-binding (kbd (cadr case))) command))
+            (cl-letf (((symbol-function command)
+                       (lambda () (interactive) (setq called t)))
+                      ((symbol-function 'hermes-dashboard--chat-unavailable-p)
+                       (lambda (&optional _) nil)))
+              (unwind-protect
+                  (progn
+                    (execute-kbd-macro (kbd (cadr case)))
+                    (should called)
+                    (setq called nil)
+                    (execute-kbd-macro (kbd (concat "? " (car case) " " (cadr case))))
+                    (should called))
+                (keymap-popup-dismiss)))))))))
+
+(ert-deftest hermes-dashboard-popup-back-repeat-and-rebinding ()
+  "Navigation stays open; native back, dismissal and user rebindings survive."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-dashboard-stale-refresh-interval nil)
+            (keymap-popup-backend #'keymap-popup-backend-side-window))
+        (hermes-dashboard-mode)
+        (let ((map (copy-keymap hermes-dashboard-mode-map)) (steps 0))
+          (keymap-unset map "n")
+          (keymap-set map "N" #'hermes-dashboard-next)
+          (use-local-map map)
+          (cl-letf (((symbol-function 'hermes-dashboard-next)
+                     (lambda () (interactive) (cl-incf steps))))
+            (unwind-protect
+                (progn
+                  (keymap-popup map)
+                  (execute-kbd-macro (kbd "N N b q"))
+                  (should (= steps 2))
+                  (with-current-buffer keymap-popup--buffer-name
+                    (should (string-match-p "Chats" (buffer-string)))
+                    (should-not (string-match-p "mouse-1" (buffer-string))))
+                  (condition-case nil (execute-kbd-macro (kbd "C-g")) (quit nil))
+                  (should-not (get-buffer keymap-popup--buffer-name)))
+              (keymap-popup-dismiss))))))))
+
+(ert-deftest hermes-management-popup-layout-and-cached-selection ()
+  "Board and MCP menus use two columns and identify their cached selection."
+  (save-window-excursion
+    (let ((width (frame-width))
+          (keymap-popup-backend #'keymap-popup-backend-side-window))
+      (unwind-protect
+          (progn
+            (set-frame-width (selected-frame) 80)
+            (dolist (case '((hermes-mcp-mode hermes-mcp-mode-map "server-one" 5)
+                            (hermes-kanban-mode hermes-kanban-mode-map "task-one" 4)))
+              (with-temp-buffer
+                (switch-to-buffer (current-buffer))
+                (funcall (car case))
+                (setq hermes-kanban--name "Test board")
+                (let ((map (symbol-value (cadr case))) (id (nth 2 case)))
+                  (dolist (row (keymap-popup--meta map 'descriptions))
+                    (should (= (length row) 2)))
+                  (setq tabulated-list-entries
+                        (list (list id (make-vector (nth 3 case) "cached"))))
+                  (tabulated-list-print)
+                  (goto-char (point-min))
+                  (should (string-match-p
+                           id (funcall (keymap-popup--meta map 'description))))
+                  (unwind-protect
+                      (progn
+                        (keymap-popup map)
+                        (with-current-buffer keymap-popup--buffer-name
+                          (should (<= (apply #'max (mapcar #'string-width
+                                                          (split-string (buffer-string) "\n")))
+                                      (1- (window-body-width
+                                           (get-buffer-window (current-buffer))))))))
+                    (keymap-popup-dismiss))))))
+        (set-frame-width (selected-frame) width)))))
+
+(ert-deftest hermes-management-popup-selection-and-busy-guards ()
+  "Missing selections and active MCP/plugin operations are visibly unavailable."
+  (save-window-excursion
+    (dolist (case '((hermes-plugins-mode hermes-plugins-mode-map
+                    hermes-plugins-enable "e" hermes-plugins--busy)
+                   (hermes-mcp-mode hermes-mcp-mode-map
+                    hermes-mcp-toggle "e" hermes-mcp--operation)
+                   (hermes-kanban-mode hermes-kanban-mode-map
+                    hermes-kanban-edit "e" nil)))
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (funcall (car case))
+        (let ((map (symbol-value (cadr case))) (command (nth 2 case)) called)
+          (cl-letf (((symbol-function command)
+                     (lambda () (interactive) (setq called t))))
+            (unwind-protect
+                (progn
+                  (keymap-popup map)
+                  (execute-kbd-macro (kbd (nth 3 case)))
+                  (should-not called)
+                  (should (get-buffer keymap-popup--buffer-name))
+                  (keymap-popup-dismiss)
+                  (setq tabulated-list-entries
+                        (list (list "selected" (make-vector (length tabulated-list-format)
+                                                          "cached"))))
+                  (tabulated-list-print)
+                  (goto-char (point-min))
+                  (when (nth 4 case) (set (nth 4 case) t))
+                  (keymap-popup map)
+                  (execute-kbd-macro (kbd (nth 3 case)))
+                  (if (nth 4 case) (should-not called) (should called))
+                  (when (nth 4 case)
+                    (set (nth 4 case) nil)
+                    ;; No description fetch or re-open is needed after settlement.
+                    (execute-kbd-macro (kbd (nth 3 case)))
+                    (should called)))
+              (when (nth 4 case) (set (nth 4 case) nil))
+              (keymap-popup-dismiss))))))))
+
+(ert-deftest hermes-dashboard-popup-selected-owner-title-and-availability ()
+  "A selected chat's cached identity and busy state never come from another chat."
+  (hermes-test-with-chat-buffer
+   (let ((first (current-buffer)))
+     (hermes-test-with-chat-buffer
+      (let ((second (current-buffer)))
+        (setq hermes-chat--dashboard-running-p t)
+        (hermes-test-with-dashboard-buffer
+         (hermes-dashboard--sync-ewoc
+          (list (list :id "first" :kind 'chat :title "First chat" :buffer first)
+                (list :id "second" :kind 'chat :title "Second chat" :buffer second)))
+         (dolist (case '(("first" "First chat" nil) ("second" "Second chat" t)))
+           (goto-char (ewoc-location (gethash (car case) hermes-dashboard--nodes)))
+           (should (string-match-p (cadr case) (hermes-dashboard--popup-title)))
+           (should (eq (not (null (hermes-dashboard--chat-unavailable-p
+                                  #'hermes-chat--active-turn-p)))
+                       (nth 2 case))))))))))
 
 (ert-deftest hermes-dashboard-reader-windows-survive-membership ()
   "Adding, removing and reordering cards preserves both window anchors."

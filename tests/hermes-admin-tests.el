@@ -295,8 +295,20 @@
         (should (commandp (key-binding (kbd key))))))
     (let* ((map (intern (format "%s-map" mode)))
            (metadata (keymap-popup--meta (symbol-value map) 'descriptions)))
-      (dolist (group metadata)
-        (should (<= (length (plist-get group :entries)) 4))))))
+      (should (hermes-admin-test--bounded-groups-p metadata)))))
+
+(defun hermes-admin-test--bounded-groups-p (rows)
+  "Return non-nil when each popup group in ROWS has at most four entries."
+  (cl-every (lambda (row)
+              (cl-every (lambda (group)
+                          (<= (length (plist-get group :entries)) 4))
+                        row))
+            rows))
+
+(ert-deftest hermes-admin-popup-bounds-reject-oversized-group ()
+  "The bounds check measures entries, not the enclosing rows."
+  (should-not (hermes-admin-test--bounded-groups-p
+               (list (list (list :name "Oversized" :entries '(a b c d e)))))))
 
 (ert-deftest hermes-admin-create-preserves-name-and-replacement-consent ()
   "Reject aliases and duplicates; explicit consent names replacement and scope."

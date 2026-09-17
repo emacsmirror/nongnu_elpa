@@ -340,12 +340,12 @@
           ,@body)))))
 
 (ert-deftest hermes-chat-work-refinement-popup-workers ()
-  "Inspect renders current delegate counts without treating processes as workers."
+  "Work renders delegate counts and preserves the original Inspect shortcut."
   (hermes-test--with-work
-    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-info-map 'descriptions)))
-           (inspect (seq-find (lambda (g) (equal (plist-get g :name) "Inspect")) groups))
+    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-jobs-map 'descriptions)))
+           (work (seq-find (lambda (g) (equal (plist-get g :name) "Work")) groups))
            (entry (seq-find (lambda (e) (equal (plist-get e :key) "W"))
-                            (plist-get inspect :entries)))
+                            (plist-get work :entries)))
            (description (plist-get entry :description)))
       (should entry)
       (should (functionp description))
