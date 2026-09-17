@@ -8,6 +8,15 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **The line suggesting `vm-check-configuration` waits to be read**
+    (emacs-vm/vm#844).  It was said in the middle of the startup, where the
+    folder totals and the messages a fetch prints came after it and
+    overwrote it: a reader saw something go past and had to dig it out of
+    the log buffer to find out what it said.  It is said once Emacs is idle
+    now, and stays there until you do something.  It also says what it
+    means: "VM has 2 settings missing.  M-x vm-check-configuration says
+    which, and what to set".
+
   * **`vm-check-configuration` checks the `From` header VM writes**
     (emacs-vm/vm#832).  VM puts the value of `vm-mail-header-from` into a
     composition verbatim, after `From: `, so a value that is not an address

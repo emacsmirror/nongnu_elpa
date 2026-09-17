@@ -2809,6 +2809,11 @@ one line, that the command would have something to report, and only where
 it would; @code{vm-suggest-checking-configuration} set to nil stops even
 that.
 
+The line waits for Emacs to go idle before it is said, so that the folder
+totals and the messages a fetch prints do not overwrite it on their way
+past.  Nothing waits for you to read it: it stays in the echo area until you
+do something.
+
 @menu
 * Mail agent::          Making VM the mail reader Emacs uses.
 * Local mail::          Folders on this machine, and where new mail arrives.
