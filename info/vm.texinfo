@@ -3691,26 +3691,28 @@ displayed in Emacs using a variety of packages.  VM knows about:
 @cindex lynx
 @cindex w3m
 @cindex Emacs-w3m
-@multitable @columnfractions .15 .85
-@item lynx
-  @tab The @command{lynx} browser used externally to convert @acronym{HTML}
-  to plain text
-@item w3m
-  @tab The @command{w3m} browser used externally to convert @acronym{HTML}
-  to plain text
+@table @code
 @item emacs-w3m
-  @tab  The @samp{Emacs-W3M} browser used internally in Emacs.
-        @xref{top,, Emacs-w3m, emacs-w3m, Emacs-w3m User's Manual}.
-@end multitable
+The @command{w3m} browser driven from inside Emacs, which renders into the
+presentation buffer and can show images.  @xref{@acronym{HTML} display}.
+@xref{top,, Emacs-w3m, emacs-w3m, Emacs-w3m User's Manual}.
+@item w3m
+The same program run outside Emacs, converting the part to plain text.
+@item lynx
+The @command{lynx} browser run the same way.
+@end table
 
-You can set the variable @code{vm-mime-text/html-handler} to one of
-these values to use the appropriate package.  A value of
-@code{auto-select} causes VM to select the best package available.  A
-value of @code{nil} asks VM not to display @acronym{HTML} content internally.
-The default value is @code{auto-select}, allowing VM to give you the
-best display possible in your environment.  If you do not like the
-results, you may set the variable to a different value or
-@code{nil}.
+@code{vm-mime-text/html-handler} names which of them is used.
+@code{auto-select}, the default, takes the first this machine has, in the
+order above: @code{emacs-w3m} needs both the library and the @command{w3m}
+program, so a library without the program falls through to the next.
+@code{nil} asks VM not to display @acronym{HTML} content internally at all.
+
+@cindex no handler for @acronym{HTML}
+With @code{nil}, or with none of the three installed, VM says @samp{No
+handler available for internal display of text/html} and shows the part as
+a button rather than as text.  @xref{External display}, for handing the
+type to a program of your own.
 
 @cindex format=flowed
 @cindex RFC 3676
@@ -3731,10 +3733,9 @@ sender's own line breaks.
 @subsection @acronym{HTML} display
 
 @cindex Emacs-w3m
-The preferred method of displaying @acronym{HTML} content in email messages
-is through the Emacs-w3m browser.  @xref{top,, Emacs-w3m, emacs-w3m,
-Emacs-w3m User's Manual}.  VM has special facilities for using this browser,
-which are described in this section.
+Emacs-w3m is the handler that renders rather than converting to plain text,
+and the only one that shows images.  @xref{top,, Emacs-w3m, emacs-w3m,
+Emacs-w3m User's Manual}.  What VM adds to it is here.
 
 @vindex vm-use-presentation-minor-modes
 @vindex vm-presentation-minor-modes
@@ -3745,30 +3746,46 @@ have effect.  To switch to the Emacs-w3m key bindings, set the variable
 used for the Emacs-w3m generated text can be set using the variable
 @code{vm-presentation-minor-modes}. 
 
-@vindex vm-w3m-display-inline-images
 @cindex multipart/related
-@acronym{HTML} content may have embedded images.  Such images might be
-shipped with the email message (via the @acronym{MIME} type
-@samp{multipart/related}) or they might be provided via @acronym{URL}'s to
-be retrieved when you view the message.  The variable
-@code{vm-w3m-display-inline-images} controls whether VM should allow images
-to be retrieved via @acronym{URL}'s.  Set it to @code{t} to retrieve them
-and @code{nil} otherwise.
+@cindex images, remote ones in a message
+@cindex tracking image
+An image in an @acronym{HTML} part either came with the message, which
+@samp{multipart/related} does with a @samp{cid:} @acronym{URL}, or sits on a
+web server and is fetched as the message is displayed.  Fetching the second
+kind tells the sender that you have read the message, and an address that
+answers is worth more to them than one that does not.  Two settings decide
+what is fetched:
 
+@table @code
+@vindex vm-w3m-display-inline-images
+@item vm-w3m-display-inline-images
+Whether images are shown at all.
 @vindex vm-w3m-safe-url-regexp
-@acronym{URL}'s embedded in @acronym{HTML} content are in general unsafe,
-because you cannot see where they point to.  (The fraudulent technique of
-``phishing'' operates by asking you to click on innocuous links, which under
-the surface, link to the fraudster's web sites.)  By default, the Emacs-w3m
-browser treats all external @acronym{URL}'s as unsafe and gives you a warning
-when you attempt to follow the links.  To get around the warning, you can
-customize the variable @code{vm-w3m-safe-url-regexp}.  You can set it to
-@code{t}, to regard all @acronym{URL}'s as being safe, or to a regular
-expression that identifies which @acronym{URL}'s should be regarded as safe.
+@item vm-w3m-safe-url-regexp
+Which image @acronym{URL}s may be fetched, @code{nil} meaning every one.
+@end table
 
-The Emacs-w3m browser has numerous 
-option settings that may customize.  Some important
-settings for use with VM are the following:
+@noindent
+@code{vm-w3m-display-inline-images} defaults to @code{t}, and
+@code{vm-w3m-safe-url-regexp} defaults to @samp{\`cid:}, so a message shows
+the images it came with and fetches nothing from a web server.
+
+@findex vm-w3m-safe-toggle-inline-images
+@kbd{M-x vm-w3m-safe-toggle-inline-images} turns the images in the message
+you are reading off and on again.  With a prefix argument it treats every
+image in that message as safe, which is how to see the rest of one you
+trust without changing what the next message may fetch.
+
+@vindex vm-use-presentation-minor-modes
+The same setting decides which links Emacs-w3m will follow for you, where
+@code{vm-use-presentation-minor-modes} is @code{t} and its own key bindings
+are in force: a link whose @acronym{URL} does not match is refused with
+@samp{This link is considered to be unsafe}, and a prefix argument follows
+it anyway.  That is worth having on a message asking you to click something,
+which is how ``phishing'' works: the text of a link says nothing about where
+it goes.
+
+Emacs-w3m has options of its own.  Three of them matter for reading mail:
 
 @table @code
 @vindex w3m-force-redisplay
@@ -3783,7 +3800,7 @@ your Emacs windows.
 
 @vindex w3m-goto-article-function
 @item w3m-goto-article-function
-Set this to an Emacs function that opens a @code{URL}.  If you have already
+Set this to an Emacs function that opens a @acronym{URL}.  If you have already
 set @code{vm-url-browser}, you may copy its value into this variable.
 @end table
 

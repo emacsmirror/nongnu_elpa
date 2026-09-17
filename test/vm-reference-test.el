@@ -610,6 +610,12 @@ The value may be marked up or not -- @samp{nil} and a bare \\='bold both
 count, and the first version of this test matched only the marked-up form,
 which is not how the wording that was wrong had been written.
 
+The claim is paired with the nearest name before it: the search runs from
+each @code{vm-...} to the end of that sentence, or to the next such name,
+whichever comes first.  Emacs has no bounded non-greedy repetition, and the
+bounded form this used instead is greedy, so it took the last \"defaults to\"
+within reach and paired the name of one option with the value of another.
+
 The generated appendix prints every default from the code, so prose saying it
 again is the only place the two can disagree."
   (vm-reference-load-everything)
@@ -617,15 +623,21 @@ again is the only place the two can disagree."
     (with-temp-buffer
       (insert-file-contents vm-reference-test--manual)
       (goto-char (point-min))
-      (while (re-search-forward
-              (concat "@code{\\(vm-[a-z0-9-]+\\)}[^.]\\{0,120\\}?"
-                      "defaults to[ \n]+\\(?:the face[ \n]+\\)?"
-                      "\\(?:@\\(?:samp\\|code\\){\\([^}]+\\)}"
-                      "\\|\\('?[a-z][a-z0-9-]*\\)\\)")
-              nil t)
+      (while (re-search-forward "@code{\\(vm-[a-z0-9-]+\\)}" nil t)
         (let* ((symbol (intern (match-string 1)))
-               (said (or (match-string 2) (match-string 3)))
-               (actual (and (boundp symbol)
+               (limit (min (or (save-excursion (re-search-forward "\\.[ \n]" nil t))
+                               (point-max))
+                           (or (save-excursion
+                                 (re-search-forward "@code{vm-[a-z0-9-]+}" nil t))
+                               (point-max))))
+               (said (and (re-search-forward
+                           (concat "\\=[^.]*?defaults to[ \n]+"
+                                   "\\(?:the face[ \n]+\\)?"
+                                   "\\(?:@\\(?:samp\\|code\\){\\([^}]+\\)}"
+                                   "\\|\\('?[a-z][a-z0-9-]*\\)\\)")
+                           limit t)
+                          (or (match-string 1) (match-string 2))))
+               (actual (and said (boundp symbol)
                             (format "%S" (default-value symbol)))))
           (unless (or (null actual)
                       (equal said actual)
