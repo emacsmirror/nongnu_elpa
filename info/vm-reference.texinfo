@@ -8533,16 +8533,16 @@ This command is meant to be used in VM created Mail mode buffers; the
 yanked message comes from the mail buffer containing the message you
 are replying to, forwarding, or invoked VM’s mail command from.
 
-All message headers are yanked along with the text.  Point is
-left before the inserted text, the mark after.  Any hook
-functions bound to @code{mail-citation-hook} are run, after inserting
-the text and setting point and mark.
+The whole message is inserted, headers and all, with point left
+before it and the mark after it, which is where a function on
+@code{mail-citation-hook} looks for what it is to cite.  Anything on
+that hook is then run.
 
-If mail-citation-hook and mail-yank-hooks are both nil, this
-default action is taken: the yanked headers are trimmed as
-specified by @code{vm-included-text-headers} and
-@code{vm-included-text-discard-header-regexp}, and the value of
-@code{vm-included-text-prefix} is prepended to every yanked line.
+With nothing on the hook VM cites the message itself: the yanked
+headers are trimmed as specified by @code{vm-included-text-headers} and
+@code{vm-included-text-discard-header-regexp}, which between them keep
+none by default, and the value of @code{vm-included-text-prefix} is
+prepended to every line that is left.
 @end deffn
 
 @deffn Command vm-yank-message-other-folder folder

@@ -1693,6 +1693,46 @@ with is the same option the include-text commands use."
       (should (string-match-p "^> The body of the message\\.$" (buffer-string)))
       (set-buffer-modified-p nil))))
 
+(ert-deftest vm-reply-test-a-yank-keeps-no-headers-by-default ()
+  "What C-c C-y leaves behind is the body, quoted, and no headers.
+
+The manual said every header is yanked along with the text.  That is what is
+inserted before the citing is done, not what the reader is left with:
+`vm-included-text-headers' and `vm-included-text-discard-header-regexp' are
+both nil, and that pair keeps none of them."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let ((message (car vm-message-list)))
+      (vm-mail)
+      (goto-char (point-max))
+      (vm-yank-message message)
+      (should (string-match-p "^> The body of the message\\.$" (buffer-string)))
+      (should-not (string-match-p "Subject: badgers" (buffer-string)))
+      (should-not (string-match-p "Message-ID:" (buffer-string)))
+      (set-buffer-modified-p nil))))
+
+(ert-deftest vm-reply-test-a-yank-runs-mail-citation-hook ()
+  "`mail-citation-hook' does the citing wherever it has anything on it.
+
+It runs with point before the inserted text and the mark after it, headers
+and all, which is the contract a citation package such as supercite is
+written to, and VM cites the message itself only where the hook is empty."
+  (vm-reply-test--composing (_folder vm-reply-test--incoming)
+    (let* ((message (car vm-message-list))
+           (cited nil)
+           (mail-citation-hook
+            (list (lambda ()
+                    (setq cited (buffer-substring-no-properties
+                                 (point) (mark t)))))))
+      (vm-mail)
+      (goto-char (point-max))
+      (vm-yank-message message)
+      (should cited)
+      (should (string-match-p "Subject: badgers" cited))
+      (should (string-match-p "The body of the message\\." cited))
+      ;; VM prefixed nothing: the hook was given the job
+      (should-not (string-match-p "^> " (buffer-string)))
+      (set-buffer-modified-p nil))))
+
 (ert-deftest vm-reply-test-the-composition-is-a-mail-buffer-set-up-for-vm ()
   "A reply is left in a buffer VM's own commands work in.
 `vm-mail-buffer' points back at the folder -- that is how C-c C-y knows which

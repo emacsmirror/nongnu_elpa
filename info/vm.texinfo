@@ -4415,20 +4415,21 @@ they have some extra command keys.
 @findex vm-yank-message
 @findex vm-yank-message-other-folder
 @kindex C-c C-y
+@vindex mail-citation-hook
+@vindex vm-included-text-prefix
 @item C-c C-y (@code{vm-yank-message})
-Copies a message from the folder that is the parent of this
-composition into the mail composition buffer.
-The message number is read from the minibuffer.  By default, each line of
-the copy is prepended with the value of the variable
-@code{vm-included-text-prefix}.  All message headers are yanked along
-with the text.  Point is left before the inserted text, the mark after.
-Any hook functions bound to @code{mail-yank-hooks} are run, after inserting
-the text and setting point and mark.  If a prefix argument is given,
-this tells VM: ignore @code{mail-yank-hooks}, don't set the mark, don't 
-prepend the 
-value of @code{vm-included-text-prefix} to every yanked line, and don't yank
-any headers other than those specified in
-@code{vm-visible-headers} and @code{vm-invisible-header-regexp}.  
+Copies a message from the folder that is the parent of this composition into
+the mail composition buffer.  The message number is read from the
+minibuffer.  Point is left before the inserted text and the mark after it,
+which is where a function on @code{mail-citation-hook} looks for what it is
+to cite; anything on that hook runs once the text is in.
+
+With nothing on the hook, VM does the citing itself: the headers are trimmed
+to @code{vm-included-text-headers} and
+@code{vm-included-text-discard-header-regexp}, which between them keep none
+unless you say otherwise, and every remaining line is prefixed with
+@code{vm-included-text-prefix}.  @xref{Replying}, for the attribution line
+and the rest of what is included.
 
 @item @code{M-x vm-yank-message-other-folder}
 This allows one to yank a message from a different folder than the
