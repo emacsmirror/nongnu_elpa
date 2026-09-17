@@ -7,7 +7,8 @@
 ;;; Commentary:
 
 ;; Prints every VM `defcustom' whose `:type' does not accept its own default
-;; value, and exits non-zero if there are any.  Run by
+;; value, and every option that declares no `:type' at all, and exits non-zero
+;; if there are any of the first.  Run by
 ;; `vm-custom-test-every-type-accepts-its-own-default', and by hand as
 ;;
 ;;     emacs -Q --batch -L lisp -l test/vm-custom-check.el
@@ -23,6 +24,7 @@
 ;; The `hook' widget and the other Customize types are defined in cus-edit, not
 ;; in wid-edit; converting one without it fails rather than saying it cannot.
 (require 'cus-edit)
+(require 'seq)
 
 (defvar vm-custom-check-minimum 300
   "Fewer declarations than this means the load went wrong, not that VM is small.")
@@ -44,16 +46,34 @@
           ;; be found.  Either way, what it declares goes unchecked.
           (ignore-errors (require feature nil t)))))))
 
-(defun vm-custom-check-customs ()
-  "Return every VM variable that has a `:type', sorted by name."
+(defun vm-custom-check-options ()
+  "Return every VM user option, aliases resolved, sorted by name.
+An obsolete name is a `defvaralias' and carries no type of its own: the
+option it points at has one, and `customize-option' follows the alias
+before it builds anything.  So the alias is not an untyped option and is not
+a second option either, and resolving it here says so once
+(emacs-vm/vm#837)."
   (let ((out nil))
     (mapatoms
      (lambda (sym)
-       (when (and (string-prefix-p "vm-" (symbol-name sym))
-                  (get sym 'custom-type)
+       (when (and (string-prefix-p "vm" (symbol-name sym))
+                  (custom-variable-p sym)
                   (boundp sym))
-         (push sym out))))
-    (sort out (lambda (a b) (string< (symbol-name a) (symbol-name b))))))
+         (push (indirect-variable sym) out))))
+    (sort (delete-dups out)
+          (lambda (a b) (string< (symbol-name a) (symbol-name b))))))
+
+(defun vm-custom-check-customs ()
+  "Return every VM option that has a `:type', sorted by name."
+  (seq-filter (lambda (sym) (get sym 'custom-type))
+              (vm-custom-check-options)))
+
+(defun vm-custom-check-untyped ()
+  "Return every VM option that declares no `:type', sorted by name.
+Customize offers a raw sexp editor for one of those, which asks the reader
+to know the structure the code wants and offers no help with it."
+  (seq-remove (lambda (sym) (get sym 'custom-type))
+              (vm-custom-check-options)))
 
 (defun vm-custom-check-report ()
   "Print the mismatches and how many variables were checked.
@@ -72,6 +92,8 @@ Return a cons of (CHECKED . MISMATCHES)."
                        mismatched)))))
     (dolist (line (nreverse mismatched))
       (princ (format "MISMATCH %s\n" line)))
+    (dolist (sym (vm-custom-check-untyped))
+      (princ (format "UNTYPED %s\n" sym)))
     (princ (format "checked %d VM defcustoms\n" (length customs)))
     (cons (length customs) (length mismatched))))
 

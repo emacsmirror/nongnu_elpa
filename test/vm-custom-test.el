@@ -53,6 +53,27 @@ type says something false about what the code accepts."
     (should (equal nil (nreverse mismatches)))
     (should (= 0 (car result)))))
 
+(ert-deftest vm-custom-test-every-option-declares-a-type ()
+  "REGRESSION: every VM user option declares a `:type'.
+Customize offers a raw sexp editor for an option without one, which asks the
+reader to know the structure the code wants and helps them with none of it.
+
+Thirty-two looked untyped (emacs-vm/vm#837) and every one of them was an
+obsolete name.  A `defvaralias' carries no type of its own, the option it
+points at carries it, and `customize-option' resolves the alias before it
+builds anything, saying which option it went to.  The checker resolves them
+too, so a genuinely untyped option is what would show here."
+  (let* ((result (vm-custom-test--run-checker))
+         (output (cdr result))
+         (untyped nil))
+    (dolist (line (split-string output "\n" t))
+      (when (string-prefix-p "UNTYPED " line)
+        (push (substring line (length "UNTYPED ")) untyped)))
+    ;; the same premise as above: a load that went wrong checks nothing
+    (should (string-match "checked \\([0-9]+\\) VM defcustoms" output))
+    (should (> (string-to-number (match-string 1 output)) 300))
+    (should (equal nil (sort untyped #'string<)))))
+
 ;;; The misspelled option names are gone, not aliased
 
 ;; Three user options were spelled wrong in their own names.  They were
