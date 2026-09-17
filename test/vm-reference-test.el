@@ -960,3 +960,55 @@ does not point, because it costs the reader the search as well."
                       (file-name-nondirectory (cdr named)) (car named))
               missing)))
     (should-not missing)))
+
+;;; The manual does not condition anything on an Emacs nobody runs
+
+(defun vm-reference-test--emacs-versions-the-manual-names ()
+  "Every Emacs version number the manual names, outside its history.
+Answers a list of (VERSION . LINE).  The History and Administration chapter
+names the Emacs VM was written under, which is the point of it."
+  (let ((named nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (let ((history (save-excursion
+                       (when (re-search-forward
+                              "^@node History and Administration" nil t)
+                         (cons (match-beginning 0)
+                               (or (and (re-search-forward "^@node " nil t)
+                                        (match-beginning 0))
+                                   (point-max)))))))
+        (while (re-search-forward
+                "Emacs \\(?:version \\)?\\([0-9]+\\(?:\\.[0-9]+\\)*\\)" nil t)
+          (unless (and history
+                       (>= (match-beginning 0) (car history))
+                       (< (match-beginning 0) (cdr history)))
+            (push (cons (match-string 1)
+                        (buffer-substring (line-beginning-position)
+                                          (line-end-position)))
+                  named)))))
+    (nreverse named)))
+
+(ert-deftest vm-reference-test-the-manual-names-no-emacs-older-than-vm-needs ()
+  "REGRESSION: the manual names no Emacs older than VM will run in.
+
+It told the reader that GNU Emacs 24 has TLS built in and earlier versions do
+not, and that the smtpmail included with 24 can do SSL, in a tree whose
+minimum is 28.1.  Both readings are the same mistake: a condition on a version
+nobody can be running, which leaves the reader deciding whether it applies to
+them when it cannot.
+
+The History and Administration chapter is exempt, naming the Emacs VM was
+first written under."
+  (let ((minimum (with-temp-buffer
+                   (insert-file-contents
+                    (expand-file-name "../lisp/vm.el" vm-test-dir))
+                   (goto-char (point-min))
+                   (should (re-search-forward
+                            "vm-min-emacs-version \"\\([0-9.]+\\)\"" nil t))
+                   (match-string 1)))
+        (older nil))
+    (dolist (named (vm-reference-test--emacs-versions-the-manual-names))
+      (when (version< (car named) minimum)
+        (push (cdr named) older)))
+    (should (equal nil (nreverse older)))))

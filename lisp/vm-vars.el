@@ -5759,12 +5759,12 @@ Set this to nil and VM will not use it."
   (if (and (fboundp 'gnutls-available-p) (gnutls-available-p))
       nil
     "stunnel")
-  "*Name of program to use to run stunnel.
-This is used to make SSL connections to POP and IMAP servers that
-support SSL.  If this is set to nil, VM will attempt to use the
-built-in SSL functionality of Emacs.  Use this setting only if you
-know that your version of Emacs has SSL capability, or any attempt to 
-contact the server will likely hang.
+  "*Name of program to use to run stunnel, or nil for Emacs's own TLS.
+This is how VM makes an SSL connection to a POP or IMAP server.  The
+default is nil where Emacs was built with GnuTLS, since Emacs can make
+the connection itself, and \"stunnel\" where it was not.  An Emacs
+without GnuTLS on a machine without stunnel cannot reach a server that
+requires SSL at all.
 
 If you do use an stunnel program, then see also the related variables
 `vm-stunnel-program-switches' and

@@ -2788,7 +2788,7 @@ The same settings, in one file you can copy, are installed as
 @findex vm-check-configuration
 @cindex checking a configuration
 @kbd{M-x vm-check-configuration} says what is still missing, and what to set
-for each.  It reports only settings whose default either does nothing or
+for each, in a buffer of its own.  It reports only settings whose default either does nothing or
 does something you did not choose, so a report is worth acting on and
 silence means the pieces below are in place.  It also checks each maildrop
 for a type VM knows and the right number of fields, neither of which the
@@ -4309,9 +4309,7 @@ reply the organizer's software understands, is not something VM does.
 @node Reading Secure @acronym{MIME}, , Calendar invitations, @acronym{MIME} Messages
 @subsection Reading Secure @acronym{MIME} Messages
 
-VM supports reading @acronym{S/MIME} messages if your Emacs version includes
-@samp{smime.el}
-package.
+VM reads @acronym{S/MIME} messages through Emacs's own @file{smime.el}.
 Typically, a secure message part (identified
 by @acronym{MIME} type ``application/pkcs7-mime'') will be presented as a
 button which, when pushed, will decrypt that part of the message.
@@ -8870,6 +8868,10 @@ This section brings together what configuring VM through all of them
 requires of you.  It is introductory: the documentation of the protocols and
 the programs themselves goes further.
 
+@findex vm-check-configuration
+@xref{Setting Up}, for the settings themselves, one piece at a time, and
+@kbd{M-x vm-check-configuration} for which of them this Emacs is missing.
+
 @unnumberedsubsec Configuration for email reception
 
 If you receive email on a remote server, that email will be made available
@@ -8927,21 +8929,23 @@ Secure channels are provided using a protocol called @acronym{SSL} (Secure
 Sockets Layer).  A later version of the protocol is called @acronym{TLS}
 (Transport Layer Security), which is backward compatible with @acronym{SSL}.
 
-GNU Emacs version 24 has a built-in implementation of @acronym{TLS} (which
-also includes @acronym{SSL}).  Prior versions of GNU Emacs do not have it.
-Other versions of Emacs may or may not have any implementation of
-@acronym{SSL} or @acronym{TLS}.
+Emacs does @acronym{TLS} itself, through @acronym{GnuTLS}, which most builds
+have compiled in; @code{(gnutls-available-p)} says whether yours does.  On
+such a build VM opens the connection itself and needs no other program.
 
-If the Emacs version does not have SSL/TLS support, you can use an external
-@code{stunnel} program to establish a secure ``tunnel''.  You can download
-the @code{stunnel} program from the @code{stunnel.org} web site, and install
-it somewhere on the @code{exec-path}.  VM is preconfigured to use the
-@code{stunnel} program for talking to the mail servers that require SSL,
-i.e., the value of the variable @code{vm-stunnel-program} is set to
-@code{stunnel}.  VM automatically generates a configuration file that the
-@code{stunnel} program requires, starts the program, and communicates
-through it to the mail server.  You can look at the generated configuration
-file by running:
+@vindex vm-stunnel-program
+A build without @acronym{GnuTLS} needs an external @code{stunnel} program to
+make the secure ``tunnel'' instead.  Download it from the
+@code{stunnel.org} web site and install it somewhere on the
+@code{exec-path}.  @code{vm-stunnel-program} decides which of the two is
+used, and takes its default from the build: @code{nil}, meaning Emacs's own
+@acronym{TLS}, where @acronym{GnuTLS} is there, and @code{"stunnel"} where
+it is not.  Set it to @code{"stunnel"} to use the program on a build that
+could do without it.
+
+VM writes the configuration file @code{stunnel} requires, starts the
+program, and talks to the mail server through it.  You can look at the
+generated configuration file by running:
 
 @example
 M-: (find-file (vm-stunnel-configuration-file))
@@ -8951,10 +8955,6 @@ M-: (find-file (vm-stunnel-configuration-file))
 specify additional configuration options for @code{stunnel}.  In that case,
 you should create the required configuration file and set the variable
 @code{vm-stunnel-program-additional-configuration-file} to its path name.
-
-If your Emacs version has a built-in implementation of @acronym{TLS} and you
-wish to use it, you should set the variable @code{vm-stunnel-program} to
-@code{nil}.
 
 @unnumberedsubsec Configuration for email sending
 
@@ -8972,53 +8972,51 @@ called @acronym{SMTP} (Simple mail transfer protocol).  A separate Emacs
 library @code{smtpmail.el} has been written to intervene in the operation of
 @code{sendmail.el} and hand the mail to the remote @acronym{SMTP} server
 instead.  @xref{top,, Emacs SMTP Library, smtpmail, Emacs SMTP Library}.
-This library has traditionally had limited functionality, and various other
-packages have been contributed to enhance the functionality.
 
-On the server side, there are actually two versions of the @acronym{SMTP}
-that are run by servers.  The so-called ``Mail Transfer Agents'' use port 25
-for plain connections and port 465 for secure @acronym{SSL} connections.
-Mail Submission Agents use port 587 for both secure and insecure
-communication.  These complexities, coupled with the limited functionality
-of @code{smtpmail.el} library, have made the life difficult to many users.
+Which port the server takes mail on says what kind of server it is:
+
+@itemize
+@item
+Port 25 is where one server takes mail from another.  Internet providers
+commonly block it for everything else, so it is rarely the port you want.
+@item
+Port 587 is submission: where a mail program hands over mail of its own,
+having said who it is.  @acronym{STARTTLS} usually secures it.
+@item
+Port 465 is submission as well, secured from the first byte rather than by
+@acronym{STARTTLS}.
+@end itemize
 
 @vindex smtpmail-stream-type
 @vindex smtpmail-smtp-service
-The @code{smtpmail.el} library included with GNU Emacs version 24 has
-@acronym{SSL}/@acronym{TLS} functionality.  Follow these guidelines for
-configuring the up-to-date @code{smtpmail} library depending on the type of
-the @acronym{SMTP} server.
+@code{smtpmail} does @acronym{SSL}/@acronym{TLS} itself, so these two
+settings are the whole of it.
 
 @itemize
 @item The @acronym{SMTP} server does not use a secure protocol.
 
-In this case, the server expects connections on port 25.  You should set the
-variable @code{smtpmail-stream-type} to @code{nil} and
-@code{smtpmail-smtp-service} to 25.
+Set @code{smtpmail-stream-type} to @code{nil} and
+@code{smtpmail-smtp-service} to the port the server takes mail on, 587 or
+25.
 
-@item The @acronym{SMTP} server supports @acronym{SSL}.
+@item The @acronym{SMTP} server is secure from the first byte.
 
-In this case, you should set the variable @code{smtpmail-stream-type} to
-@code{ssl} to use it with the mail server. The port number to use (usually
-465) is specified in the variable @code{smtpmail-smtp-service}.
+Set @code{smtpmail-stream-type} to @code{ssl} and
+@code{smtpmail-smtp-service} to its port, usually 465.
 
-@item The @acronym{SMTP} server is a Mail Submission Agent.
+@item The @acronym{SMTP} server upgrades the connection with @acronym{STARTTLS}.
 
-This is the more complicated case.  The @acronym{SMTP} server expects a ``mail
-submission'' connection on port 587, and it may require a @acronym{STARTTLS}
-protocol to engage in secure communication.  This means that your mail
-program first communicates insecurely, the server informs it that it
-requires the @acronym{STARTTLS} protocol, and the mail program must then
-initiate a negotiation to establish a secure channel.
-
-Emacs does @acronym{STARTTLS} itself, through @acronym{GnuTLS}, which most
-builds have compiled in; @code{(gnutls-available-p)} says whether yours does.
-Set @code{smtpmail-stream-type} to @code{starttls} to require it.
-
-If you set @code{smtpmail-stream-type} to @code{nil} (which is also the
-default value), then Emacs tries a plain text communication initially and
-upgrades it to @acronym{TLS} if the server requires @acronym{STARTTLS}.
+The connection begins in plain text, the server says it wants
+@acronym{STARTTLS}, and the mail program negotiates a secure channel before
+handing over anything.  Emacs does that itself, through @acronym{GnuTLS},
+which most builds have compiled in; @code{(gnutls-available-p)} says whether
+yours does.  Set @code{smtpmail-stream-type} to @code{starttls} and
+@code{smtpmail-smtp-service} to 587.
 @end itemize
+
+@code{starttls} refuses to send where the server does not offer the upgrade.
+@code{nil}, the default, takes the upgrade where it is offered and sends in
+plain text where it is not.
 
 @unnumberedsec Org links to messages
 @cindex Org mode
