@@ -2249,15 +2249,17 @@ than left empty."
        (buffer-substring (vm-headers-of message) (vm-text-end-of message))))))
 
 (defun vm-imap-net-message-flags (message)
-  "The flags to store MESSAGE under, as an IMAP flag list.
+  "The flags to store MESSAGE under, as a list of IMAP flag names.
 
-The system flags only.  A keyword is what the server may not take: RFC 3501
-has it answer NO to an APPEND naming a flag it does not support, which loses
-the copy rather than a flag, and whether it takes one is in the
-PERMANENTFLAGS of the destination mailbox, which this has not selected.  So
-a label, and `filed', `written', `forwarded' and `redistributed', do not
-travel with a saved copy, where the sync path sends all of them as keywords
-to a mailbox it has selected (emacs-vm/vm#828).
+The system flags, and the labels and the attributes that travel as keywords:
+`filed', `written', `forwarded' and `redistributed' are keywords on the
+sync path too, so a saved copy carries what a synchronised message carries
+(emacs-vm/vm#828).
+
+Which of the keywords are sent is the destination mailbox's to say, in its
+PERMANENTFLAGS; `vm-imap-net-flags-a-mailbox-takes' decides it.  An APPEND
+naming a flag the server does not support can be answered NO, and that loses
+the copy rather than the flag.
 
 Not \\Deleted: a message is not saved into a mailbox in order to be deleted
 from it."
@@ -2265,7 +2267,29 @@ from it."
     (when (vm-replied-flag message) (push "\\Answered" flags))
     (when (vm-flagged-flag message) (push "\\Flagged" flags))
     (unless (vm-unread-flag message) (push "\\Seen" flags))
-    (format "(%s)" (mapconcat #'identity flags " "))))
+    (when (vm-filed-flag message) (push "filed" flags))
+    (when (vm-written-flag message) (push "written" flags))
+    (when (vm-forwarded-flag message) (push "forwarded" flags))
+    (when (vm-redistributed-flag message) (push "redistributed" flags))
+    (append (nreverse flags) (copy-sequence (vm-decoded-labels-of message)))))
+
+(defun vm-imap-net-flags-a-mailbox-takes (flags permanent)
+  "Those of FLAGS that a mailbox whose PERMANENTFLAGS are PERMANENT will keep.
+
+The system flags always: every server has them.  A keyword only where the
+mailbox says it takes one, which is `\\*' in PERMANENTFLAGS or the keyword
+named there itself.  A refused APPEND costs the copy and not the flag, which
+is why this is decided before sending rather than after.
+
+A mailbox that said nothing about its permanent flags is taken the other
+way, as `vm-imap-net-keeps-keywords-p' takes it: nothing is claimed about a
+server that did not say, so everything goes."
+  (if (or (null permanent) (member "\\*" permanent))
+      flags
+    (seq-filter (lambda (flag)
+                  (or (not (vm-imap-keyword-p flag))
+                      (member-ignore-case flag permanent)))
+                flags)))
 
 (iter-defun vm-imap-net-append (mailbox text flags)
   "APPEND TEXT to MAILBOX with FLAGS, as a literal.
@@ -2296,10 +2320,25 @@ speak."
 	(setq done t))))
   t)
 
+(iter-defun vm-imap-net-mailbox-permanent-flags (mailbox)
+  "What MAILBOX says it keeps, or nil where it would not say.
+EXAMINE rather than SELECT: nothing here writes to the mailbox, and this
+session is the save's own, so selecting in it takes no folder's mailbox
+away.  A mailbox that cannot be examined answers nil, which sends the flags
+a server is obliged to keep and no others."
+  (condition-case nil
+      (nth 5 (iter-yield-from (vm-imap-net-select mailbox 'examine)))
+    (vm-imap-normal-error nil)))
+
 (iter-defun vm-imap-net-save (user password mailbox messages)
   "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
 The mailbox is created if the server does not have it, its refusal to create
-one it already has being no reason to stop."
+one it already has being no reason to stop.
+
+Each message carries the flags it was read with, less the keywords the
+mailbox says it will not keep: a refused APPEND loses the copy rather than
+the flag, so what the destination takes is asked before anything is sent
+(emacs-vm/vm#828)."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
@@ -2311,11 +2350,26 @@ one it already has being no reason to stop."
     				"CREATE"))
 	    (vm-imap-normal-error (setq error-data caught)))
 	  (ignore error-data))
-	(let ((saved 0))
+	(let ((permanent (iter-yield-from
+			  (vm-imap-net-mailbox-permanent-flags mailbox)))
+	      (dropped nil)
+	      (saved 0))
 	  (dolist (message messages)
-	    (iter-yield-from (vm-imap-net-append mailbox
-    						 (car message) (cdr message)))
+	    (let* ((wanted (cdr message))
+		   (sending (vm-imap-net-flags-a-mailbox-takes wanted
+							       permanent)))
+	      (dolist (flag wanted)
+		(unless (member flag sending) (push flag dropped)))
+	      (iter-yield-from
+	       (vm-imap-net-append mailbox (car message)
+				   (vm-imap-flag-list-string sending))))
 	    (setq saved (1+ saved)))
+	  (when dropped
+	    (vm-net-warn 1 (concat "Saved into %s without %s, which its"
+				   " PERMANENTFLAGS says it does not keep")
+			 mailbox
+			 (mapconcat #'identity
+				    (delete-dups (nreverse dropped)) ", ")))
 	  saved))
     (vm-imap-net-logout)))
 
@@ -2350,6 +2404,8 @@ open."
 
 (defun vm-imap-net-append-text (spec mailbox text &optional flags may-ask)
   "APPEND TEXT to MAILBOX on SPEC without waiting, and answer whether it did.
+FLAGS is a list of flag names, of which the mailbox is sent what it says it
+will keep.
 
 For filing a composition as it is sent: there is no folder here whose session
 could be borrowed and none whose buffer could be written, so this session
@@ -2377,7 +2433,7 @@ copy is what did not arrive."
 		  (vm-net-inform 6 "Filed in %s on %s" mailbox name))))
 	(vm-net-start session
 		      (vm-imap-net-save (nth 2 opened) (nth 3 opened) mailbox
-					(list (cons text (or flags "()")))))
+					(list (cons text flags))))
 	(vm-net-inform 6 "Filing in %s on %s without waiting" mailbox name)
 	t)
     (vm-imap-net-no-password nil)))
