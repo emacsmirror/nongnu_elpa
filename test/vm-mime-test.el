@@ -4906,6 +4906,60 @@ and no sign of one."
     (vm-partial-test--with-a-folder-of (list (car texts))
       (should-error (funcall assemble)))))
 
+(defun vm-mime-test--present-html (handler)
+  "Present a text/html message with `vm-mime-text/html-handler' as HANDLER.
+Answers the presentation text."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-html" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-mime-text/html-handler handler)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-user-interaction-buffer vm-user-interaction-buffer)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "From alice@example.com  Thu Jan  1 00:00:00 2026\n"
+                    "From: alice@example.com\nSubject: html\n"
+                    "MIME-Version: 1.0\nContent-Type: text/html\n\n"
+                    "<p>hello from html</p>\n\n")
+            (write-region (point-min) (point-max) file nil 'quiet))
+          (vm-visit-folder file)
+          (vm-present-current-message)
+          (vm-show-current-message)
+          (with-current-buffer (or vm-presentation-buffer (current-buffer))
+            (buffer-substring-no-properties (point-min) (point-max))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-html-with-no-handler-is-a-button ()
+  "With no handler for text/html the part is a button, not silence.
+
+What the manual tells a reader with none of emacs-w3m, w3m or lynx
+installed: the part is still there to save or hand to a program, and the
+text of the message is not what they see.  `vm-mime-text/html-handler' nil
+is the same case, and is how a machine that has none of the three is
+reached from a machine that has one."
+  (let ((presented (vm-mime-test--present-html nil)))
+    (should (string-match-p "HTML" presented))
+    (should (string-match-p "\\[save\\]" presented))
+    (should-not (string-match-p "hello from html" presented))))
+
+(ert-deftest vm-mime-test-html-handler-renders-the-part ()
+  "A handler that is there renders the HTML into the presentation.
+The other half of the pair: the button is the absence of a handler and not
+something VM does to every text/html part."
+  (skip-unless (executable-find "lynx"))
+  (let ((presented (vm-mime-test--present-html 'lynx)))
+    (should (string-match-p "hello from html" presented))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
