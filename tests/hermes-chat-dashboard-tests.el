@@ -340,10 +340,12 @@
           ,@body)))))
 
 (ert-deftest hermes-chat-work-refinement-popup-workers ()
-  "Work renders delegate counts and preserves the original Inspect shortcut."
+  "The root renders delegate counts and preserves child Workers shortcuts."
   (hermes-test--with-work
-    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-jobs-map 'descriptions)))
-           (work (seq-find (lambda (g) (equal (plist-get g :name) "Work")) groups))
+    (should (eq (keymap-lookup hermes-chat-actions-map "W") #'hermes-chat-work))
+    (should (eq (keymap-lookup hermes-chat-jobs-map "W") #'hermes-chat-work))
+    (let* ((groups (apply #'append (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
+           (work (seq-find (lambda (g) (equal (plist-get g :name) "Browse")) groups))
            (entry (seq-find (lambda (e) (equal (plist-get e :key) "W"))
                             (plist-get work :entries)))
            (description (plist-get entry :description)))

@@ -2329,6 +2329,8 @@
                       ("w w" hermes-chat-set-directory)
                       ("w b" hermes-switch-to-chat)
                       ("w P" hermes-chat-queue-panel)
+                      ("W" hermes-chat-work)
+                      ("B W" hermes-chat-work)
                       ("X W" hermes-chat-work)
                       ("X h" hermes-chat-session-details)
                       ("X x" hermes-dashboard-reconnect)

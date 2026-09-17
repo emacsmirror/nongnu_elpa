@@ -2507,6 +2507,7 @@ Do not wrap into the composer or modify its draft."
   "X" ("Inspect" :keymap hermes-chat-info-map)
   "c" ("Show commands" hermes-chat-show-commands)
   "r" ("Refresh commands" hermes-chat-refresh-commands :stay-open t)
+  "W" (#'hermes-chat-workers-label hermes-chat-work)
   :row
   :group ("Prompt" :if #'hermes-chat--pending-prompt-p)
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
