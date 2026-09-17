@@ -1753,6 +1753,27 @@ anyone can reply to."
                          " setup in the VM manual")
                  user-mail-address))))
 
+(defun vm-configuration-problem-from-header ()
+  "A problem with the `From' header VM will write, or nil.
+`vm-mail-header-from' goes into a composition verbatim, after \"From: \", so a
+value that is not an address is a header nobody can reply to and nothing
+says so.  A reader who meant to add a header to every composition and
+reached for this variable gets \"From: IMAP-FCC: Sent\" in the message and in
+every copy filed of it (emacs-vm/vm#832)."
+  (when (stringp vm-mail-header-from)
+    (cond ((string-match-p "\\`[A-Za-z][A-Za-z0-9-]*:" vm-mail-header-from)
+           (format (concat "`vm-mail-header-from' is %S, which reads as a"
+                           " header line rather than an address, so VM writes"
+                           " `From: %s'.  To add a header to every composition"
+                           " set `mail-default-headers' instead, and set this"
+                           " to your own address or to nil")
+                   vm-mail-header-from vm-mail-header-from))
+          ((not (string-match-p "@" vm-mail-header-from))
+           (format (concat "`vm-mail-header-from' is %S, which names no"
+                           " domain, so a reply has nowhere to go.  Set it to"
+                           " your own address or to nil")
+                   vm-mail-header-from)))))
+
 (defun vm-configuration-problem-sending ()
   "A problem with how mail will be sent, or nil."
   (cond ((eq send-mail-function 'sendmail-query-once)
@@ -1835,6 +1856,7 @@ comes later, from the session, saying something about the server instead.")
   (append
    (delq nil (list (vm-configuration-problem-mail-agent)
                    (vm-configuration-problem-from-address)
+                   (vm-configuration-problem-from-header)
                    (vm-configuration-problem-sending)
                    (vm-configuration-problem-folder-directory)
                    (vm-configuration-problem-mail-source)))
@@ -1848,7 +1870,8 @@ Checks the settings a first-time reader has to get right before anything
 works: which mail agent Emacs uses, the address mail goes out from, how it
 is sent, where folders are kept, and where new mail comes from.  Each
 maildrop is checked for a type VM knows and the right number of fields,
-neither of which the parsers mind.
+neither of which the parsers mind, and `vm-mail-header-from' for a value
+that is not an address, which is a `From' header nobody can reply to.
 
 Says nothing about taste.  Everything it reports is a setting whose default
 either does nothing or does something the reader did not choose."

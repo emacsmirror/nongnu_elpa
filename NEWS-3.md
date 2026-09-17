@@ -8,6 +8,15 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`vm-check-configuration` checks the `From` header VM writes**
+    (emacs-vm/vm#832).  VM puts the value of `vm-mail-header-from` into a
+    composition verbatim, after `From: `, so a value that is not an address
+    is a header nobody can reply to and nothing said so.  A reader who
+    wanted a header on every composition and reached for this variable
+    rather than `mail-default-headers` sent every message as
+    `From: IMAP-FCC: Sent`, and the copies filed on the server carried it
+    too.
+
   * **`M-x vm-backup-folder` keeps a copy of a folder as it is on disk**
     (emacs-vm/vm#843).  Emacs backs a file up on the first save of its
     buffer and not again, so a folder saved earlier in the session has no

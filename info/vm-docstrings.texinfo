@@ -13267,7 +13267,8 @@ Checks the settings a first-time reader has to get right before anything
 works: which mail agent Emacs uses, the address mail goes out from, how it
 is sent, where folders are kept, and where new mail comes from.  Each
 maildrop is checked for a type VM knows and the right number of fields,
-neither of which the parsers mind.
+neither of which the parsers mind, and @code{vm-mail-header-from} for a value
+that is not an address, which is a @code{From} header nobody can reply to.
 
 Says nothing about taste.  Everything it reports is a setting whose default
 either does nothing or does something the reader did not choose.
