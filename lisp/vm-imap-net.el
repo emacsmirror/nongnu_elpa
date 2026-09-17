@@ -389,8 +389,7 @@ than dropping it."
 
 (iter-defun vm-imap-net-greeting ()
   "Read the server's greeting.
-Answers t for OK, `preauth' for PREAUTH, and nil for anything else, which is
-what `vm-imap-read-greeting' answers."
+Answers t for OK, `preauth' for PREAUTH, and nil for anything else."
   (let ((response (vm-imap-net-read-a-response)))
     (cond ((vm-imap-response-matches response '* 'OK) t)
 	  ((vm-imap-response-matches response '* 'PREAUTH) 'preauth)
@@ -398,8 +397,7 @@ what `vm-imap-read-greeting' answers."
 
 (iter-defun vm-imap-net-capabilities ()
   "Ask what the server can do.
-Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols, as
-`vm-imap-read-capability-response' does."
+Answers (CAPABILITIES AUTHENTICATIONS), both lists of symbols."
   (let ((lines (iter-yield-from (vm-imap-net-command "CAPABILITY")))
 	(capabilities nil)
 	(authentications nil))
@@ -1847,7 +1845,7 @@ an error and left with its modification flag set, so the next synchronisation
 tries it again, and the rest are still sent.
 
 ALL sends every message's flags, changed or not, which is what a full
-synchronisation asks for: `vm-imap-save-attributes' with `:all-flags'."
+synchronisation asks for: `vm-imap-net-save-attributes' with `:all-flags'."
   (let ((messages (and (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (seq-filter
@@ -3454,8 +3452,7 @@ FOLDER-TYPE where the server sent none of its own."
 
 A babyl crash box wants the folder header at the start of it, and only when
 it is empty: babyl is the one type VM writes that has one, and a file without
-it reads back as no type at all.  The blocking path wrote it in
-`vm-imap-retrieve-to-target', per message and under the same emptiness test."
+it reads back as no type at all."
   (with-current-buffer work
     (let ((coding-system-for-write 'binary)
 	  (selective-display nil))
@@ -3481,9 +3478,7 @@ message from arriving twice.  A session that fails after some of the mail is
 on disk leaves that mail in the crash box, which the folder gobbles when it
 next looks; if the folder did not know it had those UIDs it would fetch them
 again, and both copies would land -- refusing the EXPUNGE of a two-message
-maildrop put four messages in the folder.  Remembering them before the fetch
-goes on is also what the blocking path does, in the `unwind-protect' of
-`vm-imap-move-mail'.
+maildrop put four messages in the folder.
 
 `vm-imap-net-note-retrieved' only writes the folder's own variable, so this
 is not the folder work the session leaves to the callback: nothing is parsed

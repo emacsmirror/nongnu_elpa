@@ -475,8 +475,8 @@ which is what left one default 1642 characters wide."
 (defun vm-reference-print-value (value one-line)
   "Print VALUE for the manual, on one line if ONE-LINE, else broken up.
 `prin1-to-string' puts a whole alist on one line, and some of VM's defaults
-are long enough to leave the reader scrolling sideways -- `vm-serial-cookies'
-runs to nearly three thousand characters.  `pp' breaks those at their
+are long enough to leave the reader scrolling sideways -- the default of
+`vm-serial-token-alist' runs to nearly three thousand characters.  `pp' breaks those at their
 structure, and a string keeps the newlines it was written with."
   (if one-line
       (let ((print-escape-control-characters t)

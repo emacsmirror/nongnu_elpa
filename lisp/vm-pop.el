@@ -213,7 +213,7 @@ giving up, and nil means wait for ever, which is its default.
 A closed connection is reported as such rather than as a timeout.
 `accept-process-output' returns nil both when it waited in vain and when
 there is nothing left to wait for, so the two are told apart by the process
-status.  This mirrors `vm-imap-accept-process-output'.
+status.
 
 Until this existed, POP passed no timeout at any of its five reads, so
 `vm-pop-server-timeout' guarded only the connect: a server that accepted a
